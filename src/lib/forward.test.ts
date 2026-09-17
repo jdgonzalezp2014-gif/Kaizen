@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 import { classify, rank, suspectedDuplicates, type ForwardUnit } from './forward.ts';
 
 const unit = (over: Partial<ForwardUnit> = {}): ForwardUnit => ({
-  listingId: '1', name: 'U', active: true, basePrice: 150, cleaningFeeCharged: 90,
+  listingId: '1', name: 'U', active: true, listedActive: true, parked: false, parkedDays: 0,
+  basePrice: 150, cleaningFeeCharged: 90, cleaningCost: 55,
   weeklyDiscountPct: null, monthlyDiscountPct: null,
   nights: 30, nightsOpen: 15, nightsSold: 15, nightsBlocked: 0,
-  occupancy: 0.5, onBooks: 0, askAvg: 150, openDates: [], hasCalendar: true, ...over
+  occupancy: 0.5, onBooks: 0, askAvg: 150, openDates: [], hasCalendar: true, days: [], ...over
 });
 
 test('a unit blocked solid is offline, not zero per cent occupied', () => {
@@ -70,4 +71,17 @@ test('two units at zero revenue are not duplicates of each other', () => {
   const a = unit({ name: 'A', onBooks: 0, nightsSold: 0 });
   const b = unit({ name: 'B', onBooks: 0, nightsSold: 0 });
   assert.deepEqual(suspectedDuplicates([a, b]), []);
+});
+
+test('blocked past the horizon is parked, and parked outranks offline', () => {
+  // Hostaway still flags these active, so every portfolio average
+  // divides by them and the per-unit target is set against a unit
+  // count nobody could book against.
+  const u = unit({ parked: true, parkedDays: 45, nightsOpen: 0, nightsSold: 0,
+                   nightsBlocked: 30, occupancy: null });
+  assert.equal(classify(u, 0.6), 'parked');
+  assert.equal(u.listedActive, true);        // the flag still says yes
+  // Sorts below everything, including a short block.
+  const gap = unit({ name: 'Gap', nightsOpen: 0, nightsSold: 0, nightsBlocked: 30, occupancy: null });
+  assert.deepEqual(rank([u, gap], 0.6).map(x => x.state), ['offline', 'parked']);
 });

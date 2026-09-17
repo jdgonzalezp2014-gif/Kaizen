@@ -8,9 +8,18 @@
 export interface ForwardUnit {
   listingId: string;
   name: string;
+  /** Hostaway's flag. Says the listing exists, not that it takes bookings. */
+  listedActive: boolean;
+  /** Blocked solid across the whole parked horizon — off, whatever the flag says. */
+  parked: boolean;
+  parkedDays: number;
+  /** listedActive AND not parked. This is the one worth counting. */
   active: boolean;
   basePrice: number | null;
+  /** What the guest pays, from Hostaway. Revenue. */
   cleaningFeeCharged: number | null;
+  /** What the cleaner is paid, from the host's sheet. Cost. */
+  cleaningCost: number | null;
   weeklyDiscountPct: number | null;
   monthlyDiscountPct: number | null;
   nights: number;
@@ -22,6 +31,7 @@ export interface ForwardUnit {
   askAvg: number | null;
   openDates: string[];
   hasCalendar: boolean;
+  days: { d: string; s: 'o' | 's' | 'b'; p: number | null }[];
 }
 
 /**
@@ -34,7 +44,7 @@ export interface ForwardUnit {
  *   watch      under the floor but with little left to sell.
  *   ok         at or above the floor.
  */
-export type ForwardState = 'offline' | 'unknown' | 'thin' | 'watch' | 'ok';
+export type ForwardState = 'parked' | 'offline' | 'unknown' | 'thin' | 'watch' | 'ok';
 
 export interface RankedUnit extends ForwardUnit {
   state: ForwardState;
@@ -56,6 +66,9 @@ export interface RankedUnit extends ForwardUnit {
  */
 export function classify(u: ForwardUnit, occFloor: number): ForwardState {
   if (!u.hasCalendar) return 'unknown';
+  // Parked outranks offline: both are unbookable, but parked says the
+  // block runs past this window and is a standing decision, not a gap.
+  if (u.parked) return 'parked';
   if (u.nightsOpen + u.nightsSold === 0) return 'offline';
   if (u.occupancy == null) return 'unknown';
   if (u.occupancy >= occFloor) return 'ok';
@@ -81,7 +94,8 @@ export function rank(units: ForwardUnit[], occFloor: number): RankedUnit[] {
     return { ...u, state, atRisk, exposure, urgency };
   });
 
-  const order: Record<ForwardState, number> = { thin: 0, watch: 1, ok: 2, unknown: 3, offline: 4 };
+  const order: Record<ForwardState, number> = {
+    thin: 0, watch: 1, ok: 2, unknown: 3, offline: 4, parked: 5 };
   return ranked.sort((a, b) => {
     if (order[a.state] !== order[b.state]) return order[a.state] - order[b.state];
     if (a.urgency !== b.urgency) return b.urgency - a.urgency;

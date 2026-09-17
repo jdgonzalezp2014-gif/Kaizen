@@ -1,18 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Money } from './screens/Money.tsx';
+import { Revenue } from './screens/Revenue.tsx';
 import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
 import { Settings } from './screens/Settings.tsx';
 import { getUnits, type UnitRow } from './api.ts';
 
-type Tab = 'money' | 'units' | 'costs' | 'settings';
+type Tab = 'revenue' | 'units' | 'costs' | 'settings';
 
 const TABS: [Tab, string][] = [
-  ['money', 'Money'], ['units', 'Units'], ['costs', 'Costs'], ['settings', 'Settings']
+  ['revenue', 'Revenue'], ['units', 'Units'], ['costs', 'Costs'], ['settings', 'Settings']
 ];
 
 export function App() {
-  const [tab, setTab] = useState<Tab>('money');
+  const [tab, setTab] = useState<Tab>('revenue');
   // Fetched once at the top: three screens need the same unit list, and
   // three copies of it drift the moment one of them is stale.
   const [units, setUnits] = useState<UnitRow[]>([]);
@@ -39,7 +39,7 @@ export function App() {
         </p>
       )}
 
-      {tab === 'money'    && <Money />}
+      {tab === 'revenue'  && <Revenue />}
       {tab === 'units'    && <Units />}
       {tab === 'costs'    && <Costs units={units} />}
       {tab === 'settings' && <Settings />}

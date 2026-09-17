@@ -376,6 +376,39 @@ already changed the thing that prompted it.
 before the first listing sync fails on the INSERT. That is handled as a
 setup message, not a 500.
 
+## 18a. The cleanings sheet
+
+Published CSV, stored per account in `accounts.cleanings_csv_url`. It is
+a **log** — one row per clean, with `Unit`, `💲 Price`, `🧽 Deep`,
+`Cleaner` — not a per-unit rate table.
+
+Two things follow:
+
+* Header keys are normalised by stripping everything that is not a
+  letter or digit, because `💲 Price` otherwise normalises to `💲price`
+  and a lookup for `price` silently reads empty. That is an import which
+  reports zero matches instead of an error.
+* The per-unit cost is the **median of the standard (non-deep) cleans**,
+  not the most recent. The same unit legitimately shows different prices
+  — P2-1304 appears at both $35 and $70 — so "latest wins" would swing
+  its recurring cost by double depending on who cleaned last. Deep cleans
+  are held out and reported separately.
+
+Rows with no price ("Not needed", "TBD") are skipped, never counted as
+zero. Coverage is partial by nature: 10 of 27 units at the last run.
+
+## 18b. Sync was broken from migration 002 until 2026-09-17
+
+`syncUnits` upserted with `ON CONFLICT (id)` and never passed
+`account_id`. Migration 002 had made the primary key `(account_id, id)`,
+and Postgres rejects an `ON CONFLICT` target with no matching unique
+index — so **every sync failed outright** and `units` stayed empty. That
+in turn blocked costs, claims and price decisions, all foreign-keyed to
+it, and the failure surfaced only as "no units yet".
+
+It typechecked the whole time. Nothing but running it could have found
+it. See §13 on the difference between deployed and working.
+
 ## 18. Occupancy is a guardrail, not the opposite of profit
 
 The tagline once read "Profit per unit. Not occupancy." That framing was

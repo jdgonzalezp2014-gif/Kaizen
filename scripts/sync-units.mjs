@@ -8,7 +8,7 @@
  */
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import { syncUnits } from '../functions/_lib/sync.ts';
-import { getCredentials } from '../functions/_lib/accounts.ts';
+import { getAccount, getCredentials } from '../functions/_lib/accounts.ts';
 
 neonConfig.webSocketConstructor = globalThis.WebSocket;
 
@@ -33,7 +33,8 @@ try {
   // Credentials come from the database, the same place the deployed app
   // reads them — so this script exercises the real path, not a shortcut.
   const creds = await getCredentials(sql, process.env.ENCRYPTION_KEY);
-  const r = await syncUnits(creds, sql);
+  const account = await getAccount(sql);
+  const r = await syncUnits(creds, sql, account?.offlineAfterDays ?? 45);
   console.log(`${r.fetched} listing(s): ${r.active} active, ${r.inactive} inactive`);
   if (r.deactivated.length) console.log(`marked inactive (gone from Hostaway): ${r.deactivated.join(', ')}`);
   console.log();

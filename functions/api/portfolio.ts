@@ -48,16 +48,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Hostaway and Postgres are independent; there is no reason to wait for
   // one before starting the other.
-  const [listings, reservations, expenses, claims] = await Promise.all([
+  const [listings, reservations, expenses, claims, parkedRows] = await Promise.all([
     fetchListings(creds),
     fetchAllReservations(creds, from, to),
     sql`SELECT unit_id, shared, start_date, end_date, category, frequency, amount
         FROM expenses WHERE end_date IS NULL OR end_date >= ${from}` as unknown as Promise<CostRowDb[]>,
     sql`SELECT unit_id, occurred_on, category, severity, status, refund, repair_cost
-        FROM claims WHERE occurred_on >= ${from}`
+        FROM claims WHERE occurred_on >= ${from}`,
+    // The parked verdict, computed at sync time. Reading it costs one
+    // cheap query; recomputing it would cost 27 calendar requests on
+    // every dashboard load.
+    sql`SELECT id FROM units WHERE account_id = 1 AND parked = TRUE` as unknown as Promise<{ id: string }[]>
   ]);
 
-  const active = listings.filter(l => l.active);
+  // A unit blocked solid for the next 45 days is not taking bookings,
+  // whatever Hostaway's flag says. Counting it drags every per-unit
+  // average down and sets the portfolio target against units nobody
+  // could book — 27 × the target instead of 23 × it, on this account.
+  const parked = new Set((parkedRows as { id: string }[]).map(r => r.id));
+  const active = listings.filter(l => l.active && !parked.has(l.listingId));
   const perUnitTarget = account.targetNetPerUnit;
 
   return Response.json({
@@ -73,8 +82,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         perUnitNet: perUnitTarget,
         activeUnits: active.length,
         inactiveUnits: listings.length - active.length,
+        parkedUnits: parked.size,
         portfolioNet: active.length * perUnitTarget,
-        basis: `${active.length} active unit(s) × ${perUnitTarget}`
+        basis: `${active.length} unit(s) taking bookings × ${perUnitTarget}` +
+               (parked.size ? ` · ${parked.size} parked, excluded` : '')
       }
     },
     listings,

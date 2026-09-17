@@ -68,12 +68,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await sql`UPDATE accounts SET cleanings_csv_url = ${u || null} WHERE id = 1`;
     }
 
-    const targets = ['targetNetPerUnit', 'occFloorPct', 'stayNights', 'fwdStudyDays'] as const;
+    const targets = ['targetNetPerUnit', 'occFloorPct', 'stayNights', 'fwdStudyDays', 'offlineAfterDays'] as const;
     const cols: Record<typeof targets[number], string> = {
       targetNetPerUnit: 'target_net_per_unit',
       occFloorPct: 'occ_floor_pct',
       stayNights: 'stay_nights',
-      fwdStudyDays: 'fwd_study_days'
+      fwdStudyDays: 'fwd_study_days',
+      offlineAfterDays: 'offline_after_days'
     };
     for (const key of targets) {
       const v = Number(body[key]);
@@ -83,6 +84,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (cols[key] === 'occ_floor_pct')       await sql`UPDATE accounts SET occ_floor_pct = ${Math.round(v)} WHERE id = 1`;
       if (cols[key] === 'stay_nights')         await sql`UPDATE accounts SET stay_nights = ${Math.round(v)} WHERE id = 1`;
       if (cols[key] === 'fwd_study_days')       await sql`UPDATE accounts SET fwd_study_days = ${Math.round(v)} WHERE id = 1`;
+      if (cols[key] === 'offline_after_days')  await sql`UPDATE accounts SET offline_after_days = ${Math.round(v)} WHERE id = 1`;
     }
 
     return Response.json({ ok: true, account: await getAccount(sql) });

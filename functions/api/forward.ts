@@ -39,12 +39,35 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const days = Math.max(1, Math.min(365, Number(url.searchParams.get('days')) || account.fwdStudyDays));
   const to = addDays(asOf, days - 1);
 
+  // The calendar is pulled for whichever is longer: the window being
+  // studied, or the horizon the parked test needs. One fetch, both
+  // questions — the alternative is a second sweep of 27 calendars.
+  const horizon = Math.max(days, account.offlineAfterDays);
+  const calTo = addDays(asOf, horizon - 1);
+  const parkedThrough = addDays(asOf, account.offlineAfterDays - 1);
+
   const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
-  const listings = await fetchListings(creds);
-  const calendars = await fetchCalendars(creds, listings.map(l => l.listingId), asOf, to);
+  // What the cleaner is PAID, from the host's sheet. Hostaway only knows
+  // what the guest is charged, and the gap between them is margin that
+  // nothing else in this app would show.
+  const [listings, costRows] = await Promise.all([
+    fetchListings(creds),
+    sql`SELECT id, cleaning_fee FROM units WHERE account_id = 1 AND cleaning_fee IS NOT NULL`
+  ]) as [Awaited<ReturnType<typeof fetchListings>>, { id: string; cleaning_fee: string }[]];
+  const cleaningCost = new Map(costRows.map(r => [r.id, Number(r.cleaning_fee)]));
+  const calendars = await fetchCalendars(creds, listings.map(l => l.listingId), asOf, calTo);
 
   const units = listings.map(l => {
-    const cal = calendars[l.listingId] ?? [];
+    const all = calendars[l.listingId] ?? [];
+    const cal = all.filter(d => d.date <= to);
+
+    // Hostaway's own "active" flag only says the listing exists. A unit
+    // whose calendar is blocked solid for the next 45 days is not taking
+    // bookings whatever the flag says, and counting it as active drags
+    // every portfolio average towards zero and inflates the target.
+    const probe = all.filter(d => d.date <= parkedThrough);
+    const parked = probe.length > 0 && probe.every(d => !d.available &&
+      !/reserv|book/i.test(d.status));
     const open = cal.filter(d => d.available);
     const sold = cal.filter(d => !d.available && /reserv|book/i.test(d.status));
     // Blocked is its own category, never folded into either. A unit that
@@ -60,9 +83,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return {
       listingId: l.listingId,
       name: l.name,
-      active: l.active,
+      // Hostaway's flag, kept separate from what the calendar shows.
+      listedActive: l.active,
+      parked,
+      parkedDays: parked ? probe.length : 0,
+      active: l.active && !parked,
       basePrice: l.basePrice,
       cleaningFeeCharged: l.cleaningFee,
+      cleaningCost: cleaningCost.get(l.listingId) ?? null,
       weeklyDiscountPct: l.weeklyDiscountPct,
       monthlyDiscountPct: l.monthlyDiscountPct,
       nights: cal.length,
@@ -78,7 +106,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // this is what a pricing decision is aimed at.
       openDates: open.map(d => d.date),
       // A unit with no calendar at all is unknown, not empty.
-      hasCalendar: cal.length > 0
+      hasCalendar: cal.length > 0,
+      // Day-level state for the date picker, compact on purpose: 27
+      // units over 45 nights is a lot of JSON in long form.
+      //   o = open · s = sold · b = blocked
+      days: cal.map(d => ({
+        d: d.date,
+        s: d.available ? 'o' : /reserv|book/i.test(d.status) ? 's' : 'b',
+        p: Number(d.price) || null
+      }))
     };
   });
 
@@ -87,6 +123,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     meta: {
       asOf, days, to, tookMs: Date.now() - started,
       occFloorPct: account.occFloorPct,
+      offlineAfterDays: account.offlineAfterDays,
+      parkedThrough,
       generatedAt: new Date().toISOString()
     },
     units

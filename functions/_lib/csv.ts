@@ -40,7 +40,13 @@ export function parseCsv(text: string): Record<string, string>[] {
   // Headers are normalised so "Start Date", "start_date" and "START DATE"
   // are the same column. A person exporting a sheet should not have to
   // guess our capitalisation.
-  const keys = header.map(h => h.trim().toLowerCase().replace(/[\s_-]+/g, ''));
+  //
+  // Everything that is not a letter or digit goes, which matters more
+  // than it sounds: real sheets label columns "💲 Price" and "🧽 Deep".
+  // Stripping only whitespace leaves the key as "💲price", so a lookup
+  // for "price" misses and the column reads as empty — an import that
+  // reports zero matches rather than an error.
+  const keys = header.map(h => h.trim().toLowerCase().replace(/[^a-z0-9]+/g, ''));
 
   return rows
     .filter(r => r.some(cell => cell.trim() !== ''))   // drop blank lines
@@ -54,7 +60,7 @@ export function parseCsv(text: string): Record<string, string>[] {
 /** Reads the first header that matches any of the given aliases. */
 export function pick(row: Record<string, string>, ...aliases: string[]): string {
   for (const a of aliases) {
-    const key = a.toLowerCase().replace(/[\s_-]+/g, '');
+    const key = a.toLowerCase().replace(/[^a-z0-9]+/g, '');
     if (row[key] !== undefined && row[key] !== '') return row[key];
   }
   return '';

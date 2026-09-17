@@ -1,0 +1,14 @@
+-- "Active" in Hostaway is not the same as "actually taking bookings".
+--
+-- Several listings here are flagged active and have their calendar
+-- blocked solid by hand for months — a unit between tenants, one being
+-- renovated, one an owner is sitting in. Hostaway still calls them
+-- active, so every portfolio average silently divides by them, and the
+-- per-unit target is set against a count that includes units nobody
+-- could book if they tried.
+--
+-- The test is behavioural rather than a flag: if there is not one
+-- sellable night in the next N days, the unit is parked. 45 by default,
+-- because a block shorter than that is a gap and a block longer than
+-- that is a decision.
+ALTER TABLE accounts ADD COLUMN offline_after_days INTEGER NOT NULL DEFAULT 45;

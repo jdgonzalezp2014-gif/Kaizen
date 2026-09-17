@@ -5,7 +5,7 @@ export interface Account {
   hostawayAccountId: string | null;
   hasHostawayKey: boolean;
   targetNetPerUnit: number; occFloorPct: number; stayNights: number;
-  fwdStudyDays: number; cleaningsCsvUrl: string | null;
+  fwdStudyDays: number; offlineAfterDays: number; cleaningsCsvUrl: string | null;
   allowedEmails: string[];
 }
 export interface Connection { ok: boolean; message: string; units?: number }
@@ -53,7 +53,8 @@ import type { ForwardUnit } from './lib/forward.ts';
 
 export interface ForwardResponse {
   ok: boolean;
-  meta: { asOf: string; days: number; to: string; tookMs: number; occFloorPct: number };
+  meta: { asOf: string; days: number; to: string; tookMs: number; occFloorPct: number;
+          offlineAfterDays: number; parkedThrough: string };
   units: ForwardUnit[];
   error?: string;
 }

@@ -21,6 +21,8 @@ export interface Account {
   stayNights: number;
   /** The forward window this account studies by default, in days. */
   fwdStudyDays: number;
+  /** Blocked solid for this many days ahead = parked, not active. */
+  offlineAfterDays: number;
   /** Published-CSV URL of the sheet holding what cleaners are PAID. */
   cleaningsCsvUrl: string | null;
   allowedEmails: string[];
@@ -34,6 +36,7 @@ interface AccountRow {
   occ_floor_pct: number;
   stay_nights: number;
   fwd_study_days: number;
+  offline_after_days: number;
   cleanings_csv_url: string | null;
   allowed_emails: string[];
 }
@@ -46,7 +49,7 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
   const rows = await sql`
     SELECT id, name, hostaway_account_id, hostaway_api_key_enc,
            target_net_per_unit, occ_floor_pct, stay_nights,
-           fwd_study_days, cleanings_csv_url, allowed_emails
+           fwd_study_days, offline_after_days, cleanings_csv_url, allowed_emails
     FROM accounts WHERE id = ${accountId}
   ` as AccountRow[];
 
@@ -62,6 +65,7 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
     occFloorPct: r.occ_floor_pct,
     stayNights: r.stay_nights,
     fwdStudyDays: r.fwd_study_days ?? 30,
+    offlineAfterDays: r.offline_after_days ?? 45,
     cleaningsCsvUrl: r.cleanings_csv_url,
     allowedEmails: r.allowed_emails ?? []
   };

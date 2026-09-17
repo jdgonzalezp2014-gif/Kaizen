@@ -17,7 +17,7 @@ interface Portfolio {
 const money = (n: number | null) => n == null ? '—'
   : n.toLocaleString('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 });
 
-export function Money() {
+export function Revenue() {
   const [data, setData] = useState<Portfolio | null>(null);
   const [error, setError] = useState('');
   const [preset, setPreset] = useState<PresetId | 'custom'>('mtd');

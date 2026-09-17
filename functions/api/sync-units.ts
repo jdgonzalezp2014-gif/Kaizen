@@ -7,7 +7,7 @@
  */
 import { syncUnits } from '../_lib/sync.ts';
 import { db, type Env } from '../_lib/db.ts';
-import { getCredentials, type SqlFn } from '../_lib/accounts.ts';
+import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -17,8 +17,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
 
   try {
+    const account = await getAccount(sql);
     const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
-    const result = await syncUnits(creds, sql);
+    const result = await syncUnits(creds, sql, account?.offlineAfterDays ?? 45);
     return Response.json({ ok: true, by: who.email, ...result });
   } catch (err) {
     return Response.json(
