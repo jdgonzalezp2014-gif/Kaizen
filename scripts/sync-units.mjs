@@ -8,12 +8,12 @@
  */
 import { Pool, neonConfig } from '@neondatabase/serverless';
 import { syncUnits } from '../functions/_lib/sync.ts';
+import { getCredentials } from '../functions/_lib/accounts.ts';
 
 neonConfig.webSocketConstructor = globalThis.WebSocket;
 
-const { HOSTAWAY_ACCOUNT_ID, HOSTAWAY_API_KEY } = process.env;
-if (!HOSTAWAY_ACCOUNT_ID || !HOSTAWAY_API_KEY) {
-  console.error('Set HOSTAWAY_ACCOUNT_ID and HOSTAWAY_API_KEY (see .env.example).');
+if (!process.env.ENCRYPTION_KEY) {
+  console.error('ENCRYPTION_KEY is not set — credentials are stored encrypted.');
   process.exit(1);
 }
 
@@ -30,7 +30,10 @@ const sql = async (strings, ...values) => {
 };
 
 try {
-  const r = await syncUnits({ accountId: HOSTAWAY_ACCOUNT_ID, apiKey: HOSTAWAY_API_KEY }, sql);
+  // Credentials come from the database, the same place the deployed app
+  // reads them — so this script exercises the real path, not a shortcut.
+  const creds = await getCredentials(sql, process.env.ENCRYPTION_KEY);
+  const r = await syncUnits(creds, sql);
   console.log(`${r.fetched} listing(s): ${r.active} active, ${r.inactive} inactive`);
   if (r.deactivated.length) console.log(`marked inactive (gone from Hostaway): ${r.deactivated.join(', ')}`);
   console.log();

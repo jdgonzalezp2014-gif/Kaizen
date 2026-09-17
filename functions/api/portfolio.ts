@@ -21,8 +21,11 @@ interface CostRowDb {
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const started = Date.now();
   const now = today();
-  // Wide enough that any range the UI can ask for is already in hand.
-  const from = addDays(now, -Number(env.LEDGER_BACK_DAYS ?? 400));
+  // Three years back by default. Reservations are fetched one call per
+  // listing WITH a date range, so widening the window costs no extra
+  // requests — only a larger response. Hostaway is the system of record
+  // for booking history; there is no reason to ask it for less than it has.
+  const from = addDays(now, -Number(env.LEDGER_BACK_DAYS ?? 1095));
   const to   = addDays(now,  Number(env.LEDGER_FWD_DAYS ?? 365));
 
   const creds = { accountId: env.HOSTAWAY_ACCOUNT_ID, apiKey: env.HOSTAWAY_API_KEY };
