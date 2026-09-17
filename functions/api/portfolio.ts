@@ -66,6 +66,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       generatedAt: new Date().toISOString(),
       tookMs: Date.now() - started,
       window: { from, to },
+      occFloorPct: account.occFloorPct,
       // Targets are derived, never stored: taking a unit offline must move
       // the target rather than make the portfolio look like it missed.
       targets: {

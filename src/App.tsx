@@ -12,7 +12,7 @@ export function App() {
       <header>
         <div>
           <h1>Kaizen OS</h1>
-          <p className="sub">Profit per unit. Not occupancy.</p>
+          <p className="sub">Profit per unit — and the occupancy that has to hold it up.</p>
         </div>
         <nav>
           <button className={tab === 'money' ? 'tab active' : 'tab'} onClick={() => setTab('money')}>Money</button>

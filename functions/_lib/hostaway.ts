@@ -111,7 +111,7 @@ export async function getAccessToken(creds: HostawayCredentials): Promise<string
   return cachedToken.token;
 }
 
-async function apiGet<T>(path: string, token: string): Promise<T[]> {
+async function apiGetEnvelope<T>(path: string, token: string): Promise<{ result: T[]; count: number }> {
   // Retries 429 and 5xx with a widening gap. Hostaway rate-limits a
   // full-portfolio sweep, and failing the whole sync because one call in
   // twenty-seven was throttled is the wrong trade.
@@ -127,11 +127,15 @@ async function apiGet<T>(path: string, token: string): Promise<T[]> {
     }
     if (!res.ok) throw new Error(`Hostaway ${path} returned ${res.status}.`);
 
-    const json = await res.json() as { result?: T[] } | T[];
-    if (Array.isArray(json)) return json;
-    return (json.result ?? []) as T[];
+    const json = await res.json() as { result?: T[]; count?: number } | T[];
+    if (Array.isArray(json)) return { result: json, count: json.length };
+    return { result: (json.result ?? []) as T[], count: Number(json.count ?? 0) };
   }
   throw new Error(`Hostaway ${path} kept failing after 4 attempts.`);
+}
+
+async function apiGet<T>(path: string, token: string): Promise<T[]> {
+  return (await apiGetEnvelope<T>(path, token)).result;
 }
 
 function firstNumber(o: Record<string, unknown>, keys: string[]): number {
@@ -178,62 +182,83 @@ export function reservationCounts(status: string): boolean {
   return !NON_COUNTING.has(String(status).toLowerCase().replace(/[^a-z]/g, ''));
 }
 
+const PAGE = 500;
+
 /**
- * Reservations for one listing.
+ * Every reservation in the account, paginated.
  *
- * The result is re-filtered by listing id even though the query asks for
- * one: when the endpoint ignores `listingMapId` it returns the entire
- * account, and without this every unit would report the portfolio total.
- * That bug is silent — the numbers look plausible and are all identical.
+ * NOT one request per listing, and that is a correctness fix rather than
+ * an optimisation. Two documented Hostaway behaviours compound:
+ *
+ *   · `/reservations` ignores `listingMapId` and returns account-wide
+ *     rows anyway, which is why every result is re-filtered by listing.
+ *   · It pages at 100 rows by default and says so only in a `limit`
+ *     field nobody reads.
+ *
+ * Together those truncated silently: we asked for one listing, got 100
+ * rows belonging to the whole account, and kept the two that matched.
+ * Across 27 listings that returned 57 of 2,020 reservations — revenue at
+ * three percent of reality, with nothing erroring.
+ *
+ * Fetching account-wide and grouping locally is also five requests
+ * instead of twenty-nine, and about a second instead of seventeen.
  */
-export async function fetchReservations(
-  creds: HostawayCredentials, listingId: string, from: DateStr, to: DateStr, token?: string
+export async function fetchAllReservations(
+  creds: HostawayCredentials, from: DateStr, to: DateStr
 ): Promise<HostawayReservation[]> {
-  const t = token ?? await getAccessToken(creds);
-  // A long lookback catches stays that began well before the window and
-  // still overlap it.
-  const buffered = addDays(from, -400);
+  const token = await getAccessToken(creds);
 
-  const variants = [
-    `/reservations?listingMapId=${listingId}&arrivalStartDate=${buffered}&arrivalEndDate=${to}`,
-    `/reservations?listingMapId=${listingId}&fromDate=${buffered}&toDate=${to}`,
-    `/reservations?listingMapId=${listingId}`
-  ];
+  // The first page reports the account total, so the rest are fetched at
+  // once rather than discovered one round trip at a time. Sequential
+  // paging cost ~3 seconds per page; the whole point of a single call is
+  // that the page is not left blank while it happens.
+  const first = await apiGetEnvelope<Record<string, any>>(`/reservations?limit=${PAGE}&offset=0`, token);
+  const raw: Record<string, any>[] = [...first.result];
 
-  for (const path of variants) {
-    let raw: Record<string, any>[];
-    try { raw = await apiGet<Record<string, any>>(path, t); } catch { continue; }
+  const total = Math.min(first.count || first.result.length, 50_000);
+  const offsets: number[] = [];
+  for (let o = PAGE; o < total; o += PAGE) offsets.push(o);
 
-    const owned = raw.filter(r =>
-      String(r.listingMapId ?? r.listingId ?? r.listing_id ?? '') === String(listingId));
-    if (!owned.length) continue;
-
-    return owned
-      .filter(r => reservationCounts(String(r.status ?? '')))
-      .map(r => {
-        const arrival = asDate(r.arrivalDate ?? r.checkInDate ?? r.startDate);
-        const departure = asDate(r.departureDate ?? r.checkOutDate ?? r.endDate);
-        const total = firstNumber(r, ['totalPrice', 'totalPaid', 'price', 'baseRate']);
-        // No payout means no cleaning fee to deduct. See the header note.
-        const paid = total > 0;
-
-        return {
-          listingId: String(listingId),
-          reservationId: String(r.id ?? ''),
-          status: String(r.status ?? ''),
-          channel: String(r.channelName ?? r.source ?? r.channel ?? ''),
-          bookedOn: asDate(r.reservationDate ?? r.insertedOn ?? r.confirmedOn ?? r.createdOn),
-          arrival,
-          departure,
-          nights: arrival && departure ? Math.max(1, daysBetween(arrival, departure)) : 0,
-          totalPaid: total,
-          cleaningFee: paid ? firstNumber(r, ['cleaningFee', 'cleaningFeeAmount']) : 0
-        };
-      })
-      .filter(r => r.arrival && r.departure);
+  if (offsets.length) {
+    const pages = await Promise.all(offsets.map(o =>
+      apiGet<Record<string, any>>(`/reservations?limit=${PAGE}&offset=${o}`, token)
+        .catch(() => [])));
+    pages.forEach(pg => raw.push(...pg));
   }
 
-  return [];
+  return raw
+    .filter(r => reservationCounts(String(r.status ?? '')))
+    .map(r => {
+      const arrival = asDate(r.arrivalDate ?? r.checkInDate ?? r.startDate);
+      const departure = asDate(r.departureDate ?? r.checkOutDate ?? r.endDate);
+      const total = firstNumber(r, ['totalPrice', 'totalPaid', 'price', 'baseRate']);
+      const paid = total > 0;
+
+      return {
+        listingId: String(r.listingMapId ?? r.listingId ?? r.listing_id ?? ''),
+        reservationId: String(r.id ?? ''),
+        status: String(r.status ?? ''),
+        channel: String(r.channelName ?? r.source ?? r.channel ?? ''),
+        bookedOn: asDate(r.reservationDate ?? r.insertedOn ?? r.confirmedOn ?? r.createdOn),
+        arrival,
+        departure,
+        nights: arrival && departure ? Math.max(1, daysBetween(arrival, departure)) : 0,
+        totalPaid: total,
+        cleaningFee: paid ? firstNumber(r, ['cleaningFee', 'cleaningFeeAmount']) : 0
+      };
+    })
+    // Overlap, not containment: a stay that began before the window and
+    // runs into it still earns nights inside it.
+    .filter(r => r.arrival && r.departure && r.listingId &&
+                 r.departure >= from && r.arrival <= to);
+}
+
+/** One listing's reservations, filtered from the account-wide pull. */
+export async function fetchReservations(
+  creds: HostawayCredentials, listingId: string, from: DateStr, to: DateStr
+): Promise<HostawayReservation[]> {
+  const all = await fetchAllReservations(creds, from, to);
+  return all.filter(r => r.listingId === String(listingId));
 }
 
 /**
@@ -269,24 +294,4 @@ export async function fetchCalendar(
     if (days.length) return days;
   }
   return [];
-}
-
-/** Every listing's reservations, fetched concurrently but politely. */
-export async function fetchAllReservations(
-  creds: HostawayCredentials, from: DateStr, to: DateStr, concurrency = 4
-): Promise<HostawayReservation[]> {
-  const token = await getAccessToken(creds);
-  const listings = await fetchListings(creds, token);
-  const out: HostawayReservation[] = [];
-
-  // Batched rather than all-at-once: twenty-seven simultaneous requests
-  // is how a rate limit is discovered in production.
-  for (let i = 0; i < listings.length; i += concurrency) {
-    const batch = listings.slice(i, i + concurrency);
-    const results = await Promise.all(
-      batch.map(l => fetchReservations(creds, l.listingId, from, to, token).catch(() => []))
-    );
-    results.forEach(rs => out.push(...rs));
-  }
-  return out;
 }

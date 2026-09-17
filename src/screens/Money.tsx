@@ -7,6 +7,7 @@ import type { Period } from '../lib/finance.ts';
 
 interface Portfolio {
   meta: { targets: { perUnitNet: number; activeUnits: number; portfolioNet: number; basis: string };
+          occFloorPct?: number;
           window: { from: string; to: string }; tookMs: number };
   listings: { listingId: string; name: string; active: boolean }[];
   reservations: Dataset['reservations'];
@@ -44,7 +45,10 @@ export function Money() {
     return {
       board,
       units: board.units.map(u => ({ ...u, name: names.get(u.listingId) ?? u.listingId })),
+      occFloor: (data.meta.occFloorPct ?? 60) / 100,
       series: portfolioSeries(set, period),
+      thin: board.units.filter(u =>
+        u.occupancy != null && u.occupancy < (data.meta.occFloorPct ?? 60) / 100).length,
       granularity: granularityFor(period),
       anyCosts: data.costs.length > 0
     };
@@ -88,13 +92,18 @@ export function Money() {
             : `${Math.round(board.portfolio.occupancy * 100)}%`}</dd></div>
           <div><dt>ADR</dt><dd>{money(board.portfolio.adr)}</dd></div>
           <div><dt>RevPAN</dt><dd>{money(board.portfolio.revpan)}</dd></div>
+          <div><dt>Below floor</dt><dd>{view.thin} of {view.units.length}</dd></div>
         </dl>
       </div>
 
       <div className="card">
         <h2>Net by unit</h2>
-        <p className="note">Worst first — that is what needs a decision.</p>
-        <UnitBars units={view.units} />
+        <p className="note">
+          Worst first — that is what needs a decision. Occupancy sits beside the money on
+          purpose: a unit can clear its target on a half-empty calendar, and that is a price
+          that found few takers rather than a unit that is working.
+        </p>
+        <UnitBars units={view.units} occFloor={view.occFloor} />
       </div>
 
       <div className="card">

@@ -125,3 +125,11 @@ td { padding: 5px 0; border-bottom: 1px solid var(--line); }
   .bar-row .tag { display: none; }   /* value + length still carry it */
   .hero { flex-direction: column; gap: 16px; }
 }
+
+.bar-row { grid-template-columns: 144px 1fr 88px 74px 138px; }
+.bar-occ { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); font-size: 12px; }
+.breach { color: var(--warn); font-weight: 600; }
+@media (max-width: 860px) {
+  .bar-row { grid-template-columns: 108px 1fr 80px 66px; }
+  .bar-row .tag { display: none; }
+}

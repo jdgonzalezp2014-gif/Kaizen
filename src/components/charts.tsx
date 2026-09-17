@@ -28,8 +28,12 @@ export function BandTag({ band }: { band: Band }) {
  * to a zero baseline because net goes negative, and a tile would have to
  * express that with colour alone.
  */
-export function UnitBars({ units }: {
-  units: { listingId: string; name: string; net: number; target: number; delta: number; band: Band }[];
+export function UnitBars({ units, occFloor }: {
+  units: {
+    listingId: string; name: string; net: number; target: number;
+    delta: number; band: Band; occupancy: number | null;
+  }[];
+  occFloor: number;
 }) {
   if (!units.length) return <p className="note">No units yet — run “Sync listings” in Settings.</p>;
 
@@ -54,6 +58,18 @@ export function UnitBars({ units }: {
                      : { left: `${zero - w}%`, width: `${w}%` }} />
             </div>
             <div className="bar-value">{money(u.net)}</div>
+            <div className="bar-occ">
+              {/* The guardrail, shown beside the verdict rather than on
+                  another screen. A unit can clear its profit target on a
+                  half-empty calendar — that is a price that found few
+                  takers, not a unit that is working. */}
+              {u.occupancy == null ? '—' : `${Math.round(u.occupancy * 100)}%`}
+              {u.occupancy != null && u.occupancy < occFloor && (
+                <span className="breach" title={`Below the ${Math.round(occFloor * 100)}% occupancy floor`}>
+                  {' '}⚠ thin
+                </span>
+              )}
+            </div>
             <BandTag band={u.band} />
           </div>
         );
