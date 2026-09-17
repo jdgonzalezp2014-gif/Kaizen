@@ -10,7 +10,7 @@
 import { fetchAllReservations, fetchListings } from '../_lib/hostaway.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
-import { userEmail } from '../_lib/auth.ts';
+import { identify, unauthorised } from '../_lib/auth.ts';
 import { addDays, today } from '../../src/lib/dates.ts';
 
 interface CostRowDb {
@@ -20,6 +20,9 @@ interface CostRowDb {
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const who = identify(request, env);
+  if (!who) return unauthorised();
+
   const started = Date.now();
   const now = today();
   // Three years back by default. Reservations are fetched one call per
@@ -59,7 +62,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return Response.json({
     meta: {
-      user: userEmail(request),
+      user: who.email,
       generatedAt: new Date().toISOString(),
       tookMs: Date.now() - started,
       window: { from, to },

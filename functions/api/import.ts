@@ -15,7 +15,7 @@
  */
 import { parseCsv, parseAmount, parseDate, pick } from '../_lib/csv.ts';
 import { db, type Env } from '../_lib/db.ts';
-import { userEmail } from '../_lib/auth.ts';
+import { identify, unauthorised } from '../_lib/auth.ts';
 
 type Kind = 'expenses' | 'claims';
 
@@ -32,6 +32,9 @@ interface Parsed {
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const who = identify(request, env);
+  if (!who) return unauthorised();
+
   const sql = db(env);
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
 
@@ -87,7 +90,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     });
   }
 
-  const by = userEmail(request);
+  const by = who.email;
   let written = 0;
   for (const p of ready) {
     if (kind === 'expenses') {

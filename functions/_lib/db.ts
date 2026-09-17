@@ -9,8 +9,9 @@
  * requests.
  */
 import { neon } from '@neondatabase/serverless';
+import type { AuthEnv } from './auth.ts';
 
-export interface Env {
+export interface Env extends AuthEnv {
   DATABASE_URL: string;
   // Master key for tenant credentials at rest. See crypto.ts.
   ENCRYPTION_KEY: string;

@@ -10,9 +10,12 @@
 import { getAccount, getCredentials, saveCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { getAccessToken, fetchListings } from '../_lib/hostaway.ts';
 import { db, type Env } from '../_lib/db.ts';
-import { userEmail } from '../_lib/auth.ts';
+import { identify, unauthorised } from '../_lib/auth.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+  const who = identify(request, env);
+  if (!who) return unauthorised();
+
   const sql = db(env) as unknown as SqlFn;
   const account = await getAccount(sql);
   if (!account) return Response.json({ ok: false, error: 'no_account' }, { status: 404 });
@@ -38,10 +41,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
-  return Response.json({ ok: true, user: userEmail(request), account, connection });
+  return Response.json({ ok: true, user: who.email, account, connection });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const who = identify(request, env);
+  if (!who) return unauthorised();
+
   const sql = db(env) as unknown as SqlFn;
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;
 
