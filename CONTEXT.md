@@ -96,6 +96,38 @@ request. Deployment is `git push`; there is no deploy step to run or forget.
 | Airbnb live price + ratings | Postgres | Scraped by a scheduled job, not an API |
 | Pricing decisions + outcomes | Postgres | Our own derived history |
 
+## 4a. Multi-tenant by shape, single-tenant in fact
+
+Hostaway credentials are **entered in the app and stored per account**, not baked into a
+deployment as environment variables. That was a deliberate call: env-var credentials work exactly
+once — one deployment, one property manager, forever — and the intent is to be able to sell this
+to other hosts.
+
+**Done now because it is nearly free now and brutal later.** Adding `account_id` to five
+populated tables, backfilling it, and auditing every query for a missing filter is the class of
+migration that leaks one customer's revenue into another's dashboard. Done while `units` was
+empty, it cost one file.
+
+**What it is not:** a single-row `accounts` table is not production multi-tenancy. There is no
+row-level security, no per-tenant rate limiting, no onboarding, no billing. What it buys is that
+adding those is additive rather than a rewrite.
+
+Two details that matter:
+
+- **`units` is keyed on `(account_id, id)`.** A Hostaway listing id is unique only within its own
+  Hostaway account; two customers can both own listing `366041` and they are different
+  apartments. Every foreign key is composite for the same reason.
+- **The backfill `DEFAULT 1` is dropped immediately after.** It existed to fill the one row that
+  already existed. Left in place, a future insert that forgets `account_id` would silently file
+  another tenant's data under account 1 instead of failing.
+
+**Credentials are encrypted at rest** (`functions/_lib/crypto.ts`, AES-256-GCM via WebCrypto).
+The master key lives in `ENCRYPTION_KEY` in the environment, never in the database — an attacker
+needs both the dump and the deployment's secrets. GCM rather than CBC because it authenticates:
+tampered ciphertext fails to decrypt instead of producing garbage that gets sent to Hostaway as a
+credential. The plaintext key never travels back to a browser; a settings screen shows
+`maskKey()` output.
+
 ## 5. Scope — what this is and is not
 
 | In scope | Notes |
@@ -157,7 +189,8 @@ error halfway down leaves no half-built schema.
 It connects on `DATABASE_URL_UNPOOLED`: Neon's pooler multiplexes sessions and DDL wants one to
 itself. `neon link` writes both URLs into `.env.local`, which is gitignored.
 
-**Applied:** `001_init.sql` — 7 tables, 14 indexes, 3 seeded config rows.
+**Applied:** `001_init.sql` (7 tables, 14 indexes), `002_accounts.sql` (tenant scoping,
+composite keys, encrypted credentials).
 
 ```
 units              mirrors Hostaway listings; cached for joins, refreshed by the sync
@@ -216,7 +249,8 @@ platform.** These are proven against real data and worth reading before rewritin
 | 0 | `src/lib/` analytics — proration, ranges, series | **done**, tested |
 | 1 | Vite scaffold, Pages Functions, Hostaway client, `/api/portfolio` | **done**, builds |
 | 2 | Neon project linked, schema applied, migration runner | **done** |
-| 3 | `/api/sync-units` — populate `units` from Hostaway | **next** |
+| 3 | `/api/sync-units` — populate `units` from Hostaway | built, **not yet run** |
+| 3b | Settings screen: enter Hostaway credentials per account | **next** |
 | 4 | Connect GitHub → Cloudflare Pages, enable Access | needs a human |
 | 5 | Money screen: scoreboard → per-unit tile → per-unit P&L | |
 | 6 | Expense + claim entry forms | |
