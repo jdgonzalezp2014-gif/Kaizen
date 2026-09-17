@@ -16,15 +16,14 @@ It is a product the client owns, on infrastructure the client controls. Not a sp
 
 ## 2. The stack
 
-| Layer | Choice | Free tier | Commercial use |
-|---|---|---|---|
-| Repo + scheduled jobs | **GitHub** + Actions | 2,000 min/mo private | yes |
-| App + API | **Next.js on Vercel** | Hobby | ⚠️ see §2a |
-| Database | **Neon** (Postgres) | 0.5 GB, always-free | yes |
-| Auth | **Auth.js** + Google provider | — | yes |
-| SMS | **QUO** (formerly OpenPhone) | client's account | — |
-| Domain / DNS | **Cloudflare** | registrar at cost | yes |
-| Email | **Resend** | 3k/mo | yes |
+| Layer | Choice | Free tier |
+|---|---|---|
+| Repo + scheduled jobs | **GitHub** + Actions | 2,000 min/mo private |
+| App + API | **Vite + React on Cloudflare Pages**, API via Pages Functions | unlimited static, 100k fn req/day |
+| Database | **Neon** (Postgres) | 0.5 GB, always-free |
+| Auth | **Cloudflare Access** — Google sign-in, no auth code | 50 users |
+| SMS | **QUO** (formerly OpenPhone) | client's account |
+| Domain / DNS | **Cloudflare** | registrar at cost |
 
 This is essentially the stack the client asked for, and it is the right one. An earlier draft of
 this project routed around it with Google Apps Script and Sheets — that was a mistake born of
@@ -32,18 +31,34 @@ over-reading the "no server" constraint. *Serverless functions are not a server.
 holds a secret exactly as safely as Apps Script does, and the client ends up owning a real
 platform instead of inheriting a spreadsheet script.
 
-### 2a. The one licensing risk
+### 2a. Two choices worth understanding
 
-**Vercel's Hobby plan is licensed for non-commercial use**, and this is a commercial business.
-Many commercial projects run on it anyway; it is a risk to know, not necessarily to act on.
-The clean exits, in order of cost:
+**Vite, not Next.js.** Next.js earns its keep with server rendering, and this is an auth-gated
+dashboard: no SEO, no public pages, and every number is computed in the browser by design (§7).
+Running it on Cloudflare needs the `next-on-pages` adapter, which is another moving part that can
+lag Next releases. Pages Functions are native — a file at `functions/api/x.ts` *is* the route
+`/api/x`, with no adapter. If the client insists on Next.js later it is a contained swap; the
+analytics core and the Functions do not change.
 
-1. **Cloudflare Pages + Workers** — free tier permits commercial use outright. Next.js runs
-   there via `@cloudflare/next-on-pages`.
-2. **Vercel Pro** — ~$20/mo.
+**Cloudflare Access, not Auth.js.** Access sits in front of the whole site at the edge, so an
+unauthenticated request never reaches a Function at all. It provides Google sign-in, an email
+allowlist managed in a dashboard rather than a deploy, and it is free to 50 users. Auth.js would
+have meant a session store, a callback route, a login page and secret rotation to arrive at the
+same place. **There is no auth code in this project, and that is the point.**
 
-Everything in §3 is host-agnostic on purpose: API routes, a Postgres URL, and cron. Moving hosts
-is an afternoon.
+Access forwards the verified identity as `Cf-Access-Authenticated-User-Email` *after* validating
+its JWT. It cannot be spoofed from outside because a spoofed request never gets past Access.
+Locally there is no Access, so the header is absent and `functions/_lib/auth.ts` falls back to a
+loud placeholder — a row written in dev says so in `created_by` rather than impersonating anyone.
+
+### 2b. Runtime constraints that are not preferences
+
+- **No raw TCP on Workers**, so `pg` cannot connect. `@neondatabase/serverless` speaks HTTP.
+  This is why the driver choice is not interchangeable.
+- **No ambient `process.env`.** Cloudflare passes bindings to the handler, so server modules take
+  credentials as arguments. That also makes them testable and gives them no hidden inputs.
+- **`functions/` is invisible to Vite.** Server code physically cannot reach the browser bundle —
+  a stronger guarantee than a convention about what not to import.
 
 ## 3. Architecture
 
@@ -51,31 +66,25 @@ is an afternoon.
 ┌── GitHub ─────────────────────────────────────────────────┐
 │  repo + Actions (cron: sync, scrape, alerts)              │
 └───────────────┬───────────────────────────────────────────┘
-                │
-┌── Vercel ─────▼───────────────────────────────────────────┐
-│  Next.js                                                   │
-│    app/           React Server Components, dashboards      │
-│    app/api/       route handlers — the ONLY place secrets  │
-│                   are read                                 │
-│    src/lib/       pure analytics: proration, ranges,       │
-│                   series. No network, no framework         │
+                │  push → build → deploy
+┌── Cloudflare ─▼───────────────────────────────────────────┐
+│  Access          Google sign-in at the edge, 50 users     │
+│  Pages           static Vite build                        │
+│    src/lib/      pure analytics — no network, no framework│
+│  Pages Functions functions/api/* — the ONLY place secrets │
+│    functions/_lib/   server-only clients                  │
 └───────┬───────────────────────────┬───────────────────────┘
         │                           │
   ┌─────▼──────┐            ┌───────▼────────┐
   │  Hostaway  │            │  Neon Postgres │
   │  (live)    │            │  costs, claims,│
-  │            │            │  decisions,    │
-  │            │            │  scraped prices│
+  │            │            │  observations, │
+  │            │            │  decisions     │
   └────────────┘            └────────────────┘
 ```
 
-**Secrets live in exactly one place:** Vercel environment variables, read only inside
-`app/api/**` and in GitHub Actions. Nothing that runs in a browser ever sees a key. A static
-site calling Hostaway directly would ship the account ID and API key in its bundle, handing
-anyone with devtools full read/write on bookings and guest data.
-
-**`src/lib/` is pure.** No fetch, no React, no env. It takes rows and returns numbers, which is
-what makes it testable with `node src/lib/finance.test.ts` and portable if the host ever changes.
+Cloudflare Pages builds from GitHub on every push, with a preview URL per branch and per pull
+request. Deployment is `git push`; there is no deploy step to run or forget.
 
 ## 4. Where each number comes from
 
@@ -195,15 +204,16 @@ platform.** These are proven against real data and worth reading before rewritin
 | Phase | Ships | Status |
 |---|---|---|
 | 0 | `src/lib/` analytics — proration, ranges, series | **done**, tested |
-| 1 | Next.js scaffold, Auth.js + Google, Neon connected, migrations | **next** |
-| 2 | Hostaway client in `src/lib/hostaway.ts` + `/api/portfolio` | |
-| 3 | Money screen: scoreboard → per-unit tile → per-unit P&L | |
-| 4 | Expense + claim entry forms | |
-| 5 | Charts and range control | |
-| 6 | GitHub Action: nightly sync, scrape, QUO alerts | |
-| 7 | Decision log view | |
+| 1 | Vite scaffold, Pages Functions, Hostaway client, `/api/portfolio` | **done**, builds |
+| 2 | Neon project, run `db/migrations/001_init.sql`, set secrets | **next — needs a human** |
+| 3 | Connect GitHub → Cloudflare Pages, enable Access | needs a human |
+| 4 | Money screen: scoreboard → per-unit tile → per-unit P&L | |
+| 5 | Expense + claim entry forms | |
+| 6 | Charts and range control | |
+| 7 | GitHub Action: nightly scrape + QUO alerts | |
+| 8 | Decision log view | |
 
-Phases 1–5 are the demo.
+Phases 2–3 are account setup, not code. Everything after is the demo.
 
 ## 12. Open questions — need a human, do not guess
 

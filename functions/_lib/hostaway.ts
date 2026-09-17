@@ -1,27 +1,39 @@
 /**
- * Hostaway client — server-side only.
+ * Hostaway client — server only, by construction.
  *
- * Every function here reads `HOSTAWAY_ACCOUNT_ID` / `HOSTAWAY_API_KEY`
- * from the environment, so this module must only ever be imported from
- * `app/api/**` or a GitHub Action. Importing it into a component ships
- * the credential to the browser, and that credential is full read/write
- * on bookings and guest data.
+ * It lives under `functions/` rather than `src/` deliberately. Anything
+ * in `src/` can be imported by a component and end up in the browser
+ * bundle; nothing here can, because Vite never sees this directory. The
+ * credential is full read/write on bookings and guest data, so "please
+ * do not import this" is not a strong enough guarantee.
  *
- * The defensive bits below are not paranoia. They are behaviours
+ * Credentials are PASSED IN, never read from the environment. On the
+ * Workers runtime there is no ambient `process.env` — Cloudflare hands
+ * bindings to the request handler — and taking them as an argument also
+ * means this module has no hidden inputs and can be tested.
+ *
+ * The defensive branches below are not caution. Each is a real failure
  * observed against this account:
  *
- *   · The calendar endpoint accepts three different spellings of its
- *     date parameters depending on plan, and ignores the ones it does
- *     not recognise — returning everything rather than erroring.
+ *   · The calendar endpoint accepts three spellings of its date
+ *     parameters depending on plan, and silently ignores the ones it
+ *     does not recognise — returning the full horizon instead of erroring.
  *   · `/reservations` filtered by listing sometimes returns the whole
- *     account. Unfiltered, every unit reports the portfolio total and
- *     nothing looks wrong.
+ *     account. Every unit then reports the portfolio total, all
+ *     identical, with nothing looking wrong.
  *   · A reservation with `totalPrice` 0 is an iCal block or an owner
  *     stay. The listing's default cleaning fee still resolves, so the
- *     naive `(total - cleaning) / nights` invents negative revenue.
+ *     naive `(total - cleaning) / nights` invents negative revenue — a
+ *     321-night owner block was quietly billing its unit.
  */
-import type { DateStr } from './dates.ts';
-import { addDays, daysBetween } from './dates.ts';
+
+export interface HostawayCredentials {
+  accountId: string;
+  apiKey: string;
+}
+
+import type { DateStr } from '../../src/lib/dates.ts';
+import { addDays, daysBetween } from '../../src/lib/dates.ts';
 
 const BASE = 'https://api.hostaway.com/v1';
 
@@ -58,27 +70,20 @@ export interface CalendarDay {
   available: boolean;
 }
 
-/** Never logged, never returned to a client. */
-function credentials() {
-  const accountId = process.env.HOSTAWAY_ACCOUNT_ID;
-  const apiKey = process.env.HOSTAWAY_API_KEY;
-  if (!accountId || !apiKey) {
-    throw new Error('HOSTAWAY_ACCOUNT_ID and HOSTAWAY_API_KEY must be set in the server environment.');
-  }
-  return { accountId, apiKey };
-}
-
 let cachedToken: { token: string; expires: number } | null = null;
 
 /**
- * Tokens last hours; a serverless instance lives minutes. Caching in
- * module scope helps within one warm instance and costs nothing when a
- * cold one starts.
+ * Tokens last hours; a Worker instance lives minutes. Caching in module
+ * scope helps within one warm isolate and costs nothing on a cold one.
  */
-export async function getAccessToken(): Promise<string> {
+export async function getAccessToken(creds: HostawayCredentials): Promise<string> {
   if (cachedToken && cachedToken.expires > Date.now() + 60_000) return cachedToken.token;
 
-  const { accountId, apiKey } = credentials();
+  const { accountId, apiKey } = creds;
+  if (!accountId || !apiKey) {
+    throw new Error('Hostaway credentials are missing from the environment.');
+  }
+
   const res = await fetch(`${BASE}/accessTokens`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -142,8 +147,8 @@ function asDate(v: unknown): DateStr | '' {
   return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
 }
 
-export async function fetchListings(token?: string): Promise<HostawayListing[]> {
-  const t = token ?? await getAccessToken();
+export async function fetchListings(creds: HostawayCredentials, token?: string): Promise<HostawayListing[]> {
+  const t = token ?? await getAccessToken(creds);
   const raw = await apiGet<Record<string, any>>('/listings', t);
 
   return raw.map(l => ({
@@ -182,9 +187,9 @@ export function reservationCounts(status: string): boolean {
  * That bug is silent — the numbers look plausible and are all identical.
  */
 export async function fetchReservations(
-  listingId: string, from: DateStr, to: DateStr, token?: string
+  creds: HostawayCredentials, listingId: string, from: DateStr, to: DateStr, token?: string
 ): Promise<HostawayReservation[]> {
-  const t = token ?? await getAccessToken();
+  const t = token ?? await getAccessToken(creds);
   // A long lookback catches stays that began well before the window and
   // still overlap it.
   const buffered = addDays(from, -400);
@@ -238,9 +243,9 @@ export async function fetchReservations(
  * none of its date parameters and returns the full horizon regardless.
  */
 export async function fetchCalendar(
-  listingId: string, from: DateStr, to: DateStr, token?: string
+  creds: HostawayCredentials, listingId: string, from: DateStr, to: DateStr, token?: string
 ): Promise<CalendarDay[]> {
-  const t = token ?? await getAccessToken();
+  const t = token ?? await getAccessToken(creds);
   const variants = [
     `/listings/${listingId}/calendar?startDate=${from}&endDate=${to}`,
     `/listings/${listingId}/calendar?dateFrom=${from}&dateTo=${to}`,
@@ -268,10 +273,10 @@ export async function fetchCalendar(
 
 /** Every listing's reservations, fetched concurrently but politely. */
 export async function fetchAllReservations(
-  from: DateStr, to: DateStr, concurrency = 4
+  creds: HostawayCredentials, from: DateStr, to: DateStr, concurrency = 4
 ): Promise<HostawayReservation[]> {
-  const token = await getAccessToken();
-  const listings = await fetchListings(token);
+  const token = await getAccessToken(creds);
+  const listings = await fetchListings(creds, token);
   const out: HostawayReservation[] = [];
 
   // Batched rather than all-at-once: twenty-seven simultaneous requests
@@ -279,7 +284,7 @@ export async function fetchAllReservations(
   for (let i = 0; i < listings.length; i += concurrency) {
     const batch = listings.slice(i, i + concurrency);
     const results = await Promise.all(
-      batch.map(l => fetchReservations(l.listingId, from, to, token).catch(() => []))
+      batch.map(l => fetchReservations(creds, l.listingId, from, to, token).catch(() => []))
     );
     results.forEach(rs => out.push(...rs));
   }

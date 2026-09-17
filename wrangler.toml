@@ -1,0 +1,5 @@
+name = "kaizen-os"
+compatibility_date = "2024-11-27"
+# Needed by @neondatabase/serverless for its WebSocket transport.
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = "dist"
