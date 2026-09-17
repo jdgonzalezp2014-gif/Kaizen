@@ -15,3 +15,5 @@ build/
 
 # Cloudflare
 .wrangler/
+.neon
+.env.local
