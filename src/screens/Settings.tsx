@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
-  getSettings, saveSettings, syncUnits,
-  type Account, type Connection
+  getSettings, saveSettings, syncUnits, pullCleanings,
+  type Account, type Connection, type CleaningMatch
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
 
@@ -41,7 +41,9 @@ export function Settings() {
       hostawayApiKey: apiKey || undefined,
       targetNetPerUnit: account?.targetNetPerUnit,
       occFloorPct: account?.occFloorPct,
-      stayNights: account?.stayNights
+      stayNights: account?.stayNights,
+      fwdStudyDays: account?.fwdStudyDays,
+      cleaningsCsvUrl: account?.cleaningsCsvUrl ?? ''
     });
     if (r.ok) {
       setApiKey('');                       // never keep it in memory once stored
@@ -120,9 +122,20 @@ export function Settings() {
             <input type="number" value={account.stayNights}
                    onChange={e => setAccount({ ...account, stayNights: Number(e.target.value) })} />
           </label>
+          <label>
+            Study window (days)
+            <input type="number" value={account.fwdStudyDays}
+                   onChange={e => setAccount({ ...account, fwdStudyDays: Number(e.target.value) })} />
+          </label>
         </div>
+        <p className="note">
+          The study window is how far ahead the Units screen looks by default — the nights a price
+          change can still affect.
+        </p>
         <button onClick={() => void save()}>Save targets</button>
       </div>
+
+      <CleaningsPanel account={account} onAccount={setAccount} />
 
       <ImportPanel onDone={() => void load()} />
 
@@ -133,5 +146,85 @@ export function Settings() {
       )}
       <p className="note">Signed in as {user}</p>
     </>
+  );
+}
+
+/**
+ * The cleanings sheet.
+ *
+ * What a cleaner is PAID, which Hostaway does not know — its
+ * `cleaningFee` is what the guest is charged. Both are needed and they
+ * are not the same number.
+ *
+ * Always previewed before it writes. A name in the sheet that matches no
+ * unit is shown, never guessed at: "CL 1446" and "CL1446" are the same
+ * apartment, but "Cabin 2" and "Cabin 3" are not.
+ */
+function CleaningsPanel({ account, onAccount }: {
+  account: Account; onAccount: (a: Account) => void;
+}) {
+  const [url, setUrl] = useState(account.cleaningsCsvUrl ?? '');
+  const [busy, setBusy] = useState(false);
+  const [preview, setPreview] = useState<{ matched: CleaningMatch[]; unmatched: string[] } | null>(null);
+  const [msg, setMsg] = useState('');
+
+  const run = async (commit: boolean) => {
+    setBusy(true); setMsg('');
+    const r = await pullCleanings(url.trim(), commit);
+    setBusy(false);
+    if (!r.ok) { setMsg(r.message ?? r.error ?? 'Failed.'); setPreview(null); return; }
+    if (r.dryRun) { setPreview({ matched: r.matched ?? [], unmatched: r.unmatched ?? [] }); setMsg(r.message ?? ''); }
+    else {
+      setPreview(null);
+      setMsg(`${r.updated} unit(s) updated.`);
+      onAccount({ ...account, cleaningsCsvUrl: url.trim() });
+    }
+  };
+
+  return (
+    <div className="card">
+      <h2>Cleaning cost</h2>
+      <p className="note">
+        What the cleaner is paid, from your sheet. This is a cost — separate from the cleaning fee
+        Hostaway charges the guest, which is revenue and comes across automatically.
+        In the sheet: File → Share → Publish to web → the Cleanings log tab, CSV.
+      </p>
+      <label>
+        Published CSV URL
+        <input value={url} onChange={e => setUrl(e.target.value)}
+               placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?gid=…&single=true&output=csv" />
+      </label>
+      <div className="modal-actions" style={{ justifyContent: 'flex-start' }}>
+        <button className="ghost" disabled={busy || !url.trim()} onClick={() => void run(false)}>
+          {busy ? 'Reading…' : 'Preview'}
+        </button>
+        {preview && preview.matched.length > 0 && (
+          <button disabled={busy} onClick={() => void run(true)}>
+            Apply to {preview.matched.length} unit(s)
+          </button>
+        )}
+      </div>
+      {msg && <p className="note">{msg}</p>}
+      {preview && (
+        <>
+          {preview.matched.length > 0 && (
+            <table className="units">
+              <thead><tr><th>Unit</th><th className="n">Cleaner paid</th></tr></thead>
+              <tbody>
+                {preview.matched.map(m => (
+                  <tr key={m.id}><td>{m.name}</td><td className="n">${m.amount}</td></tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {preview.unmatched.length > 0 && (
+            <p className="banner warn">
+              No unit matches these names in the sheet: {preview.unmatched.join(', ')}. They were
+              skipped rather than guessed at.
+            </p>
+          )}
+        </>
+      )}
+    </div>
   );
 }

@@ -5,6 +5,7 @@ export interface Account {
   hostawayAccountId: string | null;
   hasHostawayKey: boolean;
   targetNetPerUnit: number; occFloorPct: number; stayNights: number;
+  fwdStudyDays: number; cleaningsCsvUrl: string | null;
   allowedEmails: string[];
 }
 export interface Connection { ok: boolean; message: string; units?: number }
@@ -45,3 +46,74 @@ export const importCsv = (kind: 'expenses' | 'claims', csv: string, opts: { comm
 
 export const syncUnits = () =>
   call<{ ok: boolean; fetched?: number; active?: number; error?: string }>('/api/sync-units', { method: 'POST' });
+
+/* ── forward window & pricing ─────────────────────────────────────── */
+
+import type { ForwardUnit } from './lib/forward.ts';
+
+export interface ForwardResponse {
+  ok: boolean;
+  meta: { asOf: string; days: number; to: string; tookMs: number; occFloorPct: number };
+  units: ForwardUnit[];
+  error?: string;
+}
+
+export const getForward = (asOf: string, days: number) =>
+  call<ForwardResponse>(`/api/forward?asOf=${asOf}&days=${days}`);
+
+export interface PriceChange {
+  listingId: string;
+  baseRate?: number | null;
+  discountPct?: number | null;
+  discountKind?: 'window' | 'weekly' | 'monthly';
+  from?: string;
+  to?: string;
+  note?: string;
+  confirmed?: boolean;
+  recordOnly?: boolean;
+}
+
+export interface PriceResult {
+  ok: boolean; id?: string; pushed?: string | false; detail?: string;
+  message?: string; error?: string;
+  occupancy?: number | null; nightsOpen?: number; nightsTotal?: number;
+}
+
+export const applyPrice = (body: PriceChange) =>
+  call<PriceResult>('/api/pricing', { method: 'POST', body: JSON.stringify(body) });
+
+/* ── expenses ─────────────────────────────────────────────────────── */
+
+export interface FixedLine {
+  id: string; label: string; unit_id: string | null; unit_name: string | null;
+  shared: boolean; category: string; amount: string; notes: string | null;
+}
+export interface VariableExpense extends FixedLine {
+  start_date: string; end_date: string | null; frequency: string; created_by: string;
+}
+
+export const getFixed = (month: string) =>
+  call<{ ok: boolean; month: string; lines: FixedLine[]; carryable: FixedLine[] }>(`/api/expenses?month=${month}`);
+
+export const getVariable = () =>
+  call<{ ok: boolean; expenses: VariableExpense[] }>('/api/expenses');
+
+export const postExpense = (body: Record<string, unknown>) =>
+  call<{ ok: boolean; id?: string; added?: number; message?: string; error?: string }>('/api/expenses', {
+    method: 'POST', body: JSON.stringify(body)
+  });
+
+export const deleteExpense = (id: string) =>
+  call<{ ok: boolean; deleted: number }>(`/api/expenses?id=${id}`, { method: 'DELETE' });
+
+export interface UnitRow { id: string; name: string; active: boolean; cleaning_fee: string | null }
+export const getUnits = () => call<{ ok: boolean; units: UnitRow[] }>('/api/units');
+export const setCleaningCost = (id: string, cleaningFee: number | null) =>
+  call<{ ok: boolean }>('/api/units', { method: 'POST', body: JSON.stringify({ id, cleaningFee }) });
+
+export interface CleaningMatch { id: string; name: string; amount: number }
+export const pullCleanings = (url: string, commit = false) =>
+  call<{ ok: boolean; dryRun?: boolean; updated?: number; matched?: CleaningMatch[];
+         unmatched?: string[]; message?: string; error?: string }>('/api/cleanings', {
+    method: 'POST', body: JSON.stringify({ url, commit })
+  });

@@ -293,3 +293,98 @@ Phases 2–3 are account setup, not code. Everything after is the demo.
   built and was wrong in a way only a real request could show: two Apps Script load-time crashes
   and an auth helper that failed open. Static checks verify the code does what it says; they
   cannot tell you the assumption underneath was false.
+
+## 14. Hostaway fields, confirmed against the live account
+
+Probed 2026-09-17 on account 144914. These are observed values, not
+documentation — the published reference does not describe most of them.
+
+**On a listing** (`GET /listings`):
+
+| Field | Meaning | Trap |
+|---|---|---|
+| `price` | default nightly rate | the calendar overrides it per night |
+| `cleaningFee` | what the **guest is charged** | this is REVENUE, not the cleaner's pay |
+| `weeklyDiscount` | **multiplier**, e.g. `0.85` = 15% off | `0` means unset, and `(1-0)*100` is a free stay |
+| `monthlyDiscount` | multiplier, e.g. `0.75` = 25% off | same |
+
+Conversion lives in `discountPct` / `discountMultiplier` in
+`functions/_lib/hostaway.ts` and nowhere else. The zero guard is the
+whole reason they are functions.
+
+**On a calendar day** (`GET /listings/{id}/calendar`): `date`, `price`,
+`status` (only ever `available` | `reserved` | `blocked` on this
+account), `isAvailable`, `minimumStay`.
+
+**The cleaning number is two numbers.** Hostaway's `cleaningFee` is what
+the guest pays. What the cleaner is paid lives in the host's own sheet
+and comes in via `/api/cleanings`. Conflating them is wrong twice over —
+it inflates revenue and deletes a cost on the same booking.
+
+### Writes
+`PUT /listings/{id}` takes a partial object and is documented.
+The calendar write is **not** documented — `functions/_lib/hostaway.ts`
+tries `PUT`, then `POST`, then an array body, and decides success only by
+**reading the range back**. A 200 that changed nothing is the one outcome
+the decision log must never record as applied.
+
+## 15. Blocked is not empty
+
+Four units in this portfolio are blocked solid for the next 30 days.
+Occupancy is measured against **sellable** nights (open + sold), never
+calendar nights, so those units report as `offline` rather than 0%.
+
+With calendar nights as the denominator they read 0% and sort to the top
+of "needs a discount" — recommending a price cut on units nobody can
+book. `src/lib/forward.ts` holds the rule and `forward.test.ts` pins it,
+along with the related trap that `occupancy || fallback` treats a real
+0% as missing and buries the most urgent row in the table.
+
+Three states that must stay distinct: **sold**, **open**, **blocked**. A
+unit that is 100% blocked is neither fully occupied nor empty; it is out
+of service.
+
+## 16. Costs have two shapes
+
+**Fixed** is a recurring *line* — Lease, Internet — with **one row per
+month**. Editing August edits August; last year does not move. A line is
+identified by `(account_id, label, unit_id, start_date)` and a unique
+index makes "carry forward" idempotent, which matters because the button
+gives no sign it worked the first time and will be clicked twice.
+
+**Variable** is dated and one-off, charged to a unit (a repair) or shared
+and divided across active units.
+
+`unit_id IS NULL` means shared. Amounts are never edited in place except
+through the month upsert; a correction is a new row.
+
+## 17. Price changes are recorded before they are pushed
+
+`POST /api/pricing` writes the decision **first**, then attempts
+Hostaway, then updates the row with what actually landed
+(`push_status`: `none` | `applied` | `partial` | `failed`).
+
+A push that fails must leave a row saying so, never no row. The log's
+only purpose is learning which price moves filled nights, and it is
+worthless if it silently contains just the successes.
+
+The evidence — occupancy, open nights, old price — is frozen at decision
+time. It cannot be recovered afterwards, because by then the discount has
+already changed the thing that prompted it.
+
+`pricing_decisions` has a foreign key to `units`, so a price change
+before the first listing sync fails on the INSERT. That is handled as a
+setup message, not a 500.
+
+## 18. Occupancy is a guardrail, not the opposite of profit
+
+The tagline once read "Profit per unit. Not occupancy." That framing was
+wrong and the owner said so: occupancy was *his* proposed guardrail,
+dismissed by a boss who reads only dollar figures.
+
+Both numbers are gameable alone. Profit clears on a half-empty calendar
+at a high rate; occupancy hits 86.7% against a 60.7% market on $63
+RevPAR. So occupancy sits **beside** net in the unit table, with a floor
+breach marked, and RevPAN is in the hero row — RevPAN being occupancy
+expressed in dollars, which is the version that survives contact with a
+boss who only sees money.

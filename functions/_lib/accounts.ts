@@ -19,6 +19,10 @@ export interface Account {
   targetNetPerUnit: number;
   occFloorPct: number;
   stayNights: number;
+  /** The forward window this account studies by default, in days. */
+  fwdStudyDays: number;
+  /** Published-CSV URL of the sheet holding what cleaners are PAID. */
+  cleaningsCsvUrl: string | null;
   allowedEmails: string[];
 }
 
@@ -29,6 +33,8 @@ interface AccountRow {
   target_net_per_unit: string;
   occ_floor_pct: number;
   stay_nights: number;
+  fwd_study_days: number;
+  cleanings_csv_url: string | null;
   allowed_emails: string[];
 }
 
@@ -39,7 +45,8 @@ interface AccountRow {
 export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | null> {
   const rows = await sql`
     SELECT id, name, hostaway_account_id, hostaway_api_key_enc,
-           target_net_per_unit, occ_floor_pct, stay_nights, allowed_emails
+           target_net_per_unit, occ_floor_pct, stay_nights,
+           fwd_study_days, cleanings_csv_url, allowed_emails
     FROM accounts WHERE id = ${accountId}
   ` as AccountRow[];
 
@@ -54,6 +61,8 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
     targetNetPerUnit: Number(r.target_net_per_unit),
     occFloorPct: r.occ_floor_pct,
     stayNights: r.stay_nights,
+    fwdStudyDays: r.fwd_study_days ?? 30,
+    cleaningsCsvUrl: r.cleanings_csv_url,
     allowedEmails: r.allowed_emails ?? []
   };
 }

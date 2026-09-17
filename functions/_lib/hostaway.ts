@@ -48,6 +48,33 @@ export interface HostawayListing {
   lat: number | null;
   lng: number | null;
   amenities: string[];
+  /** The listing's default nightly rate, before any calendar override. */
+  basePrice: number | null;
+  /** What the GUEST is charged to clean. Not what the cleaner is paid. */
+  cleaningFee: number | null;
+  /** Percent off, 0–100. See discountPct for why this is not the raw field. */
+  weeklyDiscountPct: number | null;
+  monthlyDiscountPct: number | null;
+}
+
+/**
+ * Hostaway stores length-of-stay discounts as a MULTIPLIER: 0.85 means a
+ * 15% discount. Everything a human types is a percent, so the conversion
+ * happens once, here, in both directions.
+ *
+ * The zero guard is the whole reason this is a function. An unset
+ * discount comes back as 0, and `(1 - 0) * 100` is 100% off — a free
+ * stay, written to a live listing, from a field that meant "none".
+ */
+export function discountPct(multiplier: unknown): number | null {
+  const m = Number(multiplier);
+  if (!Number.isFinite(m) || m <= 0 || m > 1) return null;
+  return Math.round((1 - m) * 10000) / 100;
+}
+
+export function discountMultiplier(pct: number): number {
+  const p = Math.max(0, Math.min(90, Number(pct) || 0));
+  return Math.round((1 - p / 100) * 10000) / 10000;
 }
 
 export interface HostawayReservation {
@@ -168,7 +195,11 @@ export async function fetchListings(creds: HostawayCredentials, token?: string):
     lng: Number(l.lng ?? l.longitude) || null,
     amenities: Array.isArray(l.listingAmenities)
       ? l.listingAmenities.map((a: any) => String(a?.amenityName ?? a ?? '')).filter(Boolean)
-      : []
+      : [],
+    basePrice: Number(l.price) || null,
+    cleaningFee: Number(l.cleaningFee) || null,
+    weeklyDiscountPct: discountPct(l.weeklyDiscount),
+    monthlyDiscountPct: discountPct(l.monthlyDiscount)
   }));
 }
 
@@ -294,4 +325,159 @@ export async function fetchCalendar(
     if (days.length) return days;
   }
   return [];
+}
+
+/* ── writes ──────────────────────────────────────────────────────────
+ *
+ * Everything below changes a live, guest-facing price. Two rules apply
+ * to all of it.
+ *
+ * FIRST: never trust the response. Hostaway's calendar write is
+ * under-documented — the published reference describes a price
+ * CALCULATION endpoint and a changelog line from 2017 — so the request
+ * shape here is the documented one plus fallbacks, and the only thing
+ * that decides whether a write worked is reading the value back. A 200
+ * that did nothing is the exact failure this table must never record as
+ * a success, because the whole point of the log is to learn which price
+ * changes filled nights, and a change that never happened poisons that.
+ *
+ * SECOND: send only what is being changed. A full-object PUT would carry
+ * whatever the read returned, including fields this app does not model,
+ * and quietly overwrite work someone did in Hostaway's own UI.
+ */
+
+async function apiSend(
+  path: string, token: string, body: unknown, method: 'PUT' | 'POST'
+): Promise<{ ok: boolean; status: number; text: string }> {
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json',
+      'Cache-control': 'no-cache'
+    },
+    body: JSON.stringify(body)
+  });
+  return { ok: res.ok, status: res.status, text: (await res.text()).slice(0, 400) };
+}
+
+export interface WriteResult {
+  ok: boolean;
+  detail: string;
+  /** What the value actually is after the write, read back from Hostaway. */
+  verified: number | null;
+}
+
+/**
+ * Set the nightly price across a date range.
+ *
+ * Verified by re-reading the range and checking every night, not the
+ * first one: a partial apply (some nights taken, some refused because
+ * they are reserved) is the likely failure and looks identical to
+ * success from the response body.
+ */
+export async function updateCalendarPrice(
+  creds: HostawayCredentials, listingId: string,
+  from: DateStr, to: DateStr, price: number, token?: string
+): Promise<WriteResult> {
+  const t = token ?? await getAccessToken(creds);
+  const want = Math.round(Number(price));
+  if (!Number.isFinite(want) || want <= 0) {
+    return { ok: false, detail: `Refusing to write a nightly price of ${price}.`, verified: null };
+  }
+
+  const attempts: [( 'PUT' | 'POST' ), string, unknown][] = [
+    ['PUT',  `/listings/${listingId}/calendar`, { startDate: from, endDate: to, price: want }],
+    ['POST', `/listings/${listingId}/calendar`, { startDate: from, endDate: to, price: want }],
+    ['PUT',  `/listings/${listingId}/calendar`, [{ startDate: from, endDate: to, price: want }]]
+  ];
+
+  const tried: string[] = [];
+  for (const [method, path, body] of attempts) {
+    const r = await apiSend(path, t, body, method);
+    tried.push(`${method} ${path} → ${r.status}`);
+    if (!r.ok) continue;
+
+    // The response said yes. That is not evidence.
+    const days = await fetchCalendar(creds, listingId, from, to, t);
+    const wrong = days.filter(d => Math.round(Number(d.price)) !== want);
+    if (!days.length) {
+      return { ok: false, detail: `Wrote, but could not read the range back to confirm. ${tried.join('; ')}`, verified: null };
+    }
+    if (wrong.length) {
+      return {
+        ok: false,
+        detail: `${days.length - wrong.length} of ${days.length} night(s) took the new price. ` +
+                `Unchanged: ${wrong.slice(0, 5).map(d => d.date).join(', ')}` +
+                (wrong.length > 5 ? ` and ${wrong.length - 5} more` : '') +
+                '. Nights that are already reserved cannot be repriced.',
+        verified: Number(days[0]!.price) || null
+      };
+    }
+    return { ok: true, detail: `${days.length} night(s) set to ${want}.`, verified: want };
+  }
+
+  return { ok: false, detail: `Hostaway refused every calendar write form. ${tried.join('; ')}`, verified: null };
+}
+
+/**
+ * Set the weekly and/or monthly length-of-stay discount on the listing.
+ *
+ * This is documented: PUT /listings/{id} takes a partial object. It is
+ * still read back, because the multiplier conversion is the kind of
+ * thing that is wrong in exactly one direction and looks fine either way
+ * until a guest books a month at 25% of the rate.
+ */
+export async function updateListingDiscounts(
+  creds: HostawayCredentials, listingId: string,
+  discounts: { weeklyPct?: number | null; monthlyPct?: number | null }, token?: string
+): Promise<WriteResult> {
+  const t = token ?? await getAccessToken(creds);
+
+  const body: Record<string, number> = {};
+  if (discounts.weeklyPct  != null) body.weeklyDiscount  = discountMultiplier(discounts.weeklyPct);
+  if (discounts.monthlyPct != null) body.monthlyDiscount = discountMultiplier(discounts.monthlyPct);
+  if (!Object.keys(body).length) {
+    return { ok: false, detail: 'No discount supplied.', verified: null };
+  }
+
+  const r = await apiSend(`/listings/${listingId}`, t, body, 'PUT');
+  if (!r.ok) return { ok: false, detail: `Hostaway rejected the update (${r.status}): ${r.text}`, verified: null };
+
+  const after = (await fetchListings(creds, t)).find(l => l.listingId === String(listingId));
+  if (!after) return { ok: false, detail: 'Wrote, but the listing did not come back to confirm.', verified: null };
+
+  const checks: string[] = [];
+  let ok = true;
+  if (discounts.weeklyPct != null) {
+    const got = after.weeklyDiscountPct;
+    if (got == null || Math.abs(got - discounts.weeklyPct) > 0.51) { ok = false; checks.push(`weekly is ${got ?? 'unset'}%, asked for ${discounts.weeklyPct}%`); }
+    else checks.push(`weekly ${got}%`);
+  }
+  if (discounts.monthlyPct != null) {
+    const got = after.monthlyDiscountPct;
+    if (got == null || Math.abs(got - discounts.monthlyPct) > 0.51) { ok = false; checks.push(`monthly is ${got ?? 'unset'}%, asked for ${discounts.monthlyPct}%`); }
+    else checks.push(`monthly ${got}%`);
+  }
+  return { ok, detail: checks.join('; '), verified: after.monthlyDiscountPct ?? after.weeklyDiscountPct };
+}
+
+/**
+ * Calendars for many listings at once.
+ *
+ * One request per listing is unavoidable here — unlike /reservations,
+ * the calendar endpoint really is per listing — so they go out together
+ * and a listing whose calendar fails yields an empty array rather than
+ * failing the whole dashboard.
+ */
+export async function fetchCalendars(
+  creds: HostawayCredentials, listingIds: string[], from: DateStr, to: DateStr
+): Promise<Record<string, CalendarDay[]>> {
+  const token = await getAccessToken(creds);
+  const out: Record<string, CalendarDay[]> = {};
+  const results = await Promise.all(
+    listingIds.map(id => fetchCalendar(creds, id, from, to, token).catch(() => [] as CalendarDay[]))
+  );
+  listingIds.forEach((id, i) => { out[id] = results[i]!; });
+  return out;
 }
