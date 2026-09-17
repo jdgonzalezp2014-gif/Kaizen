@@ -144,6 +144,19 @@ export interface SignalInput {
   lastBookedOn: string | null;
   orphanNights: number;
   portfolioAdr: number | null;
+  /**
+   * The portfolio's own median ask-to-ADR ratio.
+   *
+   * Asking sits ABOVE achieved rate everywhere, always: the nights still
+   * on sale are the less wanted ones, and length-of-stay discounts pull
+   * the achieved figure down further. A flat "25% above ADR is
+   * overpriced" test fired on eleven of twenty-three units here, which
+   * is not a signal, it is wallpaper. Measuring each unit against how
+   * far apart the two normally sit in THIS portfolio makes the flag mean
+   * "unusual" again, and it self-calibrates per host and per season
+   * instead of encoding one market's habits as a constant.
+   */
+  portfolioAskRatio: number | null;
   today: string;
 }
 
@@ -153,14 +166,19 @@ const daysBetween = (a: string, b: string) =>
 export function signals(u: SignalInput): Signal[] {
   const out: Signal[] = [];
 
-  // Asking far above what this unit has ever actually achieved. The
-  // clearest overpricing tell there is, and invisible in occupancy.
-  if (u.openAsk != null && u.adr != null && u.adr > 0 && u.openAsk > u.adr * 1.25) {
-    out.push({ kind: 'ask-above-adr', tone: 'bad',
-      text: `Asking $${u.openAsk} but only achieving $${u.adr} — ${Math.round((u.openAsk / u.adr - 1) * 100)}% above its own rate.` });
+  // Asking unusually far above what this unit achieves — judged against
+  // the gap the rest of the portfolio runs, not an absolute multiple.
+  if (u.openAsk != null && u.adr != null && u.adr > 0) {
+    const ratio = u.openAsk / u.adr;
+    const normal = u.portfolioAskRatio ?? 1.3;
+    if (ratio > normal * 1.25 && ratio > 1.3) {
+      out.push({ kind: 'ask-above-adr', tone: 'bad',
+        text: `Asking $${u.openAsk} against the $${u.adr} it achieves — a ${Math.round((ratio - 1) * 100)}% gap, ` +
+              `where the portfolio typically runs ${Math.round((normal - 1) * 100)}%.` });
+    }
   }
   // No achieved rate to compare against, so fall back to the portfolio.
-  else if (u.openAsk != null && (u.adr == null || u.adr === 0) &&
+  if (u.openAsk != null && (u.adr == null || u.adr === 0) &&
            u.portfolioAdr != null && u.openAsk > u.portfolioAdr * 1.5) {
     out.push({ kind: 'ask-above-adr', tone: 'bad',
       text: `Asking $${u.openAsk} with nothing booked, against a portfolio average of $${u.portfolioAdr}.` });
@@ -187,7 +205,9 @@ export function signals(u: SignalInput): Signal[] {
       text: `Typically books ${u.leadTime} day(s) out — being empty this far ahead is normal for this unit.` });
   }
 
-  if (u.lastBookedOn) {
+  // Silence only matters if there is something left to sell. A unit
+  // that is full has no reason to have taken a booking lately.
+  if (u.lastBookedOn && u.nightsOpen > 0) {
     const quiet = daysBetween(u.lastBookedOn, u.today);
     if (quiet >= 21) {
       out.push({ kind: 'no-recent-booking', tone: 'warn',
@@ -196,4 +216,87 @@ export function signals(u: SignalInput): Signal[] {
   }
 
   return out;
+}
+
+/**
+ * The one-line diagnosis: what is actually wrong, if anything.
+ *
+ * A card that prints seven metrics of equal weight makes the reader do
+ * the diagnosis every time, for every unit, and that work does not get
+ * done — it gets skipped, and the list stops being read. The metrics are
+ * still there underneath; this is what the card LEADS with.
+ *
+ * Order matters: the checks run most-actionable first, because a unit
+ * can be several of these at once and the headline should name the thing
+ * worth doing something about.
+ */
+export type VerdictKind =
+  | 'unbookable' | 'overpriced' | 'stuck' | 'early' | 'filling' | 'full' | 'quiet';
+
+export interface Verdict {
+  kind: VerdictKind;
+  /** Two or three words. The headline. */
+  label: string;
+  /** One sentence, with the numbers that justify it. */
+  reason: string;
+  tone: 'bad' | 'warn' | 'ok' | 'info';
+}
+
+export function verdict(u: SignalInput & { orphanRuns: number }): Verdict {
+  const sig = signals(u);
+  const has = (k: SignalKind) => sig.some(s => s.kind === k);
+
+  // Cheapest fix first, and the only one a price cannot solve.
+  if (u.orphanNights > 0 && u.orphanNights >= u.nightsOpen * 0.5) {
+    return { kind: 'unbookable', tone: 'warn', label: 'Gaps too short to book',
+      reason: `${u.orphanNights} of ${u.nightsOpen} open nights sit in stretches shorter than the minimum stay. Lowering the minimum opens them; lowering the price does nothing.` };
+  }
+
+  if (has('ask-above-adr')) {
+    const over = u.adr && u.adr > 0
+      ? `a ${Math.round((u.openAsk! / u.adr - 1) * 100)}% gap over the $${u.adr} it achieves, ` +
+        `against ${Math.round(((u.portfolioAskRatio ?? 1.3) - 1) * 100)}% across the portfolio`
+      : `well above the $${u.portfolioAdr} portfolio average, with nothing booked`;
+    return { kind: 'overpriced', tone: 'bad', label: 'Priced above what it earns',
+      reason: `Asking $${u.openAsk}, ${over}${has('no-pickup') ? ', and nothing has booked in a week' : ''}.` };
+  }
+
+  // Books late, still under the floor — the common false alarm.
+  if (has('books-late')) {
+    return { kind: 'early', tone: 'info', label: 'Too early to tell',
+      reason: `This unit books about ${u.leadTime} day(s) out, so ${u.nightsOpen} open nights this far ahead is its normal pattern. Discounting now gives away rate for nothing.` };
+  }
+
+  if (has('no-pickup')) {
+    return { kind: 'stuck', tone: 'bad', label: 'Not moving',
+      reason: `${u.nightsOpen} nights open and none booked in the last 7 days${u.openAsk ? `, asking $${u.openAsk}` : ''}. Demand is not finding this price.` };
+  }
+
+  if (has('no-recent-booking')) {
+    return { kind: 'quiet', tone: 'warn', label: 'Gone quiet',
+      reason: 'No booking of any kind recently, though the open window is small.' };
+  }
+
+  if (u.nightsOpen <= 2) {
+    return { kind: 'full', tone: 'ok', label: 'Effectively full',
+      reason: `Only ${u.nightsOpen} night(s) left to sell in this window.` };
+  }
+
+  return { kind: 'filling', tone: 'ok', label: 'Filling',
+    reason: `${u.pickup7} night(s) booked in the last week with ${u.nightsOpen} still open.` };
+}
+
+/**
+ * The portfolio's median ask-to-ADR ratio — the benchmark
+ * `ask-above-adr` calibrates against. Units with no achieved rate are
+ * excluded: they have no ratio, and treating a missing one as 1 would
+ * drag the benchmark down and flag everyone.
+ */
+export function portfolioAskRatio(
+  units: { openAsk: number | null; adr: number | null }[]
+): number | null {
+  const ratios = units
+    .filter(u => u.openAsk != null && u.adr != null && u.adr > 0)
+    .map(u => u.openAsk! / u.adr!);
+  return median(ratios);
 }

@@ -137,6 +137,8 @@ export function Settings() {
 
       <CleaningsPanel account={account} onAccount={setAccount} />
 
+      <GeminiPanel account={account} onSaved={() => void load()} />
+
       <ImportPanel onDone={() => void load()} />
 
       {status && (
@@ -225,6 +227,55 @@ function CleaningsPanel({ account, onAccount }: {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * The Gemini key.
+ *
+ * Stored encrypted and never returned to the browser — the form can say
+ * a key EXISTS, never what it is, which is the same rule the Hostaway
+ * credential follows.
+ */
+function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [key, setKey] = useState('');
+  const [model, setModel] = useState(account.geminiModel ?? 'gemini-2.5-flash');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const save = async () => {
+    setBusy(true); setMsg('');
+    const r = await saveSettings({ geminiApiKey: key || undefined, geminiModel: model });
+    setBusy(false);
+    setKey('');
+    setMsg(r.ok ? 'Saved.' : (r.error ?? 'Failed.'));
+    if (r.ok) onSaved();
+  };
+
+  return (
+    <div className="card">
+      <h2>AI suggestions</h2>
+      <p className="note">
+        Gemini reviews one unit at a time and recommends what to do with its price. It is given
+        only figures measured from your own account and is told it has no market data, so it
+        cannot quote comparable listings it has not seen. It never writes to Hostaway — every
+        change still goes through the same confirmation you would use by hand.
+        A free key comes from <code>aistudio.google.com/apikey</code>.
+      </p>
+      <div className="row">
+        <label>
+          API key {account.hasGeminiKey && <span className="ok-tag">one is stored</span>}
+          <input type="password" value={key} onChange={e => setKey(e.target.value)}
+                 placeholder={account.hasGeminiKey ? 'stored — type to replace' : 'AIza…'} />
+        </label>
+        <label>
+          Model
+          <input value={model} onChange={e => setModel(e.target.value)} />
+        </label>
+      </div>
+      <button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+      {msg && <p className="note">{msg}</p>}
     </div>
   );
 }

@@ -11,6 +11,7 @@ import { getAccount, getCredentials, saveCredentials, type SqlFn } from '../_lib
 import { getAccessToken, fetchListings } from '../_lib/hostaway.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
+import { encrypt } from '../_lib/crypto.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -61,6 +62,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       // form the person is currently looking at.
       await getAccessToken({ accountId, apiKey });
       await saveCredentials(sql, env.ENCRYPTION_KEY, accountId, apiKey);
+    }
+
+    if (typeof body.geminiApiKey === 'string' && body.geminiApiKey.trim()) {
+      // Encrypted, exactly like the Hostaway key, and never echoed back.
+      const enc = await encrypt(body.geminiApiKey.trim(), env.ENCRYPTION_KEY);
+      await sql`UPDATE accounts SET gemini_api_key_enc = ${enc} WHERE id = 1`;
+    }
+    if (typeof body.geminiModel === 'string' && body.geminiModel.trim()) {
+      await sql`UPDATE accounts SET gemini_model = ${body.geminiModel.trim()} WHERE id = 1`;
     }
 
     if (typeof body.cleaningsCsvUrl === 'string') {

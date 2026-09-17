@@ -13,8 +13,9 @@ import {
   getFixed, getVariable, postExpense, deleteExpense,
   type FixedLine, type VariableExpense, type UnitRow
 } from '../api.ts';
+import { money2 as money } from '../lib/format.ts';
 
-const money = (n: number) => `$${n.toLocaleString(undefined, { maximumFractionDigits: 2 })}`;
+
 const thisMonth = () => new Date().toISOString().slice(0, 7);
 const shiftMonth = (m: string, by: number) => {
   const [y, mo] = m.split('-').map(Number);

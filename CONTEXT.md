@@ -456,7 +456,47 @@ connected". The comp set is the biggest missing input to any of these
 decisions, and a visible hole says so; omitting the row would let the
 card read as though the picture were complete.
 
+## 19a. A signal that fires on half the portfolio is wallpaper
+
+The first overpricing test was `ask > adr × 1.25`. It flagged **11 of 23
+units**, which is not a finding, it is decoration.
+
+The mistake was treating an absolute multiple as meaningful. Asking sits
+above achieved ADR *everywhere*: the nights still on sale are the less
+wanted ones, and length-of-stay discounts pull the achieved figure down
+further. This portfolio's normal gap is **18%**.
+
+It now calibrates against `portfolioAskRatio()` — the portfolio's own
+median ask-to-ADR ratio — and flags a unit only when its gap runs well
+above that. Four units flag, at 56% and up. It also self-calibrates per
+host and per season instead of freezing one market's habits into a
+constant.
+
+The general rule, worth applying to every future signal: **check the
+distribution on real data before shipping a threshold.** A test that
+passes its unit test and fires on half the portfolio is still wrong.
+
+## 19b. The verdict leads, the metrics support
+
+A card printing seven equal-weight metrics makes the reader do the
+diagnosis on every unit, every time — so it does not get done. `verdict()`
+returns one headline and one sentence with the numbers in it; the metrics
+sit underneath in a quiet line as the evidence.
+
+Check order is most-actionable first, because a unit is often several of
+these at once:
+
+1. **Gaps too short to book** — the only one a price cannot fix
+2. **Priced above what it earns** — the cause, named before the symptom
+3. **Too early to tell** — lead time excusing a low number
+4. **Not moving** — zero pickup with nights open
+5. **Gone quiet** / **Effectively full** / **Filling**
+
 ## 20. Design notes
+
+Money is formatted through `src/lib/format.ts`, pinned to `en-US`.
+`toLocaleString()` with no locale follows the BROWSER: on a Spanish-locale
+machine $66,819 rendered as "$66.819", which reads as sixty-six dollars.
 
 The global `input, select, textarea { display: block; width: 100% }`
 rule was making every inline control span the page and push its own
@@ -491,3 +531,24 @@ RevPAR. So occupancy sits **beside** net in the unit table, with a floor
 breach marked, and RevPAN is in the hero row — RevPAN being occupancy
 expressed in dollars, which is the version that survives contact with a
 boss who only sees money.
+
+
+## 21. Gemini suggestions
+
+`functions/_lib/gemini.ts`, key stored encrypted per account like the
+Hostaway one, never returned to the browser. Structured JSON output
+against a fixed schema — free text is where an unsourced claim hides.
+
+The real risk is not bad prose, it is **an invented market**. Asked what
+a unit should cost, a model will happily produce a confident comparable
+rate for a town it has never seen, and that number would then be written
+to a live calendar. So the prompt carries only figures measured from this
+account, states plainly that there is no market data, and requires a
+`missing` field — which makes the model say what it could not see instead
+of papering over it. Output is bounded again on the way back: a rate above
+3× the current ask is discarded rather than shown.
+
+It never writes to Hostaway. Every suggestion is recorded in
+`pricing_decisions` with `origin='agent'` and `push_status='none'`, so
+when a human later moves that price, the advice sits beside what they
+actually did and `alignment` becomes answerable rather than anecdotal.

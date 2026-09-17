@@ -66,14 +66,25 @@ import { signals } from './revenue.ts';
 const base = {
   occupancy: 0.5, nightsOpen: 10, pickup7: 4, leadTime: 10,
   adr: 150, openAsk: 160, lastBookedOn: '2026-09-15',
-  orphanNights: 0, portfolioAdr: 150, today: '2026-09-17'
+  orphanNights: 0, portfolioAdr: 150, portfolioAskRatio: 1.3, today: '2026-09-17'
 };
 
-test('asking far above its own achieved rate is called out', () => {
-  const s = signals({ ...base, adr: 120, openAsk: 220 });
-  const hit = s.find(x => x.kind === 'ask-above-adr');
-  assert.ok(hit, 'expected an overpricing signal');
-  assert.match(hit!.text, /83% above/);
+test('overpricing is judged against the portfolio gap, not an absolute multiple', () => {
+  // Asking above achieved rate is normal everywhere. A unit running the
+  // same gap as the rest of the portfolio is not overpriced, and a flat
+  // threshold flagged eleven of twenty-three units here — wallpaper.
+  assert.equal(signals({ ...base, adr: 120, openAsk: 156, portfolioAskRatio: 1.3 })
+    .some(x => x.kind === 'ask-above-adr'), false, 'a normal gap must not flag');
+
+  const hit = signals({ ...base, adr: 120, openAsk: 240, portfolioAskRatio: 1.3 })
+    .find(x => x.kind === 'ask-above-adr');
+  assert.ok(hit, 'a gap far above the portfolio norm must flag');
+  assert.match(hit!.text, /100% gap/);
+});
+
+test('a unit with nothing left to sell is never "gone quiet"', () => {
+  const s = signals({ ...base, nightsOpen: 0, lastBookedOn: '2026-07-01' });
+  assert.equal(s.some(x => x.kind === 'no-recent-booking'), false);
 });
 
 test('a unit with nothing booked is measured against the portfolio instead', () => {
@@ -104,4 +115,34 @@ test('a long-lead unit gets no such excuse', () => {
 test('silence is reported in days', () => {
   const s = signals({ ...base, lastBookedOn: '2026-08-01', today: '2026-09-17' });
   assert.match(s.find(x => x.kind === 'no-recent-booking')!.text, /47 days/);
+});
+
+import { verdict } from './revenue.ts';
+const vbase = { ...base, orphanRuns: 0 };
+
+test('unbookable gaps outrank every other diagnosis', () => {
+  // The only problem in this list that a price cannot solve, so naming
+  // anything else first sends someone to the wrong lever.
+  const v = verdict({ ...vbase, orphanNights: 6, nightsOpen: 8, openAsk: 400, adr: 120, pickup7: 0 });
+  assert.equal(v.kind, 'unbookable');
+  assert.match(v.reason, /minimum stay/);
+});
+
+test('a late-booking unit is "too early to tell", not "not moving"', () => {
+  const v = verdict({ ...vbase, leadTime: 2, occupancy: 0.3, pickup7: 0, nightsOpen: 20,
+                      openAsk: 150, adr: 150 });
+  assert.equal(v.kind, 'early');
+  assert.equal(v.tone, 'info');
+});
+
+test('overpricing is named ahead of being stuck, since it is the cause', () => {
+  const v = verdict({ ...vbase, openAsk: 423, adr: 0, portfolioAdr: 154,
+                      pickup7: 0, nightsOpen: 30, leadTime: 30 });
+  assert.equal(v.kind, 'overpriced');
+  assert.match(v.reason, /423/);
+});
+
+test('a healthy unit gets a plain verdict, not a warning', () => {
+  const v = verdict({ ...vbase, pickup7: 6, nightsOpen: 10, occupancy: 0.7, leadTime: 20 });
+  assert.equal(v.tone, 'ok');
 });

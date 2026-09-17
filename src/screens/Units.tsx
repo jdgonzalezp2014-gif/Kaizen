@@ -7,13 +7,15 @@
  * and three groups answer that before any number is read.
  */
 import { useEffect, useState } from 'react';
-import { getForward, applyPrice, type PriceResult } from '../api.ts';
+import { getForward, applyPrice, askSuggestion, type PriceResult, type Suggestion } from '../api.ts';
 import { rank, suspectedDuplicates, type RankedUnit, type ForwardUnit, type ForwardState } from '../lib/forward.ts';
-import { findGaps, signals, median, type Signal } from '../lib/revenue.ts';
+import { findGaps, signals, verdict, median, portfolioAskRatio,
+         type Signal } from '../lib/revenue.ts';
+import { money, pct, points } from '../lib/format.ts';
 import { DayPicker } from '../components/DayPicker.tsx';
+import { Glossary } from '../components/Glossary.tsx';
 
-const money = (n: number | null) => n == null ? '—' : `$${Math.round(n).toLocaleString()}`;
-const pct   = (n: number | null) => n == null ? '—' : `${Math.round(n * 100)}%`;
+
 const addDays = (d: string, n: number) =>
   new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 
@@ -46,6 +48,7 @@ export function Units() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState<RankedUnit | null>(null);
+  const [help, setHelp] = useState(false);
 
   const load = () => {
     setLoading(true); setError('');
@@ -73,6 +76,7 @@ export function Units() {
   // would drag both towards zero and make everything look healthy.
   const medianOcc = median(live.filter(u => u.occupancy != null).map(u => u.occupancy as number));
   const portfolioAdr = median(live.filter(u => u.adr != null && u.adr > 0).map(u => u.adr as number));
+  const askRatio = portfolioAskRatio(live);
   const totalOpen = live.reduce((a, u) => a + u.nightsOpen, 0);
   const totalPickup = live.reduce((a, u) => a + u.pickup7, 0);
   const totalBooks = live.reduce((a, u) => a + u.onBooks, 0);
@@ -80,7 +84,7 @@ export function Units() {
   return (
     <section>
       <div className="explain">
-        <h2>The next {days} nights</h2>
+        <h2>The next {days} nights <button className="link" onClick={() => setHelp(true)}>What do these mean?</button></h2>
         <p>
           Everything here is forward-looking: nights that have not happened yet and that a price
           can still change. It is a different question from the Revenue tab, which is money that
@@ -136,8 +140,9 @@ export function Units() {
             <p className="note">{g.blurb}{g.key === 'off' && ` A block running past ${parkedAfter} days counts as parked.`}</p>
             {asCards
               ? rows.map(u => (
-                  <UnitCard key={u.listingId} u={u} floor={floor} medianOcc={medianOcc}
-                            portfolioAdr={portfolioAdr} asOf={asOf} onEdit={() => setEditing(u)} />
+                  <UnitCard key={u.listingId} u={u} medianOcc={medianOcc}
+                            portfolioAdr={portfolioAdr} askRatio={askRatio} asOf={asOf}
+                            onEdit={() => setEditing(u)} onExplain={() => setHelp(true)} />
                 ))
               : (
                 <table className="units compact">
@@ -160,6 +165,8 @@ export function Units() {
         );
       })}
 
+      {help && <Glossary onClose={() => setHelp(false)} />}
+
       {editing && (
         <PriceDialog u={editing} asOf={asOf} days={days}
           onClose={() => setEditing(null)} onDone={() => { setEditing(null); load(); }} />
@@ -169,81 +176,94 @@ export function Units() {
 }
 
 /**
- * One unit, as a revenue manager would read it.
+ * One unit, led by the diagnosis rather than by its metrics.
  *
- * The bar is occupancy against the portfolio median rather than against
- * 100%, because 45% is not a verdict on its own — it is healthy in one
- * market and a crisis in another, and the portfolio is the only honest
- * benchmark available until real comp data exists.
+ * The bar is occupancy against the PORTFOLIO MEDIAN, not against 100%,
+ * because 45% is not a verdict on its own. The metrics sit underneath in
+ * one quiet line: they are the evidence, and evidence does not need to
+ * shout over the finding it supports.
  */
-function UnitCard({ u, floor, medianOcc, portfolioAdr, asOf, onEdit }: {
-  u: RankedUnit; floor: number; medianOcc: number | null;
-  portfolioAdr: number | null; asOf: string; onEdit: () => void;
+function UnitCard({ u, medianOcc, portfolioAdr, askRatio, asOf, onEdit, onExplain }: {
+  u: RankedUnit; medianOcc: number | null;
+  portfolioAdr: number | null; askRatio: number | null; asOf: string;
+  onEdit: () => void; onExplain: () => void;
 }) {
   const gaps = findGaps(u.days);
-  const orphanNights = gaps.filter(g => g.orphaned).reduce((a, g) => a + g.nights, 0);
-  const sig = signals({
+  const orphans = gaps.filter(g => g.orphaned);
+  const input = {
     occupancy: u.occupancy, nightsOpen: u.nightsOpen, pickup7: u.pickup7,
     leadTime: u.leadTime, adr: u.adr, openAsk: u.openAsk,
-    lastBookedOn: u.lastBookedOn, orphanNights,
-    portfolioAdr: portfolioAdr == null ? null : Math.round(portfolioAdr), today: asOf
-  });
-
-  const worst: 'bad' | 'warn' | 'ok' =
-    sig.some(x => x.tone === 'bad') ? 'bad' : sig.some(x => x.tone === 'warn') ? 'warn' : 'ok';
+    lastBookedOn: u.lastBookedOn,
+    orphanNights: orphans.reduce((a, g) => a + g.nights, 0),
+    orphanRuns: orphans.length,
+    portfolioAdr: portfolioAdr == null ? null : Math.round(portfolioAdr),
+    portfolioAskRatio: askRatio,
+    today: asOf
+  };
+  const v = verdict(input);
+  const rest = signals(input).filter(x => !v.reason.includes(x.text.slice(0, 24)));
   const occ = u.occupancy ?? 0;
 
   return (
-    <article className={`ucard tone-${worst}`}>
-      <div className="ucard-head">
+    <article className="ucard">
+      <header>
         <h4>{u.name}</h4>
-        <span className="meta">
-          {u.nightsSold} booked · {u.nightsOpen} open of {u.nightsOpen + u.nightsSold} sellable
+        <span className="at-stake">
+          {u.nightsOpen} open · <strong>{money(u.exposure)}</strong> still winnable
         </span>
-      </div>
+      </header>
 
-      <div className={`occbar tone-${worst}`}>
+      <p className={`verdict tone-${v.tone}`}>
+        <span className="dot" aria-hidden="true" />
+        <strong>{v.label}</strong>
+        <span className="because">{v.reason}</span>
+      </p>
+
+      {rest.length > 0 && (
+        <ul className="signals">{rest.map(x => <SignalLine key={x.kind} s={x} />)}</ul>
+      )}
+
+      <div className={`occbar tone-${v.tone}`}>
         <div className="fill" style={{ width: `${Math.min(100, occ * 100)}%` }} />
         {medianOcc != null && (
-          <div className="median" style={{ left: `${Math.min(100, medianOcc * 100)}%` }}
-               title={`Portfolio median ${pct(medianOcc)}`} />
+          <div className="median" style={{ left: `${Math.min(100, medianOcc * 100)}%` }} />
         )}
       </div>
       <div className="occbar-legend">
-        <span>{pct(u.occupancy)} occupied</span>
+        <span><strong>{pct(u.occupancy)}</strong> of sellable nights booked</span>
         {medianOcc != null && (
-          <span>
-            {/* Signed, in points, so the comparison needs no arithmetic. */}
-            {occ >= medianOcc ? '+' : ''}{Math.round((occ - medianOcc) * 100)} pts vs
-            portfolio median {pct(medianOcc)}
-          </span>
+          <span>{points((occ - medianOcc) * 100)} pts vs portfolio median {pct(medianOcc)}</span>
         )}
       </div>
 
-      <dl className="umetrics">
-        <div><dt>RevPAN</dt><dd>{money(u.revpan)}</dd></div>
-        <div><dt>Achieved ADR</dt><dd>{money(u.adr)}</dd></div>
-        <div><dt>Asking, open nights</dt><dd>{u.nightsOpen ? money(u.openAsk) : '—'}</dd></div>
-        <div><dt>Booked last 7d</dt><dd>{u.pickup7}<span className="unit"> nights</span></dd></div>
-        <div><dt>Books</dt><dd>{u.leadTime == null ? '—' : <>{u.leadTime}<span className="unit"> days out</span></>}</dd></div>
-        <div><dt>Money still open</dt><dd>{money(u.exposure)}</dd></div>
-        {/* Deliberately a visible hole rather than a hidden one. The comp
-            set is the single biggest missing input to any of these
-            decisions, and an empty slot says so; omitting it would let
-            the card read as if the picture were complete. */}
-        <div className="pending"><dt>Market rate</dt><dd>—<span className="unit"> not connected</span></dd></div>
-      </dl>
-
-      {sig.length > 0 && (
-        <ul className="signals">
-          {sig.map(x => <SignalLine key={x.kind} s={x} />)}
-        </ul>
-      )}
-
-      <div className="ucard-actions">
+      <footer>
+        <p className="facts">
+          <Fact k="RevPAN" v={money(u.revpan)} onExplain={onExplain} />
+          <Fact k="ADR" v={money(u.adr)} onExplain={onExplain} />
+          <Fact k="asking" v={u.nightsOpen ? money(u.openAsk) : '—'} />
+          <Fact k="booked 7d" v={`${u.pickup7}n`} onExplain={onExplain} />
+          <Fact k="books" v={u.leadTime == null ? '—' : `${u.leadTime}d out`} onExplain={onExplain} />
+          {/* A visible hole, not a hidden one: the comp set is the biggest
+              missing input here, and leaving the row out entirely would
+              let the card read as though the picture were complete. */}
+          <Fact k="market" v="not connected" muted />
+        </p>
         <button className="small" onClick={onEdit}>Change price</button>
-      </div>
+      </footer>
     </article>
+  );
+}
+
+function Fact({ k, v, onExplain, muted }: {
+  k: string; v: string; onExplain?: () => void; muted?: boolean;
+}) {
+  return (
+    <span className={muted ? 'fact muted' : 'fact'}>
+      {onExplain
+        ? <button type="button" className="fact-k" onClick={onExplain} title={`What is ${k}?`}>{k}</button>
+        : <span className="fact-k">{k}</span>}
+      <b>{v}</b>
+    </span>
   );
 }
 
@@ -312,6 +332,9 @@ function PriceDialog({ u, asOf, days, onClose, onDone }: {
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState<PriceResult | null>(null);
+  const [advice, setAdvice] = useState<Suggestion | null>(null);
+  const [adviceErr, setAdviceErr] = useState('');
+  const [thinking, setThinking] = useState(false);
 
   const rateNum = rate.trim() === '' ? null : Number(rate);
   const discNum = disc.trim() === '' ? null : Number(disc);
@@ -330,6 +353,25 @@ function PriceDialog({ u, asOf, days, onClose, onDone }: {
       from, to, note, confirmed: true, recordOnly
     }).then(setResult).catch(e => setResult({ ok: false, error: String(e) }))
       .finally(() => setBusy(false));
+  };
+
+  const ask = () => {
+    setThinking(true); setAdviceErr(''); setAdvice(null);
+    askSuggestion(u.listingId, from, to)
+      .then(r => {
+        if (!r.ok) { setAdviceErr(r.message ?? r.error ?? 'Could not get a suggestion.'); return; }
+        setAdvice(r.suggestion!);
+      })
+      .catch(e => setAdviceErr(String(e)))
+      .finally(() => setThinking(false));
+  };
+
+  /** Fill the form from the advice. It still goes through the same confirm. */
+  const applyAdvice = (a: Suggestion) => {
+    if (a.suggestedRate != null) setRate(String(a.suggestedRate));
+    if (a.suggestedWeeklyDiscountPct != null) { setKind('weekly'); setDisc(String(a.suggestedWeeklyDiscountPct)); }
+    else if (a.suggestedMonthlyDiscountPct != null) { setKind('monthly'); setDisc(String(a.suggestedMonthlyDiscountPct)); }
+    if (!note) setNote(`AI: ${a.action.replace(/_/g, ' ')}`);
   };
 
   return (
@@ -362,6 +404,45 @@ function PriceDialog({ u, asOf, days, onClose, onDone }: {
             </span>
           </label>
         </div>
+        <div className="advice-block">
+          {!advice && !thinking && (
+            <button type="button" className="ghost small" onClick={ask}>Ask Gemini what to do</button>
+          )}
+          {thinking && <p className="note">Reading this unit's calendar and booking history…</p>}
+          {adviceErr && <p className="banner warn">{adviceErr}</p>}
+          {advice && (
+            <div className="advice">
+              <div className="advice-head">
+                <strong>{advice.action.replace(/_/g, ' ')}</strong>
+                <span className={`conf conf-${advice.confidence}`}>{advice.confidence} confidence</span>
+              </div>
+              <p>{advice.reasoning}</p>
+              {/* What the model could NOT see. Shown as prominently as the
+                  advice, because a recommendation made without the comp
+                  set is a different object from one made with it. */}
+              {advice.missing && <p className="missing"><i>Not considered:</i> {advice.missing}</p>}
+              <div className="advice-actions">
+                {(advice.suggestedRate != null || advice.suggestedWeeklyDiscountPct != null ||
+                  advice.suggestedMonthlyDiscountPct != null) && (
+                  <button type="button" className="ghost small" onClick={() => applyAdvice(advice)}>
+                    Fill the form with this
+                  </button>
+                )}
+                {advice.suggestedMinimumStay != null && (
+                  <span className="note">
+                    Suggests a minimum stay of {advice.suggestedMinimumStay} night(s) — change that in
+                    Hostaway; this app does not write minimum stays yet.
+                  </span>
+                )}
+              </div>
+              <p className="note">
+                Advice only. Nothing has changed, and it is recorded next to whatever you decide,
+                so its track record becomes measurable.
+              </p>
+            </div>
+          )}
+        </div>
+
         <label>Why (optional)
           <input value={note} onChange={e => setNote(e.target.value)}
                  placeholder="e.g. three weeks open, school holidays over" />

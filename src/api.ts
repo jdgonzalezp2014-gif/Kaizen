@@ -4,6 +4,8 @@ export interface Account {
   id: number; name: string;
   hostawayAccountId: string | null;
   hasHostawayKey: boolean;
+  hasGeminiKey: boolean;
+  geminiModel: string;
   targetNetPerUnit: number; occFloorPct: number; stayNights: number;
   fwdStudyDays: number; offlineAfterDays: number; cleaningsCsvUrl: string | null;
   allowedEmails: string[];
@@ -126,4 +128,20 @@ export const pullCleanings = (url: string, commit = false) =>
   call<{ ok: boolean; dryRun?: boolean; updated?: number; matched?: CleaningMatch[];
          unmatched?: string[]; message?: string; error?: string }>('/api/cleanings', {
     method: 'POST', body: JSON.stringify({ url, commit })
+  });
+
+export interface Suggestion {
+  action: 'hold' | 'lower_rate' | 'raise_rate' | 'lower_minimum_stay' | 'adjust_discounts';
+  suggestedRate: number | null;
+  suggestedWeeklyDiscountPct: number | null;
+  suggestedMonthlyDiscountPct: number | null;
+  suggestedMinimumStay: number | null;
+  confidence: 'low' | 'medium' | 'high';
+  reasoning: string;
+  missing: string;
+}
+
+export const askSuggestion = (listingId: string, from: string, to: string) =>
+  call<{ ok: boolean; suggestion?: Suggestion; message?: string; error?: string }>('/api/suggest', {
+    method: 'POST', body: JSON.stringify({ listingId, from, to })
   });
