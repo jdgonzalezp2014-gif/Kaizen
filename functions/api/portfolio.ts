@@ -8,7 +8,8 @@
  * 1–3 second Hostaway sweep acceptable here.
  */
 import { fetchAllReservations, fetchListings } from '../_lib/hostaway.ts';
-import { appConfig, configNumber, db, type Env } from '../_lib/db.ts';
+import { db, type Env } from '../_lib/db.ts';
+import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { userEmail } from '../_lib/auth.ts';
 import { addDays, today } from '../../src/lib/dates.ts';
 
@@ -28,23 +29,33 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const from = addDays(now, -Number(env.LEDGER_BACK_DAYS ?? 1095));
   const to   = addDays(now,  Number(env.LEDGER_FWD_DAYS ?? 365));
 
-  const creds = { accountId: env.HOSTAWAY_ACCOUNT_ID, apiKey: env.HOSTAWAY_API_KEY };
-  const sql = db(env);
+  const sql = db(env) as unknown as SqlFn;
+
+  // Credentials come from the account row, decrypted per request — the
+  // same path every tenant uses. Nothing here reads the environment for
+  // them, which is what stops this working for exactly one customer.
+  const account = await getAccount(sql);
+  if (!account?.hasHostawayKey) {
+    return Response.json({
+      ok: false, error: 'not_configured',
+      message: 'No Hostaway credentials for this account. Add them in Settings.'
+    }, { status: 409 });
+  }
+  const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
 
   // Hostaway and Postgres are independent; there is no reason to wait for
   // one before starting the other.
-  const [listings, reservations, expenses, claims, cfg] = await Promise.all([
+  const [listings, reservations, expenses, claims] = await Promise.all([
     fetchListings(creds),
     fetchAllReservations(creds, from, to),
     sql`SELECT unit_id, shared, start_date, end_date, category, frequency, amount
         FROM expenses WHERE end_date IS NULL OR end_date >= ${from}` as unknown as Promise<CostRowDb[]>,
     sql`SELECT unit_id, occurred_on, category, severity, status, refund, repair_cost
-        FROM claims WHERE occurred_on >= ${from}`,
-    appConfig(env)
+        FROM claims WHERE occurred_on >= ${from}`
   ]);
 
   const active = listings.filter(l => l.active);
-  const perUnitTarget = configNumber(cfg, 'TARGET_NET_PER_UNIT', 1500);
+  const perUnitTarget = account.targetNetPerUnit;
 
   return Response.json({
     meta: {

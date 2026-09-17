@@ -24,3 +24,35 @@ h1 { font-size: 20px; margin: 0 0 4px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; }
 .note { font-size: 12.5px; color: var(--muted); line-height: 1.6; }
 code { background: rgba(127,127,127,.12); padding: 1px 5px; border-radius: 4px; font-size: 12px; }
+
+header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 22px; }
+nav { display: flex; gap: 6px; }
+.tab { background: transparent; border: 1px solid var(--line); color: var(--muted);
+  padding: 7px 14px; border-radius: 7px; cursor: pointer; font-size: 13px; }
+.tab.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+.card { margin-bottom: 16px; }
+.card h2 { font-size: 15px; margin: 0 0 6px; }
+label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 0; }
+label.check { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+input, select, textarea {
+  display: block; width: 100%; margin-top: 5px; padding: 8px 10px;
+  border: 1px solid var(--line); border-radius: 7px;
+  background: var(--bg); color: var(--ink); font: inherit; font-size: 13px;
+}
+label.check input { width: auto; margin: 0; }
+textarea { font-family: ui-monospace, monospace; font-size: 12px; margin-top: 14px; }
+.row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-top: 14px; }
+.row > label { flex: 1; min-width: 150px; margin-top: 0; }
+button { background: var(--ink); color: var(--bg); border: 0; padding: 9px 16px;
+  border-radius: 7px; cursor: pointer; font-size: 13px; font-weight: 600; }
+button.secondary { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+button:disabled { opacity: .4; cursor: default; }
+.banner { margin-top: 14px; padding: 10px 12px; border-radius: 7px; font-size: 12.5px; border: 1px solid; }
+.banner.ok    { border-color: color-mix(in srgb, var(--green) 40%, transparent); color: var(--green); }
+.banner.warn  { border-color: color-mix(in srgb, var(--amber) 40%, transparent); color: var(--amber); }
+.banner.error { border-color: color-mix(in srgb, var(--red) 40%, transparent); color: var(--red); }
+table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12.5px; }
+th { text-align: left; color: var(--muted); font-weight: 600; padding: 5px 0; border-bottom: 1px solid var(--line); }
+td { padding: 5px 0; border-bottom: 1px solid var(--line); }
+@media (max-width: 640px) { header { flex-direction: column; align-items: flex-start; gap: 14px; } }

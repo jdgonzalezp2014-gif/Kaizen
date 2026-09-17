@@ -9,7 +9,7 @@
 import { decrypt, encrypt } from './crypto.ts';
 import type { HostawayCredentials } from './hostaway.ts';
 
-export type SqlFn = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+export type SqlFn = (strings: TemplateStringsArray, ...values: any[]) => Promise<any[]>;
 
 export interface Account {
   id: number;

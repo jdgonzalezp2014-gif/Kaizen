@@ -145,9 +145,16 @@ credential. The plaintext key never travels back to a browser; a settings screen
 | Channel live/dark probing | Costly; low value until the basics are trusted |
 | Agents that send anything | Agents draft. Humans send. Always |
 
+**Onboarding is self-service.** A new host enters their own Hostaway credentials in Settings and
+imports their existing costs/claims spreadsheet as CSV. Nothing about adding a customer touches a
+deployment. `/api/import` always previews before writing — an import is the one operation where
+being wrong is both easy and invisible — and reports unmatched rows rather than guessing or
+silently dropping them.
+
 **Wanted later, schema already allows it:** expense import from Walmart and Amazon invoices. The
-`expenses` table carries `source` and `external_ref` from day one, so that import is a new writer
-against an unchanged table rather than a migration.
+`expenses` table carries `source` and `external_ref` from day one (CSV imports already write
+`source = 'import:csv'`), so that is a new writer against an unchanged table rather than a
+migration.
 
 ## 6. Units and targets are variables, never constants
 
@@ -250,7 +257,8 @@ platform.** These are proven against real data and worth reading before rewritin
 | 1 | Vite scaffold, Pages Functions, Hostaway client, `/api/portfolio` | **done**, builds |
 | 2 | Neon project linked, schema applied, migration runner | **done** |
 | 3 | `/api/sync-units` — populate `units` from Hostaway | built, **not yet run** |
-| 3b | Settings screen: enter Hostaway credentials per account | **next** |
+| 3b | Settings screen — credentials, targets, sync | **done** |
+| 3c | CSV import for existing costs and claims spreadsheets | **done** |
 | 4 | Connect GitHub → Cloudflare Pages, enable Access | needs a human |
 | 5 | Money screen: scoreboard → per-unit tile → per-unit P&L | |
 | 6 | Expense + claim entry forms | |

@@ -12,8 +12,12 @@ import { neon } from '@neondatabase/serverless';
 
 export interface Env {
   DATABASE_URL: string;
-  HOSTAWAY_ACCOUNT_ID: string;
-  HOSTAWAY_API_KEY: string;
+  // Master key for tenant credentials at rest. See crypto.ts.
+  ENCRYPTION_KEY: string;
+  // Only used by local bootstrap scripts; the deployed app reads
+  // credentials from the accounts table.
+  HOSTAWAY_ACCOUNT_ID?: string;
+  HOSTAWAY_API_KEY?: string;
   QUO_API_KEY?: string;
   QUO_FROM?: string;
   // How far either side of today to pull reservations. Wide enough that

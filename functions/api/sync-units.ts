@@ -7,14 +7,15 @@
  */
 import { syncUnits } from '../_lib/sync.ts';
 import { db, type Env } from '../_lib/db.ts';
+import { getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { userEmail } from '../_lib/auth.ts';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
-  const sql = db(env);
-  const creds = { accountId: env.HOSTAWAY_ACCOUNT_ID, apiKey: env.HOSTAWAY_API_KEY };
+  const sql = db(env) as unknown as SqlFn;
 
   try {
-    const result = await syncUnits(creds, sql as never);
+    const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
+    const result = await syncUnits(creds, sql);
     return Response.json({ ok: true, by: userEmail(request), ...result });
   } catch (err) {
     return Response.json(

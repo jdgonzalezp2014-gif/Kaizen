@@ -1,27 +1,34 @@
-import { PRESETS } from './lib/ranges.ts';
+import { useState } from 'react';
+import { Settings } from './screens/Settings.tsx';
 
-/**
- * Placeholder shell. It exists so the build produces something real and
- * deploys end to end before any screen is written — a pipeline proven
- * empty is worth more than a dashboard that has never been served.
- */
+type Tab = 'money' | 'settings';
+
 export function App() {
+  // Settings first, deliberately: nothing else works until a host has
+  // connected their Hostaway account.
+  const [tab, setTab] = useState<Tab>('settings');
+
   return (
     <main>
-      <h1>Kaizen OS</h1>
-      <p className="sub">Profit per unit. Not occupancy.</p>
+      <header>
+        <div>
+          <h1>Kaizen OS</h1>
+          <p className="sub">Profit per unit. Not occupancy.</p>
+        </div>
+        <nav>
+          <button className={tab === 'money' ? 'tab active' : 'tab'} onClick={() => setTab('money')}>Money</button>
+          <button className={tab === 'settings' ? 'tab active' : 'tab'} onClick={() => setTab('settings')}>Settings</button>
+        </nav>
+      </header>
 
-      <div className="card">
-        <p className="note">
-          Scaffold only — no data is being read yet. The analytics core
-          (<code>src/lib/</code>) and the Hostaway client are written and tested;
-          the screens are not.
-        </p>
-        <p className="note" style={{ marginTop: 14 }}>
-          Ranges wired and shared by every screen:{' '}
-          {PRESETS.map(p => p.label).join(' · ')}
-        </p>
-      </div>
+      {tab === 'settings' ? <Settings /> : (
+        <div className="card">
+          <p className="note">
+            Not built yet. The analytics core is written and tested; this screen renders it once
+            units are synced.
+          </p>
+        </div>
+      )}
     </main>
   );
 }
