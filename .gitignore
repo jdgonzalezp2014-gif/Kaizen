@@ -1,0 +1,14 @@
+# Never commit credentials. Apps Script secrets live in Script Properties,
+# not in the repo — see CONTEXT.md §2.
+.clasprc.json
+.env
+.env.*
+!.env.example
+
+node_modules/
+dist/
+build/
+.vite/
+
+.DS_Store
+*.log
