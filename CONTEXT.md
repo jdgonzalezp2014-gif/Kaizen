@@ -26,6 +26,47 @@ It replaces a daily manual Hostaway check.
 The client's own spec (`docs/kaizen-os-spec.pdf`) proposes Supabase + Vercel + Twilio + Neon.
 That is a good spec for a funded build. It is not this build. See §4.
 
+## 2a. Scope — what this app is and is not
+
+**It is an analytical surface with two data-entry paths.** Nothing else, for now.
+
+| In scope | Notes |
+|---|---|
+| Profit per unit, per period | The headline. Every screen ends in a net number |
+| Portfolio scoreboard vs target | Target is **derived**, never hardcoded — see §2b |
+| Forward pace, occupancy, peer pricing position | Diagnosis for the profit number |
+| **Expense entry by the team** | Fixed and variable. Multiple people, not just the owner |
+| **Claim entry by the team** | Guest claims with severity and cost |
+
+| Out of scope for now | Why |
+|---|---|
+| Outbound CRM | A product on its own |
+| Review dispute tracker | Needs per-platform review APIs we do not have |
+| Channel live/dark probing | Costly; the panel already flags unexported listings |
+| Agentic sending of anything | Agents draft. Humans send. Always |
+
+**Later, explicitly wanted:** expense import from **Walmart and Amazon invoices**. Design the
+expense schema so a row can carry a source and an external reference now, so that import is a
+new writer against an unchanged table rather than a migration.
+
+## 2b. Units and targets are variables, never constants
+
+The client's PDF prints *"22 live units × $1,500/mo = $33,000"*. Do not hardcode any of those
+three numbers.
+
+- **Units go on and off.** Some are currently inactive. The live count is derived at read time
+  from `📊 Dashboard` (an inactive unit shows `⚪` in its vacancy column) — never counted by hand,
+  never stored.
+- **The per-unit target is config** (`TARGET_NET_PER_UNIT`), editable without a deploy.
+- **The portfolio target is computed**: `active units × per-unit target`. It moves when a unit is
+  taken offline, which is the correct behaviour — a portfolio of 20 should not be measured
+  against a target set for 27.
+- **Revenue is likewise never a constant.** It is always read for a stated period from the
+  reservation ledger.
+
+Any screen showing a target states the unit count it was computed from, so a number that moved
+because a unit went dark is legible as exactly that rather than looking like a data error.
+
 ## 3. Architecture
 
 ```
@@ -42,7 +83,7 @@ That is a good spec for a funded build. It is not this build. See §4.
 └─────────────────────────────┬───────────────────────────────┘
                               │  HTTPS, Google-account gated
 ┌─────────────────────────────▼───────────────────────────────┐
-│  CLOUDFLARE PAGES (free static hosting + SSL + domain)      │
+│  VERCEL (free static hosting + SSL)                         │
 │                                                             │
 │   React + TypeScript + Vite  ── read-only dashboards        │
 │   Google Identity Services   ── sign-in, email allowlist    │
@@ -67,7 +108,7 @@ Say this plainly if asked; do not be defensive about it.
 | Their choice | What we do | Why |
 |---|---|---|
 | Neon (Postgres) | Google Sheets | ~3k rows. Staff must hand-edit costs and claims. Postgres would need an admin UI built on top of it just to match what Sheets does for free. |
-| Vercel / Render | Cloudflare Pages | They already want Cloudflare for the domain. Registrar + DNS + SSL + static hosting in one free account. |
+| Vercel / Render | **Vercel**, static only | Agreed — free tier, zero config for a Vite build, and the developer already knows it. What we do *not* use is its serverless functions or cron: those exist on Apps Script already, credentialed. |
 | Vercel cron | Apps Script triggers | Already built, already running, free, and it already has the Hostaway credentials. |
 | Twilio / WhatsApp | QUO (OpenPhone) | Already integrated and paid for by the client. Character handling is already written and tested. |
 | Resend | Apps Script `MailApp` | Free quota is ample at this volume. |
@@ -141,8 +182,9 @@ Existing, populated, and live. Column names are the contract between Apps Script
 
 1. **Sheets is the database.** Revisit only above ~200 units or if concurrent editing breaks.
 2. **Apps Script is the API.** No separate backend.
-3. **The web app is read-mostly.** Writes (costs, claims) happen in the Sheet itself, or through
-   a narrow `doPost`. Do not build a general CRUD layer.
+3. **Writes are narrow and append-only.** The team records expenses and claims through the app;
+   everything else is read-only. Appending never rewrites an existing row, so a retry cannot
+   double-count and yesterday's numbers stay reproducible. Do not build a general CRUD layer.
 4. **Profit is the headline metric**, not occupancy. Every screen ends in a net number.
    (This is the one idea from the client's PDF worth taking wholesale.)
 5. **Agents draft, humans send.** Nothing writes a price to Hostaway. Ever. Autonomy is earned
@@ -155,21 +197,27 @@ Existing, populated, and live. Column names are the contract between Apps Script
 
 | Phase | Ships | Status |
 |---|---|---|
-| 0 | Apps Script `doGet` JSON API + allowlist | **next** |
-| 1 | Vite + React + TS shell, Google sign-in, fetches the API | |
-| 2 | Money screen: portfolio net → per-unit tile → per-unit P&L | |
-| 3 | Deploy to Cloudflare Pages on the client's domain | |
-| 4 | Performance screen: forward pace, peer comparison, the two failure patterns | |
-| 5 | Alerts surfaced in-app; QUO already sends them | |
-| 6 | Decision log view — the thing that earns automation later | |
+| 0 | Apps Script `doGet` JSON API + allowlist | **done** — `apps-script/Api.js` |
+| 0b | `doPost` append-only writer for expenses and claims | **done** — same file |
+| 1 | Vite + React + TS shell, Google sign-in, reads the API | **next** |
+| 2 | Money screen: derived scoreboard → per-unit tile → per-unit P&L | |
+| 3 | Expense + claim entry forms | |
+| 4 | Deploy to Vercel | |
+| 5 | Performance: forward pace, peer position, the two failure patterns | |
+| 6 | Decision log view — what earns automation later | |
 
-Phases 0–3 are the demo. Everything after is earned.
+Phases 1–4 are the demo. Everything after is earned.
+
+**Deliberately not scheduled:** Walmart/Amazon invoice import. The schema is ready for it
+(§2a); building it before anyone has entered a single expense by hand would be guessing at a
+workflow nobody has performed yet.
 
 ## 10. Open questions — need a human, do not guess
 
 - Does the client want the existing Google Sheet used directly, or a fresh copy?
 - Which Google accounts go on the allowlist?
-- Which domain, and is it already on Cloudflare?
+- **No domain yet.** Vercel gives a free `*.vercel.app` URL, which is enough for the demo. Buy a
+  domain only once the client has seen it working.
 - Ownership and licence: repo is under the developer's account pending payment terms. **Not a
   technical question — do not resolve it in code.**
 

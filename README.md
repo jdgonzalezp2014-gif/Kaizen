@@ -11,8 +11,8 @@ costs and guest claims, and sends SMS alerts when something needs a decision.
 | Ingestion, scheduling, alerts | Google Apps Script | free |
 | Database | Google Sheets | free |
 | API | Apps Script Web App (`doGet`) | free |
-| Hosting, SSL, CDN | Cloudflare Pages | free |
-| Domain | Cloudflare Registrar | at cost |
+| Hosting, SSL, CDN | Vercel (static) | free |
+| Domain | not yet — Vercel's free URL covers the demo | — |
 | Auth | Google Identity Services | free |
 | SMS | QUO (OpenPhone) | existing client account |
 
@@ -26,7 +26,7 @@ as a Web App turns it into a JSON API at no extra cost. The web app is a static 
 reads that API and renders it.
 
 ```
-Hostaway ──► Apps Script ──► Google Sheets ──► doGet() JSON ──► React (Cloudflare Pages)
+Hostaway ──► Apps Script ──► Google Sheets ──► doGet() JSON ──► React (Vercel)
                   │
                   └──► QUO / SMS alerts
 ```
@@ -36,6 +36,18 @@ Hostaway ──► Apps Script ──► Google Sheets ──► doGet() JSON �
 Financial data is never on a public URL. The API is deployed to execute **as the signed-in user**
 and is reachable only by Google accounts on an allowlist; Google performs the authentication.
 "Publish to web" CSV is deliberately not used.
+
+## What it does
+
+**Analytics.** Profit per unit for any period, against a target that is *computed* — active units
+× per-unit net — rather than hardcoded, so taking a unit offline moves the target instead of
+making the portfolio look like it missed.
+
+**Entry.** The team records expenses and claims from the app. Writes are append-only: a retry
+cannot corrupt a row that already exists, and every row carries who entered it and when.
+
+Everything else — outbound CRM, review disputes, channel probing — is deliberately out of scope.
+See `CONTEXT.md` §2a.
 
 ## Repository layout
 

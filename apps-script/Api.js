@@ -48,6 +48,49 @@ function apiReadableSheets_() {
   };
 }
 
+/**
+ * The scoreboard, computed rather than stated.
+ *
+ * The client's spec prints "22 live units × $1,500/mo = $33,000". All
+ * three of those are wrong to hardcode: units go on and off, the target
+ * is a business decision that changes, and the portfolio figure is just
+ * their product. A target set for 27 units judges a portfolio of 20
+ * unfairly, and the failure is invisible — the number simply looks
+ * missed.
+ *
+ * So the unit count is derived at read time. A unit Hostaway reports as
+ * inactive shows ⚪ on 📊 Dashboard and is excluded, and the response
+ * carries the count it used so a screen can say "20 active × $1,500"
+ * rather than presenting a moved target as an unexplained drop.
+ */
+function apiTargets_(ss) {
+  const perUnit = cfgNum_('TARGET_NET_PER_UNIT', 1500);
+  const sheet = ss.getSheetByName(SHEET_DASH);
+
+  let active = 0, inactive = 0;
+  if (sheet && sheet.getLastRow() > 1) {
+    const H = headerMap_(sheet);
+    const col = H['🚥 Vacancy'];
+    if (col) {
+      sheet.getRange(2, col, sheet.getLastRow() - 1, 1).getValues().forEach(r => {
+        const v = String(r[0] || '');
+        if (!v) return;
+        if (v.indexOf('⚪') >= 0) inactive++; else active++;
+      });
+    }
+  }
+
+  return {
+    perUnitNet: perUnit,
+    activeUnits: active,
+    inactiveUnits: inactive,
+    portfolioNet: active * perUnit,
+    // Stated so a screen never has to infer it: the target moved because
+    // the portfolio did, not because something broke.
+    basis: active + ' active unit(s) × ' + perUnit
+  };
+}
+
 function apiAllowed_(email) {
   const raw = String(cfg_(API_ALLOWLIST_KEY, '')).trim();
   if (!raw) return false;            // unset means closed, never open
@@ -127,7 +170,8 @@ function doGet(e) {
     // Every response says how fresh it is. The client's spec is right that
     // the real risk is silent staleness — a screen showing yesterday's
     // numbers as if they were today's is worse than a screen that is down.
-    lastSync: cfg_('LAST_SYNC_AT', '') || null
+    lastSync: cfg_('LAST_SYNC_AT', '') || null,
+    targets: apiTargets_(ss)
   };
 
   if (want === 'all') {
@@ -165,4 +209,132 @@ function apiSelfTest() {
     'Readable sheets: ' + Object.keys(apiReadableSheets_()).join(', ') + '\n\n' +
     'If this says YES but the URL still returns 403, the deployment is set to ' +
     '"Execute as: Me" instead of "User accessing the web app".');
+}
+
+// ============================================================
+// WRITES — expenses and claims, appended only
+// ============================================================
+
+/**
+ * The only two things the team writes from the app.
+ *
+ * Append-only, deliberately. A retry, a double-tap on a phone, or a lost
+ * response cannot corrupt a row that already exists — the worst case is
+ * a duplicate, which is visible and deletable, rather than a silently
+ * rewritten figure that nobody can reconstruct. It also means yesterday's
+ * numbers stay reproducible: the sheets are a ledger, not a current-state
+ * table.
+ *
+ * `source` and `externalRef` are carried now and used by nobody. They are
+ * here because Walmart and Amazon invoice import is explicitly wanted
+ * later, and a column added before there is data is free while a column
+ * added after means a migration.
+ */
+const API_WRITABLE = {
+  expense: {
+    sheet: function () { return SHEET_COSTS; },
+    // Maps the request body onto the sheet's own header names. The panel
+    // owns those names; this map is the seam, so a column rename is one
+    // edit here rather than a hunt through the front end.
+    map: {
+      startDate:  'Start Date',
+      endDate:    'End Date',
+      scope:      'Scope',
+      listingId:  'Listing ID',
+      unit:       'Internal Name',
+      category:   'Category',
+      frequency:  'Frequency',
+      amount:     'Amount',
+      notes:      'Notes'
+    },
+    required: ['startDate', 'amount'],
+    defaults: { frequency: 'One-time', category: 'General', scope: 'This unit' }
+  },
+  claim: {
+    sheet: function () { return SHEET_CLAIMS; },
+    map: {
+      date:        'Date',
+      listingId:   'Listing ID',
+      unit:        'Internal Name',
+      source:      'Source',
+      category:    'Category',
+      severity:    'Severity',
+      description: 'Description',
+      status:      'Status',
+      refund:      'Refund / Credit',
+      repair:      'Repair Cost',
+      notes:       'Notes'
+    },
+    required: ['date'],
+    defaults: { severity: 'Medium', status: 'Open', source: 'Guest message' }
+  }
+};
+
+function apiAppend_(ss, kind, body) {
+  const spec = API_WRITABLE[kind];
+  if (!spec) return { ok: false, error: 'unknown_kind', message: '"' + kind + '" is not writable.' };
+
+  const sheet = ss.getSheetByName(spec.sheet());
+  if (!sheet) return { ok: false, error: 'no_sheet', message: spec.sheet() + ' does not exist yet.' };
+
+  const missing = spec.required.filter(k => body[k] === undefined || body[k] === '' || body[k] === null);
+  if (missing.length) {
+    return { ok: false, error: 'missing_fields', message: 'Required: ' + missing.join(', ') };
+  }
+
+  const headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0].map(String);
+  const values  = Object.assign({}, spec.defaults, body);
+  const row     = new Array(headers.length).fill('');
+
+  Object.keys(spec.map).forEach(field => {
+    const header = spec.map[field];
+    const at = headers.indexOf(header);
+    if (at < 0) return;                       // sheet predates this field; skip rather than fail
+    if (values[field] === undefined) return;
+    row[at] = values[field];
+  });
+
+  // Provenance on every written row. Who entered it matters when a number
+  // is questioned three months later, and it is the only audit trail a
+  // spreadsheet gives you for free.
+  const note = 'Entered via Kaizen OS by ' + (values._user || 'unknown') +
+               ' at ' + nowStamp_() +
+               (values.source ? ' · source: ' + values.source : '') +
+               (values.externalRef ? ' · ref: ' + values.externalRef : '');
+
+  sheet.appendRow(row);
+  const written = sheet.getLastRow();
+  try { sheet.getRange(written, 1).setNote(note); } catch (e) {}
+
+  return { ok: true, kind: kind, row: written, sheet: spec.sheet() };
+}
+
+/**
+ * POST { kind: "expense" | "claim", ...fields }
+ *
+ * Same allowlist as doGet. Always returns 200 at the HTTP level; read
+ * `ok` and `status` in the body — Apps Script web apps cannot set a status.
+ */
+function doPost(e) {
+  let email = '';
+  try { email = Session.getEffectiveUser().getEmail(); } catch (err) { email = ''; }
+
+  if (!apiAllowed_(email)) {
+    return apiJson_({ error: 'not_authorised', message: 'Not on the allowlist.' }, 403);
+  }
+
+  let body = {};
+  try {
+    body = JSON.parse((e && e.postData && e.postData.contents) || '{}');
+  } catch (err) {
+    return apiJson_({ error: 'bad_json', message: err.message }, 400);
+  }
+
+  const kind = String(body.kind || '').trim();
+  body._user = email;
+
+  // One row per request. Batching would need an idempotency key to stay
+  // safe on retry, and nobody is entering expenses fast enough to need it.
+  const result = apiAppend_(SpreadsheetApp.getActiveSpreadsheet(), kind, body);
+  return apiJson_(result, result.ok ? 200 : 400);
 }
