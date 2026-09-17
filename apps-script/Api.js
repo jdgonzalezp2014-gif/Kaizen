@@ -33,13 +33,124 @@
 // an allowlist in source is an allowlist in the git history.
 const API_ALLOWLIST_KEY = 'API_ALLOWED_EMAILS';
 
+// ============================================================
+// LIVE HOSTAWAY — fetched, not cached
+// ============================================================
+
+/**
+ * Reservations straight from Hostaway, with the sheet as a fallback.
+ *
+ * 🧾 Reservations was only ever a cached copy of data Hostaway already
+ * owns, and a cache you have to remember to refresh is a screen that is
+ * silently wrong between refreshes. So this fetches live.
+ *
+ * It is affordable *because* the browser does its own proration
+ * (CONTEXT.md §2c): this runs once per session, not once per range
+ * change. A 1–3 second load is fine; 1–3 seconds per slider drag would
+ * not have been.
+ *
+ * On failure it serves the last good sheet copy and labels it. A screen
+ * showing yesterday's numbers *marked* as yesterday's is useful. The
+ * same screen pretending to be live is how people make decisions on
+ * stale data without knowing it.
+ */
+function apiReservations_(ss) {
+  const horizonBack = cfgNum_('API_LEDGER_BACK_DAYS', 400);
+  const horizonFwd  = cfgNum_('API_LEDGER_FWD_DAYS', 365);
+  const now  = fmtDate(new Date());
+  const from = addDays_(now, -horizonBack);
+  const to   = addDays_(now, horizonFwd);
+
+  try {
+    const token = getAccessToken();
+    const listings = fetchAll('/listings', token);
+    const rows = [];
+
+    listings.forEach(l => {
+      const lid = String(l.id);
+      fetchReservations_(lid, from, to, token).forEach(r => {
+        if (!reservationCounts_(r)) return;
+        const d = reservationDates_(r);
+        if (!d.arrival || !d.departure) return;
+
+        const total = reservationTotal_(r);
+        // Same rule as everywhere else: no payout means no cleaning fee
+        // deduction. An iCal block or owner stay reports nothing paid
+        // while the listing's default cleaning fee still resolves, and
+        // subtracting one from the other invents negative revenue.
+        const paid = total > 0;
+
+        rows.push({
+          listingId: lid,
+          unit: l.internalListingName || l.name || '',
+          reservationId: String(r.id || ''),
+          status: String(r.status || ''),
+          channel: String(r.channelName || r.source || r.channel || ''),
+          bookedOn: reservationBookedOn_(r),
+          arrival: d.arrival,
+          departure: d.departure,
+          nights: Math.max(1, daysBetween_(d.arrival, d.departure)),
+          totalPaid: total,
+          cleaningFee: paid ? reservationCleaningFee_(r) : 0
+        });
+      });
+    });
+
+    return { source: 'hostaway', fetchedAt: new Date().toISOString(), rows: rows };
+  } catch (err) {
+    const cached = apiSheetRows_(ss, SHEET_LEDGER, 0);
+    return {
+      source: 'cache',
+      error: err.message,
+      // The caller must be able to tell the user how old this is.
+      fetchedAt: cached.length ? String(cached[0]['Fetched At'] || '') : null,
+      rows: cached.map(r => ({
+        listingId: String(r['Listing ID'] || ''),
+        unit: r['Internal Name'] || '',
+        reservationId: String(r['Reservation ID'] || ''),
+        status: String(r['Status'] || ''),
+        channel: String(r['Channel'] || ''),
+        bookedOn: r['Booked On'] || '',
+        arrival: r['Arrival'] || '',
+        departure: r['Departure'] || '',
+        nights: Number(r['Nights']) || 0,
+        totalPaid: Number(r['Total Paid']) || 0,
+        cleaningFee: Number(r['Cleaning Fee']) || 0
+      }))
+    };
+  }
+}
+
+/** Listings, live. Only the fields a screen actually needs. */
+function apiListings_() {
+  try {
+    const token = getAccessToken();
+    return {
+      source: 'hostaway',
+      rows: fetchAll('/listings', token).map(l => ({
+        listingId: String(l.id),
+        unit: l.internalListingName || l.name || '',
+        active: isListingActive_(l),
+        bedrooms: (typeof listingBedrooms_ === 'function') ? listingBedrooms_(l) : null,
+        bathrooms: (typeof listingBathrooms_ === 'function') ? listingBathrooms_(l) : null,
+        capacity: (typeof listingCapacity_ === 'function') ? listingCapacity_(l) : null,
+        unitType: (typeof listingUnitType_ === 'function') ? listingUnitType_(l) : '',
+        poolType: (typeof listingPoolType_ === 'function') ? listingPoolType_(l) : 'None',
+        lat: Number(l.lat || l.latitude) || null,
+        lng: Number(l.lng || l.longitude) || null
+      }))
+    };
+  } catch (err) {
+    return { source: 'error', error: err.message, rows: [] };
+  }
+}
+
 // Only these sheets are ever served. An explicit list, not "any sheet
 // named in the query string": the next sheet someone adds should not
 // become public because the API was permissive by default.
 function apiReadableSheets_() {
   return {
     dashboard:    SHEET_DASH,
-    reservations: SHEET_LEDGER,
     costs:        SHEET_COSTS,
     fixedCosts:   SHEET_FIXED_COSTS,
     claims:       SHEET_CLAIMS,
@@ -174,16 +285,40 @@ function doGet(e) {
     targets: apiTargets_(ss)
   };
 
+  // Live sources first — these are Hostaway's, not ours.
+  if (want === 'reservations') {
+    const res = apiReservations_(ss);
+    meta.source = res.source;
+    meta.fetchedAt = res.fetchedAt;
+    if (res.error) meta.warning = 'Hostaway unavailable (' + res.error + '); serving the cached copy.';
+    return apiJson_({ meta: meta, sheet: 'reservations', rows: res.rows }, 200);
+  }
+  if (want === 'listings') {
+    const l = apiListings_();
+    meta.source = l.source;
+    if (l.error) meta.warning = l.error;
+    return apiJson_({ meta: meta, sheet: 'listings', rows: l.rows }, 200);
+  }
+
   if (want === 'all') {
     const data = {};
     Object.keys(readable).forEach(key => { data[key] = apiSheetRows_(ss, readable[key], limit); });
+
+    const res = apiReservations_(ss);
+    data.reservations = res.rows;
+    data.listings = apiListings_().rows;
+    meta.source = res.source;
+    meta.fetchedAt = res.fetchedAt;
+    if (res.error) meta.warning = 'Hostaway unavailable (' + res.error + '); reservations are the cached copy.';
+
     return apiJson_({ meta: meta, data: data }, 200);
   }
 
   if (!readable[want]) {
     return apiJson_({
       error: 'unknown_sheet',
-      message: '"' + want + '" is not readable. Available: ' + Object.keys(readable).join(', ')
+      message: '"' + want + '" is not readable. Available: reservations, listings, ' +
+               Object.keys(readable).join(', ')
     }, 404);
   }
 

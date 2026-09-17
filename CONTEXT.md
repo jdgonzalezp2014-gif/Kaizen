@@ -69,6 +69,48 @@ three numbers.
 Any screen showing a target states the unit count it was computed from, so a number that moved
 because a unit went dark is legible as exactly that rather than looking like a data error.
 
+## 2bb. Where each number actually comes from
+
+Hostaway is the system of record for everything it already knows. Do not cache what can be
+fetched, and do not fetch what Hostaway has never heard of.
+
+| Data | Source | Why |
+|---|---|---|
+| Listings, calendar, **reservations** | **Hostaway API, live** | It is theirs. A cached copy only adds staleness and a "refresh" button nobody remembers to press |
+| Costs — fixed and variable | Google Sheets | Hostaway has no idea what the lease is. Hand-entered by the team |
+| Claims | Google Sheets | Same — does not exist upstream |
+| Airbnb live price + ratings | Google Sheets | Scraped, not an API. Written by the Apps Script agent |
+| Pricing decisions + outcomes | Google Sheets | Our own derived history |
+
+**The credential cannot reach the browser.** A static site calling Hostaway directly would ship
+the account ID and API key in the JS bundle, and anyone with devtools would hold full read/write
+on the whole account — bookings, guest PII, pricing. So something server-side must hold the key
+and proxy the call.
+
+That something is **Apps Script**, which already holds it, is already authorised, and is already
+the API. One credential store, one auth boundary, one thing to rotate.
+
+Its 1–3 second response is acceptable *because of* §2c: reservations are fetched **once per
+session**, and every range change after that is computed in the browser. A slow call on load is
+fine; a slow call per interaction would not have been.
+
+**Live, with the sheet as fallback.** If the Hostaway call fails — rate limit, outage, expired
+key — the API serves the last good copy from `🧾 Reservations` and says so in `meta.source`. A
+screen showing yesterday's data labelled as yesterday's is useful; the same screen pretending to
+be live is not.
+
+### A licensing caveat that affects the $0 premise
+
+**Vercel's Hobby (free) plan is for non-commercial use.** This is a commercial property business.
+Static hosting on Hobby is a grey area many people live in, but it is worth knowing rather than
+discovering. The clean alternatives:
+
+- **Cloudflare Pages** — free tier permits commercial use outright.
+- **Vercel Pro** — ~$20/mo, which the client has said he will not pay.
+
+Either way, keep serverless functions out of it: the proxy lives in Apps Script precisely so the
+host can stay a dumb static CDN and be swapped in an afternoon.
+
 ## 2c. Graphs and dynamic ranges — where the arithmetic lives
 
 The app must let anyone drag a date range and see profit, revenue and occupancy redraw
@@ -207,7 +249,7 @@ Existing, populated, and live. Column names are the contract between Apps Script
 | Sheet | Role | Written by |
 |---|---|---|
 | `📊 Dashboard` | one row per unit: next gap, prices, ratings, occupancy | sync + AI agent |
-| `🧾 Reservations` | raw stay ledger: arrival, departure, booked-on, payout | ledger refresh |
+| `🧾 Reservations` | **fallback cache only** — live data comes from the Hostaway API | ledger refresh |
 | `💸 Costs` | dated variable costs, scoped to a unit or split across all | **hand-edited** |
 | `🏠 Fixed Monthly Costs` | per-unit monthly baseline | **hand-edited** |
 | `🗣️ Claims` | guest claims, severity-weighted | **hand-edited** |

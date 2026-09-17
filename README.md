@@ -11,23 +11,37 @@ costs and guest claims, and sends SMS alerts when something needs a decision.
 | Ingestion, scheduling, alerts | Google Apps Script | free |
 | Database | Google Sheets | free |
 | API | Apps Script Web App (`doGet`) | free |
-| Hosting, SSL, CDN | Vercel (static) | free |
+| Hosting, SSL, CDN | Vercel or Cloudflare Pages (static) | free¹ |
 | Domain | not yet — Vercel's free URL covers the demo | — |
 | Auth | Google Identity Services | free |
 | SMS | QUO (OpenPhone) | existing client account |
+
+¹ Vercel's free Hobby plan is licensed for non-commercial use; Cloudflare Pages' free tier
+permits commercial use. See `CONTEXT.md` §2bb before committing to a host.
 
 No server, no container, no managed database, nothing to keep patched.
 
 ## How it fits together
 
-Google Apps Script already holds the Hostaway credentials, runs on a timer, scrapes Airbnb for
-live prices and ratings, prorates costs and revenue, and sends SMS. Deploying that same script
-as a Web App turns it into a JSON API at no extra cost. The web app is a static React build that
-reads that API and renders it.
+Reservations, listings and calendars come **live from the Hostaway API** — they are Hostaway's
+data and caching them only adds staleness. Costs, claims, scraped Airbnb prices and the pricing
+decision log live in Google Sheets, because Hostaway has never heard of any of them and the team
+enters two of them by hand.
+
+Apps Script is what sits between. It already holds the Hostaway credentials, already runs on a
+timer and already sends SMS; deploying it as a Web App makes it the API too. The Hostaway key
+never reaches the browser — a static site calling Hostaway directly would ship full read/write
+access to the account in its JS bundle.
+
+The front end is a static React build. It fetches once per session and computes every date range
+in the browser, so dragging a range redraws instantly instead of waiting on a server.
 
 ```
-Hostaway ──► Apps Script ──► Google Sheets ──► doGet() JSON ──► React (Vercel)
+                  ┌── live ──► listings, calendar, reservations
+Hostaway ──► Apps Script ──┤
+                  │        └── Sheets ──► costs, claims, scraped prices, decisions
                   │
+                  ├──► doGet() JSON ──► React (static host)
                   └──► QUO / SMS alerts
 ```
 
