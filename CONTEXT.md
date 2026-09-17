@@ -33,6 +33,8 @@ That is a good spec for a funded build. It is not this build. See §4.
 | In scope | Notes |
 |---|---|
 | Profit per unit, per period | The headline. Every screen ends in a net number |
+| **Charts over time** | Net, revenue and occupancy by day/week/month — see §2c |
+| **Dynamic date ranges** | Drag or preset; everything redraws instantly, client-side |
 | Portfolio scoreboard vs target | Target is **derived**, never hardcoded — see §2b |
 | Forward pace, occupancy, peer pricing position | Diagnosis for the profit number |
 | **Expense entry by the team** | Fixed and variable. Multiple people, not just the owner |
@@ -66,6 +68,41 @@ three numbers.
 
 Any screen showing a target states the unit count it was computed from, so a number that moved
 because a unit went dark is legible as exactly that rather than looking like a data error.
+
+## 2c. Graphs and dynamic ranges — where the arithmetic lives
+
+The app must let anyone drag a date range and see profit, revenue and occupancy redraw
+immediately, with charts over time. That forces one decision, and it is the most consequential
+one in the project.
+
+**The API serves raw, period-free rows. The client does the proration.**
+
+The alternative — asking Apps Script to compute each requested range — cannot work. A Web App
+round trip is 1–3 seconds, a chart needs 30–90 buckets at once, and a dragged range would fire a
+request per frame. Serving `🧾 Reservations` and `💸 Costs` as they are and slicing them in the
+browser makes any range instant and any chart free.
+
+**The cost of that decision, stated plainly:** the proration arithmetic now exists twice — in
+`apps-script/Finance.js` for the sheet views, and in `apps/web/src/lib/finance.ts` for the app.
+Two implementations of "what did this unit earn" is two answers, which is exactly the thing this
+project refuses everywhere else.
+
+It is accepted here for one reason, and defended one way:
+
+- **Accepted** because the browser genuinely cannot ask the server 90 times, and the alternative
+  (an intermediate server that pre-computes) costs money we do not have.
+- **Defended** by `finance.test.ts`, which pins the TypeScript against worked examples taken
+  from the Apps Script behaviour — a straddling stay, a monthly lease spanning a boundary, a
+  general cost split across units, a $0-payout iCal block. If the two drift, a test fails rather
+  than a number quietly changing.
+
+Anything not on that list should be computed **once, server-side**, and served. Do not port
+more logic across than the charts actually need.
+
+**Range presets** live in one place (`ranges.ts`) and are shared by every screen: MTD, Last 30,
+Last 90, QTD, YTD, Last month, Custom. Bucket granularity is chosen from the span rather than
+picked by the user — up to ~31 days daily, up to ~120 weekly, beyond that monthly — because a
+two-year daily chart is 730 unreadable bars and nobody wants to choose.
 
 ## 3. Architecture
 
