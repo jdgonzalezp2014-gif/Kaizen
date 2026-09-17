@@ -1,312 +1,223 @@
 # Kaizen OS — session context
 
-**Read this first. It is the single source of truth for how this project is built and why.**
-It exists so a new session does not have to re-read the code, re-derive the architecture, or
-re-litigate decisions already made. Update it when a decision changes; do not let it drift.
+**Read this first.** It is the single source of truth for how this project is built and why. It
+exists so a new session does not re-read the code, re-derive the architecture, or re-argue
+decisions already made. Update it when a decision changes; do not let it drift.
 
 ---
 
 ## 1. What this is
 
-A short-term-rental management web app for Kaizen Guest Properties — ~27 units, currently run
-out of Hostaway plus a Google Sheet. It measures **profit per unit**, not occupancy, surfaces
-which units are mispriced, tracks costs and claims, and sends alerts by SMS.
+A short-term-rental management platform for Kaizen Guest Properties — ~27 units, currently run
+out of Hostaway plus a Google Sheet. It measures **profit per unit**, not occupancy, shows which
+units are mispriced, lets the team record costs and claims, and alerts by SMS.
 
-It replaces a daily manual Hostaway check.
+It is a product the client owns, on infrastructure the client controls. Not a spreadsheet.
 
-## 2. Hard constraints — these decide everything else
+## 2. The stack
 
-| Constraint | Consequence |
-|---|---|
-| **$0 running cost.** The client will not pay for infrastructure and payment for the build itself is not guaranteed. | No paid database, no paid host, no paid queue. Every piece must have a free tier that does not expire. |
-| **No server to operate.** | No always-on process. Scheduled work runs on Google's infrastructure, not ours. |
-| **The developer keeps control.** | Repo lives in the developer's GitHub account. Credentials are never committed. Handover is a transfer, not a discovery. |
-| **A working system already exists** (`../price-monitor`, Google Apps Script) | Do not rewrite what already works against the live Hostaway account. Wrap it. |
+| Layer | Choice | Free tier | Commercial use |
+|---|---|---|---|
+| Repo + scheduled jobs | **GitHub** + Actions | 2,000 min/mo private | yes |
+| App + API | **Next.js on Vercel** | Hobby | ⚠️ see §2a |
+| Database | **Neon** (Postgres) | 0.5 GB, always-free | yes |
+| Auth | **Auth.js** + Google provider | — | yes |
+| SMS | **QUO** (formerly OpenPhone) | client's account | — |
+| Domain / DNS | **Cloudflare** | registrar at cost | yes |
+| Email | **Resend** | 3k/mo | yes |
 
-The client's own spec (`docs/kaizen-os-spec.pdf`) proposes Supabase + Vercel + Twilio + Neon.
-That is a good spec for a funded build. It is not this build. See §4.
+This is essentially the stack the client asked for, and it is the right one. An earlier draft of
+this project routed around it with Google Apps Script and Sheets — that was a mistake born of
+over-reading the "no server" constraint. *Serverless functions are not a server.* A Vercel route
+holds a secret exactly as safely as Apps Script does, and the client ends up owning a real
+platform instead of inheriting a spreadsheet script.
 
-## 2a. Scope — what this app is and is not
+### 2a. The one licensing risk
 
-**It is an analytical surface with two data-entry paths.** Nothing else, for now.
+**Vercel's Hobby plan is licensed for non-commercial use**, and this is a commercial business.
+Many commercial projects run on it anyway; it is a risk to know, not necessarily to act on.
+The clean exits, in order of cost:
+
+1. **Cloudflare Pages + Workers** — free tier permits commercial use outright. Next.js runs
+   there via `@cloudflare/next-on-pages`.
+2. **Vercel Pro** — ~$20/mo.
+
+Everything in §3 is host-agnostic on purpose: API routes, a Postgres URL, and cron. Moving hosts
+is an afternoon.
+
+## 3. Architecture
+
+```
+┌── GitHub ─────────────────────────────────────────────────┐
+│  repo + Actions (cron: sync, scrape, alerts)              │
+└───────────────┬───────────────────────────────────────────┘
+                │
+┌── Vercel ─────▼───────────────────────────────────────────┐
+│  Next.js                                                   │
+│    app/           React Server Components, dashboards      │
+│    app/api/       route handlers — the ONLY place secrets  │
+│                   are read                                 │
+│    src/lib/       pure analytics: proration, ranges,       │
+│                   series. No network, no framework         │
+└───────┬───────────────────────────┬───────────────────────┘
+        │                           │
+  ┌─────▼──────┐            ┌───────▼────────┐
+  │  Hostaway  │            │  Neon Postgres │
+  │  (live)    │            │  costs, claims,│
+  │            │            │  decisions,    │
+  │            │            │  scraped prices│
+  └────────────┘            └────────────────┘
+```
+
+**Secrets live in exactly one place:** Vercel environment variables, read only inside
+`app/api/**` and in GitHub Actions. Nothing that runs in a browser ever sees a key. A static
+site calling Hostaway directly would ship the account ID and API key in its bundle, handing
+anyone with devtools full read/write on bookings and guest data.
+
+**`src/lib/` is pure.** No fetch, no React, no env. It takes rows and returns numbers, which is
+what makes it testable with `node src/lib/finance.test.ts` and portable if the host ever changes.
+
+## 4. Where each number comes from
+
+| Data | Source | Why |
+|---|---|---|
+| Listings, calendar, **reservations** | Hostaway API, live | Theirs. Caching only adds staleness and a refresh nobody presses |
+| Costs — fixed and variable | Postgres | Hostaway has no idea what the lease is. Entered by the team in-app |
+| Claims | Postgres | Same — does not exist upstream |
+| Airbnb live price + ratings | Postgres | Scraped by a scheduled job, not an API |
+| Pricing decisions + outcomes | Postgres | Our own derived history |
+
+## 5. Scope — what this is and is not
 
 | In scope | Notes |
 |---|---|
 | Profit per unit, per period | The headline. Every screen ends in a net number |
-| **Charts over time** | Net, revenue and occupancy by day/week/month — see §2c |
-| **Dynamic date ranges** | Drag or preset; everything redraws instantly, client-side |
-| Portfolio scoreboard vs target | Target is **derived**, never hardcoded — see §2b |
-| Forward pace, occupancy, peer pricing position | Diagnosis for the profit number |
-| **Expense entry by the team** | Fixed and variable. Multiple people, not just the owner |
-| **Claim entry by the team** | Guest claims with severity and cost |
+| Portfolio scoreboard vs target | Target is **computed**, never hardcoded — §6 |
+| Charts over time, draggable ranges | §7 |
+| Expense entry by the team | Fixed and variable, multiple people |
+| Claim entry by the team | Severity, cost, status |
 
 | Out of scope for now | Why |
 |---|---|
 | Outbound CRM | A product on its own |
 | Review dispute tracker | Needs per-platform review APIs we do not have |
-| Channel live/dark probing | Costly; the panel already flags unexported listings |
-| Agentic sending of anything | Agents draft. Humans send. Always |
+| Channel live/dark probing | Costly; low value until the basics are trusted |
+| Agents that send anything | Agents draft. Humans send. Always |
 
-**Later, explicitly wanted:** expense import from **Walmart and Amazon invoices**. Design the
-expense schema so a row can carry a source and an external reference now, so that import is a
-new writer against an unchanged table rather than a migration.
+**Wanted later, schema already allows it:** expense import from Walmart and Amazon invoices. The
+`expenses` table carries `source` and `external_ref` from day one, so that import is a new writer
+against an unchanged table rather than a migration.
 
-## 2b. Units and targets are variables, never constants
+## 6. Units and targets are variables, never constants
 
-The client's PDF prints *"22 live units × $1,500/mo = $33,000"*. Do not hardcode any of those
-three numbers.
+The client's spec prints *"22 live units × $1,500/mo = $33,000"*. Do not hardcode any of the
+three.
 
-- **Units go on and off.** Some are currently inactive. The live count is derived at read time
-  from `📊 Dashboard` (an inactive unit shows `⚪` in its vacancy column) — never counted by hand,
-  never stored.
-- **The per-unit target is config** (`TARGET_NET_PER_UNIT`), editable without a deploy.
-- **The portfolio target is computed**: `active units × per-unit target`. It moves when a unit is
-  taken offline, which is the correct behaviour — a portfolio of 20 should not be measured
-  against a target set for 27.
-- **Revenue is likewise never a constant.** It is always read for a stated period from the
-  reservation ledger.
+- **Units go on and off.** The live count is derived at read time from Hostaway (`isListingActive`),
+  never counted by hand, never stored.
+- **The per-unit target is config**, editable without a deploy.
+- **The portfolio target is their product**, so taking a unit offline moves the target instead of
+  making the portfolio look like it missed.
+- **Monthly targets scale to the period.** Eleven days judged against a month's target is a
+  guaranteed red that means nothing.
 
-Any screen showing a target states the unit count it was computed from, so a number that moved
-because a unit went dark is legible as exactly that rather than looking like a data error.
+Every screen showing a target states the unit count it was computed from.
 
-## 2bb. Where each number actually comes from
+## 7. Graphs and dynamic ranges
 
-Hostaway is the system of record for everything it already knows. Do not cache what can be
-fetched, and do not fetch what Hostaway has never heard of.
+The browser fetches once per session and computes every range itself. Dragging a date range must
+not hit the network — a chart needs 30–90 buckets and a slider fires per frame.
 
-| Data | Source | Why |
-|---|---|---|
-| Listings, calendar, **reservations** | **Hostaway API, live** | It is theirs. A cached copy only adds staleness and a "refresh" button nobody remembers to press |
-| Costs — fixed and variable | Google Sheets | Hostaway has no idea what the lease is. Hand-entered by the team |
-| Claims | Google Sheets | Same — does not exist upstream |
-| Airbnb live price + ratings | Google Sheets | Scraped, not an API. Written by the Apps Script agent |
-| Pricing decisions + outcomes | Google Sheets | Our own derived history |
+- Presets live in `src/lib/ranges.ts` and are shared by every screen: MTD, Last 30, Last 90,
+  Last month, QTD, YTD, Custom.
+- **Bucket granularity is derived from the span**, not offered: ≤31 days daily, ≤120 weekly,
+  beyond that monthly. Two years of daily bars is 730 unreadable bars.
+- **Buckets clip to the range**, so a part-month reports the part it covers.
+- **Partial buckets are flagged**, so a chart can draw the still-filling last bucket differently
+  instead of appearing to collapse at its right edge.
 
-**The credential cannot reach the browser.** A static site calling Hostaway directly would ship
-the account ID and API key in the JS bundle, and anyone with devtools would hold full read/write
-on the whole account — bookings, guest PII, pricing. So something server-side must hold the key
-and proxy the call.
+## 8. Database
 
-That something is **Apps Script**, which already holds it, is already authorised, and is already
-the API. One credential store, one auth boundary, one thing to rotate.
-
-Its 1–3 second response is acceptable *because of* §2c: reservations are fetched **once per
-session**, and every range change after that is computed in the browser. A slow call on load is
-fine; a slow call per interaction would not have been.
-
-**Live, with the sheet as fallback.** If the Hostaway call fails — rate limit, outage, expired
-key — the API serves the last good copy from `🧾 Reservations` and says so in `meta.source`. A
-screen showing yesterday's data labelled as yesterday's is useful; the same screen pretending to
-be live is not.
-
-### A licensing caveat that affects the $0 premise
-
-**Vercel's Hobby (free) plan is for non-commercial use.** This is a commercial property business.
-Static hosting on Hobby is a grey area many people live in, but it is worth knowing rather than
-discovering. The clean alternatives:
-
-- **Cloudflare Pages** — free tier permits commercial use outright.
-- **Vercel Pro** — ~$20/mo, which the client has said he will not pay.
-
-Either way, keep serverless functions out of it: the proxy lives in Apps Script precisely so the
-host can stay a dumb static CDN and be swapped in an afternoon.
-
-## 2c. Graphs and dynamic ranges — where the arithmetic lives
-
-The app must let anyone drag a date range and see profit, revenue and occupancy redraw
-immediately, with charts over time. That forces one decision, and it is the most consequential
-one in the project.
-
-**The API serves raw, period-free rows. The client does the proration.**
-
-The alternative — asking Apps Script to compute each requested range — cannot work. A Web App
-round trip is 1–3 seconds, a chart needs 30–90 buckets at once, and a dragged range would fire a
-request per frame. Serving `🧾 Reservations` and `💸 Costs` as they are and slicing them in the
-browser makes any range instant and any chart free.
-
-**The cost of that decision, stated plainly:** the proration arithmetic now exists twice — in
-`apps-script/Finance.js` for the sheet views, and in `apps/web/src/lib/finance.ts` for the app.
-Two implementations of "what did this unit earn" is two answers, which is exactly the thing this
-project refuses everywhere else.
-
-It is accepted here for one reason, and defended one way:
-
-- **Accepted** because the browser genuinely cannot ask the server 90 times, and the alternative
-  (an intermediate server that pre-computes) costs money we do not have.
-- **Defended** by `finance.test.ts`, which pins the TypeScript against worked examples taken
-  from the Apps Script behaviour — a straddling stay, a monthly lease spanning a boundary, a
-  general cost split across units, a $0-payout iCal block. If the two drift, a test fails rather
-  than a number quietly changing.
-
-Anything not on that list should be computed **once, server-side**, and served. Do not port
-more logic across than the charts actually need.
-
-**Range presets** live in one place (`ranges.ts`) and are shared by every screen: MTD, Last 30,
-Last 90, QTD, YTD, Last month, Custom. Bucket granularity is chosen from the span rather than
-picked by the user — up to ~31 days daily, up to ~120 weekly, beyond that monthly — because a
-two-year daily chart is 730 unreadable bars and nobody wants to choose.
-
-## 3. Architecture
+Postgres on Neon. Migrations in `db/migrations/`, plain SQL, applied in order.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│  GOOGLE (free, already working, already authenticated)      │
-│                                                             │
-│   Hostaway API ──► Apps Script ──► Google Sheets            │
-│                    · time triggers (cron)   (the database)  │
-│                    · Airbnb scraping                        │
-│                    · profit / proration                     │
-│                    · QUO (OpenPhone) SMS alerts             │
-│                         │                                   │
-│                         └──► doGet() Web App = JSON API     │
-└─────────────────────────────┬───────────────────────────────┘
-                              │  HTTPS, Google-account gated
-┌─────────────────────────────▼───────────────────────────────┐
-│  VERCEL (free static hosting + SSL)                         │
-│                                                             │
-│   React + TypeScript + Vite  ── read-only dashboards        │
-│   Google Identity Services   ── sign-in, email allowlist    │
-└─────────────────────────────────────────────────────────────┘
+units              mirrors Hostaway listings; cached for joins, refreshed by the sync
+expenses           id, unit_id (null = shared), start_date, end_date, category,
+                   frequency, amount, source, external_ref, notes, created_by, created_at
+claims             id, unit_id, date, category, severity, status, description,
+                   refund, repair_cost, resolved_on, created_by, created_at
+price_observations unit_id, observed_at, hostaway_rate, airbnb_rate, stay_nights, window_start
+pricing_decisions  unit_id, detected_at, old_price, new_price, context jsonb,
+                   outcome, days_to_book, resolved_at
 ```
 
-**Google Sheets is the database.** Not a compromise to apologise for: the data is a few thousand
-rows, the client already lives in Sheets, non-technical staff must be able to edit costs and
-claims by hand, and it costs nothing forever.
+**Append-only where it matters.** `expenses`, `claims`, `price_observations` and
+`pricing_decisions` are never updated in place except to resolve an outcome. A retry cannot
+double-count and yesterday's dashboard stays reproducible.
 
-**Apps Script is the backend.** It already holds the Hostaway credentials, already runs on a
-timer, already scrapes Airbnb, and already sends SMS. Deploying it additionally as a Web App
-turns it into a free JSON API with zero new infrastructure.
+## 9. What carries over from `../price-monitor`
 
-**The web app is static.** It builds to HTML/JS/CSS and is served from a CDN. There is no server
-to pay for, patch, or restart.
+A working Apps Script panel against the live Hostaway account. **Port the logic; do not port the
+platform.** These are proven against real data and worth reading before rewriting:
 
-## 4. Why not the client's stack
-
-Say this plainly if asked; do not be defensive about it.
-
-| Their choice | What we do | Why |
-|---|---|---|
-| Neon (Postgres) | Google Sheets | ~3k rows. Staff must hand-edit costs and claims. Postgres would need an admin UI built on top of it just to match what Sheets does for free. |
-| Vercel / Render | **Vercel**, static only | Agreed — free tier, zero config for a Vite build, and the developer already knows it. What we do *not* use is its serverless functions or cron: those exist on Apps Script already, credentialed. |
-| Vercel cron | Apps Script triggers | Already built, already running, free, and it already has the Hostaway credentials. |
-| Twilio / WhatsApp | QUO (OpenPhone) | Already integrated and paid for by the client. Character handling is already written and tested. |
-| Resend | Apps Script `MailApp` | Free quota is ample at this volume. |
-| Next.js | Vite + React + TS | Static output. Next.js earns its keep with server rendering, and there is no server. |
-| Supabase Auth | Google Identity Services | Free, and the client asked for Google Sign-in specifically. |
-
-**What we give up, honestly:** concurrent writers (Sheets serialises), sub-second queries at
-large scale, and row-level security enforced by a database. None of those bind at 27 units.
-If the portfolio reaches a few hundred units, the migration path is Sheets → Postgres behind the
-same JSON API, and the web app does not change.
-
-## 5. Security — the one thing to get right
-
-Financial data must not be on a public URL. **Do not use "Publish to web" CSV for anything with
-money in it** — that URL is readable by anyone who has it, forever, with no audit trail.
-
-Instead: the Apps Script Web App is deployed as
-
-- **Execute as:** the user accessing the web app
-- **Who has access:** anyone with a Google account
-
-and `doGet` checks `Session.getEffectiveUser().getEmail()` against an allowlist held in Script
-Properties. The Sheet is shared with those same accounts. An unlisted account gets a 403, and
-Google does the authentication.
-
-Trade-off: every viewer needs a Google account and read access to the Sheet. At this team size
-that is a feature, not a cost.
-
-## 6. What carries over from `../price-monitor`
-
-That project is a working Apps Script panel against the live Hostaway account. **Reuse it; do not
-rewrite it.** These parts are proven against real data:
-
-| Keep | Why it is worth keeping |
+| From | Worth keeping because |
 |---|---|
-| `Code.js` — Hostaway auth, calendar fetch, vacancy/urgency/occupancy | Handles an API that ignores its own filter params; caches which URL spelling works (`CAL_VARIANT`) |
-| `Finance.js` — cost proration, reservation ledger | Splits a stay or a monthly lease across a window boundary correctly. Guards $0-payout iCal blocks that used to produce negative revenue |
-| `Agent.js` + `Checkout.js` + `Ratings.js` — Airbnb live price + ratings | Works. Do not touch. The client explicitly values this |
-| `Notify.js` — QUO/SMS + the alert signal model | GSM-7 character folding and segment counting are done and tested |
-| `PriceSuggest.js` — peer-based pricing | Prices each unit against comparable units in the same portfolio. No scraping needed |
-| `Decisions.js` — the decision log | Detects price changes and records outcomes. This is the PDF's "how agents earn autonomy" table, already built |
-| `Market.js` — Airbnb comp scraping | Fragile (Airbnb DOM, undocumented ids). Manual-only sanity check. Low priority |
+| `Code.js` — Hostaway auth, calendar fetch | The API ignores its own filter params; the code re-clamps results and caches which URL spelling works |
+| `Finance.js` — proration, reservation handling | Already ported to `src/lib/finance.ts` with tests |
+| `Agent.js` / `Checkout.js` / `Ratings.js` | Airbnb price + rating scraping ladder. Fiddly, works |
+| `Notify.js` — QUO/SMS | GSM-7 folding and segment counting, already debugged |
+| `PriceSuggest.js` — peer pricing | Prices each unit against comparable units in the same portfolio. No scraping needed |
+| `Decisions.js` — the decision log | Detects price changes, records outcomes |
 
-**What was learned the hard way there — do not rediscover:**
+**Hard-won lessons that still apply** (the rest were Apps Script quirks and are now irrelevant):
 
-- Apps Script evaluates files in project order; a top-level `const` referencing a constant from a
-  later file throws at load and the whole project fails silently with no menus. Cross-file
-  constants go behind a function.
-- `sheet.clear()` does not remove merges or frozen panes.
-- You cannot freeze a column that holds part of a merged cell.
-- `setValues` treats a leading `=` as a formula — batch hyperlinks, never `setFormula` per cell.
-- Airbnb search with dates shows **whole-stay totals**, not nightly rates.
-- A simple `onOpen` trigger cannot touch `PropertiesService`.
+- Airbnb search results with dates show **whole-stay totals**, not nightly rates.
+- Hostaway reservations with `totalPrice = 0` are iCal blocks and owner stays; the listing's
+  default cleaning fee still resolves, and subtracting it invents negative revenue.
+- Hostaway `propertyTypeId` is opaque per account — id 1 and 2 on this account mean apartment and
+  house, confirmed against the listings themselves.
+- Airbnb says "Entire condo" for most US apartments; matching on exact type strings throws away
+  most of the real comp set.
 
-## 7. Data model — sheets are tables
+## 10. Decisions already made — do not re-open without a reason
 
-Existing, populated, and live. Column names are the contract between Apps Script and the web app.
-
-| Sheet | Role | Written by |
-|---|---|---|
-| `📊 Dashboard` | one row per unit: next gap, prices, ratings, occupancy | sync + AI agent |
-| `🧾 Reservations` | **fallback cache only** — live data comes from the Hostaway API | ledger refresh |
-| `💸 Costs` | dated variable costs, scoped to a unit or split across all | **hand-edited** |
-| `🏠 Fixed Monthly Costs` | per-unit monthly baseline | **hand-edited** |
-| `🗣️ Claims` | guest claims, severity-weighted | **hand-edited** |
-| `🧠 Pricing Decisions` | detected price changes + outcomes | sync |
-| `💡 Price Suggestions` | peer-based advisory | on demand |
-| `🔗 Listing Links` | platform URLs per unit | menu |
-
-## 8. Decisions already made — do not re-open without a reason
-
-1. **Sheets is the database.** Revisit only above ~200 units or if concurrent editing breaks.
-2. **Apps Script is the API.** No separate backend.
-3. **Writes are narrow and append-only.** The team records expenses and claims through the app;
-   everything else is read-only. Appending never rewrites an existing row, so a retry cannot
-   double-count and yesterday's numbers stay reproducible. Do not build a general CRUD layer.
-4. **Profit is the headline metric**, not occupancy. Every screen ends in a net number.
-   (This is the one idea from the client's PDF worth taking wholesale.)
-5. **Agents draft, humans send.** Nothing writes a price to Hostaway. Ever. Autonomy is earned
-   through the decision log.
+1. **Postgres, not Sheets.** The client owns the platform. Hand-entry happens through app forms.
+2. **Secrets only in API routes and Actions.** Never in a component, never in a public env var.
+3. **`src/lib/` stays pure.** No fetch, no framework. It is the part that outlives host choices.
+4. **Profit is the headline**, not occupancy. Every screen ends in a net number.
+5. **Agents draft, humans send.** Nothing writes a price to Hostaway. Autonomy is earned through
+   the decision log.
 6. **Alert on change, not on state.** Fire once when a condition begins, once when it resolves.
-7. **Build the ugly working version first.** The client's own spec puts the visual layer last,
-   deliberately — it is right about that.
+7. **Ugly and working before pretty.** The client's own spec puts the visual layer last.
 
-## 9. Build order
+## 11. Build order
 
 | Phase | Ships | Status |
 |---|---|---|
-| 0 | Apps Script `doGet` JSON API + allowlist | **done** — `apps-script/Api.js` |
-| 0b | `doPost` append-only writer for expenses and claims | **done** — same file |
-| 1 | Vite + React + TS shell, Google sign-in, reads the API | **next** |
-| 2 | Money screen: derived scoreboard → per-unit tile → per-unit P&L | |
-| 3 | Expense + claim entry forms | |
-| 4 | Deploy to Vercel | |
-| 5 | Performance: forward pace, peer position, the two failure patterns | |
-| 6 | Decision log view — what earns automation later | |
+| 0 | `src/lib/` analytics — proration, ranges, series | **done**, tested |
+| 1 | Next.js scaffold, Auth.js + Google, Neon connected, migrations | **next** |
+| 2 | Hostaway client in `src/lib/hostaway.ts` + `/api/portfolio` | |
+| 3 | Money screen: scoreboard → per-unit tile → per-unit P&L | |
+| 4 | Expense + claim entry forms | |
+| 5 | Charts and range control | |
+| 6 | GitHub Action: nightly sync, scrape, QUO alerts | |
+| 7 | Decision log view | |
 
-Phases 1–4 are the demo. Everything after is earned.
+Phases 1–5 are the demo.
 
-**Deliberately not scheduled:** Walmart/Amazon invoice import. The schema is ready for it
-(§2a); building it before anyone has entered a single expense by hand would be guessing at a
-workflow nobody has performed yet.
+## 12. Open questions — need a human, do not guess
 
-## 10. Open questions — need a human, do not guess
+- Neon project and connection string — who creates it.
+- Which Google accounts may sign in.
+- Domain: none yet. Vercel's free URL is enough until the client has seen it work.
+- `TARGET_NET_PER_UNIT` — the spec says $1,500; confirm it is current.
+- The spec says 22 units; Hostaway returns 27. Confirm before it goes on a screen.
+- Ownership and payment terms. **Not a technical question — do not resolve it in code.**
 
-- Does the client want the existing Google Sheet used directly, or a fresh copy?
-- Which Google accounts go on the allowlist?
-- **No domain yet.** Vercel gives a free `*.vercel.app` URL, which is enough for the demo. Buy a
-  domain only once the client has seen it working.
-- Ownership and licence: repo is under the developer's account pending payment terms. **Not a
-  technical question — do not resolve it in code.**
+## 13. Conventions
 
-## 11. Conventions for future sessions
-
-- **Comments explain *why*, never *what*.** Match the density in `../price-monitor` — that
-  codebase documents its own bugs and reversals, and that is deliberate.
-- **Verify before building on it.** Static checks do not catch load-time or spreadsheet-layout
-  failures. If a layer has never run, say so rather than stacking another on top.
-- **Delete work that nothing reads.** Several features in the reference project were built,
-  measured, and removed. That is normal, not failure.
-- **State limitations plainly in the UI**, not just in code comments. A number whose basis is
-  thin should say so on screen.
+- **Comments explain *why*, never *what*.**
+- **Verify before building on it.** Static checks do not catch runtime or layout failures. If a
+  layer has never run, say so rather than stacking another on top.
+- **Delete work that nothing reads.**
+- **State limitations in the UI**, not only in comments. A number whose basis is thin says so.
