@@ -260,9 +260,8 @@ platform.** These are proven against real data and worth reading before rewritin
 | 3b | Settings screen — credentials, targets, sync | **done** |
 | 3c | CSV import for existing costs and claims spreadsheets | **done** |
 | 4 | Connect GitHub → Cloudflare Pages, enable Access | needs a human |
-| 5 | Money screen: scoreboard → per-unit tile → per-unit P&L | |
+| 5 | Money screen: scoreboard, net by unit, net over time | **done** |
 | 6 | Expense + claim entry forms | |
-| 7 | Charts and range control | |
 | 8 | GitHub Action: nightly scrape + QUO alerts | |
 | 9 | Decision log view | |
 
@@ -283,4 +282,14 @@ Phases 2–3 are account setup, not code. Everything after is the demo.
 - **Verify before building on it.** Static checks do not catch runtime or layout failures. If a
   layer has never run, say so rather than stacking another on top.
 - **Delete work that nothing reads.**
-- **State limitations in the UI**, not only in comments. A number whose basis is thin says so.
+- **State limitations in the UI**, not only in comments. A number whose basis is thin says so. The
+  Money screen refuses to show a clean green board when no costs are recorded — it says net is
+  revenue only, because a board that means "we have not entered our expenses" is worse than none.
+- **Charts follow `dataviz`.** Status colours are the validated trio (`#0ca30c` / `#fab219` /
+  `#d03b3b`) and always ship an icon and a word: warning sits below 3:1 on a light surface by
+  design, so colour never carries meaning alone. Bucket granularity comes from the range length,
+  partial buckets are hatched rather than hidden, and axis labels are selective.
+- **"It deployed" and "it works" are different claims.** Three times now something typechecked,
+  built and was wrong in a way only a real request could show: two Apps Script load-time crashes
+  and an auth helper that failed open. Static checks verify the code does what it says; they
+  cannot tell you the assumption underneath was false.

@@ -1,12 +1,11 @@
 import { useState } from 'react';
+import { Money } from './screens/Money.tsx';
 import { Settings } from './screens/Settings.tsx';
 
 type Tab = 'money' | 'settings';
 
 export function App() {
-  // Settings first, deliberately: nothing else works until a host has
-  // connected their Hostaway account.
-  const [tab, setTab] = useState<Tab>('settings');
+  const [tab, setTab] = useState<Tab>('money');
 
   return (
     <main>
@@ -21,14 +20,7 @@ export function App() {
         </nav>
       </header>
 
-      {tab === 'settings' ? <Settings /> : (
-        <div className="card">
-          <p className="note">
-            Not built yet. The analytics core is written and tested; this screen renders it once
-            units are synced.
-          </p>
-        </div>
-      )}
+      {tab === 'settings' ? <Settings /> : <Money />}
     </main>
   );
 }

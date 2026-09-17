@@ -56,3 +56,72 @@ table { width: 100%; border-collapse: collapse; margin-top: 12px; font-size: 12.
 th { text-align: left; color: var(--muted); font-weight: 600; padding: 5px 0; border-bottom: 1px solid var(--line); }
 td { padding: 5px 0; border-bottom: 1px solid var(--line); }
 @media (max-width: 640px) { header { flex-direction: column; align-items: flex-start; gap: 14px; } }
+
+/* ── chart palette ────────────────────────────────────────────────────
+   Status steps from the validated reference palette. Warning and serious
+   sit below 3:1 on a light surface by design, so every band ships an
+   icon and a word — colour never carries the meaning alone. */
+:root {
+  --good: #0ca30c;
+  --warn: #fab219;
+  --crit: #d03b3b;
+  --series-1: #2a78d6;
+  --grid: color-mix(in srgb, currentColor 12%, transparent);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --series-1: #3987e5; }
+}
+
+.filters { display: flex; justify-content: space-between; gap: 14px;
+  flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
+.presets { display: flex; gap: 5px; flex-wrap: wrap; }
+.chip { background: transparent; border: 1px solid var(--line); color: var(--muted);
+  padding: 6px 11px; border-radius: 999px; font-size: 12px; cursor: pointer; font-weight: 500; }
+.chip.active { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+.dates { display: flex; gap: 7px; align-items: center; color: var(--muted); font-size: 12px; }
+.dates input { width: auto; margin: 0; padding: 6px 9px; }
+
+.hero { display: flex; justify-content: space-between; gap: 26px; flex-wrap: wrap; }
+.hero-label { font-size: 12px; color: var(--muted); margin: 0 0 4px; }
+.hero-value { font-size: 34px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.02em; }
+.stats { display: flex; gap: 22px; margin: 0; flex-wrap: wrap; align-items: flex-start; }
+.stats div { margin: 0; }
+.stats dt { font-size: 11px; color: var(--muted); margin-bottom: 3px; }
+.stats dd { margin: 0; font-size: 17px; font-weight: 600; font-variant-numeric: tabular-nums; }
+
+/* Per-unit bars. 4px rounded data-ends anchored to the baseline. */
+.bars { margin-top: 12px; }
+.bar-row { display: grid; grid-template-columns: 148px 1fr 92px 152px;
+  gap: 12px; align-items: center; padding: 5px 0; font-size: 12.5px; }
+.bar-name { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { position: relative; height: 16px; }
+.bar-zero { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--grid); }
+.bar-fill { position: absolute; top: 3px; bottom: 3px; border-radius: 0 4px 4px 0; }
+.bar-fill.green { background: var(--good); }
+.bar-fill.amber { background: var(--warn); }
+.bar-fill.red   { background: var(--crit); border-radius: 4px 0 0 4px; }
+.bar-value { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
+.tag { font-size: 11px; color: var(--muted); white-space: nowrap; }
+.tag.green span { color: var(--good); }
+.tag.amber span { color: var(--warn); }
+.tag.red span   { color: var(--crit); }
+
+/* Net over time. 2px surface gap between adjacent bars. */
+.chart { margin-top: 14px; }
+.plot { position: relative; display: flex; align-items: flex-end; gap: 2px;
+  height: 160px; border-bottom: 1px solid var(--grid); }
+.col { flex: 1; height: 100%; display: flex; flex-direction: column; justify-content: flex-end; }
+.col-fill { border-radius: 4px 4px 0 0; background: var(--series-1); }
+.col-fill.neg { background: var(--crit); align-self: flex-end; border-radius: 0 0 4px 4px; }
+.col-fill.partial {
+  background-image: repeating-linear-gradient(45deg,
+    transparent 0 3px, color-mix(in srgb, var(--bg) 55%, transparent) 3px 6px);
+}
+.axis { display: flex; gap: 2px; margin-top: 6px; }
+.axis span { flex: 1; font-size: 10px; color: var(--muted); text-align: center;
+  overflow: hidden; white-space: nowrap; }
+@media (max-width: 720px) {
+  .bar-row { grid-template-columns: 108px 1fr 80px; }
+  .bar-row .tag { display: none; }   /* value + length still carry it */
+  .hero { flex-direction: column; gap: 16px; }
+}
