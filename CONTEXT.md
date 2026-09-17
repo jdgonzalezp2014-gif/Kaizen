@@ -147,7 +147,17 @@ not hit the network — a chart needs 30–90 buckets and a slider fires per fra
 
 ## 8. Database
 
-Postgres on Neon. Migrations in `db/migrations/`, plain SQL, applied in order.
+Postgres on Neon — project `frosty-math-62141251`, branch `production`.
+
+Migrations are plain SQL in `db/migrations/`, applied in filename order by `npm run migrate`.
+The runner records what it applied in `_migrations`, so re-running is a no-op — a migration you
+are afraid to run twice is one nobody runs at all. Each file runs in a transaction, so a syntax
+error halfway down leaves no half-built schema.
+
+It connects on `DATABASE_URL_UNPOOLED`: Neon's pooler multiplexes sessions and DDL wants one to
+itself. `neon link` writes both URLs into `.env.local`, which is gitignored.
+
+**Applied:** `001_init.sql` — 7 tables, 14 indexes, 3 seeded config rows.
 
 ```
 units              mirrors Hostaway listings; cached for joins, refreshed by the sync
@@ -205,13 +215,14 @@ platform.** These are proven against real data and worth reading before rewritin
 |---|---|---|
 | 0 | `src/lib/` analytics — proration, ranges, series | **done**, tested |
 | 1 | Vite scaffold, Pages Functions, Hostaway client, `/api/portfolio` | **done**, builds |
-| 2 | Neon project, run `db/migrations/001_init.sql`, set secrets | **next — needs a human** |
-| 3 | Connect GitHub → Cloudflare Pages, enable Access | needs a human |
-| 4 | Money screen: scoreboard → per-unit tile → per-unit P&L | |
-| 5 | Expense + claim entry forms | |
-| 6 | Charts and range control | |
-| 7 | GitHub Action: nightly scrape + QUO alerts | |
-| 8 | Decision log view | |
+| 2 | Neon project linked, schema applied, migration runner | **done** |
+| 3 | `/api/sync-units` — populate `units` from Hostaway | **next** |
+| 4 | Connect GitHub → Cloudflare Pages, enable Access | needs a human |
+| 5 | Money screen: scoreboard → per-unit tile → per-unit P&L | |
+| 6 | Expense + claim entry forms | |
+| 7 | Charts and range control | |
+| 8 | GitHub Action: nightly scrape + QUO alerts | |
+| 9 | Decision log view | |
 
 Phases 2–3 are account setup, not code. Everything after is the demo.
 

@@ -7,7 +7,9 @@
     "build": "tsc --noEmit && vite build",
     "preview": "wrangler pages dev dist",
     "deploy": "wrangler pages deploy dist",
-    "test": "node --test src/lib/*.test.ts functions/_lib/*.test.ts"
+    "test": "node --test src/lib/*.test.ts functions/_lib/*.test.ts",
+    "migrate": "node --env-file=.env.local scripts/migrate.mjs",
+    "migrate:dry": "node --env-file=.env.local scripts/migrate.mjs --dry"
   },
   "dependencies": {
     "@neon/config": "^1.7.1",
