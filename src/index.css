@@ -35,10 +35,18 @@ nav { display: flex; gap: 6px; }
 .card h2 { font-size: 15px; margin: 0 0 6px; }
 label { display: block; font-size: 12.5px; color: var(--muted); margin: 14px 0 0; }
 label.check { display: flex; gap: 8px; align-items: center; margin-top: 14px; }
+/* Base field. Deliberately NOT full-width by default: a global
+   `display:block; width:100%` made every inline control — a month
+   picker, a day count — span the whole page and push its own buttons
+   onto the next line. Stacked forms opt in through `label > input`. */
 input, select, textarea {
-  display: block; width: 100%; margin-top: 5px; padding: 8px 10px;
-  border: 1px solid var(--line); border-radius: 7px;
+  padding: 8px 10px; border: 1px solid var(--line); border-radius: 7px;
   background: var(--bg); color: var(--ink); font: inherit; font-size: 13px;
+  max-width: 100%;
+}
+label > input, label > select, label > textarea { display: block; width: 100%; margin-top: 5px; }
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 2px solid var(--series-1); outline-offset: 1px; border-color: transparent;
 }
 label.check input { width: auto; margin: 0; }
 textarea { font-family: ui-monospace, monospace; font-size: 12px; margin-top: 14px; }
@@ -260,3 +268,123 @@ table.matrix td.cell input.amt:hover { border-color: var(--line); }
 table.matrix td.cell input.amt:focus { border-color: var(--series-1); background: var(--card); outline: none; }
 button.link.tiny { font-size: 11px; opacity: .45; padding: 0 2px; }
 button.link.tiny:hover { opacity: 1; }
+
+/* ════════════════════════════════════════════════════════════════════
+   Design layer
+   ════════════════════════════════════════════════════════════════════ */
+
+:root {
+  --r: 10px;                 /* one corner radius, used everywhere */
+  --pad: 18px;
+  --shadow: 0 1px 2px rgba(0,0,0,.05), 0 1px 3px rgba(0,0,0,.04);
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --shadow: 0 1px 2px rgba(0,0,0,.3); }
+}
+
+body { -webkit-font-smoothing: antialiased; line-height: 1.5; }
+main { max-width: 1180px; }
+
+/* Header: the product name recedes once you are inside the product. */
+header { border-bottom: 1px solid var(--line); padding-bottom: 16px; margin-bottom: 24px; }
+h1 { font-size: 17px; letter-spacing: -0.01em; font-weight: 650; }
+.sub { margin-bottom: 0; font-size: 12.5px; }
+.tab { font-weight: 550; transition: background .12s, color .12s, border-color .12s; }
+.tab:hover:not(.active) { border-color: var(--muted); color: var(--ink); }
+
+/* A control bar reads as one object: fields sized to their content and
+   sitting on a tinted strip, rather than loose inputs on the page. */
+.row-controls, .subtabs {
+  display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+  background: var(--tint); border: 1px solid var(--line);
+  border-radius: var(--r); padding: 10px 12px; margin-bottom: 16px;
+}
+.row-controls input[type="date"], .row-controls input[type="month"] { width: auto; }
+.row-controls select { width: auto; }
+.row-controls .ghost { padding: 6px 11px; }
+.subtabs { display: inline-flex; }
+
+/* Section headings carry the weight so the tables do not have to. */
+.group { margin-top: 30px; }
+.group:first-of-type { margin-top: 20px; }
+.group h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); font-weight: 650; }
+.group h3 .count { background: var(--tint); border: 1px solid var(--line); }
+
+/* ── portfolio summary strip ──────────────────────────────────────── */
+.strip { display: flex; gap: 0; flex-wrap: wrap; background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--r); overflow: hidden;
+  box-shadow: var(--shadow); margin-bottom: 20px; }
+.strip > div { flex: 1 1 130px; padding: 14px 16px; border-right: 1px solid var(--line); }
+.strip > div:last-child { border-right: 0; }
+.strip dt { font-size: 11px; color: var(--muted); margin-bottom: 4px;
+  text-transform: uppercase; letter-spacing: .04em; }
+.strip dd { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums; }
+.strip dd small { font-size: 12px; font-weight: 500; color: var(--muted); margin-left: 4px; }
+
+/* ── unit cards ───────────────────────────────────────────────────── */
+.ucard { background: var(--card); border: 1px solid var(--line); border-radius: var(--r);
+  padding: var(--pad); margin-bottom: 10px; box-shadow: var(--shadow);
+  border-left: 3px solid transparent; }
+.ucard.tone-bad  { border-left-color: var(--crit); }
+.ucard.tone-warn { border-left-color: var(--warn); }
+.ucard.tone-ok   { border-left-color: var(--good); }
+.ucard-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; }
+.ucard-head h4 { margin: 0; font-size: 15px; font-weight: 620; letter-spacing: -0.01em; }
+.ucard-head .meta { font-size: 12px; color: var(--muted); }
+
+/* The occupancy bar with a tick at the portfolio median. One axis, one
+   reference line — the comparison is the point, not the absolute value. */
+.occbar { position: relative; height: 8px; background: var(--tint);
+  border-radius: 4px; margin: 12px 0 10px; overflow: visible; }
+.occbar .fill { position: absolute; inset: 0 auto 0 0; border-radius: 4px; background: var(--series-1); }
+.occbar.tone-bad  .fill { background: var(--crit); }
+.occbar.tone-warn .fill { background: var(--warn); }
+.occbar.tone-ok   .fill { background: var(--good); }
+.occbar .median { position: absolute; top: -3px; bottom: -3px; width: 2px;
+  background: var(--ink); opacity: .55; border-radius: 1px; }
+.occbar-legend { display: flex; justify-content: space-between; font-size: 11px;
+  color: var(--muted); margin-top: -6px; margin-bottom: 10px; }
+
+.umetrics { display: flex; gap: 22px; flex-wrap: wrap; margin: 0 0 10px; }
+.umetrics div { margin: 0; }
+.umetrics dt { font-size: 10.5px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .04em; margin-bottom: 2px; }
+.umetrics dd { margin: 0; font-size: 15px; font-weight: 620; font-variant-numeric: tabular-nums; }
+.umetrics dd .unit { font-size: 11px; font-weight: 500; color: var(--muted); }
+
+/* Signals: an icon and a sentence. Colour is never the message. */
+.signals { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 5px; }
+.signals li { font-size: 12.5px; display: flex; gap: 7px; align-items: flex-start; line-height: 1.45; }
+.signals li i { font-style: normal; flex: none; width: 14px; text-align: center; }
+.signals li.bad  i { color: var(--crit); }
+.signals li.warn i { color: var(--warn); }
+.signals li.info i { color: var(--series-1); }
+.signals li.info { color: var(--muted); }
+
+.ucard-actions { margin-top: 12px; display: flex; gap: 8px; }
+button.small { padding: 6px 12px; font-size: 12.5px; }
+
+/* Compact table for groups that need no decision. */
+table.units.compact td, table.units.compact th { padding: 7px 10px; }
+table.units.compact { font-size: 13px; }
+
+@media (max-width: 720px) {
+  .umetrics { gap: 14px; }
+  .strip > div { flex-basis: 50%; }
+}
+
+.umetrics .pending dd { color: var(--muted); font-weight: 500; }
+.gaps { margin: 4px 0 14px; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.gaps-head { font-size: 11px; text-transform: uppercase; letter-spacing: .04em;
+  color: var(--muted); padding: 8px 12px; background: var(--tint); border-bottom: 1px solid var(--line); }
+.gaps ul { list-style: none; margin: 0; padding: 0; }
+.gaps li { display: grid; grid-template-columns: 1fr 72px 62px 2fr; gap: 8px;
+  align-items: center; padding: 6px 12px; font-size: 12.5px; border-bottom: 1px solid var(--line); }
+.gaps li:last-child { border-bottom: 0; }
+.gaps li .n { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
+.gaps li .min { font-size: 11.5px; color: var(--muted); }
+.gaps li.orphan { background: color-mix(in srgb, var(--warn) 9%, transparent); }
+.gaps li.orphan strong { color: var(--warn); font-weight: 600; }
+@media (max-width: 640px) { .gaps li { grid-template-columns: 1fr 60px; } .gaps li .min { grid-column: 1 / -1; } }

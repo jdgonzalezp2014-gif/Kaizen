@@ -5,6 +5,14 @@
  * browser, and later in whatever suggests a price automatically.
  */
 
+/** One night: date, state (open/sold/blocked), price, minimum stay. */
+export interface CalendarNight {
+  d: string;
+  s: 'o' | 's' | 'b';
+  p: number | null;
+  m: number | null;
+}
+
 export interface ForwardUnit {
   listingId: string;
   name: string;
@@ -31,7 +39,19 @@ export interface ForwardUnit {
   askAvg: number | null;
   openDates: string[];
   hasCalendar: boolean;
-  days: { d: string; s: 'o' | 's' | 'b'; p: number | null }[];
+  /** Revenue per AVAILABLE night: occupancy and rate in one money figure. */
+  revpan: number | null;
+  /** Average rate actually achieved on sold nights. */
+  adr: number | null;
+  /** Average price sitting on the still-open nights. */
+  openAsk: number | null;
+  /** Median days between booking and arrival for this unit. */
+  leadTime: number | null;
+  /** Nights booked in the last 7 days for stays inside this window. */
+  pickup7: number;
+  /** When this unit last received any booking at all. */
+  lastBookedOn: string | null;
+  days: CalendarNight[];
 }
 
 /**

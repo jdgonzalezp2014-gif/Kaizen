@@ -9,6 +9,7 @@
 import { useEffect, useState } from 'react';
 import { getForward, applyPrice, type PriceResult } from '../api.ts';
 import { rank, suspectedDuplicates, type RankedUnit, type ForwardUnit, type ForwardState } from '../lib/forward.ts';
+import { findGaps, signals, median, type Signal } from '../lib/revenue.ts';
 import { DayPicker } from '../components/DayPicker.tsx';
 
 const money = (n: number | null) => n == null ? '—' : `$${Math.round(n).toLocaleString()}`;
@@ -68,6 +69,13 @@ export function Units() {
   const dupes  = units ? suspectedDuplicates(units) : [];
   const live   = ranked.filter(u => u.active);
   const parked = ranked.filter(u => u.parked);
+  // Benchmarks come from units that can actually be booked — parked ones
+  // would drag both towards zero and make everything look healthy.
+  const medianOcc = median(live.filter(u => u.occupancy != null).map(u => u.occupancy as number));
+  const portfolioAdr = median(live.filter(u => u.adr != null && u.adr > 0).map(u => u.adr as number));
+  const totalOpen = live.reduce((a, u) => a + u.nightsOpen, 0);
+  const totalPickup = live.reduce((a, u) => a + u.pickup7, 0);
+  const totalBooks = live.reduce((a, u) => a + u.onBooks, 0);
 
   return (
     <section>
@@ -108,34 +116,46 @@ export function Units() {
         </p>
       )}
 
+      {units && (
+        <dl className="strip">
+          <div><dt>Taking bookings</dt><dd>{live.length}<small>of {ranked.length}</small></dd></div>
+          <div><dt>Median occupancy</dt><dd>{pct(medianOcc)}</dd></div>
+          <div><dt>Nights open</dt><dd>{totalOpen}<small>in window</small></dd></div>
+          <div><dt>Booked last 7d</dt><dd>{totalPickup}<small>nights</small></dd></div>
+          <div><dt>On the books</dt><dd>{money(totalBooks)}</dd></div>
+        </dl>
+      )}
+
       {units && GROUPS.map(g => {
         const rows = ranked.filter(u => g.states.includes(u.state));
         if (!rows.length) return null;
+        const asCards = g.key === 'act' || g.key === 'watch';
         return (
           <div key={g.key} className="group">
             <h3>{g.title} <span className="count">{rows.length}</span></h3>
             <p className="note">{g.blurb}{g.key === 'off' && ` A block running past ${parkedAfter} days counts as parked.`}</p>
-            <table className="units">
-              <thead>
-                <tr>
-                  <th>Unit</th>
-                  <th className="n">Occupied</th>
-                  <th className="n">Booked</th>
-                  <th className="n">Still open</th>
-                  <th className="n">Earned</th>
-                  <th className="n">Asking</th>
-                  <th className="n">Weekly / Monthly off</th>
-                  <th className="n">Cleaning charged / paid</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(u => (
-                  <Row key={u.listingId} u={u} floor={floor}
-                       parkedAfter={parkedAfter} onEdit={() => setEditing(u)} />
-                ))}
-              </tbody>
-            </table>
+            {asCards
+              ? rows.map(u => (
+                  <UnitCard key={u.listingId} u={u} floor={floor} medianOcc={medianOcc}
+                            portfolioAdr={portfolioAdr} asOf={asOf} onEdit={() => setEditing(u)} />
+                ))
+              : (
+                <table className="units compact">
+                  <thead>
+                    <tr>
+                      <th>Unit</th><th className="n">Occupied</th><th className="n">Open</th>
+                      <th className="n">RevPAN</th><th className="n">ADR</th>
+                      <th className="n">Cleaning in / out</th><th></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(u => (
+                      <CompactRow key={u.listingId} u={u} parkedAfter={parkedAfter}
+                                  onEdit={() => setEditing(u)} />
+                    ))}
+                  </tbody>
+                </table>
+              )}
           </div>
         );
       })}
@@ -148,60 +168,124 @@ export function Units() {
   );
 }
 
-function Row({ u, floor, parkedAfter, onEdit }: {
-  u: RankedUnit; floor: number; parkedAfter: number; onEdit: () => void;
+/**
+ * One unit, as a revenue manager would read it.
+ *
+ * The bar is occupancy against the portfolio median rather than against
+ * 100%, because 45% is not a verdict on its own — it is healthy in one
+ * market and a crisis in another, and the portfolio is the only honest
+ * benchmark available until real comp data exists.
+ */
+function UnitCard({ u, floor, medianOcc, portfolioAdr, asOf, onEdit }: {
+  u: RankedUnit; floor: number; medianOcc: number | null;
+  portfolioAdr: number | null; asOf: string; onEdit: () => void;
 }) {
-  const breach = u.occupancy != null && u.occupancy < floor;
-  const sellable = u.nightsOpen + u.nightsSold;
+  const gaps = findGaps(u.days);
+  const orphanNights = gaps.filter(g => g.orphaned).reduce((a, g) => a + g.nights, 0);
+  const sig = signals({
+    occupancy: u.occupancy, nightsOpen: u.nightsOpen, pickup7: u.pickup7,
+    leadTime: u.leadTime, adr: u.adr, openAsk: u.openAsk,
+    lastBookedOn: u.lastBookedOn, orphanNights,
+    portfolioAdr: portfolioAdr == null ? null : Math.round(portfolioAdr), today: asOf
+  });
 
-  if (u.state === 'parked' || u.state === 'offline' || u.state === 'unknown') {
+  const worst: 'bad' | 'warn' | 'ok' =
+    sig.some(x => x.tone === 'bad') ? 'bad' : sig.some(x => x.tone === 'warn') ? 'warn' : 'ok';
+  const occ = u.occupancy ?? 0;
+
+  return (
+    <article className={`ucard tone-${worst}`}>
+      <div className="ucard-head">
+        <h4>{u.name}</h4>
+        <span className="meta">
+          {u.nightsSold} booked · {u.nightsOpen} open of {u.nightsOpen + u.nightsSold} sellable
+        </span>
+      </div>
+
+      <div className={`occbar tone-${worst}`}>
+        <div className="fill" style={{ width: `${Math.min(100, occ * 100)}%` }} />
+        {medianOcc != null && (
+          <div className="median" style={{ left: `${Math.min(100, medianOcc * 100)}%` }}
+               title={`Portfolio median ${pct(medianOcc)}`} />
+        )}
+      </div>
+      <div className="occbar-legend">
+        <span>{pct(u.occupancy)} occupied</span>
+        {medianOcc != null && (
+          <span>
+            {/* Signed, in points, so the comparison needs no arithmetic. */}
+            {occ >= medianOcc ? '+' : ''}{Math.round((occ - medianOcc) * 100)} pts vs
+            portfolio median {pct(medianOcc)}
+          </span>
+        )}
+      </div>
+
+      <dl className="umetrics">
+        <div><dt>RevPAN</dt><dd>{money(u.revpan)}</dd></div>
+        <div><dt>Achieved ADR</dt><dd>{money(u.adr)}</dd></div>
+        <div><dt>Asking, open nights</dt><dd>{u.nightsOpen ? money(u.openAsk) : '—'}</dd></div>
+        <div><dt>Booked last 7d</dt><dd>{u.pickup7}<span className="unit"> nights</span></dd></div>
+        <div><dt>Books</dt><dd>{u.leadTime == null ? '—' : <>{u.leadTime}<span className="unit"> days out</span></>}</dd></div>
+        <div><dt>Money still open</dt><dd>{money(u.exposure)}</dd></div>
+        {/* Deliberately a visible hole rather than a hidden one. The comp
+            set is the single biggest missing input to any of these
+            decisions, and an empty slot says so; omitting it would let
+            the card read as if the picture were complete. */}
+        <div className="pending"><dt>Market rate</dt><dd>—<span className="unit"> not connected</span></dd></div>
+      </dl>
+
+      {sig.length > 0 && (
+        <ul className="signals">
+          {sig.map(x => <SignalLine key={x.kind} s={x} />)}
+        </ul>
+      )}
+
+      <div className="ucard-actions">
+        <button className="small" onClick={onEdit}>Change price</button>
+      </div>
+    </article>
+  );
+}
+
+/* Icon AND word, never colour alone — this has to survive colourblindness,
+   a greyscale print and a screenshot pasted into a chat. */
+const SIGNAL_ICON = { bad: '▲', warn: '▲', info: 'i' } as const;
+
+function SignalLine({ s }: { s: Signal }) {
+  return <li className={s.tone}><i>{SIGNAL_ICON[s.tone]}</i><span>{s.text}</span></li>;
+}
+
+function CompactRow({ u, parkedAfter, onEdit }: {
+  u: RankedUnit; parkedAfter: number; onEdit: () => void;
+}) {
+  const dead = u.state === 'parked' || u.state === 'offline' || u.state === 'unknown';
+  if (dead) {
     return (
       <tr className="muted-row">
         <td>{u.name}</td>
-        <td className="n" colSpan={3}>
+        <td className="n" colSpan={4}>
           {u.state === 'unknown' ? 'No calendar returned'
             : u.state === 'parked' ? `Blocked every night for ${parkedAfter}+ days`
             : `Blocked all ${u.nights} nights in this window`}
           {u.state === 'parked' && u.listedActive && <span className="sub-n"> · still flagged active in Hostaway</span>}
         </td>
-        <td className="n">{money(u.onBooks || null)}</td>
-        <td className="n">{money(u.basePrice)}</td>
-        <td className="n">—</td>
-        <td className="n">{money(u.cleaningFeeCharged)}</td>
+        <td className="n">{money(u.cleaningFeeCharged)}<span className="sub-n"> / {money(u.cleaningCost)}</span></td>
         <td></td>
       </tr>
     );
   }
-
   return (
     <tr>
       <td>{u.name}</td>
-      <td className={breach ? 'n breach' : 'n'}>
-        {pct(u.occupancy)}
-        <span className="sub-n"> of {sellable}</span>
-      </td>
-      <td className="n">{u.nightsSold}</td>
+      <td className="n">{pct(u.occupancy)}</td>
+      <td className="n">{u.nightsOpen}</td>
+      <td className="n">{money(u.revpan)}</td>
+      <td className="n">{money(u.adr)}</td>
       <td className="n">
-        {u.nightsOpen}
-        {/* The money still winnable, which is the real size of the
-            problem: 18 open nights on a $300 house is not the same
-            problem as 4 on a $150 studio, and the percentage hides it. */}
-        {u.exposure > 0 && <span className="sub-n"> · {money(u.exposure)} at stake</span>}
-      </td>
-      <td className="n">{money(u.onBooks)}</td>
-      <td className="n">{money(u.askAvg ?? u.basePrice)}</td>
-      <td className="n">
-        {u.weeklyDiscountPct == null ? '—' : `${u.weeklyDiscountPct}%`} /{' '}
-        {u.monthlyDiscountPct == null ? '—' : `${u.monthlyDiscountPct}%`}
-      </td>
-      <td className="n">
-        {money(u.cleaningFeeCharged)}
-        <span className="sub-n"> / {money(u.cleaningCost)}</span>
-        {/* A turnover that charges the guest less than the cleaner costs
-            is a loss on every booking, and neither number alone says so. */}
+        {money(u.cleaningFeeCharged)}<span className="sub-n"> / {money(u.cleaningCost)}</span>
         {u.cleaningFeeCharged != null && u.cleaningCost != null &&
           u.cleaningFeeCharged - u.cleaningCost < 10 && (
-          <span className="breach" title="The cleaning fee barely covers what the cleaner is paid"> ⚠</span>
+          <span className="breach" title="The cleaning fee barely covers what the cleaner is paid"> ▲</span>
         )}
       </td>
       <td><button className="link" onClick={onEdit}>Change price</button></td>
@@ -235,6 +319,7 @@ function PriceDialog({ u, asOf, days, onClose, onDone }: {
   const marked = kind === 'window' && discNum != null && rateNum != null
     ? Math.round(rateNum * (1 - discNum / 100)) : null;
   const openInRange = u.days.filter(d => d.d >= from && d.d <= to && d.s === 'o').length;
+  const gaps = findGaps(u.days);
 
   const send = (recordOnly: boolean) => {
     setBusy(true); setResult(null);
@@ -258,6 +343,8 @@ function PriceDialog({ u, asOf, days, onClose, onDone }: {
 
         <DayPicker days={u.days} from={from} to={to}
           onChange={(f, t) => { setFrom(f); setTo(t); }} />
+
+        <GapList gaps={gaps} onPick={(f, t) => { setFrom(f); setTo(t); }} />
 
         <div className="fields">
           <label>Nightly rate
@@ -317,6 +404,42 @@ function PriceDialog({ u, asOf, days, onClose, onDone }: {
               </>}
         </div>
       </div>
+    </div>
+  );
+}
+
+/**
+ * The open stretches, longest first, with the minimum stay that governs
+ * each one.
+ *
+ * This is the tool that stops wasted discounts. A two-night gap under a
+ * three-night minimum is unbookable at ANY price — the lever is the
+ * minimum, not the rate — and nothing in an occupancy figure will ever
+ * tell you that. Clicking a gap selects exactly those nights above.
+ */
+function GapList({ gaps, onPick }: {
+  gaps: ReturnType<typeof findGaps>; onPick: (from: string, to: string) => void;
+}) {
+  if (!gaps.length) return null;
+  const sorted = [...gaps].sort((a, b) => b.nights - a.nights).slice(0, 6);
+  return (
+    <div className="gaps">
+      <div className="gaps-head">Open stretches</div>
+      <ul>
+        {sorted.map(g => (
+          <li key={g.from} className={g.orphaned ? 'orphan' : undefined}>
+            <button type="button" className="link" onClick={() => onPick(g.from, g.to)}>
+              {g.from}{g.nights > 1 && ` → ${g.to}`}
+            </button>
+            <span className="n">{g.nights} night{g.nights === 1 ? '' : 's'}</span>
+            <span className="n">{g.askAvg == null ? '—' : `$${g.askAvg}`}</span>
+            <span className="min">
+              {g.minStay == null ? '' : `min ${g.minStay}`}
+              {g.orphaned && <strong> · too short to book — lower the minimum, not the price</strong>}
+            </span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

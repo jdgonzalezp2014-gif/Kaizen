@@ -421,6 +421,64 @@ it, and the failure surfaced only as "no units yet".
 It typechecked the whole time. Nothing but running it could have found
 it. See §13 on the difference between deployed and working.
 
+## 19. The revenue-manager metric set
+
+`src/lib/revenue.ts`, all pure and tested. Occupancy alone routinely
+points the wrong way; these are what make it a verdict.
+
+| Metric | What it answers | Why it earns its place |
+|---|---|---|
+| **RevPAN** | money per available night | occupancy and rate in one dollar figure |
+| **ADR achieved** | what sold nights actually got | the benchmark the asking price is judged against |
+| **Open ask** | average price on still-open nights | was "Asking", which said nothing on its own |
+| **Pickup (7d)** | nights booked in the last week | occupancy is a level; pickup is the derivative |
+| **Lead time** | median days from booking to arrival | says whether an empty night is a problem *yet* |
+| **Orphan nights** | gaps shorter than their minimum stay | unbookable at any price — the minimum is the lever |
+| **Pace** | points vs portfolio median occupancy | the only benchmark available until comp data exists |
+
+Two of these change decisions the most:
+
+* **Lead time.** P2-4304 books 1.5 days out, so 33% occupancy thirty days
+  ahead is normal for it. Discounting it gives away rate for nothing. The
+  `books-late` signal says this explicitly rather than leaving it to be
+  inferred.
+* **Orphan nights.** A two-night gap under a three-night minimum cannot
+  be booked at any price. Without this it sits in the "discount harder"
+  pile forever while the discount does nothing, because price was never
+  the blocker.
+
+`signals()` turns these into sentences with the number attached — never
+a mood, always a falsifiable claim. Every signal ships an icon and a
+word; colour never carries the meaning alone.
+
+**Market rate is deliberately an empty slot on the card**, labelled "not
+connected". The comp set is the biggest missing input to any of these
+decisions, and a visible hole says so; omitting the row would let the
+card read as though the picture were complete.
+
+## 20. Design notes
+
+The global `input, select, textarea { display: block; width: 100% }`
+rule was making every inline control span the page and push its own
+buttons onto the next line. Full width is now opt-in via `label > input`.
+
+Screen grammar: **cards where a decision happens, compact tables where
+one does not.** The groups that need action render as cards with the
+occupancy bar, metrics and signals; "On track" and "Not taking bookings"
+are dense rows.
+
+The occupancy bar is drawn against the **portfolio median**, not against
+100%, with a tick marking it — the comparison is the point. One axis,
+one reference line, signed point difference in the label so the reader
+does no arithmetic.
+
+Status colours are the validated reference steps (`--good #0ca30c`,
+`--warn #fab219`, `--crit #d03b3b`, `--series-1 #2a78d6`). Checked with
+the dataviz validator against this app's dark surface `#191f27`:
+contrast ≥3:1 and CVD separation ΔE 11.3 both pass. The lightness-band
+flag on the warning yellow is the documented status-colour case, covered
+by the icon+label pairing.
+
 ## 18. Occupancy is a guardrail, not the opposite of profit
 
 The tagline once read "Profit per unit. Not occupancy." That framing was

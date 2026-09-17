@@ -95,6 +95,12 @@ export interface CalendarDay {
   price: number | null;
   status: string;
   available: boolean;
+  /**
+   * Minimum nights for a stay starting here. A lever as strong as price:
+   * a two-night gap under a three-night minimum cannot be booked at any
+   * price, so discounting it does nothing at all.
+   */
+  minStay: number | null;
 }
 
 let cachedToken: { token: string; expires: number } | null = null;
@@ -317,7 +323,8 @@ export async function fetchCalendar(
         date: asDate(d.date),
         price: Number(d.price) || null,
         status: String(d.status ?? ''),
-        available: String(d.status ?? '').toLowerCase() === 'available' && d.isAvailable !== 0
+        available: String(d.status ?? '').toLowerCase() === 'available' && d.isAvailable !== 0,
+        minStay: Number(d.minimumStay) || null
       }))
       .filter(d => d.date && d.date >= from && d.date <= to)
       .sort((a, b) => a.date.localeCompare(b.date)) as CalendarDay[];

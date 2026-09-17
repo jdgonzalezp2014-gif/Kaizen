@@ -7,7 +7,8 @@ const unit = (over: Partial<ForwardUnit> = {}): ForwardUnit => ({
   basePrice: 150, cleaningFeeCharged: 90, cleaningCost: 55,
   weeklyDiscountPct: null, monthlyDiscountPct: null,
   nights: 30, nightsOpen: 15, nightsSold: 15, nightsBlocked: 0,
-  occupancy: 0.5, onBooks: 0, askAvg: 150, openDates: [], hasCalendar: true, days: [], ...over
+  occupancy: 0.5, onBooks: 0, askAvg: 150, openDates: [], hasCalendar: true, days: [],
+  revpan: null, adr: null, openAsk: 150, leadTime: null, pickup7: 0, lastBookedOn: null, ...over
 });
 
 test('a unit blocked solid is offline, not zero per cent occupied', () => {
