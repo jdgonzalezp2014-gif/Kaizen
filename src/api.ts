@@ -107,7 +107,16 @@ export const postExpense = (body: Record<string, unknown>) =>
 export const deleteExpense = (id: string) =>
   call<{ ok: boolean; deleted: number }>(`/api/expenses?id=${id}`, { method: 'DELETE' });
 
-export interface UnitRow { id: string; name: string; active: boolean; cleaning_fee: string | null }
+export interface UnitRow {
+  id: string; name: string;
+  /** Listed in Hostaway AND taking bookings. */
+  active: boolean;
+  /** Hostaway's own flag, before the parked test. */
+  listed: boolean;
+  parked: boolean;
+  cleaning_fee: string | null;
+  cleaning_fee_source: string | null;
+}
 export const getUnits = () => call<{ ok: boolean; units: UnitRow[] }>('/api/units');
 export const setCleaningCost = (id: string, cleaningFee: number | null) =>
   call<{ ok: boolean }>('/api/units', { method: 'POST', body: JSON.stringify({ id, cleaningFee }) });

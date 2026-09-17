@@ -12,9 +12,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
   if (!who) return unauthorised();
   const sql = db(env);
-  const units = await sql`
-    SELECT id, name, active, cleaning_fee
-      FROM units WHERE account_id = 1 ORDER BY active DESC, name`;
+  const rows = await sql`
+    SELECT id, name, active, parked, cleaning_fee, cleaning_fee_source, parked_checked_at
+      FROM units WHERE account_id = 1 ORDER BY active DESC, parked, name` as {
+        id: string; name: string; active: boolean; parked: boolean;
+        cleaning_fee: string | null; cleaning_fee_source: string | null;
+      }[];
+  // `active` here means listed AND taking bookings, which is the sense
+  // every caller wants. The two inputs stay separate alongside it so a
+  // parked unit can be labelled as parked rather than as delisted.
+  const units = rows.map(r => ({
+    ...r, listed: r.active, active: r.active && !r.parked
+  }));
   return Response.json({ ok: true, units });
 };
 

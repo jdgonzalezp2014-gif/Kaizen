@@ -355,6 +355,18 @@ gives no sign it worked the first time and will be clicked twice.
 **Variable** is dated and one-off, charged to a unit (a repair) or shared
 and divided across active units.
 
+Fixed is presented as a **grid: one row per unit, one column per cost
+type** (Lease, Internet, Pool maintenance…), one month at a time. A flat
+list answers "what did we spend"; the grid answers "what does each unit
+cost to keep", which is the question behind every per-unit number here.
+It also makes a hole visible — an empty cell in a column every other
+unit fills is a bill someone forgot to enter, which a list hides.
+
+Columns are derived from the labels present this month plus those seen in
+the last three, so an unfilled month still shows the shape of the one
+before it. The shared row divides by units that are **active and not
+parked**; a parked unit keeps its own row, because it still has a lease.
+
 `unit_id IS NULL` means shared. Amounts are never edited in place except
 through the month upsert; a correction is a new row.
 

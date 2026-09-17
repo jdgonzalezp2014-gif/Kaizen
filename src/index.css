@@ -237,3 +237,26 @@ table.units .tag.grey  { color: var(--muted); }
 .modal.wide { width: min(680px, 100%); }
 .modal .fields { display: flex; gap: 12px; flex-wrap: wrap; }
 .modal .fields label { flex: 1 1 200px; }
+
+/* ── fixed-cost matrix ──────────────────────────────────────────── */
+/* 27 units against half a dozen cost types is wider than any phone, so
+   the grid scrolls sideways and the unit name stays pinned — scrolling
+   to the fifth column is useless if you can no longer see whose row it is. */
+.grid-scroll { overflow-x: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: 8px; }
+table.matrix { margin: 0; min-width: 100%; }
+table.matrix th, table.matrix td { white-space: nowrap; }
+table.matrix .sticky-col { position: sticky; left: 0; z-index: 1;
+  background: var(--card); text-align: left; min-width: 160px;
+  box-shadow: 1px 0 0 var(--line); }
+table.matrix thead th { background: var(--card); }
+table.matrix tr.shared-row .sticky-col,
+table.matrix tr.shared-row td { background: var(--tint); }
+table.matrix tfoot td { background: var(--tint); border-top: 2px solid var(--line); border-bottom: 0; }
+table.matrix .strong { font-weight: 700; }
+table.matrix td.cell { padding: 3px 6px; }
+table.matrix td.cell input.amt { width: 88px; background: transparent; border: 1px solid transparent;
+  border-radius: 4px; padding: 4px 6px; color: var(--ink); }
+table.matrix td.cell input.amt:hover { border-color: var(--line); }
+table.matrix td.cell input.amt:focus { border-color: var(--series-1); background: var(--card); outline: none; }
+button.link.tiny { font-size: 11px; opacity: .45; padding: 0 2px; }
+button.link.tiny:hover { opacity: 1; }
