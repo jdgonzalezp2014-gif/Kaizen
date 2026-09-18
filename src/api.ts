@@ -16,7 +16,15 @@ export interface Account {
   allowedEmails: string[];
 }
 export interface Connection { ok: boolean; message: string; units?: number }
-export interface Member { email: string; role: 'owner' | 'ops'; added_at?: string }
+export interface Member {
+  email: string; role: 'owner' | 'ops';
+  /** Cannot be removed or demoted by anyone else. Shown, never hidden. */
+  is_primary?: boolean;
+  added_at?: string;
+}
+export interface MemberAudit {
+  actor: string; action: string; email: string; detail: string | null; at: string;
+}
 export interface SettingsResponse {
   ok: boolean; user: string;
   role: 'owner' | 'ops';
@@ -25,6 +33,7 @@ export interface SettingsResponse {
   account: Account | null;
   connection: Connection | null;
   members?: Member[];
+  audit?: MemberAudit[];
 }
 
 export interface ImportProblem { row: number; problem: string }

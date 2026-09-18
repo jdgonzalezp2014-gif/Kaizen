@@ -58,11 +58,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     });
   }
 
-  const members = await sql`
-    SELECT email, role, added_at FROM members WHERE account_id = 1 ORDER BY role, email`;
+  const [members, audit] = await Promise.all([
+    sql`SELECT email, role, is_primary, added_at FROM members
+         WHERE account_id = 1 ORDER BY is_primary DESC, role, email`,
+    sql`SELECT actor, action, email, detail, at FROM member_audit
+         WHERE account_id = 1 ORDER BY at DESC LIMIT 20`
+  ]);
 
   return Response.json({
-    ok: true, user: who.email, role, tabs: tabsFor('owner'), account, connection, members
+    ok: true, user: who.email, role, tabs: tabsFor('owner'),
+    account, connection, members, audit
   });
 };
 
@@ -104,15 +109,57 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           error: 'An account needs at least one owner.' }, { status: 400 });
       }
 
+      const before = (await sql`
+        SELECT email, role, is_primary FROM members WHERE account_id = 1
+      `) as { email: string; role: string; is_primary: boolean }[];
+      const primary = before.find(m => m.is_primary) ?? null;
+      const actor = who.email.trim().toLowerCase();
+
+      // The primary owner cannot be removed or demoted by anyone else.
+      // They can do either to themselves — this is a floor under the
+      // account, not a lock on a person.
+      if (primary && primary.email !== actor) {
+        const stillThere = rows.find(m => m.email === primary.email);
+        if (!stillThere || stillThere.role !== 'owner') {
+          return Response.json({
+            ok: false, error: 'primary_owner',
+            message: `${primary.email} is the primary owner of this account and cannot be ` +
+                     'removed or demoted by another member. They can change their own role, ' +
+                     'or transfer the primary role first.'
+          }, { status: 403 });
+        }
+      }
+
       await sql`DELETE FROM members WHERE account_id = 1`;
       for (const m of rows) {
         await sql`
-          INSERT INTO members (account_id, email, role, added_by)
-          VALUES (1, ${m.email}, ${m.role}, ${who.email})
+          INSERT INTO members (account_id, email, role, added_by, is_primary)
+          VALUES (1, ${m.email}, ${m.role}, ${who.email},
+                  ${primary ? m.email === primary.email : false})
           ON CONFLICT (account_id, email) DO UPDATE SET role = EXCLUDED.role
         `;
       }
       await sql`UPDATE accounts SET allowed_emails = ${rows.map(m => m.email)} WHERE id = 1`;
+
+      // The trail. Records grants as readily as removals — that is what
+      // makes it an audit log rather than a weapon.
+      const wasRole = new Map(before.map(m => [m.email, m.role]));
+      for (const m of rows) {
+        const prev = wasRole.get(m.email);
+        if (prev === undefined) {
+          await sql`INSERT INTO member_audit (account_id, actor, action, email, detail)
+                    VALUES (1, ${actor}, 'added', ${m.email}, ${m.role})`;
+        } else if (prev !== m.role) {
+          await sql`INSERT INTO member_audit (account_id, actor, action, email, detail)
+                    VALUES (1, ${actor}, 'role_changed', ${m.email}, ${prev + ' → ' + m.role})`;
+        }
+      }
+      for (const b of before) {
+        if (!rows.some(m => m.email === b.email)) {
+          await sql`INSERT INTO member_audit (account_id, actor, action, email, detail)
+                    VALUES (1, ${actor}, 'removed', ${b.email}, ${b.role})`;
+        }
+      }
     }
 
     if (Array.isArray(body.allowedEmails)) {

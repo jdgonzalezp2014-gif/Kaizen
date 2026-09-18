@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   getSettings, saveSettings, syncUnits, pullCleanings,
-  type Account, type Connection, type CleaningMatch, type Member
+  type Account, type Connection, type CleaningMatch, type Member, type MemberAudit
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
 import { newIngestToken, pullFeed, runCron, type FeedResult, type CronResult } from '../api.ts';
@@ -20,6 +20,7 @@ export function Settings() {
   const [connection, setConnection] = useState<Connection | null>(null);
   const [user, setUser] = useState('');
   const [members, setMembers] = useState<Member[]>([]);
+  const [audit, setAudit] = useState<MemberAudit[]>([]);
   const [hostawayId, setHostawayId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [status, setStatus] = useState<{ kind: 'ok' | 'error' | 'busy'; text: string } | null>(null);
@@ -32,6 +33,7 @@ export function Settings() {
       setUser(r.user);
       setHostawayId(r.account?.hostawayAccountId ?? '');
       setMembers(r.members ?? []);
+      setAudit(r.audit ?? []);
     } catch (err) {
       setStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
     }
@@ -158,7 +160,7 @@ export function Settings() {
 
       <GeminiPanel account={account} onSaved={() => void load()} />
 
-      <MembersPanel members={members} user={user} onSaved={() => void load()} />
+      <MembersPanel members={members} audit={audit} user={user} onSaved={() => void load()} />
 
       <AlertsPanel account={account} onSaved={() => void load()} />
 
@@ -335,8 +337,8 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
  * and a valid session, and an access level that lives in a browser is
  * not an access level.
  */
-function MembersPanel({ members, user, onSaved }: {
-  members: Member[]; user: string; onSaved: () => void;
+function MembersPanel({ members, audit, user, onSaved }: {
+  members: Member[]; audit: MemberAudit[]; user: string; onSaved: () => void;
 }) {
   const [rows, setRows] = useState<Member[]>(members);
   const [email, setEmail] = useState('');
@@ -384,17 +386,27 @@ function MembersPanel({ members, user, onSaved }: {
         <tbody>
           {rows.map(r => (
             <tr key={r.email}>
-              <td>{r.email}{r.email.toLowerCase() === me && <span className="note"> · you</span>}</td>
               <td>
-                <select value={r.role} onChange={e => setRows(prev => prev.map(x =>
-                  x.email === r.email ? { ...x, role: e.target.value as 'owner' | 'ops' } : x))}>
+                {r.email}
+                {r.email.toLowerCase() === me && <span className="note"> · you</span>}
+                {/* Marked in plain sight. A protection nobody can see is
+                    not a protection, it is a back door — and the person
+                    it is kept from is exactly the one who needs to know. */}
+                {r.is_primary && <span className="ok-tag">primary</span>}
+              </td>
+              <td>
+                <select value={r.role} disabled={r.is_primary && r.email.toLowerCase() !== me}
+                  onChange={e => setRows(prev => prev.map(x =>
+                    x.email === r.email ? { ...x, role: e.target.value as 'owner' | 'ops' } : x))}>
                   <option value="owner">Owner — everything</option>
                   <option value="ops">Ops — costs and claims</option>
                 </select>
               </td>
               <td>
-                <button className="link danger"
-                  onClick={() => setRows(prev => prev.filter(x => x.email !== r.email))}>remove</button>
+                {r.is_primary && r.email.toLowerCase() !== me
+                  ? <span className="note">cannot be removed</span>
+                  : <button className="link danger"
+                      onClick={() => setRows(prev => prev.filter(x => x.email !== r.email))}>remove</button>}
               </td>
             </tr>
           ))}
@@ -430,6 +442,29 @@ function MembersPanel({ members, user, onSaved }: {
         {busy ? 'Saving…' : 'Save'}
       </button>
       {msg && <p className="note">{msg}</p>}
+
+      {audit.length > 0 && (
+        <details className="events">
+          <summary>Recent access changes ({audit.length})</summary>
+          <table className="units compact">
+            <tbody>
+              {audit.map((a, i) => (
+                <tr key={i}>
+                  <td className="note">{a.at.slice(0, 10)}</td>
+                  <td>{a.actor.split('@')[0]}</td>
+                  <td>{a.action.replace('_', ' ')}</td>
+                  <td>{a.email}</td>
+                  <td className="note">{a.detail}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="note">
+            Grants and removals alike. A trail that only recorded removals would be a weapon
+            rather than a log.
+          </p>
+        </details>
+      )}
     </div>
   );
 }
