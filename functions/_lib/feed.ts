@@ -27,9 +27,23 @@ const PLATFORMS: { key: string; label: string; scale: number }[] = [
   { key: 'bookingcom', label: 'Booking',     scale: 10 },
   { key: 'vrbo',       label: 'VRBO',        scale: 5 },
   { key: 'expedia',    label: 'Expedia',     scale: 10 },
-  { key: 'google',     label: 'Google',      scale: 5 },
   { key: 'direct',     label: 'Web Portal',  scale: 5 }
 ];
+
+/**
+ * Hostaway's own rating is never imported, and this is a correctness
+ * rule rather than a preference.
+ *
+ * Listings get RECYCLED in this portfolio — an id is reused for a
+ * different unit — and Hostaway carries review counts across that reuse.
+ * It will also report reviews that are not visible on the platform at
+ * all. So its rating is not merely incomplete, it is describing a
+ * different property, and an average that includes it is confidently
+ * wrong in a way no amount of it being "extra data" repairs.
+ *
+ * Ratings come from scraping the live page or they do not come at all.
+ */
+const NEVER_IMPORT = /hostaway|internal/i;
 
 export function toFive(raw: number | null, scale: number): number | null {
   if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
@@ -137,6 +151,7 @@ export async function importFeed(sql: Sql, url: string): Promise<FeedResult> {
     // carrying Booking yet must not erase a Booking rating that arrived
     // some other way.
     for (const pf of PLATFORMS) {
+      if (NEVER_IMPORT.test(pf.label)) continue;
       const rating = toFive(parseAmount(pick(r, `${pf.label} rating`, `${pf.label} star`)), pf.scale);
       const reviews = parseAmount(pick(r, `${pf.label} reviews`, `${pf.label} count`));
       const url = pick(r, `${pf.label} url`, `${pf.label} link`, pf.label);

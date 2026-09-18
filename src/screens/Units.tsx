@@ -821,22 +821,27 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
             <p className="note market-problem">{air.detail}</p>
           )}
 
-          {/* Publication comes from Hostaway and is certain. The rating
-              comes from the feed and may simply not be there yet — a
-              blank is "not collected", never a zero, so the two are
-              shown as separate facts rather than one merged cell. */}
+          {/* Two separate facts, never merged into one dot.
+              Publication comes from Hostaway and is certain. The rating
+              comes from scraping the live page, and a platform only
+              reads as confirmed once we have actually read one —
+              Hostaway's own rating is never used, because listings get
+              recycled here and it carries reviews across that reuse,
+              describing a different property. */}
           <div className="chan-others">
             {others.map(c => {
               const r = ratings[c.key];
+              const rated = r?.rating != null;
               return (
                 <span key={c.key} className="chan-other">
-                  <span className={c.live ? 'chan live' : 'chan off'}>
-                    {c.live ? '●' : '○'} {c.label}
+                  <span className={rated ? 'chan live' : 'chan off'}>
+                    {rated ? '●' : '○'} {c.label}
                   </span>
-                  {r?.rating != null
-                    ? <b>{r.rating.toFixed(2)} ★{r.reviews != null && (
-                        <span className="note"> · {r.reviews}</span>)}</b>
-                    : c.live && <span className="note">no rating yet</span>}
+                  <span className="note">{c.live ? 'listed' : 'not listed'}</span>
+                  {rated
+                    ? <b>{r!.rating!.toFixed(2)} ★{r!.reviews != null && (
+                        <span className="note"> · {r!.reviews}</span>)}</b>
+                    : <span className="note">· rating not scraped yet</span>}
                 </span>
               );
             })}

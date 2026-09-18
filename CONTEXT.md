@@ -1067,3 +1067,30 @@ never as zero.
 Verified against the live database: Airbnb 4.87 stays 4.87, Booking 8.6
 stores as 4.30, Expedia 9.2 as 4.60, a URL-only platform records as
 listed with no rating, and empty ones are untouched.
+
+
+## 40. Hostaway's rating is never used
+
+Not "incomplete" — **wrong about which property it describes.**
+
+Listings get **recycled** in this portfolio: an id is reused for a
+different unit, and Hostaway carries the review count across that reuse.
+It also reports reviews that are not visible on the platform at all. An
+average that folds it in is therefore confidently wrong, and no amount of
+it being "extra data" repairs that.
+
+Ratings come from scraping the live page or they do not come. The feed
+importer refuses any column matching `/hostaway|internal/i`, and
+`Kaizen.gs` does not put one in the sheet.
+
+Consequence for the UI: a platform reads as confirmed (● and a number)
+**only when a rating has actually been scraped**. Publication and rating
+are printed as two separate facts — "listed · rating not scraped yet" —
+because Hostaway is trustworthy about the first and not about the second,
+and one dot cannot honestly carry both.
+
+**Google is dropped** from channels and from the feed. Hostaway exports
+to Google Vacation Rentals and reports a URL, but nobody here manages or
+prices against that listing, so the row could never be acted on.
+
+Platforms carried: Airbnb, Booking, VRBO, Expedia, Web Portal.

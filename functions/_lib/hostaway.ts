@@ -45,7 +45,7 @@ const BASE = 'https://api.hostaway.com/v1';
 const NOT_LIVE = new Set(['archived', 'draft', 'inactive', 'disabled', 'deleted']);
 
 export interface ChannelStatus {
-  key: 'airbnb' | 'vrbo' | 'bookingcom' | 'expedia' | 'google' | 'marriott';
+  key: 'airbnb' | 'vrbo' | 'bookingcom' | 'expedia' | 'marriott' | 'direct';
   label: string;
   /** Hostaway's export state: 'exported' when the listing is pushed there. */
   exportStatus: string | null;
@@ -54,12 +54,17 @@ export interface ChannelStatus {
   live: boolean;
 }
 
+/**
+ * Google is deliberately absent. Hostaway exports to Google Vacation
+ * Rentals and reports a URL for it, but the listing there is not one
+ * anybody here manages or prices against — carrying it produced a row
+ * that could never be acted on.
+ */
 const CHANNELS: [ChannelStatus['key'], string, string, string][] = [
   ['airbnb',     'Airbnb',        'airbnbExportStatus',     'airbnbListingUrl'],
   ['vrbo',       'Vrbo',          'vrboExportStatus',       'vrboListingUrl'],
   ['bookingcom', 'Booking.com',   'bookingcomExportStatus', 'bookingcomListingUrl'],
   ['expedia',    'Expedia',       'expediaExportStatus',    'expediaListingUrl'],
-  ['google',     'Google',        'googleExportStatus',     'googleVrListingUrl'],
   ['marriott',   'Marriott',      'marriotExportStatus',    'marriottListingUrl']
 ];
 
