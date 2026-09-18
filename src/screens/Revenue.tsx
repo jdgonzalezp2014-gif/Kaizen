@@ -139,6 +139,17 @@ export function Revenue() {
         </p>
         <Filters rows={view.units} value={filter} onChange={setFilter} counts={view.counts} />
         <div className="ulist">
+          {/* Columns were unlabelled: four money figures in a row with
+              nothing saying which is which. */}
+          <div className="urow-head rev ulist-head" aria-hidden="true">
+            <span />
+            <span>Unit</span>
+            <span>Occupancy</span>
+            <span className="n">Net</span>
+            <span className="n">vs target</span>
+            <span className="n">Revenue</span>
+            <span />
+          </div>
           {shownUnits.map(u => (
             <RevenueRow key={u.listingId} u={u} period={period} data={data}
                         expanded={openUnit === u.listingId}

@@ -2,18 +2,22 @@ import { useEffect, useState } from 'react';
 import { Revenue } from './screens/Revenue.tsx';
 import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
+import { Claims } from './screens/Claims.tsx';
 import { Settings } from './screens/Settings.tsx';
 import { getUnits, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
-type Tab = 'revenue' | 'units' | 'costs' | 'settings';
+type Tab = 'units' | 'revenue' | 'costs' | 'claims' | 'settings';
 
 const TABS: [Tab, string][] = [
-  ['revenue', 'Revenue'], ['units', 'Units'], ['costs', 'Costs'], ['settings', 'Settings']
+  ['units', 'Units'], ['revenue', 'Revenue'], ['costs', 'Costs'],
+  ['claims', 'Claims'], ['settings', 'Settings']
 ];
 
 export function App() {
-  const [tab, setTab] = useState<Tab>('revenue');
+  // Units first: it is where the decisions are made, and the tab that
+  // opens is the one people treat as the product.
+  const [tab, setTab] = useState<Tab>('units');
   // Fetched once at the top: three screens need the same unit list, and
   // three copies of it drift the moment one of them is stale.
   const [units, setUnits] = useState<UnitRow[]>([]);
@@ -41,8 +45,9 @@ export function App() {
         </p>
       )}
 
-      {tab === 'revenue'  && <Revenue />}
       {tab === 'units'    && <Units />}
+      {tab === 'revenue'  && <Revenue />}
+      {tab === 'claims'   && <Claims units={units} />}
       {tab === 'costs'    && <Costs units={units} />}
       {tab === 'settings' && <Settings />}
     </main>

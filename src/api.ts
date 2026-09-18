@@ -204,3 +204,18 @@ export interface CronResult {
   error?: string;
 }
 export const runCron = () => call<CronResult>('/api/cron', { method: 'POST' });
+
+export interface Claim {
+  id: string; unit_id: string | null; unit_name: string | null;
+  occurred_on: string; category: string | null; severity: string; status: string;
+  source: string | null; description: string | null;
+  refund: string; repair_cost: string; resolved_on: string | null;
+  created_by: string; created_at: string;
+}
+export const getClaims = () => call<{ ok: boolean; claims: Claim[] }>('/api/claims');
+export const saveClaim = (body: Record<string, unknown>) =>
+  call<{ ok: boolean; id?: string; error?: string }>('/api/claims', {
+    method: 'POST', body: JSON.stringify(body)
+  });
+export const deleteClaim = (id: string) =>
+  call<{ ok: boolean }>(`/api/claims?id=${id}`, { method: 'DELETE' });

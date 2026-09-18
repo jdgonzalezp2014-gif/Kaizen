@@ -1222,3 +1222,34 @@ ordinary letters; this project shipped that bug once.
 Segment counting accounts for the concatenation header — 153 per part,
 not 160 — which is right only when the message is one character over,
 which is exactly when someone is relying on it.
+
+
+## 46. Claims are the only CRUD here, and that is deliberate
+
+Every money table is append-only: an expense happened once, and a
+correction is a new row. A **claim is a CASE** — raised, investigated,
+refunded, closed — and a table you could only append to would make
+"update the status" mean "file it twice".
+
+What never changes is `occurred_on`: when the guest raised it, never when
+someone got round to it. Filing a July complaint in September moves it
+into the wrong month and quietly flatters July.
+
+**Open cases sort first regardless of age.** A three-month-old open claim
+is precisely the one that needs attention, and sorting by date alone
+buries it under yesterday's resolved ones. The headline figures are
+open count, **weighted severity (1/2/4/8)** — a plain count ranks five
+slow-wifi complaints above three midnight lockouts — days the oldest open
+case has been waiting, and cost to date.
+
+Closing a claim fills the resolution date rather than leaving it to
+whoever remembers; re-opening clears it, so a claim never carries a
+resolution date while it is open.
+
+## 47. Units is the first tab
+
+It is where the decisions are made, and the tab that opens is the one
+people treat as the product.
+
+The Revenue unit list also gained column labels: it was four money
+figures in a row with nothing saying which was which.
