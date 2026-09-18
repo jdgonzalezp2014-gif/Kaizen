@@ -300,3 +300,35 @@ export function portfolioAskRatio(
     .map(u => u.openAsk! / u.adr!);
   return median(ratios);
 }
+
+/**
+ * Does the model agree with the rules?
+ *
+ * Both analyses appear on the same card and they reach the same
+ * conclusion most of the time, which makes the second one read as
+ * padding. Saying WHICH it is turns that repetition into information:
+ * agreement is corroboration worth a glance, and disagreement is the
+ * only time the model is telling you something the rules did not.
+ *
+ * Deliberately coarse. It compares the DIRECTION of the advice, not its
+ * wording — a model that phrases "hold" as three sentences about lead
+ * time is still saying hold.
+ */
+export type Agreement = 'agrees' | 'differs' | 'unclear';
+
+const EXPECTED: Record<VerdictKind, string[]> = {
+  unbookable: ['lower_minimum_stay'],
+  overpriced: ['lower_rate', 'adjust_discounts'],
+  stuck:      ['lower_rate', 'adjust_discounts'],
+  early:      ['hold'],
+  filling:    ['hold', 'raise_rate'],
+  full:       ['hold', 'raise_rate'],
+  quiet:      ['hold', 'lower_rate', 'adjust_discounts']
+};
+
+export function agreement(verdictKind: VerdictKind, action: string | null | undefined): Agreement {
+  if (!action) return 'unclear';
+  const expected = EXPECTED[verdictKind];
+  if (!expected) return 'unclear';
+  return expected.includes(action) ? 'agrees' : 'differs';
+}

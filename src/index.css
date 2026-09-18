@@ -730,3 +730,21 @@ button.fact-k:hover { color: var(--ink); }
 .quote-main { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
 .quote-main b { font-size: 17px; font-weight: 650; font-variant-numeric: tabular-nums; }
 .quote-gap { margin-top: 5px; max-width: 70ch; }
+
+/* ── who is speaking ────────────────────────────────────────────────
+   Two analyses sit on one card and usually agree. Each says whose it
+   is, so corroboration never reads as repetition, and a disagreement is
+   visible rather than buried in two similar paragraphs.
+   ─────────────────────────────────────────────────────────────────── */
+.byline { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 5px; }
+.byline .who { font-size: 10.5px; text-transform: uppercase; letter-spacing: .06em;
+  color: var(--muted); font-weight: 600; }
+.byline .who.ai { display: inline-flex; align-items: baseline; gap: 5px; color: var(--series-1); }
+.ai-mark { font-size: 12px; line-height: 1; }
+.agree { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.agree-agrees { color: var(--good); border-color: color-mix(in srgb, var(--good) 40%, transparent); }
+/* A disagreement is the one case worth stopping on, so it is the one
+   that gets colour. */
+.agree-differs { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  font-weight: 600; }
+.advice .byline { margin-bottom: 8px; }

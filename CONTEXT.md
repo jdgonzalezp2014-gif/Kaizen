@@ -939,3 +939,29 @@ it reaches the function. Add an Access application for the path
 `/api/observations` with a **Bypass / Everyone** policy — the endpoint
 authenticates itself with the token, which is the stronger check for a
 machine client anyway.
+
+
+## 35. Two analyses, and saying which is which
+
+An open unit carries a rule-based read at the top and Gemini's at the
+bottom, and they reach the same conclusion most of the time. Unattributed
+that made the second read as padding, and left no way to tell which to
+believe when they differed.
+
+Both now carry a byline: **"Read from your booking data"** for the rules,
+**✦ Gemini** for the model. Two words each, and the ambiguity is gone.
+
+`agreement()` compares the two and labels it — **agrees with the read
+above** or **differs from the read above**. It compares the DIRECTION of
+the advice, not its wording: a model phrasing "hold" as three sentences
+about lead time is still saying hold. The disagreement chip is the one
+that gets colour, because it is the only case where the model is telling
+you something the rules did not.
+
+Never defaults to "agrees" when there is no advice yet — a corroboration
+badge on a card where nothing has answered is worse than no badge. A
+test pins that.
+
+Metric labels were shortened (`Asking, open nights` → `Open ask`, `ADR
+achieved` → `ADR`) because they were wrapping onto two lines and pushing
+their own values out of alignment.

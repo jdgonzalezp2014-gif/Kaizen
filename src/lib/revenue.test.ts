@@ -146,3 +146,26 @@ test('a healthy unit gets a plain verdict, not a warning', () => {
   const v = verdict({ ...vbase, pickup7: 6, nightsOpen: 10, occupancy: 0.7, leadTime: 20 });
   assert.equal(v.tone, 'ok');
 });
+
+import { agreement } from './revenue.ts';
+
+test('agreement compares direction, not wording', () => {
+  // A model that phrases "hold" as three sentences about lead time is
+  // still saying hold. Both analyses land on the same card and usually
+  // agree, so the label is what stops the second reading as padding.
+  assert.equal(agreement('early', 'hold'), 'agrees');
+  assert.equal(agreement('overpriced', 'lower_rate'), 'agrees');
+  assert.equal(agreement('unbookable', 'lower_minimum_stay'), 'agrees');
+});
+
+test('a disagreement is the only time the model adds something', () => {
+  assert.equal(agreement('early', 'lower_rate'), 'differs');
+  assert.equal(agreement('overpriced', 'raise_rate'), 'differs');
+});
+
+test('no advice yet is unclear, not agreement', () => {
+  // Defaulting to "agrees" would put a corroboration badge on a card
+  // where nothing has answered.
+  assert.equal(agreement('early', null), 'unclear');
+  assert.equal(agreement('early', undefined), 'unclear');
+});

@@ -18,7 +18,7 @@ import {
   type RankedUnit, type ForwardUnit, type ForwardState
 } from '../lib/forward.ts';
 import {
-  findGaps, signals, verdict, median, portfolioAskRatio,
+  findGaps, signals, verdict, median, portfolioAskRatio, agreement,
   type Signal, type Verdict
 } from '../lib/revenue.ts';
 import { money, pct, points } from '../lib/format.ts';
@@ -283,6 +283,13 @@ function UnitDetail({ u, read, medianOcc, asOf, days, dead, onExplain, onChanged
     <div className="udetail">
       {/* The finding spans both columns: it is the one thing that should
           be read before anything else on the card. */}
+      {/* Both analyses on this card reach the same conclusion most of the
+          time, so each one says who is speaking. Without it the reader
+          cannot tell corroboration from repetition — or which of the two
+          to believe when they differ. */}
+      <div className="byline">
+        <span className="who">Read from your booking data</span>
+      </div>
       <p className={`verdict tone-${dead ? 'info' : read.v.tone}`}>
         <span>{read.v.reason}</span>
       </p>
@@ -305,14 +312,14 @@ function UnitDetail({ u, read, medianOcc, asOf, days, dead, onExplain, onChanged
         <div className="ud-evidence">
           <dl className="facts-grid">
             <Fact k="RevPAN" v={money(u.revpan)} onExplain={onExplain} />
-            <Fact k="ADR achieved" v={money(u.adr)} onExplain={onExplain} />
-            <Fact k="Asking, open nights" v={u.nightsOpen ? money(u.openAsk) : '—'} />
-            <Fact k="Booked last 7d" v={`${u.pickup7} nights`} onExplain={onExplain} />
+            <Fact k="ADR" v={money(u.adr)} onExplain={onExplain} />
+            <Fact k="Open ask" v={u.nightsOpen ? money(u.openAsk) : '—'} />
+            <Fact k="Booked 7d" v={`${u.pickup7} nights`} onExplain={onExplain} />
             <Fact k="Books" v={u.leadTime == null ? '—' : `${u.leadTime} days out`} onExplain={onExplain} />
-            <Fact k="On the books" v={money(u.onBooks)} />
-            <Fact k="Cleaning in / out"
+            <Fact k="On books" v={money(u.onBooks)} />
+            <Fact k="Cleaning in/out"
                   v={`${money(u.cleaningFeeCharged)} / ${money(u.cleaningCost)}`} onExplain={onExplain} />
-            <Fact k="Market rate" v="not connected" muted />
+            <Fact k="Market" v="not connected" muted />
           </dl>
 
           {!dead && (
@@ -335,7 +342,8 @@ function UnitDetail({ u, read, medianOcc, asOf, days, dead, onExplain, onChanged
 
         {!dead && (
           <div className="ud-action">
-            <PriceWorkspace u={u} gaps={read.gaps} asOf={asOf} days={days} onChanged={onChanged} />
+            <PriceWorkspace u={u} gaps={read.gaps} verdictKind={read.v.kind}
+                            asOf={asOf} days={days} onChanged={onChanged} />
           </div>
         )}
       </div>
@@ -363,8 +371,9 @@ function Fact({ k, v, onExplain, muted }: {
  * sit together because they are one decision — and because a modal would
  * cover the list you were comparing this unit against.
  */
-function PriceWorkspace({ u, gaps, asOf, days, onChanged }: {
+function PriceWorkspace({ u, gaps, verdictKind, asOf, days, onChanged }: {
   u: RankedUnit; gaps: ReturnType<typeof findGaps>;
+  verdictKind: Verdict['kind'];
   asOf: string; days: number; onChanged: () => void;
 }) {
   const current = u.openAsk ?? u.basePrice;
@@ -380,6 +389,11 @@ function PriceWorkspace({ u, gaps, asOf, days, onChanged }: {
   const [adviceErr, setAdviceErr] = useState('');
   const [thinking, setThinking] = useState(false);
   const [confirming, setConfirming] = useState(false);
+
+  // Coarse on purpose: it compares the direction of the advice, not its
+  // wording. A model phrasing "hold" as three sentences about lead time
+  // is still saying hold.
+  const agree = agreement(verdictKind, advice?.action);
 
   const rateNum = rate.trim() === '' ? null : Number(rate);
   const discNum = disc.trim() === '' ? null : Number(disc);
@@ -471,6 +485,17 @@ function PriceWorkspace({ u, gaps, asOf, days, onChanged }: {
 
       {advice && (
         <div className="advice">
+          <div className="byline">
+            <span className="who ai"><span className="ai-mark" aria-hidden="true">✦</span> Gemini</span>
+            {/* Agreement is corroboration worth a glance; disagreement is
+                the only time the model is saying something the rules did
+                not, and that is worth stopping on. */}
+            {agree !== 'unclear' && (
+              <span className={`agree agree-${agree}`}>
+                {agree === 'agrees' ? 'agrees with the read above' : 'differs from the read above'}
+              </span>
+            )}
+          </div>
           <div className="advice-head">
             <strong>{advice.action.replace(/_/g, ' ')}</strong>
             <span className={`conf conf-${advice.confidence}`}>{advice.confidence} confidence</span>
