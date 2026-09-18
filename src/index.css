@@ -474,7 +474,12 @@ table.units.compact { font-size: 13px; }
    are comparing against.
    ════════════════════════════════════════════════════════════════════ */
 
-.ulist { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--card); }
+/* Not `overflow: hidden`: it would clip the lift on an open row. The
+   rounded corners are handled on the first and last rows instead, so a
+   hover background still cannot bleed past them. */
+.ulist { border: 1px solid var(--line); border-radius: 10px; background: var(--card); }
+.urow:first-child .urow-head { border-radius: 9px 9px 0 0; }
+.urow:last-child  .urow-head { border-radius: 0 0 9px 9px; }
 .urow + .urow { border-top: 1px solid var(--line); }
 .urow.open { background: var(--tint); }
 
@@ -630,3 +635,47 @@ button.fact-k:hover { color: var(--ink); }
 .theme-toggle { display: inline-flex; align-items: center; gap: 6px; margin-left: 10px; }
 .theme-toggle span[aria-hidden] { font-size: 13px; line-height: 1; }
 @media (max-width: 560px) { .theme-word { display: none; } }
+
+/* ── the opened row ─────────────────────────────────────────────────
+   An open row is a workspace, so it should look like one object rather
+   than like the list carrying on. It lifts out: a 2px ring, its own
+   corners, a thicker bar in its own status colour down the left edge,
+   and the hairlines above and below suppressed so the ring closes
+   cleanly.
+
+   Only one row is ever open — opening another closes it — so this
+   never has to tile.
+   ──────────────────────────────────────────────────────────────────── */
+.urow.open {
+  position: relative;
+  border-radius: 10px;
+  background: var(--card);
+  /* An inset ring rather than a border: it adds no width, so nothing
+     reflows when a row opens and the list does not jump under the
+     cursor. */
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ink) 20%, transparent),
+              0 2px 14px rgba(0, 0, 0, .07);
+}
+:root[data-theme="dark"] .urow.open {
+  box-shadow: inset 0 0 0 2px color-mix(in srgb, var(--ink) 26%, transparent),
+              0 2px 14px rgba(0, 0, 0, .35);
+}
+.urow.open { border-top-color: transparent; }
+.urow.open + .urow { border-top-color: transparent; }
+
+/* The status colour, on the edge. Inset so it sits inside the ring. */
+.urow.open::before {
+  content: ''; position: absolute; left: 2px; top: 2px; bottom: 2px; width: 4px;
+  border-radius: 10px 0 0 10px; background: var(--muted);
+}
+.urow.open.tone-bad::before  { background: var(--crit); }
+.urow.open.tone-warn::before { background: var(--warn); }
+.urow.open.tone-ok::before   { background: var(--good); }
+.urow.open.tone-info::before { background: var(--series-1); }
+.urow.open.tone-off::before  { background: color-mix(in srgb, var(--muted) 50%, transparent); }
+
+/* The header of an open row reads as its title, not as another list item. */
+.urow.open .urow-head { padding-top: 14px; padding-bottom: 12px; padding-left: 20px; }
+.urow.open .urow-head:hover { background: none; }
+.urow.open .uname { font-size: 14px; }
+.urow.open .udetail { padding-left: 20px; padding-right: 20px; }

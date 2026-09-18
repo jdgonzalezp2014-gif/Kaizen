@@ -209,7 +209,9 @@ function UnitRow({ u, read, medianOcc, expanded, onToggle, asOf, days, parkedAft
   const tone = dead ? 'off' : read.v.tone;
 
   return (
-    <div className={`urow${expanded ? ' open' : ''}`}>
+    // The tone rides on the wrapper as well as the light, so an opened
+    // row can carry its own colour on the edge that frames it.
+    <div className={`urow tone-${tone}${expanded ? ' open' : ''}`}>
       <button type="button" className="urow-head" onClick={onToggle} aria-expanded={expanded}>
         {/* Colour AND a word. The dot is the scan; the label is the meaning,
             so nothing here depends on seeing the difference between red

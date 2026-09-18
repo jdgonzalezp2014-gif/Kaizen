@@ -747,5 +747,15 @@ choice.
 Cells are 38px and the months are centred — a calendar pinned left under
 full-width fields reads as debris rather than a control.
 
+**An open row lifts out of the list.** It is a workspace, not the list
+carrying on: a 2px ring, its own corners, a shadow, and a 4px bar in its
+status colour down the left edge. The ring is an inset shadow rather than
+a border so nothing reflows when a row opens and the list does not jump
+under the cursor, and `.ulist` dropped `overflow: hidden` (which would
+have clipped the lift) in favour of rounding the first and last rows.
+
+Both lists are accordions — `open` holds a single id, so opening one
+closes the other. The lift therefore never has to tile.
+
 Dead `.modal*` CSS removed: every panel that once opened as a dialog now
 renders in place.

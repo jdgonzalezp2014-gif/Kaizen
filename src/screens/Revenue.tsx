@@ -256,7 +256,7 @@ function RevenueRow({ u, period, data, expanded, onToggle }: {
   }, [expanded, u.listingId, data, period]);
 
   return (
-    <div className={`urow${expanded ? ' open' : ''}`}>
+    <div className={`urow tone-${light}${expanded ? ' open' : ''}`}>
       <button type="button" className="urow-head rev" onClick={onToggle} aria-expanded={expanded}>
         <span className={`light tone-${light}`} aria-hidden="true" />
         <span className="uname">{u.name}</span>
