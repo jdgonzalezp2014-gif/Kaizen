@@ -194,6 +194,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return Response.json({ ok: true, ingestToken: token, account: await getAccount(sql) });
     }
 
+    if (typeof body.cleaningsSheetUrl === 'string') {
+      await sql`UPDATE accounts SET cleanings_sheet_url = ${body.cleaningsSheetUrl.trim() || null} WHERE id = 1`;
+    }
+
     if (typeof body.quoApiKey === 'string' && body.quoApiKey.trim()) {
       await sql`UPDATE accounts SET quo_api_key_enc = ${await encrypt(body.quoApiKey.trim(), env.ENCRYPTION_KEY)} WHERE id = 1`;
     }

@@ -835,3 +835,10 @@ button.fact-k:hover { color: var(--ink); }
   border: 1px solid var(--line); background: var(--card); color: var(--ink);
   font-variant-numeric: tabular-nums; margin: 0; }
 .date-in:focus { outline: 2px solid var(--series-1); outline-offset: 1px; }
+
+/* In flight: dim and stop interaction, so numbers on their way out are
+   not read as current and a second click cannot race the first. */
+.is-stale { opacity: .45; pointer-events: none; transition: opacity 120ms; }
+.loading-dot::after { content: ''; animation: dots 1.2s steps(4, end) infinite; }
+@keyframes dots { 0% { content: ''; } 25% { content: '.'; }
+  50% { content: '..'; } 75% { content: '...'; } }

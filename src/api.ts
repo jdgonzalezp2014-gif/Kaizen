@@ -252,7 +252,8 @@ export const getCleanings = (
   from = '', scope: CleaningScope = 'done', cleaners: string[] = [],
   to = '', include: string[] = []
 ) =>
-  call<{ ok: boolean; today: string; scope: CleaningScope; selected: string[];
+  call<{ ok: boolean; today: string; scope: CleaningScope; sheetUrl: string | null;
+         selected: string[];
          cleaners: { cleaner: string; n: number }[];
          states: Record<string, number>;
          cleanings: Cleaning[]; doneCount: number; scheduledAhead: number }>(

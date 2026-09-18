@@ -30,6 +30,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env);
   const url = new URL(request.url);
   const now = today();
+  let sheetUrl: string | null = null;
 
   // Refreshed on the way in, not by a button. The sheet is edited daily
   // by the people doing the work, so anything older than a few hours is
@@ -76,7 +77,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const raw = url.searchParams.get('scope');
   const scope = raw === 'scheduled' || raw === 'all' ? raw : 'done';
 
-  const rows = await sql`
+  const rowsQ = sql`
     SELECT key, unit_id, unit_name, checkout_on, cleaner, assignment, guest,
            price, deep, urgency, reservation_note,
            (checkout_on > ${now}) AS future
@@ -96,30 +97,38 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
      ORDER BY checkout_on DESC, unit_name
      LIMIT 1000`;
 
-  // Both counts always, whatever the scope: the tab needs to say what it
-  // is NOT showing, or a filtered view reads as an empty table.
-  const counts = (await sql`
+  // Independent of each other, so they go together. In series they were
+  // four round trips a person waits through one after another; the
+  // database does not care in which order it answers them.
+  const countsQ = sql`
     SELECT
       COUNT(*) FILTER (WHERE checkout_on <= ${now})::int AS done,
       COUNT(*) FILTER (WHERE checkout_on >  ${now})::int AS scheduled
-    FROM cleanings WHERE account_id = 1`) as { done: number; scheduled: number }[];
+    FROM cleanings WHERE account_id = 1`;
 
   // Real cleaners only, for the filter. "Not needed" and "TBD" are not
   // people and must not appear in a list of who to filter by.
-  const crew = (await sql`
+  const crewQ = sql`
     SELECT cleaner, COUNT(*)::int AS n FROM cleanings
      WHERE account_id = 1 AND assignment = 'assigned' AND cleaner IS NOT NULL
-     GROUP BY cleaner ORDER BY n DESC`) as { cleaner: string; n: number }[];
+     GROUP BY cleaner ORDER BY n DESC`;
 
   // Counted over the whole table, not the current selection, so a chip
   // that is switched off can still say how much it is holding back.
-  const states = (await sql`
+  const statesQ = sql`
     SELECT assignment, COUNT(*)::int AS n FROM cleanings
      WHERE account_id = 1 AND assignment <> 'assigned'
-     GROUP BY assignment`) as { assignment: string; n: number }[];
+     GROUP BY assignment`;
+
+  const [rows, counts, crew, states] = await Promise.all([rowsQ, countsQ, crewQ, statesQ]) as [
+    Record<string, unknown>[],
+    { done: number; scheduled: number }[],
+    { cleaner: string; n: number }[],
+    { assignment: string; n: number }[]
+  ];
 
   return Response.json({
-    ok: true, today: now, scope, selected: cleaners, cleaners: crew,
+    ok: true, today: now, scope, sheetUrl, selected: cleaners, cleaners: crew,
     states: Object.fromEntries(states.map(r => [r.assignment, r.n])),
     cleanings: rows,
     doneCount: counts[0]?.done ?? 0,

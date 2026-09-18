@@ -51,9 +51,14 @@ export function Cleanings() {
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [data, setData] = useState<{
     cleanings: Cleaning[]; cleaners: { cleaner: string; n: number }[];
-    states: Record<string, number>;
+    states: Record<string, number>; sheetUrl: string | null;
     scheduledAhead: number; doneCount: number; today: string } | null>(null);
   const [err, setErr] = useState('');
+  // Stale numbers that look current are worse than no numbers. While a
+  // request is out the panel says so and dims, because a filter chip
+  // reading "Michelle" above a table still showing everyone is a bug
+  // report waiting to happen.
+  const [busy, setBusy] = useState(true);
 
   useEffect(() => {
     // The calendar asks for one CLOSED month — an invoice covers a month,
@@ -63,18 +68,22 @@ export function Cleanings() {
     if (view === 'calendar') {
       const [y, m] = month.split('-').map(Number);
       const last = new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
+      setBusy(true);
       getCleanings(`${month}-01`, 'all', picked, last, include)
         .then(r => r.ok ? setData(r) : setErr('Could not load.'))
-        .catch(e => setErr(String(e)));
+        .catch(e => setErr(String(e)))
+        .finally(() => setBusy(false));
       return;
     }
+    setBusy(true);
     // Scheduled work is ahead of today, so a backward window would ask for
     // a range that cannot contain any of it — the dates are dropped rather
     // than inverted.
     getCleanings(scope === 'scheduled' ? '' : from, scope, picked,
                  scope === 'scheduled' ? '' : to, include)
       .then(r => r.ok ? setData(r) : setErr('Could not load.'))
-      .catch(e => setErr(String(e)));
+      .catch(e => setErr(String(e)))
+      .finally(() => setBusy(false));
   }, [from, to, scope, picked, include, view, month]);
 
   const usePreset = (n: number) => {
@@ -143,8 +152,14 @@ export function Cleanings() {
                    onChange={e => { setPreset(null); setTo(e.target.value); }} />
           </>
         )}
+        {data?.sheetUrl && (
+          <a className="chip" href={data.sheetUrl} target="_blank" rel="noreferrer">
+            Open the sheet ↗
+          </a>
+        )}
         <span className="note right">
-          {view === 'calendar' ? 'one whole month, for checking an invoice'
+          {busy ? <span className="loading-dot">Loading…</span>
+           : view === 'calendar' ? 'one whole month, for checking an invoice'
            : scope === 'done' ? 'up to and including today'
            : scope === 'scheduled' ? 'after today — not yet paid'
            : 'paid and committed together'}
@@ -195,6 +210,7 @@ export function Cleanings() {
       {err && <p className="banner warn">{err}</p>}
       {!data && !err && <p className="note">Loading…</p>}
 
+      <div className={busy && data ? 'is-stale' : undefined}>
       {data && view === 'calendar' && (
         <CleaningCalendar month={month} cleanings={data.cleanings} onMonth={setMonth} />
       )}
@@ -267,7 +283,7 @@ export function Cleanings() {
             <thead>
               <tr>
                 <th>Checkout</th><th>Unit</th><th>Cleaner</th>
-                <th className="n">Paid</th><th>Reservation note</th>
+                <th className="n">Paid</th>
               </tr>
             </thead>
             <tbody>
@@ -295,11 +311,11 @@ export function Cleanings() {
                   </td>
                   <td className="n">{c.price == null
                     ? <span className="note">not priced</span> : money2(Number(c.price))}</td>
-                  <td className="note">{c.reservation_note}</td>
+
                 </tr>
               ))}
               {data.cleanings.length === 0 && (
-                <tr><td colSpan={5} className="note">
+                <tr><td colSpan={4} className="note">
                   {data.doneCount + data.scheduledAhead === 0
                     ? 'No cleanings imported yet. Settings → Cleaning cost → Pull now reads the sheet.'
                     : 'Nothing in this range. Try a longer window, or another scope.'}
@@ -309,6 +325,7 @@ export function Cleanings() {
           </table>
         </>
       )}
+      </div>
     </section>
   );
 }

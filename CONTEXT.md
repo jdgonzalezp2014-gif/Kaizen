@@ -1630,3 +1630,32 @@ with both — which is the whole table.
 
 The scheduled scope still drops the dates rather than inverting them —
 work ahead of today cannot be in a backward window.
+
+
+## 62. The cleanings tab was slow because of one row at a time
+
+`importCleanings` wrote **one INSERT per clean**, awaited in sequence. At
+24 rows nobody noticed; the sheet is now **202**, so that is 202 HTTP round
+trips to Postgres and **25 seconds**, paid in full by whoever happens to
+open the tab when the three-hour cache expires.
+
+Rewritten as a single `INSERT … SELECT FROM unnest(...)` with one array per
+column, and the per-unit rate updates as a single `UPDATE … FROM unnest`.
+**25,000 ms → 1,444 ms**, and most of what is left is fetching the CSV.
+
+The endpoint's four independent queries now run together rather than one
+after another: **923 ms → 335 ms**. The database never cared in which
+order it answered them.
+
+**The visible symptom was not slowness, it was wrongness.** With no
+loading state the old rows stayed on screen, so a filter chip reading
+"Michelle" sat above a table still showing everyone — which looks exactly
+like a broken filter. In flight the panel now dims and says so, and
+pointer events are off so a second click cannot race the first.
+
+The reservation-note column is gone from the table; it was about the
+booking, never the cleaning.
+
+`cleanings_sheet_url` holds the editing link, separately from the
+published-CSV link the importer reads — one is a page a person opens, the
+other is a file download, and the button has to go where the work is done.

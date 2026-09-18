@@ -76,7 +76,19 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
   const rows = parseCsv(csv);
   const unmatched: string[] = [];
   const perUnit = new Map<string, { standard: number[]; deep: number[] }>();
-  let logged = 0;
+
+  // Collected into columns, then written in ONE statement.
+  //
+  // A row at a time meant one HTTP round trip to Postgres per clean: at
+  // 202 rows that is 202 requests and twenty-five seconds, and the person
+  // who happens to open the tab when the cache expires pays all of it.
+  // The work was never the problem — the waiting was.
+  const col = {
+    key: [] as string[], unit: [] as (string | null)[], name: [] as string[],
+    date: [] as string[], cleaner: [] as (string | null)[], assign: [] as string[],
+    guest: [] as (string | null)[], price: [] as (number | null)[],
+    deep: [] as boolean[], urgency: [] as (string | null)[], note: [] as (string | null)[]
+  };
 
   for (const r of rows) {
     const name = pick(r, 'unit', 'internal name', 'listing', 'property', 'name');
@@ -89,26 +101,19 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
     const amount = parseAmount(pick(r, 'price', 'cleaning', 'cost', 'amount'));
     const deep = /^(y|yes|true|1|x)$/i.test(pick(r, 'deep', 'deep clean').trim());
     const resId = pick(r, 'res id', 'resid', 'reservation id');
-    const key = resId || `${name}|${checkout}`;
     const who = readAssignment(pick(r, 'cleaner'));
 
-    await sql`
-      INSERT INTO cleanings
-        (account_id, key, unit_id, unit_name, checkout_on, cleaner, assignment,
-         guest, price, deep, urgency, reservation_note)
-      VALUES (1, ${key}, ${id}, ${name}, ${checkout.slice(0, 10)},
-              ${who.cleaner}, ${who.assignment}, ${pick(r, 'guest') || null},
-              ${amount != null && amount > 0 ? amount : null},
-              ${deep}, ${pick(r, 'urgency') || null}, ${pick(r, 'notes') || null})
-      ON CONFLICT (account_id, key) DO UPDATE SET
-        unit_id = EXCLUDED.unit_id, unit_name = EXCLUDED.unit_name,
-        checkout_on = EXCLUDED.checkout_on, cleaner = EXCLUDED.cleaner,
-        assignment = EXCLUDED.assignment,
-        guest = EXCLUDED.guest, price = EXCLUDED.price, deep = EXCLUDED.deep,
-        urgency = EXCLUDED.urgency, reservation_note = EXCLUDED.reservation_note,
-        imported_at = now()
-    `;
-    logged++;
+    col.key.push(resId || `${name}|${checkout}`);
+    col.unit.push(id);
+    col.name.push(name);
+    col.date.push(checkout.slice(0, 10));
+    col.cleaner.push(who.cleaner);
+    col.assign.push(who.assignment);
+    col.guest.push(pick(r, 'guest') || null);
+    col.price.push(amount != null && amount > 0 ? amount : null);
+    col.deep.push(deep);
+    col.urgency.push(pick(r, 'urgency') || null);
+    col.note.push(pick(r, 'notes') || null);
 
     // Priced, actually-cleaned rows only. A clean with no figure is "not
     // priced yet" and counting it as zero would drag the unit's rate
@@ -121,19 +126,45 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
     }
   }
 
+  const logged = col.key.length;
+  if (logged) {
+    await sql`
+      INSERT INTO cleanings
+        (account_id, key, unit_id, unit_name, checkout_on, cleaner, assignment,
+         guest, price, deep, urgency, reservation_note)
+      SELECT 1, k, u, n, d, c, a, g, p, dp, ug, rn
+        FROM unnest(${col.key}::text[], ${col.unit}::text[], ${col.name}::text[],
+                    ${col.date}::date[], ${col.cleaner}::text[], ${col.assign}::text[],
+                    ${col.guest}::text[], ${col.price}::numeric[], ${col.deep}::boolean[],
+                    ${col.urgency}::text[], ${col.note}::text[])
+             AS t(k, u, n, d, c, a, g, p, dp, ug, rn)
+      ON CONFLICT (account_id, key) DO UPDATE SET
+        unit_id = EXCLUDED.unit_id, unit_name = EXCLUDED.unit_name,
+        checkout_on = EXCLUDED.checkout_on, cleaner = EXCLUDED.cleaner,
+        assignment = EXCLUDED.assignment, guest = EXCLUDED.guest,
+        price = EXCLUDED.price, deep = EXCLUDED.deep, urgency = EXCLUDED.urgency,
+        reservation_note = EXCLUDED.reservation_note, imported_at = now()
+    `;
+  }
+
   // The MEDIAN of the standard cleans, not the most recent. The same unit
   // legitimately shows different prices — a deep clean costs more, and
   // cleaners differ — so "latest wins" would set a recurring cost from
-  // whichever clean happened to be last.
-  let rated = 0;
-  for (const [id, e] of perUnit) {
-    const amount = e.standard.length ? median(e.standard) : median(e.deep);
+  // whichever clean happened to be last. One statement again.
+  const ids = [...perUnit.keys()];
+  const fees = ids.map(id => {
+    const e = perUnit.get(id)!;
+    return e.standard.length ? median(e.standard) : median(e.deep);
+  });
+  if (ids.length) {
     await sql`
-      UPDATE units SET cleaning_fee = ${amount}, cleaning_fee_source = 'sheet',
+      UPDATE units SET cleaning_fee = t.fee, cleaning_fee_source = 'sheet',
                        cleaning_fee_at = now()
-       WHERE account_id = 1 AND id = ${id}`;
-    rated++;
+        FROM unnest(${ids}::text[], ${fees}::numeric[]) AS t(id, fee)
+       WHERE units.account_id = 1 AND units.id = t.id
+    `;
   }
+  const rated = ids.length;
 
   return { ok: true, rows: rows.length, logged, rated, unmatched, problem: null };
 }
