@@ -46,9 +46,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const member = (await sql`
     SELECT role FROM members WHERE account_id = 1 AND email = ${who.email.trim().toLowerCase()}
   `) as { role: string }[];
-  const role = member[0]?.role ?? 'owner';
+  const role = member[0]?.role ?? 'admin';
 
-  if (role !== 'owner') {
+  if (role !== 'admin') {
     // An ops member gets their identity and their tabs. Not the
     // credential flags, not the allow-list, not the targets — none of
     // which they can act on, and all of which describe the business
@@ -66,7 +66,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   ]);
 
   return Response.json({
-    ok: true, user: who.email, role, tabs: tabsFor('owner'),
+    ok: true, user: who.email, role, tabs: tabsFor('admin'),
     account, connection, members, audit
   });
 };
@@ -97,16 +97,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const rows = (body.members as { email?: string; role?: string }[])
         .map(m => ({
           email: String(m.email ?? '').trim().toLowerCase(),
-          role: m.role === 'owner' ? 'owner' : 'ops'
+          role: m.role === 'admin' ? 'admin' : 'ops'
         }))
         .filter(m => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m.email));
 
       // Refused rather than explained afterwards: saving a list with no
       // owner leaves an account nobody can administer, and no screen
       // left that could fix it.
-      if (rows.length && !rows.some(m => m.role === 'owner')) {
+      if (rows.length && !rows.some(m => m.role === 'admin')) {
         return Response.json({ ok: false,
-          error: 'An account needs at least one owner.' }, { status: 400 });
+          error: 'An account needs at least one admin.' }, { status: 400 });
       }
 
       const before = (await sql`
@@ -115,22 +115,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const primary = before.find(m => m.is_primary) ?? null;
       const actor = who.email.trim().toLowerCase();
 
-      // The primary owner cannot be removed or demoted by anyone else.
+      // The primary admin cannot be removed or demoted by anyone else.
       // They can do either to themselves — this is a floor under the
       // account, not a lock on a person.
       if (primary && primary.email !== actor) {
         const stillThere = rows.find(m => m.email === primary.email);
-        if (!stillThere || stillThere.role !== 'owner') {
+        if (!stillThere || stillThere.role !== 'admin') {
           return Response.json({
             ok: false, error: 'primary_owner',
-            message: `${primary.email} is the primary owner of this account and cannot be ` +
+            message: `${primary.email} is the primary admin of this account and cannot be ` +
                      'removed or demoted by another member. They can change their own role, ' +
                      'or transfer the primary role first.'
           }, { status: 403 });
         }
       }
 
-      // Bootstrap: with no primary yet, the owner doing this save becomes
+      // Bootstrap: with no primary yet, the admin doing this save becomes
       // it. Without this nobody could ever be primary — the flag only
       // preserved an existing one, so an empty table stayed flat forever
       // and the protection was unreachable.
@@ -139,7 +139,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       // and they can transfer it afterwards.
       const primaryEmail = primary
         ? primary.email
-        : (rows.some(m => m.email === actor && m.role === 'owner') ? actor : null);
+        : (rows.some(m => m.email === actor && m.role === 'admin') ? actor : null);
 
       await sql`DELETE FROM members WHERE account_id = 1`;
       for (const m of rows) {

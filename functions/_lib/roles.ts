@@ -6,7 +6,7 @@
  * directly, and an access level that lives only in the interface is not
  * an access level at all.
  */
-export type Role = 'owner' | 'ops';
+export type Role = 'admin' | 'ops';
 
 /**
  * Routes an `ops` member may reach. Everything not listed is refused.
@@ -27,14 +27,14 @@ const OPS_ALLOWED: { path: string; methods: string[] }[] = [
 ];
 
 export function mayAccess(role: Role, pathname: string, method: string): boolean {
-  if (role === 'owner') return true;
+  if (role === 'admin') return true;
   const rule = OPS_ALLOWED.find(r => r.path === pathname);
   return !!rule && rule.methods.includes(method.toUpperCase());
 }
 
 /** What the browser needs to decide which tabs to draw. */
 export function tabsFor(role: Role): string[] {
-  return role === 'owner'
+  return role === 'admin'
     ? ['units', 'revenue', 'costs', 'claims', 'settings']
     : ['costs', 'claims'];
 }

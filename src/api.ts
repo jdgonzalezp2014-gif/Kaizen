@@ -17,7 +17,7 @@ export interface Account {
 }
 export interface Connection { ok: boolean; message: string; units?: number }
 export interface Member {
-  email: string; role: 'owner' | 'ops';
+  email: string; role: 'admin' | 'ops';
   /** Cannot be removed or demoted by anyone else. Shown, never hidden. */
   is_primary?: boolean;
   added_at?: string;
@@ -27,7 +27,7 @@ export interface MemberAudit {
 }
 export interface SettingsResponse {
   ok: boolean; user: string;
-  role: 'owner' | 'ops';
+  role: 'admin' | 'ops';
   tabs: string[];
   /** Null for an ops member: they get their identity and their tabs. */
   account: Account | null;

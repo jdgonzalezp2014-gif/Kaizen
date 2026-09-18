@@ -29,14 +29,14 @@ test('a route nobody listed is closed, not open', () => {
   assert.equal(mayAccess('ops', '/api/something-new', 'GET'), false);
 });
 
-test('an owner is not restricted', () => {
-  assert.equal(mayAccess('owner', '/api/portfolio', 'GET'), true);
-  assert.equal(mayAccess('owner', '/api/anything', 'POST'), true);
+test('an admin is not restricted', () => {
+  assert.equal(mayAccess('admin', '/api/portfolio', 'GET'), true);
+  assert.equal(mayAccess('admin', '/api/anything', 'POST'), true);
 });
 
 test('the tabs match what the routes allow', () => {
   // If these drift apart, someone sees a tab that answers 403 — which
   // reads as the app being broken rather than as a permission.
   assert.deepEqual(tabsFor('ops'), ['costs', 'claims']);
-  assert.ok(tabsFor('owner').includes('revenue'));
+  assert.ok(tabsFor('admin').includes('revenue'));
 });

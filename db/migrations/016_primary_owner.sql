@@ -1,4 +1,4 @@
--- A primary owner, and a record of who changed what.
+-- A primary admin, and a record of who changed what.
 --
 -- Every system that survives contact with more than one administrator
 -- has one account that the others cannot remove: the GitHub org owner,

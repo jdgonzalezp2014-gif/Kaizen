@@ -48,7 +48,7 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
 
   const email = who.email.trim().toLowerCase();
   let allowed: string[] = [];
-  let role: Role = 'owner';
+  let role: Role = 'admin';
   try {
     const sql = db(ctx.env);
     const [acc, member] = await Promise.all([
@@ -57,10 +57,10 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     ]) as [{ allowed_emails: string[] | null }[], { role: Role }[]];
     allowed = acc[0]?.allowed_emails ?? [];
     // No member row means no role has been assigned. Defaulting to
-    // OWNER preserves what everyone had before roles existed — a
+    // ADMIN preserves what everyone had before roles existed — a
     // migration must not quietly take access away — and the allow-list
     // below is still what decides whether they get in at all.
-    role = member[0]?.role ?? 'owner';
+    role = member[0]?.role ?? 'admin';
   } catch {
     // A database that is down must not become an open door. It also must
     // not become a lock-out with no explanation, so this says which it is.

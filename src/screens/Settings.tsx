@@ -49,7 +49,7 @@ export function Settings() {
         <h2>Settings</h2>
         <p className="note">
           Signed in as {user}. Your account records costs and claims, so there is nothing to
-          configure here. Ask an owner if you need more.
+          configure here. Ask an admin if you need more.
         </p>
       </div>
     );
@@ -342,19 +342,19 @@ function MembersPanel({ members, audit, user, onSaved }: {
 }) {
   const [rows, setRows] = useState<Member[]>(members);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'owner' | 'ops'>('ops');
+  const [role, setRole] = useState<'admin' | 'ops'>('ops');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
   useEffect(() => setRows(members), [members]);
 
   const me = user.trim().toLowerCase();
-  const owners = rows.filter(r => r.role === 'owner').length;
-  // Saving a list with no owner leaves an account nobody can administer,
+  const admins = rows.filter(r => r.role === 'admin').length;
+  // Saving a list with no admin leaves an account nobody can administer,
   // and no screen left that could fix it.
-  const noOwner = rows.length > 0 && owners === 0;
+  const noAdmin = rows.length > 0 && admins === 0;
   const wouldLockMeOut = rows.length > 0 &&
-    !rows.some(r => r.email.toLowerCase() === me && r.role === 'owner');
+    !rows.some(r => r.email.toLowerCase() === me && r.role === 'admin');
 
   const save = async (next: Member[]) => {
     setBusy(true); setMsg('');
@@ -375,7 +375,7 @@ function MembersPanel({ members, audit, user, onSaved }: {
     <div className="card">
       <h2>Who can sign in</h2>
       <p className="note">
-        An <strong>owner</strong> sees everything. <strong>Ops</strong> records costs and claims
+        An <strong>admin</strong> sees everything. <strong>Ops</strong> records costs and claims
         and nothing else — no revenue, no units, no settings. Hiding the tabs is only the visible
         half: the API refuses those routes for an ops account, because a tab that is merely not
         drawn is still an address anyone can type.
@@ -397,8 +397,8 @@ function MembersPanel({ members, audit, user, onSaved }: {
               <td>
                 <select value={r.role} disabled={r.is_primary && r.email.toLowerCase() !== me}
                   onChange={e => setRows(prev => prev.map(x =>
-                    x.email === r.email ? { ...x, role: e.target.value as 'owner' | 'ops' } : x))}>
-                  <option value="owner">Owner — everything</option>
+                    x.email === r.email ? { ...x, role: e.target.value as 'admin' | 'ops' } : x))}>
+                  <option value="admin">Admin — everything</option>
                   <option value="ops">Ops — costs and claims</option>
                 </select>
               </td>
@@ -414,9 +414,9 @@ function MembersPanel({ members, audit, user, onSaved }: {
             <td><input value={email} onChange={e => setEmail(e.target.value)}
                        placeholder="someone@example.com" /></td>
             <td>
-              <select value={role} onChange={e => setRole(e.target.value as 'owner' | 'ops')}>
+              <select value={role} onChange={e => setRole(e.target.value as 'admin' | 'ops')}>
                 <option value="ops">Ops — costs and claims</option>
-                <option value="owner">Owner — everything</option>
+                <option value="admin">Admin — everything</option>
               </select>
             </td>
             <td><button className="link" onClick={add} disabled={!email.trim()}>add</button></td>
@@ -430,15 +430,15 @@ function MembersPanel({ members, audit, user, onSaved }: {
           setting only while your Access policy itself names the people.
         </p>
       )}
-      {noOwner && <p className="banner error">An account needs at least one owner.</p>}
+      {noAdmin && <p className="banner error">An account needs at least one admin.</p>}
       {wouldLockMeOut && (
         <p className="banner error">
-          You are {user}, and this list does not make you an owner. Saving it would lock you out
+          You are {user}, and this list does not make you an admin. Saving it would lock you out
           of everything except costs and claims, with no settings screen left to undo it.
         </p>
       )}
 
-      <button onClick={() => void save(rows)} disabled={busy || noOwner || wouldLockMeOut}>
+      <button onClick={() => void save(rows)} disabled={busy || noAdmin || wouldLockMeOut}>
         {busy ? 'Saving…' : 'Save'}
       </button>
       {msg && <p className="note">{msg}</p>}

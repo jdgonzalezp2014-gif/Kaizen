@@ -1295,7 +1295,10 @@ looking current.
 
 ## 49. Roles: two levels, enforced in the middleware
 
-**owner** — everything. **ops** — expenses and claims, nothing else.
+**admin** — everything. **ops** — expenses and claims, nothing else.
+
+Called `admin`, not `owner`: the role is administrative access to the
+app, and "owner" reads as ownership of the business, which it is not.
 
 **Hiding a tab is not access control.** Every screen is an endpoint
 reachable with a URL and a valid session, so `functions/_lib/roles.ts`
@@ -1315,12 +1318,12 @@ rather than their job.
 
 Lock-out guards, the same shape as before:
 
-* **No member row means owner.** Roles arrived after people did, and a
+* **No member row means admin.** Roles arrived after people did, and a
   migration must not quietly take access away. The allow-list still
   decides whether they get in at all.
-* Everyone on the old `allowed_emails` was migrated **as an owner** —
+* Everyone on the old `allowed_emails` was migrated **as an admin** —
   they had full access a moment earlier.
-* Saving a list **with no owner is refused**, not explained afterwards:
+* Saving a list **with no admin is refused**, not explained afterwards:
   it would leave an account nobody can administer and no screen left to
   fix it.
 * The form refuses to save a list that **demotes the person saving it**.
@@ -1368,7 +1371,7 @@ table — which is what a fresh account has, since `allowed_emails` was
 empty and migration 015 had nobody to migrate — nobody could ever become
 primary. The protection existed and was unreachable.
 
-Bootstrapped: with no primary yet, the **owner performing the save
+Bootstrapped: with no primary yet, the **admin performing the save
 becomes it**. The person setting the account up is the one administering
 it, and the role can be transferred afterwards.
 
