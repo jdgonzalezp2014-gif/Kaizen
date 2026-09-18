@@ -1327,3 +1327,34 @@ Lock-out guards, the same shape as before:
 * Adding a member also adds them to the allow-list. A role with no way
   in is a role nobody can use, and two separate chores is how someone
   ends up locked out.
+
+
+## 50. An archived listing still earned the money it earned
+
+Three different questions, and they had been collapsed into one:
+
+| Question | Who counts |
+|---|---|
+| **What did we earn?** | every listing, archived and parked included |
+| **Who shares this month's bill?** | units live now |
+| **What is the target?** | active AND not parked — 22 |
+
+`Revenue` built its dataset from `listings.filter(l => l.active)`. Once
+`active` learned about `specialStatus`, the archived listing dropped out
+of the dataset entirely — **$91,672 across 68 real reservations, from
+January 2025 to August 2026, vanished from every total it belonged in**,
+including its own row. 2026 YTD alone was understated by $33,025.
+
+`Dataset.sharedAmong` now separates the second question from the first. A
+unit archived last month did not consume this month's internet, and
+giving it a share moves cost off the units that did — so revenue counts
+everyone and shared costs divide among the live.
+
+The row is labelled `archived` and its light is `off`: an archived unit
+cannot chase a target, so it is not judged against one. Its money still
+counts; it is simply not a decision.
+
+The general shape of the mistake is worth remembering: **a flag that
+answers one question gets reused for a second one it was never about.**
+`active` was built to mean "can this take a booking today" and was
+standing in for "did this ever exist".

@@ -66,6 +66,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // average down and sets the portfolio target against units nobody
   // could book — 27 × the target instead of 23 × it, on this account.
   const parked = new Set((parkedRows as { id: string }[]).map(r => r.id));
+  // Who the TARGET is measured against. The history is a different
+  // question and counts every listing, archived ones included — see the
+  // dataset the browser builds.
   const active = listings.filter(l => l.active && !parked.has(l.listingId));
   const perUnitTarget = account.targetNetPerUnit;
 

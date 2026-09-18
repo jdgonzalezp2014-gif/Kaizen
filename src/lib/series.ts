@@ -25,11 +25,26 @@ export interface SeriesPoint {
 export interface Dataset {
   reservations: Reservation[];
   costs: CostRow[];
+  /**
+   * Every unit whose history belongs in this period — including ones
+   * archived or parked since. An archived listing earned real money
+   * before it was archived, and dropping it silently removes that money
+   * from every total it appears in.
+   */
   listingIds: string[];
+  /**
+   * Who divides a SHARED cost. Defaults to `listingIds`.
+   *
+   * Not the same question: a unit archived last month did not consume
+   * this month's internet, and giving it a share would move cost off the
+   * units that did. The target is a third question again, and lives in
+   * the API response.
+   */
+  sharedAmong?: string[];
 }
 
 function metricsFor(data: Dataset, p: Period) {
-  const costs = prorateCosts(data.costs, data.listingIds, p);
+  const costs = prorateCosts(data.costs, data.sharedAmong ?? data.listingIds, p);
   const byUnit = data.listingIds.map(id =>
     unitMetrics(
       id,

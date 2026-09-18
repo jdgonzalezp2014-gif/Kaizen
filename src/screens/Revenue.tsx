@@ -16,7 +16,8 @@ interface Portfolio {
   meta: { targets: { perUnitNet: number; activeUnits: number; portfolioNet: number; basis: string };
           occFloorPct?: number;
           window: { from: string; to: string }; tookMs: number };
-  listings: { listingId: string; name: string; active: boolean; city?: string; state?: string }[];
+  listings: { listingId: string; name: string; active: boolean;
+              specialStatus?: string | null; city?: string; state?: string }[];
   reservations: Dataset['reservations'];
   costs: Dataset['costs'];
 }
@@ -50,17 +51,28 @@ export function Revenue() {
     const set: Dataset = {
       reservations: data.reservations,
       costs: data.costs,
-      listingIds: data.listings.filter(l => l.active).map(l => l.listingId)
+      // EVERY unit, not just the live ones. One archived listing here
+      // carries $91,672 across 68 real reservations; filtering on
+      // `active` quietly removed all of it from the portfolio totals,
+      // and from its own row, as though it had never earned anything.
+      listingIds: data.listings.map(l => l.listingId),
+      // Shared costs are a different question: a unit archived last
+      // month did not consume this month's internet.
+      sharedAmong: data.listings.filter(l => l.active).map(l => l.listingId)
     };
     const names = new Map(data.listings.map(l => [l.listingId, l.name]));
     const places = new Map(data.listings.map(l => [l.listingId, { city: l.city, state: l.state }]));
+    const state = new Map(data.listings.map(l => [l.listingId,
+      { active: l.active, special: l.specialStatus ?? null }]));
     const board = scoreboard(set, period, data.meta.targets.perUnitNet);
     return {
       board,
       units: board.units.map(u => ({
         ...u,
         name: names.get(u.listingId) ?? u.listingId,
-        city: places.get(u.listingId)?.city, state: places.get(u.listingId)?.state
+        city: places.get(u.listingId)?.city, state: places.get(u.listingId)?.state,
+        listed: state.get(u.listingId)?.active ?? true,
+        special: state.get(u.listingId)?.special ?? null
       })),
       series: portfolioSeries(set, period),
       // Both breakdowns run the same window arithmetic as the headline
@@ -246,9 +258,12 @@ function Breakdown({ title, note, empty, total, rows, tone }: {
  * being trustworthy.
  */
 type UnitRowData = ReturnType<typeof scoreboard>['units'][number] &
-  { name: string; city?: string; state?: string };
+  { name: string; city?: string; state?: string; listed?: boolean; special?: string | null };
 
-function lightOfUnit(u: { delta: number; target: number }): Light {
+function lightOfUnit(u: { delta: number; target: number; listed?: boolean }): Light {
+  // An archived unit cannot chase a target, so it is not judged against
+  // one. Its history still counts; it is simply not a decision.
+  if (u.listed === false) return 'off';
   if (u.target <= 0) return 'info';
   const r = u.delta / u.target;
   if (r <= -0.25) return 'bad';
@@ -286,7 +301,13 @@ function RevenueRow({ u, period, data, expanded, onToggle }: {
     <div className={`urow tone-${light}${expanded ? ' open' : ''}`}>
       <button type="button" className="urow-head rev" onClick={onToggle} aria-expanded={expanded}>
         <span className={`light tone-${light}`} aria-hidden="true" />
-        <span className="uname">{u.name}</span>
+        <span className="uname">
+          {u.name}
+          {/* Its money is real and counted; it is simply not earning any
+              more. Saying so stops a dead unit reading as a live one
+              having a bad month. */}
+          {u.listed === false && <span className="sub-n"> {u.special ?? 'archived'}</span>}
+        </span>
         <span className="ustate">{u.occupancy == null ? '—' : `${Math.round(u.occupancy * 100)}% occupied`}</span>
         <span className="uocc">{money(u.net)}</span>
         <span className="uopen">{u.delta >= 0 ? '+' : ''}{money(u.delta)}</span>
