@@ -29,8 +29,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env);
   const url = new URL(request.url);
   const now = today();
-  const from = url.searchParams.get('from') || '';
-  const unit = url.searchParams.get('unit') || '';
+  // NULL, not ''. `checkout_on >= $1` makes Postgres coerce the
+  // parameter to DATE, and it does that before the OR can short-circuit
+  // — so an empty string failed the whole query with
+  // "invalid input syntax for type date". A filter meaning "no filter"
+  // has to be absent, not blank.
+  const from = url.searchParams.get('from') || null;
+  const unit = url.searchParams.get('unit') || null;
   const raw = url.searchParams.get('scope');
   const scope = raw === 'scheduled' || raw === 'all' ? raw : 'done';
 
@@ -43,8 +48,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
        AND (${scope} = 'all'
             OR (${scope} = 'done' AND checkout_on <= ${now})
             OR (${scope} = 'scheduled' AND checkout_on > ${now}))
-       AND (${from} = '' OR checkout_on >= ${from})
-       AND (${unit} = '' OR unit_id = ${unit})
+       AND (${from}::date IS NULL OR checkout_on >= ${from}::date)
+       AND (${unit}::text IS NULL OR unit_id = ${unit}::text)
      ORDER BY checkout_on DESC, unit_name
      LIMIT 1000`;
 

@@ -1444,3 +1444,32 @@ in later updates the row.
 
 Ops can see this tab: it is their own work, and the money in it is cost
 data they already record.
+
+
+## 54. An empty string is not "no filter" for a date column
+
+`AND (${from} = '' OR checkout_on >= ${from})` failed the whole query
+with `invalid input syntax for type date: ""`. Postgres coerces the
+parameter to DATE because of the comparison against `checkout_on`, and
+it does that **before** the OR can short-circuit. The guard that was
+supposed to make the filter optional is what broke it.
+
+A filter meaning "no filter" has to be **absent**, not blank:
+`${from}::date IS NULL OR checkout_on >= ${from}::date`, with `null`
+passed rather than `''`.
+
+The same pattern is in `/api/pricing` and the cleanings import — worth
+checking any query where an optional parameter is compared against a
+typed column.
+
+## 55. A failed load must not look like a demotion
+
+§52 made the tab list fail closed to the ops set. Correct as a security
+choice, wrong as a message: an admin whose `/api/settings` call failed
+lost Units, Revenue and Settings with no explanation, which reads as
+*"someone changed my access"* rather than *"the request failed"*.
+
+It still fails closed — **no** tabs are drawn, which is narrower than the
+ops set — but it says so, and says it is a load failure rather than a
+permission change. Failing closed and failing silently are different
+decisions, and only the first one was intended.

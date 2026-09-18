@@ -26,6 +26,7 @@ export function App() {
   // Which tabs to draw comes from the server, not from a guess here.
   // Null until it answers, so nothing is drawn that might then vanish.
   const [allowed, setAllowed] = useState<string[] | null>(null);
+  const [loadError, setLoadError] = useState('');
 
   useEffect(() => { getUnits().then(r => setUnits(r.units ?? [])).catch(() => {}); }, []);
   useEffect(() => {
@@ -37,13 +38,15 @@ export function App() {
         // is Units, where the decisions are; for ops it is Costs.
         setTab(prev => (prev && tabs.includes(prev)) ? prev : (tabs[0] as Tab));
       })
-      .catch(() => {
-        // The role could not be read. Falling back to every tab would
-        // show an ops account exactly what this is meant to keep from
-        // them, so it falls back to the narrow set instead — a wrong
-        // guess then costs an admin one reload, not a leak.
-        setAllowed(['costs', 'claims']);
-        setTab('costs');
+      .catch(e => {
+        // Silently falling back to the ops tab set made a transient
+        // failure look like a demotion: an admin lost Units, Revenue and
+        // Settings with no explanation, which reads as "someone changed
+        // my access" rather than "the request failed".
+        //
+        // Still fails closed — no tabs are drawn — but it says why.
+        setAllowed([]);
+        setLoadError(e instanceof Error ? e.message : String(e));
       });
   }, []);
 
@@ -78,7 +81,13 @@ export function App() {
         </p>
       )}
 
-      {tab === null    && <p className="note">Loading…</p>}
+      {loadError && (
+        <p className="banner error">
+          Could not read your access level, so nothing is shown. This is a failure to load,
+          not a change to your permissions — reload to try again. ({loadError})
+        </p>
+      )}
+      {tab === null && !loadError && <p className="note">Loading…</p>}
       {tab === 'units'    && <Units />}
       {tab === 'revenue'  && <Revenue />}
       {tab === 'claims'   && <Claims units={units} />}
