@@ -42,7 +42,7 @@ const GROUPS: Group[] = [
     blurb: 'Under the floor, but almost nothing left to sell in this window.' },
   { key: 'ok', title: 'On track', states: ['ok'],
     blurb: 'At or above your occupancy floor for these dates.' },
-  { key: 'off', title: 'Not taking bookings', states: ['parked', 'offline', 'unknown'],
+  { key: 'off', title: 'Not taking bookings', states: ['archived', 'parked', 'offline', 'unknown'],
     blurb: 'Blocked, or no calendar. Held out of the ranking: a blocked unit is not an empty ' +
            'one, and discounting it would cut the price of something nobody can book.' }
 ];
@@ -92,7 +92,8 @@ export function Units() {
   const read = (u: RankedUnit) => diagnose(u, portfolioAdr, askRatio, asOf);
   // A unit that is not taking bookings has no diagnosis to show — its
   // light is "off" rather than a verdict it never earned.
-  const lightOf = (u: RankedUnit): Light => u.active ? read(u).v.tone : 'off';
+  const lightOf = (u: RankedUnit): Light =>
+    u.active && u.listedActive ? read(u).v.tone : 'off';
 
   const counts: Partial<Record<Light, number>> = {};
   ranked.forEach(u => { const l = lightOf(u); counts[l] = (counts[l] ?? 0) + 1; });
@@ -204,7 +205,8 @@ function UnitRow({ u, read, medianOcc, expanded, onToggle, asOf, days, parkedAft
   asOf: string; days: number; parkedAfter: number;
   onExplain: () => void; onChanged: () => void;
 }) {
-  const dead = u.state === 'parked' || u.state === 'offline' || u.state === 'unknown';
+  const dead = u.state === 'parked' || u.state === 'offline'
+            || u.state === 'unknown' || u.state === 'archived';
   const occ = u.occupancy ?? 0;
   const tone = dead ? 'off' : read.v.tone;
 
@@ -220,7 +222,8 @@ function UnitRow({ u, read, medianOcc, expanded, onToggle, asOf, days, parkedAft
         <span className="uname">{u.name}</span>
         <span className="ustate">
           {dead
-            ? (u.state === 'unknown' ? 'No calendar'
+            ? (u.state === 'archived' ? `Not published — ${u.specialStatus ?? 'archived'} in Hostaway`
+               : u.state === 'unknown' ? 'No calendar'
                : u.state === 'parked' ? `Parked ${parkedAfter}+ days` : 'Blocked all window')
             : read.v.label}
         </span>

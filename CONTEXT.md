@@ -759,3 +759,47 @@ closes the other. The lift therefore never has to tile.
 
 Dead `.modal*` CSS removed: every panel that once opened as a dialog now
 renders in place.
+
+
+## 31. "Active" was never actually checked
+
+`fetchListings` decided a listing was active with:
+
+```js
+l.isActive !== false && l.status !== 'inactive' && l.listingStatus !== 'inactive'
+```
+
+**None of those three fields exist** on Hostaway's listing object. The
+expression was always true, so every listing was active and the sync
+reported "0 inactive" from the day it was written.
+
+It surfaced when a **Draft/Archived** listing topped the "needs a
+decision" list with $13,560 supposedly at stake. An archived listing
+still returns a calendar full of *available* nights, so every downstream
+test read it as a healthy unit sitting empty. Occupancy 0%, nothing
+booked, 30 nights open — a perfect false alarm on something nobody can
+book.
+
+The field that carries this is **`specialStatus`**: `null` on a live
+listing, `"archived"` on one taken down. Confirmed on this account:
+exactly one listing has it, and that listing also has every channel
+export `null` while the other 26 export to 1–5 channels.
+
+Rules:
+
+* Only **known** non-live values disqualify (`archived`, `draft`,
+  `inactive`, `disabled`, `deleted`). An unrecognised status keeps the
+  listing active and is carried to the UI as a label, so a new Hostaway
+  value shows up as something to investigate rather than silently
+  deleting a working unit from the portfolio and its target.
+* `classify()` checks it **before the calendar**, since the calendar is
+  exactly what makes an archived listing look healthy.
+* Stored in `units.special_status` at sync time, so the portfolio target
+  excludes it without a calendar sweep — the same shape as `parked`.
+
+Live counts now: 27 listings, **22 active**, 1 archived, 4 parked. The
+target moved from 27 × to 22 × the per-unit figure.
+
+The general lesson is the same one as the composite-key sync bug: a
+condition naming fields that do not exist typechecks perfectly and is
+always true. Only comparing it against the real payload finds it.

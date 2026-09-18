@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { classify, rank, suspectedDuplicates, type ForwardUnit } from './forward.ts';
 
 const unit = (over: Partial<ForwardUnit> = {}): ForwardUnit => ({
-  listingId: '1', name: 'U', city: 'Frisco', state: 'TX', active: true, listedActive: true, parked: false, parkedDays: 0,
+  listingId: '1', name: 'U', city: 'Frisco', state: 'TX', active: true, listedActive: true, specialStatus: null, parked: false, parkedDays: 0,
   basePrice: 150, cleaningFeeCharged: 90, cleaningCost: 55,
   weeklyDiscountPct: null, monthlyDiscountPct: null,
   nights: 30, nightsOpen: 15, nightsSold: 15, nightsBlocked: 0,
@@ -85,4 +85,27 @@ test('blocked past the horizon is parked, and parked outranks offline', () => {
   // Sorts below everything, including a short block.
   const gap = unit({ name: 'Gap', nightsOpen: 0, nightsSold: 0, nightsBlocked: 30, occupancy: null });
   assert.deepEqual(rank([u, gap], 0.6).map(x => x.state), ['offline', 'parked']);
+});
+
+test('an archived listing is never diagnosed, whatever its calendar says', () => {
+  // A draft listing still returns a calendar full of available nights,
+  // so every later test reads it as a healthy unit sitting empty. One
+  // did exactly that: it topped "needs a decision" with $13,560
+  // supposedly at stake on something nobody could book.
+  const u = unit({
+    listedActive: false, specialStatus: 'archived',
+    nightsOpen: 30, nightsSold: 0, occupancy: 0, hasCalendar: true
+  });
+  assert.equal(classify(u, 0.6), 'archived');
+  const ranked = rank([u, unit({ name: 'Live', occupancy: 0.2, nightsOpen: 20 })], 0.6);
+  assert.deepEqual(ranked.map(r => r.state), ['thin', 'archived']);
+  assert.equal(ranked.find(r => r.state === 'archived')!.atRisk, 0);
+});
+
+test('an unrecognised Hostaway status does not delete a working unit', () => {
+  // Only known non-live values disqualify. A status nobody has seen
+  // before should surface as a label to investigate, not silently drop a
+  // unit out of the portfolio and its target.
+  const u = unit({ listedActive: true, specialStatus: 'something_new' });
+  assert.notEqual(classify(u, 0.6), 'archived');
 });

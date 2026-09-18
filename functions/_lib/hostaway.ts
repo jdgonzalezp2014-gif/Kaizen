@@ -37,6 +37,13 @@ import { addDays, daysBetween } from '../../src/lib/dates.ts';
 
 const BASE = 'https://api.hostaway.com/v1';
 
+/**
+ * `specialStatus` values that mean the listing is not taking bookings.
+ * Confirmed on this account: one listing carries "archived" and shows as
+ * Draft/Archived in the Hostaway UI, with every channel export null.
+ */
+const NOT_LIVE = new Set(['archived', 'draft', 'inactive', 'disabled', 'deleted']);
+
 export interface HostawayListing {
   listingId: string;
   name: string;
@@ -50,6 +57,8 @@ export interface HostawayListing {
   city: string;
   state: string;
   timeZone: string;
+  /** Hostaway's publication flag: 'archived', 'draft', or null when live. */
+  specialStatus: string | null;
   amenities: string[];
   /** The listing's default nightly rate, before any calendar override. */
   basePrice: number | null;
@@ -194,8 +203,19 @@ export async function fetchListings(creds: HostawayCredentials, token?: string):
   return raw.map(l => ({
     listingId: String(l.id),
     name: l.internalListingName || l.name || '',
-    // Hostaway spells "switched off" several ways depending on plan.
-    active: l.isActive !== false && l.status !== 'inactive' && l.listingStatus !== 'inactive',
+    // `isActive`, `status` and `listingStatus` were checked here for
+    // months. NONE of them exist on the listing object — the expression
+    // was always true, so every listing was "active" and the sync
+    // reported 0 inactive forever. The field that actually carries this
+    // is `specialStatus`, which is null on a live listing and
+    // "archived" on one that was taken down.
+    //
+    // Only known non-live values disqualify. An unrecognised value keeps
+    // the listing active and is carried through to the UI instead, so a
+    // new Hostaway status shows up as a label to investigate rather than
+    // silently deleting a working unit from the portfolio.
+    active: !NOT_LIVE.has(String(l.specialStatus ?? '').toLowerCase()),
+    specialStatus: l.specialStatus ? String(l.specialStatus) : null,
     bedrooms: firstNumber(l, ['bedroomsNumber', 'bedrooms']) || null,
     bathrooms: firstNumber(l, ['bathroomsNumber', 'bathrooms']) || null,
     capacity: firstNumber(l, ['personCapacity', 'maxGuests', 'accommodates']) || null,

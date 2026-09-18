@@ -53,6 +53,7 @@ export async function syncUnits(
     id: l.listingId,
     name: l.name,
     active: l.active,
+    specialStatus: l.specialStatus,
     parked: isParked(l.listingId),
     bedrooms: l.bedrooms,
     bathrooms: l.bathrooms,
@@ -75,14 +76,15 @@ export async function syncUnits(
   // price decisions, all of which are foreign-keyed to it.
   for (const u of rows) {
     await sql`
-      INSERT INTO units (account_id, id, name, active, parked, parked_checked_at,
+      INSERT INTO units (account_id, id, name, active, special_status, parked, parked_checked_at,
                          bedrooms, bathrooms, capacity,
                          unit_type, pool_type, lat, lng, synced_at)
-      VALUES (${accountId}, ${u.id}, ${u.name}, ${u.active}, ${u.parked}, now(),
+      VALUES (${accountId}, ${u.id}, ${u.name}, ${u.active}, ${u.specialStatus}, ${u.parked}, now(),
               ${u.bedrooms}, ${u.bathrooms},
               ${u.capacity}, ${u.unitType}, ${u.poolType}, ${u.lat}, ${u.lng}, now())
       ON CONFLICT (account_id, id) DO UPDATE SET
         name = EXCLUDED.name, active = EXCLUDED.active,
+        special_status = EXCLUDED.special_status,
         parked = EXCLUDED.parked, parked_checked_at = EXCLUDED.parked_checked_at,
         bedrooms = EXCLUDED.bedrooms, bathrooms = EXCLUDED.bathrooms,
         capacity = EXCLUDED.capacity, unit_type = EXCLUDED.unit_type,

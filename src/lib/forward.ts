@@ -20,6 +20,8 @@ export interface ForwardUnit {
   state: string;
   /** Hostaway's flag. Says the listing exists, not that it takes bookings. */
   listedActive: boolean;
+  /** 'archived' / 'draft' when Hostaway says it is not published. */
+  specialStatus: string | null;
   /** Blocked solid across the whole parked horizon — off, whatever the flag says. */
   parked: boolean;
   parkedDays: number;
@@ -66,7 +68,8 @@ export interface ForwardUnit {
  *   watch      under the floor but with little left to sell.
  *   ok         at or above the floor.
  */
-export type ForwardState = 'parked' | 'offline' | 'unknown' | 'thin' | 'watch' | 'ok';
+export type ForwardState =
+  'archived' | 'parked' | 'offline' | 'unknown' | 'thin' | 'watch' | 'ok';
 
 export interface RankedUnit extends ForwardUnit {
   state: ForwardState;
@@ -87,6 +90,12 @@ export interface RankedUnit extends ForwardUnit {
  * and a unit with none is reported as offline rather than ranked.
  */
 export function classify(u: ForwardUnit, occFloor: number): ForwardState {
+  // Checked FIRST, before the calendar is even consulted. An archived
+  // listing still returns a calendar full of "available" nights, so
+  // every later test reads it as a healthy unit sitting empty — which is
+  // how a draft listing came to top the "needs a decision" list with
+  // $13,560 supposedly at stake on something nobody can book.
+  if (!u.listedActive) return 'archived';
   if (!u.hasCalendar) return 'unknown';
   // Parked outranks offline: both are unbookable, but parked says the
   // block runs past this window and is a standing decision, not a gap.
@@ -117,7 +126,7 @@ export function rank(units: ForwardUnit[], occFloor: number): RankedUnit[] {
   });
 
   const order: Record<ForwardState, number> = {
-    thin: 0, watch: 1, ok: 2, unknown: 3, offline: 4, parked: 5 };
+    thin: 0, watch: 1, ok: 2, unknown: 3, offline: 4, parked: 5, archived: 6 };
   return ranked.sort((a, b) => {
     if (order[a.state] !== order[b.state]) return order[a.state] - order[b.state];
     if (a.urgency !== b.urgency) return b.urgency - a.urgency;
