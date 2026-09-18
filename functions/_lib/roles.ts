@@ -21,6 +21,8 @@ const OPS_ALLOWED: { path: string; methods: string[] }[] = [
   { path: '/api/claims',   methods: ['GET', 'POST', 'DELETE'] },
   // Needed to attach a cost or a claim to a unit — names and ids only.
   { path: '/api/units',    methods: ['GET'] },
+  // Their own work, and the money in it is cost data they already record.
+  { path: '/api/cleaning-log', methods: ['GET'] },
   // Their own identity and role. The response is trimmed for ops; see
   // settings.ts.
   { path: '/api/settings', methods: ['GET'] }
@@ -35,6 +37,6 @@ export function mayAccess(role: Role, pathname: string, method: string): boolean
 /** What the browser needs to decide which tabs to draw. */
 export function tabsFor(role: Role): string[] {
   return role === 'admin'
-    ? ['units', 'revenue', 'costs', 'claims', 'settings']
-    : ['costs', 'claims'];
+    ? ['units', 'revenue', 'costs', 'cleanings', 'claims', 'settings']
+    : ['costs', 'cleanings', 'claims'];
 }

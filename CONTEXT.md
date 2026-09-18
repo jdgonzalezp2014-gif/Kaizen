@@ -1405,3 +1405,29 @@ same rule as the auth helper and the allow-list.
 
 The "Sync listings" banner is also gated on having a Settings tab: it
 told ops accounts to open a screen they cannot reach.
+
+
+## 53. Cleanings: past and today only, cut on the server
+
+The sheet is a forward log — **14 of its 24 rows are future cleans**.
+Showing them would answer "what did cleaning cost this month" with work
+nobody has done and money nobody has paid.
+
+The cut is in the SQL, not trimmed in the browser, so the totals on the
+page and the rows under them come from the same query and cannot
+disagree. Anything scheduled ahead is reported as a **count** and never
+mixed in.
+
+**A blank price is "not priced", never zero.** Rows without a figure
+("Not needed", "TBD") are counted as cleans and left out of the money —
+4 of the 10 current rows. Treating them as zero would report the period
+as cheaper than it was, and the screen says how many are missing.
+
+Read-only, deliberately. The sheet is where this is maintained, daily, by
+the people doing the work; a second place to edit it would be a second
+version of the truth. Rows are upserted on the reservation id, so
+re-reading corrects a clean rather than duplicating it — a price filled
+in later updates the row.
+
+Ops can see this tab: it is their own work, and the money in it is cost
+data they already record.

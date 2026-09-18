@@ -135,7 +135,43 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
                                cleaning_fee_at = now()
                WHERE account_id = 1 AND id = ${m.id}`;
   }
+
+  // The log itself, not only the rate derived from it. Upserted on the
+  // row's own key so re-reading the sheet corrects rows rather than
+  // duplicating them — a cleaner filled in later should update the
+  // clean, not add a second one.
+  let logged = 0;
+  for (const r of rows) {
+    const name = pick(r, 'unit', 'internal name', 'listing', 'property', 'name');
+    const checkout = pick(r, 'checkout', 'check-out', 'date');
+    if (!name || !checkout) continue;
+    const id = byName.get(name.toLowerCase().replace(/\s+/g, '')) ?? null;
+
+    // Res ID identifies the clean; without one, unit + date is the best
+    // available and collides only if a unit is cleaned twice in a day.
+    const resId = pick(r, 'res id', 'resid', 'reservation id');
+    const key = resId || `${name}|${checkout}`;
+    const amount = parseAmount(pick(r, 'price', 'cleaning', 'cost', 'amount'));
+
+    await sql`
+      INSERT INTO cleanings
+        (account_id, key, unit_id, unit_name, checkout_on, cleaner, guest,
+         price, deep, urgency, notes)
+      VALUES (1, ${key}, ${id}, ${name}, ${checkout.slice(0, 10)},
+              ${pick(r, 'cleaner') || null}, ${pick(r, 'guest') || null},
+              ${amount != null && amount > 0 ? amount : null},
+              ${/^(y|yes|true|1|x)$/i.test(pick(r, 'deep', 'deep clean').trim())},
+              ${pick(r, 'urgency') || null}, ${pick(r, 'notes') || null})
+      ON CONFLICT (account_id, key) DO UPDATE SET
+        unit_id = EXCLUDED.unit_id, unit_name = EXCLUDED.unit_name,
+        checkout_on = EXCLUDED.checkout_on, cleaner = EXCLUDED.cleaner,
+        guest = EXCLUDED.guest, price = EXCLUDED.price, deep = EXCLUDED.deep,
+        urgency = EXCLUDED.urgency, notes = EXCLUDED.notes, imported_at = now()
+    `;
+    logged++;
+  }
   if (body.url) await sql`UPDATE accounts SET cleanings_csv_url = ${url} WHERE id = 1`;
 
-  return Response.json({ ok: true, dryRun: false, updated: matched.length, matched, unmatched, skipped });
+  return Response.json({ ok: true, dryRun: false, updated: matched.length,
+                         logged, matched, unmatched, skipped });
 };

@@ -37,6 +37,6 @@ test('an admin is not restricted', () => {
 test('the tabs match what the routes allow', () => {
   // If these drift apart, someone sees a tab that answers 403 — which
   // reads as the app being broken rather than as a permission.
-  assert.deepEqual(tabsFor('ops'), ['costs', 'claims']);
+  assert.deepEqual(tabsFor('ops'), ['costs', 'cleanings', 'claims']);
   assert.ok(tabsFor('admin').includes('revenue'));
 });

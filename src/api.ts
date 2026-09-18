@@ -237,3 +237,12 @@ export const saveClaim = (body: Record<string, unknown>) =>
   });
 export const deleteClaim = (id: string) =>
   call<{ ok: boolean }>(`/api/claims?id=${id}`, { method: 'DELETE' });
+
+export interface Cleaning {
+  key: string; unit_id: string | null; unit_name: string;
+  checkout_on: string; cleaner: string | null; guest: string | null;
+  price: string | null; deep: boolean; urgency: string | null; notes: string | null;
+}
+export const getCleanings = (from = '') =>
+  call<{ ok: boolean; today: string; cleanings: Cleaning[]; scheduledAhead: number }>(
+    `/api/cleaning-log?from=${from}`);
