@@ -56,12 +56,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // has to be absent, not blank.
   const from = url.searchParams.get('from') || null;
   const unit = url.searchParams.get('unit') || null;
+  const cleaner = url.searchParams.get('cleaner') || null;
   const raw = url.searchParams.get('scope');
   const scope = raw === 'scheduled' || raw === 'all' ? raw : 'done';
 
   const rows = await sql`
-    SELECT key, unit_id, unit_name, checkout_on, cleaner, guest,
-           price, deep, urgency, notes,
+    SELECT key, unit_id, unit_name, checkout_on, cleaner, assignment, guest,
+           price, deep, urgency, reservation_note,
            (checkout_on > ${now}) AS future
       FROM cleanings
      WHERE account_id = 1
@@ -70,6 +71,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
             OR (${scope} = 'scheduled' AND checkout_on > ${now}))
        AND (${from}::date IS NULL OR checkout_on >= ${from}::date)
        AND (${unit}::text IS NULL OR unit_id = ${unit}::text)
+       AND (${cleaner}::text IS NULL OR cleaner = ${cleaner}::text)
      ORDER BY checkout_on DESC, unit_name
      LIMIT 1000`;
 
@@ -81,8 +83,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       COUNT(*) FILTER (WHERE checkout_on >  ${now})::int AS scheduled
     FROM cleanings WHERE account_id = 1`) as { done: number; scheduled: number }[];
 
+  // Real cleaners only, for the filter. "Not needed" and "TBD" are not
+  // people and must not appear in a list of who to filter by.
+  const cleaners = (await sql`
+    SELECT cleaner, COUNT(*)::int AS n FROM cleanings
+     WHERE account_id = 1 AND assignment = 'assigned' AND cleaner IS NOT NULL
+     GROUP BY cleaner ORDER BY n DESC`) as { cleaner: string; n: number }[];
+
   return Response.json({
-    ok: true, today: now, scope, cleanings: rows,
+    ok: true, today: now, scope, cleaner, cleaners, cleanings: rows,
     doneCount: counts[0]?.done ?? 0,
     scheduledAhead: counts[0]?.scheduled ?? 0
   });

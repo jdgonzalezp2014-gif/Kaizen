@@ -1497,3 +1497,31 @@ so re-reading corrects rather than duplicates.
 
 **Ops can see it.** It is their own work, the money in it is cost data
 they already record, and it sits inside Costs which they already have.
+
+
+## 57. "Not needed" is not a cleaner, and the notes are not about cleaning
+
+Two readings of that sheet were wrong.
+
+**The cleaner column carries two different things**: who is doing it, and
+that nobody is. `🚫 Not needed` and `❓ TBD` were appearing in the
+by-cleaner breakdown as though they were people, and both counted as
+cleans. `readAssignment()` now splits them into `assigned` / `tbd` /
+`not_needed`, matching **on the words, not the emoji** — the emoji is
+decoration somebody may drop, and a match depending on it would silently
+stop working the day they did.
+
+The three are not interchangeable: `tbd` is work that will happen with no
+name on it yet, `not_needed` is work that will not happen.
+
+**A stay that needed no clean is not a clean.** On the live sheet that is
+3 of 10 in the current window — the headline said 10 and should say 7,
+and the average cost per clean was understated by 30%. They are held out
+of every figure and reported on their own line.
+
+**The Notes column is about the RESERVATION** — "reservation cancelled",
+"unpaid extension", "guest extending" — not remarks on the work. Renamed
+`reservation_note` so nothing reads it as a comment on the cleaning.
+
+Filter by cleaner is on the server, and the list offered contains **real
+cleaners only**: Michelle 7, Karina and Marvin 5, Veronica 3.

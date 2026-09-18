@@ -18,6 +18,27 @@ export interface CleaningsImport {
   problem: string | null;
 }
 
+/**
+ * A cleaner, or the absence of one.
+ *
+ * The sheet uses the cleaner column for two different things: who is
+ * doing it, and that nobody is. "🚫 Not needed" means the stay needed no
+ * clean; "❓ TBD" means one is coming but unassigned. Left as written,
+ * both appeared in the by-cleaner breakdown as though they were people,
+ * and both counted as cleans.
+ *
+ * Matched on the words, not the emoji: the emoji is decoration someone
+ * may drop, and a match that depends on it would silently stop working.
+ */
+export function readAssignment(raw: string): { cleaner: string | null; assignment: string } {
+  const t = (raw ?? '').trim();
+  if (!t) return { cleaner: null, assignment: 'tbd' };
+  const plain = t.toLowerCase().replace(/[^a-z ]/g, '').trim();
+  if (/not needed|no cleaning|none/.test(plain)) return { cleaner: null, assignment: 'not_needed' };
+  if (/^tbd$|unassigned|pending/.test(plain)) return { cleaner: null, assignment: 'tbd' };
+  return { cleaner: t, assignment: 'assigned' };
+}
+
 const median = (xs: number[]): number => {
   const a = [...xs].sort((x, y) => x - y);
   const m = Math.floor(a.length / 2);
@@ -69,26 +90,31 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
     const deep = /^(y|yes|true|1|x)$/i.test(pick(r, 'deep', 'deep clean').trim());
     const resId = pick(r, 'res id', 'resid', 'reservation id');
     const key = resId || `${name}|${checkout}`;
+    const who = readAssignment(pick(r, 'cleaner'));
 
     await sql`
       INSERT INTO cleanings
-        (account_id, key, unit_id, unit_name, checkout_on, cleaner, guest,
-         price, deep, urgency, notes)
+        (account_id, key, unit_id, unit_name, checkout_on, cleaner, assignment,
+         guest, price, deep, urgency, reservation_note)
       VALUES (1, ${key}, ${id}, ${name}, ${checkout.slice(0, 10)},
-              ${pick(r, 'cleaner') || null}, ${pick(r, 'guest') || null},
+              ${who.cleaner}, ${who.assignment}, ${pick(r, 'guest') || null},
               ${amount != null && amount > 0 ? amount : null},
               ${deep}, ${pick(r, 'urgency') || null}, ${pick(r, 'notes') || null})
       ON CONFLICT (account_id, key) DO UPDATE SET
         unit_id = EXCLUDED.unit_id, unit_name = EXCLUDED.unit_name,
         checkout_on = EXCLUDED.checkout_on, cleaner = EXCLUDED.cleaner,
+        assignment = EXCLUDED.assignment,
         guest = EXCLUDED.guest, price = EXCLUDED.price, deep = EXCLUDED.deep,
-        urgency = EXCLUDED.urgency, notes = EXCLUDED.notes, imported_at = now()
+        urgency = EXCLUDED.urgency, reservation_note = EXCLUDED.reservation_note,
+        imported_at = now()
     `;
     logged++;
 
-    // Priced rows only. A clean with no figure is "not priced yet", and
-    // counting it as zero would drag the unit's rate towards nothing.
-    if (id && amount != null && amount > 0) {
+    // Priced, actually-cleaned rows only. A clean with no figure is "not
+    // priced yet" and counting it as zero would drag the unit's rate
+    // towards nothing; a stay that needed no clean is not a data point
+    // about what cleaning costs at all.
+    if (id && amount != null && amount > 0 && who.assignment !== 'not_needed') {
       const e = perUnit.get(id) ?? { standard: [], deep: [] };
       (deep ? e.deep : e.standard).push(amount);
       perUnit.set(id, e);

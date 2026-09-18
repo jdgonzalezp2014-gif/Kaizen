@@ -241,11 +241,15 @@ export const deleteClaim = (id: string) =>
 export interface Cleaning {
   key: string; unit_id: string | null; unit_name: string;
   checkout_on: string; cleaner: string | null; guest: string | null;
-  price: string | null; deep: boolean; urgency: string | null; notes: string | null;
+  price: string | null; deep: boolean; urgency: string | null;
+  /** From the sheet's Notes column, which is about the RESERVATION. */
+  reservation_note: string | null;
+  assignment: 'assigned' | 'tbd' | 'not_needed';
   future?: boolean;
 }
 export type CleaningScope = 'done' | 'scheduled' | 'all';
-export const getCleanings = (from = '', scope: CleaningScope = 'done') =>
-  call<{ ok: boolean; today: string; scope: CleaningScope; cleanings: Cleaning[];
+export const getCleanings = (from = '', scope: CleaningScope = 'done', cleaner = '') =>
+  call<{ ok: boolean; today: string; scope: CleaningScope; cleaner: string | null;
+         cleaners: { cleaner: string; n: number }[]; cleanings: Cleaning[];
          doneCount: number; scheduledAhead: number }>(
-    `/api/cleaning-log?from=${from}&scope=${scope}`);
+    `/api/cleaning-log?from=${from}&scope=${scope}&cleaner=${encodeURIComponent(cleaner)}`);

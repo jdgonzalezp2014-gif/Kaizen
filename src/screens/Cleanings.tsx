@@ -33,8 +33,10 @@ const SCOPES: [CleaningScope, string, string][] = [
 export function Cleanings() {
   const [days, setDays] = useState(30);
   const [scope, setScope] = useState<CleaningScope>('done');
+  const [cleaner, setCleaner] = useState('');
   const [data, setData] = useState<{
-    cleanings: Cleaning[]; scheduledAhead: number; doneCount: number; today: string } | null>(null);
+    cleanings: Cleaning[]; cleaners: { cleaner: string; n: number }[];
+    scheduledAhead: number; doneCount: number; today: string } | null>(null);
   const [err, setErr] = useState('');
 
   useEffect(() => {
@@ -42,28 +44,37 @@ export function Cleanings() {
     // for a range that cannot contain any of it.
     const from = scope === 'scheduled'
       ? '' : new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
-    getCleanings(from, scope)
+    getCleanings(from, scope, cleaner)
       .then(r => r.ok ? setData(r) : setErr('Could not load.'))
       .catch(e => setErr(String(e)));
-  }, [days, scope]);
+  }, [days, scope, cleaner]);
 
   const stats = useMemo(() => {
-    const list = data?.cleanings ?? [];
-    // Rows with no price are counted as CLEANS but not as money. A
-    // missing figure is "not priced yet", and treating it as zero would
-    // quietly report the month as cheaper than it was.
+    const all = data?.cleanings ?? [];
+    // A stay that needed no clean is not a clean. Counting it inflated
+    // the number and made the average cost per clean look lower than it
+    // is, so it is held out of every figure and reported on its own.
+    const notNeeded = all.filter(c => c.assignment === 'not_needed');
+    const list = all.filter(c => c.assignment !== 'not_needed');
+    const unassigned = list.filter(c => c.assignment === 'tbd');
+
+    // Rows with no price count as CLEANS but not as money: a missing
+    // figure is "not priced yet", and treating it as zero would report
+    // the period as cheaper than it was.
     const priced = list.filter(c => c.price != null);
     const spend = priced.reduce((a, c) => a + Number(c.price), 0);
+
     const byCleaner = new Map<string, { n: number; paid: number }>();
-    list.forEach(c => {
-      const who = c.cleaner?.trim() || 'Unassigned';
-      const e = byCleaner.get(who) ?? { n: 0, paid: 0 };
+    list.filter(c => c.assignment === 'assigned' && c.cleaner).forEach(c => {
+      const e = byCleaner.get(c.cleaner!) ?? { n: 0, paid: 0 };
       e.n++; e.paid += Number(c.price ?? 0);
-      byCleaner.set(who, e);
+      byCleaner.set(c.cleaner!, e);
     });
+
     return {
       total: list.length, priced: priced.length, spend,
       deep: list.filter(c => c.deep).length,
+      notNeeded: notNeeded.length, unassigned: unassigned.length,
       cleaners: [...byCleaner.entries()].sort((a, b) => b[1].n - a[1].n)
     };
   }, [data]);
@@ -91,6 +102,20 @@ export function Cleanings() {
         </span>
       </div>
 
+      {(data?.cleaners.length ?? 0) > 1 && (
+        <div className="row-controls">
+          <span className="note">Cleaner</span>
+          <button className={cleaner === '' ? 'chip active' : 'chip'}
+                  onClick={() => setCleaner('')}>Everyone</button>
+          {data!.cleaners.map(c => (
+            <button key={c.cleaner} className={cleaner === c.cleaner ? 'chip active' : 'chip'}
+                    onClick={() => setCleaner(c.cleaner)}>
+              {c.cleaner} <b>{c.n}</b>
+            </button>
+          ))}
+        </div>
+      )}
+
       {err && <p className="banner warn">{err}</p>}
       {!data && !err && <p className="note">Loading…</p>}
 
@@ -107,13 +132,16 @@ export function Cleanings() {
             <div><dt>Deep cleans</dt><dd>{stats.deep}</dd></div>
             <div><dt>Not priced</dt><dd>{stats.total - stats.priced}
               <small>of {stats.total}</small></dd></div>
+            <div><dt>No clean needed</dt><dd>{stats.notNeeded}
+              <small>not counted above</small></dd></div>
           </dl>
 
           {stats.total > stats.priced && (
             <p className="note">
-              {stats.total - stats.priced} clean(s) have no figure in the sheet yet. They are
-              counted as cleans and left out of the total — a blank is "not priced", and
-              treating it as zero would report the period as cheaper than it was.
+              {stats.total - stats.priced} clean(s) have no figure in the sheet yet
+              {stats.unassigned > 0 && `, ${stats.unassigned} of them still unassigned`}. They
+              count as cleans and stay out of the money — a blank is "not priced", and treating
+              it as zero would report the period as cheaper than it was.
             </p>
           )}
 
@@ -160,7 +188,7 @@ export function Cleanings() {
             <thead>
               <tr>
                 <th>Checkout</th><th>Unit</th><th>Cleaner</th>
-                <th className="n">Paid</th><th>Notes</th>
+                <th className="n">Paid</th><th>Reservation note</th>
               </tr>
             </thead>
             <tbody>
@@ -177,13 +205,18 @@ export function Cleanings() {
                         cost off that unit's row. */}
                     {!c.unit_id && <span className="sub-n"> not matched</span>}
                   </td>
-                  <td>{c.cleaner ?? '—'}
+                  <td>
+                    {c.cleaner ?? (
+                      <span className="note">
+                        {c.assignment === 'not_needed' ? 'no clean needed' : 'unassigned'}
+                      </span>
+                    )}
                     {c.deep && <span className="sub-n"> deep</span>}
                     {c.urgency && <span className="breach"> {c.urgency}</span>}
                   </td>
                   <td className="n">{c.price == null
                     ? <span className="note">not priced</span> : money2(Number(c.price))}</td>
-                  <td className="note">{c.notes}</td>
+                  <td className="note">{c.reservation_note}</td>
                 </tr>
               ))}
               {data.cleanings.length === 0 && (
