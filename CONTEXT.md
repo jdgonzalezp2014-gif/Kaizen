@@ -552,3 +552,44 @@ It never writes to Hostaway. Every suggestion is recorded in
 `pricing_decisions` with `origin='agent'` and `push_status='none'`, so
 when a human later moves that price, the advice sits beside what they
 actually did and `alignment` becomes answerable rather than anecdotal.
+
+
+## 22. Units is a list, not a wall of cards
+
+Twenty-three expanded cards is a scroll, not a workspace. The screen is a
+**traffic light per unit** — colour plus a three-word finding, scanned in
+seconds — and **one row opens in place** with the metrics, calendar, open
+stretches, Gemini's read and the price controls together.
+
+Nothing modal. A dialog covers the very list the unit is being compared
+against, which is the comparison the whole screen exists to support.
+
+Colour never carries meaning alone: the dot is the scan, the word beside
+it is the meaning.
+
+## 23. Revenue breakdowns
+
+`src/lib/breakdown.ts` — `byChannel()` and `byCategory()`, both running
+the SAME window arithmetic as the headline figures
+(`reservationContribution`, `prorateCosts`) rather than re-deriving
+totals. A breakdown whose parts do not add up to the number above it is
+worse than no breakdown.
+
+Channel labels are grouped, and two mappings are not obvious:
+
+* **`bookingengine` is Direct, not Booking.com.** It is Hostaway's own
+  direct booking engine, and a substring test for "booking" claims it for
+  the OTA — quietly moving commission-free revenue into the channel you
+  pay 15% to. Direct is therefore tested first. A unit test pins this.
+* **`customIcal` is "Blocked (iCal)".** Owner holds and cross-platform
+  blocks: nights occupied, nothing earned. Listing them as a sales
+  channel invites someone to read a $0 ADR as a pricing failure rather
+  than a blocked calendar.
+
+Live shape, 2026 YTD: Airbnb 63%, Direct 13%, Vrbo/Expedia 10%,
+Partner 7%, Booking.com 6%.
+
+Bars are scaled to the **largest slice**, not to 100%, so small rows stay
+legible instead of collapsing to a sliver. Sorted largest first, because
+the question is always which slice is biggest — a pie makes that harder
+to answer, not easier.

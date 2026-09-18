@@ -1,42 +1,46 @@
 /**
- * Units — what each one is doing over the nights you can still change,
- * and the levers that change them.
+ * Units — a status list you scan, and one row you open.
  *
- * Grouped rather than ranked into one long table. The first question is
- * never "what is row 14 doing", it is "which of these needs me today",
- * and three groups answer that before any number is read.
+ * Twenty-three expanded cards is not a workspace, it is a scroll. The
+ * shape that matches the actual job is a traffic light per unit: colour
+ * and a three-word finding, scanned in seconds, and then ONE row opened
+ * to do the work in — metrics, calendar, gaps, advice and the price
+ * controls, all in place. Nothing modal, because a dialog hides the list
+ * you were comparing against.
  */
 import { useEffect, useState } from 'react';
-import { getForward, applyPrice, askSuggestion, type PriceResult, type Suggestion } from '../api.ts';
-import { rank, suspectedDuplicates, type RankedUnit, type ForwardUnit, type ForwardState } from '../lib/forward.ts';
-import { findGaps, signals, verdict, median, portfolioAskRatio,
-         type Signal } from '../lib/revenue.ts';
+import {
+  getForward, applyPrice, askSuggestion,
+  type PriceResult, type Suggestion
+} from '../api.ts';
+import {
+  rank, suspectedDuplicates,
+  type RankedUnit, type ForwardUnit, type ForwardState
+} from '../lib/forward.ts';
+import {
+  findGaps, signals, verdict, median, portfolioAskRatio,
+  type Signal, type Verdict
+} from '../lib/revenue.ts';
 import { money, pct, points } from '../lib/format.ts';
 import { DayPicker } from '../components/DayPicker.tsx';
 import { Glossary } from '../components/Glossary.tsx';
 
-
 const addDays = (d: string, n: number) =>
   new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 
-interface Group {
-  key: string; title: string; blurb: string; states: ForwardState[];
-}
+interface Group { key: string; title: string; blurb: string; states: ForwardState[] }
 
-// Ordered by what you would act on first. The blurb is the explanation
-// that stops the table needing one.
 const GROUPS: Group[] = [
   { key: 'act', title: 'Needs a decision', states: ['thin'],
-    blurb: 'Below your occupancy floor with nights still open. These are the ones a price ' +
-           'change can still do something about — biggest money at stake first, not lowest percentage.' },
+    blurb: 'Below your occupancy floor with nights still open — ordered by money at stake, ' +
+           'not by lowest percentage.' },
   { key: 'watch', title: 'Nearly spent', states: ['watch'],
-    blurb: 'Under the floor, but almost nothing left to sell in this window. Too late to fix here; ' +
-           'worth looking at further out.' },
+    blurb: 'Under the floor, but almost nothing left to sell in this window.' },
   { key: 'ok', title: 'On track', states: ['ok'],
     blurb: 'At or above your occupancy floor for these dates.' },
   { key: 'off', title: 'Not taking bookings', states: ['parked', 'offline', 'unknown'],
-    blurb: 'Blocked, or no calendar. Deliberately kept out of the ranking: a blocked unit is not ' +
-           'an empty one, and discounting it would cut the price of something nobody can book.' }
+    blurb: 'Blocked, or no calendar. Held out of the ranking: a blocked unit is not an empty ' +
+           'one, and discounting it would cut the price of something nobody can book.' }
 ];
 
 export function Units() {
@@ -47,7 +51,7 @@ export function Units() {
   const [parkedAfter, setParkedAfter] = useState(45);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
-  const [editing, setEditing] = useState<RankedUnit | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
 
   const load = () => {
@@ -71,9 +75,8 @@ export function Units() {
   const ranked = units ? rank(units, floor) : [];
   const dupes  = units ? suspectedDuplicates(units) : [];
   const live   = ranked.filter(u => u.active);
-  const parked = ranked.filter(u => u.parked);
   // Benchmarks come from units that can actually be booked — parked ones
-  // would drag both towards zero and make everything look healthy.
+  // would drag them towards zero and make everything look healthy.
   const medianOcc = median(live.filter(u => u.occupancy != null).map(u => u.occupancy as number));
   const portfolioAdr = median(live.filter(u => u.adr != null && u.adr > 0).map(u => u.adr as number));
   const askRatio = portfolioAskRatio(live);
@@ -81,21 +84,22 @@ export function Units() {
   const totalPickup = live.reduce((a, u) => a + u.pickup7, 0);
   const totalBooks = live.reduce((a, u) => a + u.onBooks, 0);
 
+  const read = (u: RankedUnit) => diagnose(u, portfolioAdr, askRatio, asOf);
+
   return (
     <section>
       <div className="explain">
-        <h2>The next {days} nights <button className="link" onClick={() => setHelp(true)}>What do these mean?</button></h2>
+        <h2>
+          The next {days} nights
+          <button className="link" onClick={() => setHelp(true)}>What do these mean?</button>
+        </h2>
         <p>
-          Everything here is forward-looking: nights that have not happened yet and that a price
-          can still change. It is a different question from the Revenue tab, which is money that
-          already landed.
+          Forward-looking: nights that have not happened yet and that a price can still change.
         </p>
       </div>
 
       <div className="row-controls">
-        <label>From
-          <input type="date" value={asOf} onChange={e => setAsOf(e.target.value)} />
-        </label>
+        <label>From <input type="date" value={asOf} onChange={e => setAsOf(e.target.value)} /></label>
         <label>for
           <select value={days} onChange={e => setDays(Number(e.target.value))}>
             {[7, 14, 30, 45, 60, 90].map(d => <option key={d} value={d}>{d} nights</option>)}
@@ -104,14 +108,13 @@ export function Units() {
         <span className="note">through {addDays(asOf, days - 1)}</span>
         {units && (
           <span className="note right">
-            {live.length} unit{live.length === 1 ? '' : 's'} taking bookings
-            {parked.length > 0 && <> · {parked.length} parked</>}
+            {live.length} taking bookings · {ranked.length - live.length} parked
           </span>
         )}
       </div>
 
       {error && <p className="banner warn">{error}</p>}
-      {loading && <p className="note">Reading calendars from Hostaway…</p>}
+      {loading && !units && <p className="note">Reading calendars from Hostaway…</p>}
 
       {dupes.length > 0 && (
         <p className="banner warn">
@@ -124,7 +127,7 @@ export function Units() {
         <dl className="strip">
           <div><dt>Taking bookings</dt><dd>{live.length}<small>of {ranked.length}</small></dd></div>
           <div><dt>Median occupancy</dt><dd>{pct(medianOcc)}</dd></div>
-          <div><dt>Nights open</dt><dd>{totalOpen}<small>in window</small></dd></div>
+          <div><dt>Nights open</dt><dd>{totalOpen}</dd></div>
           <div><dt>Booked last 7d</dt><dd>{totalPickup}<small>nights</small></dd></div>
           <div><dt>On the books</dt><dd>{money(totalBooks)}</dd></div>
         </dl>
@@ -133,67 +136,43 @@ export function Units() {
       {units && GROUPS.map(g => {
         const rows = ranked.filter(u => g.states.includes(u.state));
         if (!rows.length) return null;
-        const asCards = g.key === 'act' || g.key === 'watch';
         return (
           <div key={g.key} className="group">
             <h3>{g.title} <span className="count">{rows.length}</span></h3>
-            <p className="note">{g.blurb}{g.key === 'off' && ` A block running past ${parkedAfter} days counts as parked.`}</p>
-            {asCards
-              ? rows.map(u => (
-                  <UnitCard key={u.listingId} u={u} medianOcc={medianOcc}
-                            portfolioAdr={portfolioAdr} askRatio={askRatio} asOf={asOf}
-                            onEdit={() => setEditing(u)} onExplain={() => setHelp(true)} />
-                ))
-              : (
-                <table className="units compact">
-                  <thead>
-                    <tr>
-                      <th>Unit</th><th className="n">Occupied</th><th className="n">Open</th>
-                      <th className="n">RevPAN</th><th className="n">ADR</th>
-                      <th className="n">Cleaning in / out</th><th></th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {rows.map(u => (
-                      <CompactRow key={u.listingId} u={u} parkedAfter={parkedAfter}
-                                  onEdit={() => setEditing(u)} />
-                    ))}
-                  </tbody>
-                </table>
-              )}
+            <p className="note">
+              {g.blurb}{g.key === 'off' && ` A block running past ${parkedAfter} days counts as parked.`}
+            </p>
+            <div className="ulist">
+              {rows.map(u => (
+                <UnitRow
+                  key={u.listingId} u={u} read={read(u)} medianOcc={medianOcc}
+                  expanded={open === u.listingId}
+                  onToggle={() => setOpen(open === u.listingId ? null : u.listingId)}
+                  asOf={asOf} days={days} parkedAfter={parkedAfter}
+                  onExplain={() => setHelp(true)} onChanged={load}
+                />
+              ))}
+            </div>
           </div>
         );
       })}
 
       {help && <Glossary onClose={() => setHelp(false)} />}
-
-      {editing && (
-        <PriceDialog u={editing} asOf={asOf} days={days}
-          onClose={() => setEditing(null)} onDone={() => { setEditing(null); load(); }} />
-      )}
     </section>
   );
 }
 
-/**
- * One unit, led by the diagnosis rather than by its metrics.
- *
- * The bar is occupancy against the PORTFOLIO MEDIAN, not against 100%,
- * because 45% is not a verdict on its own. The metrics sit underneath in
- * one quiet line: they are the evidence, and evidence does not need to
- * shout over the finding it supports.
- */
-function UnitCard({ u, medianOcc, portfolioAdr, askRatio, asOf, onEdit, onExplain }: {
-  u: RankedUnit; medianOcc: number | null;
-  portfolioAdr: number | null; askRatio: number | null; asOf: string;
-  onEdit: () => void; onExplain: () => void;
-}) {
+/* ── the read ──────────────────────────────────────────────────────── */
+
+interface Read { v: Verdict; rest: Signal[]; orphanNights: number; gaps: ReturnType<typeof findGaps> }
+
+function diagnose(u: RankedUnit, portfolioAdr: number | null,
+                  askRatio: number | null, asOf: string): Read {
   const gaps = findGaps(u.days);
   const orphans = gaps.filter(g => g.orphaned);
   const input = {
     occupancy: u.occupancy, nightsOpen: u.nightsOpen, pickup7: u.pickup7,
-    leadTime: u.leadTime, adr: u.adr, openAsk: u.openAsk,
-    lastBookedOn: u.lastBookedOn,
+    leadTime: u.leadTime, adr: u.adr, openAsk: u.openAsk, lastBookedOn: u.lastBookedOn,
     orphanNights: orphans.reduce((a, g) => a + g.nights, 0),
     orphanRuns: orphans.length,
     portfolioAdr: portfolioAdr == null ? null : Math.round(portfolioAdr),
@@ -201,56 +180,120 @@ function UnitCard({ u, medianOcc, portfolioAdr, askRatio, asOf, onEdit, onExplai
     today: asOf
   };
   const v = verdict(input);
-  const rest = signals(input).filter(x => !v.reason.includes(x.text.slice(0, 24)));
+  // The headline already carries its own evidence; repeating it under
+  // itself is noise, so the signal that produced it is filtered out.
+  const rest = signals(input).filter(s => !v.reason.includes(s.text.slice(0, 24)));
+  return { v, rest, orphanNights: input.orphanNights, gaps };
+}
+
+/* ── the traffic-light row ─────────────────────────────────────────── */
+
+function UnitRow({ u, read, medianOcc, expanded, onToggle, asOf, days, parkedAfter, onExplain, onChanged }: {
+  u: RankedUnit; read: Read; medianOcc: number | null;
+  expanded: boolean; onToggle: () => void;
+  asOf: string; days: number; parkedAfter: number;
+  onExplain: () => void; onChanged: () => void;
+}) {
+  const dead = u.state === 'parked' || u.state === 'offline' || u.state === 'unknown';
   const occ = u.occupancy ?? 0;
+  const tone = dead ? 'off' : read.v.tone;
 
   return (
-    <article className="ucard">
-      <header>
-        <h4>{u.name}</h4>
-        <span className="at-stake">
-          {u.nightsOpen} open · <strong>{money(u.exposure)}</strong> still winnable
+    <div className={`urow${expanded ? ' open' : ''}`}>
+      <button type="button" className="urow-head" onClick={onToggle} aria-expanded={expanded}>
+        {/* Colour AND a word. The dot is the scan; the label is the meaning,
+            so nothing here depends on seeing the difference between red
+            and amber. */}
+        <span className={`light tone-${tone}`} aria-hidden="true" />
+        <span className="uname">{u.name}</span>
+        <span className="ustate">
+          {dead
+            ? (u.state === 'unknown' ? 'No calendar'
+               : u.state === 'parked' ? `Parked ${parkedAfter}+ days` : 'Blocked all window')
+            : read.v.label}
         </span>
-      </header>
 
-      <p className={`verdict tone-${v.tone}`}>
-        <span className="dot" aria-hidden="true" />
-        <strong>{v.label}</strong>
-        <span className="because">{v.reason}</span>
+        {dead ? <span className="ubar" /> : (
+          <span className="ubar" title={`${pct(u.occupancy)} occupied`}>
+            <span className={`ubar-fill tone-${tone}`} style={{ width: `${Math.min(100, occ * 100)}%` }} />
+            {medianOcc != null && (
+              <span className="ubar-median" style={{ left: `${Math.min(100, medianOcc * 100)}%` }} />
+            )}
+          </span>
+        )}
+
+        <span className="uocc">{dead ? '—' : pct(u.occupancy)}</span>
+        <span className="uopen">{dead ? '—' : `${u.nightsOpen} open`}</span>
+        <span className="ustake">{dead ? '' : money(u.exposure)}</span>
+        <span className="uchev" aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+      </button>
+
+      {expanded && (
+        <UnitDetail u={u} read={read} medianOcc={medianOcc} asOf={asOf} days={days}
+                    dead={dead} onExplain={onExplain} onChanged={onChanged} />
+      )}
+    </div>
+  );
+}
+
+/* ── the workspace ─────────────────────────────────────────────────── */
+
+function UnitDetail({ u, read, medianOcc, asOf, days, dead, onExplain, onChanged }: {
+  u: RankedUnit; read: Read; medianOcc: number | null;
+  asOf: string; days: number; dead: boolean;
+  onExplain: () => void; onChanged: () => void;
+}) {
+  const occ = u.occupancy ?? 0;
+  return (
+    <div className="udetail">
+      <p className={`verdict tone-${dead ? 'info' : read.v.tone}`}>
+        <span>{read.v.reason}</span>
       </p>
 
-      {rest.length > 0 && (
-        <ul className="signals">{rest.map(x => <SignalLine key={x.kind} s={x} />)}</ul>
+      {read.rest.length > 0 && (
+        <ul className="signals">
+          {read.rest.map(s => (
+            <li key={s.kind} className={s.tone}>
+              <i>{s.tone === 'info' ? 'i' : '▲'}</i><span>{s.text}</span>
+            </li>
+          ))}
+        </ul>
       )}
 
-      <div className={`occbar tone-${v.tone}`}>
-        <div className="fill" style={{ width: `${Math.min(100, occ * 100)}%` }} />
-        {medianOcc != null && (
-          <div className="median" style={{ left: `${Math.min(100, medianOcc * 100)}%` }} />
-        )}
-      </div>
-      <div className="occbar-legend">
-        <span><strong>{pct(u.occupancy)}</strong> of sellable nights booked</span>
-        {medianOcc != null && (
-          <span>{points((occ - medianOcc) * 100)} pts vs portfolio median {pct(medianOcc)}</span>
-        )}
-      </div>
+      <dl className="facts-grid">
+        <Fact k="RevPAN" v={money(u.revpan)} onExplain={onExplain} />
+        <Fact k="ADR achieved" v={money(u.adr)} onExplain={onExplain} />
+        <Fact k="Asking, open nights" v={u.nightsOpen ? money(u.openAsk) : '—'} />
+        <Fact k="Booked last 7d" v={`${u.pickup7} nights`} onExplain={onExplain} />
+        <Fact k="Books" v={u.leadTime == null ? '—' : `${u.leadTime} days out`} onExplain={onExplain} />
+        <Fact k="On the books" v={money(u.onBooks)} />
+        <Fact k="Cleaning in / out"
+              v={`${money(u.cleaningFeeCharged)} / ${money(u.cleaningCost)}`} onExplain={onExplain} />
+        {/* A visible hole, not a hidden one: the comp set is the biggest
+            missing input here, and omitting the row would let the panel
+            read as though the picture were complete. */}
+        <Fact k="Market rate" v="not connected" muted />
+      </dl>
 
-      <footer>
-        <p className="facts">
-          <Fact k="RevPAN" v={money(u.revpan)} onExplain={onExplain} />
-          <Fact k="ADR" v={money(u.adr)} onExplain={onExplain} />
-          <Fact k="asking" v={u.nightsOpen ? money(u.openAsk) : '—'} />
-          <Fact k="booked 7d" v={`${u.pickup7}n`} onExplain={onExplain} />
-          <Fact k="books" v={u.leadTime == null ? '—' : `${u.leadTime}d out`} onExplain={onExplain} />
-          {/* A visible hole, not a hidden one: the comp set is the biggest
-              missing input here, and leaving the row out entirely would
-              let the card read as though the picture were complete. */}
-          <Fact k="market" v="not connected" muted />
-        </p>
-        <button className="small" onClick={onEdit}>Change price</button>
-      </footer>
-    </article>
+      {!dead && (
+        <>
+          <div className="occline">
+            <span className="ubar big">
+              <span className={`ubar-fill tone-${read.v.tone}`} style={{ width: `${Math.min(100, occ * 100)}%` }} />
+              {medianOcc != null && (
+                <span className="ubar-median" style={{ left: `${Math.min(100, medianOcc * 100)}%` }} />
+              )}
+            </span>
+            <span className="note">
+              <strong>{pct(u.occupancy)}</strong> of {u.nightsOpen + u.nightsSold} sellable nights booked
+              {medianOcc != null && <> · {points((occ - medianOcc) * 100)} pts vs portfolio median {pct(medianOcc)}</>}
+            </span>
+          </div>
+
+          <PriceWorkspace u={u} gaps={read.gaps} asOf={asOf} days={days} onChanged={onChanged} />
+        </>
+      )}
+    </div>
   );
 }
 
@@ -258,76 +301,31 @@ function Fact({ k, v, onExplain, muted }: {
   k: string; v: string; onExplain?: () => void; muted?: boolean;
 }) {
   return (
-    <span className={muted ? 'fact muted' : 'fact'}>
+    <div className={muted ? 'fact muted' : 'fact'}>
       {onExplain
-        ? <button type="button" className="fact-k" onClick={onExplain} title={`What is ${k}?`}>{k}</button>
-        : <span className="fact-k">{k}</span>}
-      <b>{v}</b>
-    </span>
-  );
-}
-
-/* Icon AND word, never colour alone — this has to survive colourblindness,
-   a greyscale print and a screenshot pasted into a chat. */
-const SIGNAL_ICON = { bad: '▲', warn: '▲', info: 'i' } as const;
-
-function SignalLine({ s }: { s: Signal }) {
-  return <li className={s.tone}><i>{SIGNAL_ICON[s.tone]}</i><span>{s.text}</span></li>;
-}
-
-function CompactRow({ u, parkedAfter, onEdit }: {
-  u: RankedUnit; parkedAfter: number; onEdit: () => void;
-}) {
-  const dead = u.state === 'parked' || u.state === 'offline' || u.state === 'unknown';
-  if (dead) {
-    return (
-      <tr className="muted-row">
-        <td>{u.name}</td>
-        <td className="n" colSpan={4}>
-          {u.state === 'unknown' ? 'No calendar returned'
-            : u.state === 'parked' ? `Blocked every night for ${parkedAfter}+ days`
-            : `Blocked all ${u.nights} nights in this window`}
-          {u.state === 'parked' && u.listedActive && <span className="sub-n"> · still flagged active in Hostaway</span>}
-        </td>
-        <td className="n">{money(u.cleaningFeeCharged)}<span className="sub-n"> / {money(u.cleaningCost)}</span></td>
-        <td></td>
-      </tr>
-    );
-  }
-  return (
-    <tr>
-      <td>{u.name}</td>
-      <td className="n">{pct(u.occupancy)}</td>
-      <td className="n">{u.nightsOpen}</td>
-      <td className="n">{money(u.revpan)}</td>
-      <td className="n">{money(u.adr)}</td>
-      <td className="n">
-        {money(u.cleaningFeeCharged)}<span className="sub-n"> / {money(u.cleaningCost)}</span>
-        {u.cleaningFeeCharged != null && u.cleaningCost != null &&
-          u.cleaningFeeCharged - u.cleaningCost < 10 && (
-          <span className="breach" title="The cleaning fee barely covers what the cleaner is paid"> ▲</span>
-        )}
-      </td>
-      <td><button className="link" onClick={onEdit}>Change price</button></td>
-    </tr>
+        ? <dt><button type="button" className="fact-k" onClick={onExplain} title={`What is ${k}?`}>{k}</button></dt>
+        : <dt><span className="fact-k">{k}</span></dt>}
+      <dd>{v}</dd>
+    </div>
   );
 }
 
 /**
- * The confirm step.
+ * Everything needed to change a price, in the row you opened.
  *
- * It says in words exactly what is about to change and where — the live
- * guest-facing calendar, not a draft in this app — and the result panel
- * reports what actually landed rather than assuming the request worked.
+ * The calendar, the open stretches, the model's read and the controls
+ * sit together because they are one decision — and because a modal would
+ * cover the list you were comparing this unit against.
  */
-function PriceDialog({ u, asOf, days, onClose, onDone }: {
-  u: RankedUnit; asOf: string; days: number; onClose: () => void; onDone: () => void;
+function PriceWorkspace({ u, gaps, asOf, days, onChanged }: {
+  u: RankedUnit; gaps: ReturnType<typeof findGaps>;
+  asOf: string; days: number; onChanged: () => void;
 }) {
-  const current = u.askAvg ?? u.basePrice;
+  const current = u.openAsk ?? u.basePrice;
   const [from, setFrom] = useState(asOf);
   const [to, setTo] = useState(addDays(asOf, days - 1));
-  const [rate, setRate] = useState<string>(current == null ? '' : String(current));
-  const [disc, setDisc] = useState<string>('');
+  const [rate, setRate] = useState(current == null ? '' : String(current));
+  const [disc, setDisc] = useState('');
   const [kind, setKind] = useState<'weekly' | 'monthly' | 'window'>('weekly');
   const [note, setNote] = useState('');
   const [busy, setBusy] = useState(false);
@@ -335,6 +333,7 @@ function PriceDialog({ u, asOf, days, onClose, onDone }: {
   const [advice, setAdvice] = useState<Suggestion | null>(null);
   const [adviceErr, setAdviceErr] = useState('');
   const [thinking, setThinking] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const rateNum = rate.trim() === '' ? null : Number(rate);
   const discNum = disc.trim() === '' ? null : Number(disc);
@@ -342,53 +341,42 @@ function PriceDialog({ u, asOf, days, onClose, onDone }: {
   const marked = kind === 'window' && discNum != null && rateNum != null
     ? Math.round(rateNum * (1 - discNum / 100)) : null;
   const openInRange = u.days.filter(d => d.d >= from && d.d <= to && d.s === 'o').length;
-  const gaps = findGaps(u.days);
-
-  const send = (recordOnly: boolean) => {
-    setBusy(true); setResult(null);
-    applyPrice({
-      listingId: u.listingId,
-      baseRate: rateChanged ? rateNum : null,
-      discountPct: discNum, discountKind: kind,
-      from, to, note, confirmed: true, recordOnly
-    }).then(setResult).catch(e => setResult({ ok: false, error: String(e) }))
-      .finally(() => setBusy(false));
-  };
+  const nothingToDo = !rateChanged && discNum == null;
 
   const ask = () => {
     setThinking(true); setAdviceErr(''); setAdvice(null);
     askSuggestion(u.listingId, from, to)
-      .then(r => {
-        if (!r.ok) { setAdviceErr(r.message ?? r.error ?? 'Could not get a suggestion.'); return; }
-        setAdvice(r.suggestion!);
-      })
+      .then(r => r.ok ? setAdvice(r.suggestion!) : setAdviceErr(r.message ?? r.error ?? 'No suggestion.'))
       .catch(e => setAdviceErr(String(e)))
       .finally(() => setThinking(false));
   };
 
-  /** Fill the form from the advice. It still goes through the same confirm. */
-  const applyAdvice = (a: Suggestion) => {
+  const useAdvice = (a: Suggestion) => {
     if (a.suggestedRate != null) setRate(String(a.suggestedRate));
     if (a.suggestedWeeklyDiscountPct != null) { setKind('weekly'); setDisc(String(a.suggestedWeeklyDiscountPct)); }
     else if (a.suggestedMonthlyDiscountPct != null) { setKind('monthly'); setDisc(String(a.suggestedMonthlyDiscountPct)); }
-    if (!note) setNote(`AI: ${a.action.replace(/_/g, ' ')}`);
+    if (!note) setNote(`Gemini: ${a.action.replace(/_/g, ' ')}`);
+  };
+
+  const send = (recordOnly: boolean) => {
+    setBusy(true); setResult(null);
+    applyPrice({
+      listingId: u.listingId, baseRate: rateChanged ? rateNum : null,
+      discountPct: discNum, discountKind: kind, from, to, note,
+      confirmed: true, recordOnly
+    }).then(r => { setResult(r); setConfirming(false); if (r.ok) onChanged(); })
+      .catch(e => setResult({ ok: false, error: String(e) }))
+      .finally(() => setBusy(false));
   };
 
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal wide" onClick={e => e.stopPropagation()}>
-        <h3>{u.name}</h3>
-        <p className="note">
-          {pct(u.occupancy)} occupied · {u.nightsOpen} of {u.nightsOpen + u.nightsSold} sellable
-          nights still open in the next {days}.
-        </p>
+    <div className="workspace">
+      <DayPicker days={u.days} from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t); }} />
 
-        <DayPicker days={u.days} from={from} to={to}
-          onChange={(f, t) => { setFrom(f); setTo(t); }} />
+      {gaps.length > 0 && <GapList gaps={gaps} onPick={(f, t) => { setFrom(f); setTo(t); }} />}
 
-        <GapList gaps={gaps} onPick={(f, t) => { setFrom(f); setTo(t); }} />
-
-        <div className="fields">
+      <div className="tools">
+        <div className="tool-fields">
           <label>Nightly rate
             <input type="number" value={rate} onChange={e => setRate(e.target.value)}
                    placeholder={String(current ?? '')} />
@@ -397,111 +385,113 @@ function PriceDialog({ u, asOf, days, onClose, onDone }: {
             <span className="inline">
               <input type="number" value={disc} onChange={e => setDisc(e.target.value)} placeholder="none" />
               <select value={kind} onChange={e => setKind(e.target.value as typeof kind)}>
-                <option value="weekly">% off stays of 7+ nights</option>
-                <option value="monthly">% off stays of 28+ nights</option>
-                <option value="window">% off the selected dates</option>
+                <option value="weekly">% off 7+ nights</option>
+                <option value="monthly">% off 28+ nights</option>
+                <option value="window">% off selected dates</option>
               </select>
             </span>
           </label>
-        </div>
-        <div className="advice-block">
-          {!advice && !thinking && (
-            <button type="button" className="ghost small" onClick={ask}>Ask Gemini what to do</button>
-          )}
-          {thinking && <p className="note">Reading this unit's calendar and booking history…</p>}
-          {adviceErr && <p className="banner warn">{adviceErr}</p>}
-          {advice && (
-            <div className="advice">
-              <div className="advice-head">
-                <strong>{advice.action.replace(/_/g, ' ')}</strong>
-                <span className={`conf conf-${advice.confidence}`}>{advice.confidence} confidence</span>
-              </div>
-              <p>{advice.reasoning}</p>
-              {/* What the model could NOT see. Shown as prominently as the
-                  advice, because a recommendation made without the comp
-                  set is a different object from one made with it. */}
-              {advice.missing && <p className="missing"><i>Not considered:</i> {advice.missing}</p>}
-              <div className="advice-actions">
-                {(advice.suggestedRate != null || advice.suggestedWeeklyDiscountPct != null ||
-                  advice.suggestedMonthlyDiscountPct != null) && (
-                  <button type="button" className="ghost small" onClick={() => applyAdvice(advice)}>
-                    Fill the form with this
-                  </button>
-                )}
-                {advice.suggestedMinimumStay != null && (
-                  <span className="note">
-                    Suggests a minimum stay of {advice.suggestedMinimumStay} night(s) — change that in
-                    Hostaway; this app does not write minimum stays yet.
-                  </span>
-                )}
-              </div>
-              <p className="note">
-                Advice only. Nothing has changed, and it is recorded next to whatever you decide,
-                so its track record becomes measurable.
-              </p>
-            </div>
-          )}
+          <label>Why (optional)
+            <input value={note} onChange={e => setNote(e.target.value)}
+                   placeholder="e.g. three weeks open, holidays over" />
+          </label>
         </div>
 
-        <label>Why (optional)
-          <input value={note} onChange={e => setNote(e.target.value)}
-                 placeholder="e.g. three weeks open, school holidays over" />
-        </label>
-
-        {!result && (
-          <div className="disclaimer">
-            <strong>This changes the live price guests see.</strong>
-            <ul>
-              {rateChanged && <li>Nightly rate {money(current)} → {money(rateNum)} on the {openInRange} open night(s) between {from} and {to}.</li>}
-              {discNum != null && kind !== 'window' && (
-                <li>{kind === 'weekly' ? 'Weekly' : 'Monthly'} discount set to {discNum}% on the listing —
-                    it applies to any qualifying stay, not only the dates selected above.</li>
-              )}
-              {marked != null && <li>The selected dates repriced to {money(marked)} ({discNum}% off {money(rateNum)}).</li>}
-              {!rateChanged && discNum == null && <li>Nothing to change yet — enter a rate or a discount.</li>}
-              <li>Nights already booked keep their price; Hostaway will not reprice a booked night.</li>
-              <li>It is recorded either way, with today's occupancy, so its effect can be measured later.</li>
-            </ul>
-          </div>
+        {!advice && !thinking && (
+          <button type="button" className="ghost small" onClick={ask}>Ask Gemini</button>
         )}
+        {thinking && <span className="note">Reading this unit's calendar and history…</span>}
+      </div>
 
-        {result && (
-          <div className={`disclaimer ${result.ok ? 'good' : 'bad'}`}>
-            <strong>{result.ok ? 'Applied.' : result.pushed ? 'Partly applied.' : 'Not applied.'}</strong>
-            <p>{result.message ?? result.error}</p>
-            {result.detail && <p className="mono">{result.detail}</p>}
+      {adviceErr && <p className="banner warn">{adviceErr}</p>}
+
+      {advice && (
+        <div className="advice">
+          <div className="advice-head">
+            <strong>{advice.action.replace(/_/g, ' ')}</strong>
+            <span className={`conf conf-${advice.confidence}`}>{advice.confidence} confidence</span>
           </div>
-        )}
+          <p>{advice.reasoning}</p>
+          {/* What the model could NOT see, shown as prominently as what it
+              did. A recommendation made without the comp set is a
+              different object from one made with it. */}
+          {advice.missing && <p className="missing"><i>Not considered:</i> {advice.missing}</p>}
+          <div className="advice-actions">
+            {(advice.suggestedRate != null || advice.suggestedWeeklyDiscountPct != null ||
+              advice.suggestedMonthlyDiscountPct != null) && (
+              <button type="button" className="ghost small" onClick={() => useAdvice(advice)}>
+                Use these numbers
+              </button>
+            )}
+            {advice.suggestedMinimumStay != null && (
+              <span className="note">
+                Suggests a {advice.suggestedMinimumStay}-night minimum — set that in Hostaway;
+                this app does not write minimum stays yet.
+              </span>
+            )}
+            <button type="button" className="link" onClick={() => setAdvice(null)}>dismiss</button>
+          </div>
+        </div>
+      )}
 
-        <div className="modal-actions">
-          {result
-            ? <button onClick={onDone}>Done</button>
+      {result && (
+        <div className={`disclaimer ${result.ok ? 'good' : 'bad'}`}>
+          <strong>{result.ok ? 'Applied.' : result.pushed ? 'Partly applied.' : 'Not applied.'}</strong>
+          <p>{result.message ?? result.error}</p>
+          {result.detail && <p className="mono">{result.detail}</p>}
+        </div>
+      )}
+
+      {confirming && !result && (
+        <div className="disclaimer">
+          <strong>This changes the live price guests see.</strong>
+          <ul>
+            {rateChanged && <li>Nightly rate {money(current)} → {money(rateNum)} on the {openInRange} open night(s), {from} to {to}.</li>}
+            {discNum != null && kind !== 'window' && (
+              <li>{kind === 'weekly' ? 'Weekly' : 'Monthly'} discount set to {discNum}% on the listing —
+                  it applies to any qualifying stay, not only these dates.</li>
+            )}
+            {marked != null && <li>Selected dates repriced to {money(marked)} ({discNum}% off {money(rateNum)}).</li>}
+            <li>Nights already booked keep their price; Hostaway will not reprice a booked night.</li>
+            <li>It is recorded either way, with today's occupancy, so its effect can be measured later.</li>
+          </ul>
+        </div>
+      )}
+
+      <div className="workspace-actions">
+        {result
+          ? <button className="small" onClick={() => setResult(null)}>Make another change</button>
+          : confirming
+            ? <>
+                <button className="ghost small" onClick={() => setConfirming(false)}>Back</button>
+                <button className="small" disabled={busy} onClick={() => send(false)}>
+                  {busy ? 'Applying…' : 'Yes, change the live price'}
+                </button>
+              </>
             : <>
-                <button onClick={onClose} className="ghost">Cancel</button>
-                <button onClick={() => send(true)} disabled={busy} className="ghost">Record only</button>
-                <button onClick={() => send(false)} disabled={busy || (!rateChanged && discNum == null)}>
-                  {busy ? 'Applying…' : 'Change the live price'}
+                <button className="ghost small" disabled={busy || nothingToDo} onClick={() => send(true)}>
+                  Record only
+                </button>
+                <button className="small" disabled={nothingToDo} onClick={() => setConfirming(true)}>
+                  Change price…
                 </button>
               </>}
-        </div>
       </div>
     </div>
   );
 }
 
 /**
- * The open stretches, longest first, with the minimum stay that governs
- * each one.
+ * The open stretches, longest first, with the minimum stay governing each.
  *
- * This is the tool that stops wasted discounts. A two-night gap under a
- * three-night minimum is unbookable at ANY price — the lever is the
- * minimum, not the rate — and nothing in an occupancy figure will ever
- * tell you that. Clicking a gap selects exactly those nights above.
+ * This is the tool that prevents wasted discounts: a two-night gap under
+ * a three-night minimum is unbookable at ANY price — the lever is the
+ * minimum, not the rate — and no occupancy figure will show you that.
+ * Clicking a stretch selects exactly those nights above.
  */
 function GapList({ gaps, onPick }: {
   gaps: ReturnType<typeof findGaps>; onPick: (from: string, to: string) => void;
 }) {
-  if (!gaps.length) return null;
   const sorted = [...gaps].sort((a, b) => b.nights - a.nights).slice(0, 6);
   return (
     <div className="gaps">
@@ -512,7 +502,7 @@ function GapList({ gaps, onPick }: {
             <button type="button" className="link" onClick={() => onPick(g.from, g.to)}>
               {g.from}{g.nights > 1 && ` → ${g.to}`}
             </button>
-            <span className="n">{g.nights} night{g.nights === 1 ? '' : 's'}</span>
+            <span className="n">{g.nights}n</span>
             <span className="n">{g.askAvg == null ? '—' : `$${g.askAvg}`}</span>
             <span className="min">
               {g.minStay == null ? '' : `min ${g.minStay}`}
