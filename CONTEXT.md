@@ -1094,3 +1094,32 @@ to Google Vacation Rentals and reports a URL, but nobody here manages or
 prices against that listing, so the row could never be acted on.
 
 Platforms carried: Airbnb, Booking, VRBO, Expedia, Web Portal.
+
+
+## 41. The 30-night quote, and what it is NOT comparable to
+
+`findNextStay_` in the Apps Script project finds the **first consecutive
+run of free nights of at least `STAY_NIGHTS` (30)** inside a 150-day
+horizon, and the dashboard prices exactly that window:
+
+| column | is |
+|---|---|
+| `Check-in` / `Check-out` | the next bookable 30-night stretch |
+| `Nights` | 30 |
+| `Per Night` | Hostaway's own average over those nights |
+| `✅ Airbnb Live` | the guest-facing **total** for that same window |
+
+So the feed's price is the next possible 30-day booking, which is the
+question that was asked.
+
+**The trap: a nightly figure derived from a 30-night total is not
+comparable to a weekend rate.** Airbnb applies the monthly discount
+inside that total, so the per-night number already has it baked in. The
+card therefore never prints the nightly figure without the stay it came
+from — "for the next bookable 30-night stay, from …".
+
+The gap line was wrong and is fixed. It said the difference was "fees and
+tax"; on a 30-night quote it is fees and tax **minus** the length-of-stay
+discount, and calling it fees alone overstates them by exactly the
+discount. Both sides of the comparison are averages over the same stay,
+so the figure is meaningful — it just is not only fees.

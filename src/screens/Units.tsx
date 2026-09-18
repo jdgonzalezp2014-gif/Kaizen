@@ -797,15 +797,28 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
                 )}
                 {stored.nights != null && stored.windowStart && (
                   <span className="note">
-                    for {stored.nights} night{stored.nights === 1 ? '' : 's'} from {stored.windowStart}
+                    {/* The stay length is not decoration. A nightly figure
+                        derived from a 30-night total carries the monthly
+                        discount inside it and is not comparable to a
+                        weekend rate — so it never appears without the
+                        stay it came from. */}
+                    for the next bookable {stored.nights}-night stay, from {stored.windowStart}
                   </span>
                 )}
               </div>
               {stored.ourRate != null && stored.nightly != null && stored.ourRate > 0 && (
                 <div className="note quote-gap">
                   We ask ${stored.ourRate}/night · a guest is quoted ${stored.nightly} —
-                  {' '}{Math.round((stored.nightly / stored.ourRate - 1) * 100)}% more once fees
-                  and tax are added.
+                  {' '}{Math.round((stored.nightly / stored.ourRate - 1) * 100)}%
+                  {' '}{stored.nightly >= stored.ourRate ? 'more' : 'less'}.
+                  {/* Both figures are averages over THIS stay, so the gap
+                      is fees and tax MINUS any length-of-stay discount —
+                      not fees alone. On a 30-night quote the monthly
+                      discount is already inside the guest's number, and
+                      calling the difference "fees" would overstate them
+                      by exactly the discount. */}
+                  {' '}That is fees and tax, net of any length-of-stay discount already applied
+                  to {stored.nights ?? 'this'}-night stays.
                 </div>
               )}
             </div>
