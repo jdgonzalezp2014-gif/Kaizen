@@ -91,8 +91,9 @@ const NOT_A_CLEAN =
 const INVOICE_HEADER = /\b(invoice of the week|weekly invoice|invoice for deep|here is the invoice|invoice summary)\b/i;
 const DEEP = /\bdeep\s*clean/i;
 
+const MEDIA = /<Multimedia omitido>/;
 const SKIP = [
-  /<Multimedia omitido>/, /Se eliminó este mensaje/, /Eliminaste este mensaje/,
+  /Se eliminó este mensaje/, /Eliminaste este mensaje/,
   /‎?.*(añadió a|creó el grupo|cambió el nombre|te añadió)/,
   /Los mensajes y las llamadas están cifrados/, /Fijaste un mensaje/
 ];
@@ -308,8 +309,46 @@ for (const msg of messages) {
   }
 }
 
+// (d) A burst of photos.
+//
+// The normal shape of this chat is thirty photos and no words at all, and
+// the office answering "Thanks". That clean happened and was invoiced, and
+// in text it left nothing — which is why fewer than a quarter of the
+// invoiced cleans were being found.
+//
+// In a chat named after ONE property the unit is not in doubt, so a day on
+// which the crew sent photos there is a day that unit was worked on. In a
+// multi-unit chat a burst only counts if the same person named exactly one
+// unit that day: two names is a guess, and a guess is what put Concord on
+// days nobody cleaned it.
+const SHOTS = 4;
+const burst = new Map();   // `chat|date|sender` -> count
+const named = new Map();   // `chat|date|sender` -> Set(unit)
+
+for (const msg of messages) {
+  if (!isCrew(msg.sender)) continue;
+  const k = `${msg.chat}|${msg.date}|${msg.sender}`;
+  if (MEDIA.test(msg.body)) burst.set(k, (burst.get(k) ?? 0) + 1);
+  else if (!INVOICE_HEADER.test(msg.body)) {
+    const u = findUnit(msg.body);
+    if (u) { if (!named.has(k)) named.set(k, new Set()); named.get(k).add(u); }
+  }
+}
+
+for (const [k, shots] of burst) {
+  if (shots < SHOTS) continue;
+  const [chat, date, sender] = k.split('|');
+  const house = CHAT_DEFAULT.find(([re]) => re.test(chat))?.[1] ?? null;
+  const saidThatDay = [...(named.get(k) ?? [])];
+  // The chat's own property wins; otherwise one unambiguous mention.
+  const unit = house ?? (saidThatDay.length === 1 ? saidThatDay[0] : null);
+  if (!unit) continue;
+  events.push({ date, unit, vendor: crewOf(sender), source: 'photo-burst',
+                line: `${shots} photos, no caption`, chat });
+}
+
 // One clean per unit per day, keeping the strongest evidence for it.
-const RANK = { ready: 3, photos: 2, scheduled: 1 };
+const RANK = { ready: 4, photos: 3, 'photo-burst': 2, scheduled: 1 };
 const best = new Map();
 for (const e of events) {
   const k = `${e.date}|${e.unit}`;
@@ -353,6 +392,7 @@ console.log(`messages read      ${messages.length}`);
 console.log(`dated cleanings    ${cleanings.length}   ${span}`);
 console.log(`   crew said ready ${by('ready')}`);
 console.log(`   photo captions  ${by('photos')}`);
+console.log(`   photo bursts    ${by('photo-burst')}`);
 console.log(`   office schedule ${by('scheduled')}`);
 console.log(`deep, dated        ${deepDated}`);
 console.log(`deep, on invoices  ${deepBilled}   <- billed but never dated in chat: ${Math.max(0, deepBilled - deepDated)}`);

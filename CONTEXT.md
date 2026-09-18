@@ -1580,6 +1580,31 @@ day early. The summary prints how many deeps the invoices show against how
 many could be dated — 20 against 8 — so the gap is visible rather than
 guessed at.
 
+## 59-0. Most cleans are photos and no words
+
+Detection was finding **fewer than a quarter** of the invoiced cleans — 30
+against Karina & Marvin's 128 invoice lines. The reason is the shape of
+the chat: thirty photos, no caption, and the office replying "Thanks".
+That clean happened and was billed, and in text it left nothing.
+
+So a **burst of four or more photos** from the crew counts. In a chat named
+after one property the unit is not in doubt. In a shared chat a burst only
+counts if that person named exactly one unit that day — two names is a
+guess, and a guess is what put Concord on days nobody cleaned it.
+
+56 verified rows became **117**: Michelle 24 → 70, Karina & Marvin 30 → 45.
+Karina & Marvin stay short of their 128 because most of their work is in
+the shared chat on days they name several units at once.
+
+The signal is "the crew was at this property that day", which is not
+identical to "they cleaned it" — 21 April at Preston was 177 photos of
+damage for a claim, taken while they were there cleaning. Close enough to
+be useful, not so close it should be paid from.
+
+**Michelle's receipt links are a dead end.** There is exactly one Square
+link in six months of chat, it is an `invtmp:` draft from April, and the
+page is a JavaScript shell with no invoice data in it.
+
 ## 59a. A unit mentioned is not a unit cleaned
 
 Three of the four Concord rows were wrong, and each in a different way:
