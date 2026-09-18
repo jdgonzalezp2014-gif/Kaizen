@@ -60,7 +60,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // after it, which is the opposite of what a cross-check needs.
   const to = url.searchParams.get('to') || null;
   const unit = url.searchParams.get('unit') || null;
-  const cleaner = url.searchParams.get('cleaner') || null;
+  // Several cleaners, not one. Comparing a filter against a LIST is the
+  // same question as comparing it against a name, and a filter that can
+  // only hold one value makes "Michelle and Veronica" impossible to ask.
+  const cleaners = (url.searchParams.get('cleaners') || '')
+    .split(',').map(c => c.trim()).filter(Boolean);
   const raw = url.searchParams.get('scope');
   const scope = raw === 'scheduled' || raw === 'all' ? raw : 'done';
 
@@ -76,7 +80,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
        AND (${from}::date IS NULL OR checkout_on >= ${from}::date)
        AND (${to}::date IS NULL OR checkout_on <= ${to}::date)
        AND (${unit}::text IS NULL OR unit_id = ${unit}::text)
-       AND (${cleaner}::text IS NULL OR cleaner = ${cleaner}::text)
+       AND (${cleaners.length === 0} OR cleaner = ANY(${cleaners}::text[]))
      ORDER BY checkout_on DESC, unit_name
      LIMIT 1000`;
 
@@ -90,13 +94,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Real cleaners only, for the filter. "Not needed" and "TBD" are not
   // people and must not appear in a list of who to filter by.
-  const cleaners = (await sql`
+  const crew = (await sql`
     SELECT cleaner, COUNT(*)::int AS n FROM cleanings
      WHERE account_id = 1 AND assignment = 'assigned' AND cleaner IS NOT NULL
      GROUP BY cleaner ORDER BY n DESC`) as { cleaner: string; n: number }[];
 
   return Response.json({
-    ok: true, today: now, scope, cleaner, cleaners, cleanings: rows,
+    ok: true, today: now, scope, selected: cleaners, cleaners: crew, cleanings: rows,
     doneCount: counts[0]?.done ?? 0,
     scheduledAhead: counts[0]?.scheduled ?? 0
   });

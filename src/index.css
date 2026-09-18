@@ -828,3 +828,10 @@ button.fact-k:hover { color: var(--ink); }
   .cal-day { min-height: 54px; }
   .cal-list { display: none; }
 }
+
+/* A date field is a filter control, so it sits at chip height and weight
+   rather than looking like a form input dropped into a toolbar. */
+.date-in { width: auto; padding: 5px 9px; font-size: 12.5px; border-radius: 999px;
+  border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  font-variant-numeric: tabular-nums; margin: 0; }
+.date-in:focus { outline: 2px solid var(--series-1); outline-offset: 1px; }

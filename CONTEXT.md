@@ -1590,3 +1590,33 @@ because the office writes "is 2462 ready?", which is a question.
 Two invoice lines read `2472` and `2482` at $110 — no such units, and $110
 is CL2462's exact rate. Flagged as probable typos in `unresolved.txt` with
 the suggestion; **not** silently rewritten.
+
+
+## 60. A new column with a default does not fix the rows already there
+
+Migration 019 added `assignment` with `DEFAULT 'assigned'` and stopped. A
+default describes rows written **after** it — the 24 rows already in
+`cleanings` kept their raw text and were labelled as though a person had
+done them, so "TBD" and "Not needed" went on appearing in the by-cleaner
+filter as if they were people. The importer was fixed; the data was not.
+
+Migration 020 re-reads them, on the words rather than the emoji, same as
+`readAssignment`. **Adding a column and backfilling it are two jobs, and
+only doing the first means the fix applies to data nobody has imported
+yet.**
+
+## 61. Cleanings: free dates, and several cleaners at once
+
+**Dates.** The presets are shortcuts that write the same `from`/`to` the
+custom pickers do, and the table only ever reads those two. A preset that
+took a different path from a typed date would eventually disagree with it.
+Typing a date clears the preset rather than fighting it.
+
+**Cleaners are multi-select.** "Michelle and Veronica" was impossible to
+ask with a single-value filter. `Everyone` is the *empty* selection rather
+than a chip of its own, so there is one state and not two that can
+disagree about who is showing. Verified: Michelle 7 + Veronica 3 = 10
+together, $290 + $600 = $890.
+
+The scheduled scope still drops the dates rather than inverting them —
+work ahead of today cannot be in a backward window.

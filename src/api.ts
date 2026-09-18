@@ -249,10 +249,10 @@ export interface Cleaning {
 }
 export type CleaningScope = 'done' | 'scheduled' | 'all';
 export const getCleanings = (
-  from = '', scope: CleaningScope = 'done', cleaner = '', to = ''
+  from = '', scope: CleaningScope = 'done', cleaners: string[] = [], to = ''
 ) =>
-  call<{ ok: boolean; today: string; scope: CleaningScope; cleaner: string | null;
+  call<{ ok: boolean; today: string; scope: CleaningScope; selected: string[];
          cleaners: { cleaner: string; n: number }[]; cleanings: Cleaning[];
          doneCount: number; scheduledAhead: number }>(
     `/api/cleaning-log?from=${from}&to=${to}&scope=${scope}` +
-    `&cleaner=${encodeURIComponent(cleaner)}`);
+    `&cleaners=${encodeURIComponent(cleaners.join(','))}`);

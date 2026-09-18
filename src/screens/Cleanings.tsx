@@ -17,6 +17,9 @@ import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 
 const RANGES: [string, number][] = [['30 days', 30], ['90 days', 90], ['This year', 365]];
 
+const iso = (d: Date) => d.toISOString().slice(0, 10);
+const daysAgo = (n: number) => iso(new Date(Date.now() - n * 864e5));
+
 /**
  * Two different questions of the same table, never blended.
  *
@@ -32,9 +35,15 @@ const SCOPES: [CleaningScope, string, string][] = [
 ];
 
 export function Cleanings() {
-  const [days, setDays] = useState(30);
+  // A preset is a shortcut for a range, not a different kind of thing, so
+  // both write to the same two dates and the table only ever reads those.
+  // Anything else and "90 days" and "1 Aug to 14 Aug" answer through
+  // different code paths and drift apart.
+  const [from, setFrom] = useState(() => daysAgo(30));
+  const [to, setTo] = useState(() => iso(new Date()));
+  const [preset, setPreset] = useState<number | null>(30);
   const [scope, setScope] = useState<CleaningScope>('done');
-  const [cleaner, setCleaner] = useState('');
+  const [picked, setPicked] = useState<string[]>([]);
   const [view, setView] = useState<'list' | 'calendar'>('list');
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [data, setData] = useState<{
@@ -50,19 +59,25 @@ export function Cleanings() {
     if (view === 'calendar') {
       const [y, m] = month.split('-').map(Number);
       const last = new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
-      getCleanings(`${month}-01`, 'all', cleaner, last)
+      getCleanings(`${month}-01`, 'all', picked, last)
         .then(r => r.ok ? setData(r) : setErr('Could not load.'))
         .catch(e => setErr(String(e)));
       return;
     }
-    // Scheduled work is ahead of today, so a backward window would ask
-    // for a range that cannot contain any of it.
-    const from = scope === 'scheduled'
-      ? '' : new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
-    getCleanings(from, scope, cleaner)
+    // Scheduled work is ahead of today, so a backward window would ask for
+    // a range that cannot contain any of it — the dates are dropped rather
+    // than inverted.
+    getCleanings(scope === 'scheduled' ? '' : from, scope, picked,
+                 scope === 'scheduled' ? '' : to)
       .then(r => r.ok ? setData(r) : setErr('Could not load.'))
       .catch(e => setErr(String(e)));
-  }, [days, scope, cleaner, view, month]);
+  }, [from, to, scope, picked, view, month]);
+
+  const usePreset = (n: number) => {
+    setPreset(n); setFrom(daysAgo(n)); setTo(iso(new Date()));
+  };
+  const toggle = (name: string) =>
+    setPicked(p => p.includes(name) ? p.filter(x => x !== name) : [...p, name]);
 
   const stats = useMemo(() => {
     const all = data?.cleanings ?? [];
@@ -110,9 +125,16 @@ export function Cleanings() {
           <>
             <span className="note">over</span>
             {RANGES.map(([label, n]) => (
-              <button key={n} className={days === n ? 'chip active' : 'chip'}
-                      onClick={() => setDays(n)}>{label}</button>
+              <button key={n} className={preset === n ? 'chip active' : 'chip'}
+                      onClick={() => usePreset(n)}>{label}</button>
             ))}
+            {/* Typing a date is choosing a range too, so it clears the
+                preset rather than fighting it. */}
+            <input type="date" className="date-in" value={from} max={to}
+                   onChange={e => { setPreset(null); setFrom(e.target.value); }} />
+            <span className="note">to</span>
+            <input type="date" className="date-in" value={to} min={from}
+                   onChange={e => { setPreset(null); setTo(e.target.value); }} />
           </>
         )}
         <span className="note right">
@@ -126,14 +148,22 @@ export function Cleanings() {
       {(data?.cleaners.length ?? 0) > 1 && (
         <div className="row-controls">
           <span className="note">Cleaner</span>
-          <button className={cleaner === '' ? 'chip active' : 'chip'}
-                  onClick={() => setCleaner('')}>Everyone</button>
+          {/* Multi-select. "Everyone" is the empty selection rather than a
+              chip of its own, so there is one state, not two that can
+              disagree about who is showing. */}
+          <button className={picked.length === 0 ? 'chip active' : 'chip'}
+                  onClick={() => setPicked([])}>Everyone</button>
           {data!.cleaners.map(c => (
-            <button key={c.cleaner} className={cleaner === c.cleaner ? 'chip active' : 'chip'}
-                    onClick={() => setCleaner(c.cleaner)}>
+            <button key={c.cleaner}
+                    className={picked.includes(c.cleaner) ? 'chip active' : 'chip'}
+                    aria-pressed={picked.includes(c.cleaner)}
+                    onClick={() => toggle(c.cleaner)}>
               {c.cleaner} <b>{c.n}</b>
             </button>
           ))}
+          {picked.length > 1 && (
+            <span className="note">{picked.length} selected, added together</span>
+          )}
         </div>
       )}
 
