@@ -11,19 +11,18 @@
  * a guessed one is a number you will trust. Same for dates: a row without
  * a date it could read is dropped, not estimated.
  *
- * WHERE THE NUMBERS COME FROM
+ * ONE ROW PER CLEAN, AND ONLY WHERE A REAL DATE WAS READ
  *
- * Two different things are in these chats and they are not interchangeable:
+ * An earlier version also emitted the invoice line items. That was wrong
+ * in a way that is easy to miss: the invoices are WEEKLY, so a unit
+ * cleaned three times in a week appears three times on one invoice — and
+ * dating all three to the invoice day turns three real cleans into three
+ * rows on the same day. They look like duplicates because, as dated, they
+ * are. The invoices are read for the deep-clean flag and for the summary
+ * printed at the end, and nothing dated by them is written out.
  *
- *   the INVOICES  carry unit + price together, and are the only authority
- *                 on what a clean cost. They are weekly, so they do NOT say
- *                 which day each clean happened.
- *   the CHATTER   carries unit + date ("Napa ready", "Preston ready"), and
- *                 is the only authority on when.
- *
- * So the script builds a rate card from the invoices and applies it to the
- * dated events. Every row says which of the two it came from, and carries
- * the message it was read from so you can check it.
+ * What comes out is one file: date, unit, deep, cleaner — deduplicated on
+ * unit and day, because the same clean gets talked about more than once.
  */
 
 import { readFileSync, readdirSync, writeFileSync, mkdirSync, statSync } from 'node:fs';
@@ -221,6 +220,30 @@ const isCrew = s => /^\+?\d|^\+\s?\(/.test(s.trim());
 
 const events = [];
 
+/**
+ * Days a deep clean was named for a unit.
+ *
+ * "for tomorrow we need a deep cleaning" dates the work to the day after
+ * the message, so the shift is applied rather than the message's own date
+ * being used — otherwise every scheduled deep lands one day early.
+ */
+const deepDays = new Set();
+const shift = (date, by) => {
+  const d = new Date(date + 'T00:00:00Z');
+  d.setUTCDate(d.getUTCDate() + by);
+  return d.toISOString().slice(0, 10);
+};
+
+for (const msg of messages) {
+  if (!DEEP.test(msg.body) && !/\bdeep\b/i.test(msg.body)) continue;
+  const ahead = /\btomorrow\b/i.test(msg.body) ? 1 : 0;
+  for (const line of msg.body.split('\n')) {
+    if (!/\bdeep\b/i.test(line) && !/\bdeep\b/i.test(msg.body.split('\n')[0] ?? '')) continue;
+    const unit = findUnit(line) ?? (msg.chat ? CHAT_DEFAULT.find(([re]) => re.test(msg.chat))?.[1] : null);
+    if (unit) deepDays.add(`${shift(msg.date, ahead)}|${unit}`);
+  }
+}
+
 for (const msg of messages) {
   if (INVOICE_HEADER.test(msg.body)) continue;
   const lines = msg.body.split('\n');
@@ -276,7 +299,7 @@ for (const e of events) {
 const cleanings = [...best.values()]
   .sort((a, b) => a.date.localeCompare(b.date) || a.unit.localeCompare(b.unit));
 
-// ── write ────────────────────────────────────────────────────────────
+// ── write: one file ─────────────────────────────────────────────────
 mkdirSync(outDir, { recursive: true });
 const esc = v => {
   const s = v == null ? '' : String(v);
@@ -284,47 +307,27 @@ const esc = v => {
 };
 const csv = (head, rows) => [head, ...rows].map(r => r.map(esc).join(',')).join('\n') + '\n';
 
-// The rate card. Deep is a column of its own and is left EMPTY where the
-// crew never invoiced a deep clean for that unit — that blank is the space
-// to fill in, not a zero.
-const keys = [...rates.keys()].sort();
-writeFileSync(join(outDir, 'rates.csv'), csv(
-  ['Unit', 'Cleaner', 'Regular', 'Deep', 'Regular samples', 'Regular range', 'Deep samples'],
-  keys.map(k => {
-    const [u, v] = k.split('||');
-    const r = rates.get(k);
-    const lo = Math.min(...r.regular), hi = Math.max(...r.regular);
-    return [u, v, median(r.regular) ?? '', median(r.deep) ?? '', r.regular.length,
-            r.regular.length ? (lo === hi ? `${lo}` : `${lo}–${hi}`) : '', r.deep.length];
-  })));
+// Deduplicated on unit and day above; the deep flag is read from the
+// separate pass, so a clean is marked deep because somebody said so on
+// that day for that unit, not because the unit has ever had one.
+for (const c of cleanings) c.deep = deepDays.has(`${c.date}|${c.unit}`);
 
 writeFileSync(join(outDir, 'cleanings.csv'), csv(
-  ['Checkout', 'Unit', 'Cleaner', 'Price', 'Deep', 'Source', 'Confidence', 'Quote', 'Chat'],
-  cleanings.map(c => {
-    // The vendor's own rate, or nothing. A price from the other crew is
-    // not this clean's price.
-    const r = c.vendor ? rates.get(`${c.unit}||${c.vendor}`) : null;
-    return [c.date, c.unit, c.vendor ?? '', r ? (median(r.regular) ?? '') : '', '', c.source,
-            c.source === 'ready' ? 'high' : c.source === 'photos' ? 'high' : 'planned',
-            c.line.slice(0, 120), c.chat];
-  })));
-
-writeFileSync(join(outDir, 'billed.csv'), csv(
-  ['Invoice date', 'Unit', 'Cleaner', 'Amount', 'Deep', 'Not a clean', 'Line', 'Chat'],
-  billed.map(b => [b.date, b.unit, b.vendor, b.amount, b.deep ? 'YES' : '', b.chore ? 'YES' : '', b.line, b.chat])));
-
-writeFileSync(join(outDir, 'unresolved.txt'),
-  (oddMoney.length ? oddMoney.join('\n') : '(none)') + '\n');
+  ['Checkout', 'Unit', 'Deep', 'Cleaner'],
+  cleanings.map(c => [c.date, c.unit, c.deep ? 'YES' : '', c.vendor ?? ''])));
 
 // ── report ───────────────────────────────────────────────────────────
 const span = cleanings.length ? `${cleanings[0].date} → ${cleanings.at(-1).date}` : '—';
-console.log(`messages read      ${messages.length}`);
-console.log(`invoice line items ${billed.length}  (${billed.filter(b => b.deep).length} deep, ${billed.filter(b => b.chore).length} not a clean)`);
-console.log(`unit x cleaner     ${keys.length} rate(s)`);
 const by = k => cleanings.filter(c => c.source === k).length;
+const deepDated = cleanings.filter(c => c.deep).length;
+const deepBilled = billed.filter(b => b.deep && !b.chore).length;
+
+console.log(`messages read      ${messages.length}`);
 console.log(`dated cleanings    ${cleanings.length}   ${span}`);
 console.log(`   crew said ready ${by('ready')}`);
 console.log(`   photo captions  ${by('photos')}`);
-console.log(`   office schedule ${by('scheduled')}   (planned, not confirmed)`);
-console.log(`money not matched  ${oddMoney.length}  -> unresolved.txt`);
-console.log(`\nwrote rates.csv, cleanings.csv, billed.csv, unresolved.txt in ${outDir}`);
+console.log(`   office schedule ${by('scheduled')}`);
+console.log(`deep, dated        ${deepDated}`);
+console.log(`deep, on invoices  ${deepBilled}   <- billed but never dated in chat: ${Math.max(0, deepBilled - deepDated)}`);
+console.log(`\nwrote cleanings.csv (${cleanings.length} rows) in ${outDir}`);
+console.log(`nothing is dated from an invoice: a weekly invoice cannot say which day.`);

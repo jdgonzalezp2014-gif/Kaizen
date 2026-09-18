@@ -1559,7 +1559,28 @@ column carries statuses). He has the Apps Script project id for it. Ask
 before changing that sheet — his team edits it daily.
 
 
-## 59. The WhatsApp chats are two different records, not one
+## 59. A weekly invoice cannot date a clean — this caused real duplicates
+
+**The bug, and it was mine.** The first version of the parser also wrote
+out the invoice line items, dated to the invoice day. The invoices are
+WEEKLY: a unit cleaned three times in a week appears three times on one
+invoice, and dating all three to the invoice day turns three real cleans
+into three rows on the same day. Imported into the sheet, those 113 rows
+double- and triple-counted against the 65 properly dated ones.
+
+`whatsapp-cleanings.mjs` now writes **one file** — `cleanings.csv`, with
+date, unit, deep, cleaner — containing only events it could read a real
+date for, deduplicated on unit and day. The invoices are still read, but
+only for the deep flag and the summary. Nothing dated by them is written.
+
+A clean is marked deep because somebody named a deep for that unit on that
+day, not because the unit has ever had one. Scheduling messages that say
+"for tomorrow" shift the date by a day, or every scheduled deep lands one
+day early. The summary prints how many deeps the invoices show against how
+many could be dated — 20 against 8 — so the gap is visible rather than
+guessed at.
+
+## 59b. The WhatsApp chats are two different records, not one
 
 `scripts/whatsapp-cleanings.mjs` reads the crew chat exports. 3,741
 messages, of which **11,495 of 16,600 lines were `<Multimedia omitido>`** —
