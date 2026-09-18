@@ -23,6 +23,8 @@ import {
 } from '../lib/revenue.ts';
 import { money, pct, points } from '../lib/format.ts';
 import { channelState } from '../lib/channels.ts';
+import { Loading } from '../components/Loading.tsx';
+import { rememberTiming, recallTiming } from '../lib/progress.ts';
 import { DayPicker } from '../components/DayPicker.tsx';
 import { Glossary } from '../components/Glossary.tsx';
 import {
@@ -62,6 +64,7 @@ export function Units() {
 
   const load = () => {
     setLoading(true); setError('');
+    const started = Date.now();
     getForward(asOf, days)
       .then(r => {
         if (!r.ok) {
@@ -72,6 +75,10 @@ export function Units() {
         setUnits(r.units);
         setFloor((r.meta.occFloorPct ?? 60) / 100);
         setParkedAfter(r.meta.offlineAfterDays ?? 45);
+        // The server reports what it actually spent; the browser adds
+        // its own latency, so the wall-clock figure is the honest input
+        // to the next estimate.
+        rememberTiming('forward', Date.now() - started);
       })
       .catch(e => setError(String(e)))
       .finally(() => setLoading(false));
@@ -119,7 +126,17 @@ export function Units() {
       {help && <Glossary onClose={() => setHelp(false)} />}
 
       {error && <p className="banner warn">{error}</p>}
-      {loading && !units && <p className="note">Reading calendars from Hostaway…</p>}
+      {loading && !units && (
+        <Loading
+          estimateMs={recallTiming('forward', 9000)}
+          stages={[
+            'Asking Hostaway for the listings',
+            'Reading each calendar',
+            'Pulling the booking history',
+            'Working out pace and open nights'
+          ]}
+        />
+      )}
 
       {dupes.length > 0 && (
         <p className="banner warn">

@@ -1131,3 +1131,30 @@ tax"; on a 30-night quote it is fees and tax **minus** the length-of-stay
 discount, and calling it fees alone overstates them by exactly the
 discount. Both sides of the comparison are averages over the same stay,
 so the figure is meaningful — it just is not only fees.
+
+
+## 42. The wait has a number on it
+
+A bare "Loading…" says the same thing at three seconds and at thirty.
+`src/components/Loading.tsx` shows a percentage, a stage, and a bar.
+
+**The percentage is not invented.** It is measured against how long this
+exact call took last time — the API already reports `tookMs`, and the
+browser records its own wall-clock figure in `localStorage`, averaged
+0.6/0.4 with the previous reading so one slow call does not make every
+later bar crawl.
+
+Two rules, both pinned by tests:
+
+* **It never reaches 100% on its own.** Completion is the response
+  landing, not a timer expiring. A bar that hits 100% and then waits has
+  told the reader something false.
+* **It never stalls at a wall.** `1 - e^(-1.6t/est)` reaches ~80% at the
+  expected duration and keeps creeping: 88% at 12s, 93% at 15s, 97% at
+  20s on a 9s estimate. An overrun looks like a slow finish, which is
+  what it is, rather than like a hang. Past 1.6× the estimate it says so
+  outright — "Taking longer than usual — 14s so far" — because slower
+  than usual is information and a frozen bar is just alarming.
+
+Stages advance **with the bar**, not on their own timer, so the label can
+never describe a step the bar has already passed.

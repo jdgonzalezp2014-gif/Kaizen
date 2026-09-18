@@ -761,3 +761,18 @@ button.fact-k:hover { color: var(--ink); }
   padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; }
 .chan-other { display: inline-flex; gap: 7px; align-items: baseline; white-space: nowrap; }
 .chan-other b { font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* ── the wait ───────────────────────────────────────────────────── */
+.loading { background: var(--card); border: 1px solid var(--line); border-radius: var(--r);
+  padding: 18px 20px; margin: 16px 0; }
+.loading-head { display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px; margin-bottom: 9px; }
+.loading-stage { font-size: 13.5px; font-weight: 550; }
+.loading-pct { font-size: 20px; font-weight: 650; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums; }
+.loading-track { height: 6px; border-radius: 3px; overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 9%, transparent); }
+.loading-fill { height: 100%; border-radius: 3px; background: var(--series-1);
+  /* Matches the poll interval, so the bar glides rather than stepping. */
+  transition: width 120ms linear; }
+.loading .note { margin: 8px 0 0; }

@@ -9,6 +9,8 @@ import {
   Filters, filterUnits, EMPTY_FILTER, type FilterState, type Light
 } from '../components/Filters.tsx';
 import { money as fmtMoney, pct } from '../lib/format.ts';
+import { Loading } from '../components/Loading.tsx';
+import { rememberTiming, recallTiming } from '../lib/progress.ts';
 
 interface Portfolio {
   meta: { targets: { perUnitNet: number; activeUnits: number; portfolioNet: number; basis: string };
@@ -30,9 +32,13 @@ export function Revenue() {
   const [period, setPeriod] = useState<Period>(() => resolvePreset('mtd')!);
 
   useEffect(() => {
+    const started = Date.now();
     fetch('/api/portfolio')
       .then(r => r.json() as Promise<Portfolio & { ok?: boolean; message?: string; error?: string }>)
-      .then(j => j.ok === false ? setError(j.message ?? j.error ?? 'Request failed') : setData(j))
+      .then(j => {
+        rememberTiming('portfolio', Date.now() - started);
+        return j.ok === false ? setError(j.message ?? j.error ?? 'Request failed') : setData(j);
+      })
       .catch(e => setError(String(e)));
   }, []);
 
@@ -71,7 +77,17 @@ export function Revenue() {
   }, [data, period]);
 
   if (error) return <div className="card"><div className="banner error">{error}</div></div>;
-  if (!view || !data) return <div className="card"><p className="note">Loading…</p></div>;
+  if (!view || !data) return (
+    <Loading
+      estimateMs={recallTiming('portfolio', 12000)}
+      stages={[
+        'Asking Hostaway for the listings',
+        'Fetching every reservation',
+        'Reading costs and claims',
+        'Prorating the period'
+      ]}
+    />
+  );
 
   const { board } = view;
   const delta = board.portfolio.net - board.portfolioTarget;
