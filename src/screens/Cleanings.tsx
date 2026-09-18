@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getCleanings, type Cleaning, type CleaningScope } from '../api.ts';
 import { money2 } from '../lib/format.ts';
+import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 
 const RANGES: [string, number][] = [['30 days', 30], ['90 days', 90], ['This year', 365]];
 
@@ -34,12 +35,26 @@ export function Cleanings() {
   const [days, setDays] = useState(30);
   const [scope, setScope] = useState<CleaningScope>('done');
   const [cleaner, setCleaner] = useState('');
+  const [view, setView] = useState<'list' | 'calendar'>('list');
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [data, setData] = useState<{
     cleanings: Cleaning[]; cleaners: { cleaner: string; n: number }[];
     scheduledAhead: number; doneCount: number; today: string } | null>(null);
   const [err, setErr] = useState('');
 
   useEffect(() => {
+    // The calendar asks for one CLOSED month — an invoice covers a month,
+    // and a window open at either end cannot be reconciled against one.
+    // It also ignores the scope: a September invoice includes cleans
+    // after today if today is in September.
+    if (view === 'calendar') {
+      const [y, m] = month.split('-').map(Number);
+      const last = new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
+      getCleanings(`${month}-01`, 'all', cleaner, last)
+        .then(r => r.ok ? setData(r) : setErr('Could not load.'))
+        .catch(e => setErr(String(e)));
+      return;
+    }
     // Scheduled work is ahead of today, so a backward window would ask
     // for a range that cannot contain any of it.
     const from = scope === 'scheduled'
@@ -47,7 +62,7 @@ export function Cleanings() {
     getCleanings(from, scope, cleaner)
       .then(r => r.ok ? setData(r) : setErr('Could not load.'))
       .catch(e => setErr(String(e)));
-  }, [days, scope, cleaner]);
+  }, [days, scope, cleaner, view, month]);
 
   const stats = useMemo(() => {
     const all = data?.cleanings ?? [];
@@ -82,11 +97,16 @@ export function Cleanings() {
   return (
     <section>
       <div className="row-controls">
-        {SCOPES.map(([k, label]) => (
+        <button className={view === 'list' ? 'chip active' : 'chip'}
+                onClick={() => setView('list')}>List</button>
+        <button className={view === 'calendar' ? 'chip active' : 'chip'}
+                onClick={() => setView('calendar')}>Calendar</button>
+        <span className="note">|</span>
+        {view === 'list' && SCOPES.map(([k, label]) => (
           <button key={k} className={scope === k ? 'chip active' : 'chip'}
                   onClick={() => setScope(k)}>{label}</button>
         ))}
-        {scope !== 'scheduled' && (
+        {view === 'list' && scope !== 'scheduled' && (
           <>
             <span className="note">over</span>
             {RANGES.map(([label, n]) => (
@@ -96,7 +116,8 @@ export function Cleanings() {
           </>
         )}
         <span className="note right">
-          {scope === 'done' ? 'up to and including today'
+          {view === 'calendar' ? 'one whole month, for checking an invoice'
+           : scope === 'done' ? 'up to and including today'
            : scope === 'scheduled' ? 'after today — not yet paid'
            : 'paid and committed together'}
         </span>
@@ -119,7 +140,11 @@ export function Cleanings() {
       {err && <p className="banner warn">{err}</p>}
       {!data && !err && <p className="note">Loading…</p>}
 
-      {data && (
+      {data && view === 'calendar' && (
+        <CleaningCalendar month={month} cleanings={data.cleanings} onMonth={setMonth} />
+      )}
+
+      {data && view === 'list' && (
         <>
           <dl className="strip">
             <div><dt>Cleans</dt><dd>{stats.total}</dd></div>

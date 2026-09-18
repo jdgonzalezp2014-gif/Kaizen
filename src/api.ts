@@ -248,8 +248,11 @@ export interface Cleaning {
   future?: boolean;
 }
 export type CleaningScope = 'done' | 'scheduled' | 'all';
-export const getCleanings = (from = '', scope: CleaningScope = 'done', cleaner = '') =>
+export const getCleanings = (
+  from = '', scope: CleaningScope = 'done', cleaner = '', to = ''
+) =>
   call<{ ok: boolean; today: string; scope: CleaningScope; cleaner: string | null;
          cleaners: { cleaner: string; n: number }[]; cleanings: Cleaning[];
          doneCount: number; scheduledAhead: number }>(
-    `/api/cleaning-log?from=${from}&scope=${scope}&cleaner=${encodeURIComponent(cleaner)}`);
+    `/api/cleaning-log?from=${from}&to=${to}&scope=${scope}` +
+    `&cleaner=${encodeURIComponent(cleaner)}`);

@@ -1525,3 +1525,35 @@ of every figure and reported on their own line.
 
 Filter by cleaner is on the server, and the list offered contains **real
 cleaners only**: Michelle 7, Karina and Marvin 5, Veronica 3.
+
+
+## 58. A calendar, for reconciling invoices
+
+Cleanings has a **Calendar** view beside the list. It exists for one job:
+a cleaner sends a total for September and the question is which days that
+covers and whether the count matches. A list sorted by date can be
+counted by hand; a calendar is checked at a glance, and **a missing
+Tuesday is a hole rather than an absence you have to notice**.
+
+Three decisions follow from that job:
+
+* It asks for **one closed month**. A window open at either end cannot be
+  reconciled against an invoice that covers exactly one.
+* It **ignores the done/scheduled scope**. A September invoice includes
+  cleans after today if today is in September.
+* **"No clean needed" is excluded from the total** and shown on the day
+  anyway. It is not on the invoice, so it must not be in the figure being
+  checked against one — but it explains a gap instead of leaving one
+  unexplained.
+
+Monday-first, because a cleaning week is a working week and Sunday in the
+first column splits it across two rows.
+
+Live, with the cleaner filter: Michelle 7 cleans $290, Karina and Marvin
+5 cleans $545, Veronica 3 cleans $600 — September total $1,435 over 21
+cleans plus 3 that needed none.
+
+**Still open:** the owner wants to restructure the sheet itself (the
+notes column mixes reservation remarks with cleaning, and the cleaner
+column carries statuses). He has the Apps Script project id for it. Ask
+before changing that sheet — his team edits it daily.

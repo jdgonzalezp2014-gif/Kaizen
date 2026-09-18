@@ -55,6 +55,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // "invalid input syntax for type date". A filter meaning "no filter"
   // has to be absent, not blank.
   const from = url.searchParams.get('from') || null;
+  // A closed window, for reconciling one month against one invoice.
+  // Without an upper bound a month view silently includes everything
+  // after it, which is the opposite of what a cross-check needs.
+  const to = url.searchParams.get('to') || null;
   const unit = url.searchParams.get('unit') || null;
   const cleaner = url.searchParams.get('cleaner') || null;
   const raw = url.searchParams.get('scope');
@@ -70,6 +74,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
             OR (${scope} = 'done' AND checkout_on <= ${now})
             OR (${scope} = 'scheduled' AND checkout_on > ${now}))
        AND (${from}::date IS NULL OR checkout_on >= ${from}::date)
+       AND (${to}::date IS NULL OR checkout_on <= ${to}::date)
        AND (${unit}::text IS NULL OR unit_id = ${unit}::text)
        AND (${cleaner}::text IS NULL OR cleaner = ${cleaner}::text)
      ORDER BY checkout_on DESC, unit_name

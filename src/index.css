@@ -800,3 +800,31 @@ button.fact-k:hover { color: var(--ink); }
 .claim-form { margin-bottom: 16px; }
 .claim-form h3 { margin: 0 0 10px; font-size: 14px; }
 @media (max-width: 860px) { .urow-head.claim { grid-template-columns: 12px 1fr 80px 44px; } }
+
+/* ── cleanings calendar ─────────────────────────────────────────── */
+.cal { border: 1px solid var(--line); border-radius: var(--r); background: var(--card);
+  padding: 16px; margin-top: 4px; }
+.cal-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.cal-head strong { font-size: 15px; min-width: 150px; }
+/* The number being checked against the invoice, so it is the largest
+   thing here. */
+.cal-total { margin-left: auto; text-align: right; }
+.cal-total b { font-size: 24px; font-weight: 650; letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums; display: block; }
+.cal-dow, .cal-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; }
+.cal-dow span { font-size: 10.5px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: .04em; padding-bottom: 4px; }
+.cal-day { min-height: 74px; border: 1px solid var(--line); border-radius: 7px;
+  padding: 5px 6px; display: flex; flex-direction: column; gap: 2px; }
+.cal-day.empty { border: 0; }
+.cal-day.has { background: var(--tint); }
+.cal-num { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cal-amt { font-size: 13px; font-weight: 650; font-variant-numeric: tabular-nums; }
+.cal-list { display: flex; flex-direction: column; gap: 1px; }
+.cal-item { font-size: 10.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.cal-item i { font-style: normal; color: var(--muted); }
+.cal-none { font-size: 10px; color: var(--muted); font-style: italic; }
+@media (max-width: 860px) {
+  .cal-day { min-height: 54px; }
+  .cal-list { display: none; }
+}
