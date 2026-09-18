@@ -240,7 +240,7 @@ function CleaningsPanel({ account, onAccount }: {
  */
 function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
   const [key, setKey] = useState('');
-  const [model, setModel] = useState(account.geminiModel ?? 'gemini-2.5-flash');
+  const [model, setModel] = useState(account.geminiModel ?? 'gemini-3.6-flash');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 

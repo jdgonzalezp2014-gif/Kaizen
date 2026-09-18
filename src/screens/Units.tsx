@@ -24,6 +24,10 @@ import {
 import { money, pct, points } from '../lib/format.ts';
 import { DayPicker } from '../components/DayPicker.tsx';
 import { Glossary } from '../components/Glossary.tsx';
+import {
+  Filters, filterUnits, placeOf, EMPTY_FILTER,
+  type FilterState, type Light
+} from '../components/Filters.tsx';
 
 const addDays = (d: string, n: number) =>
   new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
@@ -53,6 +57,7 @@ export function Units() {
   const [loading, setLoading] = useState(true);
   const [open, setOpen] = useState<string | null>(null);
   const [help, setHelp] = useState(false);
+  const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER);
 
   const load = () => {
     setLoading(true); setError('');
@@ -85,33 +90,31 @@ export function Units() {
   const totalBooks = live.reduce((a, u) => a + u.onBooks, 0);
 
   const read = (u: RankedUnit) => diagnose(u, portfolioAdr, askRatio, asOf);
+  // A unit that is not taking bookings has no diagnosis to show — its
+  // light is "off" rather than a verdict it never earned.
+  const lightOf = (u: RankedUnit): Light => u.active ? read(u).v.tone : 'off';
+
+  const counts: Partial<Record<Light, number>> = {};
+  ranked.forEach(u => { const l = lightOf(u); counts[l] = (counts[l] ?? 0) + 1; });
+  const shown = filterUnits(ranked, filter, lightOf);
 
   return (
     <section>
-      <div className="explain">
-        <h2>
-          The next {days} nights
-          <button className="link" onClick={() => setHelp(true)}>What do these mean?</button>
-        </h2>
-        <p>
-          Forward-looking: nights that have not happened yet and that a price can still change.
-        </p>
-      </div>
-
       <div className="row-controls">
+        <h2 className="screen-title">Next {days} nights</h2>
         <label>From <input type="date" value={asOf} onChange={e => setAsOf(e.target.value)} /></label>
         <label>for
           <select value={days} onChange={e => setDays(Number(e.target.value))}>
             {[7, 14, 30, 45, 60, 90].map(d => <option key={d} value={d}>{d} nights</option>)}
           </select>
         </label>
-        <span className="note">through {addDays(asOf, days - 1)}</span>
-        {units && (
-          <span className="note right">
-            {live.length} taking bookings · {ranked.length - live.length} parked
-          </span>
-        )}
+        <span className="note">to {addDays(asOf, days - 1)}</span>
+        <button className="link right" onClick={() => setHelp(h => !h)}>
+          {help ? 'hide' : 'what do these mean?'}
+        </button>
       </div>
+
+      {help && <Glossary onClose={() => setHelp(false)} />}
 
       {error && <p className="banner warn">{error}</p>}
       {loading && !units && <p className="note">Reading calendars from Hostaway…</p>}
@@ -133,8 +136,16 @@ export function Units() {
         </dl>
       )}
 
+      {units && (
+        <Filters rows={ranked} value={filter} onChange={setFilter} counts={counts} />
+      )}
+
+      {units && shown.length === 0 && (
+        <p className="note">No unit matches those filters.</p>
+      )}
+
       {units && GROUPS.map(g => {
-        const rows = ranked.filter(u => g.states.includes(u.state));
+        const rows = shown.filter(u => g.states.includes(u.state));
         if (!rows.length) return null;
         return (
           <div key={g.key} className="group">
@@ -157,7 +168,6 @@ export function Units() {
         );
       })}
 
-      {help && <Glossary onClose={() => setHelp(false)} />}
     </section>
   );
 }
@@ -351,6 +361,13 @@ function PriceWorkspace({ u, gaps, asOf, days, onChanged }: {
       .finally(() => setThinking(false));
   };
 
+  // Runs as soon as the row opens: by the time someone has read the
+  // calendar the answer is already there, instead of costing a click and
+  // another wait. Once only — it deliberately does not re-run when the
+  // date range is nudged, because that would fire a paid call on every
+  // click in the calendar.
+  useEffect(() => { ask(); /* eslint-disable-next-line */ }, [u.listingId]);
+
   const useAdvice = (a: Suggestion) => {
     if (a.suggestedRate != null) setRate(String(a.suggestedRate));
     if (a.suggestedWeeklyDiscountPct != null) { setKind('weekly'); setDisc(String(a.suggestedWeeklyDiscountPct)); }
@@ -397,10 +414,12 @@ function PriceWorkspace({ u, gaps, asOf, days, onChanged }: {
           </label>
         </div>
 
-        {!advice && !thinking && (
-          <button type="button" className="ghost small" onClick={ask}>Ask Gemini</button>
+        {!thinking && (
+          <button type="button" className="ghost small" onClick={ask}>
+            {advice ? 'Re-run for these dates' : 'Ask Gemini'}
+          </button>
         )}
-        {thinking && <span className="note">Reading this unit's calendar and history…</span>}
+        {thinking && <span className="note">Checking the calendar, the history and what is on locally…</span>}
       </div>
 
       {adviceErr && <p className="banner warn">{adviceErr}</p>}
@@ -415,7 +434,38 @@ function PriceWorkspace({ u, gaps, asOf, days, onChanged }: {
           {/* What the model could NOT see, shown as prominently as what it
               did. A recommendation made without the comp set is a
               different object from one made with it. */}
+          {advice.eventNote && <p className="eventnote"><i>Locally:</i> {advice.eventNote}</p>}
           {advice.missing && <p className="missing"><i>Not considered:</i> {advice.missing}</p>}
+
+          {(advice.events || advice.eventsError) && (
+            <details className="events">
+              <summary>
+                {advice.eventsError ? 'Local events unavailable' : `What is on near ${u.name.split(' ')[0] ?? 'here'}`}
+              </summary>
+              {advice.eventsError
+                ? <p className="note">{advice.eventsError}</p>
+                : <>
+                    {/* Shown verbatim with its sources. This is the one input
+                        that came from outside the account, so it is the one a
+                        human has to be able to check — an event that does not
+                        exist is exactly the kind of confident detail that
+                        would otherwise justify a price rise. */}
+                    <p className="note">{advice.events}</p>
+                    {advice.eventSources && advice.eventSources.length > 0 && (
+                      <ul className="sources">
+                        {advice.eventSources.map(src => (
+                          <li key={src.uri}>
+                            <a href={src.uri} target="_blank" rel="noreferrer noopener">
+                              {src.title || src.uri}
+                            </a>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    <p className="note"><em>From a web search — verify before pricing against it.</em></p>
+                  </>}
+            </details>
+          )}
           <div className="advice-actions">
             {(advice.suggestedRate != null || advice.suggestedWeeklyDiscountPct != null ||
               advice.suggestedMonthlyDiscountPct != null) && (

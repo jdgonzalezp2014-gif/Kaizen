@@ -67,7 +67,7 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
     hostawayAccountId: r.hostaway_account_id,
     hasHostawayKey: Boolean(r.hostaway_api_key_enc),
     hasGeminiKey: Boolean(r.gemini_api_key_enc),
-    geminiModel: r.gemini_model ?? 'gemini-2.5-flash',
+    geminiModel: r.gemini_model ?? 'gemini-3.6-flash',
     targetNetPerUnit: Number(r.target_net_per_unit),
     occFloorPct: r.occ_floor_pct,
     stayNights: r.stay_nights,

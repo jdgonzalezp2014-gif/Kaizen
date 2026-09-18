@@ -21,10 +21,10 @@ export function App() {
   return (
     <main>
       <header>
-        <div>
-          <h1>Kaizen OS</h1>
-          <p className="sub">Profit per unit — and the occupancy that has to hold it up.</p>
-        </div>
+        {/* No tagline. It restated a framing the owner had already lost an
+            argument about, and a slogan nobody reads is pure vertical
+            space on a screen whose job is a list. */}
+        <h1>Kaizen OS</h1>
         <nav>
           {TABS.map(([t, label]) => (
             <button key={t} className={tab === t ? 'tab active' : 'tab'} onClick={() => setTab(t)}>{label}</button>

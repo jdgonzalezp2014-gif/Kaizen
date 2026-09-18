@@ -83,11 +83,21 @@ const ENTRIES: Entry[] = [
   }
 ];
 
+/**
+ * Rendered in place, never as a dialog.
+ *
+ * A modal covers the very table whose column you are trying to
+ * understand, which means reading the definition and applying it become
+ * two separate trips.
+ */
 export function Glossary({ onClose }: { onClose: () => void }) {
   return (
-    <div className="modal-back" onClick={onClose}>
-      <div className="modal wide glossary" onClick={e => e.stopPropagation()}>
-        <h3>What these numbers mean</h3>
+    <section className="glossary-panel">
+      <div className="glossary">
+        <div className="gp-head">
+          <h3>What these numbers mean</h3>
+          <button className="link" onClick={onClose}>close</button>
+        </div>
         <dl>
           {ENTRIES.map(e => (
             <div key={e.term}>
@@ -100,8 +110,7 @@ export function Glossary({ onClose }: { onClose: () => void }) {
             </div>
           ))}
         </dl>
-        <div className="modal-actions"><button onClick={onClose}>Close</button></div>
       </div>
-    </div>
+    </section>
   );
 }

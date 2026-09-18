@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { classify, rank, suspectedDuplicates, type ForwardUnit } from './forward.ts';
 
 const unit = (over: Partial<ForwardUnit> = {}): ForwardUnit => ({
-  listingId: '1', name: 'U', active: true, listedActive: true, parked: false, parkedDays: 0,
+  listingId: '1', name: 'U', city: 'Frisco', state: 'TX', active: true, listedActive: true, parked: false, parkedDays: 0,
   basePrice: 150, cleaningFeeCharged: 90, cleaningCost: 55,
   weeklyDiscountPct: null, monthlyDiscountPct: null,
   nights: 30, nightsOpen: 15, nightsSold: 15, nightsBlocked: 0,

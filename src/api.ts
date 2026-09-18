@@ -139,6 +139,10 @@ export interface Suggestion {
   confidence: 'low' | 'medium' | 'high';
   reasoning: string;
   missing: string;
+  eventNote?: string | null;
+  events?: string | null;
+  eventSources?: { title: string; uri: string }[];
+  eventsError?: string | null;
 }
 
 export const askSuggestion = (listingId: string, from: string, to: string) =>

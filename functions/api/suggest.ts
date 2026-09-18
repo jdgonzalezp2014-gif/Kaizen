@@ -13,7 +13,7 @@
  * following.
  */
 import { fetchListings, fetchCalendar } from '../_lib/hostaway.ts';
-import { suggestPrice, type PricingContext } from '../_lib/gemini.ts';
+import { suggestPrice, fetchLocalEvents, type PricingContext } from '../_lib/gemini.ts';
 import { decrypt } from '../_lib/crypto.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
@@ -114,12 +114,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     cleaningCost: costRow[0]?.cleaning_fee == null ? null : Number(costRow[0].cleaning_fee),
     orphanNights: gaps.filter(g => g.orphaned).reduce((a, g) => a + g.nights, 0),
     gaps: gaps.map(g => ({ from: g.from, to: g.to, nights: g.nights, minStay: g.minStay, orphaned: g.orphaned })),
-    unitType: null, bedrooms: listing.bedrooms, capacity: listing.capacity
+    unitType: null, bedrooms: listing.bedrooms, capacity: listing.capacity,
+    city: listing.city, state: listing.state,
+    localEvents: null
   };
+
+  // Searched before the recommendation so the model can weigh it, and
+  // kept optional: if the lookup fails the advice still happens, just
+  // without this input.
+  const model = keyRows[0]!.gemini_model || 'gemini-3.6-flash';
+  const events = await fetchLocalEvents(apiKey, model, listing.city, listing.state, from, to);
+  ctx.localEvents = events.text;
 
   let suggestion;
   try {
-    suggestion = await suggestPrice(apiKey, keyRows[0]!.gemini_model || 'gemini-2.5-flash', ctx);
+    suggestion = await suggestPrice(apiKey, model, ctx);
+    suggestion.events = events.text;
+    suggestion.eventSources = events.sources;
+    suggestion.eventsError = events.error;
   } catch (err) {
     return Response.json({ ok: false, error: 'gemini_failed',
       message: err instanceof Error ? err.message : String(err) }, { status: 502 });

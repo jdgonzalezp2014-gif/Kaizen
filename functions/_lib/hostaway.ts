@@ -47,6 +47,9 @@ export interface HostawayListing {
   propertyTypeId: number | null;
   lat: number | null;
   lng: number | null;
+  city: string;
+  state: string;
+  timeZone: string;
   amenities: string[];
   /** The listing's default nightly rate, before any calendar override. */
   basePrice: number | null;
@@ -199,6 +202,9 @@ export async function fetchListings(creds: HostawayCredentials, token?: string):
     propertyTypeId: Number.isFinite(Number(l.propertyTypeId)) ? Number(l.propertyTypeId) : null,
     lat: Number(l.lat ?? l.latitude) || null,
     lng: Number(l.lng ?? l.longitude) || null,
+    city: String(l.city ?? '').trim(),
+    state: String(l.state ?? '').trim(),
+    timeZone: String(l.timeZoneName ?? '').trim(),
     amenities: Array.isArray(l.listingAmenities)
       ? l.listingAmenities.map((a: any) => String(a?.amenityName ?? a ?? '')).filter(Boolean)
       : [],

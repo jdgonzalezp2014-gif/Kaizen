@@ -103,6 +103,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return {
       listingId: l.listingId,
       name: l.name,
+      city: l.city,
+      state: l.state,
       // Hostaway's flag, kept separate from what the calendar shows.
       listedActive: l.active,
       parked,

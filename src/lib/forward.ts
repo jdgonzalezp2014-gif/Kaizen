@@ -16,6 +16,8 @@ export interface CalendarNight {
 export interface ForwardUnit {
   listingId: string;
   name: string;
+  city: string;
+  state: string;
   /** Hostaway's flag. Says the listing exists, not that it takes bookings. */
   listedActive: boolean;
   /** Blocked solid across the whole parked horizon — off, whatever the flag says. */

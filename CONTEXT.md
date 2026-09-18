@@ -593,3 +593,60 @@ Bars are scaled to the **largest slice**, not to 100%, so small rows stay
 legible instead of collapsing to a sliver. Sorted largest first, because
 the question is always which slice is biggest — a pie makes that harder
 to answer, not easier.
+
+
+## 24. Filters, and one vocabulary for the traffic light
+
+`src/components/Filters.tsx` is shared by Units and Revenue. Three axes,
+because they are three different questions: **status** (what needs me),
+**location** (where), **search** (this one).
+
+A red chip must mean "this needs me" on either screen or the filter stops
+being trustworthy — so Revenue applies the same light to *money* that
+Units applies to the calendar: `bad` at 25% or more under target, `warn`
+under target, `ok` at or above. Filters are always visible; a hidden
+filter still applied is the fastest way to make someone distrust a number.
+
+Locations come from Hostaway's `city`/`state`. This account: Frisco TX
+(25), Austin TX (1), Celina TX (1).
+
+## 25. Local events, and the only outside input
+
+`fetchLocalEvents()` is a **separate, grounded** Gemini call using
+`google_search`. Separate because grounding and `responseSchema` do not
+combine reliably, and the structured recommendation is the part that must
+not degrade — so the search runs first and its prose becomes one more
+input to the constrained call.
+
+This is the **only** place the model may reach outside the supplied
+figures, so it returns its sources and the UI shows them verbatim behind
+a disclosure, with "verify before pricing against it". An event that does
+not exist is exactly the kind of confident detail that would otherwise
+justify a price rise.
+
+It fails soft: no events must never mean no advice. But the error is
+*reported*, because silently missing events look identical to "none
+found", and those are different facts.
+
+**`gemini-2.5-flash` is retired** — the API answers 404, "no longer
+available to new users". Default is now `gemini-3.6-flash` (migration
+007). A 429 means the key's free-tier quota is spent; both are turned
+into sentences that say what to do rather than a raw error blob.
+
+## 26. The advice runs on open
+
+Expanding a unit fires the suggestion immediately, so by the time the
+calendar has been read the answer is there. It runs **once per unit**,
+deliberately not on date-range changes — that would fire a paid call on
+every click in the calendar. "Re-run for these dates" is explicit.
+
+## 27. No tagline, no modals
+
+The header tagline restated a framing the owner had already lost an
+argument about with his boss, and a slogan nobody reads is vertical space
+on a screen whose job is a list. Removed.
+
+The glossary renders **in place**, not as a dialog: a modal covers the
+very table whose column you are trying to understand, making reading the
+definition and applying it two separate trips. Same reason the price
+workspace is inline.
