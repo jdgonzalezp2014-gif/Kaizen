@@ -285,12 +285,12 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
                placeholder={account.hasJinaKey ? 'stored — type to replace' : 'jina_…'} />
       </label>
       <p className="note">
-        Only a fallback. The public Airbnb rating and the guest-facing price are read straight
-        from the listing page first, with no key and no proxy — which is how the previous
-        system did it. Whether that works depends on where the request leaves from, so open a
-        unit and look: if it reports that Airbnb refused the address, a free key from
-        <code>jina.ai</code> gives the fetch a different route. If it already shows a rating,
-        leave this empty.
+        Only a fallback, and currently not a working one. The public rating and the
+        guest-facing price are read straight from the listing page first, with no key and no
+        proxy — which is how the previous system did it. As last tested, Airbnb serves neither
+        this deployment nor the reader anything but a shell, with or without a key. The code
+        tries on every load and will start working the moment that changes; nothing else on a
+        unit card depends on it.
       </p>
       <button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
       {msg && <p className="note">{msg}</p>}

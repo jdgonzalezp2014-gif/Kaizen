@@ -109,9 +109,16 @@ export async function readListing(
 
   const wrong = looksLikeListing(html, roomId);
   if (wrong) {
-    return fail(stage === 'direct' ? wrong
-      : `Airbnb refused this deployment's address. ${wrong} ` +
-        'Optionally, a Jina reader key in Settings routes the request differently.');
+    // Tested 2026-09: the origin refuses this egress AND the reader's,
+    // keyed or not, across every engine it offers. Suggesting a key that
+    // is already configured would be worse than useless — it reads as
+    // "you did it wrong" for something outside anyone's control here.
+    return fail(jinaKey
+      ? 'Airbnb is serving neither this deployment nor the reader the listing page. ' +
+        'The rating and public price cannot be read right now; everything else on this ' +
+        'card is unaffected.'
+      : `${wrong} Airbnb refuses most automated requests; a reader key in Settings is worth ` +
+        'one try, though it did not help when last tested.');
   }
 
   const rt = readRating(html);

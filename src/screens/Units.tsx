@@ -8,7 +8,7 @@
  * controls, all in place. Nothing modal, because a dialog hides the list
  * you were comparing against.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   getForward, applyPrice, askSuggestion, getMarket,
   type PriceResult, type Suggestion, type ChannelStatus, type PageRead
@@ -209,11 +209,31 @@ function UnitRow({ u, read, medianOcc, expanded, onToggle, asOf, days, parkedAft
             || u.state === 'unknown' || u.state === 'archived';
   const occ = u.occupancy ?? 0;
   const tone = dead ? 'off' : read.v.tone;
+  const ref = useRef<HTMLDivElement>(null);
+
+  // Bring an opened row to the top of the viewport. Opening a row near
+  // the bottom of a list of twenty-three otherwise leaves its panel
+  // entirely below the fold, so the click appears to do nothing.
+  useEffect(() => {
+    if (!expanded) return;
+    const el = ref.current;
+    if (!el) return;
+    const id = window.setTimeout(() => {
+      const top = el.getBoundingClientRect().top + window.scrollY - 12;
+      // Only scroll when the row is not already comfortably in view —
+      // nudging the page under someone who can already see it is worse
+      // than not scrolling at all.
+      if (Math.abs(window.scrollY - top) > 40) {
+        window.scrollTo({ top, behavior: 'smooth' });
+      }
+    }, 60);
+    return () => window.clearTimeout(id);
+  }, [expanded]);
 
   return (
     // The tone rides on the wrapper as well as the light, so an opened
     // row can carry its own colour on the edge that frames it.
-    <div className={`urow tone-${tone}${expanded ? ' open' : ''}`}>
+    <div ref={ref} className={`urow tone-${tone}${expanded ? ' open' : ''}`}>
       <button type="button" className="urow-head" onClick={onToggle} aria-expanded={expanded}>
         {/* Colour AND a word. The dot is the scan; the label is the meaning,
             so nothing here depends on seeing the difference between red
@@ -261,6 +281,8 @@ function UnitDetail({ u, read, medianOcc, asOf, days, dead, onExplain, onChanged
   const occ = u.occupancy ?? 0;
   return (
     <div className="udetail">
+      {/* The finding spans both columns: it is the one thing that should
+          be read before anything else on the card. */}
       <p className={`verdict tone-${dead ? 'info' : read.v.tone}`}>
         <span>{read.v.reason}</span>
       </p>
@@ -275,41 +297,48 @@ function UnitDetail({ u, read, medianOcc, asOf, days, dead, onExplain, onChanged
         </ul>
       )}
 
-      <dl className="facts-grid">
-        <Fact k="RevPAN" v={money(u.revpan)} onExplain={onExplain} />
-        <Fact k="ADR achieved" v={money(u.adr)} onExplain={onExplain} />
-        <Fact k="Asking, open nights" v={u.nightsOpen ? money(u.openAsk) : '—'} />
-        <Fact k="Booked last 7d" v={`${u.pickup7} nights`} onExplain={onExplain} />
-        <Fact k="Books" v={u.leadTime == null ? '—' : `${u.leadTime} days out`} onExplain={onExplain} />
-        <Fact k="On the books" v={money(u.onBooks)} />
-        <Fact k="Cleaning in / out"
-              v={`${money(u.cleaningFeeCharged)} / ${money(u.cleaningCost)}`} onExplain={onExplain} />
-        {/* A visible hole, not a hidden one: the comp set is the biggest
-            missing input here, and omitting the row would let the panel
-            read as though the picture were complete. */}
-        <Fact k="Market rate" v="not connected" muted />
-      </dl>
+      {/* Two columns on a wide screen: evidence on the left, the thing
+          you came to do on the right. Stacked they ran to two screens of
+          scrolling, so the calendar — the control the whole panel exists
+          for — sat below the fold behind numbers you had already read. */}
+      <div className="udetail-cols">
+        <div className="ud-evidence">
+          <dl className="facts-grid">
+            <Fact k="RevPAN" v={money(u.revpan)} onExplain={onExplain} />
+            <Fact k="ADR achieved" v={money(u.adr)} onExplain={onExplain} />
+            <Fact k="Asking, open nights" v={u.nightsOpen ? money(u.openAsk) : '—'} />
+            <Fact k="Booked last 7d" v={`${u.pickup7} nights`} onExplain={onExplain} />
+            <Fact k="Books" v={u.leadTime == null ? '—' : `${u.leadTime} days out`} onExplain={onExplain} />
+            <Fact k="On the books" v={money(u.onBooks)} />
+            <Fact k="Cleaning in / out"
+                  v={`${money(u.cleaningFeeCharged)} / ${money(u.cleaningCost)}`} onExplain={onExplain} />
+            <Fact k="Market rate" v="not connected" muted />
+          </dl>
 
-      <Market listingId={u.listingId} from={asOf} days={days} />
+          {!dead && (
+            <div className="occline">
+              <span className="ubar big">
+                <span className={`ubar-fill tone-${read.v.tone}`} style={{ width: `${Math.min(100, occ * 100)}%` }} />
+                {medianOcc != null && (
+                  <span className="ubar-median" style={{ left: `${Math.min(100, medianOcc * 100)}%` }} />
+                )}
+              </span>
+              <span className="note">
+                <strong>{pct(u.occupancy)}</strong> of {u.nightsOpen + u.nightsSold} sellable nights booked
+                {medianOcc != null && <> · {points((occ - medianOcc) * 100)} pts vs median {pct(medianOcc)}</>}
+              </span>
+            </div>
+          )}
 
-      {!dead && (
-        <>
-          <div className="occline">
-            <span className="ubar big">
-              <span className={`ubar-fill tone-${read.v.tone}`} style={{ width: `${Math.min(100, occ * 100)}%` }} />
-              {medianOcc != null && (
-                <span className="ubar-median" style={{ left: `${Math.min(100, medianOcc * 100)}%` }} />
-              )}
-            </span>
-            <span className="note">
-              <strong>{pct(u.occupancy)}</strong> of {u.nightsOpen + u.nightsSold} sellable nights booked
-              {medianOcc != null && <> · {points((occ - medianOcc) * 100)} pts vs portfolio median {pct(medianOcc)}</>}
-            </span>
+          <Market listingId={u.listingId} from={asOf} days={days} />
+        </div>
+
+        {!dead && (
+          <div className="ud-action">
+            <PriceWorkspace u={u} gaps={read.gaps} asOf={asOf} days={days} onChanged={onChanged} />
           </div>
-
-          <PriceWorkspace u={u} gaps={read.gaps} asOf={asOf} days={days} onChanged={onChanged} />
-        </>
-      )}
+        )}
+      </div>
     </div>
   );
 }

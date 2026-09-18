@@ -820,7 +820,20 @@ Live: 23 of 27 on Airbnb. The four without are Charger Luxe (archived),
 CL2211 and CL2349 (parked) — and **Kingsford Home**, which is not on
 Airbnb while *Kingsford Duplicate* is. More evidence for the duplicate.
 
-**The rating and the quoted price are best-effort.** The DIRECT request
+**As of 2026-09, Airbnb serves nothing readable.** Tested from the
+sandbox AND reported from the deployed Cloudflare app: the direct request
+returns a 3 kB shell or a soft 404, and the Jina reader returns 0–1 kB
+with a key, across every engine it offers (`markdown`, `browser`,
+`browser` + wait-for-selector, `html`). This is not a configuration
+problem and no key fixes it.
+
+The code tries on every load and will start working the moment that
+changes. The message says so plainly rather than suggesting a key the
+account already has — telling someone to add what they added reads as
+"you did it wrong" for something outside their control. Nothing else on
+a unit card depends on it.
+
+**The DIRECT request
 is the mechanism — the old Apps Script project read ratings straight from
 the origin via `fetchRawHtml_` and never used a proxy. Jina is a
 fallback, and optional.
@@ -848,3 +861,24 @@ because a wrong price is wrong by a factor, not a margin.
 
 Readings land in `price_observations` only when something was actually
 read; a table of nulls would bury the real series it exists to keep.
+
+
+## 33. The expanded panel is two columns
+
+Stacked, an opened unit ran to about two screens — so the calendar, the
+control the whole panel exists for, sat below the fold behind numbers
+that had already been read.
+
+Now: the verdict spans the full width (the one thing to read first), then
+**evidence left** (metrics, occupancy bar, channels and rating) and
+**action right** (open stretches, calendar, effect line, rate controls,
+Gemini). One column again below 1080px, where a 7×38px month grid cannot
+sit beside anything.
+
+`main` widened to 1340px to give those two columns room.
+
+Opening a row **scrolls it to the top of the viewport** — near the bottom
+of a list of twenty-three, the panel otherwise opens entirely below the
+fold and the click looks like it did nothing. It only scrolls when the
+row is not already comfortably in view: nudging the page under someone
+who can already see it is worse than not scrolling.
