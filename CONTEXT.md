@@ -1580,6 +1580,29 @@ day early. The summary prints how many deeps the invoices show against how
 many could be dated — 20 against 8 — so the gap is visible rather than
 guessed at.
 
+## 59a. A unit mentioned is not a unit cleaned
+
+Three of the four Concord rows were wrong, and each in a different way:
+
+* `"Tuesday to concord"` — she is saying she will GO on Tuesday.
+* `"For concord is also no sheets ready"` — what is ready is **sheets**,
+  and the sentence is a negation.
+* `"...both houses are ready just the duvets taken from quest to concord"`
+  — a sentence about neither, picking whichever name came first.
+
+So every rule now asks the same question: **is this unit the SUBJECT of a
+statement that the work is done?** The unit has to open the clause for
+`ready`; the caption has to BE the name, with no verb, preposition or
+weekday anywhere; negations and questions are out.
+
+**And WhatsApp writes curly apostrophes.** `today'?s` does not match
+`today’s`, which was silently dropping real scheduling messages — the same
+class of bug as matching emoji by code range. Text is flattened on the way
+in; scheduled cleans went from 21 to 29 and the missing 12 September
+Concord clean came back.
+
+Concord now has exactly its two real cleans.
+
 ## 59b. The WhatsApp chats are two different records, not one
 
 `scripts/whatsapp-cleanings.mjs` reads the crew chat exports. 3,741

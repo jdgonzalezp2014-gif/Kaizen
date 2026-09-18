@@ -105,7 +105,15 @@ function isoDate(d, m, y) {
 }
 
 /** Group lines into messages; a continuation line has no timestamp. */
+/**
+ * WhatsApp writes curly quotes. `today'?s` does not match `today’s`, and
+ * that one character was silently dropping real scheduling messages — the
+ * same class of bug as matching emoji by code range.
+ */
+const flatten = t => t.replace(/[\u2018\u2019\u201B]/g, "'").replace(/[\u201C\u201D]/g, '"');
+
 function parseChat(text, chat) {
+  text = flatten(text);
   const msgs = [];
   let cur = null;
   for (const raw of text.split(/\r?\n/)) {
@@ -248,42 +256,54 @@ for (const msg of messages) {
   if (INVOICE_HEADER.test(msg.body)) continue;
   const lines = msg.body.split('\n');
 
-  // (a) "Napa ready" — the CREW reporting the unit finished. Strongest.
+  // A unit being mentioned is not a unit being cleaned. Every rule below
+  // asks the same question — is this unit the SUBJECT of a statement that
+  // the work is done — because "Tuesday to concord" and "no sheets ready"
+  // both name a unit and neither is a clean.
+
+  // (a) "<unit> ready" — the crew reporting that unit finished.
   //
-  // Only from the crew: the office writes "is 2462 ready?" and "it should
-  // be ready at 4", which are a question and a plan, not a completion.
-  for (const line of isCrew(msg.sender) ? lines : []) {
-    if (!/\bready\b/i.test(line)) continue;
-    if (/\?\s*$|\bis\s+\S+\s+ready|would like|check in/i.test(line)) continue;
-    if (/\bnot ready|ready to|ready for|be ready|will be ready|when.*ready|ready\?/i.test(line)) continue;
-    const m = line.match(READY);
-    if (!m) continue;
-    const unit = findUnit(m[1]) ?? findUnit(line);
-    if (unit) events.push({ date: msg.date, unit, vendor: crewOf(msg.sender), source: 'ready', line: line.trim(), chat: msg.chat });
+  // The unit has to OPEN the clause. Without that, "For concord is also no
+  // sheets ready" reads as a Concord clean when the thing that is ready is
+  // sheets, and "both houses are ready ... from quest to concord" picks
+  // whichever name appears first in a sentence about neither.
+  if (isCrew(msg.sender)) {
+    for (const clause of msg.body.split(/[,.;:|\n]|\band\b/)) {
+      const c = clause.trim();
+      if (!/\bready\b/i.test(c)) continue;
+      if (/\bno\b|\bnot\b|\?|\bwill be\b|\bto be\b|\bwhen\b|\bis it\b|\bare they\b/i.test(c)) continue;
+      // Something other than the unit is the subject.
+      if (/\b(sheet|towel|duvet|linen|supply|supplies|order|key|code|everything|it|they)\b/i.test(c)) continue;
+      const opener = c.match(/^(?:the\s+)?([\w\s-]{2,22}?)\s+(?:house\s+)?(?:is\s+|are\s+|will\s+)?ready\b/i);
+      if (!opener) continue;
+      const unit = findUnit(opener[1]);
+      if (unit) events.push({ date: msg.date, unit, vendor: crewOf(msg.sender),
+                              source: 'ready', line: c, chat: msg.chat });
+    }
   }
 
-  // (b) A bare unit name from the crew: the caption on a batch of finished
-  // photos. The photos themselves are stripped, the label is the evidence.
+  // (b) A bare unit name from the crew — the caption on a batch of photos
+  // of a finished unit. It must BE the name and nothing else: one or two
+  // extra words at most, and no verb or preposition anywhere, or "Tuesday
+  // to concord" becomes a clean that has not happened yet.
   const only = msg.body.trim();
-  if (isCrew(msg.sender) && only.length <= 24 && !/\bready\b/i.test(only)) {
+  if (isCrew(msg.sender) && only.length <= 22 && !/\bready\b/i.test(only)) {
+    const words = only.split(/\s+/);
+    const noise = /\b(in|at|on|for|to|the|a|is|are|and|or|no|not|so|we|i|it|this|that|just|only|also|do|does|did|will|can|go|going|next|tomorrow|today|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b/i;
     const unit = findUnit(only);
-    // Guard: the whole message must BE the name, not merely contain it,
-    // or "2 more" and "ok 1125?" become cleans that never happened.
-    // It must BE the label, not a sentence that happens to be short. A
-    // leading preposition or verb means it is a fragment — "In 4308" is
-    // the tail of a sentence about a sofa, not a finished unit.
-    const fragment = /^(in|at|on|for|to|the|a|is|are|and|or|no|not|so|we|i|it|this|that|just|only|also|do|does|did)\b/i;
-    if (unit && /^[\w\s.'-]+$/.test(only) && only.split(/\s+/).length <= 3 && !fragment.test(only)) {
-      events.push({ date: msg.date, unit, vendor: crewOf(msg.sender), source: 'photos', line: only, chat: msg.chat });
+    if (unit && words.length <= 3 && /^[\w\s.'-]+$/.test(only) && !noise.test(only)) {
+      events.push({ date: msg.date, unit, vendor: crewOf(msg.sender),
+                    source: 'photos', line: only, chat: msg.chat });
     }
   }
 
   // (c) The office naming the day's work. A plan, not a completion — but
-  // it is dated, and almost all of them happened.
-  if (!isCrew(msg.sender) && /today'?s cleaning|today we (have|only have)|remember today/i.test(msg.body)) {
+  // dated, and nearly all of them happened.
+  if (!isCrew(msg.sender) && /today'?s cleaning|today we (have|only have)|remember today|don'?t forget today/i.test(msg.body)) {
     for (const line of lines) {
       const unit = findUnit(line);
-      if (unit) events.push({ date: msg.date, unit, vendor: null, source: 'scheduled', line: line.trim(), chat: msg.chat });
+      if (unit) events.push({ date: msg.date, unit, vendor: null,
+                              source: 'scheduled', line: line.trim(), chat: msg.chat });
     }
   }
 }
@@ -313,8 +333,9 @@ const csv = (head, rows) => [head, ...rows].map(r => r.map(esc).join(',')).join(
 for (const c of cleanings) c.deep = deepDays.has(`${c.date}|${c.unit}`);
 
 writeFileSync(join(outDir, 'cleanings.csv'), csv(
-  ['Checkout', 'Unit', 'Deep', 'Cleaner'],
-  cleanings.map(c => [c.date, c.unit, c.deep ? 'YES' : '', c.vendor ?? ''])));
+  ['Checkout', 'Unit', 'Deep', 'Cleaner', 'Source', 'Quote'],
+  cleanings.map(c => [c.date, c.unit, c.deep ? 'YES' : '', c.vendor ?? '',
+                      c.source, c.line.slice(0, 100)])));
 
 // ── report ───────────────────────────────────────────────────────────
 const span = cleanings.length ? `${cleanings[0].date} → ${cleanings.at(-1).date}` : '—';
