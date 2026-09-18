@@ -15,9 +15,11 @@ const TABS: [Tab, string][] = [
 ];
 
 export function App() {
-  // Units first: it is where the decisions are made, and the tab that
-  // opens is the one people treat as the product.
-  const [tab, setTab] = useState<Tab>('units');
+  // Null, not 'units'. Rendering a default tab before the role is known
+  // mounts that screen for everyone — an ops account briefly saw Units
+  // and fired /api/forward, which answers 403 for them. The flash was
+  // the visible part; the forbidden request was the rest of it.
+  const [tab, setTab] = useState<Tab | null>(null);
   // Fetched once at the top: three screens need the same unit list, and
   // three copies of it drift the moment one of them is stale.
   const [units, setUnits] = useState<UnitRow[]>([]);
@@ -31,12 +33,18 @@ export function App() {
       .then(r => {
         const tabs = r.tabs ?? TABS.map(t => t[0]);
         setAllowed(tabs);
-        // Land on a tab they can actually open. Defaulting to Units for
-        // someone who only records costs shows a permission error as
-        // their first impression of the app.
-        setTab(prev => tabs.includes(prev) ? prev : (tabs[0] as Tab));
+        // Land on the first tab they can actually open. For an admin that
+        // is Units, where the decisions are; for ops it is Costs.
+        setTab(prev => (prev && tabs.includes(prev)) ? prev : (tabs[0] as Tab));
       })
-      .catch(() => setAllowed(TABS.map(t => t[0])));
+      .catch(() => {
+        // The role could not be read. Falling back to every tab would
+        // show an ops account exactly what this is meant to keep from
+        // them, so it falls back to the narrow set instead — a wrong
+        // guess then costs an admin one reload, not a leak.
+        setAllowed(['costs', 'claims']);
+        setTab('costs');
+      });
   }, []);
 
   return (
@@ -47,20 +55,30 @@ export function App() {
             space on a screen whose job is a list. */}
         <h1>Kaizen OS</h1>
         <nav>
-          {TABS.filter(([t]) => allowed == null || allowed.includes(t)).map(([t, label]) => (
-            <button key={t} className={tab === t ? 'tab active' : 'tab'} onClick={() => setTab(t)}>{label}</button>
-          ))}
+          {/* Nothing until the role is known. A tab that appears and then
+              vanishes has already told the reader it exists. */}
+          {allowed?.map(t => {
+            const label = TABS.find(x => x[0] === t)?.[1];
+            return label ? (
+              <button key={t} className={tab === t ? 'tab active' : 'tab'}
+                      onClick={() => setTab(t as Tab)}>{label}</button>
+            ) : null;
+          })}
           <ThemeToggle />
         </nav>
       </header>
 
-      {units.length === 0 && tab !== 'settings' && allowed != null && (
+      {/* Only shown to someone who can act on it. Telling an ops account
+          to go to Settings → Sync listings names a screen they cannot
+          open. */}
+      {units.length === 0 && tab !== 'settings' && allowed?.includes('settings') && (
         <p className="banner warn">
           No units in the local database yet. Settings → Sync listings, once — costs and price
           decisions attach to these records and cannot be saved without them.
         </p>
       )}
 
+      {tab === null    && <p className="note">Loading…</p>}
       {tab === 'units'    && <Units />}
       {tab === 'revenue'  && <Revenue />}
       {tab === 'claims'   && <Claims units={units} />}

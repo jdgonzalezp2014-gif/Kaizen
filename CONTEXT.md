@@ -1380,3 +1380,28 @@ rule written only for the steady state, with no path into it. The
 allow-list had the same gap (empty means allow-all, or nobody could add
 themselves) and it was solved the same way — by asking what happens on
 the very first run.
+
+
+## 52. Nothing renders before the role is known
+
+The tab bar drew every tab while `/api/settings` was still in flight, so
+an ops account saw Units and Revenue for a moment before they vanished.
+A tab that appears and then disappears has already told the reader it
+exists.
+
+The flash was the visible half. The rest: `tab` defaulted to `'units'`,
+so that screen **mounted for everyone** and fired `/api/forward`, which
+answers 403 for ops. The middleware refused it correctly — the request
+should never have been made.
+
+Now `tab` starts `null` and the nav renders from `allowed`, which is
+`null` until the server answers. Nothing is drawn that might then vanish.
+
+And the failure path **falls back to the narrow set**, not the wide one.
+If the role cannot be read, showing every tab would reveal exactly what
+the role exists to hide; a wrong guess in the other direction costs an
+admin one reload. When a permission check fails, it fails closed — the
+same rule as the auth helper and the allow-list.
+
+The "Sync listings" banner is also gated on having a Settings tab: it
+told ops accounts to open a screen they cannot reach.
