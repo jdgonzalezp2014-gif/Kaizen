@@ -912,8 +912,26 @@ Details that matter:
 * Rows match **by unit name**, because a sheet says "CL1339" and has
   never heard of a Hostaway listing id. Unmatched names are returned,
   never guessed.
-* An observation with neither a rating nor a rate is dropped: nulls would
+* An observation with no rating, rate or total is dropped: nulls would
   bury the series the table exists to keep.
+
+**The guest quote is stored as BOTH a total and a nightly rate**, with
+the window it belongs to. They are not interchangeable: the nightly
+figure compares across units and dates, the total is what a guest
+actually sees and carries the fees and tax. Deriving either from the
+other needs the night count, which is the first thing to go missing.
+
+The dashboard column `✅ Airbnb Live` holds the **stay total** —
+`Agent.js` writes `Math.round(pd.total)` — so `Kaizen.gs` divides by
+`Nights` before sending a nightly rate. This project has already made
+that exact mistake once, when comp prices were 30-night totals read as
+nightly: every comparison was out by a factor of thirty and looked
+entirely reasonable. A row with no night count sends no rate at all.
+
+The card shows the gap: *"We ask $175/night · a guest is quoted $247 —
+41% more once fees and tax are added."* That difference is why a unit can
+look competitive in Hostaway and expensive on Airbnb, and nothing else in
+the app would surface it.
 
 **One Cloudflare step is still needed.** Access sits in front of
 everything, so an Apps Script POST is redirected to a login page before

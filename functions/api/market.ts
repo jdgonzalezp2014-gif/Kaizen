@@ -45,21 +45,31 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // and it is the whole point of the ingest route: a rating read
   // yesterday from somewhere that works beats a blank read from here.
   const storedRows = (await sql`
-    SELECT airbnb_rating, airbnb_reviews, airbnb_rate, observed_at, source
+    SELECT airbnb_rating, airbnb_reviews, airbnb_rate, airbnb_total,
+           window_start, window_end, stay_nights, hostaway_rate, observed_at, source
       FROM price_observations
      WHERE account_id = 1 AND unit_id = ${listingId}
-       AND (airbnb_rating IS NOT NULL OR airbnb_rate IS NOT NULL)
+       AND (airbnb_rating IS NOT NULL OR airbnb_rate IS NOT NULL OR airbnb_total IS NOT NULL)
      ORDER BY observed_at DESC LIMIT 1
   `) as {
     airbnb_rating: string | null; airbnb_reviews: number | null;
     airbnb_rate: string | null; observed_at: string; source: string | null;
+    airbnb_total: string | null; window_start: string | null; window_end: string | null;
+    stay_nights: number | null; hostaway_rate: string | null;
   }[];
-  const stored = storedRows[0] ? {
-    rating: storedRows[0].airbnb_rating == null ? null : Number(storedRows[0].airbnb_rating),
-    reviews: storedRows[0].airbnb_reviews,
-    nightly: storedRows[0].airbnb_rate == null ? null : Number(storedRows[0].airbnb_rate),
-    observedAt: storedRows[0].observed_at,
-    source: storedRows[0].source
+  const n = (v: string | null) => v == null ? null : Number(v);
+  const r0 = storedRows[0];
+  const stored = r0 ? {
+    rating: n(r0.airbnb_rating),
+    reviews: r0.airbnb_reviews,
+    nightly: n(r0.airbnb_rate),
+    total: n(r0.airbnb_total),
+    ourRate: n(r0.hostaway_rate),
+    windowStart: r0.window_start,
+    windowEnd: r0.window_end,
+    nights: r0.stay_nights,
+    observedAt: r0.observed_at,
+    source: r0.source
   } : null;
 
   // Publication is the part that is always answerable, so it is returned

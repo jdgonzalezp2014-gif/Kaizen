@@ -160,7 +160,14 @@ export interface PageRead {
   nightly: number | null; source: string | null; problem: string | null;
 }
 export interface StoredRead {
-  rating: number | null; reviews: number | null; nightly: number | null;
+  rating: number | null; reviews: number | null;
+  /** Per night, derived from the stay total. */
+  nightly: number | null;
+  /** The whole stay as a guest is quoted it, fees and tax included. */
+  total: number | null;
+  /** Our own nightly rate for the same stay, for the comparison. */
+  ourRate: number | null;
+  windowStart: string | null; windowEnd: string | null; nights: number | null;
   observedAt: string; source: string | null;
 }
 export const getMarket = (listingId: string, from: string, to: string) =>

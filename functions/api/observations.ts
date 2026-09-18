@@ -25,6 +25,9 @@ interface Observation {
   stayNights?: number;
   hostawayRate?: number | null;
   airbnbRate?: number | null;
+  /** The whole stay, as a guest is quoted it — fees and tax included. */
+  airbnbTotal?: number | null;
+  windowEnd?: string;
   airbnbRating?: number | null;
   airbnbReviews?: number | null;
   source?: string;
@@ -83,14 +86,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
     // A reading with nothing in it is not a reading. Storing it would
     // bury the real series under rows of nulls.
-    if (o.airbnbRating == null && o.airbnbRate == null) continue;
+    if (o.airbnbRating == null && o.airbnbRate == null && o.airbnbTotal == null) continue;
 
     await sql`
       INSERT INTO price_observations
-        (account_id, unit_id, window_start, stay_nights,
-         hostaway_rate, airbnb_rate, airbnb_rating, airbnb_reviews, source, note)
-      VALUES (1, ${id}, ${o.windowStart ?? null}, ${o.stayNights ?? null},
-              ${o.hostawayRate ?? null}, ${o.airbnbRate ?? null},
+        (account_id, unit_id, window_start, window_end, stay_nights,
+         hostaway_rate, airbnb_rate, airbnb_total, airbnb_rating, airbnb_reviews, source, note)
+      VALUES (1, ${id}, ${o.windowStart ?? null}, ${o.windowEnd ?? null}, ${o.stayNights ?? null},
+              ${o.hostawayRate ?? null}, ${o.airbnbRate ?? null}, ${o.airbnbTotal ?? null},
               ${o.airbnbRating ?? null}, ${o.airbnbReviews ?? null},
               ${o.source ?? 'apps-script'}, ${o.note ?? null})
     `;

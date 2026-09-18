@@ -739,9 +739,9 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
                   <span className="note"> · {page?.reviews ?? stored!.reviews} reviews</span>}
               </span>
             )}
-            {(page?.nightly ?? stored?.nightly) != null && (
+            {page?.nightly != null && (
               <span className="chan-metric">
-                <b>${page?.nightly ?? stored!.nightly}</b> <span className="note">shown to guests</span>
+                <b>${page.nightly}</b> <span className="note">shown to guests</span>
               </span>
             )}
             {page?.rating == null && stored?.rating != null && (
@@ -751,6 +751,41 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
               </span>
             )}
           </div>
+
+          {/* The guest-facing quote, with the dates it is for. A price
+              without its stay is not a price: the same unit quotes
+              differently for a weekend, a week and a month, and this is
+              the number a guest actually decides on. */}
+          {stored && (stored.total != null || stored.nightly != null) && page?.nightly == null && (
+            <div className="quote">
+              <div className="quote-main">
+                {stored.total != null && (
+                  <span><b>${Math.round(stored.total).toLocaleString('en-US')}</b> total</span>
+                )}
+                {stored.nightly != null && (
+                  <span className="note">${stored.nightly}/night</span>
+                )}
+                {stored.nights != null && stored.windowStart && (
+                  <span className="note">
+                    for {stored.nights} night{stored.nights === 1 ? '' : 's'} from {stored.windowStart}
+                  </span>
+                )}
+              </div>
+              {/* The gap is the fee and tax load a guest sees on top of
+                  our rate — the reason a unit can look competitive in
+                  Hostaway and expensive on Airbnb. */}
+              {stored.ourRate != null && stored.nightly != null && stored.ourRate > 0 && (
+                <div className="note quote-gap">
+                  We ask ${stored.ourRate}/night · a guest is quoted ${stored.nightly} —
+                  {' '}{Math.round((stored.nightly / stored.ourRate - 1) * 100)}% more once fees
+                  and tax are added.
+                </div>
+              )}
+              <div className="note">
+                Read {stored.observedAt.slice(0, 10)}{stored.source ? ` · ${stored.source}` : ''}
+              </div>
+            </div>
+          )}
 
           {msg && <p className="note">{msg}</p>}
           {/* Only worth saying when there is nothing to show. With a
