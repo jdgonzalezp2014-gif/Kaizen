@@ -4,7 +4,7 @@ import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
 import { Claims } from './screens/Claims.tsx';
 import { Settings } from './screens/Settings.tsx';
-import { getUnits, type UnitRow } from './api.ts';
+import { getUnits, getSettings, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
 type Tab = 'units' | 'revenue' | 'costs' | 'claims' | 'settings';
@@ -21,7 +21,23 @@ export function App() {
   // Fetched once at the top: three screens need the same unit list, and
   // three copies of it drift the moment one of them is stale.
   const [units, setUnits] = useState<UnitRow[]>([]);
+  // Which tabs to draw comes from the server, not from a guess here.
+  // Null until it answers, so nothing is drawn that might then vanish.
+  const [allowed, setAllowed] = useState<string[] | null>(null);
+
   useEffect(() => { getUnits().then(r => setUnits(r.units ?? [])).catch(() => {}); }, []);
+  useEffect(() => {
+    getSettings()
+      .then(r => {
+        const tabs = r.tabs ?? TABS.map(t => t[0]);
+        setAllowed(tabs);
+        // Land on a tab they can actually open. Defaulting to Units for
+        // someone who only records costs shows a permission error as
+        // their first impression of the app.
+        setTab(prev => tabs.includes(prev) ? prev : (tabs[0] as Tab));
+      })
+      .catch(() => setAllowed(TABS.map(t => t[0])));
+  }, []);
 
   return (
     <main>
@@ -31,14 +47,14 @@ export function App() {
             space on a screen whose job is a list. */}
         <h1>Kaizen OS</h1>
         <nav>
-          {TABS.map(([t, label]) => (
+          {TABS.filter(([t]) => allowed == null || allowed.includes(t)).map(([t, label]) => (
             <button key={t} className={tab === t ? 'tab active' : 'tab'} onClick={() => setTab(t)}>{label}</button>
           ))}
           <ThemeToggle />
         </nav>
       </header>
 
-      {units.length === 0 && tab !== 'settings' && (
+      {units.length === 0 && tab !== 'settings' && allowed != null && (
         <p className="banner warn">
           No units in the local database yet. Settings → Sync listings, once — costs and price
           decisions attach to these records and cannot be saved without them.

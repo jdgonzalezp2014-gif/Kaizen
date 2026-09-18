@@ -1291,3 +1291,39 @@ average.
 On the Kaizen OS side, the staleness threshold dropped from 3 days to 2.
 Three days was chosen for prices, and a month-old rating sat inside it
 looking current.
+
+
+## 49. Roles: two levels, enforced in the middleware
+
+**owner** — everything. **ops** — expenses and claims, nothing else.
+
+**Hiding a tab is not access control.** Every screen is an endpoint
+reachable with a URL and a valid session, so `functions/_lib/roles.ts`
+is checked in `functions/api/_middleware.ts` on every request. The tab
+list the browser draws comes from the same module via `/api/settings`,
+so the two cannot drift — a tab that answers 403 reads as the app being
+broken rather than as a permission.
+
+**`mayAccess` is an allow-list, deliberately.** With a deny-list, a route
+added next month would be reachable by everyone until somebody
+remembered to add it. This way a new route is closed until it is opened.
+
+`/api/settings` returns **nothing** to an ops member beyond their
+identity and their tabs: no credential flags, no allow-list, no targets.
+None of it is actionable by them, and all of it describes the business
+rather than their job.
+
+Lock-out guards, the same shape as before:
+
+* **No member row means owner.** Roles arrived after people did, and a
+  migration must not quietly take access away. The allow-list still
+  decides whether they get in at all.
+* Everyone on the old `allowed_emails` was migrated **as an owner** —
+  they had full access a moment earlier.
+* Saving a list **with no owner is refused**, not explained afterwards:
+  it would leave an account nobody can administer and no screen left to
+  fix it.
+* The form refuses to save a list that **demotes the person saving it**.
+* Adding a member also adds them to the allow-list. A role with no way
+  in is a role nobody can use, and two separate chores is how someone
+  ends up locked out.

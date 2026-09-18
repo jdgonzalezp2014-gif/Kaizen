@@ -11,6 +11,7 @@ import { getAccount, getCredentials, saveCredentials, type SqlFn } from '../_lib
 import { getAccessToken, fetchListings } from '../_lib/hostaway.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
+import { tabsFor } from '../_lib/roles.ts';
 import { encrypt } from '../_lib/crypto.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -42,7 +43,27 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
-  return Response.json({ ok: true, user: who.email, account, connection });
+  const member = (await sql`
+    SELECT role FROM members WHERE account_id = 1 AND email = ${who.email.trim().toLowerCase()}
+  `) as { role: string }[];
+  const role = member[0]?.role ?? 'owner';
+
+  if (role !== 'owner') {
+    // An ops member gets their identity and their tabs. Not the
+    // credential flags, not the allow-list, not the targets — none of
+    // which they can act on, and all of which describe the business
+    // rather than their job.
+    return Response.json({
+      ok: true, user: who.email, role, tabs: tabsFor('ops'), account: null, connection: null
+    });
+  }
+
+  const members = await sql`
+    SELECT email, role, added_at FROM members WHERE account_id = 1 ORDER BY role, email`;
+
+  return Response.json({
+    ok: true, user: who.email, role, tabs: tabsFor('owner'), account, connection, members
+  });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -62,6 +83,36 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       // form the person is currently looking at.
       await getAccessToken({ accountId, apiKey });
       await saveCredentials(sql, env.ENCRYPTION_KEY, accountId, apiKey);
+    }
+
+    // Members. Adding one also puts them on the allow-list: a role with
+    // no way in is a role nobody can use, and making that two separate
+    // chores is how somebody ends up unable to sign in.
+    if (Array.isArray(body.members)) {
+      const rows = (body.members as { email?: string; role?: string }[])
+        .map(m => ({
+          email: String(m.email ?? '').trim().toLowerCase(),
+          role: m.role === 'owner' ? 'owner' : 'ops'
+        }))
+        .filter(m => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m.email));
+
+      // Refused rather than explained afterwards: saving a list with no
+      // owner leaves an account nobody can administer, and no screen
+      // left that could fix it.
+      if (rows.length && !rows.some(m => m.role === 'owner')) {
+        return Response.json({ ok: false,
+          error: 'An account needs at least one owner.' }, { status: 400 });
+      }
+
+      await sql`DELETE FROM members WHERE account_id = 1`;
+      for (const m of rows) {
+        await sql`
+          INSERT INTO members (account_id, email, role, added_by)
+          VALUES (1, ${m.email}, ${m.role}, ${who.email})
+          ON CONFLICT (account_id, email) DO UPDATE SET role = EXCLUDED.role
+        `;
+      }
+      await sql`UPDATE accounts SET allowed_emails = ${rows.map(m => m.email)} WHERE id = 1`;
     }
 
     if (Array.isArray(body.allowedEmails)) {

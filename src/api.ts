@@ -16,7 +16,16 @@ export interface Account {
   allowedEmails: string[];
 }
 export interface Connection { ok: boolean; message: string; units?: number }
-export interface SettingsResponse { ok: boolean; user: string; account: Account; connection: Connection }
+export interface Member { email: string; role: 'owner' | 'ops'; added_at?: string }
+export interface SettingsResponse {
+  ok: boolean; user: string;
+  role: 'owner' | 'ops';
+  tabs: string[];
+  /** Null for an ops member: they get their identity and their tabs. */
+  account: Account | null;
+  connection: Connection | null;
+  members?: Member[];
+}
 
 export interface ImportProblem { row: number; problem: string }
 export interface ImportResult {

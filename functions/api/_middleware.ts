@@ -26,6 +26,7 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
+import { mayAccess, type Role } from '../_lib/roles.ts';
 
 /**
  * Routes that carry their own credential and must not be gated on a
@@ -45,12 +46,21 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   // visibly fake address would only make dev harder for no security.
   if (who.local) return ctx.next();
 
+  const email = who.email.trim().toLowerCase();
   let allowed: string[] = [];
+  let role: Role = 'owner';
   try {
     const sql = db(ctx.env);
-    const rows = (await sql`SELECT allowed_emails FROM accounts WHERE id = 1`) as
-      { allowed_emails: string[] | null }[];
-    allowed = rows[0]?.allowed_emails ?? [];
+    const [acc, member] = await Promise.all([
+      sql`SELECT allowed_emails FROM accounts WHERE id = 1`,
+      sql`SELECT role FROM members WHERE account_id = 1 AND email = ${email}`
+    ]) as [{ allowed_emails: string[] | null }[], { role: Role }[]];
+    allowed = acc[0]?.allowed_emails ?? [];
+    // No member row means no role has been assigned. Defaulting to
+    // OWNER preserves what everyone had before roles existed — a
+    // migration must not quietly take access away — and the allow-list
+    // below is still what decides whether they get in at all.
+    role = member[0]?.role ?? 'owner';
   } catch {
     // A database that is down must not become an open door. It also must
     // not become a lock-out with no explanation, so this says which it is.
@@ -60,13 +70,21 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     }, { status: 503 });
   }
 
-  if (allowed.length === 0) return ctx.next();
-
-  const email = who.email.trim().toLowerCase();
-  if (!allowed.some(a => a.trim().toLowerCase() === email)) {
+  if (allowed.length > 0 && !allowed.some(a => a.trim().toLowerCase() === email)) {
     return Response.json({
       ok: false, error: 'not_on_allowlist',
       message: `${who.email} signed in successfully but is not on this account's allow-list.`
+    }, { status: 403 });
+  }
+
+  // The actual access level. Hiding a tab in the browser is a
+  // convenience for the person using it; this is the control, because
+  // every one of those endpoints is reachable with a URL and a session.
+  const url = new URL(ctx.request.url);
+  if (!mayAccess(role, url.pathname, ctx.request.method)) {
+    return Response.json({
+      ok: false, error: 'forbidden',
+      message: `Your account records costs and claims. ${url.pathname} is not part of that.`
     }, { status: 403 });
   }
 

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import {
   getSettings, saveSettings, syncUnits, pullCleanings,
-  type Account, type Connection, type CleaningMatch
+  type Account, type Connection, type CleaningMatch, type Member
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
 import { newIngestToken, pullFeed, runCron, type FeedResult, type CronResult } from '../api.ts';
@@ -19,6 +19,7 @@ export function Settings() {
   const [account, setAccount] = useState<Account | null>(null);
   const [connection, setConnection] = useState<Connection | null>(null);
   const [user, setUser] = useState('');
+  const [members, setMembers] = useState<Member[]>([]);
   const [hostawayId, setHostawayId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [status, setStatus] = useState<{ kind: 'ok' | 'error' | 'busy'; text: string } | null>(null);
@@ -29,12 +30,28 @@ export function Settings() {
       setAccount(r.account);
       setConnection(r.connection);
       setUser(r.user);
-      setHostawayId(r.account.hostawayAccountId ?? '');
+      setHostawayId(r.account?.hostawayAccountId ?? '');
+      setMembers(r.members ?? []);
     } catch (err) {
       setStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
     }
   };
   useEffect(() => { void load(); }, []);
+
+  // An ops member never reaches this screen — the tab is not drawn and
+  // the route refuses POST — but if they arrive by URL they should see a
+  // sentence, not a blank page or a crash on a null account.
+  if (account === null && user) {
+    return (
+      <div className="card">
+        <h2>Settings</h2>
+        <p className="note">
+          Signed in as {user}. Your account records costs and claims, so there is nothing to
+          configure here. Ask an owner if you need more.
+        </p>
+      </div>
+    );
+  }
 
   const save = async () => {
     setStatus({ kind: 'busy', text: 'Verifying against Hostaway…' });
@@ -141,7 +158,7 @@ export function Settings() {
 
       <GeminiPanel account={account} onSaved={() => void load()} />
 
-      <AccessPanel account={account} user={user} onSaved={() => void load()} />
+      <MembersPanel members={members} user={user} onSaved={() => void load()} />
 
       <AlertsPanel account={account} onSaved={() => void load()} />
 
@@ -307,56 +324,110 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
 }
 
 /**
- * Who may use this account.
+ * Who may use this account, and for what.
  *
- * Cloudflare Access decides whether someone reaches the app at all; this
- * decides whether they are one of ours once they have. With a public
- * identity provider such as Google those are very different questions,
- * and one policy edit should not answer both.
+ * Two levels. An **owner** sees everything. **Ops** records costs and
+ * claims and nothing else — no revenue, no units, no settings, no
+ * credentials.
+ *
+ * The list here is a convenience. The control is in the API middleware,
+ * because every one of those screens is an endpoint reachable with a URL
+ * and a valid session, and an access level that lives in a browser is
+ * not an access level.
  */
-function AccessPanel({ account, user, onSaved }: {
-  account: Account; user: string; onSaved: () => void;
+function MembersPanel({ members, user, onSaved }: {
+  members: Member[]; user: string; onSaved: () => void;
 }) {
-  const [text, setText] = useState((account.allowedEmails ?? []).join('\n'));
+  const [rows, setRows] = useState<Member[]>(members);
+  const [email, setEmail] = useState('');
+  const [role, setRole] = useState<'owner' | 'ops'>('ops');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
-  const list = text.split(/[\n,;]+/).map(e => e.trim().toLowerCase()).filter(Boolean);
-  // Saving a list you are not on ends your own session at the next
-  // request, so it is refused rather than explained afterwards.
-  const wouldLockMeOut = list.length > 0 && !list.includes(user.trim().toLowerCase());
+  useEffect(() => setRows(members), [members]);
 
-  const save = async () => {
+  const me = user.trim().toLowerCase();
+  const owners = rows.filter(r => r.role === 'owner').length;
+  // Saving a list with no owner leaves an account nobody can administer,
+  // and no screen left that could fix it.
+  const noOwner = rows.length > 0 && owners === 0;
+  const wouldLockMeOut = rows.length > 0 &&
+    !rows.some(r => r.email.toLowerCase() === me && r.role === 'owner');
+
+  const save = async (next: Member[]) => {
     setBusy(true); setMsg('');
-    const r = await saveSettings({ allowedEmails: list });
+    const r = await saveSettings({ members: next });
     setBusy(false);
-    setMsg(r.ok ? (list.length ? `${list.length} address(es) allowed.` : 'Allow-list cleared.')
-                : (r.error ?? 'Failed.'));
+    setMsg(r.ok ? 'Saved.' : (r.error ?? 'Failed.'));
     if (r.ok) onSaved();
+  };
+
+  const add = () => {
+    const e = email.trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) { setMsg('That is not an email address.'); return; }
+    setRows(prev => [...prev.filter(r => r.email !== e), { email: e, role }]);
+    setEmail('');
   };
 
   return (
     <div className="card">
       <h2>Who can sign in</h2>
       <p className="note">
-        One email per line. Leave it empty to allow anyone Cloudflare Access lets through —
-        which is the right setting only while your Access policy itself names the people.
-        If you point Access at Google, fill this in: a policy like “any gmail.com address”
-        is one edit away from letting in anyone with a Google account.
+        An <strong>owner</strong> sees everything. <strong>Ops</strong> records costs and claims
+        and nothing else — no revenue, no units, no settings. Hiding the tabs is only the visible
+        half: the API refuses those routes for an ops account, because a tab that is merely not
+        drawn is still an address anyone can type.
       </p>
-      <label>
-        Allowed addresses
-        <textarea rows={4} value={text} onChange={e => setText(e.target.value)}
-                  placeholder={'you@example.com\nteammate@example.com'} />
-      </label>
-      {wouldLockMeOut && (
-        <p className="banner error">
-          You are signed in as {user}, which is not on this list. Saving it would lock you out
-          of your own account on the next request. Add yourself first.
+
+      <table className="units compact">
+        <thead><tr><th>Email</th><th>Role</th><th></th></tr></thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.email}>
+              <td>{r.email}{r.email.toLowerCase() === me && <span className="note"> · you</span>}</td>
+              <td>
+                <select value={r.role} onChange={e => setRows(prev => prev.map(x =>
+                  x.email === r.email ? { ...x, role: e.target.value as 'owner' | 'ops' } : x))}>
+                  <option value="owner">Owner — everything</option>
+                  <option value="ops">Ops — costs and claims</option>
+                </select>
+              </td>
+              <td>
+                <button className="link danger"
+                  onClick={() => setRows(prev => prev.filter(x => x.email !== r.email))}>remove</button>
+              </td>
+            </tr>
+          ))}
+          <tr className="new-row">
+            <td><input value={email} onChange={e => setEmail(e.target.value)}
+                       placeholder="someone@example.com" /></td>
+            <td>
+              <select value={role} onChange={e => setRole(e.target.value as 'owner' | 'ops')}>
+                <option value="ops">Ops — costs and claims</option>
+                <option value="owner">Owner — everything</option>
+              </select>
+            </td>
+            <td><button className="link" onClick={add} disabled={!email.trim()}>add</button></td>
+          </tr>
+        </tbody>
+      </table>
+
+      {rows.length === 0 && (
+        <p className="note">
+          Empty means anyone Cloudflare Access lets through gets full access. That is the right
+          setting only while your Access policy itself names the people.
         </p>
       )}
-      <button onClick={() => void save()} disabled={busy || wouldLockMeOut}>
-        {busy ? 'Saving…' : 'Save allow-list'}
+      {noOwner && <p className="banner error">An account needs at least one owner.</p>}
+      {wouldLockMeOut && (
+        <p className="banner error">
+          You are {user}, and this list does not make you an owner. Saving it would lock you out
+          of everything except costs and claims, with no settings screen left to undo it.
+        </p>
+      )}
+
+      <button onClick={() => void save(rows)} disabled={busy || noOwner || wouldLockMeOut}>
+        {busy ? 'Saving…' : 'Save'}
       </button>
       {msg && <p className="note">{msg}</p>}
     </div>
