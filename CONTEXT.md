@@ -685,3 +685,38 @@ under 4.5 for small text. Now `#636e7c` (4.83) and `#2470cc` (4.92).
 
 Every text and status pair in both themes is verified ≥ its bar. Re-check
 with the contrast script pattern in the history if these tokens move.
+
+
+## 29. Two gates, not one
+
+`functions/api/_middleware.ts` guards every `/api` route. Endpoints still
+call `identify()` themselves — deliberate duplication, so a route stays
+safe if this file is ever moved.
+
+What the middleware adds is the check nothing was doing: whether the
+person Access vouched for is on **this account's** allow-list
+(`accounts.allowed_emails`). The column had existed since migration 002
+and was displayed in Settings, but was never enforced.
+
+It did not matter while login was one-time-PIN, because the Access policy
+named the individual addresses and the two agreed by construction. It
+matters the moment Access points at a public identity provider: a Google
+policy is written as a rule (`any @gmail.com`), which is one careless
+edit from "anyone with a Google account". **Access decides whether you
+reach the app; the allow-list decides whether you are one of ours.** Same
+failure would otherwise take out both.
+
+Rules that keep it usable:
+
+* **Empty list = allow any authenticated caller.** Turning this on must
+  not lock out the only person who could add themselves to it.
+* **A database failure returns 503, never a pass.** An authz check whose
+  failure mode is "allow" is not a check — the same lesson as the
+  fail-open `identify()` in §13.
+* Addresses are normalised on save and compared lower-cased, or a stored
+  `Me@Gmail.com ` silently never matches and the list looks broken.
+* The Settings form **refuses to save a list you are not on**, rather
+  than explaining it afterwards.
+* Scoped to `functions/api/`, not the functions root: a root middleware
+  also intercepts static assets, and a 403 there serves a blank page
+  instead of a sign-in.

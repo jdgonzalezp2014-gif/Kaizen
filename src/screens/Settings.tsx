@@ -139,6 +139,8 @@ export function Settings() {
 
       <GeminiPanel account={account} onSaved={() => void load()} />
 
+      <AccessPanel account={account} user={user} onSaved={() => void load()} />
+
       <ImportPanel onDone={() => void load()} />
 
       {status && (
@@ -275,6 +277,63 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
         </label>
       </div>
       <button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+      {msg && <p className="note">{msg}</p>}
+    </div>
+  );
+}
+
+/**
+ * Who may use this account.
+ *
+ * Cloudflare Access decides whether someone reaches the app at all; this
+ * decides whether they are one of ours once they have. With a public
+ * identity provider such as Google those are very different questions,
+ * and one policy edit should not answer both.
+ */
+function AccessPanel({ account, user, onSaved }: {
+  account: Account; user: string; onSaved: () => void;
+}) {
+  const [text, setText] = useState((account.allowedEmails ?? []).join('\n'));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+
+  const list = text.split(/[\n,;]+/).map(e => e.trim().toLowerCase()).filter(Boolean);
+  // Saving a list you are not on ends your own session at the next
+  // request, so it is refused rather than explained afterwards.
+  const wouldLockMeOut = list.length > 0 && !list.includes(user.trim().toLowerCase());
+
+  const save = async () => {
+    setBusy(true); setMsg('');
+    const r = await saveSettings({ allowedEmails: list });
+    setBusy(false);
+    setMsg(r.ok ? (list.length ? `${list.length} address(es) allowed.` : 'Allow-list cleared.')
+                : (r.error ?? 'Failed.'));
+    if (r.ok) onSaved();
+  };
+
+  return (
+    <div className="card">
+      <h2>Who can sign in</h2>
+      <p className="note">
+        One email per line. Leave it empty to allow anyone Cloudflare Access lets through —
+        which is the right setting only while your Access policy itself names the people.
+        If you point Access at Google, fill this in: a policy like “any gmail.com address”
+        is one edit away from letting in anyone with a Google account.
+      </p>
+      <label>
+        Allowed addresses
+        <textarea rows={4} value={text} onChange={e => setText(e.target.value)}
+                  placeholder={'you@example.com\nteammate@example.com'} />
+      </label>
+      {wouldLockMeOut && (
+        <p className="banner error">
+          You are signed in as {user}, which is not on this list. Saving it would lock you out
+          of your own account on the next request. Add yourself first.
+        </p>
+      )}
+      <button onClick={() => void save()} disabled={busy || wouldLockMeOut}>
+        {busy ? 'Saving…' : 'Save allow-list'}
+      </button>
       {msg && <p className="note">{msg}</p>}
     </div>
   );

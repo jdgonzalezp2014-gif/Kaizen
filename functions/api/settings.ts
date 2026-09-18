@@ -64,6 +64,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await saveCredentials(sql, env.ENCRYPTION_KEY, accountId, apiKey);
     }
 
+    if (Array.isArray(body.allowedEmails)) {
+      // Normalised and de-duplicated here rather than trusted: the gate
+      // compares lower-cased, and a stored "Me@Gmail.com " that never
+      // matches would look like the allow-list is simply broken.
+      const list = [...new Set(
+        (body.allowedEmails as unknown[])
+          .map(e => String(e).trim().toLowerCase())
+          .filter(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
+      )];
+      await sql`UPDATE accounts SET allowed_emails = ${list} WHERE id = 1`;
+    }
+
     if (typeof body.geminiApiKey === 'string' && body.geminiApiKey.trim()) {
       // Encrypted, exactly like the Hostaway key, and never echoed back.
       const enc = await encrypt(body.geminiApiKey.trim(), env.ENCRYPTION_KEY);
