@@ -44,6 +44,25 @@ const BASE = 'https://api.hostaway.com/v1';
  */
 const NOT_LIVE = new Set(['archived', 'draft', 'inactive', 'disabled', 'deleted']);
 
+export interface ChannelStatus {
+  key: 'airbnb' | 'vrbo' | 'bookingcom' | 'expedia' | 'google' | 'marriott';
+  label: string;
+  /** Hostaway's export state: 'exported' when the listing is pushed there. */
+  exportStatus: string | null;
+  url: string | null;
+  /** Exported AND reachable: the pair is what "bookable there" means. */
+  live: boolean;
+}
+
+const CHANNELS: [ChannelStatus['key'], string, string, string][] = [
+  ['airbnb',     'Airbnb',        'airbnbExportStatus',     'airbnbListingUrl'],
+  ['vrbo',       'Vrbo',          'vrboExportStatus',       'vrboListingUrl'],
+  ['bookingcom', 'Booking.com',   'bookingcomExportStatus', 'bookingcomListingUrl'],
+  ['expedia',    'Expedia',       'expediaExportStatus',    'expediaListingUrl'],
+  ['google',     'Google',        'googleExportStatus',     'googleVrListingUrl'],
+  ['marriott',   'Marriott',      'marriotExportStatus',    'marriottListingUrl']
+];
+
 export interface HostawayListing {
   listingId: string;
   name: string;
@@ -59,6 +78,15 @@ export interface HostawayListing {
   timeZone: string;
   /** Hostaway's publication flag: 'archived', 'draft', or null when live. */
   specialStatus: string | null;
+  /**
+   * Per-channel publication, straight from Hostaway.
+   *
+   * This answers "is it public and can it be booked there" without
+   * fetching a single page: `exported` plus a live URL means the channel
+   * has it. Only Airbnb is surfaced today; the rest are carried so the
+   * next platform is a UI change rather than a data change.
+   */
+  channels: ChannelStatus[];
   amenities: string[];
   /** The listing's default nightly rate, before any calendar override. */
   basePrice: number | null;
@@ -216,6 +244,18 @@ export async function fetchListings(creds: HostawayCredentials, token?: string):
     // silently deleting a working unit from the portfolio.
     active: !NOT_LIVE.has(String(l.specialStatus ?? '').toLowerCase()),
     specialStatus: l.specialStatus ? String(l.specialStatus) : null,
+    channels: CHANNELS.map(([key, label, statusField, urlField]) => {
+      const exportStatus = l[statusField] ? String(l[statusField]) : null;
+      const url = l[urlField] ? String(l[urlField]) : null;
+      return {
+        key, label, exportStatus, url,
+        // Both, deliberately. Expedia and Google hand back a generic
+        // city-search URL for listings they do not actually carry, so a
+        // URL alone proves nothing — and an export status alone does not
+        // give anyone a link to check.
+        live: exportStatus === 'exported' && !!url
+      };
+    }),
     bedrooms: firstNumber(l, ['bedroomsNumber', 'bedrooms']) || null,
     bathrooms: firstNumber(l, ['bathroomsNumber', 'bathrooms']) || null,
     capacity: firstNumber(l, ['personCapacity', 'maxGuests', 'accommodates']) || null,

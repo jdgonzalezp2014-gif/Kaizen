@@ -803,3 +803,46 @@ target moved from 27 × to 22 × the per-unit figure.
 The general lesson is the same one as the composite-key sync bug: a
 condition naming fields that do not exist typechecks perfectly and is
 always true. Only comparing it against the real payload finds it.
+
+
+## 32. Channels, public rating, and what Airbnb actually serves
+
+Two different kinds of fact, reported as two:
+
+**Publication is certain and free.** Hostaway's listing object carries
+`airbnbExportStatus` + `airbnbListingUrl` (and the same pair for Vrbo,
+Booking.com, Expedia, Google, Marriott). `exported` AND a URL is what
+"bookable there" means — both, because Expedia and Google hand back a
+generic city-search URL for listings they do not carry, so a URL alone
+proves nothing.
+
+Live: 23 of 27 on Airbnb. The four without are Charger Luxe (archived),
+CL2211 and CL2349 (parked) — and **Kingsford Home**, which is not on
+Airbnb while *Kingsford Duplicate* is. More evidence for the duplicate.
+
+**The rating and the quoted price are best-effort, and currently blocked.**
+Measured, not assumed:
+
+* a plain request returns a **3 kB JavaScript shell** — no rating, no
+  price, no JSON-LD
+* through a datacenter IP the room URL **redirects to Airbnb's home
+  page**: a 200 with the wrong document, which parses cleanly to nothing
+
+So `looksLikeListing()` checks the response IS the listing — length, soft
+404, bot challenge, and whether the room id even appears — before
+anything is extracted. A blank rating for "Airbnb blocked us" and a blank
+rating for "no reviews yet" must never look the same in a dashboard.
+
+Without a key the current result is: *"Airbnb served a bot challenge
+instead of the listing."* A **Jina reader key** (Settings) is what the
+old Apps Script project used and what this needs.
+
+`src/lib/scrape.ts` is the extraction ladder, ported and tested: JSON-LD
+→ embedded state JSON → meta tags. A model is never asked to read a
+number a parser can find. Only specific key names are trusted — generic
+ones like `score` match unrelated numbers and produce confident nonsense
+— and a price outside a plausible band is treated as a different field,
+because a wrong price is wrong by a factor, not a margin.
+
+Readings land in `price_observations` only when something was actually
+read; a table of nulls would bury the real series it exists to keep.

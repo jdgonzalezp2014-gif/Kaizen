@@ -243,21 +243,23 @@ function CleaningsPanel({ account, onAccount }: {
 function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
   const [key, setKey] = useState('');
   const [model, setModel] = useState(account.geminiModel ?? 'gemini-3.6-flash');
+  const [jina, setJina] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
   const save = async () => {
     setBusy(true); setMsg('');
-    const r = await saveSettings({ geminiApiKey: key || undefined, geminiModel: model });
+    const r = await saveSettings({
+      geminiApiKey: key || undefined, geminiModel: model, jinaApiKey: jina || undefined });
     setBusy(false);
-    setKey('');
+    setKey(''); setJina('');
     setMsg(r.ok ? 'Saved.' : (r.error ?? 'Failed.'));
     if (r.ok) onSaved();
   };
 
   return (
     <div className="card">
-      <h2>AI suggestions</h2>
+      <h2>AI suggestions &amp; market reading</h2>
       <p className="note">
         Gemini reviews one unit at a time and recommends what to do with its price. It is given
         only figures measured from your own account and is told it has no market data, so it
@@ -276,6 +278,17 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
           <input value={model} onChange={e => setModel(e.target.value)} />
         </label>
       </div>
+      <label>
+        Jina reader key {account.hasJinaKey && <span className="ok-tag">one is stored</span>}
+        <input type="password" value={jina} onChange={e => setJina(e.target.value)}
+               placeholder={account.hasJinaKey ? 'stored — type to replace' : 'jina_…'} />
+      </label>
+      <p className="note">
+        For reading the public Airbnb rating and the price a guest is quoted. Airbnb serves a
+        JavaScript shell to a plain request and turns datacenter addresses away entirely, so this
+        needs a rendering reader — verified from here: without a key it comes back as a bot
+        challenge. A free key from <code>jina.ai</code> raises the limit and changes the egress.
+      </p>
       <button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
       {msg && <p className="note">{msg}</p>}
     </div>

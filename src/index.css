@@ -679,3 +679,18 @@ button.fact-k:hover { color: var(--ink); }
 .urow.open .urow-head:hover { background: none; }
 .urow.open .uname { font-size: 14px; }
 .urow.open .udetail { padding-left: 20px; padding-right: 20px; }
+
+/* ── channels & public rating ───────────────────────────────────── */
+.market { border-top: 1px solid var(--line); margin-top: 14px; padding-top: 12px; }
+.market-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
+.chan-row { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; font-size: 13px; }
+.chan { white-space: nowrap; }
+.chan.live { color: var(--good); font-weight: 600; }
+.chan.off  { color: var(--muted); }
+.chan-link { color: var(--series-1); font-size: 12.5px; }
+.chan-metric { font-variant-numeric: tabular-nums; }
+.chan-metric b { font-weight: 650; font-size: 15px; }
+.chan-others { display: flex; gap: 12px; flex-wrap: wrap; margin-top: 8px; align-items: baseline; }
+.chan-others .chan { font-size: 12px; }
+.pending-note { font-style: italic; }
+.market-problem { border-left: 2px solid var(--warn); padding-left: 10px; margin-top: 8px; max-width: 74ch; }

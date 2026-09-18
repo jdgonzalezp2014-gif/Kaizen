@@ -10,8 +10,8 @@
  */
 import { useEffect, useState } from 'react';
 import {
-  getForward, applyPrice, askSuggestion,
-  type PriceResult, type Suggestion
+  getForward, applyPrice, askSuggestion, getMarket,
+  type PriceResult, type Suggestion, type ChannelStatus, type PageRead
 } from '../api.ts';
 import {
   rank, suspectedDuplicates,
@@ -289,6 +289,8 @@ function UnitDetail({ u, read, medianOcc, asOf, days, dead, onExplain, onChanged
             read as though the picture were complete. */}
         <Fact k="Market rate" v="not connected" muted />
       </dl>
+
+      <Market listingId={u.listingId} from={asOf} days={days} />
 
       {!dead && (
         <>
@@ -631,5 +633,100 @@ function Effect({ from, to, openInRange, soldInRange, current, rateNum, rateChan
         )}
       </span>
     </p>
+  );
+}
+
+/**
+ * Where this unit is published, and what a guest actually sees there.
+ *
+ * Two different kinds of fact, so they are shown as two. Publication
+ * comes from Hostaway and is certain. The rating and the quoted price
+ * come from the live listing page and can fail — and when they do, the
+ * reason is printed, because a blank rating for "Airbnb blocked us" and
+ * a blank rating for "this listing has no reviews" are not the same
+ * thing and must not look alike.
+ *
+ * Only Airbnb is read today. The other channels still show their
+ * publication state, since that much is free and already known.
+ */
+function Market({ listingId, from, days }: { listingId: string; from: string; days: number }) {
+  const [channels, setChannels] = useState<ChannelStatus[] | null>(null);
+  const [page, setPage] = useState<PageRead | null>(null);
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  // A three-night midweek stay a fortnight out: a representative quote
+  // rather than the whole window, which would price as a long stay and
+  // pick up length-of-stay discounts that no ordinary guest sees.
+  const to = addDays(from, Math.min(3, days));
+
+  const load = () => {
+    setBusy(true); setErr(''); setMsg('');
+    getMarket(listingId, addDays(from, 14), addDays(from, 17))
+      .then(r => {
+        if (!r.ok) { setErr(r.error ?? 'Could not check.'); return; }
+        setChannels(r.channels ?? []);
+        setPage(r.page ?? null);
+        setMsg(r.message ?? '');
+      })
+      .catch(e => setErr(String(e)))
+      .finally(() => setBusy(false));
+  };
+  useEffect(load, [listingId]);
+
+  const airbnb = channels?.find(c => c.key === 'airbnb');
+  const others = channels?.filter(c => c.key !== 'airbnb') ?? [];
+
+  return (
+    <div className="market">
+      <div className="market-head">
+        <span className="fact-k">Published &amp; public rating</span>
+        {!busy && <button type="button" className="link" onClick={load}>refresh</button>}
+      </div>
+
+      {busy && <p className="note">Checking Airbnb…</p>}
+      {err && <p className="note">{err}</p>}
+
+      {channels && (
+        <>
+          <div className="chan-row">
+            <span className={`chan ${airbnb?.live ? 'live' : 'off'}`}>
+              {airbnb?.live ? '●' : '○'} Airbnb
+            </span>
+            {airbnb?.url
+              ? <a className="chan-link" href={airbnb.url} target="_blank" rel="noreferrer noopener">open listing</a>
+              : <span className="note">not published{airbnb?.exportStatus ? ` (${airbnb.exportStatus})` : ''}</span>}
+
+            {page?.rating != null && (
+              <span className="chan-metric"><b>{page.rating.toFixed(2)}</b> ★
+                {page.reviews != null && <span className="note"> · {page.reviews} reviews</span>}</span>
+            )}
+            {page?.nightly != null && (
+              <span className="chan-metric">
+                <b>${page.nightly}</b> <span className="note">shown to guests</span>
+              </span>
+            )}
+          </div>
+
+          {msg && <p className="note">{msg}</p>}
+          {page?.problem && (
+            <p className="note market-problem">{page.problem}</p>
+          )}
+
+          {/* Carried, not read. Publication is free from Hostaway; the
+              pages themselves are a later job and saying so beats an
+              empty column that looks like a zero. */}
+          <p className="note chan-others">
+            {others.map(c => (
+              <span key={c.key} className={c.live ? 'chan live' : 'chan off'}>
+                {c.live ? '●' : '○'} {c.label}
+              </span>
+            ))}
+            <span className="pending-note">ratings for these come later</span>
+          </p>
+        </>
+      )}
+    </div>
   );
 }

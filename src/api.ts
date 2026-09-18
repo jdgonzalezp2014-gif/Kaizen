@@ -5,6 +5,7 @@ export interface Account {
   hostawayAccountId: string | null;
   hasHostawayKey: boolean;
   hasGeminiKey: boolean;
+  hasJinaKey: boolean;
   geminiModel: string;
   targetNetPerUnit: number; occFloorPct: number; stayNights: number;
   fwdStudyDays: number; offlineAfterDays: number; cleaningsCsvUrl: string | null;
@@ -149,3 +150,15 @@ export const askSuggestion = (listingId: string, from: string, to: string) =>
   call<{ ok: boolean; suggestion?: Suggestion; message?: string; error?: string }>('/api/suggest', {
     method: 'POST', body: JSON.stringify({ listingId, from, to })
   });
+
+export interface ChannelStatus {
+  key: string; label: string; exportStatus: string | null; url: string | null; live: boolean;
+}
+export interface PageRead {
+  ok: boolean; rating: number | null; reviews: number | null;
+  nightly: number | null; source: string | null; problem: string | null;
+}
+export const getMarket = (listingId: string, from: string, to: string) =>
+  call<{ ok: boolean; channels?: ChannelStatus[]; page?: PageRead | null;
+         window?: { from: string; to: string }; message?: string; error?: string }>(
+    `/api/market?listingId=${listingId}&from=${from}&to=${to}`);

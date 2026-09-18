@@ -76,6 +76,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await sql`UPDATE accounts SET allowed_emails = ${list} WHERE id = 1`;
     }
 
+    if (typeof body.jinaApiKey === 'string' && body.jinaApiKey.trim()) {
+      const enc = await encrypt(body.jinaApiKey.trim(), env.ENCRYPTION_KEY);
+      await sql`UPDATE accounts SET jina_api_key_enc = ${enc} WHERE id = 1`;
+    }
+
     if (typeof body.geminiApiKey === 'string' && body.geminiApiKey.trim()) {
       // Encrypted, exactly like the Hostaway key, and never echoed back.
       const enc = await encrypt(body.geminiApiKey.trim(), env.ENCRYPTION_KEY);
