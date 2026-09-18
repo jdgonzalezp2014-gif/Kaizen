@@ -377,26 +377,7 @@ function IngestPanel({ account, onSaved }: { account: Account; onSaved: () => vo
     if (r.ok && r.ingestToken) { setToken(r.ingestToken); onSaved(); }
   };
 
-  const snippet = `// Paste into the price-monitor Apps Script project.
-// Runs where Airbnb answers; posts what it read to Kaizen OS.
-const KAIZEN_URL = '${window.location.origin}/api/observations';
-const KAIZEN_TOKEN = '${token || 'PASTE_THE_TOKEN'}';
-
-function pushObservationsToKaizen() {
-  const rows = [
-    // one per unit, from whatever the scraper already produced:
-    // { unitName: 'CL1339', airbnbRating: 4.87, airbnbReviews: 213,
-    //   airbnbRate: 182, windowStart: '2026-10-02', stayNights: 3 }
-  ];
-  const res = UrlFetchApp.fetch(KAIZEN_URL, {
-    method: 'post',
-    contentType: 'application/json',
-    headers: { 'X-Kaizen-Ingest': KAIZEN_TOKEN },
-    payload: JSON.stringify({ observations: rows }),
-    muteHttpExceptions: true
-  });
-  Logger.log(res.getResponseCode() + ' ' + res.getContentText());
-}`;
+  const origin = window.location.origin;
 
   return (
     <div className="card">
@@ -422,10 +403,39 @@ function pushObservationsToKaizen() {
       {token && (
         <>
           <p className="banner warn">
-            Copy this now. It is shown once and never again — what is stored is encrypted, and
-            there is nothing to reveal later.
+            Copy the token now. It is shown once and never again — what is stored is encrypted,
+            so there is nothing to reveal later.
           </p>
-          <textarea readOnly rows={12} value={snippet} onFocus={e => e.currentTarget.select()} />
+          <label>
+            Token
+            <input readOnly value={token} onFocus={e => e.currentTarget.select()} />
+          </label>
+          <ol className="steps">
+            <li>
+              In the Apps Script project, add the file <code>Kaizen.gs</code> — it is in the
+              price-monitor repository and reads the dashboard columns directly.
+            </li>
+            <li>
+              Project Settings → <strong>Script properties</strong> → add two:
+              <br /><code>KAIZEN_URL</code> = <code>{origin}/api/observations</code>
+              <br /><code>KAIZEN_TOKEN</code> = the token above
+              <br />
+              <span className="note">
+                Properties rather than constants in the file, so the token never lands in source
+                control.
+              </span>
+            </li>
+            <li>
+              In Cloudflare: Access → Applications → add one for the path
+              {' '}<code>/api/observations</code> with a <strong>Bypass</strong> policy. Access
+              would otherwise answer a script with a login page. The endpoint checks the token
+              itself, which is the stronger control for a machine client.
+            </li>
+            <li>
+              Run <code>pushRatingsToKaizen</code> once by hand to authorise it and see the log,
+              then <code>installKaizenTrigger</code> for a daily push.
+            </li>
+          </ol>
         </>
       )}
     </div>
