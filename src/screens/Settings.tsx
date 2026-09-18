@@ -279,15 +279,18 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
         </label>
       </div>
       <label>
-        Jina reader key {account.hasJinaKey && <span className="ok-tag">one is stored</span>}
+        Jina reader key <span className="note">— optional</span>
+        {account.hasJinaKey && <span className="ok-tag">one is stored</span>}
         <input type="password" value={jina} onChange={e => setJina(e.target.value)}
                placeholder={account.hasJinaKey ? 'stored — type to replace' : 'jina_…'} />
       </label>
       <p className="note">
-        For reading the public Airbnb rating and the price a guest is quoted. Airbnb serves a
-        JavaScript shell to a plain request and turns datacenter addresses away entirely, so this
-        needs a rendering reader — verified from here: without a key it comes back as a bot
-        challenge. A free key from <code>jina.ai</code> raises the limit and changes the egress.
+        Only a fallback. The public Airbnb rating and the guest-facing price are read straight
+        from the listing page first, with no key and no proxy — which is how the previous
+        system did it. Whether that works depends on where the request leaves from, so open a
+        unit and look: if it reports that Airbnb refused the address, a free key from
+        <code>jina.ai</code> gives the fetch a different route. If it already shows a rating,
+        leave this empty.
       </p>
       <button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
       {msg && <p className="note">{msg}</p>}

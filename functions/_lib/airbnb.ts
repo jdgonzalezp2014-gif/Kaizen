@@ -1,19 +1,22 @@
 /**
  * Reading a live Airbnb listing page.
  *
- * Two facts about this, both measured rather than assumed:
+ * A DIRECT request first, always. The previous version of this system
+ * read ratings straight from the origin and never needed a proxy — the
+ * reader below is a fallback, not the mechanism.
  *
- *   · A plain request gets a 3 kB JavaScript shell with no rating, no
- *     price and no JSON-LD in it. There is nothing to parse.
- *   · Through a datacenter IP, the room URL redirects to Airbnb's home
- *     page — a 200 with the wrong document, which is worse than an
- *     error because it parses cleanly to nothing.
+ * Whether the direct read works depends entirely on where the request
+ * leaves from. Measured from a development sandbox, all three listings
+ * tested came back as Airbnb's soft 404: a 200 carrying a 3 kB shell
+ * with no rating, no price and no JSON-LD, with full browser headers and
+ * no redirect. That says the egress is refused, not that the headers are
+ * wrong — and Cloudflare's edge is a different egress, so the same call
+ * may well succeed in production. It is deliberately tried first every
+ * time rather than assumed dead.
  *
- * So the fetch goes through a rendering reader, and every response is
- * checked for BEING THE RIGHT PAGE before anything is extracted. The
- * result always says which stage produced it, because "no rating on this
- * listing" and "we were served someone else's page" must never look the
- * same in a dashboard.
+ * Whatever the stage, every response is checked for BEING THE RIGHT PAGE
+ * before anything is extracted. "No rating on this listing" and "we were
+ * served someone else's page" must never look the same in a dashboard.
  */
 import { readRating, readNightlyPrice, normalizeRating } from '../../src/lib/scrape.ts';
 
@@ -89,12 +92,16 @@ export async function readListing(
   } catch { /* fall through to the reader */ }
 
   let stage = 'direct';
-  if (looksLikeListing(html, roomId)) {
+  const directProblem = looksLikeListing(html, roomId);
+  if (directProblem) {
+    // Only reached when the origin refused us. With no reader key this
+    // is still worth one attempt: the free tier often answers.
     const r = await viaReader(url, jinaKey).catch(() => ({ html: '', status: 0 }));
     if (r.status === 429) {
       return fail(jinaKey
         ? 'The reader is rate-limited on this key right now.'
-        : 'The reader is rate-limited. Add a Jina API key in Settings for a higher limit and residential egress.');
+        : `Airbnb refused the direct request (${directProblem.toLowerCase()}) and the fallback reader ` +
+          'is rate-limited. A Jina key in Settings raises that limit; it is optional.');
     }
     html = r.html;
     stage = 'reader';
@@ -102,8 +109,9 @@ export async function readListing(
 
   const wrong = looksLikeListing(html, roomId);
   if (wrong) {
-    return fail(jinaKey ? wrong
-      : `${wrong} Airbnb blocks datacenter addresses; a Jina API key in Settings routes the request differently.`);
+    return fail(stage === 'direct' ? wrong
+      : `Airbnb refused this deployment's address. ${wrong} ` +
+        'Optionally, a Jina reader key in Settings routes the request differently.');
   }
 
   const rt = readRating(html);

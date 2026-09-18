@@ -820,22 +820,24 @@ Live: 23 of 27 on Airbnb. The four without are Charger Luxe (archived),
 CL2211 and CL2349 (parked) — and **Kingsford Home**, which is not on
 Airbnb while *Kingsford Duplicate* is. More evidence for the duplicate.
 
-**The rating and the quoted price are best-effort, and currently blocked.**
-Measured, not assumed:
+**The rating and the quoted price are best-effort.** The DIRECT request
+is the mechanism — the old Apps Script project read ratings straight from
+the origin via `fetchRawHtml_` and never used a proxy. Jina is a
+fallback, and optional.
 
-* a plain request returns a **3 kB JavaScript shell** — no rating, no
-  price, no JSON-LD
-* through a datacenter IP the room URL **redirects to Airbnb's home
-  page**: a 200 with the wrong document, which parses cleanly to nothing
+Whether the direct read works depends entirely on the **egress**. From
+the development sandbox, three listings tested returned Airbnb's soft
+404: a 200 carrying a 3 kB shell, no rating, no price, no JSON-LD — with
+full browser headers and no redirect, so the address is refused rather
+than the headers being wrong. **Cloudflare's edge is a different egress
+and was never tested from here**; the direct call is tried first on every
+request rather than assumed dead.
 
-So `looksLikeListing()` checks the response IS the listing — length, soft
-404, bot challenge, and whether the room id even appears — before
-anything is extracted. A blank rating for "Airbnb blocked us" and a blank
-rating for "no reviews yet" must never look the same in a dashboard.
-
-Without a key the current result is: *"Airbnb served a bot challenge
-instead of the listing."* A **Jina reader key** (Settings) is what the
-old Apps Script project used and what this needs.
+`looksLikeListing()` checks the response IS the listing — length, soft
+404, bot challenge, whether the room id appears — before anything is
+extracted. A blank rating for "Airbnb refused us" and a blank rating for
+"no reviews yet" must never look the same in a dashboard, and the message
+now distinguishes which stage failed.
 
 `src/lib/scrape.ts` is the extraction ladder, ported and tested: JSON-LD
 → embedded state JSON → meta tags. A model is never asked to read a
