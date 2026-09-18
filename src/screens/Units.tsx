@@ -314,7 +314,9 @@ function UnitDetail({ u, read, medianOcc, asOf, days, dead, onExplain, onChanged
           <dl className="facts-grid">
             <Fact k="RevPAN" v={money(u.revpan)} onExplain={onExplain} />
             <Fact k="ADR" v={money(u.adr)} onExplain={onExplain} />
-            <Fact k="Open ask" v={u.nightsOpen ? money(u.openAsk) : '—'} />
+            {/* Labelled by source. This is Hostaway's calendar price, which
+            is what we asked for, not what a guest was shown. */}
+        <Fact k="Our ask (Hostaway)" v={u.nightsOpen ? money(u.openAsk) : '—'} />
             <Fact k="Booked 7d" v={`${u.pickup7} nights`} onExplain={onExplain} />
             <Fact k="Books" v={u.leadTime == null ? '—' : `${u.leadTime} days out`} onExplain={onExplain} />
             <Fact k="On books" v={money(u.onBooks)} />
@@ -806,19 +808,19 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
                   </span>
                 )}
               </div>
-              {stored.ourRate != null && stored.nightly != null && stored.ourRate > 0 && (
+              {/* Hostaway's own figure is shown, never used as the
+                  baseline to measure against.
+                  It is biased here: listings are recycled and the
+                  calendar price is what we pushed, not what a channel
+                  ended up displaying. Deriving a "% above our rate" from
+                  it dressed the unreliable number up as the reference
+                  and the scraped one as the deviation, which is backwards.
+                  The scraped price is what a guest actually pays; the
+                  other is context. */}
+              {stored.ourRate != null && stored.ourRate > 0 && (
                 <div className="note quote-gap">
-                  We ask ${stored.ourRate}/night · a guest is quoted ${stored.nightly} —
-                  {' '}{Math.round((stored.nightly / stored.ourRate - 1) * 100)}%
-                  {' '}{stored.nightly >= stored.ourRate ? 'more' : 'less'}.
-                  {/* Both figures are averages over THIS stay, so the gap
-                      is fees and tax MINUS any length-of-stay discount —
-                      not fees alone. On a 30-night quote the monthly
-                      discount is already inside the guest's number, and
-                      calling the difference "fees" would overstate them
-                      by exactly the discount. */}
-                  {' '}That is fees and tax, net of any length-of-stay discount already applied
-                  to {stored.nights ?? 'this'}-night stays.
+                  Hostaway shows ${stored.ourRate}/night for the same nights — its own calendar
+                  figure, not what any channel displayed.
                 </div>
               )}
             </div>

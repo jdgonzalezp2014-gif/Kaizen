@@ -1112,6 +1112,14 @@ horizon, and the dashboard prices exactly that window:
 So the feed's price is the next possible 30-day booking, which is the
 question that was asked.
 
+**Hostaway's price is shown, never used as the baseline.** It is biased
+the same way its rating is: listings are recycled, and the calendar price
+is what we *pushed*, not what a channel ended up displaying. Deriving a
+"% above our rate" from it dressed the unreliable number up as the
+reference and the scraped one as the deviation — backwards. The scraped
+Airbnb price is what a guest actually pays; Hostaway's is labelled as its
+own calendar figure and left as context.
+
 **The trap: a nightly figure derived from a 30-night total is not
 comparable to a weekend rate.** Airbnb applies the monthly discount
 inside that total, so the per-night number already has it baked in. The
