@@ -198,7 +198,7 @@ function CleaningsPanel({ account, onAccount }: {
         <input value={url} onChange={e => setUrl(e.target.value)}
                placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?gid=…&single=true&output=csv" />
       </label>
-      <div className="modal-actions" style={{ justifyContent: 'flex-start' }}>
+      <div className="button-row">
         <button className="ghost" disabled={busy || !url.trim()} onClick={() => void run(false)}>
           {busy ? 'Reading…' : 'Preview'}
         </button>

@@ -720,3 +720,32 @@ Rules that keep it usable:
 * Scoped to `functions/api/`, not the functions root: a root middleware
   also intercepts static assets, and a 403 there serves a blank page
   instead of a sign-in.
+
+
+## 30. Calendar: the band, and saying what the dates do
+
+Three fixes from watching it in use:
+
+**Selection is a continuous band**, rounded at its two ends, not a border
+per cell. The default range covers the whole window, so a per-cell
+outline made all thirty nights look individually picked and the range
+impossible to read. The band is 3px and sits above the day pills, which
+are drawn as an inset `::before` so the two can overlap.
+
+**Open stretches moved ABOVE the calendar.** Sitting between the calendar
+and the rate fields they read as part of the pricing form, when they are
+a way of *choosing* the dates — the step before.
+
+**An `Effect` line states what the selection does.** The calendar shows
+which nights are picked; it cannot show what picking them changes, and
+the two levers behave differently: a nightly rate touches exactly the
+selected open nights, while a weekly or monthly discount is a
+listing-wide setting the dates do not bound at all. That distinction was
+previously only in the confirm step, which is too late to be steering the
+choice.
+
+Cells are 38px and the months are centred — a calendar pinned left under
+full-width fields reads as debris rather than a control.
+
+Dead `.modal*` CSS removed: every panel that once opened as a dialog now
+renders in place.

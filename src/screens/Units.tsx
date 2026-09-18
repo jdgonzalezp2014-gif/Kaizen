@@ -388,9 +388,18 @@ function PriceWorkspace({ u, gaps, asOf, days, onChanged }: {
 
   return (
     <div className="workspace">
+      {/* Above the calendar, not below it. Sitting between the calendar
+          and the rate fields, this read as though the stretch rows were
+          part of the pricing form — when they are a way of CHOOSING the
+          dates, which is the step before. */}
+      {gaps.length > 0 && <GapList gaps={gaps} onPick={(f, t) => { setFrom(f); setTo(t); }} />}
+
       <DayPicker days={u.days} from={from} to={to} onChange={(f, t) => { setFrom(f); setTo(t); }} />
 
-      {gaps.length > 0 && <GapList gaps={gaps} onPick={(f, t) => { setFrom(f); setTo(t); }} />}
+      <Effect from={from} to={to} openInRange={openInRange}
+              soldInRange={u.days.filter(d => d.d >= from && d.d <= to && d.s === 's').length}
+              current={current} rateNum={rateNum} rateChanged={rateChanged}
+              discNum={discNum} kind={kind} marked={marked} />
 
       <div className="tools">
         <div className="tool-fields">
@@ -562,5 +571,60 @@ function GapList({ gaps, onPick }: {
         ))}
       </ul>
     </div>
+  );
+}
+
+/**
+ * What the selected dates actually mean for the price.
+ *
+ * The calendar shows which nights are picked; it cannot show what
+ * picking them DOES. Without this, a range and a rate sit next to each
+ * other and the reader has to assume the connection — and the two cases
+ * behave very differently: a nightly rate touches exactly the selected
+ * open nights, while a length-of-stay discount is a listing-wide setting
+ * that the dates do not bound at all.
+ */
+function Effect({ from, to, openInRange, soldInRange, current, rateNum, rateChanged, discNum, kind, marked }: {
+  from: string; to: string; openInRange: number; soldInRange: number;
+  current: number | null; rateNum: number | null; rateChanged: boolean;
+  discNum: number | null; kind: 'weekly' | 'monthly' | 'window'; marked: number | null;
+}) {
+  const span = from === to ? from : `${from} → ${to}`;
+  const nights = `${openInRange} open night${openInRange === 1 ? '' : 's'}`;
+
+  if (!rateChanged && discNum == null) {
+    return (
+      <p className="effect quiet">
+        <strong>{span}</strong> · {nights} selected
+        {soldInRange > 0 && `, ${soldInRange} already booked`}. Enter a rate or a discount to see
+        what would change.
+      </p>
+    );
+  }
+
+  return (
+    <p className="effect">
+      <strong>{span}</strong>
+      <span className="eff-lines">
+        {rateChanged && (
+          <span>
+            Nightly rate <b>{money(current)} → {money(rateNum)}</b> on {nights}.
+          </span>
+        )}
+        {marked != null && (
+          <span>These dates repriced to <b>{money(marked)}</b> ({discNum}% off {money(rateNum)}) on {nights}.</span>
+        )}
+        {discNum != null && kind !== 'window' && (
+          <span>
+            {kind === 'weekly' ? 'Weekly' : 'Monthly'} discount <b>{discNum}%</b> —
+            {' '}a listing setting, so it applies to any qualifying stay,{' '}
+            <b>not only these dates</b>.
+          </span>
+        )}
+        {soldInRange > 0 && (
+          <span className="muted">{soldInRange} booked night(s) in this range keep their price.</span>
+        )}
+      </span>
+    </p>
   );
 }

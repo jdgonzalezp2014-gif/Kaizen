@@ -56,9 +56,6 @@ export function DayPicker({ days, from, to, onChange }: {
     if (d < from) onChange(d, from); else onChange(from, d);
   };
 
-  const openInRange = days.filter(d => d.d >= from && d.d <= to && d.s === 'o').length;
-  const soldInRange = days.filter(d => d.d >= from && d.d <= to && d.s === 's').length;
-
   return (
     <div className="daypicker">
       <div className="months">
@@ -70,9 +67,16 @@ export function DayPicker({ days, from, to, onChange }: {
               {mo.cells.map((c, i) => {
                 if (!c) return <span key={i} className="day empty" />;
                 const sel = c.d >= from && c.d <= to;
+                // Selection is drawn as a continuous BAND, rounded at its
+                // two ends, rather than a border around every cell. With
+                // the default range covering the whole window, a per-cell
+                // outline made all thirty nights look individually picked
+                // and the range impossible to see at a glance.
+                const edge = sel ? (c.d === from ? ' sel-start' : '') + (c.d === to ? ' sel-end' : '') : '';
                 return (
                   <button key={i} type="button"
-                    className={`day st-${c.s}${sel ? ' sel' : ''}`}
+                    className={`day st-${c.s}${sel ? ' sel' : ''}${edge}`}
+                    aria-pressed={sel}
                     title={`${c.d} — ${LABEL[c.s]}${c.p ? ` · $${c.p}` : ''}`}
                     onClick={() => click(c.d)}>
                     <span className="num">{Number(c.d.slice(8))}</span>
@@ -89,13 +93,8 @@ export function DayPicker({ days, from, to, onChange }: {
         {(['o', 's', 'b'] as DayState[]).map(s => (
           <span key={s} className={`key st-${s}`}><i>{MARK[s]}</i> {LABEL[s]}</span>
         ))}
+        {from === to && <span className="key hint">click a second day to finish the range</span>}
       </div>
-      <p className="note">
-        {from === to
-          ? `${from} — click another day to finish the range.`
-          : <><strong>{from} → {to}</strong> · {openInRange} open night{openInRange === 1 ? '' : 's'} to
-             reprice{soldInRange ? `, ${soldInRange} already booked and unchangeable` : ''}.</>}
-      </p>
     </div>
   );
 }

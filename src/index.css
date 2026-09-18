@@ -208,16 +208,10 @@ button.link { background: none; border: 0; color: var(--series-1); cursor: point
 button.link.danger { color: var(--warn); }
 button.ghost { background: none; border: 1px solid var(--line); color: var(--ink); }
 
-/* ── confirm dialog ─────────────────────────────────────────────── */
-.modal-back { position: fixed; inset: 0; background: rgba(0,0,0,.55);
-  display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 50; }
-.modal { background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-  padding: 20px; width: min(520px, 100%); max-height: 90vh; overflow: auto; }
-.modal label { display: flex; flex-direction: column; gap: 4px; margin: 12px 0; font-size: 13px; }
-.modal .inline { display: flex; gap: 8px; }
-.modal .inline input { width: 90px; }
-.modal .inline select { flex: 1; }
-.modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+/* A row of buttons. What is left of the dialog styles: every panel that
+   once opened as a modal now renders in place, so .modal-back, .modal
+   and their layout rules had nothing left to style. */
+.button-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 12px; }
 
 .disclaimer { border-left: 3px solid var(--warn); background: var(--tint);
   padding: 10px 14px; border-radius: 4px; font-size: 13px; margin-top: 8px; }
@@ -253,33 +247,67 @@ table.units .tag.grey  { color: var(--muted); }
 .note.right { margin-left: auto; }
 
 /* ── day picker ─────────────────────────────────────────────────── */
-.daypicker { margin: 14px 0; }
-.daypicker .months { display: flex; gap: 20px; flex-wrap: wrap; }
-.daypicker .month-name { font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 4px; }
-.daypicker .dow, .daypicker .grid { display: grid; grid-template-columns: repeat(7, 32px); gap: 2px; }
+.daypicker { margin: 14px 0 10px; }
+/* Centred, because it is the widest thing in the panel and a calendar
+   pinned left under full-width fields reads as debris rather than a
+   control. */
+.daypicker .months { display: flex; gap: 28px; flex-wrap: wrap; justify-content: center; }
+.daypicker .month-name { font-size: 12px; font-weight: 600; color: var(--muted);
+  margin-bottom: 6px; text-align: center; }
+.daypicker .dow, .daypicker .grid { display: grid; grid-template-columns: repeat(7, 38px); }
+.daypicker .dow { gap: 0; margin-bottom: 2px; }
 .daypicker .dow span { font-size: 10px; color: var(--muted); text-align: center; }
-.daypicker .day { height: 32px; border: 1px solid transparent; border-radius: 5px;
-  background: var(--tint); color: var(--ink); cursor: pointer; padding: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1; }
-.daypicker .day.empty { background: none; cursor: default; }
-.daypicker .day .num { font-size: 11px; font-variant-numeric: tabular-nums; }
-.daypicker .day .mk  { font-size: 8px; }
-/* Open is the only state you can act on, so it is the only one that
-   reads as available rather than spent. */
-.daypicker .st-o { background: color-mix(in srgb, var(--good) 16%, var(--card)); }
+
+/* No gap between cells: the selection is a continuous band, and a gap
+   would break it into thirty separate chips. Separation comes from the
+   inset background on each day instead. */
+.daypicker .grid { gap: 0; row-gap: 3px; }
+.daypicker .day { height: 38px; width: 38px; border: 0; background: none; padding: 0;
+  cursor: pointer; color: var(--ink); position: relative;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px; line-height: 1; }
+.daypicker .day.empty { cursor: default; }
+.daypicker .day .num { font-size: 12.5px; font-variant-numeric: tabular-nums; position: relative; z-index: 1; }
+.daypicker .day .mk  { font-size: 7px; position: relative; z-index: 1; }
+
+/* State: a filled pill inset inside the cell, so the band can sit behind it. */
+.daypicker .day::before { content: ''; position: absolute; inset: 3px 2px; border-radius: 6px; z-index: 0; }
+.daypicker .st-o::before { background: color-mix(in srgb, var(--good) 18%, var(--card)); }
 .daypicker .st-o .mk { color: var(--good); }
-.daypicker .st-s { background: color-mix(in srgb, var(--series-1) 20%, var(--card)); }
+.daypicker .st-s::before { background: color-mix(in srgb, var(--series-1) 22%, var(--card)); }
 .daypicker .st-s .mk { color: var(--series-1); }
-.daypicker .st-b { background: var(--tint); color: var(--muted); }
-.daypicker .day.sel { border-color: var(--ink); font-weight: 700; }
-.daypicker .legend { display: flex; gap: 14px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+.daypicker .st-b::before { background: var(--tint); }
+.daypicker .st-b { color: var(--muted); }
+.daypicker .day:hover::before { outline: 2px solid var(--muted); outline-offset: -1px; }
+
+/* The selection band: one continuous strip, rounded only at its two
+   ends. Wide, because it has to be legible behind the day pills. */
+.daypicker .day.sel::after { content: ''; position: absolute; inset: 0 0;
+  border-top: 3px solid var(--ink); border-bottom: 3px solid var(--ink);
+  opacity: .85; z-index: 2; pointer-events: none; }
+.daypicker .day.sel-start::after { border-left: 3px solid var(--ink);
+  border-top-left-radius: 9px; border-bottom-left-radius: 9px; }
+.daypicker .day.sel-end::after { border-right: 3px solid var(--ink);
+  border-top-right-radius: 9px; border-bottom-right-radius: 9px; }
+.daypicker .day.sel .num { font-weight: 700; }
+
+.daypicker .legend { display: flex; gap: 16px; margin-top: 10px; font-size: 12px;
+  color: var(--muted); justify-content: center; flex-wrap: wrap; }
 .daypicker .legend .key i { font-style: normal; margin-right: 4px; }
 .daypicker .legend .st-o i { color: var(--good); }
 .daypicker .legend .st-s i { color: var(--series-1); }
+.daypicker .legend .hint { font-style: italic; }
 
-.modal.wide { width: min(680px, 100%); }
-.modal .fields { display: flex; gap: 12px; flex-wrap: wrap; }
-.modal .fields label { flex: 1 1 200px; }
+/* ── what the selection will do ─────────────────────────────────── */
+.effect { margin: 10px 0 16px; padding: 11px 14px; font-size: 13px; line-height: 1.55;
+  background: var(--tint); border: 1px solid var(--line);
+  border-left: 3px solid var(--series-1); border-radius: 8px; }
+.effect.quiet { border-left-color: var(--line); color: var(--muted); }
+.effect > strong { display: block; font-variant-numeric: tabular-nums; margin-bottom: 4px; }
+.eff-lines { display: grid; gap: 3px; }
+.eff-lines b { font-weight: 650; }
+.eff-lines .muted { color: var(--muted); }
+
 
 /* ── fixed-cost matrix ──────────────────────────────────────────── */
 /* 27 units against half a dozen cost types is wider than any phone, so
