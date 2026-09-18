@@ -21,6 +21,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { today } from '../../src/lib/dates.ts';
+import { importCleanings } from '../_lib/cleanings-import.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -29,6 +30,25 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env);
   const url = new URL(request.url);
   const now = today();
+
+  // Refreshed on the way in, not by a button. The sheet is edited daily
+  // by the people doing the work, so anything older than a few hours is
+  // behind — and asking someone to remember to press Pull is how a
+  // screen ends up quietly showing last week.
+  //
+  // Guarded by age so opening the tab twice costs one fetch, and wrapped
+  // because a sheet that is down must cost the refresh, never the view.
+  try {
+    const acc = (await sql`SELECT cleanings_csv_url FROM accounts WHERE id = 1`) as
+      { cleanings_csv_url: string | null }[];
+    const feedUrl = acc[0]?.cleanings_csv_url;
+    if (feedUrl) {
+      const fresh = (await sql`
+        SELECT 1 FROM cleanings
+         WHERE account_id = 1 AND imported_at > now() - INTERVAL '3 hours' LIMIT 1`) as unknown[];
+      if (!fresh.length) await importCleanings(sql as never, feedUrl);
+    }
+  } catch { /* the log is not the sheet's hostage */ }
   // NULL, not ''. `checkout_on >= $1` makes Postgres coerce the
   // parameter to DATE, and it does that before the OR can short-circuit
   // — so an empty string failed the whole query with

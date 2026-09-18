@@ -216,9 +216,11 @@ function CleaningsPanel({ account, onAccount }: {
     <div className="card">
       <h2>Cleaning cost</h2>
       <p className="note">
-        What the cleaner is paid, from your sheet. This is a cost — separate from the cleaning fee
-        Hostaway charges the guest, which is revenue and comes across automatically.
-        In the sheet: File → Share → Publish to web → the Cleanings log tab, CSV.
+        What the cleaner is paid, from your sheet — a cost, separate from the cleaning fee
+        Hostaway charges the guest, which is revenue. In the sheet: File → Share →
+        Publish to web → the Cleanings log tab, CSV. Once the URL is saved it re-reads itself
+        whenever the Cleanings tab is opened and the last read is more than three hours old;
+        this button is for the first pull and for “it should have updated by now”.
       </p>
       <label>
         Published CSV URL

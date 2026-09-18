@@ -1473,3 +1473,27 @@ It still fails closed — **no** tabs are drawn, which is narrower than the
 ops set — but it says so, and says it is a load failure rather than a
 permission change. Failing closed and failing silently are different
 decisions, and only the first one was intended.
+
+
+## 56. The cleanings sheet refreshes itself
+
+Read on the way into `/api/cleaning-log` when the last import is more
+than three hours old. The sheet is edited daily by the people doing the
+work, so anything older is behind — and asking someone to remember to
+press *Pull* is how a screen ends up quietly showing last week.
+
+Guarded by age, so opening the tab twice costs one fetch, and wrapped, so
+a sheet that is down costs the refresh and never the view. The button
+stays for the first pull and for "it should have updated by now".
+
+`functions/_lib/cleanings-import.ts` is the single implementation, used
+by the manual endpoint and the automatic path. Two implementations of an
+import is two sets of rules about what a blank price means, and they
+drift.
+
+Verified against the live sheet: 24 rows, 24 logged, 10 units rated, no
+unmatched names — and a second pass logs 24 with 24 still in the table,
+so re-reading corrects rather than duplicates.
+
+**Ops can see it.** It is their own work, the money in it is cost data
+they already record, and it sits inside Costs which they already have.
