@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   getForward, applyPrice, askSuggestion, getMarket,
-  type PriceResult, type Suggestion, type ChannelStatus, type PageRead, type StoredRead
+  type PriceResult, type Suggestion, type ChannelStatus, type PageRead, type StoredRead, type PlatformRating
 } from '../api.ts';
 import {
   rank, suspectedDuplicates,
@@ -708,6 +708,7 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
   const [channels, setChannels] = useState<ChannelStatus[] | null>(null);
   const [page, setPage] = useState<PageRead | null>(null);
   const [stored, setStored] = useState<StoredRead | null>(null);
+  const [ratings, setRatings] = useState<Record<string, PlatformRating>>({});
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -725,6 +726,7 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
         setChannels(r.channels ?? []);
         setPage(r.page ?? null);
         setStored(r.stored ?? null);
+        setRatings(r.ratings ?? {});
         setMsg(r.message ?? '');
       })
       .catch(e => setErr(String(e)))
@@ -819,17 +821,26 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
             <p className="note market-problem">{air.detail}</p>
           )}
 
-          {/* Carried, not read. Publication is free from Hostaway; the
-              pages themselves are a later job and saying so beats an
-              empty column that looks like a zero. */}
-          <p className="note chan-others">
-            {others.map(c => (
-              <span key={c.key} className={c.live ? 'chan live' : 'chan off'}>
-                {c.live ? '●' : '○'} {c.label}
-              </span>
-            ))}
-            <span className="pending-note">ratings for these come later</span>
-          </p>
+          {/* Publication comes from Hostaway and is certain. The rating
+              comes from the feed and may simply not be there yet — a
+              blank is "not collected", never a zero, so the two are
+              shown as separate facts rather than one merged cell. */}
+          <div className="chan-others">
+            {others.map(c => {
+              const r = ratings[c.key];
+              return (
+                <span key={c.key} className="chan-other">
+                  <span className={c.live ? 'chan live' : 'chan off'}>
+                    {c.live ? '●' : '○'} {c.label}
+                  </span>
+                  {r?.rating != null
+                    ? <b>{r.rating.toFixed(2)} ★{r.reviews != null && (
+                        <span className="note"> · {r.reviews}</span>)}</b>
+                    : c.live && <span className="note">no rating yet</span>}
+                </span>
+              );
+            })}
+          </div>
         </>
       )}
     </div>

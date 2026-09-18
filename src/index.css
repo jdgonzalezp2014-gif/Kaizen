@@ -756,3 +756,8 @@ button.fact-k:hover { color: var(--ink); }
 .agree-differs { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent);
   font-weight: 600; }
 .advice .byline { margin-bottom: 8px; }
+
+.chan-others { display: flex; gap: 8px 20px; flex-wrap: wrap; margin-top: 10px;
+  padding-top: 10px; border-top: 1px solid var(--line); font-size: 12px; }
+.chan-other { display: inline-flex; gap: 7px; align-items: baseline; white-space: nowrap; }
+.chan-other b { font-weight: 650; font-variant-numeric: tabular-nums; }

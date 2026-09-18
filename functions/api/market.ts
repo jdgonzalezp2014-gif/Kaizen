@@ -38,6 +38,24 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const from = url.searchParams.get('from') || addDays(today(), 14);
   const to   = url.searchParams.get('to')   || addDays(from, 2);
 
+  // What each platform says about this unit, from the feed. Hostaway
+  // already tells us whether a listing is PUBLISHED somewhere; this adds
+  // the rating, which Hostaway has never heard of.
+  const platformRows = (await sql`
+    SELECT platform, listed, url, rating, reviews, observed_at, source
+      FROM listing_platforms WHERE account_id = 1 AND unit_id = ${listingId}
+  `) as {
+    platform: string; listed: boolean | null; url: string | null;
+    rating: string | null; reviews: number | null; observed_at: string; source: string | null;
+  }[];
+  const ratings = Object.fromEntries(platformRows.map(r => [r.platform, {
+    rating: r.rating == null ? null : Number(r.rating),
+    reviews: r.reviews,
+    url: r.url,
+    observedAt: r.observed_at,
+    source: r.source
+  }]));
+
   const airbnb = listing.channels.find(c => c.key === 'airbnb')!;
 
   // The last reading anyone managed, from any source. Airbnb refuses
@@ -77,6 +95,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const base = {
     ok: true,
     channels: listing.channels,
+    ratings,
     stored,
     window: { from, to },
     guests: listing.capacity ?? 2

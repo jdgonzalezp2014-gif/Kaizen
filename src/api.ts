@@ -171,8 +171,13 @@ export interface StoredRead {
   windowStart: string | null; windowEnd: string | null; nights: number | null;
   observedAt: string; source: string | null;
 }
+export interface PlatformRating {
+  rating: number | null; reviews: number | null; url: string | null;
+  observedAt: string; source: string | null;
+}
 export const getMarket = (listingId: string, from: string, to: string) =>
   call<{ ok: boolean; channels?: ChannelStatus[]; page?: PageRead | null;
+         ratings?: Record<string, PlatformRating>;
          stored?: StoredRead | null;
          window?: { from: string; to: string }; message?: string; error?: string }>(
     `/api/market?listingId=${listingId}&from=${from}&to=${to}`);

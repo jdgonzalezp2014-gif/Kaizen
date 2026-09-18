@@ -11,6 +11,36 @@
  */
 import { parseCsv, parseAmount, pick } from './csv.ts';
 
+/**
+ * The platforms the feed can carry, and the scale each one prints on.
+ *
+ * Booking.com and Expedia score out of 10. Stored raw, an 8.6 sits
+ * beside an Airbnb 4.8 and reads as the better property — so everything
+ * is converted to a 5-point scale on the way in, once, here.
+ *
+ * Listed with blank ratings on purpose: the columns exist in the sheet
+ * before the scraping does, so filling them later is a spreadsheet
+ * change rather than a schema change on both sides.
+ */
+const PLATFORMS: { key: string; label: string; scale: number }[] = [
+  { key: 'airbnb',     label: 'Airbnb',      scale: 5 },
+  { key: 'bookingcom', label: 'Booking',     scale: 10 },
+  { key: 'vrbo',       label: 'VRBO',        scale: 5 },
+  { key: 'expedia',    label: 'Expedia',     scale: 10 },
+  { key: 'google',     label: 'Google',      scale: 5 },
+  { key: 'direct',     label: 'Web Portal',  scale: 5 }
+];
+
+export function toFive(raw: number | null, scale: number): number | null {
+  if (raw == null || !Number.isFinite(raw) || raw <= 0) return null;
+  // Trust the number over the declared scale when they disagree: a 9.2
+  // in a column labelled /5 is a ten-point score in the wrong column,
+  // and halving it is right while rejecting it loses a real reading.
+  const s = raw > 5 ? 10 : scale;
+  const out = s === 10 ? raw / 2 : raw;
+  return out > 0 && out <= 5 ? Math.round(out * 100) / 100 : null;
+}
+
 export interface FeedResult {
   ok: boolean;
   rows: number;
@@ -100,6 +130,31 @@ export async function importFeed(sql: Sql, url: string): Promise<FeedResult> {
     `) as unknown[];
 
     if (out.length) written++; else duplicates++;
+
+    // Per-platform state, upserted: this is what each channel says about
+    // the unit NOW, not a series. Blank columns leave the row alone
+    // rather than overwriting a known rating with a null — the sheet not
+    // carrying Booking yet must not erase a Booking rating that arrived
+    // some other way.
+    for (const pf of PLATFORMS) {
+      const rating = toFive(parseAmount(pick(r, `${pf.label} rating`, `${pf.label} star`)), pf.scale);
+      const reviews = parseAmount(pick(r, `${pf.label} reviews`, `${pf.label} count`));
+      const url = pick(r, `${pf.label} url`, `${pf.label} link`, pf.label);
+      if (rating == null && reviews == null && !url) continue;
+
+      await sql`
+        INSERT INTO listing_platforms
+          (account_id, unit_id, platform, listed, url, rating, reviews, source, observed_at)
+        VALUES (1, ${id}, ${pf.key}, ${url ? true : null}, ${url || null},
+                ${rating}, ${reviews == null ? null : Math.round(reviews)}, 'sheet-feed', now())
+        ON CONFLICT (account_id, unit_id, platform) DO UPDATE SET
+          listed  = COALESCE(EXCLUDED.listed,  listing_platforms.listed),
+          url     = COALESCE(EXCLUDED.url,     listing_platforms.url),
+          rating  = COALESCE(EXCLUDED.rating,  listing_platforms.rating),
+          reviews = COALESCE(EXCLUDED.reviews, listing_platforms.reviews),
+          source = EXCLUDED.source, observed_at = now()
+      `;
+    }
   }
 
   return { ok: true, rows: rows.length, written, duplicates, unmatched, problem: null };

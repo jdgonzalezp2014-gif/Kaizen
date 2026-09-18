@@ -1033,3 +1033,37 @@ The sheet publishes the stay **total**, labelled as one, and the importer
 divides by `Nights`. One place owns that division. This project once read
 30-night totals as nightly rates and every comparison was out by a factor
 of thirty while looking entirely reasonable.
+
+
+## 39. Platforms are rows, not columns
+
+`listing_platforms`, keyed `(account_id, unit_id, platform)`. A table
+rather than `booking_rating`, `vrbo_rating`, … on another table, so
+adding Marriott or a direct portal later is a row instead of a migration
+on both sides.
+
+It holds **current state, not a series** — a rating moves over weeks, and
+the series already lives in `price_observations`.
+
+**Everything is stored on a 5-point scale.** Booking.com and Expedia
+print out of 10; stored raw, an 8.6 sits beside an Airbnb 4.8 in the same
+column and reads as the better property. `toFive()` converts once, on the
+way in, and **trusts the number over the declared scale** when they
+disagree: a 9.2 in a column labelled /5 is a ten-point score in the wrong
+column, and halving it keeps a real reading where rejecting it loses one.
+
+Three states, not two: `listed` is **nullable**, because unknown is not
+the same as "we checked and it is not there".
+
+Blank feed columns **leave the row alone** rather than overwriting with
+null — the sheet not carrying Booking yet must not erase a Booking rating
+that arrived some other way.
+
+The feed carries columns for every platform whether or not its scraping
+works. An empty column can be filled by hand tomorrow; a missing one
+needs a change on both sides first. Blank reads as "not collected",
+never as zero.
+
+Verified against the live database: Airbnb 4.87 stays 4.87, Booking 8.6
+stores as 4.30, Expedia 9.2 as 4.60, a URL-only platform records as
+listed with no rating, and empty ones are untouched.
