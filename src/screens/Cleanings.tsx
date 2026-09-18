@@ -44,10 +44,14 @@ export function Cleanings() {
   const [preset, setPreset] = useState<number | null>(30);
   const [scope, setScope] = useState<CleaningScope>('done');
   const [picked, setPicked] = useState<string[]>([]);
+  // Off by default. A row with nobody on it is not an answer to "who
+  // cleaned what", so it has to be asked for.
+  const [include, setInclude] = useState<string[]>([]);
   const [view, setView] = useState<'list' | 'calendar'>('list');
   const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
   const [data, setData] = useState<{
     cleanings: Cleaning[]; cleaners: { cleaner: string; n: number }[];
+    states: Record<string, number>;
     scheduledAhead: number; doneCount: number; today: string } | null>(null);
   const [err, setErr] = useState('');
 
@@ -59,7 +63,7 @@ export function Cleanings() {
     if (view === 'calendar') {
       const [y, m] = month.split('-').map(Number);
       const last = new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
-      getCleanings(`${month}-01`, 'all', picked, last)
+      getCleanings(`${month}-01`, 'all', picked, last, include)
         .then(r => r.ok ? setData(r) : setErr('Could not load.'))
         .catch(e => setErr(String(e)));
       return;
@@ -68,16 +72,18 @@ export function Cleanings() {
     // a range that cannot contain any of it — the dates are dropped rather
     // than inverted.
     getCleanings(scope === 'scheduled' ? '' : from, scope, picked,
-                 scope === 'scheduled' ? '' : to)
+                 scope === 'scheduled' ? '' : to, include)
       .then(r => r.ok ? setData(r) : setErr('Could not load.'))
       .catch(e => setErr(String(e)));
-  }, [from, to, scope, picked, view, month]);
+  }, [from, to, scope, picked, include, view, month]);
 
   const usePreset = (n: number) => {
     setPreset(n); setFrom(daysAgo(n)); setTo(iso(new Date()));
   };
-  const toggle = (name: string) =>
-    setPicked(p => p.includes(name) ? p.filter(x => x !== name) : [...p, name]);
+  const flip = (set: (f: (p: string[]) => string[]) => void) => (name: string) =>
+    set(p => p.includes(name) ? p.filter(x => x !== name) : [...p, name]);
+  const toggle = flip(setPicked);
+  const toggleState = flip(setInclude);
 
   const stats = useMemo(() => {
     const all = data?.cleanings ?? [];
@@ -164,6 +170,25 @@ export function Cleanings() {
           {picked.length > 1 && (
             <span className="note">{picked.length} selected, added together</span>
           )}
+
+          {/* Separated, and off until clicked: these are states, not
+              people, and the count is over the whole table so a chip
+              that is switched off still says what it is holding back. */}
+          {(data!.states?.tbd || data!.states?.not_needed) ? <span className="note">|</span> : null}
+          {data!.states?.tbd ? (
+            <button className={include.includes('tbd') ? 'chip active' : 'chip'}
+                    aria-pressed={include.includes('tbd')}
+                    onClick={() => toggleState('tbd')}>
+              Unassigned <b>{data!.states.tbd}</b>
+            </button>
+          ) : null}
+          {data!.states?.not_needed ? (
+            <button className={include.includes('not_needed') ? 'chip active' : 'chip'}
+                    aria-pressed={include.includes('not_needed')}
+                    onClick={() => toggleState('not_needed')}>
+              No clean needed <b>{data!.states.not_needed}</b>
+            </button>
+          ) : null}
         </div>
       )}
 
@@ -193,8 +218,7 @@ export function Cleanings() {
 
           {stats.total > stats.priced && (
             <p className="note">
-              {stats.total - stats.priced} clean(s) have no figure in the sheet yet
-              {stats.unassigned > 0 && `, ${stats.unassigned} of them still unassigned`}. They
+              {stats.total - stats.priced} clean(s) have no figure in the sheet yet. They
               count as cleans and stay out of the money — a blank is "not priced", and treating
               it as zero would report the period as cheaper than it was.
             </p>

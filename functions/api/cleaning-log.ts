@@ -65,6 +65,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // only hold one value makes "Michelle and Veronica" impossible to ask.
   const cleaners = (url.searchParams.get('cleaners') || '')
     .split(',').map(c => c.trim()).filter(Boolean);
+
+  // Rows with nobody on them are OUT unless asked for. "Unassigned" and
+  // "no clean needed" are states, not people, and a view that mixes them
+  // into the default answers "who cleaned what" with rows where the answer
+  // is nobody. They stay one click away, never silently included.
+  const include = (url.searchParams.get('include') || '')
+    .split(',').map(c => c.trim())
+    .filter(c => c === 'tbd' || c === 'not_needed');
   const raw = url.searchParams.get('scope');
   const scope = raw === 'scheduled' || raw === 'all' ? raw : 'done';
 
@@ -80,7 +88,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
        AND (${from}::date IS NULL OR checkout_on >= ${from}::date)
        AND (${to}::date IS NULL OR checkout_on <= ${to}::date)
        AND (${unit}::text IS NULL OR unit_id = ${unit}::text)
-       AND (${cleaners.length === 0} OR cleaner = ANY(${cleaners}::text[]))
+       AND (
+             (assignment = 'assigned'
+              AND (${cleaners.length === 0} OR cleaner = ANY(${cleaners}::text[])))
+             OR assignment = ANY(${include}::text[])
+           )
      ORDER BY checkout_on DESC, unit_name
      LIMIT 1000`;
 
@@ -99,8 +111,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
      WHERE account_id = 1 AND assignment = 'assigned' AND cleaner IS NOT NULL
      GROUP BY cleaner ORDER BY n DESC`) as { cleaner: string; n: number }[];
 
+  // Counted over the whole table, not the current selection, so a chip
+  // that is switched off can still say how much it is holding back.
+  const states = (await sql`
+    SELECT assignment, COUNT(*)::int AS n FROM cleanings
+     WHERE account_id = 1 AND assignment <> 'assigned'
+     GROUP BY assignment`) as { assignment: string; n: number }[];
+
   return Response.json({
-    ok: true, today: now, scope, selected: cleaners, cleaners: crew, cleanings: rows,
+    ok: true, today: now, scope, selected: cleaners, cleaners: crew,
+    states: Object.fromEntries(states.map(r => [r.assignment, r.n])),
+    cleanings: rows,
     doneCount: counts[0]?.done ?? 0,
     scheduledAhead: counts[0]?.scheduled ?? 0
   });

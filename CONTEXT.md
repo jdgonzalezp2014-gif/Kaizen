@@ -1618,5 +1618,15 @@ than a chip of its own, so there is one state and not two that can
 disagree about who is showing. Verified: Michelle 7 + Veronica 3 = 10
 together, $290 + $600 = $890.
 
+**Unassigned and "no clean needed" are OFF by default.** They are states,
+not people, and a default view that folds them in answers "who cleaned
+what" with rows where the answer is nobody. They sit apart from the
+cleaner chips and are one click away, never silently included — and their
+counts are taken over the whole table, so a chip that is switched off can
+still say how much it is holding back.
+
+Live: 15 rows by default, 21 with Unassigned, 18 with No-clean-needed, 24
+with both — which is the whole table.
+
 The scheduled scope still drops the dates rather than inverting them —
 work ahead of today cannot be in a backward window.
