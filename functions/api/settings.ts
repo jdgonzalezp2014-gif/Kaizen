@@ -130,12 +130,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         }
       }
 
+      // Bootstrap: with no primary yet, the owner doing this save becomes
+      // it. Without this nobody could ever be primary — the flag only
+      // preserved an existing one, so an empty table stayed flat forever
+      // and the protection was unreachable.
+      //
+      // The person setting the account up is the one administering it,
+      // and they can transfer it afterwards.
+      const primaryEmail = primary
+        ? primary.email
+        : (rows.some(m => m.email === actor && m.role === 'owner') ? actor : null);
+
       await sql`DELETE FROM members WHERE account_id = 1`;
       for (const m of rows) {
         await sql`
           INSERT INTO members (account_id, email, role, added_by, is_primary)
-          VALUES (1, ${m.email}, ${m.role}, ${who.email},
-                  ${primary ? m.email === primary.email : false})
+          VALUES (1, ${m.email}, ${m.role}, ${who.email}, ${m.email === primaryEmail})
           ON CONFLICT (account_id, email) DO UPDATE SET role = EXCLUDED.role
         `;
       }

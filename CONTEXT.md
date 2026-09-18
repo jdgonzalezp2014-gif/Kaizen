@@ -1358,3 +1358,22 @@ The general shape of the mistake is worth remembering: **a flag that
 answers one question gets reused for a second one it was never about.**
 `active` was built to mean "can this take a booking today" and was
 standing in for "did this ever exist".
+
+
+## 51. The primary owner had to be reachable
+
+`is_primary` only ever PRESERVED an existing primary:
+`primary ? m.email === primary.email : false`. With an empty members
+table — which is what a fresh account has, since `allowed_emails` was
+empty and migration 015 had nobody to migrate — nobody could ever become
+primary. The protection existed and was unreachable.
+
+Bootstrapped: with no primary yet, the **owner performing the save
+becomes it**. The person setting the account up is the one administering
+it, and the role can be transferred afterwards.
+
+Worth noting the shape, because it is the third time in this project: a
+rule written only for the steady state, with no path into it. The
+allow-list had the same gap (empty means allow-all, or nobody could add
+themselves) and it was solved the same way — by asking what happens on
+the very first run.
