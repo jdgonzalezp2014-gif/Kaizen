@@ -4,6 +4,7 @@ import {
   type Account, type Connection, type CleaningMatch
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
+import { newIngestToken } from '../api.ts';
 
 /**
  * Onboarding for a host who is not us.
@@ -140,6 +141,8 @@ export function Settings() {
       <GeminiPanel account={account} onSaved={() => void load()} />
 
       <AccessPanel account={account} user={user} onSaved={() => void load()} />
+
+      <IngestPanel account={account} onSaved={() => void load()} />
 
       <ImportPanel onDone={() => void load()} />
 
@@ -351,6 +354,80 @@ function AccessPanel({ account, user, onSaved }: {
         {busy ? 'Saving…' : 'Save allow-list'}
       </button>
       {msg && <p className="note">{msg}</p>}
+    </div>
+  );
+}
+
+/**
+ * The bridge back to Apps Script.
+ *
+ * Airbnb serves Google's address space and refuses Cloudflare's — so the
+ * scraper stays in Apps Script, where it already works, and posts what
+ * it read to this app. It is not that Apps Script is more capable; it is
+ * that the request leaves from somewhere Airbnb is willing to answer.
+ */
+function IngestPanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [token, setToken] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  const gen = async () => {
+    setBusy(true);
+    const r = await newIngestToken();
+    setBusy(false);
+    if (r.ok && r.ingestToken) { setToken(r.ingestToken); onSaved(); }
+  };
+
+  const snippet = `// Paste into the price-monitor Apps Script project.
+// Runs where Airbnb answers; posts what it read to Kaizen OS.
+const KAIZEN_URL = '${window.location.origin}/api/observations';
+const KAIZEN_TOKEN = '${token || 'PASTE_THE_TOKEN'}';
+
+function pushObservationsToKaizen() {
+  const rows = [
+    // one per unit, from whatever the scraper already produced:
+    // { unitName: 'CL1339', airbnbRating: 4.87, airbnbReviews: 213,
+    //   airbnbRate: 182, windowStart: '2026-10-02', stayNights: 3 }
+  ];
+  const res = UrlFetchApp.fetch(KAIZEN_URL, {
+    method: 'post',
+    contentType: 'application/json',
+    headers: { 'X-Kaizen-Ingest': KAIZEN_TOKEN },
+    payload: JSON.stringify({ observations: rows }),
+    muteHttpExceptions: true
+  });
+  Logger.log(res.getResponseCode() + ' ' + res.getContentText());
+}`;
+
+  return (
+    <div className="card">
+      <h2>Ratings from Apps Script</h2>
+      <p className="note">
+        Airbnb answers Google's addresses and refuses Cloudflare's, so the scraper stays in the
+        Apps Script project where it already works and posts its readings here. Rows are matched
+        by unit name, the way the sheet already names them.
+      </p>
+
+      <div className="button-row">
+        <button onClick={() => void gen()} disabled={busy}>
+          {busy ? 'Generating…' : account.hasIngestToken ? 'Generate a new token' : 'Generate a token'}
+        </button>
+        {account.hasIngestToken && !token && (
+          <span className="note">
+            A token exists. It is stored encrypted and cannot be shown again — generating a new
+            one replaces it, and the old one stops working immediately.
+          </span>
+        )}
+      </div>
+
+      {token && (
+        <>
+          <p className="banner warn">
+            Copy this now. It is shown once and never again — what is stored is encrypted, and
+            there is nothing to reveal later.
+          </p>
+          <textarea readOnly rows={12} value={snippet} onFocus={e => e.currentTarget.select()} />
+        </>
+      )}
     </div>
   );
 }

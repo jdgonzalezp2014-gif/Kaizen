@@ -76,6 +76,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await sql`UPDATE accounts SET allowed_emails = ${list} WHERE id = 1`;
     }
 
+    // Generated server-side and returned ONCE. A token the browser
+    // invents is a token whose quality depends on the browser; a token
+    // stored in plain text is a token a database dump hands over.
+    if (body.newIngestToken === true) {
+      const bytes = crypto.getRandomValues(new Uint8Array(32));
+      const token = [...bytes].map(b => b.toString(16).padStart(2, '0')).join('');
+      await sql`UPDATE accounts SET ingest_token_enc = ${await encrypt(token, env.ENCRYPTION_KEY)} WHERE id = 1`;
+      return Response.json({ ok: true, ingestToken: token, account: await getAccount(sql) });
+    }
+
     if (typeof body.jinaApiKey === 'string' && body.jinaApiKey.trim()) {
       const enc = await encrypt(body.jinaApiKey.trim(), env.ENCRYPTION_KEY);
       await sql`UPDATE accounts SET jina_api_key_enc = ${enc} WHERE id = 1`;

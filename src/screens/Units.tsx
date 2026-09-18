@@ -11,7 +11,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
   getForward, applyPrice, askSuggestion, getMarket,
-  type PriceResult, type Suggestion, type ChannelStatus, type PageRead
+  type PriceResult, type Suggestion, type ChannelStatus, type PageRead, type StoredRead
 } from '../api.ts';
 import {
   rank, suspectedDuplicates,
@@ -681,6 +681,7 @@ function Effect({ from, to, openInRange, soldInRange, current, rateNum, rateChan
 function Market({ listingId, from, days }: { listingId: string; from: string; days: number }) {
   const [channels, setChannels] = useState<ChannelStatus[] | null>(null);
   const [page, setPage] = useState<PageRead | null>(null);
+  const [stored, setStored] = useState<StoredRead | null>(null);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -697,6 +698,7 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
         if (!r.ok) { setErr(r.error ?? 'Could not check.'); return; }
         setChannels(r.channels ?? []);
         setPage(r.page ?? null);
+        setStored(r.stored ?? null);
         setMsg(r.message ?? '');
       })
       .catch(e => setErr(String(e)))
@@ -727,19 +729,34 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
               ? <a className="chan-link" href={airbnb.url} target="_blank" rel="noreferrer noopener">open listing</a>
               : <span className="note">not published{airbnb?.exportStatus ? ` (${airbnb.exportStatus})` : ''}</span>}
 
-            {page?.rating != null && (
-              <span className="chan-metric"><b>{page.rating.toFixed(2)}</b> ★
-                {page.reviews != null && <span className="note"> · {page.reviews} reviews</span>}</span>
-            )}
-            {page?.nightly != null && (
+            {/* A live read when one is possible, otherwise the last one
+                anyone managed — dated, so nobody mistakes a reading from
+                last week for what Airbnb shows this minute. */}
+            {(page?.rating ?? stored?.rating) != null && (
               <span className="chan-metric">
-                <b>${page.nightly}</b> <span className="note">shown to guests</span>
+                <b>{(page?.rating ?? stored!.rating)!.toFixed(2)}</b> ★
+                {(page?.reviews ?? stored?.reviews) != null &&
+                  <span className="note"> · {page?.reviews ?? stored!.reviews} reviews</span>}
+              </span>
+            )}
+            {(page?.nightly ?? stored?.nightly) != null && (
+              <span className="chan-metric">
+                <b>${page?.nightly ?? stored!.nightly}</b> <span className="note">shown to guests</span>
+              </span>
+            )}
+            {page?.rating == null && stored?.rating != null && (
+              <span className="note">
+                as of {stored.observedAt.slice(0, 10)}
+                {stored.source ? ` · via ${stored.source}` : ''}
               </span>
             )}
           </div>
 
           {msg && <p className="note">{msg}</p>}
-          {page?.problem && (
+          {/* Only worth saying when there is nothing to show. With a
+              stored reading on screen, a paragraph about the live fetch
+              failing is noise about a problem already worked around. */}
+          {page?.problem && stored == null && (
             <p className="note market-problem">{page.problem}</p>
           )}
 

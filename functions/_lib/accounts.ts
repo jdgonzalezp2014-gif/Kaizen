@@ -18,6 +18,7 @@ export interface Account {
   hasHostawayKey: boolean;
   hasGeminiKey: boolean;
   hasJinaKey: boolean;
+  hasIngestToken: boolean;
   geminiModel: string;
   targetNetPerUnit: number;
   occFloorPct: number;
@@ -37,6 +38,7 @@ interface AccountRow {
   hostaway_api_key_enc: string | null;
   gemini_api_key_enc: string | null;
   jina_api_key_enc: string | null;
+  ingest_token_enc: string | null;
   gemini_model: string;
   target_net_per_unit: string;
   occ_floor_pct: number;
@@ -54,7 +56,7 @@ interface AccountRow {
 export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | null> {
   const rows = await sql`
     SELECT id, name, hostaway_account_id, hostaway_api_key_enc,
-           gemini_api_key_enc, gemini_model, jina_api_key_enc,
+           gemini_api_key_enc, gemini_model, jina_api_key_enc, ingest_token_enc,
            target_net_per_unit, occ_floor_pct, stay_nights,
            fwd_study_days, offline_after_days, cleanings_csv_url, allowed_emails
     FROM accounts WHERE id = ${accountId}
@@ -70,6 +72,7 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
     hasHostawayKey: Boolean(r.hostaway_api_key_enc),
     hasGeminiKey: Boolean(r.gemini_api_key_enc),
     hasJinaKey: Boolean(r.jina_api_key_enc),
+    hasIngestToken: Boolean(r.ingest_token_enc),
     geminiModel: r.gemini_model ?? 'gemini-3.6-flash',
     targetNetPerUnit: Number(r.target_net_per_unit),
     occFloorPct: r.occ_floor_pct,

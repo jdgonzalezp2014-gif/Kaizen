@@ -27,7 +27,16 @@
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 
+/**
+ * Routes that carry their own credential and must not be gated on a
+ * browser sign-in. Listed explicitly, never pattern-matched: a prefix
+ * rule here is one typo away from exempting everything beneath it.
+ */
+const SELF_AUTHENTICATING = new Set(['/api/observations']);
+
 export const onRequest: PagesFunction<Env> = async (ctx) => {
+  if (SELF_AUTHENTICATING.has(new URL(ctx.request.url).pathname)) return ctx.next();
+
   const who = identify(ctx.request, ctx.env);
   if (!who) return unauthorised();
 

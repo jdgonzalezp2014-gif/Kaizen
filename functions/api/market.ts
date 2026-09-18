@@ -40,11 +40,34 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const airbnb = listing.channels.find(c => c.key === 'airbnb')!;
 
+  // The last reading anyone managed, from any source. Airbnb refuses
+  // this deployment, so in practice this is what Apps Script posted —
+  // and it is the whole point of the ingest route: a rating read
+  // yesterday from somewhere that works beats a blank read from here.
+  const storedRows = (await sql`
+    SELECT airbnb_rating, airbnb_reviews, airbnb_rate, observed_at, source
+      FROM price_observations
+     WHERE account_id = 1 AND unit_id = ${listingId}
+       AND (airbnb_rating IS NOT NULL OR airbnb_rate IS NOT NULL)
+     ORDER BY observed_at DESC LIMIT 1
+  `) as {
+    airbnb_rating: string | null; airbnb_reviews: number | null;
+    airbnb_rate: string | null; observed_at: string; source: string | null;
+  }[];
+  const stored = storedRows[0] ? {
+    rating: storedRows[0].airbnb_rating == null ? null : Number(storedRows[0].airbnb_rating),
+    reviews: storedRows[0].airbnb_reviews,
+    nightly: storedRows[0].airbnb_rate == null ? null : Number(storedRows[0].airbnb_rate),
+    observedAt: storedRows[0].observed_at,
+    source: storedRows[0].source
+  } : null;
+
   // Publication is the part that is always answerable, so it is returned
   // whether or not the page read works.
   const base = {
     ok: true,
     channels: listing.channels,
+    stored,
     window: { from, to },
     guests: listing.capacity ?? 2
   };

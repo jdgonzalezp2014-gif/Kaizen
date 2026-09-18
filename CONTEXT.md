@@ -882,3 +882,42 @@ of a list of twenty-three, the panel otherwise opens entirely below the
 fold and the click looks like it did nothing. It only scrolls when the
 row is not already comfortably in view: nudging the page under someone
 who can already see it is worse than not scrolling.
+
+
+## 34. Apps Script scrapes; Kaizen stores. Egress, not power
+
+Apps Script reads Airbnb listing pages fine. This app cannot — and the
+reason is not capability, it is **whose address the request leaves
+from**. `UrlFetchApp` egresses from Google's ranges, which Airbnb serves.
+Cloudflare Workers, a VPS and the Jina reader are all turned away, and no
+key or engine setting changes that.
+
+So the scraper stays where it works. `POST /api/observations` takes what
+it read and writes it to `price_observations`; the unit card shows a live
+read when one is possible and the **last stored reading, dated**, when it
+is not — a rating read yesterday from somewhere that works beats a blank
+read from here.
+
+Details that matter:
+
+* **Its own credential**, not a person's: a script has no browser to sign
+  in with, and revoking it must never cost anyone their login. Generated
+  server-side, shown once, stored encrypted.
+* **Constant-time comparison.** A token checked with `===` leaks its
+  length and prefix to anyone timing the responses, and this one guards
+  writes.
+* Listed **explicitly** in the middleware's exempt set, never
+  prefix-matched — a prefix rule is one typo from exempting everything
+  beneath it.
+* Rows match **by unit name**, because a sheet says "CL1339" and has
+  never heard of a Hostaway listing id. Unmatched names are returned,
+  never guessed.
+* An observation with neither a rating nor a rate is dropped: nulls would
+  bury the series the table exists to keep.
+
+**One Cloudflare step is still needed.** Access sits in front of
+everything, so an Apps Script POST is redirected to a login page before
+it reaches the function. Add an Access application for the path
+`/api/observations` with a **Bypass / Everyone** policy — the endpoint
+authenticates itself with the token, which is the stronger check for a
+machine client anyway.
