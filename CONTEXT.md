@@ -650,3 +650,38 @@ The glossary renders **in place**, not as a dialog: a modal covers the
 very table whose column you are trying to understand, making reading the
 definition and applying it two separate trips. Same reason the price
 workspace is inline.
+
+
+## 28. Day / night, day by default
+
+The theme is an **explicit `data-theme` attribute**, never
+`prefers-color-scheme`. Day is the default by choice, and a media query
+would silently override that for anyone on a dark OS — which is most
+laptops. The attribute is set by an inline script in `index.html` before
+first paint, so there is no flash and no state where the two could
+disagree. `color-scheme` rides along so native date pickers, selects and
+scrollbars follow; this app is mostly form controls, and a light date
+picker on a dark panel is the giveaway that a theme was half done.
+
+Stored in `localStorage` under `kaizen-theme`, wrapped in try/catch: a
+blocked store must cost the preference, never the page.
+
+### What the theme flip actually broke
+
+**Warning amber.** `#fab219` is correct on the dark surface (9.49:1) and
+**1.83:1 on white** — invisible for a 9px dot. Light mode uses `#b06a00`
+at 4.28:1. It is the only status step that differs per theme.
+
+**And darkening does not fix colourblindness.** Amber and green converge
+under deuteranopia; every candidate tested scored ΔE 2–5 against the
+green, which is the well-known reason traffic lights are a poor
+accessibility pattern. So the lights carry a **shape**: `● ok`,
+`▲ warn`, `■ bad`, `○ off`. Colour reinforces, never carries.
+
+**Two tokens were marginally short in day mode** and would have failed
+quietly rather than visibly: `--muted` measured 4.26:1 on the page
+background, and the link blue `#2a78d6` measured 4.42:1 on white — both
+under 4.5 for small text. Now `#636e7c` (4.83) and `#2470cc` (4.92).
+
+Every text and status pair in both themes is verified ≥ its bar. Re-check
+with the contrast script pattern in the history if these tokens move.

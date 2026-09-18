@@ -4,6 +4,7 @@ import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
 import { Settings } from './screens/Settings.tsx';
 import { getUnits, type UnitRow } from './api.ts';
+import { ThemeToggle } from './components/ThemeToggle.tsx';
 
 type Tab = 'revenue' | 'units' | 'costs' | 'settings';
 
@@ -29,6 +30,7 @@ export function App() {
           {TABS.map(([t, label]) => (
             <button key={t} className={tab === t ? 'tab active' : 'tab'} onClick={() => setTab(t)}>{label}</button>
           ))}
+          <ThemeToggle />
         </nav>
       </header>
 

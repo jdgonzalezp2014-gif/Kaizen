@@ -4,6 +4,26 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Kaizen OS</title>
+    <script>
+      /*
+       * Runs before the first paint, so the page never flashes the wrong
+       * theme. Day is the default deliberately: the OS setting is not
+       * consulted, because most laptops report dark and this app is meant
+       * to open light unless someone says otherwise.
+       *
+       * localStorage throws in some private-browsing modes, so the whole
+       * thing is wrapped — a storage failure must not leave the page with
+       * no theme at all.
+       */
+      (function () {
+        var t = 'light';
+        try {
+          var saved = localStorage.getItem('kaizen-theme');
+          if (saved === 'dark' || saved === 'light') t = saved;
+        } catch (e) { /* no storage: day it is */ }
+        document.documentElement.setAttribute('data-theme', t);
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>
