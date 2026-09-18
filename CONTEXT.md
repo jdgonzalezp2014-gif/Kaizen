@@ -1557,3 +1557,36 @@ cleans plus 3 that needed none.
 notes column mixes reservation remarks with cleaning, and the cleaner
 column carries statuses). He has the Apps Script project id for it. Ask
 before changing that sheet — his team edits it daily.
+
+
+## 59. The WhatsApp chats are two different records, not one
+
+`scripts/whatsapp-cleanings.mjs` reads the crew chat exports. 3,741
+messages, of which **11,495 of 16,600 lines were `<Multimedia omitido>`** —
+69% of the file is stripped photos.
+
+**The invoices and the chatter answer different questions and are not
+interchangeable.** The weekly invoices carry unit + price together and are
+the only authority on cost, but being weekly they never say which day. The
+chatter carries unit + date — "Napa ready", a photo batch captioned
+"2349" — and is the only authority on when. So the script builds a rate
+card from the invoices and applies it to the dated events, and every row
+says which of the two it came from.
+
+**Rates are keyed by unit AND cleaner.** CL1250 is $35 from one crew and
+$70 from the other; a rate not tied to a vendor is the midpoint of two real
+prices and equals neither. This is why the sheet and the chat disagreed on
+6 of 9 overlapping units — they are quoting different vendors.
+
+**All 113 invoice line items are Karina & Marvin.** Michelle never invoices
+in these chats, so her 27 dated cleanings come out with an empty price —
+her rates live in the Google Sheet. An empty cell, not a borrowed one.
+
+Evidence is ranked, never merged: `ready` (the crew said so) > `photos` (a
+bare unit name captioning a finished batch) > `scheduled` (the office named
+the day's work — dated, but a plan). Only crew messages count as `ready`,
+because the office writes "is 2462 ready?", which is a question.
+
+Two invoice lines read `2472` and `2482` at $110 — no such units, and $110
+is CL2462's exact rate. Flagged as probable typos in `unresolved.txt` with
+the suggestion; **not** silently rewritten.
