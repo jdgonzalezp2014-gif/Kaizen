@@ -242,7 +242,10 @@ export interface Cleaning {
   key: string; unit_id: string | null; unit_name: string;
   checkout_on: string; cleaner: string | null; guest: string | null;
   price: string | null; deep: boolean; urgency: string | null; notes: string | null;
+  future?: boolean;
 }
-export const getCleanings = (from = '') =>
-  call<{ ok: boolean; today: string; cleanings: Cleaning[]; scheduledAhead: number }>(
-    `/api/cleaning-log?from=${from}`);
+export type CleaningScope = 'done' | 'scheduled' | 'all';
+export const getCleanings = (from = '', scope: CleaningScope = 'done') =>
+  call<{ ok: boolean; today: string; scope: CleaningScope; cleanings: Cleaning[];
+         doneCount: number; scheduledAhead: number }>(
+    `/api/cleaning-log?from=${from}&scope=${scope}`);

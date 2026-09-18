@@ -14,6 +14,7 @@ import {
   type FixedLine, type VariableExpense, type UnitRow
 } from '../api.ts';
 import { money2 as money } from '../lib/format.ts';
+import { Cleanings } from './Cleanings.tsx';
 
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -26,7 +27,9 @@ const CATEGORIES = ['Lease', 'Electricity', 'Gas', 'Water', 'Internet', 'Cleanin
                     'Restock', 'Handyman', 'Software', 'Insurance', 'General'];
 
 export function Costs({ units }: { units: UnitRow[] }) {
-  const [mode, setMode] = useState<'fixed' | 'variable'>('fixed');
+  // Cleanings belong here rather than in a tab of their own: they are a
+  // cost, and the third kind alongside the monthly lines and the one-offs.
+  const [mode, setMode] = useState<'fixed' | 'variable' | 'cleanings'>('fixed');
   return (
     <section>
       <nav className="subtabs">
@@ -36,8 +39,13 @@ export function Costs({ units }: { units: UnitRow[] }) {
         <button className={mode === 'variable' ? 'tab active' : 'tab'} onClick={() => setMode('variable')}>
           One-off & repairs
         </button>
+        <button className={mode === 'cleanings' ? 'tab active' : 'tab'} onClick={() => setMode('cleanings')}>
+          Cleanings
+        </button>
       </nav>
-      {mode === 'fixed' ? <Fixed units={units} /> : <Variable units={units} />}
+      {mode === 'fixed' && <Fixed units={units} />}
+      {mode === 'variable' && <Variable units={units} />}
+      {mode === 'cleanings' && <Cleanings />}
     </section>
   );
 }

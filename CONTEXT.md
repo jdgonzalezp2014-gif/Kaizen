@@ -1407,16 +1407,29 @@ The "Sync listings" banner is also gated on having a Settings tab: it
 told ops accounts to open a screen they cannot reach.
 
 
-## 53. Cleanings: past and today only, cut on the server
+## 53. Cleanings: a cost, with a scope you choose
 
-The sheet is a forward log — **14 of its 24 rows are future cleans**.
-Showing them would answer "what did cleaning cost this month" with work
-nobody has done and money nobody has paid.
+Lives under **Costs** as a third sub-tab, beside the monthly lines and
+the one-offs. It is a cost; a tab of its own implied it was a separate
+kind of thing.
 
-The cut is in the SQL, not trimmed in the browser, so the totals on the
-page and the rows under them come from the same query and cannot
-disagree. Anything scheduled ahead is reported as a **count** and never
-mixed in.
+The sheet is a forward log — **14 of its 24 rows are cleans that have not
+happened**. Three scopes, never blended:
+
+| scope | is | for |
+|---|---|---|
+| `done` (default) | past and today | what cleaning **cost** |
+| `scheduled` | after today | what is **committed** — projections |
+| `all` | both | the full commitment |
+
+The default is `done` because it is the only one that is a fact. The
+headline label changes with the scope — **"Paid out" / "Committed" /
+"Paid + committed"** — because the number means something different.
+Calling committed work "paid out" would be the whole mistake in one word.
+
+The cut is in the SQL, so the totals and the rows beneath them come from
+one query and cannot disagree. Each view says what it is **not** showing,
+with a link across, so a filtered table never reads as an empty one.
 
 **A blank price is "not priced", never zero.** Rows without a figure
 ("Not needed", "TBD") are counted as cleans and left out of the money —

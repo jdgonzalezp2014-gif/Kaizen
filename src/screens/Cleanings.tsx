@@ -11,22 +11,41 @@
  * a second version of the truth.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { getCleanings, type Cleaning } from '../api.ts';
+import { getCleanings, type Cleaning, type CleaningScope } from '../api.ts';
 import { money2 } from '../lib/format.ts';
 
 const RANGES: [string, number][] = [['30 days', 30], ['90 days', 90], ['This year', 365]];
 
+/**
+ * Two different questions of the same table, never blended.
+ *
+ * `done` is what cleaning COST — the only scope that is a fact, and so
+ * the default. `scheduled` is work committed but not done, which is what
+ * a projection needs. A total mixing money paid with money promised
+ * answers neither.
+ */
+const SCOPES: [CleaningScope, string, string][] = [
+  ['done', 'Done', 'paid out'],
+  ['scheduled', 'Scheduled', 'committed, not yet paid'],
+  ['all', 'Both', 'paid and committed']
+];
+
 export function Cleanings() {
   const [days, setDays] = useState(30);
-  const [data, setData] = useState<{ cleanings: Cleaning[]; scheduledAhead: number; today: string } | null>(null);
+  const [scope, setScope] = useState<CleaningScope>('done');
+  const [data, setData] = useState<{
+    cleanings: Cleaning[]; scheduledAhead: number; doneCount: number; today: string } | null>(null);
   const [err, setErr] = useState('');
 
   useEffect(() => {
-    const from = new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
-    getCleanings(from)
+    // Scheduled work is ahead of today, so a backward window would ask
+    // for a range that cannot contain any of it.
+    const from = scope === 'scheduled'
+      ? '' : new Date(Date.now() - days * 864e5).toISOString().slice(0, 10);
+    getCleanings(from, scope)
       .then(r => r.ok ? setData(r) : setErr('Could not load.'))
       .catch(e => setErr(String(e)));
-  }, [days]);
+  }, [days, scope]);
 
   const stats = useMemo(() => {
     const list = data?.cleanings ?? [];
@@ -52,12 +71,24 @@ export function Cleanings() {
   return (
     <section>
       <div className="row-controls">
-        <h2 className="screen-title">Cleanings</h2>
-        {RANGES.map(([label, n]) => (
-          <button key={n} className={days === n ? 'chip active' : 'chip'}
-                  onClick={() => setDays(n)}>{label}</button>
+        {SCOPES.map(([k, label]) => (
+          <button key={k} className={scope === k ? 'chip active' : 'chip'}
+                  onClick={() => setScope(k)}>{label}</button>
         ))}
-        <span className="note right">up to and including today</span>
+        {scope !== 'scheduled' && (
+          <>
+            <span className="note">over</span>
+            {RANGES.map(([label, n]) => (
+              <button key={n} className={days === n ? 'chip active' : 'chip'}
+                      onClick={() => setDays(n)}>{label}</button>
+            ))}
+          </>
+        )}
+        <span className="note right">
+          {scope === 'done' ? 'up to and including today'
+           : scope === 'scheduled' ? 'after today — not yet paid'
+           : 'paid and committed together'}
+        </span>
       </div>
 
       {err && <p className="banner warn">{err}</p>}
@@ -67,7 +98,12 @@ export function Cleanings() {
         <>
           <dl className="strip">
             <div><dt>Cleans</dt><dd>{stats.total}</dd></div>
-            <div><dt>Paid out</dt><dd>{money2(stats.spend)}</dd></div>
+            {/* The label changes with the scope, because the number means
+                something different. Calling committed work "paid out"
+                would be the whole mistake in one word. */}
+            <div><dt>{scope === 'done' ? 'Paid out'
+                      : scope === 'scheduled' ? 'Committed' : 'Paid + committed'}</dt>
+              <dd>{money2(stats.spend)}</dd></div>
             <div><dt>Deep cleans</dt><dd>{stats.deep}</dd></div>
             <div><dt>Not priced</dt><dd>{stats.total - stats.priced}
               <small>of {stats.total}</small></dd></div>
@@ -81,10 +117,20 @@ export function Cleanings() {
             </p>
           )}
 
-          {data.scheduledAhead > 0 && (
+          {/* Says what it is NOT showing, so a filtered view never reads
+              as an empty table. */}
+          {scope === 'done' && data.scheduledAhead > 0 && (
             <p className="note">
-              {data.scheduledAhead} more are scheduled after today. Not shown and not counted:
-              a clean that has not happened is a plan, not a cost.
+              {data.scheduledAhead} more are scheduled after today, not counted here — a clean
+              that has not happened is a commitment, not a cost.{' '}
+              <button className="link" onClick={() => setScope('scheduled')}>See them</button>
+            </p>
+          )}
+          {scope === 'scheduled' && (
+            <p className="note">
+              Work committed but not done. Useful for a projection; not part of what this month
+              has cost.{' '}
+              <button className="link" onClick={() => setScope('done')}>Back to what was paid</button>
             </p>
           )}
 
@@ -120,7 +166,10 @@ export function Cleanings() {
             <tbody>
               {data.cleanings.map(c => (
                 <tr key={c.key}>
-                  <td>{c.checkout_on.slice(0, 10)}</td>
+                  <td>
+                    {c.checkout_on.slice(0, 10)}
+                    {c.future && <span className="sub-n"> ahead</span>}
+                  </td>
                   <td>
                     {c.unit_name}
                     {/* A name the sheet uses that matches no unit here. Worth
@@ -139,8 +188,9 @@ export function Cleanings() {
               ))}
               {data.cleanings.length === 0 && (
                 <tr><td colSpan={5} className="note">
-                  Nothing in this range. Cleanings come from the sheet — Settings → Cleaning
-                  cost — and only checkouts up to today are kept.
+                  {data.doneCount + data.scheduledAhead === 0
+                    ? 'No cleanings imported yet. Settings → Cleaning cost → Pull now reads the sheet.'
+                    : 'Nothing in this range. Try a longer window, or another scope.'}
                 </td></tr>
               )}
             </tbody>

@@ -37,6 +37,6 @@ export function mayAccess(role: Role, pathname: string, method: string): boolean
 /** What the browser needs to decide which tabs to draw. */
 export function tabsFor(role: Role): string[] {
   return role === 'admin'
-    ? ['units', 'revenue', 'costs', 'cleanings', 'claims', 'settings']
-    : ['costs', 'cleanings', 'claims'];
+    ? ['units', 'revenue', 'costs', 'claims', 'settings']
+    : ['costs', 'claims'];
 }

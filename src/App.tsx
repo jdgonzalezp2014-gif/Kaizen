@@ -3,16 +3,15 @@ import { Revenue } from './screens/Revenue.tsx';
 import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
 import { Claims } from './screens/Claims.tsx';
-import { Cleanings } from './screens/Cleanings.tsx';
 import { Settings } from './screens/Settings.tsx';
 import { getUnits, getSettings, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
-type Tab = 'units' | 'revenue' | 'costs' | 'cleanings' | 'claims' | 'settings';
+type Tab = 'units' | 'revenue' | 'costs' | 'claims' | 'settings';
 
 const TABS: [Tab, string][] = [
   ['units', 'Units'], ['revenue', 'Revenue'], ['costs', 'Costs'],
-  ['cleanings', 'Cleanings'], ['claims', 'Claims'], ['settings', 'Settings']
+  ['claims', 'Claims'], ['settings', 'Settings']
 ];
 
 export function App() {
@@ -82,7 +81,6 @@ export function App() {
       {tab === null    && <p className="note">Loading…</p>}
       {tab === 'units'    && <Units />}
       {tab === 'revenue'  && <Revenue />}
-      {tab === 'cleanings' && <Cleanings />}
       {tab === 'claims'   && <Claims units={units} />}
       {tab === 'costs'    && <Costs units={units} />}
       {tab === 'settings' && <Settings />}
