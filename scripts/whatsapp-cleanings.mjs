@@ -316,7 +316,13 @@ for (const e of events) {
   const prev = best.get(k);
   if (!prev || RANK[e.source] > RANK[prev.source]) best.set(k, e);
 }
+// --verified keeps only what the CREW confirmed: a unit they said was
+// ready, or one they captioned a batch of finished photos with. The
+// office naming the day's work is a plan — dated, usually right, but
+// nobody has said it happened.
+const verifiedOnly = process.argv.includes('--verified');
 const cleanings = [...best.values()]
+  .filter(e => !verifiedOnly || e.source !== 'scheduled')
   .sort((a, b) => a.date.localeCompare(b.date) || a.unit.localeCompare(b.unit));
 
 // ── write: one file ─────────────────────────────────────────────────
