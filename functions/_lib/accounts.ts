@@ -19,6 +19,10 @@ export interface Account {
   hasGeminiKey: boolean;
   hasJinaKey: boolean;
   hasIngestToken: boolean;
+  hasQuoKey: boolean;
+  quoFrom: string | null;
+  quoRecipients: string[];
+  quoLive: boolean;
   geminiModel: string;
   targetNetPerUnit: number;
   occFloorPct: number;
@@ -41,6 +45,10 @@ interface AccountRow {
   gemini_api_key_enc: string | null;
   jina_api_key_enc: string | null;
   ingest_token_enc: string | null;
+  quo_api_key_enc: string | null;
+  quo_from: string | null;
+  quo_recipients: string[];
+  quo_live: boolean;
   gemini_model: string;
   target_net_per_unit: string;
   occ_floor_pct: number;
@@ -60,6 +68,7 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
   const rows = await sql`
     SELECT id, name, hostaway_account_id, hostaway_api_key_enc,
            gemini_api_key_enc, gemini_model, jina_api_key_enc, ingest_token_enc,
+           quo_api_key_enc, quo_from, quo_recipients, quo_live,
            target_net_per_unit, occ_floor_pct, stay_nights,
            fwd_study_days, offline_after_days, cleanings_csv_url, feed_csv_url, allowed_emails
     FROM accounts WHERE id = ${accountId}
@@ -76,6 +85,10 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
     hasGeminiKey: Boolean(r.gemini_api_key_enc),
     hasJinaKey: Boolean(r.jina_api_key_enc),
     hasIngestToken: Boolean(r.ingest_token_enc),
+    hasQuoKey: Boolean(r.quo_api_key_enc),
+    quoFrom: r.quo_from,
+    quoRecipients: r.quo_recipients ?? [],
+    quoLive: r.quo_live === true,
     geminiModel: r.gemini_model ?? 'gemini-3.6-flash',
     targetNetPerUnit: Number(r.target_net_per_unit),
     occFloorPct: r.occ_floor_pct,

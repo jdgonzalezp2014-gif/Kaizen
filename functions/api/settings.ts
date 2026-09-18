@@ -86,6 +86,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return Response.json({ ok: true, ingestToken: token, account: await getAccount(sql) });
     }
 
+    if (typeof body.quoApiKey === 'string' && body.quoApiKey.trim()) {
+      await sql`UPDATE accounts SET quo_api_key_enc = ${await encrypt(body.quoApiKey.trim(), env.ENCRYPTION_KEY)} WHERE id = 1`;
+    }
+    if (typeof body.quoFrom === 'string') {
+      await sql`UPDATE accounts SET quo_from = ${body.quoFrom.trim() || null} WHERE id = 1`;
+    }
+    if (Array.isArray(body.quoRecipients)) {
+      const list = [...new Set((body.quoRecipients as unknown[])
+        .map(v => String(v).trim()).filter(Boolean))];
+      await sql`UPDATE accounts SET quo_recipients = ${list} WHERE id = 1`;
+    }
+    if (typeof body.quoLive === 'boolean') {
+      await sql`UPDATE accounts SET quo_live = ${body.quoLive} WHERE id = 1`;
+    }
+
     if (typeof body.jinaApiKey === 'string' && body.jinaApiKey.trim()) {
       const enc = await encrypt(body.jinaApiKey.trim(), env.ENCRYPTION_KEY);
       await sql`UPDATE accounts SET jina_api_key_enc = ${enc} WHERE id = 1`;

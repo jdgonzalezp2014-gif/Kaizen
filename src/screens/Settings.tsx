@@ -4,7 +4,8 @@ import {
   type Account, type Connection, type CleaningMatch
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
-import { newIngestToken, pullFeed, type FeedResult } from '../api.ts';
+import { newIngestToken, pullFeed, runCron, type FeedResult, type CronResult } from '../api.ts';
+import { sanitize, segments } from '../lib/sms.ts';
 
 /**
  * Onboarding for a host who is not us.
@@ -141,6 +142,8 @@ export function Settings() {
       <GeminiPanel account={account} onSaved={() => void load()} />
 
       <AccessPanel account={account} user={user} onSaved={() => void load()} />
+
+      <AlertsPanel account={account} onSaved={() => void load()} />
 
       <FeedPanel account={account} onSaved={() => void load()} />
 
@@ -495,6 +498,122 @@ function FeedPanel({ account, onSaved }: { account: Account; onSaved: () => void
           {res.duplicates > 0 && ` · ${res.duplicates} already had (re-reading the same sheet writes nothing)`}
           {res.unmatched.length > 0 && ` · no unit matches: ${res.unmatched.join(', ')}`}
         </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Alerts, staged until somebody says otherwise.
+ *
+ * The whole path runs with sending switched off — recipients resolved,
+ * message folded to GSM-7, segments counted, a row written saying what
+ * WOULD have gone out. That is the only way to find a three-segment
+ * message or an unparseable number without a phone proving it.
+ */
+function AlertsPanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [key, setKey] = useState('');
+  const [from, setFrom] = useState(account.quoFrom ?? '');
+  const [to, setTo] = useState((account.quoRecipients ?? []).join(', '));
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const [cron, setCron] = useState<CronResult | null>(null);
+
+  // A live preview of the real thing: the same sanitiser and the same
+  // segment counter the sender uses, so what is shown is what is billed.
+  const sample = sanitize('CL1339: 12% booked, asking $237 vs $178 achieved, $5,451 open. Open Kaizen OS to price it.');
+  const seg = segments(sample);
+
+  const save = async (over: Record<string, unknown> = {}) => {
+    setBusy(true); setMsg('');
+    const r = await saveSettings({
+      quoApiKey: key || undefined,
+      quoFrom: from,
+      quoRecipients: to.split(/[,;\n]+/).map(x => x.trim()).filter(Boolean),
+      ...over
+    });
+    setBusy(false); setKey('');
+    setMsg(r.ok ? 'Saved.' : (r.error ?? 'Failed.'));
+    if (r.ok) onSaved();
+  };
+
+  const run = async () => {
+    setBusy(true); setCron(null);
+    const r = await runCron().catch(e => ({ ok: false, error: String(e) } as CronResult));
+    setBusy(false); setCron(r);
+    onSaved();
+  };
+
+  return (
+    <div className="card">
+      <h2>Alerts <span className={account.quoLive ? 'ok-tag' : 'chan-tag'}>
+        {account.quoLive ? 'sending' : 'staged'}</span></h2>
+      <p className="note">
+        One message when a listing goes red, one when it comes back. Never while it simply stays
+        red — a channel that repeats itself daily is a channel people mute, and then the message
+        that mattered arrives to nobody. A listing counts as red only when a price change could
+        still recover real money, so this is a handful of units, not a digest.
+      </p>
+
+      <div className="row">
+        <label>QUO API key {account.hasQuoKey && <span className="ok-tag">stored</span>}
+          <input type="password" value={key} onChange={e => setKey(e.target.value)}
+                 placeholder={account.hasQuoKey ? 'stored — type to replace' : ''} />
+        </label>
+        <label>Send from
+          <input value={from} onChange={e => setFrom(e.target.value)} placeholder="+1…" />
+        </label>
+      </div>
+      <label>Send to
+        <input value={to} onChange={e => setTo(e.target.value)} placeholder="+1…, +1…" />
+      </label>
+
+      <div className="preview">
+        <div className="fact-k">What one looks like</div>
+        <p className="mono">{sample}</p>
+        <p className="note">
+          {seg.used} characters · {seg.encoding} · <strong>{seg.count} segment
+          {seg.count === 1 ? '' : 's'}</strong>. Curly quotes, dashes and emoji are folded to
+          plain equivalents first: one character outside GSM-7 drops the segment from 160
+          characters to 70 and triples the bill.
+        </p>
+      </div>
+
+      <div className="button-row">
+        <button onClick={() => void save()} disabled={busy}>Save</button>
+        <button className="ghost" onClick={() => void run()} disabled={busy}>
+          {busy ? 'Running…' : 'Run the check now'}
+        </button>
+        <label className="check">
+          <input type="checkbox" checked={account.quoLive}
+                 onChange={e => void save({ quoLive: e.target.checked })} />
+          Actually send
+        </label>
+      </div>
+      {!account.quoLive && (
+        <p className="note">
+          Staged. Everything runs and is logged; nothing leaves. Tick the box once the staged
+          messages read the way you want them to.
+        </p>
+      )}
+      {msg && <p className="note">{msg}</p>}
+
+      {cron && (
+        <div className={`disclaimer ${cron.ok ? 'good' : 'bad'}`}>
+          {cron.ok ? (
+            <>
+              <strong>{cron.red} red · {cron.changed} changed</strong>
+              <p className="note">
+                Decisions closed: {cron.outcomes?.booked ?? 0} booked, {cron.outcomes?.expired ?? 0} expired,
+                {' '}{cron.outcomes?.stillOpen ?? 0} still open of {cron.outcomes?.checked ?? 0} checked.
+              </p>
+              {(cron.alerts ?? []).map((a, i) => (
+                <p key={i} className="mono">{a.unit} · {a.edge} · {a.outcome} · {a.segments} seg</p>
+              ))}
+              {cron.changed === 0 && <p className="note">Nothing changed since the last run, so nothing was sent.</p>}
+            </>
+          ) : <p>{cron.error}</p>}
+        </div>
       )}
     </div>
   );

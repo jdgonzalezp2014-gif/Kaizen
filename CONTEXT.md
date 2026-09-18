@@ -1158,3 +1158,67 @@ Two rules, both pinned by tests:
 
 Stages advance **with the bar**, not on their own timer, so the label can
 never describe a step the bar has already passed.
+
+
+## 43. Outcomes close themselves, with no UI
+
+`functions/_lib/outcomes.ts`, run by `/api/cron`. Twelve decisions sat
+`pending` forever: a pile of intentions with nothing saying whether any
+of it happened. "Record for training" only becomes training when the
+outcome is attached, and the outcome can only be read later — which is
+exactly why nothing had read it.
+
+A decision resolves as `booked` when every night it was aimed at has
+sold, `expired empty` when its window passed, `no open gap` when there
+was never a gap to fill. A calendar that cannot be read leaves it
+pending: an unreadable calendar is not a decision that failed.
+
+It says what happened, never why. Nothing here can show causation, and
+whether the advice was worth following is a question answered by many
+rows, not one.
+
+## 44. Alerts: on the change, never on the state
+
+`src/lib/alerts.ts` (pure, tested) and `/api/cron`.
+
+**The rule that decides everything:** a condition that has just begun is
+news, one that has just ended is news, one that is simply still true is
+**silence**. "Still 0%, tenth straight day" is true, useless, and trains
+people to mute the channel — so that when the message that mattered
+arrives, it arrives to an audience that stopped reading.
+
+`alert_state` holds one row per `(unit, kind)` with what we last
+announced. Resolved rows are **kept**, which is what stops a unit
+hovering at the line re-announcing itself every run.
+
+State moves whether or not the send succeeded. A failed send must not
+re-announce the same condition on every pass; the failure sits in
+`alert_log` where it can be seen.
+
+**A listing is red** when its verdict is overpriced, stuck or unbookable
+AND at least $2,000 is still winnable. The exposure floor is what keeps
+this an alert rather than a digest — twenty-three units under an
+occupancy floor is a dashboard. `early` is explicitly never red: a unit
+that books three days out is not in trouble for being empty in week
+four, and alerting on it is how a channel earns its mute.
+
+## 45. QUO is staged until somebody decides otherwise
+
+`quo_live` defaults false. The whole path runs — recipients normalised to
+E.164, body folded to GSM-7, segments counted, a row written saying what
+*would* have gone — and the request is simply not made. It is the only
+way to find a three-segment message or an unparseable number without a
+phone proving it.
+
+`src/lib/sms.ts` is pure and tested, and exists for one reason: **a
+single curly quote drops the segment size from 160 characters to 70 and
+triples the bill.** So characters are FOLDED, never stripped — deleting
+an em dash runs two sentences together and changes what the message says.
+
+Emoji are matched as **surrogate pairs**. A range like
+`[\u1F300-\u1FAFF]` parses as `\u1F30` followed by `0-\u1FAF` and eats
+ordinary letters; this project shipped that bug once.
+
+Segment counting accounts for the concatenation header — 153 per part,
+not 160 — which is right only when the message is one character over,
+which is exactly when someone is relying on it.

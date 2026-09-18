@@ -776,3 +776,11 @@ button.fact-k:hover { color: var(--ink); }
   /* Matches the poll interval, so the bar glides rather than stepping. */
   transition: width 120ms linear; }
 .loading .note { margin: 8px 0 0; }
+
+.preview { background: var(--tint); border: 1px solid var(--line); border-radius: 8px;
+  padding: 12px 14px; margin: 14px 0; }
+.preview .mono { font-family: ui-monospace, monospace; font-size: 12.5px;
+  margin: 6px 0 8px; line-height: 1.5; }
+.button-row .check { display: inline-flex; align-items: center; gap: 7px;
+  margin: 0 0 0 auto; font-size: 13px; color: var(--ink); }
+.button-row .check input { width: auto; margin: 0; }

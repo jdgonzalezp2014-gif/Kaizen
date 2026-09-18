@@ -7,6 +7,8 @@ export interface Account {
   hasGeminiKey: boolean;
   hasJinaKey: boolean;
   hasIngestToken: boolean;
+  hasQuoKey: boolean; quoFrom: string | null;
+  quoRecipients: string[]; quoLive: boolean;
   geminiModel: string;
   targetNetPerUnit: number; occFloorPct: number; stayNights: number;
   fwdStudyDays: number; offlineAfterDays: number;
@@ -193,3 +195,12 @@ export interface FeedResult {
 }
 export const pullFeed = (url: string) =>
   call<FeedResult>('/api/feed', { method: 'POST', body: JSON.stringify({ url }) });
+
+export interface CronResult {
+  ok: boolean;
+  outcomes?: { checked: number; booked: number; expired: number; stillOpen: number };
+  red?: number; changed?: number; quoLive?: boolean;
+  alerts?: { unit: string; edge: string; outcome: string; segments: number }[];
+  error?: string;
+}
+export const runCron = () => call<CronResult>('/api/cron', { method: 'POST' });
