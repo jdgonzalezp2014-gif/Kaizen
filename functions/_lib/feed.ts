@@ -1,0 +1,106 @@
+/**
+ * Importing the Apps Script feed.
+ *
+ * Apps Script scrapes where scraping works, writes a sheet, and
+ * publishes it as CSV. This reads that CSV. No inbound request means no
+ * Cloudflare Access bypass and no shared token — and the sheet stays
+ * something a person can open and check, which a POST body never is.
+ *
+ * The same shape as the cleanings import, which is the one integration
+ * here that worked on the first try.
+ */
+import { parseCsv, parseAmount, pick } from './csv.ts';
+
+export interface FeedResult {
+  ok: boolean;
+  rows: number;
+  written: number;
+  duplicates: number;
+  unmatched: string[];
+  problem: string | null;
+}
+
+type Sql = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
+
+export async function importFeed(sql: Sql, url: string): Promise<FeedResult> {
+  const fail = (problem: string): FeedResult =>
+    ({ ok: false, rows: 0, written: 0, duplicates: 0, unmatched: [], problem });
+
+  if (!/^https:\/\/docs\.google\.com\//.test(url)) {
+    return fail('That is not a docs.google.com URL. Paste the published-CSV link, not the editing link.');
+  }
+
+  let csv: string;
+  try {
+    const res = await fetch(url, { redirect: 'follow' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    csv = await res.text();
+  } catch (e) {
+    return fail(`Could not read the feed: ${e instanceof Error ? e.message : String(e)}`);
+  }
+  // A sheet that is shared but not PUBLISHED serves a sign-in page with
+  // a 200 and a body full of HTML, which parses to zero rows and reads
+  // as "the feed is empty" rather than "it was never readable".
+  if (/^\s*</.test(csv)) {
+    return fail('That URL returned a web page, not CSV — the sheet is shared but not published. ' +
+                'Use File → Share → Publish to web.');
+  }
+
+  const units = (await sql`SELECT id, name FROM units WHERE account_id = 1`) as
+    { id: string; name: string }[];
+  if (!units.length) return fail('No units synced yet — rows are matched by name and id.');
+
+  const byId = new Set(units.map(u => u.id));
+  const byName = new Map(units.map(u => [u.name.toLowerCase().replace(/\s+/g, ''), u.id]));
+
+  const rows = parseCsv(csv);
+  const unmatched: string[] = [];
+  let written = 0, duplicates = 0;
+
+  for (const r of rows) {
+    const rawId = pick(r, 'listing id', 'listingid', 'unit id');
+    const name = pick(r, 'unit', 'internal name', 'listing', 'name');
+    const id = rawId && byId.has(rawId) ? rawId
+             : byName.get(name.toLowerCase().replace(/\s+/g, ''));
+    if (!id) {
+      const label = name || rawId || '(blank)';
+      if (!unmatched.includes(label)) unmatched.push(label);
+      continue;
+    }
+
+    const rating = parseAmount(pick(r, 'airbnb rating', 'rating', 'airbnb star'));
+    const total = parseAmount(pick(r, 'airbnb total', 'total', 'stay total'));
+    const nights = parseAmount(pick(r, 'nights', 'stay nights'));
+    // The feed carries the total; the nightly figure is derived here so
+    // one place owns that division. A total stored as a nightly rate is
+    // wrong by a factor, and this project has made that mistake before.
+    const nightly = (total != null && nights != null && nights > 0)
+      ? Math.round(total / nights) : parseAmount(pick(r, 'airbnb nightly', 'nightly'));
+
+    if (rating == null && total == null && nightly == null) continue;
+
+    const windowStart = pick(r, 'check-in', 'checkin', 'window start') || null;
+    const readAt = pick(r, 'read at', 'readat', 'observed at', 'updated') || '';
+    // Identifies the READING, not the row: re-importing an unchanged
+    // sheet becomes a no-op instead of a second identical observation.
+    const feedKey = `${id}|${windowStart ?? ''}|${readAt}`;
+
+    const out = (await sql`
+      INSERT INTO price_observations
+        (account_id, unit_id, window_start, window_end, stay_nights,
+         hostaway_rate, airbnb_rate, airbnb_total, airbnb_rating, airbnb_reviews,
+         source, feed_key)
+      VALUES (1, ${id}, ${windowStart}, ${pick(r, 'check-out', 'checkout', 'window end') || null},
+              ${nights}, ${parseAmount(pick(r, 'per night', 'hostaway rate'))},
+              ${nightly}, ${total}, ${rating},
+              ${parseAmount(pick(r, 'airbnb reviews', 'reviews', 'airbnb count'))},
+              'sheet-feed', ${feedKey})
+      ON CONFLICT (account_id, feed_key) WHERE feed_key IS NOT NULL DO NOTHING
+      RETURNING id
+    `) as unknown[];
+
+    if (out.length) written++; else duplicates++;
+  }
+
+  return { ok: true, rows: rows.length, written, duplicates, unmatched, problem: null };
+}

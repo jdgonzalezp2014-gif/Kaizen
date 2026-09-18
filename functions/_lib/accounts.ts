@@ -29,6 +29,8 @@ export interface Account {
   offlineAfterDays: number;
   /** Published-CSV URL of the sheet holding what cleaners are PAID. */
   cleaningsCsvUrl: string | null;
+  /** Published CSV the Apps Script scraper writes to. */
+  feedCsvUrl: string | null;
   allowedEmails: string[];
 }
 
@@ -46,6 +48,7 @@ interface AccountRow {
   fwd_study_days: number;
   offline_after_days: number;
   cleanings_csv_url: string | null;
+  feed_csv_url: string | null;
   allowed_emails: string[];
 }
 
@@ -58,7 +61,7 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
     SELECT id, name, hostaway_account_id, hostaway_api_key_enc,
            gemini_api_key_enc, gemini_model, jina_api_key_enc, ingest_token_enc,
            target_net_per_unit, occ_floor_pct, stay_nights,
-           fwd_study_days, offline_after_days, cleanings_csv_url, allowed_emails
+           fwd_study_days, offline_after_days, cleanings_csv_url, feed_csv_url, allowed_emails
     FROM accounts WHERE id = ${accountId}
   ` as AccountRow[];
 
@@ -80,6 +83,7 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
     fwdStudyDays: r.fwd_study_days ?? 30,
     offlineAfterDays: r.offline_after_days ?? 45,
     cleaningsCsvUrl: r.cleanings_csv_url,
+    feedCsvUrl: r.feed_csv_url,
     allowedEmails: r.allowed_emails ?? []
   };
 }

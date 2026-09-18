@@ -999,3 +999,37 @@ runs the live scrape on every call, then shows whichever it has, live
 preferred. So the Apps Script push and the live read are not alternatives
 — the live path stays wired and starts working the moment Airbnb stops
 refusing us, without anything being switched over.
+
+
+## 38. The ratings feed is a published CSV, not a POST
+
+Apps Script writes a `🔁 Kaizen Feed` tab twice a day (6am and 6pm) and
+publishes it as CSV; `/api/forward` imports it on the first screen load
+after each run. Chosen over the POST route because **nothing inbound
+means no Cloudflare Access bypass and no token to rotate** — and unlike a
+POST body, the sheet is something a person can open when a number looks
+wrong. Same mechanism as the cleanings import, which is the one
+integration here that worked first try.
+
+`pushRatingsToKaizen()` and `/api/observations` are kept. They are
+immediate rather than polled, and cost nothing to leave in place.
+
+**Idempotence is the whole design.** `price_observations` is append-only,
+which is right for a reading taken once and wrong for a feed that is
+re-read every few hours. Each row carries a `feed_key` of
+`unit | window_start | read_at` under a unique index, so re-importing an
+unchanged sheet writes nothing. Verified against the live database: first
+pass 3 rows, second pass 0.
+
+Twice a day, not hourly: a rating moves over weeks and a thirty-day price
+over days, and every run spends the one scraping path that still works.
+
+The import is guarded by a 6-hour staleness check and wrapped in a
+try/catch — a page load never pays for an import that would change
+nothing, and a feed that is down must cost the ratings, never the
+dashboard.
+
+The sheet publishes the stay **total**, labelled as one, and the importer
+divides by `Nights`. One place owns that division. This project once read
+30-night totals as nightly rates and every comparison was out by a factor
+of thirty while looking entirely reasonable.

@@ -9,7 +9,8 @@ export interface Account {
   hasIngestToken: boolean;
   geminiModel: string;
   targetNetPerUnit: number; occFloorPct: number; stayNights: number;
-  fwdStudyDays: number; offlineAfterDays: number; cleaningsCsvUrl: string | null;
+  fwdStudyDays: number; offlineAfterDays: number;
+  cleaningsCsvUrl: string | null; feedCsvUrl: string | null;
   allowedEmails: string[];
 }
 export interface Connection { ok: boolean; message: string; units?: number }
@@ -180,3 +181,10 @@ export const newIngestToken = () =>
   call<{ ok: boolean; ingestToken?: string; error?: string }>('/api/settings', {
     method: 'POST', body: JSON.stringify({ newIngestToken: true })
   });
+
+export interface FeedResult {
+  ok: boolean; rows: number; written: number; duplicates: number;
+  unmatched: string[]; problem: string | null;
+}
+export const pullFeed = (url: string) =>
+  call<FeedResult>('/api/feed', { method: 'POST', body: JSON.stringify({ url }) });

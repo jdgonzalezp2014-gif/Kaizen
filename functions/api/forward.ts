@@ -23,6 +23,7 @@ import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { addDays, today } from '../../src/lib/dates.ts';
 import { leadTimeDays, pickup, median } from '../../src/lib/revenue.ts';
+import { importFeed } from '../_lib/feed.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -46,6 +47,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const horizon = Math.max(days, account.offlineAfterDays);
   const calTo = addDays(asOf, horizon - 1);
   const parkedThrough = addDays(asOf, account.offlineAfterDays - 1);
+
+  // The Apps Script sheet republishes twice a day; this picks it up on
+  // the first screen load after each run and does nothing on the rest.
+  // Guarded by the age of what we already have, so a page load never
+  // pays for an import that would change nothing — and wrapped, because
+  // a feed that is down must cost the ratings, never the dashboard.
+  if (account.feedCsvUrl) {
+    try {
+      const fresh = (await sql`
+        SELECT 1 FROM price_observations
+         WHERE account_id = 1 AND source = 'sheet-feed'
+           AND observed_at > now() - INTERVAL '6 hours' LIMIT 1
+      `) as unknown[];
+      if (!fresh.length) await importFeed(sql as never, account.feedCsvUrl);
+    } catch { /* the dashboard is not the feed's hostage */ }
+  }
 
   const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
   // What the cleaner is PAID, from the host's sheet. Hostaway only knows

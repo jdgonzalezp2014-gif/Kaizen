@@ -4,7 +4,7 @@ import {
   type Account, type Connection, type CleaningMatch
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
-import { newIngestToken } from '../api.ts';
+import { newIngestToken, pullFeed, type FeedResult } from '../api.ts';
 
 /**
  * Onboarding for a host who is not us.
@@ -141,6 +141,8 @@ export function Settings() {
       <GeminiPanel account={account} onSaved={() => void load()} />
 
       <AccessPanel account={account} user={user} onSaved={() => void load()} />
+
+      <FeedPanel account={account} onSaved={() => void load()} />
 
       <IngestPanel account={account} onSaved={() => void load()} />
 
@@ -437,6 +439,62 @@ function IngestPanel({ account, onSaved }: { account: Account; onSaved: () => vo
             </li>
           </ol>
         </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The ratings feed.
+ *
+ * Apps Script scrapes where scraping works, writes a tab twice a day and
+ * publishes it as CSV. This reads it. Nothing inbound means no Access
+ * bypass and no token — and unlike a POST body, the sheet is something a
+ * person can open when a number looks wrong.
+ */
+function FeedPanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [url, setUrl] = useState(account.feedCsvUrl ?? '');
+  const [busy, setBusy] = useState(false);
+  const [res, setRes] = useState<FeedResult | null>(null);
+
+  const pull = async () => {
+    setBusy(true); setRes(null);
+    const r = await pullFeed(url.trim()).catch(e => ({
+      ok: false, rows: 0, written: 0, duplicates: 0, unmatched: [], problem: String(e)
+    } as FeedResult));
+    setBusy(false); setRes(r);
+    if (r.ok) onSaved();
+  };
+
+  return (
+    <div className="card">
+      <h2>Ratings feed</h2>
+      <p className="note">
+        In the Apps Script project run <code>installKaizenTriggers()</code> once: it writes a
+        <code>🔁 Kaizen Feed</code> tab and schedules it for 6am and 6pm. Publish that tab —
+        File → Share → Publish to web → CSV — and paste the URL here. After that it refreshes
+        itself; this button is for the first pull and for “it should have updated by now”.
+      </p>
+      <label>
+        Published CSV URL
+        <input value={url} onChange={e => setUrl(e.target.value)}
+               placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?gid=…&single=true&output=csv" />
+      </label>
+      <div className="button-row">
+        <button onClick={() => void pull()} disabled={busy || !url.trim()}>
+          {busy ? 'Reading…' : 'Pull now'}
+        </button>
+      </div>
+
+      {res && !res.ok && <p className="banner error">{res.problem}</p>}
+      {res?.ok && (
+        <p className="note">
+          {res.rows} row(s) read · <strong>{res.written} new</strong>
+          {/* Re-reading an unchanged sheet is meant to write nothing. Saying
+              so stops "0 new" looking like a failure. */}
+          {res.duplicates > 0 && ` · ${res.duplicates} already had (re-reading the same sheet writes nothing)`}
+          {res.unmatched.length > 0 && ` · no unit matches: ${res.unmatched.join(', ')}`}
+        </p>
       )}
     </div>
   );
