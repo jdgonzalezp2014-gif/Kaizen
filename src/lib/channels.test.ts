@@ -19,6 +19,16 @@ test('a recent stored reading counts as current', () => {
   assert.equal(s.state, 'ok');
 });
 
+test('a rating from before the last scheduled run is stale', () => {
+  // The scraper runs daily, so anything older than two days means a run
+  // was missed. Under the old three-day window a stale rating read as
+  // current, which is how a month-old number went unnoticed.
+  const s = channelState({ published: true, liveOk: false, observedAt: daysAgo(3),
+                           problem: null, now: NOW });
+  assert.equal(s.state, 'stale');
+  assert.equal(s.label, '3d old');
+});
+
 test('old readings are stale, not broken', () => {
   // Usually the feed pausing. It needs nothing today, so it must not
   // look like the case that does.

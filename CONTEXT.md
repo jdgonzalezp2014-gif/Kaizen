@@ -1253,3 +1253,41 @@ people treat as the product.
 
 The Revenue unit list also gained column labels: it was four money
 figures in a row with nothing saying which was which.
+
+
+## 48. Two clocks, and the trap of sharing one
+
+Ratings now refresh **daily**, prices **three times a day**. The Apps
+Script project runs `kaizenScheduledRun` at 6am, 1pm and 8pm: scrape,
+then publish the feed. In that order — a feed built from a dashboard
+nobody refreshed sends yesterday's numbers with today's timestamp, which
+is worse than sending nothing because the far side cannot tell.
+
+**Changing the intervals alone would have made ratings worse.**
+`planWork_` computed both ages from `🕑 Last Checked`, which is rewritten
+on *every* pass. With an 8-hour price clock and a 24-hour rating clock,
+the price pass resets the stamp before the rating clock can ever expire:
+
+```
+06:00  both due → rating + price → stamp 06:00
+14:00  age 8h   → price only     → stamp 14:00
+22:00  age 8h   → price only     → stamp 22:00
+        the rating clock never reaches 24 again
+```
+
+Ratings would have stopped refreshing entirely once every unit had one.
+The old 720-hour default hid it, because 30 days outran the resets.
+
+Fixed with a separate `🕑 Rating Checked` column, stamped **only when a
+rating fetch was actually attempted** — stamping it on a price-only pass
+would restart the clock without having looked, which is the same bug
+wearing a different column. A column that does not exist yet reads as
+"never checked", which asks for a fetch: the safe direction.
+
+The old default was justified as "ratings barely move". True for a unit
+with 200 reviews; on one with 5, a single new review visibly shifts the
+average.
+
+On the Kaizen OS side, the staleness threshold dropped from 3 days to 2.
+Three days was chosen for prices, and a month-old rating sat inside it
+looking current.

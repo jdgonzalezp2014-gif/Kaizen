@@ -42,7 +42,11 @@ export function channelState(input: {
   now?: number;
   staleAfterDays?: number;
 }): ChannelView {
-  const staleAfter = input.staleAfterDays ?? 3;
+  // Two days, now that the scraper runs daily: a rating older than that
+  // means a run was missed, not that ratings move slowly. The previous
+  // 3-day default was chosen for prices, and a 30-day-old rating sat
+  // inside it looking current.
+  const staleAfter = input.staleAfterDays ?? 2;
   const now = input.now ?? Date.now();
   const ageDays = input.observedAt
     ? Math.floor((now - Date.parse(input.observedAt)) / DAY) : null;
