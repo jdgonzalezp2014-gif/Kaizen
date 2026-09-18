@@ -688,8 +688,16 @@ button.fact-k:hover { color: var(--ink); }
 .market-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
 .chan-row { display: flex; align-items: baseline; gap: 16px; flex-wrap: wrap; font-size: 13px; }
 .chan { white-space: nowrap; }
-.chan.live { color: var(--good); font-weight: 600; }
-.chan.off  { color: var(--muted); }
+/* Four states, four weights. Only `blocked` is coloured as a warning:
+   a triangle shown every day for something transient is a triangle
+   people learn to skip, and then it is missing when it matters. */
+.chan.live, .chan.st-ok { color: var(--good); font-weight: 600; }
+.chan.off, .chan.st-unpublished { color: var(--muted); }
+.chan.st-stale { color: var(--muted); font-weight: 600; }
+.chan.st-blocked { color: var(--warn); font-weight: 600; }
+.chan-tag { font-size: 11px; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted); cursor: help; }
+.chan-tag.st-blocked { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
 .chan-link { color: var(--series-1); font-size: 12.5px; }
 .chan-metric { font-variant-numeric: tabular-nums; }
 .chan-metric b { font-weight: 650; font-size: 15px; }

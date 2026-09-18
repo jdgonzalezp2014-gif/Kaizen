@@ -965,3 +965,37 @@ test pins that.
 Metric labels were shortened (`Asking, open nights` → `Open ask`, `ADR
 achieved` → `ADR`) because they were wrapping onto two lines and pushing
 their own values out of alignment.
+
+
+## 36. Four channel states, one warning
+
+`src/lib/channels.ts`. Four different situations were sharing one blank
+space and one long paragraph, and they call for different reactions:
+
+| state | mark | means | needs doing |
+|---|---|---|---|
+| `unpublished` | ○ | never put there | nothing |
+| `ok` | ● | current reading (live, or stored ≤3 days) | nothing |
+| `stale` | ◐ | had readings, they stopped | probably nothing today |
+| `blocked` | ⚠ | published and **never** read | someone must change something |
+
+The distinction that matters is **stale vs blocked**. A platform having a
+bad day and our integration not working look identical in a blank cell,
+and only one of them clears by itself. "Never read anything" is the
+integration; "read it last week, not since" is usually the feed pausing.
+
+Only `blocked` gets the warning colour and the full paragraph. A triangle
+shown every day for something transient is a triangle people learn to
+skip — and then it is missing when it matters.
+
+A stored reading ≤3 days old counts as **current**, not as a fallback:
+when yesterday's figure is still the right answer, a live read failing is
+not a problem worth reporting.
+
+## 37. The rating does both
+
+`/api/market` reads the last stored observation from the database AND
+runs the live scrape on every call, then shows whichever it has, live
+preferred. So the Apps Script push and the live read are not alternatives
+— the live path stays wired and starts working the moment Airbnb stops
+refusing us, without anything being switched over.

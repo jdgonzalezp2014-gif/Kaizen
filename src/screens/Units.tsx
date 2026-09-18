@@ -22,6 +22,7 @@ import {
   type Signal, type Verdict
 } from '../lib/revenue.ts';
 import { money, pct, points } from '../lib/format.ts';
+import { channelState } from '../lib/channels.ts';
 import { DayPicker } from '../components/DayPicker.tsx';
 import { Glossary } from '../components/Glossary.tsx';
 import {
@@ -734,6 +735,16 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
   const airbnb = channels?.find(c => c.key === 'airbnb');
   const others = channels?.filter(c => c.key !== 'airbnb') ?? [];
 
+  // Four states, not one blank space: never published, current, going
+  // stale, or never readable at all. Only the last needs anyone to do
+  // something, and only it gets a warning.
+  const air = channelState({
+    published: !!airbnb?.live,
+    liveOk: page?.rating != null || page?.nightly != null,
+    observedAt: stored?.observedAt ?? null,
+    problem: page?.problem ?? null
+  });
+
   return (
     <div className="market">
       <div className="market-head">
@@ -747,16 +758,14 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
       {channels && (
         <>
           <div className="chan-row">
-            <span className={`chan ${airbnb?.live ? 'live' : 'off'}`}>
-              {airbnb?.live ? '●' : '○'} Airbnb
+            <span className={`chan st-${air.state}`} title={air.detail}>
+              {air.mark} Airbnb
             </span>
-            {airbnb?.url
-              ? <a className="chan-link" href={airbnb.url} target="_blank" rel="noreferrer noopener">open listing</a>
-              : <span className="note">not published{airbnb?.exportStatus ? ` (${airbnb.exportStatus})` : ''}</span>}
+            {air.label && <span className={`chan-tag st-${air.state}`} title={air.detail}>{air.label}</span>}
+            {airbnb?.url && (
+              <a className="chan-link" href={airbnb.url} target="_blank" rel="noreferrer noopener">open listing</a>
+            )}
 
-            {/* A live read when one is possible, otherwise the last one
-                anyone managed — dated, so nobody mistakes a reading from
-                last week for what Airbnb shows this minute. */}
             {(page?.rating ?? stored?.rating) != null && (
               <span className="chan-metric">
                 <b>{(page?.rating ?? stored!.rating)!.toFixed(2)}</b> ★
@@ -767,12 +776,6 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
             {page?.nightly != null && (
               <span className="chan-metric">
                 <b>${page.nightly}</b> <span className="note">shown to guests</span>
-              </span>
-            )}
-            {page?.rating == null && stored?.rating != null && (
-              <span className="note">
-                as of {stored.observedAt.slice(0, 10)}
-                {stored.source ? ` · via ${stored.source}` : ''}
               </span>
             )}
           </div>
@@ -796,9 +799,6 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
                   </span>
                 )}
               </div>
-              {/* The gap is the fee and tax load a guest sees on top of
-                  our rate — the reason a unit can look competitive in
-                  Hostaway and expensive on Airbnb. */}
               {stored.ourRate != null && stored.nightly != null && stored.ourRate > 0 && (
                 <div className="note quote-gap">
                   We ask ${stored.ourRate}/night · a guest is quoted ${stored.nightly} —
@@ -806,18 +806,17 @@ function Market({ listingId, from, days }: { listingId: string; from: string; da
                   and tax are added.
                 </div>
               )}
-              <div className="note">
-                Read {stored.observedAt.slice(0, 10)}{stored.source ? ` · ${stored.source}` : ''}
-              </div>
             </div>
           )}
 
           {msg && <p className="note">{msg}</p>}
-          {/* Only worth saying when there is nothing to show. With a
-              stored reading on screen, a paragraph about the live fetch
-              failing is noise about a problem already worked around. */}
-          {page?.problem && stored == null && (
-            <p className="note market-problem">{page.problem}</p>
+
+          {/* The long explanation only when it is the actionable state.
+              A paragraph about a blocked reader beside a rating read
+              yesterday is noise about a problem already worked around —
+              and a warning shown every day teaches people to skip it. */}
+          {air.state === 'blocked' && (
+            <p className="note market-problem">{air.detail}</p>
           )}
 
           {/* Carried, not read. Publication is free from Hostaway; the
