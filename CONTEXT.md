@@ -1970,7 +1970,7 @@ code defaults. With them, 9 of 15 shared checkouts still differ in the
 same six ways: the team assigns P2 → Veronica and CL → Michelle by hand.
 
 
-## 66. The Repository is edited here — its Sheet stays the database
+## 66. The Repository is edited here — its Sheet stays the database (superseded by §71)
 
 The owner: the Repository tab should be the Data Repository itself, not a
 viewer that sends people elsewhere. So records, documents and structure
@@ -2217,3 +2217,93 @@ perform this action for an archived listing"). Found live: three failed
 writes for one edited stay on the archived listing. Kaizen no longer
 tries, the editor says the change stays in Kaizen, and those refusals are
 not counted as failures in the live banner.
+
+## 71. The Repository is native — the old project is kept as an idea, not a dependency
+
+**Why.** §66 read and wrote the repository through its Apps Script API.
+Measured: 11 s for the structure alone, 10 s to list a table of 21
+records, and failures under load — one table took six minutes of retries
+to read during the move. Every screen paid that on every open. The
+repository's IDEA is what was worth keeping; the live link was not.
+
+**What moved into Postgres** (migration 028):
+
+- `repo_sections` → `repo_tables` → `repo_columns`: structure is still
+  DATA, shaped by an admin from the screen (roles: `repository.structure`),
+  never by a migration.
+- `repo_records`: one row per record, values in one JSONB object keyed by
+  column; `seq` numbers the IDs (`ROW-0001`), archived records included,
+  so an ID is never reused. Deleting a record ARCHIVES it.
+- `repo_secrets`: apart from every other value, AES-GCM with Kaizen's
+  `ENCRYPTION_KEY`, never in `vals`, never in a list or a search. A list
+  shows `••••••••` when a value is set; a reveal writes `repo_reveals`
+  BEFORE it decrypts. A masked value sent back is refused.
+- `repo_files`: a document column holds LINKS (a Drive file, a shared
+  folder, any https address). Kaizen stores where a file is, not the file;
+  Drive stays the file store, and each record keeps its old Drive folder
+  (`folder_url`, `doc_folders`). Uploads go to Drive through Kaizen (§72).
+
+**The rules are the old engine's**, ported and tested in
+`src/lib/repo.ts`: IDs, required / dropdown / number / date / e-mail /
+reference / unique validation, and the type conversion (`coerce`) a type
+change applies to existing values, with the count converted and cleared
+logged. A save is validated on the fields it WRITES: the imported data
+predates the rules (a date column with dropdown options, a password kept
+as a select), and an untouched old value must not block an unrelated edit.
+
+**Same shapes, same screen.** The four routes (`/api/repository`,
+`-edit`, `-structure`, `-reveal`) answer in the shapes the old API had, so
+the grid did not change beyond documents (upload → "add a link" and the
+record's Drive folder) and its words. Nothing is cached: every open reads
+the database as it is.
+
+**Deleting a column** erases its values from every record (typed name to
+confirm) and the audit row keeps what was erased — never a secret.
+Deleting a table archives it. Type changes only between the plain types;
+secret, reference and document columns keep theirs (turning a secret into
+text would print passwords).
+
+**The import** is `npm run import:repository` (`--dry` reads only,
+`--replace` starts over): reads the old API slowly with retries and small
+batches, copies values as they are (a date's timestamp reduced to its
+day), re-encrypts each secret, and refuses to finish unless the counts in
+Kaizen match what it read. `functions/_lib/repository.ts` survives only for
+it; Settings keeps the old link and key as "import source" and they can be
+cleared once the import is confirmed.
+
+## 72. Google Drive is the file store — Kaizen uploads into it
+
+The owner: Drive is the storage — 8 TB, reliable, secure, and already where
+every record's folder lives. So files are not kept in Kaizen; they go to
+Drive, and the record keeps the link (`repo_files.drive_file_id` + url).
+
+**How Kaizen reaches Drive.** One Google account, connected once from
+Settings → Google Drive (OAuth, offline access, full `drive` scope —
+`drive.file` cannot write into folders the old Apps Script created). The
+admin creates the OAuth client in Google Cloud (Internal app, Drive API
+enabled, redirect URI shown in the panel) and pastes its ID and secret;
+the secret, the refresh token and the access token are encrypted with
+Kaizen's key (migration 029) and never reach a browser. The access token is
+kept with its expiry and refreshed a minute early, as Hostaway's is.
+"Connected" in Settings is asked of Google live, with the storage used.
+Why not a service account: it has no storage of its own in a personal My
+Drive, and domain-wide delegation needs a Workspace admin — one "Allow"
+by the folder's owner is the smaller ask.
+
+**Where files land** — the shape the old repository built:
+section → table → record → one subfolder per document column. Imported
+records already have theirs (`folder_url`, `doc_folders`); a new record
+gets its folder the first time a file arrives; a new table or section
+gets one under its parent (the old root is found as the parent of an
+existing section folder). Folders are made once and remembered.
+
+**Uploads** go browser → `/api/repository-upload` (multipart,
+`repository.edit`) → Drive's resumable upload (the one-request upload
+stops at 5 MB). 50 MB per file, because it passes through the Worker's
+memory; bigger files go in the record's Drive folder by hand and their
+link is pasted. "+ Google Doc / Sheet" makes one in place. Renaming a
+Drive file renames it in Drive; removing it sends it to Drive's trash (30
+days), as the old app did — Drive first, so Kaizen never lists a state
+Drive refused. A pasted link is only ever unlinked. Every one of these is
+in `repo_audit` under the person's name, since Drive shows the connected
+account as the owner.

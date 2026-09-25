@@ -43,7 +43,9 @@ export function App() {
         setPermissions(r.permissions ?? []);
         // Land on the first tab they can open — Home, for everyone: the
         // day at a glance, cut to what their role can see.
-        setTab(prev => (prev && tabs.includes(prev)) ? prev : (tabs[0] as Tab));
+        // Back from Google's consent screen (§72): straight to Settings, where it reports.
+        const back = new URLSearchParams(location.search).has('drive') && tabs.includes('settings') ? 'settings' : null;
+        setTab(prev => (prev && tabs.includes(prev)) ? prev : ((back ?? tabs[0]) as Tab));
       })
       .catch(e => {
         // Silently falling back to the ops tab set made a transient

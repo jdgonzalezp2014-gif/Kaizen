@@ -1023,6 +1023,8 @@ button.rb-danger { background: var(--crit); color: #fff; }
   color: var(--muted); cursor: pointer; transition: all .12s; }
 .rb-drop-zone:hover, .rb-drop-zone.hot { border-color: var(--series-1); color: var(--series-1);
   background: color-mix(in srgb, var(--series-1) 6%, transparent); }
+.rb-linkadd { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.rb-linkadd .rb-input { width: 100%; }
 
 /* the record, beside the grid */
 .rb-panel { position: sticky; top: 12px; max-height: calc(100vh - 110px); display: flex; flex-direction: column;

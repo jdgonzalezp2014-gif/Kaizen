@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import {
   getSettings, saveSettings, syncUnits, pullCleanings,
   type Account, type Connection, type CleaningMatch, type Member, type MemberAudit,
-  type RoleDef, type PermissionDef, saveRole, deleteRole
+  type RoleDef, type PermissionDef, saveRole, deleteRole, getDrive, driveAction, type DriveStatus
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
 import { newIngestToken, pullFeed, runCron, type FeedResult, type CronResult } from '../api.ts';
@@ -165,6 +165,7 @@ export function Settings() {
 
       <DailyFilePanel account={account} onSaved={() => void load()} />
 
+      <DrivePanel />
       <RepositoryPanel account={account} onSaved={() => void load()} />
 
       <GeminiPanel account={account} onSaved={() => void load()} />
@@ -447,11 +448,12 @@ function DailyFilePanel({ account, onSaved }: { account: Account; onSaved: () =>
 }
 
 /**
- * The Data Repository's JSON API, for the Repository tab.
+ * The OLD Data Repository's API — the source of the one-time import (§71).
  *
- * The API deployment runs as the repository's owner and checks a key, so
- * the key is a credential like Hostaway's: verified with the link before
- * it is stored, encrypted, and never sent back to this page.
+ * The Repository tab no longer reads it: records, structure and passwords
+ * live in Kaizen. The link and key stay here only so the import script can
+ * reach the old project; they are verified before they are stored,
+ * encrypted, and never sent back to this page.
  */
 function RepositoryPanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
   const [apiUrl, setApiUrl] = useState(account.repoApiUrl ?? '');
@@ -473,18 +475,19 @@ function RepositoryPanel({ account, onSaved }: { account: Account; onSaved: () =
 
   return (
     <div className="card">
-      <h2>Data Repository</h2>
+      <h2>Data Repository — import source</h2>
       <p className="note">
-        Units, logins and buildings, with their documents — read and edited in the <b>Repository</b>
-        tab. The repository's Sheet stays the database and its Drive folders keep the files; Kaizen is
-        the screen and decides who may do what (Roles). Use
-        the repository's <b>API</b> deployment (Execute as: Me, access: Anyone). The key is in its
-        Apps Script editor → ⚙️ Project Settings → Script properties → <code>API_KEY</code>.
-        Passwords stay encrypted in the repository: they reach this app masked, and only roles with
-        “reveal passwords” can show one — each reveal is logged here under their name.
+        The repository lives in Kaizen now: the <b>Repository</b> tab reads and edits Kaizen's own
+        database, passwords are encrypted with Kaizen's key, and every reveal is logged under the
+        person's name. Files stay in Drive, linked from each record.
+      </p>
+      <p className="note">
+        The old Apps Script project is no longer read by any screen. Its API link and key below are
+        kept only for the one-time import (<code>npm run import:repository</code>); they can be cleared
+        once the import is confirmed.
       </p>
       <div className={`banner ${account.repoApiUrl && account.hasRepoKey ? 'ok' : 'warn'}`}>
-        {account.repoApiUrl && account.hasRepoKey ? '● Connected' : '○ Not connected yet'}
+        {account.repoApiUrl && account.hasRepoKey ? '● Import source set' : '○ No import source'}
       </div>
       <label>
         API link
@@ -498,6 +501,92 @@ function RepositoryPanel({ account, onSaved }: { account: Account; onSaved: () =
       </label>
       <div className="button-row">
         <button disabled={busy} onClick={() => void save()}>{busy ? 'Checking…' : 'Save and verify'}</button>
+      </div>
+      {msg && <p className={`banner ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
+    </div>
+  );
+}
+
+/**
+ * Google Drive — where the Repository's files go (§72).
+ *
+ * One Google account, connected once: Kaizen uploads as it, into the
+ * folders the repository already has. The client secret and the tokens
+ * never reach this page; "connected" is asked of Google live.
+ */
+function DrivePanel() {
+  const [st, setSt] = useState<DriveStatus | null>(null);
+  const [clientId, setClientId] = useState('');
+  const [secret, setSecret] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(() => {
+    const back = new URLSearchParams(location.search).get('drive');
+    return back ? { ok: back === 'connected', text: back === 'connected' ? 'Google Drive connected.' : `Not connected: ${back}` } : null;
+  });
+  const [busy, setBusy] = useState(false);
+
+  const load = async () => {
+    const r = await getDrive().catch(() => null);
+    if (r && r.ok) { setSt(r); setClientId(c => c || r.clientId || ''); }
+  };
+  useEffect(() => {
+    void load();
+    // The word from Google is shown once; a reload must not repeat it.
+    if (location.search.includes('drive=')) history.replaceState(null, '', location.pathname + location.hash);
+  }, []);
+
+  const run = async (body: Record<string, unknown>, done: string) => {
+    setBusy(true);
+    const r = await driveAction(body).catch(e => ({ ok: false as const, error: String(e) }));
+    setBusy(false);
+    if (!r.ok) { setMsg({ ok: false, text: r.error ?? 'Failed.' }); return null; }
+    if (done) setMsg({ ok: true, text: done });
+    await load();
+    return r;
+  };
+  const gb = (n: number) => n >= 1e12 ? `${(n / 1e12).toFixed(1)} TB` : `${(n / 1e9).toFixed(1)} GB`;
+
+  if (!st) return <div className="card"><h2>Google Drive</h2><p className="note loading-dot">Reading</p></div>;
+  return (
+    <div className="card">
+      <h2>Google Drive — files</h2>
+      <p className="note">
+        The Repository's files go to Drive, into each record's folder — the same folders the old
+        repository built. Kaizen uploads as one Google account, connected here once.
+      </p>
+      <div className={`banner ${st.connected && !st.problem ? 'ok' : 'warn'}`}>
+        {st.connected && !st.problem
+          ? <>● Connected as <b>{st.email}</b>{st.quota && <> · {gb(st.quota.usage)} used{st.quota.limit ? ` of ${gb(st.quota.limit)}` : ''}</>}</>
+          : st.problem ? `▲ ${st.problem}` : '○ Not connected — uploads are off until it is'}
+      </div>
+      <details open={!st.clientId}>
+        <summary>Set up the Google client (once)</summary>
+        <ol className="note">
+          <li>In <a href="https://console.cloud.google.com/apis/library/drive.googleapis.com" target="_blank" rel="noreferrer">Google Cloud</a>,
+            with the company account: create a project (or pick one) and <b>Enable</b> the Google Drive API.</li>
+          <li>Google Auth Platform → Branding / Audience: user type <b>Internal</b> (only the company's accounts).</li>
+          <li>Clients → Create client → <b>Web application</b> → Authorized redirect URI:
+            <br /><code>{st.redirectUri}</code></li>
+          <li>Paste the client ID and secret below, save, then Connect with the account that owns the
+            repository's Drive folder.</li>
+        </ol>
+        <label>Client ID
+          <input value={clientId} onChange={e => setClientId(e.target.value)} placeholder="….apps.googleusercontent.com" />
+        </label>
+        <label>Client secret
+          <input type="password" value={secret} onChange={e => setSecret(e.target.value)}
+                 placeholder={st.hasSecret ? 'Stored — type to replace' : 'Not set yet'} />
+        </label>
+        <div className="button-row">
+          <button disabled={busy || !clientId.trim()} onClick={() => void run({ action: 'client', clientId, clientSecret: secret }, 'Client saved.').then(r => { if (r) setSecret(''); })}>
+            Save client</button>
+        </div>
+      </details>
+      <div className="button-row">
+        <button disabled={busy || !st.clientId || !st.hasSecret}
+                onClick={() => void run({ action: 'connect' }, '').then(r => { if (r?.url) location.href = r.url; })}>
+          {st.connected ? 'Reconnect Google Drive' : 'Connect Google Drive'}</button>
+        {st.connected && <button className="secondary" disabled={busy}
+                onClick={() => void run({ action: 'disconnect' }, 'Disconnected. Files already in Drive stay there.')}>Disconnect</button>}
       </div>
       {msg && <p className={`banner ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
     </div>

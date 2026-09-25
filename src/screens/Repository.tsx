@@ -1,9 +1,9 @@
 /**
  * Repository — the Data Repository, run from Kaizen OS.
  *
- * The repository's Sheet is the database and its Drive folders hold the
- * files; its engine validates, builds folders and encrypts (§66). This is
- * the screen people work in, redesigned from the repository's own app,
+ * The repository lives in Kaizen's database (§71): structure, records and
+ * encrypted secrets; Google Drive keeps the files (§72). This is the
+ * screen people work in, redesigned from the old repository's own app,
  * which got the hard part right: THE GRID IS THE WORKSPACE.
  *
  *   · Rows are one line, 42px, clipped with an ellipsis. A cell that wraps
@@ -25,21 +25,21 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  getRepoMeta, getRepoRows, getRepoDocs, getRepoDocsBatch, searchRepo, revealRepoSecret, repoEdit, repoStructure,
+  getRepoMeta, getRepoRows, getRepoDocs, getRepoDocsBatch, searchRepo, revealRepoSecret, repoEdit, repoStructure, uploadRepoFile,
   type RepoColumn, type RepoFile, type RepoHit, type RepoRow, type RepoSection, type RepoTable
 } from '../api.ts';
 
 interface Can { reveal: boolean; edit: boolean; structure: boolean }
 type DocEntry = { folderUrl: string; files: RepoFile[]; truncated?: boolean };
 
-/** The engine's own columns: never typed into. */
+/** The store's own columns: never typed into. */
 const SYSTEM_TYPES = new Set(['id', 'folder', 'auto']);
 const TYPE_LABEL: Record<string, string> = {
   text: 'Text', longtext: 'Long text', number: 'Number', date: 'Date', checkbox: 'Checkbox',
   select: 'Dropdown', email: 'E-mail', url: 'Link', ref: 'Reference', secret: 'Secret (encrypted)',
   doc: 'Documents (Drive)', id: 'ID', folder: 'Row folder', auto: 'Audit'
 };
-/** Types the engine converts between. Secret, documents and reference are fixed once made. */
+/** Types that convert into one another (src/lib/repo.ts). Secret, documents and reference are fixed once made. */
 const CONVERTIBLE = ['text', 'longtext', 'number', 'date', 'checkbox', 'select', 'email', 'url'];
 const NEW_TYPES = [...CONVERTIBLE, 'secret', 'doc'];
 /** What a conversion does to the values already there — said before it runs. */
@@ -50,8 +50,9 @@ const CONVERSION: Record<string, string> = {
   checkbox: 'true / yes / 1 / x become ticked, everything else unticked.'
 };
 const REMASK_MS = 30_000;
-const MAX_UPLOAD = 10 * 1024 * 1024;
 const POLL_MS = 60_000;
+/** The file passes through Kaizen on its way to Drive (repository-upload.ts). */
+const MAX_UPLOAD = 50 * 1024 * 1024;
 
 /* ── small helpers ────────────────────────────────────────────────── */
 
@@ -64,12 +65,6 @@ const userColumns = (t: RepoTable) => t.columns.filter(c => !c.system && !SYSTEM
 const primaryKey = (t: RepoTable) => t.nameFields[0] ?? userColumns(t).find(c => c.type === 'text')?.key ?? '';
 const fileGlyph = (mime: string) => /image\//.test(mime) ? '🖼' : /pdf/.test(mime) ? '📕'
   : /spreadsheet|excel|csv/.test(mime) ? '📊' : /presentation/.test(mime) ? '📽' : /document|word/.test(mime) ? '📝' : '📄';
-const readBase64 = (f: File) => new Promise<string>((res, rej) => {
-  const fr = new FileReader();
-  fr.onload = () => res(String(fr.result).split(',')[1] ?? '');
-  fr.onerror = () => rej(fr.error);
-  fr.readAsDataURL(f);
-});
 type Fail = { ok: false; message?: string };
 const safe = <T,>(p: Promise<T>) => p.catch(e => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as Fail);
 
@@ -232,7 +227,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const replaceRow = (key: string, id: string, row: RepoRow | null) =>
     setRowsBy(m => ({ ...m, [key]: (m[key] ?? []).flatMap(r => String(r.id) !== id ? [r] : row ? [row] : []) }));
 
-  /** Optimistic: shown at once, put back if the engine refuses. */
+  /** Optimistic: shown at once, put back if the rules refuse. */
   const saveCell = async (row: RepoRow, col: RepoColumn, value: unknown) => {
     if (!table) return;
     const id = String(row.id);
@@ -314,7 +309,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
                    placeholder={table ? `Filter ${table.title} · Enter = all tables` : 'Search'} />
           </form>
           {hits && <button className="secondary small" onClick={() => { setHits(null); setFilter(''); }}>Back to {table?.title}</button>}
-          {!hits && tableKey && <button className="secondary small" title="Reload from the sheet" onClick={() => void loadRows(tableKey)}>↻</button>}
+          {!hits && tableKey && <button className="secondary small" title="Reload" onClick={() => void loadRows(tableKey)}>↻</button>}
         </header>
 
         {hits ? (
@@ -329,7 +324,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
               <RecordPanel key={openId!} table={table} row={openRow} can={can} docs={docs} setPop={setPop}
                            onClose={() => setOpenId(null)} onSave={saveCell} say={say}
                            onDocs={refreshDocs}
-                           onDeleted={() => { replaceRow(table.key, String(openRow.id), null); setOpenId(null); say('Deleted — its folder is in _Archive'); }} />
+                           onDeleted={() => { replaceRow(table.key, String(openRow.id), null); setOpenId(null); say('Deleted — archived, not erased'); }} />
             )}
           </div>
         )}
@@ -626,7 +621,14 @@ function LongText({ col, value, onSave }: { col: RepoColumn; value: string; onSa
   );
 }
 
-/** A documents cell, opened: every file, a drop zone, and new Google files. */
+/**
+ * A documents cell, opened: every file, a drop zone, new Google files, and
+ * a pasted link for what already lives elsewhere.
+ *
+ * Files go to Google Drive, into the record's folder for this column
+ * (§72); Kaizen keeps the link. Removing a Drive file sends it to Drive's
+ * trash (30 days); removing a pasted link only removes the link.
+ */
 function DocsBox({ table, row, col, entry, can, say, onChanged, bare = false }: {
   table: RepoTable; row: RepoRow; col: RepoColumn; entry: DocEntry | undefined; can: Can;
   say: (m: string, bad?: boolean) => void; onChanged: () => Promise<void>;
@@ -634,9 +636,11 @@ function DocsBox({ table, row, col, entry, can, say, onChanged, bare = false }: 
   bare?: boolean;
 }) {
   const [busy, setBusy] = useState('');
-  const [hot, setHot] = useState(false);
   const [confirmDel, setConfirmDel] = useState<RepoFile | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
+  const [link, setLink] = useState('');
+  const [name, setName] = useState('');
+  const [hot, setHot] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   useEffect(() => { void onChanged(); }, []);
 
@@ -645,35 +649,43 @@ function DocsBox({ table, row, col, entry, can, say, onChanged, bare = false }: 
     if (!files.length) return;
     let done = 0;
     for (const f of files) {
-      if (f.size > MAX_UPLOAD) { say(`${f.name} is over 10 MB`, true); continue; }
+      if (f.size > MAX_UPLOAD) { say(`${f.name} is over 50 MB — put it in the Drive folder and paste its link`, true); continue; }
       setBusy(`Uploading ${done + 1} of ${files.length}…`);
-      const r = await safe(repoEdit({ op: 'docs.upload', table: table.key, id: String(row.id), column: col.key,
-        name: f.name, mimeType: f.type || 'application/octet-stream', data: await readBase64(f) }));
+      const r = await safe(uploadRepoFile(table.key, String(row.id), col.key, f));
       if (r.ok) done++; else say(`${f.name}: ${r.message ?? 'failed'}`, true);
     }
     setBusy('');
-    if (done) say(done === 1 ? 'File uploaded' : `${done} files uploaded`);
+    if (done) say(done === 1 ? 'Uploaded to Drive' : `${done} files uploaded to Drive`);
     await onChanged();
   };
+
   const act = async (body: Record<string, unknown>, label: string, doneMsg: string) => {
     setBusy(label);
     const r = await safe(repoEdit(body));
     setBusy(''); setConfirmDel(null); setRenaming(null);
-    if (r.ok) { say(doneMsg); await onChanged(); } else say(r.message ?? 'Failed.', true);
+    if (r.ok) { say(doneMsg); await onChanged(); return true; }
+    say(r.message ?? 'Failed.', true); return false;
+  };
+  const add = async () => {
+    if (!link.trim()) return;
+    if (await act({ op: 'docs.link', table: table.key, id: String(row.id), column: col.key, url: link.trim(), name: name.trim() },
+                  'Adding…', 'Link added')) { setLink(''); setName(''); }
   };
 
   if (confirmDel) {
-    return <Confirm title={`Remove “${confirmDel.name}”?`} message="It goes to Drive's trash, where it can be restored for 30 days."
-      action="Move to trash" onCancel={() => setConfirmDel(null)}
-      onConfirm={() => void act({ op: 'docs.delete', fileId: confirmDel.fileId }, 'Removing…', 'Moved to Drive\'s trash')} />;
+    const inDrive = !!confirmDel.driveFileId;
+    return <Confirm title={`Remove “${confirmDel.name}”?`}
+      message={inDrive ? "It goes to Drive's trash, where it can be restored for 30 days." : 'Only the link is removed; the file is not touched.'}
+      action={inDrive ? 'Move to trash' : 'Remove link'} onCancel={() => setConfirmDel(null)}
+      onConfirm={() => void act({ op: 'docs.delete', fileId: confirmDel.fileId }, 'Removing…', inDrive ? "Moved to Drive's trash" : 'Link removed')} />;
   }
   return (
     <div>
       {!bare && <div className="rb-pop-title">{col.title} <span className="rb-hint">· {String(row.id)}</span><span className="rb-spacer" />
-        {entry?.folderUrl && <a href={entry.folderUrl} target="_blank" rel="noreferrer">Folder ↗</a>}</div>}
+        {entry?.folderUrl && <a href={entry.folderUrl} target="_blank" rel="noreferrer">Drive folder ↗</a>}</div>}
       <div className="rb-files">
         {!entry && <div className="rb-hint loading-dot">Listing files</div>}
-        {entry && !entry.files.length && <div className="rb-hint">No files yet.</div>}
+        {entry && !entry.files.length && <div className="rb-hint">No files linked yet.</div>}
         {entry?.files.map(f => (
           <div key={f.fileId} className="rb-file">
             <span className="rb-glyph">{fileGlyph(f.mimeType)}</span>
@@ -687,7 +699,7 @@ function DocsBox({ table, row, col, entry, can, say, onChanged, bare = false }: 
               : <a className="rb-file-name" href={f.url} target="_blank" rel="noreferrer" title={f.name}>{f.name}</a>}
             {can.edit && renaming !== f.fileId && <>
               <button className="rb-icon rb-hover" title="Rename" onClick={() => setRenaming(f.fileId)}>✎</button>
-              <button className="rb-icon rb-hover danger" title="Remove" onClick={() => setConfirmDel(f)}>✕</button>
+              <button className="rb-icon rb-hover danger" title="Remove link" onClick={() => setConfirmDel(f)}>✕</button>
             </>}
           </div>
         ))}
@@ -697,13 +709,23 @@ function DocsBox({ table, row, col, entry, can, say, onChanged, bare = false }: 
           <div className={`rb-drop-zone ${hot ? 'hot' : ''}`} onClick={() => picker.current?.click()}
                onDragOver={e => { e.preventDefault(); setHot(true); }} onDragLeave={() => setHot(false)}
                onDrop={e => { e.preventDefault(); setHot(false); void upload(e.dataTransfer.files); }}>
-            {busy || 'Drop files here, or click to choose'}
+            {busy || 'Drop files here, or click to choose — they go to Drive'}
             <input ref={picker} type="file" multiple hidden onChange={e => void upload(e.target.files)} />
           </div>
           <div className="rb-pop-actions">
             <button className="link tiny" onClick={() => void act({ op: 'docs.create', table: table.key, id: String(row.id), column: col.key, kind: 'doc' }, 'Creating…', 'Google Doc created')}>+ Google Doc</button>
             <button className="link tiny" onClick={() => void act({ op: 'docs.create', table: table.key, id: String(row.id), column: col.key, kind: 'sheet' }, 'Creating…', 'Google Sheet created')}>+ Google Sheet</button>
           </div>
+        <div className="rb-linkadd">
+          <input className="rb-input" placeholder="…or paste a link (https://…)" value={link}
+                 onChange={e => setLink(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void add(); }} />
+          <input className="rb-input" placeholder="Name (optional)" value={name}
+                 onChange={e => setName(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void add(); }} />
+          <div className="rb-pop-actions">
+            <span className="rb-spacer" />
+            <button className="secondary small" disabled={!link.trim() || !!busy} onClick={() => void add()}>Add link</button>
+          </div>
+        </div>
         </>
       )}
     </div>
@@ -749,7 +771,7 @@ function ColumnMenu({ table, col, run }: {
           {type === 'select' && col.type !== 'select' && (
             <textarea className="rb-input" rows={4} placeholder="Options, one per line" value={opts} onChange={e => setOpts(e.target.value)} />
           )}
-          <p className="rb-note">{type === col.type ? 'This is the current type.' : (CONVERSION[type] ?? 'Values are kept as they are.')} The sheet's column is rewritten.</p>
+          <p className="rb-note">{type === col.type ? 'This is the current type.' : (CONVERSION[type] ?? 'Values are kept as they are.')} The count converted and cleared is logged.</p>
           <div className="rb-pop-actions"><span className="rb-spacer" />
             <button className="small" disabled={type === col.type || (type === 'select' && !list(opts).length)}
               onClick={() => void run({ op: 'columns.update', ...base, changes: type === 'select' ? { type, options: list(opts) } : { type } }, `Now ${TYPE_LABEL[type]}`)}>
@@ -760,7 +782,7 @@ function ColumnMenu({ table, col, run }: {
   );
   if (view === 'delete') return (
     <Confirm title={`Delete the column “${col.title}”?`} typed={col.title} action="Delete column" onCancel={() => setView('menu')}
-      message="Its values are erased from the sheet for every record (the sheet's version history can bring them back). Document folders stay in Drive."
+      message="Its values are erased from every record (the audit log keeps what was erased; passwords are not kept). Files stay in Drive."
       onConfirm={v => void run({ op: 'columns.delete', ...base, confirm: v }, 'Column deleted')} />
   );
   return (
@@ -791,7 +813,7 @@ function ColumnForm({ onSubmit }: { onSubmit: (spec: { title: string; type: stri
       </select>
       {type === 'select' && <textarea className="rb-input" rows={4} placeholder="Options, one per line" value={opts} onChange={e => setOpts(e.target.value)} />}
       {type === 'secret' && <p className="rb-note">Encrypted, masked everywhere, and every reveal is logged.</p>}
-      {type === 'doc' && <p className="rb-note">Creates a Drive folder for this column inside every record.</p>}
+      {type === 'doc' && <p className="rb-note">Each record gets a Drive folder for this column, made when its first file arrives.</p>}
       <div className="rb-pop-actions"><span className="rb-spacer" /><button className="small" disabled={!title.trim() || (type === 'select' && !list.length)}>Add column</button></div>
     </form>
   );
@@ -809,7 +831,7 @@ function TableMenu({ table, run }: { table: RepoTable; run: (body: Record<string
   );
   if (view === 'archive') return (
     <Confirm title={`Archive “${table.title}”?`} typed={table.title} action="Archive table" onCancel={() => setView('menu')}
-      message="The table disappears from here. Its sheet is hidden and its Drive folder moved to _Archive — nothing is erased."
+      message="The table disappears from here. It is archived — nothing is erased."
       onConfirm={v => void run({ op: 'tables.delete', table: table.key, confirm: v }, 'Table archived')} />
   );
   return (
@@ -934,7 +956,7 @@ function RecordPanel({ table, row, can, docs, setPop, onClose, onSave, onDocs, o
         <footer className="rb-panel-foot">
           {!confirm ? <button className="link danger" onClick={() => setConfirm(true)}>Delete record…</button>
             : <Confirm title={`Delete ${id}?`} action="Delete record" onCancel={() => setConfirm(false)} onConfirm={() => void remove()}
-                message="The row is removed; its Drive folder moves to the table's _Archive, so nothing is erased." />}
+                message="The record leaves every view. It is archived, not erased, and its Drive folder stays where it is." />}
         </footer>
       )}
     </aside>

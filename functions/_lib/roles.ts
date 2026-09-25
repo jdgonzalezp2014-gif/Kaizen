@@ -45,7 +45,7 @@ export const PERMISSIONS: Permission[] = [
   { key: 'repository.reveal', label: 'Repository — reveal passwords (each reveal is logged)', routes: [
     { path: '/api/repository-reveal', methods: ['POST'] }] },
   { key: 'repository.edit', label: 'Repository — add and edit records, upload and remove documents', routes: [
-    { path: '/api/repository-edit', methods: ['POST'] }] },
+    { path: '/api/repository-edit', methods: ['POST'] }, { path: '/api/repository-upload', methods: ['POST'] }] },
   { key: 'repository.structure', label: 'Repository — sections, tables and columns', routes: [
     { path: '/api/repository-structure', methods: ['POST'] }] },
   { key: 'costs', label: 'Costs — record expenses, see cleaning costs', tab: 'costs', routes: [
@@ -56,7 +56,8 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/settings', methods: ['POST'] }, { path: '/api/roles', methods: ['GET', 'POST', 'DELETE'] },
     { path: '/api/sync-units', methods: ['POST'] }, { path: '/api/import', methods: ['POST'] },
     { path: '/api/cleanings', methods: ['POST'] }, { path: '/api/feed', methods: ['POST'] },
-    { path: '/api/cron', methods: ['POST'] }, { path: '/api/units', methods: ['POST'] }] }
+    { path: '/api/cron', methods: ['POST'] }, { path: '/api/units', methods: ['POST'] },
+    { path: '/api/google-drive', methods: ['GET', 'POST'] }, { path: '/api/google-callback', methods: ['GET'] }] }
 ];
 
 /** The permission that means "everything", held by the admin role only. */

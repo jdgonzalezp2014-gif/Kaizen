@@ -371,6 +371,8 @@ export interface RepoSection { key: string; title: string; tables: RepoTable[] }
 export type RepoRow = Record<string, string | number | boolean>;
 export interface RepoFile {
   fileId: string; name: string; mimeType: string; size: number; url: string; updatedAt: string;
+  /** Set when the file lives in Drive (removing it trashes it there); absent for a pasted link. */
+  driveFileId?: string | null;
 }
 type RepoFail = { ok: false; error?: string; message?: string };
 
@@ -417,6 +419,27 @@ export const repoStructure = (body: Record<string, unknown>) =>
   call<{ ok: true; data: any } | { ok: false; message?: string }>('/api/repository-structure', {
     method: 'POST', body: JSON.stringify(body)
   });
+/** A file to Drive, through Kaizen (§72). Multipart, so not through `call`'s JSON headers. */
+export async function uploadRepoFile(table: string, id: string, column: string, file: File) {
+  const form = new FormData();
+  form.set('table', table); form.set('id', id); form.set('column', column); form.set('file', file);
+  const res = await fetch('/api/repository-upload', { method: 'POST', body: form });
+  return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as
+    { ok: true; data: { fileId: string; url: string } } | { ok: false; message?: string };
+}
+
+/* ── Google Drive (§72) ───────────────────────────────────────────── */
+
+export interface DriveStatus {
+  ok: true; clientId: string | null; hasSecret: boolean; connected: boolean; email: string | null;
+  redirectUri: string; quota: { usage: number; limit: number | null } | null; problem: string | null;
+}
+export const getDrive = () => call<DriveStatus | { ok: false; error?: string }>('/api/google-drive');
+export const driveAction = (body: Record<string, unknown>) =>
+  call<{ ok: true; url?: string } | { ok: false; error?: string }>('/api/google-drive', {
+    method: 'POST', body: JSON.stringify(body)
+  });
+
 export const getRepoDocsBatch = (table: string, column: string, ids: string[]) =>
   call<{ ok: true; docs: Record<string, { folderUrl: string; files: RepoFile[]; truncated: boolean }> } | { ok: false; message?: string }>(
     `/api/repository?op=docsbatch&table=${encodeURIComponent(table)}&column=${encodeURIComponent(column)}` +

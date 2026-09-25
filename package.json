@@ -11,7 +11,8 @@
     "migrate": "node --env-file=.env.local scripts/migrate.mjs",
     "migrate:dry": "node --env-file=.env.local scripts/migrate.mjs --dry",
     "sync:units": "node --env-file=.env.local scripts/sync-units.mjs",
-    "set:credentials": "node --env-file=.env.local scripts/set-credentials.mjs"
+    "set:credentials": "node --env-file=.env.local scripts/set-credentials.mjs",
+    "import:repository": "node --env-file=.env.local scripts/import-repository.mjs"
   },
   "dependencies": {
     "@neon/config": "^1.7.1",
