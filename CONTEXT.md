@@ -2324,10 +2324,15 @@ from either side is seen by both and nothing was moved:
 - **The name** is the daily file's to the letter: `MMM d & first last`,
   first + last name, else guestName, else "Guest" (`docName` on each
   reservation, kept apart from guestName; tested against a real folder).
-- **Who needs them:** only the P2 building's units (`src/lib/guestdocs.ts`,
-  the daily file's MANUAL_DOC_UNIT_PREFIX). The board checks and flags only
-  those arrivals (○/✓ ID, ○/✓ agreement); any arrival's editor can still
-  file documents.
+- **Who needs them is a setting, not a rule** (migration 031,
+  Operations → Setup → Guest documents): the right to ask for an ID
+  depends on the BUILDING — the P2 building requires it, another may not
+  allow it (Airbnb also forbids asking off-platform unless the listing
+  says so and it is required for compliance). Stored by listing ID in
+  `accounts.guest_docs_units`, chosen by building with unit exceptions;
+  it started as the daily file had it (the six P2 units). The board checks
+  and flags only those arrivals (○/✓ ID, ○/✓ agreement); any arrival's
+  editor can still file documents, marked optional.
 - **The agreement** comes from Hostaway when it can: opening an arrival
   asks GET /reservations/{id}; with `rentalAgreementFileUrl` present and
   the folder empty, the PDF is filed as `<unit>-agreement-1.pdf`. Never
@@ -2369,3 +2374,13 @@ paste the Drive link of one already in Drive → correct the guessed columns
 - The first chosen column names each record; IDs start at 1 with the
   chosen prefix. Documents are not pulled out of Monday — the export only
   holds links.
+
+## 75. Roles save on every tick
+
+Found 2026-09-25: a role created in Settings kept NO permissions although
+its boxes had been ticked. The grid held ticks in the page until a small
+"save" under each column was clicked — with fifteen permissions it sat
+below the fold — and any other panel's save reloaded Settings and wiped
+unsaved ticks. Now each tick (and a rename, on leaving the field) saves at
+once, in order, and says so; a refused save puts the box back and says
+why. Verified with a real click in a browser against the database.

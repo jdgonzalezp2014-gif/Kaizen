@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   getSettings, saveSettings, syncUnits, pullCleanings,
   type Account, type Connection, type CleaningMatch, type Member, type MemberAudit,
@@ -289,25 +289,51 @@ function RolesPanel({ roles, catalog, onSaved }: {
   const [draft, setDraft] = useState<RoleDef[]>(roles);
   const [newName, setNewName] = useState('');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [saving, setSaving] = useState<string | null>(null);
   useEffect(() => setDraft(roles), [roles]);
+  // One save at a time per panel: two ticks in quick succession must land
+  // in the order they were made, each carrying the whole list.
+  const queue = useRef<Promise<unknown>>(Promise.resolve());
 
-  const flip = (key: string, perm: string) => setDraft(d => d.map(r => r.key !== key ? r : {
-    ...r, permissions: r.permissions.includes(perm) ? r.permissions.filter(p => p !== perm) : [...r.permissions, perm]
-  }));
-  const changed = (r: RoleDef) => {
-    const o = roles.find(x => x.key === r.key);
-    return !o || o.name !== r.name || [...o.permissions].sort().join() !== [...r.permissions].sort().join();
+  const label = (perm: string) => catalog.find(c => c.key === perm)?.label.split(' — ')[0] ?? perm;
+
+  /**
+   * Every tick is saved the moment it is made. The old grid kept ticks in
+   * the page until a small "save" under the column was clicked — below
+   * fifteen rows it was off screen, and a role was created with nothing
+   * in it while it looked ticked (found 2026-09-25).
+   */
+  const persist = (next: RoleDef, before: RoleDef, what: string) => {
+    setDraft(d => d.map(r => r.key === next.key ? next : r));
+    queue.current = queue.current.then(async () => {
+      setSaving(next.key);
+      const res = await saveRole({ key: next.key, name: next.name, permissions: next.permissions })
+        .catch(e => ({ ok: false as const, message: String(e) }));
+      setSaving(null);
+      if (res.ok) setMsg({ ok: true, text: `${next.name}: ${what} — saved.` });
+      else {
+        setDraft(d => d.map(r => r.key === before.key ? before : r));
+        setMsg({ ok: false, text: `${next.name}: not saved — ${res.message ?? 'try again'}.` });
+      }
+    });
   };
-  const saveOne = async (r: RoleDef) => {
-    const res = await saveRole({ key: r.key, name: r.name, permissions: r.permissions })
-      .catch(e => ({ ok: false as const, message: String(e) }));
-    setMsg(res.ok ? { ok: true, text: `${r.name} saved.` } : { ok: false, text: res.message ?? 'Could not save.' });
-    if (res.ok) onSaved();
+  const flip = (key: string, perm: string) => {
+    const before = draft.find(r => r.key === key);
+    if (!before) return;
+    const on = before.permissions.includes(perm);
+    const next = { ...before, permissions: on ? before.permissions.filter(p => p !== perm) : [...before.permissions, perm] };
+    persist(next, before, `${on ? '−' : '+'} ${label(perm)}`);
+  };
+  const rename = (key: string) => {
+    const r = draft.find(x => x.key === key);
+    const o = roles.find(x => x.key === key);
+    if (!r || !o || r.name.trim() === o.name || !r.name.trim()) return;
+    persist({ ...r, name: r.name.trim() }, o, `renamed to ${r.name.trim()}`);
   };
   const add = async () => {
     if (!newName.trim()) return;
     const res = await saveRole({ name: newName.trim(), permissions: [] }).catch(e => ({ ok: false as const, message: String(e) }));
-    setMsg(res.ok ? { ok: true, text: `${newName.trim()} created — tick what it may do, then save it.` }
+    setMsg(res.ok ? { ok: true, text: `${newName.trim()} created — tick what it may do; each tick saves itself.` }
                   : { ok: false, text: res.message ?? 'Could not create.' });
     if (res.ok) { setNewName(''); onSaved(); }
   };
@@ -321,8 +347,9 @@ function RolesPanel({ roles, catalog, onSaved }: {
     <div className="card">
       <h2>Roles</h2>
       <p className="note">
-        What each role may see and do. Changing a role changes it for everyone who holds it, and is
-        recorded in the access log below. Revealing a password is logged every time, whoever does it.
+        What each role may see and do. Each tick saves itself at once, changes it for everyone who
+        holds the role, and is recorded in the access log below. Revealing a password is logged every
+        time, whoever does it.
       </p>
       <div className="grid-scroll">
         <table className="units compact roles-grid">
@@ -331,7 +358,9 @@ function RolesPanel({ roles, catalog, onSaved }: {
               {draft.map(r => (
                 <th key={r.key}>
                   {r.builtin ? r.name : <input value={r.name}
-                    onChange={e => setDraft(d => d.map(x => x.key === r.key ? { ...x, name: e.target.value } : x))} />}
+                    onChange={e => setDraft(d => d.map(x => x.key === r.key ? { ...x, name: e.target.value } : x))}
+                    onBlur={() => rename(r.key)} onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />}
+                  {saving === r.key && <div className="sub-n loading-dot">saving</div>}
                 </th>
               ))}
             </tr>
@@ -358,10 +387,8 @@ function RolesPanel({ roles, catalog, onSaved }: {
               <td></td>
               {draft.map(r => (
                 <td key={r.key} className="n">
-                  {r.builtin ? <span className="note">fixed</span> : <>
-                    <button className="link tiny" disabled={!changed(r)} onClick={() => void saveOne(r)}>save</button>{' '}
-                    <button className="link tiny danger" onClick={() => void remove(r)}>remove</button>
-                  </>}
+                  {r.builtin ? <span className="note">fixed</span>
+                    : <button className="link tiny danger" onClick={() => void remove(r)}>remove</button>}
                 </td>
               ))}
             </tr>

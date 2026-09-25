@@ -5,6 +5,7 @@
  *   POST { roster: [...] }                     replace the roster
  *   POST { rules: {...} }                      thresholds (merged over defaults)
  *   POST { extraInspectors: [...] }
+ *   POST { guestDocUnits: [listingId, …] }     units that ask guests for ID + agreement (§73)
  *   POST { action: 'import', commit }          one-time cutover from the daily file
  *   POST { mode: 'live' | 'shadow', confirmSheetOff }
  *
@@ -89,6 +90,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         return bad('"Due soon" has to come before the inspection interval, or nothing is ever amber.');
       }
       await sql`UPDATE accounts SET ops_rules = ${JSON.stringify(clean)}::jsonb WHERE id = 1`;
+    }
+
+    // Which units ask for guest documents (§73) — only units Kaizen knows.
+    if (Array.isArray(body.guestDocUnits)) {
+      const asked = [...new Set((body.guestDocUnits as unknown[]).map(String))];
+      const known = new Set((await sql`SELECT id FROM units WHERE id = ANY(${asked})`).map((r: any) => String(r.id)));
+      const unknown = asked.filter(id => !known.has(id));
+      if (unknown.length) return bad(`Unknown unit(s): ${unknown.join(', ')}.`);
+      await sql`UPDATE accounts SET guest_docs_units = ${asked} WHERE id = 1`;
     }
 
     if (Array.isArray(body.extraInspectors)) {

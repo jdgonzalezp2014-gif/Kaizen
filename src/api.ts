@@ -301,6 +301,8 @@ export interface OperationsResponse {
   inspectionLog: { done: InspectionEntry[]; scheduled: InspectionEntry[] };
   noteLog: NoteEntry[]; pushes: HostNotePush[];
   rules: OpsRules; extraInspectors: string[]; roster: Cleaner[];
+  /** Units whose guests must have an ID and agreement on file (§73), by listing ID. */
+  guestDocUnits: string[];
   sheet: { ok: boolean; problem: string | null; warning: string | null } | null;
   recorded: number | null; tookMs: number;
   error?: string; message?: string;
@@ -337,7 +339,7 @@ export const cancelInspection = (id: string) =>
 
 export interface OpsSettings {
   ok: true; mode: 'shadow' | 'live'; rules: OpsRules; defaults: OpsRules;
-  extraInspectors: string[]; roster: Cleaner[];
+  extraInspectors: string[]; roster: Cleaner[]; guestDocUnits: string[];
   counts: { inspections: number; notes: number; overrides: number };
 }
 export const getOpsSettings = () => call<OpsSettings | Fail>('/api/ops-settings');

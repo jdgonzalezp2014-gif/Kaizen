@@ -18,7 +18,7 @@ import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import {
   getCleanings, type Cleaning, type ExcludedCleaning,
   getOperations, saveTurnover, logInspection, scheduleInspections, cancelInspection,
-  getOpsSettings, saveOpsSettings, cutoverImport, can, getGuestDocs, syncAgreement, uploadGuestDoc,
+  getOpsSettings, saveOpsSettings, cutoverImport, can, getGuestDocs, syncAgreement, uploadGuestDoc, getUnits,
   type StayDocs, type OperationsResponse, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
 } from '../api.ts';
 import {
@@ -27,7 +27,6 @@ import {
   type BoardRow, type Cleaner, type InspectionTier, type OpsRules
 } from '../lib/operations.ts';
 import { money, money2 } from '../lib/format.ts';
-import { needsGuestDocs } from '../lib/guestdocs.ts';
 import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
@@ -215,8 +214,9 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
   const canDocs = can(data.permissions, 'guests.documents');
   const [docs, setDocs] = useState<Record<string, StayDocs>>({});
   const [docsErr, setDocsErr] = useState('');
-  // Only the stays whose building asks for them (P2) are checked on the board.
-  const docRows = data.rows.filter(r => r.kind === 'in' && needsGuestDocs(r.unit));
+  // Only the units set up to ask for them (Setup → Guest documents) are checked on the board.
+  const docUnits = new Set(data.guestDocUnits ?? []);
+  const docRows = data.rows.filter(r => r.kind === 'in' && docUnits.has(r.unitId));
   const arrivalsKey = docRows.map(r => `${r.resId}|${r.date}|${r.docName}`).join(',');
   useEffect(() => {
     if (!canDocs || !arrivalsKey) return;
@@ -301,7 +301,7 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
                   return (
                     <Fragment key={key}>
                       <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'} through={short(data.lookaheadTo)}
-                                 docs={canDocs && r.kind === 'in' && needsGuestDocs(r.unit) ? docs[r.resId] ?? null : undefined}
+                                 docs={canDocs && r.kind === 'in' && docUnits.has(r.unitId) ? docs[r.resId] ?? null : undefined}
                                  open={open === key} onToggle={() => {
                                    // Read-only roles see the board; the editor is not offered.
                                    if (can(data.permissions, 'operations.edit')) setOpen(open === key ? null : key);
@@ -477,7 +477,7 @@ function Editor({ r, data, onSaved, docs, onDocs }: {
         <button className="small" disabled={busy || note === r.note} onClick={() => void send(null, note)}>Save note</button>
         {msg && <span className="note">{msg}</span>}
       </div>
-      {!out && can(data.permissions, 'guests.documents') && <GuestDocs r={r} docs={docs} onDocs={onDocs} />}
+      {!out && can(data.permissions, 'guests.documents') && <GuestDocs r={r} docs={docs} onDocs={onDocs} required={(data.guestDocUnits ?? []).includes(r.unitId)} />}
     </div>
   );
 }
@@ -489,8 +489,11 @@ function Editor({ r, data, onSaved, docs, onDocs }: {
  * it and the folder is still empty. The ID only ever arrives by upload:
  * Hostaway never exposes it.
  */
-function GuestDocs({ r, docs, onDocs }: { r: BoardRow; docs: StayDocs | undefined; onDocs: (d: StayDocs) => void }) {
-  const required = needsGuestDocs(r.unit);
+function GuestDocs({ r, docs, onDocs, required }: {
+  r: BoardRow; docs: StayDocs | undefined; onDocs: (d: StayDocs) => void;
+  /** This unit is set up to ask for them (Setup → Guest documents). */
+  required: boolean;
+}) {
   const [hostaway, setHostaway] = useState<{ signed: boolean; available: boolean; pulled: boolean } | null>(null);
   const [busy, setBusy] = useState('');
   const [err, setErr] = useState('');
@@ -518,7 +521,7 @@ function GuestDocs({ r, docs, onDocs }: { r: BoardRow; docs: StayDocs | undefine
     <div className="ops-docs">
       <div className="ops-docs-head">
         <b>Guest documents</b>
-        {!required && <span className="note">not required for this unit — only the P2 building asks for them</span>}
+        {!required && <span className="note">not asked for at this unit (Setup → Guest documents) — filing is optional</span>}
         {docs?.folderUrl && <a href={docs.folderUrl} target="_blank" rel="noreferrer">Drive folder ↗</a>}
         <span className="note">
           {!hostaway ? 'asking Hostaway about the agreement…'
@@ -1016,7 +1019,73 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
           <button onClick={() => void save({ rules, extraInspectors: extra.split(',') }, 'Rules saved.')}>Save rules</button>
         </div>
       </div>
+
+      <GuestDocUnits initial={cfg.guestDocUnits ?? []} onSave={ids => save({ guestDocUnits: ids }, 'Guest documents saved.')} />
     </>
+  );
+}
+
+/**
+ * Which units ask each guest for an ID and a signed agreement (§73).
+ *
+ * By building first, because that is where the right to ask comes from —
+ * the P2 building requires it, another may not allow it — and unit by
+ * unit inside, for the exception.
+ */
+function GuestDocUnits({ initial, onSave }: { initial: string[]; onSave: (ids: string[]) => Promise<void> }) {
+  const [units, setUnits] = useState<{ id: string; name: string }[] | null>(null);
+  const [on, setOn] = useState(new Set(initial));
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    void getUnits().then(r => setUnits((r.units ?? []).filter(u => u.active || initial.includes(u.id))
+      .map(u => ({ id: u.id, name: u.name })).sort((a, b) => a.name.localeCompare(b.name))));
+  }, []);
+  useEffect(() => setOn(new Set(initial)), [initial.join()]);
+
+  // "P2-1201" → P2, "CL1235" / "CL 1125" → CL; a house is its own building.
+  const building = (name: string) => name.replace(/[-\s]?\d+[A-Za-z]?$/, '').trim() || name;
+  const groups = useMemo(() => {
+    const m = new Map<string, { id: string; name: string }[]>();
+    for (const u of units ?? []) m.set(building(u.name), [...(m.get(building(u.name)) ?? []), u]);
+    return [...m.entries()];
+  }, [units]);
+  const toggle = (ids: string[], value: boolean) =>
+    setOn(s => { const n = new Set(s); for (const id of ids) value ? n.add(id) : n.delete(id); return n; });
+  const dirty = [...on].sort().join() !== [...initial].sort().join();
+
+  return (
+    <div className="card">
+      <h2>Guest documents</h2>
+      <p className="note">Units that ask each guest for an ID and a signed rental agreement. Only ask where the
+        building allows it. These arrivals show ○/✓ ID and agreement on the board; any other arrival can still
+        have documents filed, optionally.</p>
+      {!units ? <p className="note loading-dot">Reading units</p> : (
+        <div className="docunits">
+          {groups.map(([b, us]) => {
+            const all = us.every(u => on.has(u.id)), some = us.some(u => on.has(u.id));
+            return (
+              <div key={b} className="docunits-group">
+                <label className="docunits-building">
+                  <input type="checkbox" checked={all} ref={el => { if (el) el.indeterminate = some && !all; }}
+                         onChange={e => toggle(us.map(u => u.id), e.target.checked)} />
+                  <b>{b}</b>{us.length > 1 && <span className="sub-n"> {us.filter(u => on.has(u.id)).length}/{us.length}</span>}
+                </label>
+                {us.length > 1 && us.map(u => (
+                  <label key={u.id} className="docunits-unit">
+                    <input type="checkbox" checked={on.has(u.id)} onChange={e => toggle([u.id], e.target.checked)} /> {u.name}
+                  </label>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <div className="button-row">
+        <button disabled={!dirty || busy} onClick={() => { setBusy(true); void onSave([...on]).finally(() => setBusy(false)); }}>
+          {busy ? 'Saving…' : 'Save guest documents'}</button>
+        {dirty && <span className="note">unsaved changes</span>}
+      </div>
+    </div>
   );
 }
 

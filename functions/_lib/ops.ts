@@ -41,18 +41,21 @@ export type OpsMode = 'shadow' | 'live';
 
 export async function opsConfig(sql: SqlFn): Promise<{
   mode: OpsMode; rules: OpsRules; extraInspectors: string[]; roster: Cleaner[];
+  /** Units whose guests must have an ID and agreement on file (§73), by listing ID. */
+  guestDocUnits: string[];
 }> {
   const [acc, roster] = await Promise.all([
-    sql`SELECT ops_mode, ops_rules, extra_inspectors FROM accounts WHERE id = 1`,
+    sql`SELECT ops_mode, ops_rules, extra_inspectors, guest_docs_units FROM accounts WHERE id = 1`,
     sql`SELECT name, tier, position, rates, deep_rates, active FROM cleaners
          WHERE account_id = 1 ORDER BY tier, position, name`
-  ]) as [{ ops_mode: OpsMode; ops_rules: Record<string, unknown>; extra_inspectors: string[] }[],
+  ]) as [{ ops_mode: OpsMode; ops_rules: Record<string, unknown>; extra_inspectors: string[]; guest_docs_units: string[] }[],
          { name: string; tier: Cleaner['tier']; position: number; rates: Record<string, number | null>;
            deep_rates: Record<string, number | null>; active: boolean }[]];
   return {
     mode: acc[0]?.ops_mode === 'live' ? 'live' : 'shadow',
     rules: withDefaults(acc[0]?.ops_rules),
     extraInspectors: acc[0]?.extra_inspectors ?? [],
+    guestDocUnits: acc[0]?.guest_docs_units ?? [],
     roster: roster.map(c => ({ name: c.name, tier: c.tier, position: c.position,
       rates: c.rates ?? {}, deepRates: c.deep_rates ?? {}, active: c.active }))
   };
@@ -81,6 +84,7 @@ export interface OpsState {
   mode: OpsMode;
   today: string; end: string; days: number;
   rules: OpsRules; roster: Cleaner[]; extraInspectors: string[];
+  guestDocUnits: string[];
   rows: BoardRow[];
   summary: ReturnType<typeof summarize>;
   panel: ReturnType<typeof inspectionPanel>;
@@ -175,7 +179,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
   timings.total = Date.now() - started;
 
   return { mode: cfg.mode, today, end, days, rules: cfg.rules, roster: cfg.roster,
-           extraInspectors: cfg.extraInspectors, rows, summary: summarize(rows), panel,
+           extraInspectors: cfg.extraInspectors, guestDocUnits: cfg.guestDocUnits, rows, summary: summarize(rows), panel,
            inspections, reservations, sheet, timings, lookaheadTo: addDays(end, NEXT_STAY_LOOKAHEAD), overrideBy };
 }
 
