@@ -13,6 +13,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { tabsFor } from '../_lib/roles.ts';
 import { encrypt } from '../_lib/crypto.ts';
+import { repoCall, type RepoMeta } from '../_lib/repository.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -225,6 +226,64 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
     if (typeof body.geminiModel === 'string' && body.geminiModel.trim()) {
       await sql`UPDATE accounts SET gemini_model = ${body.geminiModel.trim()} WHERE id = 1`;
+    }
+
+    // The daily file's other logs. Blank clears a link; anything else must
+    // at least be a Google link — the board reads them server-side, and a
+    // stray URL here would be fetched on every page load.
+    const dailyLinks = [
+      ['dailyNotesCsvUrl', 'notes'], ['dailyInspectionsCsvUrl', 'inspections'],
+      ['dailySettingsCsvUrl', 'settings']
+    ] as const;
+    for (const [field, which] of dailyLinks) {
+      if (typeof body[field] !== 'string') continue;
+      const u = (body[field] as string).trim();
+      if (u && !/^https:\/\/docs\.google\.com\//.test(u)) {
+        return Response.json({ ok: false,
+          error: `The ${which} link must be a published docs.google.com CSV link.` }, { status: 400 });
+      }
+      // Column names come from this fixed list, never from the request.
+      if (which === 'notes')       await sql`UPDATE accounts SET daily_notes_csv_url = ${u || null} WHERE id = 1`;
+      if (which === 'inspections') await sql`UPDATE accounts SET daily_inspections_csv_url = ${u || null} WHERE id = 1`;
+      if (which === 'settings')    await sql`UPDATE accounts SET daily_settings_csv_url = ${u || null} WHERE id = 1`;
+    }
+
+    // The Data Repository. The link and the key are verified TOGETHER
+    // before either is stored, the same rule as Hostaway: a credential
+    // that does not work should fail on the form someone is looking at,
+    // not later as an empty screen.
+    if (typeof body.repoApiUrl === 'string' || typeof body.repoApiKey === 'string') {
+      const current = (await sql`SELECT repo_api_url FROM accounts WHERE id = 1`) as
+        { repo_api_url: string | null }[];
+      const apiUrl = typeof body.repoApiUrl === 'string' ? body.repoApiUrl.trim()
+        : (current[0]?.repo_api_url ?? '');
+      const apiKey = typeof body.repoApiKey === 'string' ? body.repoApiKey.trim() : '';
+
+      if (!apiUrl) {
+        await sql`UPDATE accounts SET repo_api_url = NULL, repo_api_key_enc = NULL WHERE id = 1`;
+      } else {
+        if (!/^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/.test(apiUrl)) {
+          return Response.json({ ok: false, error:
+            'The repository API link should look like https://script.google.com/macros/s/…/exec.' },
+            { status: 400 });
+        }
+        if (apiKey) {
+          const meta = await repoCall<RepoMeta>({ url: apiUrl, key: apiKey }, 'meta');
+          if (!Array.isArray(meta?.sections)) throw new Error('The repository answered, but not with its structure.');
+          await sql`UPDATE accounts SET repo_api_url = ${apiUrl},
+                           repo_api_key_enc = ${await encrypt(apiKey, env.ENCRYPTION_KEY)} WHERE id = 1`;
+        } else if (apiUrl !== current[0]?.repo_api_url) {
+          // A new link with the old key is a new pairing, and it is
+          // verified like one — otherwise a pasted wrong link would sit
+          // behind a "connected" label until someone opened the tab.
+          return Response.json({ ok: false,
+            error: 'Changing the repository link needs its API key re-entered, so the pair can be checked.' },
+            { status: 400 });
+        }
+      }
+    }
+    if (typeof body.repoAppUrl === 'string') {
+      await sql`UPDATE accounts SET repo_app_url = ${body.repoAppUrl.trim() || null} WHERE id = 1`;
     }
 
     if (typeof body.cleaningsCsvUrl === 'string') {

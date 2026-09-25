@@ -37,6 +37,17 @@ test('an admin is not restricted', () => {
 test('the tabs match what the routes allow', () => {
   // If these drift apart, someone sees a tab that answers 403 — which
   // reads as the app being broken rather than as a permission.
-  assert.deepEqual(tabsFor('ops'), ['costs', 'claims']);
+  assert.deepEqual(tabsFor('ops'), ['operations', 'repository', 'costs', 'claims']);
   assert.ok(tabsFor('admin').includes('revenue'));
+  for (const [tab, path] of [['operations', '/api/operations'], ['repository', '/api/repository']]) {
+    assert.ok(tabsFor('ops').includes(tab!));
+    assert.equal(mayAccess('ops', path!, 'GET'), true);
+  }
+});
+
+test('ops can read the repository but never reveal a secret from it', () => {
+  assert.equal(mayAccess('ops', '/api/repository', 'GET'), true);
+  assert.equal(mayAccess('ops', '/api/repository', 'POST'), false);
+  assert.equal(mayAccess('ops', '/api/repository-reveal', 'POST'), false);
+  assert.equal(mayAccess('admin', '/api/repository-reveal', 'POST'), true);
 });

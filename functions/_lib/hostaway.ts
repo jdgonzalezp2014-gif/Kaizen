@@ -133,6 +133,9 @@ export interface HostawayReservation {
   nights: number;
   totalPaid: number;
   cleaningFee: number;
+  /** For the operations board. Never the portal URL — that is a login token. */
+  guestName?: string;
+  guests?: number | null;
 }
 
 export interface CalendarDay {
@@ -314,13 +317,37 @@ const PAGE = 500;
 export async function fetchAllReservations(
   creds: HostawayCredentials, from: DateStr, to: DateStr
 ): Promise<HostawayReservation[]> {
+  return (await pagedReservations(creds, ''))
+    // Overlap, not containment: a stay that began before the window and
+    // runs into it still earns nights inside it.
+    .filter(r => r.departure >= from && r.arrival <= to);
+}
+
+/**
+ * Only the stays ARRIVING in a range, asked of Hostaway rather than
+ * filtered from the whole history.
+ *
+ * The account-wide pull reads every reservation the account has ever
+ * had — 16 seconds of it, measured, for a board that needs a few weeks.
+ * The daily file has always asked with `arrivalStartDate` /
+ * `arrivalEndDate`, and that is proven on this account. Results are
+ * still clamped here, because this API has ignored its own filters
+ * before (§14); if it does again this is merely slow, never wrong.
+ */
+export async function fetchReservationsArriving(
+  creds: HostawayCredentials, arrivalFrom: DateStr, arrivalTo: DateStr
+): Promise<HostawayReservation[]> {
+  return (await pagedReservations(creds, `&arrivalStartDate=${arrivalFrom}&arrivalEndDate=${arrivalTo}`))
+    .filter(r => r.arrival >= arrivalFrom && r.arrival <= arrivalTo);
+}
+
+async function pagedReservations(creds: HostawayCredentials, query: string): Promise<HostawayReservation[]> {
   const token = await getAccessToken(creds);
 
-  // The first page reports the account total, so the rest are fetched at
-  // once rather than discovered one round trip at a time. Sequential
-  // paging cost ~3 seconds per page; the whole point of a single call is
-  // that the page is not left blank while it happens.
-  const first = await apiGetEnvelope<Record<string, any>>(`/reservations?limit=${PAGE}&offset=0`, token);
+  // The first page reports the total, so the rest are fetched at once
+  // rather than discovered one round trip at a time. Sequential paging
+  // cost ~3 seconds per page.
+  const first = await apiGetEnvelope<Record<string, any>>(`/reservations?limit=${PAGE}&offset=0${query}`, token);
   const raw: Record<string, any>[] = [...first.result];
 
   const total = Math.min(first.count || first.result.length, 50_000);
@@ -329,7 +356,7 @@ export async function fetchAllReservations(
 
   if (offsets.length) {
     const pages = await Promise.all(offsets.map(o =>
-      apiGet<Record<string, any>>(`/reservations?limit=${PAGE}&offset=${o}`, token)
+      apiGet<Record<string, any>>(`/reservations?limit=${PAGE}&offset=${o}${query}`, token)
         .catch(() => [])));
     pages.forEach(pg => raw.push(...pg));
   }
@@ -352,13 +379,13 @@ export async function fetchAllReservations(
         departure,
         nights: arrival && departure ? Math.max(1, daysBetween(arrival, departure)) : 0,
         totalPaid: total,
-        cleaningFee: paid ? firstNumber(r, ['cleaningFee', 'cleaningFeeAmount']) : 0
+        cleaningFee: paid ? firstNumber(r, ['cleaningFee', 'cleaningFeeAmount']) : 0,
+        guestName: String(r.guestName ??
+          [r.guestFirstName, r.guestLastName].filter(Boolean).join(' ')).trim(),
+        guests: Number(r.numberOfGuests ?? r.adults) || null
       };
     })
-    // Overlap, not containment: a stay that began before the window and
-    // runs into it still earns nights inside it.
-    .filter(r => r.arrival && r.departure && r.listingId &&
-                 r.departure >= from && r.arrival <= to);
+    .filter(r => r.arrival && r.departure && r.listingId);
 }
 
 /** One listing's reservations, filtered from the account-wide pull. */

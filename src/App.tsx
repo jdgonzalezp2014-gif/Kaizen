@@ -4,14 +4,16 @@ import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
 import { Claims } from './screens/Claims.tsx';
 import { Settings } from './screens/Settings.tsx';
+import { Operations } from './screens/Operations.tsx';
+import { Repository } from './screens/Repository.tsx';
 import { getUnits, getSettings, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
-type Tab = 'units' | 'revenue' | 'costs' | 'claims' | 'settings';
+type Tab = 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'settings';
 
 const TABS: [Tab, string][] = [
-  ['units', 'Units'], ['revenue', 'Revenue'], ['costs', 'Costs'],
-  ['claims', 'Claims'], ['settings', 'Settings']
+  ['units', 'Units'], ['revenue', 'Revenue'], ['operations', 'Operations'],
+  ['repository', 'Repository'], ['costs', 'Costs'], ['claims', 'Claims'], ['settings', 'Settings']
 ];
 
 export function App() {
@@ -27,6 +29,9 @@ export function App() {
   // Null until it answers, so nothing is drawn that might then vanish.
   const [allowed, setAllowed] = useState<string[] | null>(null);
   const [loadError, setLoadError] = useState('');
+  // Only decides whether a Reveal button is DRAWN. The server refuses a
+  // reveal from anyone else regardless; this just avoids offering one.
+  const [role, setRole] = useState<'admin' | 'ops'>('ops');
 
   useEffect(() => { getUnits().then(r => setUnits(r.units ?? [])).catch(() => {}); }, []);
   useEffect(() => {
@@ -34,6 +39,7 @@ export function App() {
       .then(r => {
         const tabs = r.tabs ?? TABS.map(t => t[0]);
         setAllowed(tabs);
+        setRole(r.role === 'admin' ? 'admin' : 'ops');
         // Land on the first tab they can actually open. For an admin that
         // is Units, where the decisions are; for ops it is Costs.
         setTab(prev => (prev && tabs.includes(prev)) ? prev : (tabs[0] as Tab));
@@ -90,6 +96,8 @@ export function App() {
       {tab === null && !loadError && <p className="note">Loading…</p>}
       {tab === 'units'    && <Units />}
       {tab === 'revenue'  && <Revenue />}
+      {tab === 'operations' && <Operations />}
+      {tab === 'repository' && <Repository canReveal={role === 'admin'} />}
       {tab === 'claims'   && <Claims units={units} />}
       {tab === 'costs'    && <Costs units={units} />}
       {tab === 'settings' && <Settings />}

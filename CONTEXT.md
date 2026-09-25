@@ -1728,3 +1728,129 @@ booking, never the cleaning.
 `cleanings_sheet_url` holds the editing link, separately from the
 published-CSV link the importer reads — one is a page a person opens, the
 other is a file download, and the button has to go where the work is done.
+
+
+## 63. The daily file and the Data Repository, inside Kaizen OS
+
+Two Apps Script projects the team already uses every day are now read
+from here: the **daily file** (the operations sheet — `../cliente-gas`)
+as the **Operations** tab, and the **Data Repository**
+(`../data-repository`) as the **Repository** tab. The price monitor is
+deliberately not part of this.
+
+**Both stay where they are maintained, and both are read-only here.** The
+daily file is where the team decides who cleans and what it pays, and it
+is what pushes those decisions into the Hostaway calendar; the repository
+has the validation, Drive folders and audit stamps that make an edit
+safe. A second place to edit either would be a second version of the
+truth — and an edit made here would reach neither Hostaway nor Drive.
+Every screen links back to the source for the change itself.
+
+### Operations = Hostaway + the daily file's logs, never its Main tab
+
+Main is a view the sheet redraws on every refresh: day bars and a banner
+between rows, dates printed without a year, the reservation id kept in a
+cell NOTE that a CSV export drops. Parsing it would be parsing a picture
+of a table. So the board is rebuilt from what each source owns:
+
+| from | what |
+|---|---|
+| Hostaway, live | the stays: dates, guest, value, the next booking after each checkout |
+| Cleanings Log (`cleanings`, already imported) | the sheet's decisions: cleaner, pay, deep, checkout time, beds |
+| Notes Log (published CSV) | check-in / check-out notes — last row per (reservation, kind) |
+| Inspection Log (published CSV) | done vs scheduled inspections |
+| `_Settings` (published CSV, optional) | thresholds, roster, both rate cards |
+
+**Nothing is re-decided.** The tier rule lives in the sheet; a copy here
+would be a second answer the first time the two disagreed. What IS
+computed (`src/lib/operations.ts`, tested) is what the sheet computes from
+Hostaway alone — next booking, gap, long vacancy, inspection flags —
+ported rule for rule from `03 MainSheet` / `07 Inspections`, including
+"the monthly flag lands on the first turnover in the window, not every
+one" and "a scheduled inspection is not a done one".
+
+**A checkout the daily file has not seen yet says so** — "not in the daily
+file yet" — rather than being given a cleaner. It means the sheet has not
+been refreshed since that booking; nothing here assigns one.
+
+**"Today" is New York's**, the sheet's own manifest zone (`todayIn`). UTC
+rolls to tomorrow at 8pm and would drop the evening from the board.
+
+**No Inspection Log, no "overdue".** Without it every unit reads "never
+inspected" — sixteen false flags on the first live run. Now only the rule
+that needs no history (a big booking next) fires, and the Inspections view
+says the log is not readable.
+
+**Every source reports its own state** at the top of the tab. A tab that
+is not published and a tab with nothing in it look identical on a board.
+
+**Ops sees it without booking values.** The day's work is theirs, so the
+route is on their list; totals, next-booking values and "arriving" are
+zeroed server-side (§49), and a value-triggered inspection says "a
+high-value stay" instead of the figure. Cleaner pay stays — cost data they
+already record.
+
+**Speed.** The account-wide reservation pull (`fetchAllReservations`)
+took 16.7 s for a board that needs weeks. `fetchReservationsArriving`
+asks Hostaway with `arrivalStartDate`/`arrivalEndDate` — the filter the
+daily file has always used on this account — and still clamps locally.
+Verified to produce the identical board; ~9–16 s end to end, dominated by
+Hostaway. Stage timings come back in the response (`timings`).
+
+### The Cleanings Log header went blank — and the import said ok
+
+Found while building this, on the live sheet: the published Cleanings Log
+header row is empty except `Res ID`. Every lookup by name missed, every
+row was skipped for having no unit, and `importCleanings` still returned
+ok with 0 logged — so **the Cleanings tab has been frozen since
+2026-09-18 22:13 UTC** with nothing saying so.
+
+`readCleaningsLog()` now recognises that exact shape (twelve columns, the
+last still `Res ID`, no `Unit` anywhere) and reads it by the log's fixed
+order, which the daily file's own README promises never changes — and
+returns a warning asking for the headers to be restored. Any other
+headerless shape is not guessed at. And an import that reads rows but
+logs none is now a failure, not a quiet success.
+
+The header should still be restored in the sheet. Not done from here:
+ask before touching that sheet (§58).
+
+### Repository = its own JSON API, allow-listed, from the server
+
+The repository's API deployment (Execute as: Me, key-protected) is called
+from `functions/_lib/repository.ts` with an allow-list of read actions:
+`meta`, `list`, `get`, `docs.list`, `reveal`. Anything else is refused
+before a request leaves. POST, never GET: a key in a URL ends up in logs.
+Apps Script answers a POST with a 302 to a one-time URL; `fetch` follows
+it as a GET, which is what that URL expects (exercised against a stand-in
+server with the same behaviour — the real key was not available).
+
+Structure is never known in advance: sections, tables and columns come
+from `meta`, as the repository builds its own forms.
+
+**Secrets arrive masked** — the repository masks them itself — so search
+can never match a password. `/api/repository-reveal` is its own path so
+the role rule stays a plain path rule: admin only, checked in the
+middleware and again in the route. **The reveal is written to
+`repo_reveals` before it is fetched**, because the API runs as the
+repository's owner and its own log would record every Kaizen reveal under
+one name. The value masks itself again after 30 s, the repository's rule.
+
+The link and key are verified together before either is stored (the
+Hostaway rule), and changing the link demands the key again so a wrong
+link cannot sit behind a "connected" label.
+
+### Setup a human has to do
+
+1. `npm run migrate` (022) on production.
+2. Daily file → File → Share → Publish to web → CSV for **Notes Log**,
+   **Inspection Log** and (optionally) **_Settings**; paste into Settings →
+   Daily file. `_Settings` is a hidden sheet — whether Publish to web
+   offers it has not been verified.
+3. Repository: in its Apps Script editor run `showApiKey()`; paste the API
+   deployment's `/exec` link and the key into Settings → Data Repository.
+4. Restore the Cleanings Log header row in the daily file.
+
+Guest-portal links on Main are HYPERLINK formulas, so a published CSV
+carries the 🌐 label, never the access token. Only the logs are published
+anyway.

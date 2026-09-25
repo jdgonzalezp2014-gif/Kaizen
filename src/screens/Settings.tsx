@@ -48,8 +48,8 @@ export function Settings() {
       <div className="card">
         <h2>Settings</h2>
         <p className="note">
-          Signed in as {user}. Your account records costs and claims, so there is nothing to
-          configure here. Ask an admin if you need more.
+          Signed in as {user}. Your account covers operations, the repository, costs and claims,
+          so there is nothing to configure here. Ask an admin if you need more.
         </p>
       </div>
     );
@@ -158,6 +158,10 @@ export function Settings() {
 
       <CleaningsPanel account={account} onAccount={setAccount} />
 
+      <DailyFilePanel account={account} onSaved={() => void load()} />
+
+      <RepositoryPanel account={account} onSaved={() => void load()} />
+
       <GeminiPanel account={account} onSaved={() => void load()} />
 
       <MembersPanel members={members} audit={audit} user={user} onSaved={() => void load()} />
@@ -258,6 +262,136 @@ function CleaningsPanel({ account, onAccount }: {
           )}
         </>
       )}
+    </div>
+  );
+}
+
+/**
+ * The daily file — the operations sheet — for the Operations tab.
+ *
+ * Its logs, not its Main tab: Main is redrawn on every refresh and keeps
+ * the reservation id in cell notes, which a CSV cannot carry. The
+ * Cleanings Log is the link above; these are the rest.
+ */
+function DailyFilePanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [sheetUrl, setSheetUrl] = useState(account.cleaningsSheetUrl ?? '');
+  const [notes, setNotes] = useState(account.dailyNotesCsvUrl ?? '');
+  const [insp, setInsp] = useState(account.dailyInspectionsCsvUrl ?? '');
+  const [settings, setSettings] = useState(account.dailySettingsCsvUrl ?? '');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true); setMsg(null);
+    const r = await saveSettings({
+      cleaningsSheetUrl: sheetUrl, dailyNotesCsvUrl: notes,
+      dailyInspectionsCsvUrl: insp, dailySettingsCsvUrl: settings
+    }).catch(e => ({ ok: false, error: String(e) }));
+    setBusy(false);
+    setMsg(r.ok ? { ok: true, text: 'Saved. The Operations tab reads them on its next load.' }
+                : { ok: false, text: r.error ?? 'Could not save.' });
+    if (r.ok) onSaved();
+  };
+
+  return (
+    <div className="card">
+      <h2>Daily file</h2>
+      <p className="note">
+        The operations sheet, read by the <b>Operations</b> tab. In the sheet: File → Share →
+        Publish to web, pick the tab, choose CSV, and paste each link here. Guest-portal links are
+        written as HYPERLINK formulas, so a published CSV carries the 🌐 label and never the
+        link's access token. The Cleanings Log link is the one under <b>Cleaning cost</b>.
+      </p>
+      <label>
+        Link to open the sheet (the normal editing link)
+        <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)}
+               placeholder="https://docs.google.com/spreadsheets/d/…/edit" />
+      </label>
+      <label>
+        Notes Log — published CSV
+        <input value={notes} onChange={e => setNotes(e.target.value)}
+               placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?gid=…&single=true&output=csv" />
+      </label>
+      <label>
+        Inspection Log — published CSV
+        <input value={insp} onChange={e => setInsp(e.target.value)}
+               placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?gid=…&single=true&output=csv" />
+      </label>
+      <label>
+        _Settings tab — published CSV <span className="sub-n">(optional: thresholds, roster and rate cards)</span>
+        <input value={settings} onChange={e => setSettings(e.target.value)}
+               placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?gid=…&single=true&output=csv" />
+      </label>
+      <p className="note">
+        Without the _Settings tab the board judges inspections against the sheet's built-in
+        defaults and says so on screen — the live values are edited in the sheet and may differ.
+      </p>
+      <div className="button-row">
+        <button disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save links'}</button>
+      </div>
+      {msg && <p className={`banner ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
+    </div>
+  );
+}
+
+/**
+ * The Data Repository's JSON API, for the Repository tab.
+ *
+ * The API deployment runs as the repository's owner and checks a key, so
+ * the key is a credential like Hostaway's: verified with the link before
+ * it is stored, encrypted, and never sent back to this page.
+ */
+function RepositoryPanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [apiUrl, setApiUrl] = useState(account.repoApiUrl ?? '');
+  const [apiKey, setApiKey] = useState('');
+  const [appUrl, setAppUrl] = useState(account.repoAppUrl ?? '');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+
+  const save = async () => {
+    setBusy(true); setMsg({ ok: true, text: 'Checking the link and key against the repository…' });
+    const body: Record<string, unknown> = { repoAppUrl: appUrl };
+    if (apiUrl.trim() !== (account.repoApiUrl ?? '') || apiKey.trim()) body.repoApiUrl = apiUrl;
+    if (apiKey.trim()) body.repoApiKey = apiKey;
+    const r = await saveSettings(body).catch(e => ({ ok: false, error: String(e) }));
+    setBusy(false);
+    if (r.ok) { setApiKey(''); onSaved(); }
+    setMsg(r.ok ? { ok: true, text: 'Saved — the repository answered.' }
+                : { ok: false, text: r.error ?? 'Could not save.' });
+  };
+
+  return (
+    <div className="card">
+      <h2>Data Repository</h2>
+      <p className="note">
+        Units, logins and buildings, with their documents, read by the <b>Repository</b> tab. Use
+        the repository's <b>API</b> deployment (Execute as: Me, access: Anyone); in its Apps Script
+        editor run <code>showApiKey()</code> for the key. Passwords stay encrypted in the
+        repository: they reach this app masked, and only an admin can reveal one — each reveal is
+        logged here under their name.
+      </p>
+      <div className={`banner ${account.repoApiUrl && account.hasRepoKey ? 'ok' : 'warn'}`}>
+        {account.repoApiUrl && account.hasRepoKey ? '● Connected' : '○ Not connected yet'}
+      </div>
+      <label>
+        API link
+        <input value={apiUrl} onChange={e => setApiUrl(e.target.value)}
+               placeholder="https://script.google.com/macros/s/…/exec" />
+      </label>
+      <label>
+        API key
+        <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
+               placeholder={account.hasRepoKey ? 'Stored — type to replace' : 'Not set yet'} />
+      </label>
+      <label>
+        Link people open (the web app, for editing)
+        <input value={appUrl} onChange={e => setAppUrl(e.target.value)}
+               placeholder="https://script.google.com/macros/s/…/exec" />
+      </label>
+      <div className="button-row">
+        <button disabled={busy} onClick={() => void save()}>{busy ? 'Checking…' : 'Save and verify'}</button>
+      </div>
+      {msg && <p className={`banner ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
     </div>
   );
 }

@@ -5,7 +5,7 @@
  * code. Two implementations of an import is two sets of rules about what
  * a blank price means, and they drift.
  */
-import { parseCsv, parseAmount, pick } from './csv.ts';
+import { firstRowWidth, parseCsv, parseCsvWithHeader, parseAmount, pick } from './csv.ts';
 
 type Sql = (strings: TemplateStringsArray, ...values: unknown[]) => Promise<unknown[]>;
 
@@ -16,6 +16,41 @@ export interface CleaningsImport {
   rated: number;
   unmatched: string[];
   problem: string | null;
+  /** Read, but something about the sheet needs a human. */
+  warning?: string | null;
+}
+
+/**
+ * The daily file's Cleanings Log, column for column (`15 cleaningslog.js`,
+ * CL_HEADERS). That project fixes the layout — "the same 12 columns, in
+ * the same order" — and says so in its own README.
+ */
+export const CLEANINGS_LOG_COLUMNS = [
+  'Updated', 'Checkout', 'Unit', 'Guest', 'Beds', 'Cleaner',
+  'Price', 'Time', 'Deep', 'Urgency', 'Notes', 'Res ID'
+];
+
+/**
+ * Rows of the log, surviving a lost header.
+ *
+ * Seen on the live sheet in September 2026: the published header row
+ * came through blank except for `Res ID`. Every lookup by name then
+ * missed, every row was skipped for having no unit, and the import
+ * reported success while writing nothing — so the cleanings on screen
+ * quietly stopped moving.
+ *
+ * Recognised narrowly: exactly the log's twelve columns, the last one
+ * still named `Res ID`, and no `Unit` column anywhere. Only then is the
+ * fixed order used, and the result says it was.
+ */
+export function readCleaningsLog(csv: string): { rows: Record<string, string>[]; repaired: boolean } {
+  const rows = parseCsv(csv);
+  const first = rows[0];
+  const headerLost = !!first && !('unit' in first) && ('resid' in first) &&
+    firstRowWidth(csv) === CLEANINGS_LOG_COLUMNS.length;
+  return headerLost
+    ? { rows: parseCsvWithHeader(csv, CLEANINGS_LOG_COLUMNS), repaired: true }
+    : { rows, repaired: false };
 }
 
 /**
@@ -73,7 +108,7 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
   if (!units.length) return fail('No units synced yet — rows are matched by name.');
   const byName = new Map(units.map(u => [u.name.toLowerCase().replace(/\s+/g, ''), u.id]));
 
-  const rows = parseCsv(csv);
+  const { rows, repaired } = readCleaningsLog(csv);
   const unmatched: string[] = [];
   const perUnit = new Map<string, { standard: number[]; deep: number[] }>();
 
@@ -87,7 +122,8 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
     key: [] as string[], unit: [] as (string | null)[], name: [] as string[],
     date: [] as string[], cleaner: [] as (string | null)[], assign: [] as string[],
     guest: [] as (string | null)[], price: [] as (number | null)[],
-    deep: [] as boolean[], urgency: [] as (string | null)[], note: [] as (string | null)[]
+    deep: [] as boolean[], urgency: [] as (string | null)[], note: [] as (string | null)[],
+    time: [] as (string | null)[], beds: [] as (number | null)[]
   };
 
   for (const r of rows) {
@@ -114,6 +150,12 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
     col.deep.push(deep);
     col.urgency.push(pick(r, 'urgency') || null);
     col.note.push(pick(r, 'notes') || null);
+    // What the operations board needs to show a turnover without the
+    // sheet: the checkout time a person set on Main, and the bedroom
+    // count the price was read against.
+    col.time.push(pick(r, 'time', 'checkout time') || null);
+    const beds = Number(pick(r, 'beds', 'bedrooms'));
+    col.beds.push(Number.isInteger(beds) && beds > 0 ? beds : null);
 
     // Priced, actually-cleaned rows only. A clean with no figure is "not
     // priced yet" and counting it as zero would drag the unit's rate
@@ -131,19 +173,21 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
     await sql`
       INSERT INTO cleanings
         (account_id, key, unit_id, unit_name, checkout_on, cleaner, assignment,
-         guest, price, deep, urgency, reservation_note)
-      SELECT 1, k, u, n, d, c, a, g, p, dp, ug, rn
+         guest, price, deep, urgency, reservation_note, checkout_time, beds)
+      SELECT 1, k, u, n, d, c, a, g, p, dp, ug, rn, tm, bd
         FROM unnest(${col.key}::text[], ${col.unit}::text[], ${col.name}::text[],
                     ${col.date}::date[], ${col.cleaner}::text[], ${col.assign}::text[],
                     ${col.guest}::text[], ${col.price}::numeric[], ${col.deep}::boolean[],
-                    ${col.urgency}::text[], ${col.note}::text[])
-             AS t(k, u, n, d, c, a, g, p, dp, ug, rn)
+                    ${col.urgency}::text[], ${col.note}::text[], ${col.time}::text[],
+                    ${col.beds}::smallint[])
+             AS t(k, u, n, d, c, a, g, p, dp, ug, rn, tm, bd)
       ON CONFLICT (account_id, key) DO UPDATE SET
         unit_id = EXCLUDED.unit_id, unit_name = EXCLUDED.unit_name,
         checkout_on = EXCLUDED.checkout_on, cleaner = EXCLUDED.cleaner,
         assignment = EXCLUDED.assignment, guest = EXCLUDED.guest,
         price = EXCLUDED.price, deep = EXCLUDED.deep, urgency = EXCLUDED.urgency,
-        reservation_note = EXCLUDED.reservation_note, imported_at = now()
+        reservation_note = EXCLUDED.reservation_note,
+        checkout_time = EXCLUDED.checkout_time, beds = EXCLUDED.beds, imported_at = now()
     `;
   }
 
@@ -166,5 +210,15 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
   }
   const rated = ids.length;
 
-  return { ok: true, rows: rows.length, logged, rated, unmatched, problem: null };
+  // Rows that all failed to parse are a broken sheet, not an empty week.
+  // Reported as a failure so nothing downstream reads "0 logged" as news.
+  if (rows.length > 0 && logged === 0) {
+    return { ok: false, rows: rows.length, logged, rated, unmatched,
+      problem: `Read ${rows.length} row(s) but none had a unit and a checkout date — check the header row of the Cleanings Log.` };
+  }
+
+  return { ok: true, rows: rows.length, logged, rated, unmatched, problem: null,
+    warning: repaired
+      ? 'The Cleanings Log\'s header row is blank in the sheet, so it was read by its fixed column order. Restore the headers (Updated, Checkout, Unit, …) in the sheet.'
+      : null };
 }

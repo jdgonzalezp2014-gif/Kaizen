@@ -84,7 +84,7 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   if (!mayAccess(role, url.pathname, ctx.request.method)) {
     return Response.json({
       ok: false, error: 'forbidden',
-      message: `Your account records costs and claims. ${url.pathname} is not part of that.`
+      message: `Your account covers operations, the repository, costs and claims. ${url.pathname} is not part of that.`
     }, { status: 403 });
   }
 

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { readAssignment } from './cleanings-import.ts';
+import { readAssignment, readCleaningsLog } from './cleanings-import.ts';
 
 test('"not needed" is the absence of a cleaner, not a cleaner', () => {
   // It appeared in the by-cleaner breakdown as though it were a person,
@@ -36,4 +36,32 @@ test('a real cleaner keeps their name exactly as written', () => {
 
 test('an empty cell is unassigned, not a cleaner called ""', () => {
   assert.deepEqual(readAssignment(''), { cleaner: null, assignment: 'tbd' });
+});
+
+test('a Cleanings Log whose header row went blank is read by its fixed order', () => {
+  // The live shape, September 2026: every header cell empty but Res ID.
+  // Read by name, every row was skipped and the import still said ok.
+  const csv = [
+    ',,,,,,,,,,,Res ID',
+    '2026-09-18 17:31,2026-09-18,P2-1304,Ann,1,Michelle,$35.00,10:00 AM,,⚡,,66238216'
+  ].join('\n');
+  const { rows, repaired } = readCleaningsLog(csv);
+  assert.equal(repaired, true);
+  assert.equal(rows[0]!.unit, 'P2-1304');
+  assert.equal(rows[0]!.checkout, '2026-09-18');
+  assert.equal(rows[0]!.price, '$35.00');
+  assert.equal(rows[0]!.time, '10:00 AM');
+  assert.equal(rows[0]!.resid, '66238216');
+});
+
+test('an intact header is read by name, never by position', () => {
+  const csv = 'Unit,Checkout,Cleaner\nCL1250,2026-09-18,Veronica';
+  const { rows, repaired } = readCleaningsLog(csv);
+  assert.equal(repaired, false);
+  assert.equal(rows[0]!.cleaner, 'Veronica');
+});
+
+test('a blank header on some OTHER shape is not guessed at', () => {
+  const { repaired } = readCleaningsLog(',,Res ID\na,b,1');
+  assert.equal(repaired, false);
 });

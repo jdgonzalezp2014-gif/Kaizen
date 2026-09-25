@@ -13,6 +13,10 @@ export interface Account {
   targetNetPerUnit: number; occFloorPct: number; stayNights: number;
   fwdStudyDays: number; offlineAfterDays: number;
   cleaningsCsvUrl: string | null; feedCsvUrl: string | null;
+  cleaningsSheetUrl: string | null;
+  dailyNotesCsvUrl: string | null; dailyInspectionsCsvUrl: string | null;
+  dailySettingsCsvUrl: string | null;
+  repoApiUrl: string | null; hasRepoKey: boolean; repoAppUrl: string | null;
   allowedEmails: string[];
 }
 export interface Connection { ok: boolean; message: string; units?: number }
@@ -260,3 +264,76 @@ export const getCleanings = (
     `/api/cleaning-log?from=${from}&to=${to}&scope=${scope}` +
     `&cleaners=${encodeURIComponent(cleaners.join(','))}` +
     `&include=${include.join(',')}`);
+
+/* ── operations: the daily file ───────────────────────────────────── */
+
+import type { BoardRow, BoardSummary, UnitInspection } from './lib/operations.ts';
+
+export interface DailyCleaner {
+  name: string; tier: string;
+  rates: Record<string, number | null>; deepRates: Record<string, number | null>;
+}
+export interface DailySettings {
+  source: 'sheet' | 'defaults';
+  cleanerHighThreshold: number; cleanerLowThreshold: number;
+  longStayPromoteNights: number; deepCleanNights: number; longVacancyDays: number;
+  nextResValueHorizonDays: number; inspectionIntervalDays: number;
+  inspectionSoonDays: number; inspectionValueTrigger: number;
+  cleaners: DailyCleaner[]; inspectors: string[];
+}
+export interface SourceState { ok: boolean; configured: boolean; problem: string | null; rows?: number; warning?: string | null }
+export interface NoteEntry {
+  loggedAt: string; loggedOn: string; checkIn: string; unit: string; guest: string;
+  kind: 'checkin' | 'checkout' | 'other'; notes: string; resId: string;
+}
+export interface InspectionEntry { date: string; unit: string; by: string; result: string; notes: string }
+export interface OperationsResponse {
+  ok: boolean; role: 'admin' | 'ops'; today: string; end: string; days: number; timeZone: string;
+  sheetUrl: string | null; showMoney: boolean;
+  rows: BoardRow[]; summary: BoardSummary; panel: UnitInspection[];
+  noteLog: NoteEntry[]; inspectionLog: { done: InspectionEntry[]; scheduled: InspectionEntry[] };
+  settings: DailySettings;
+  sources: Record<'cleanings' | 'notes' | 'inspections' | 'settings', SourceState>;
+  tookMs: number;
+  error?: string; message?: string;
+}
+export const getOperations = (days = 10, refresh = false) =>
+  call<OperationsResponse>(`/api/operations?days=${days}${refresh ? '&refresh=1' : ''}`);
+
+/* ── the Data Repository ──────────────────────────────────────────── */
+
+export interface RepoColumn {
+  key: string; title: string; type: string; group: string;
+  required: boolean; unique: boolean; options: string[] | null;
+  reference: { table: string; column: string } | null;
+  editable: boolean; system: boolean;
+}
+export interface RepoTable {
+  key: string; title: string; section: string; idPrefix: string;
+  nameFields: string[]; columns: RepoColumn[];
+}
+export interface RepoSection { key: string; title: string; tables: RepoTable[] }
+export type RepoRow = Record<string, string | number | boolean>;
+export interface RepoFile {
+  fileId: string; name: string; mimeType: string; size: number; url: string; updatedAt: string;
+}
+type RepoFail = { ok: false; error?: string; message?: string };
+
+export const getRepoMeta = () =>
+  call<{ ok: true; meta: { sections: RepoSection[] }; appUrl: string | null } | RepoFail>(
+    '/api/repository?op=meta');
+export const getRepoRows = (table: string) =>
+  call<{ ok: true; total: number; rows: RepoRow[]; tookMs: number } | RepoFail>(
+    `/api/repository?op=list&table=${encodeURIComponent(table)}`);
+export const getRepoDocs = (table: string, id: string, column: string) =>
+  call<{ ok: true; folderUrl: string; files: RepoFile[] } | RepoFail>(
+    `/api/repository?op=docs&table=${encodeURIComponent(table)}&id=${encodeURIComponent(id)}` +
+    `&column=${encodeURIComponent(column)}`);
+export interface RepoHit { section: string; table: string; title: string; total: number; rows: RepoRow[]; problem?: string }
+export const searchRepo = (q: string) =>
+  call<{ ok: true; q: string; results: RepoHit[]; searched: number } | RepoFail>(
+    `/api/repository?op=search&q=${encodeURIComponent(q)}`);
+export const revealRepoSecret = (table: string, id: string, column: string) =>
+  call<{ ok: true; value: string } | RepoFail>('/api/repository-reveal', {
+    method: 'POST', body: JSON.stringify({ table, id, column })
+  });

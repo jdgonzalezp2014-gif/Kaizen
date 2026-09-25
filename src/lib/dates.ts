@@ -67,3 +67,18 @@ export function startOfWeek(d: DateStr): DateStr {
 export function today(): DateStr {
   return new Date().toISOString().slice(0, 10);
 }
+
+/**
+ * Today on the wall clock of a named zone.
+ *
+ * `today()` is UTC, which is right for a ledger and wrong for a day's
+ * work: after 8pm in New York the UTC date is already tomorrow, and a
+ * board built on it drops the evening's check-ins from "today".
+ */
+export function todayIn(timeZone: string, at: Date = new Date()): DateStr {
+  // en-CA formats as yyyy-mm-dd, which is the one locale-independent
+  // shape Intl will hand back directly.
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone, year: 'numeric', month: '2-digit', day: '2-digit'
+  }).format(at);
+}

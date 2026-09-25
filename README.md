@@ -67,6 +67,12 @@ Node runs TypeScript directly, so there is no build step to run a test.
 Early — `CONTEXT.md` §11 has the build order. The analytics core and the Hostaway client are
 written and tested; the Next.js app is not scaffolded yet.
 
+## Operations and Repository
+
+The operations sheet ("daily file") and the Data Repository are read from
+inside the app, read-only, as the **Operations** and **Repository** tabs.
+`CONTEXT.md` §63 has the design and the setup steps.
+
 ## Provenance
 
 Built on a working Apps Script panel already running against the live Hostaway account. The
