@@ -7,11 +7,11 @@
  * environment. That is the whole difference between one installation and
  * a product.
  */
-import { getAccount, getCredentials, saveCredentials, type SqlFn } from '../_lib/accounts.ts';
+import { accessOf, getAccount, getCredentials, saveCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { getAccessToken, fetchListings } from '../_lib/hostaway.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { tabsFor } from '../_lib/roles.ts';
+import { PERMISSIONS, can, tabsFor } from '../_lib/roles.ts';
 import { encrypt } from '../_lib/crypto.ts';
 import { repoCall, type RepoMeta } from '../_lib/repository.ts';
 
@@ -22,6 +22,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
   const account = await getAccount(sql);
   if (!account) return Response.json({ ok: false, error: 'no_account' }, { status: 404 });
+
+  const access = await accessOf(sql, who);
+  const tabs = tabsFor(access.permissions);
+  if (!can(access.permissions, 'settings')) {
+    // Their identity, their role and what it opens. Not the credential
+    // flags, the allow-list or the targets — none of which they can act
+    // on, and all of which describe the business rather than their job.
+    return Response.json({
+      ok: true, user: who.email, role: access.role, permissions: access.permissions, tabs,
+      account: null, connection: null
+    });
+  }
 
   // Whether Hostaway actually answers, not just whether a key is stored.
   // "Saved" and "working" are different states and a settings screen that
@@ -44,31 +56,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
-  const member = (await sql`
-    SELECT role FROM members WHERE account_id = 1 AND email = ${who.email.trim().toLowerCase()}
-  `) as { role: string }[];
-  const role = member[0]?.role ?? 'admin';
-
-  if (role !== 'admin') {
-    // An ops member gets their identity and their tabs. Not the
-    // credential flags, not the allow-list, not the targets — none of
-    // which they can act on, and all of which describe the business
-    // rather than their job.
-    return Response.json({
-      ok: true, user: who.email, role, tabs: tabsFor('ops'), account: null, connection: null
-    });
-  }
-
-  const [members, audit] = await Promise.all([
+  const [members, audit, roles] = await Promise.all([
     sql`SELECT email, role, is_primary, added_at FROM members
          WHERE account_id = 1 ORDER BY is_primary DESC, role, email`,
     sql`SELECT actor, action, email, detail, at FROM member_audit
-         WHERE account_id = 1 ORDER BY at DESC LIMIT 20`
+         WHERE account_id = 1 ORDER BY at DESC LIMIT 20`,
+    sql`SELECT r.key, r.name, r.permissions, r.builtin,
+               (SELECT COUNT(*)::int FROM members m WHERE m.account_id = r.account_id AND m.role = r.key) AS members
+          FROM roles r WHERE r.account_id = 1 ORDER BY r.builtin DESC, r.name`
   ]);
 
   return Response.json({
-    ok: true, user: who.email, role, tabs: tabsFor('admin'),
-    account, connection, members, audit
+    ok: true, user: who.email, role: access.role, permissions: access.permissions, tabs,
+    account, connection, members, audit, roles,
+    catalog: PERMISSIONS.map(p => ({ key: p.key, label: p.label }))
   });
 };
 
@@ -98,9 +99,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const rows = (body.members as { email?: string; role?: string }[])
         .map(m => ({
           email: String(m.email ?? '').trim().toLowerCase(),
-          role: m.role === 'admin' ? 'admin' : 'ops'
+          role: String(m.role ?? '')
         }))
         .filter(m => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(m.email));
+
+      // Only roles that exist. The foreign key would refuse it anyway, but
+      // halfway through a save, after the old list was already deleted.
+      const known = new Set(((await sql`SELECT key FROM roles WHERE account_id = 1`) as { key: string }[]).map(r => r.key));
+      const unknown = rows.find(m => !known.has(m.role));
+      if (unknown) {
+        return Response.json({ ok: false, error: `"${unknown.role}" is not a role. Define it in Roles first.` }, { status: 400 });
+      }
 
       // Refused rather than explained afterwards: saving a list with no
       // owner leaves an account nobody can administer, and no screen

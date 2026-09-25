@@ -11,7 +11,8 @@
  * the same decisions the board shows.
  */
 import { db, type Env } from '../_lib/db.ts';
-import { getAccount, getCredentials, roleOf, type SqlFn } from '../_lib/accounts.ts';
+import { accessOf, getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
+import { can } from '../_lib/roles.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadOps, recordCleanings, trimForOps, OPS_TZ } from '../_lib/ops.ts';
 
@@ -25,7 +26,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ ok: false, error: 'not_configured',
       message: 'Hostaway is not connected yet — an admin sets it up in Settings.' }, { status: 409 });
   }
-  const role = await roleOf(sql, who);
+  const access = await accessOf(sql, who);
+  const showMoney = can(access.permissions, 'money');
   const url = new URL(request.url);
 
   let s;
@@ -56,11 +58,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           FROM host_note_pushes WHERE account_id = 1 ORDER BY id DESC LIMIT 60`
   ]);
 
-  if (role === 'ops') trimForOps(s);
+  // Booking values are what the portfolio earns (§49): only for roles that hold `money`.
+  if (!showMoney) trimForOps(s);
 
   return Response.json({
-    ok: true, role, mode: s.mode, today: s.today, end: s.end, days: s.days, timeZone: OPS_TZ,
-    sheetUrl: account.cleaningsSheetUrl, showMoney: role === 'admin',
+    ok: true, role: access.role, permissions: access.permissions, mode: s.mode, today: s.today, end: s.end, days: s.days, timeZone: OPS_TZ,
+    sheetUrl: account.cleaningsSheetUrl, showMoney,
     rows: s.rows, summary: s.summary, panel: s.panel,
     inspectionLog: { done: s.inspections.done.slice(0, 200), scheduled: s.inspections.scheduled },
     noteLog, pushes,

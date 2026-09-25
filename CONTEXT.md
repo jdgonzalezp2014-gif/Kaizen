@@ -1929,3 +1929,42 @@ pay, rules and the live switch (`/api/ops-settings`) are admin only.
 service account — a human step), guest documents into Drive, and the
 Repository moving into Postgres (needs the repository's API key for the
 one-time export).
+
+
+## 65. Roles are sets of permissions, defined in Settings
+
+Two fixed roles stopped fitting: some people need more than ops and less
+than admin, and the owner wants almost everyone to be able to read the
+repository's passwords while almost nobody needs the Hostaway key.
+
+`functions/_lib/roles.ts` now lists **permissions** — each one owning the
+routes it opens and, where it draws a screen, its tab — and a **role** is
+a named set of them in the `roles` table (migration 024), edited in
+Settings → Roles as a grid (permissions down, roles across, because the
+question is always a comparison). `admin` holds `*` and is fixed.
+
+Seeded: **admin**; **manager** — everything except Settings; **ops** —
+what it had plus *reveal passwords*, per the owner. `money` is a
+permission with no route: it decides whether /api/operations carries
+booking values.
+
+Unchanged, on purpose:
+- Still an **allow-list**: a route is reachable only by being listed
+  under a permission, so a new route is closed to all but admin.
+- **No member row = admin** (§49); a member whose role row cannot be read
+  gets **nothing** — fails closed.
+- `members.role` is a **foreign key** to `roles`, so a role someone holds
+  cannot be deleted, and the save validates roles before it deletes the
+  old list (the members save is delete-then-insert).
+- Role edits go to `member_audit` beside grants and removals — changing a
+  role is a wholesale grant.
+
+Verified against a branch: ops, manager and a custom "Accounting" role
+each reach exactly their routes through the middleware; ops sees the
+board without booking values, manager with them.
+
+The daily file's live settings (from the owner's screenshots,
+2026-09-25) are in production: roster and both rate cards, and the rules
+— note **next-booking horizon 10 days, long vacancy 7 days**, not the
+code defaults. With them, 9 of 15 shared checkouts still differ in the
+same six ways: the team assigns P2 → Veronica and CL → Michelle by hand.

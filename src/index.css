@@ -926,3 +926,8 @@ table.repo-grid { margin: 0; }
 .roster-edit select { padding: 4px 6px; font-size: 12.5px; }
 .ops-form { margin-top: 12px; }
 .ops-board td:nth-child(4) { white-space: nowrap; }
+
+/* Roles: permissions down, roles across — the question is always a comparison. */
+.roles-grid th input { width: 110px; padding: 3px 6px; font-size: 12px; }
+.roles-grid td:first-child { min-width: 260px; }
+.roles-grid th:not(:first-child), .roles-grid td:not(:first-child) { text-align: center; }

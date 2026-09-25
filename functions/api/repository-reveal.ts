@@ -13,7 +13,8 @@
  * attempt to read a password is itself worth knowing about.
  */
 import { db, type Env } from '../_lib/db.ts';
-import { getRepoCredentials, roleOf, type SqlFn } from '../_lib/accounts.ts';
+import { accessOf, getRepoCredentials, type SqlFn } from '../_lib/accounts.ts';
+import { can } from '../_lib/roles.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { repoCall, RepoError } from '../_lib/repository.ts';
 
@@ -24,12 +25,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!who) return unauthorised();
 
   const sql = db(env) as unknown as SqlFn;
-  // The middleware already refuses ops here. Checked again because this
+  // The middleware already refuses a role without it. Checked again because this
   // is the one route in the integration that hands out a secret, and a
   // route must stay safe if the middleware is ever moved (§29).
-  if (await roleOf(sql, who) !== 'admin') {
-    return Response.json({ ok: false, error: 'forbidden', message: 'Only admins can reveal a secret.' },
-                         { status: 403 });
+  if (!can((await accessOf(sql, who)).permissions, 'repository.reveal')) {
+    return Response.json({ ok: false, error: 'forbidden',
+      message: 'Your role does not include revealing passwords.' }, { status: 403 });
   }
 
   const body = await request.json().catch(() => ({})) as Record<string, unknown>;

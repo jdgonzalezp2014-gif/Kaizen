@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react';
 import {
   getSettings, saveSettings, syncUnits, pullCleanings,
-  type Account, type Connection, type CleaningMatch, type Member, type MemberAudit
+  type Account, type Connection, type CleaningMatch, type Member, type MemberAudit,
+  type RoleDef, type PermissionDef, saveRole, deleteRole
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
 import { newIngestToken, pullFeed, runCron, type FeedResult, type CronResult } from '../api.ts';
@@ -21,6 +22,8 @@ export function Settings() {
   const [user, setUser] = useState('');
   const [members, setMembers] = useState<Member[]>([]);
   const [audit, setAudit] = useState<MemberAudit[]>([]);
+  const [roles, setRoles] = useState<RoleDef[]>([]);
+  const [catalog, setCatalog] = useState<PermissionDef[]>([]);
   const [hostawayId, setHostawayId] = useState('');
   const [apiKey, setApiKey] = useState('');
   const [status, setStatus] = useState<{ kind: 'ok' | 'error' | 'busy'; text: string } | null>(null);
@@ -34,6 +37,8 @@ export function Settings() {
       setHostawayId(r.account?.hostawayAccountId ?? '');
       setMembers(r.members ?? []);
       setAudit(r.audit ?? []);
+      setRoles(r.roles ?? []);
+      setCatalog(r.catalog ?? []);
     } catch (err) {
       setStatus({ kind: 'error', text: err instanceof Error ? err.message : String(err) });
     }
@@ -48,8 +53,8 @@ export function Settings() {
       <div className="card">
         <h2>Settings</h2>
         <p className="note">
-          Signed in as {user}. Your account covers operations, the repository, costs and claims,
-          so there is nothing to configure here. Ask an admin if you need more.
+          Signed in as {user}. Your role does not include settings, so there is nothing to
+          configure here. Ask an admin if you need more.
         </p>
       </div>
     );
@@ -164,7 +169,9 @@ export function Settings() {
 
       <GeminiPanel account={account} onSaved={() => void load()} />
 
-      <MembersPanel members={members} audit={audit} user={user} onSaved={() => void load()} />
+      <MembersPanel members={members} audit={audit} user={user} roles={roles} onSaved={() => void load()} />
+
+      <RolesPanel roles={roles} catalog={catalog} onSaved={() => void load()} />
 
       <AlertsPanel account={account} onSaved={() => void load()} />
 
@@ -267,6 +274,109 @@ function CleaningsPanel({ account, onAccount }: {
 }
 
 /**
+ * Roles: which permissions each one holds.
+ *
+ * A grid, one row per permission and one column per role, because the
+ * question asked of it is always a comparison — "does a manager see
+ * revenue, and does ops?" — and a list of roles each with its own
+ * checkboxes hides the other column. Admin's column is shown, filled and
+ * locked, so it is plain what "everything" means.
+ */
+function RolesPanel({ roles, catalog, onSaved }: {
+  roles: RoleDef[]; catalog: PermissionDef[]; onSaved: () => void;
+}) {
+  const [draft, setDraft] = useState<RoleDef[]>(roles);
+  const [newName, setNewName] = useState('');
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  useEffect(() => setDraft(roles), [roles]);
+
+  const flip = (key: string, perm: string) => setDraft(d => d.map(r => r.key !== key ? r : {
+    ...r, permissions: r.permissions.includes(perm) ? r.permissions.filter(p => p !== perm) : [...r.permissions, perm]
+  }));
+  const changed = (r: RoleDef) => {
+    const o = roles.find(x => x.key === r.key);
+    return !o || o.name !== r.name || [...o.permissions].sort().join() !== [...r.permissions].sort().join();
+  };
+  const saveOne = async (r: RoleDef) => {
+    const res = await saveRole({ key: r.key, name: r.name, permissions: r.permissions })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    setMsg(res.ok ? { ok: true, text: `${r.name} saved.` } : { ok: false, text: res.message ?? 'Could not save.' });
+    if (res.ok) onSaved();
+  };
+  const add = async () => {
+    if (!newName.trim()) return;
+    const res = await saveRole({ name: newName.trim(), permissions: [] }).catch(e => ({ ok: false as const, message: String(e) }));
+    setMsg(res.ok ? { ok: true, text: `${newName.trim()} created — tick what it may do, then save it.` }
+                  : { ok: false, text: res.message ?? 'Could not create.' });
+    if (res.ok) { setNewName(''); onSaved(); }
+  };
+  const remove = async (r: RoleDef) => {
+    const res = await deleteRole(r.key).catch(e => ({ ok: false as const, message: String(e) }));
+    setMsg(res.ok ? { ok: true, text: `${r.name} removed.` } : { ok: false, text: res.message ?? 'Could not remove.' });
+    if (res.ok) onSaved();
+  };
+
+  return (
+    <div className="card">
+      <h2>Roles</h2>
+      <p className="note">
+        What each role may see and do. Changing a role changes it for everyone who holds it, and is
+        recorded in the access log below. Revealing a password is logged every time, whoever does it.
+      </p>
+      <div className="grid-scroll">
+        <table className="units compact roles-grid">
+          <thead>
+            <tr><th>Permission</th>
+              {draft.map(r => (
+                <th key={r.key}>
+                  {r.builtin ? r.name : <input value={r.name}
+                    onChange={e => setDraft(d => d.map(x => x.key === r.key ? { ...x, name: e.target.value } : x))} />}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {catalog.map(p => (
+              <tr key={p.key}>
+                <td>{p.label}</td>
+                {draft.map(r => (
+                  <td key={r.key} className="n">
+                    <input type="checkbox" disabled={r.builtin}
+                           checked={r.builtin || r.permissions.includes(p.key)}
+                           onChange={() => flip(r.key, p.key)}
+                           aria-label={`${r.name}: ${p.label}`} />
+                  </td>
+                ))}
+              </tr>
+            ))}
+            <tr>
+              <td className="note">Members with this role</td>
+              {draft.map(r => <td key={r.key} className="n sub-n">{r.members ?? '—'}</td>)}
+            </tr>
+            <tr>
+              <td></td>
+              {draft.map(r => (
+                <td key={r.key} className="n">
+                  {r.builtin ? <span className="note">fixed</span> : <>
+                    <button className="link tiny" disabled={!changed(r)} onClick={() => void saveOne(r)}>save</button>{' '}
+                    <button className="link tiny danger" onClick={() => void remove(r)}>remove</button>
+                  </>}
+                </td>
+              ))}
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <div className="row">
+        <label>New role<input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Accounting" /></label>
+        <button className="secondary" disabled={!newName.trim()} onClick={() => void add()}>Create</button>
+      </div>
+      {msg && <p className={`banner ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
+    </div>
+  );
+}
+
+/**
  * The daily file — the operations sheet — for the Operations tab.
  *
  * Its logs, not its Main tab: Main is redrawn on every refresh and keeps
@@ -297,7 +407,7 @@ function DailyFilePanel({ account, onSaved }: { account: Account; onSaved: () =>
     <div className="card">
       <h2>Daily file</h2>
       <p className="note">
-        The operations sheet. Kaizen now runs operations itself; these links are for the
+        The operations sheet. Kaizen now runs operations itself; these links are for the{' '}
         <b>one-time import</b> in Operations → Setup (roster, rates, rules, inspection and notes
         history) and for comparing against the sheet while in shadow mode. In the sheet: File →
         Share → Publish to web, pick the tab, choose CSV, and paste each link here. Guest-portal links are
@@ -367,10 +477,10 @@ function RepositoryPanel({ account, onSaved }: { account: Account; onSaved: () =
       <h2>Data Repository</h2>
       <p className="note">
         Units, logins and buildings, with their documents, read by the <b>Repository</b> tab. Use
-        the repository's <b>API</b> deployment (Execute as: Me, access: Anyone); in its Apps Script
-        editor run <code>showApiKey()</code> for the key. Passwords stay encrypted in the
-        repository: they reach this app masked, and only an admin can reveal one — each reveal is
-        logged here under their name.
+        the repository's <b>API</b> deployment (Execute as: Me, access: Anyone). The key is in its
+        Apps Script editor → ⚙️ Project Settings → Script properties → <code>API_KEY</code>.
+        Passwords stay encrypted in the repository: they reach this app masked, and only roles with
+        “reveal passwords” can show one — each reveal is logged here under their name.
       </p>
       <div className={`banner ${account.repoApiUrl && account.hasRepoKey ? 'ok' : 'warn'}`}>
         {account.repoApiUrl && account.hasRepoKey ? '● Connected' : '○ Not connected yet'}
@@ -475,12 +585,13 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
  * and a valid session, and an access level that lives in a browser is
  * not an access level.
  */
-function MembersPanel({ members, audit, user, onSaved }: {
-  members: Member[]; audit: MemberAudit[]; user: string; onSaved: () => void;
+function MembersPanel({ members, audit, user, roles, onSaved }: {
+  members: Member[]; audit: MemberAudit[]; user: string; roles: RoleDef[]; onSaved: () => void;
 }) {
   const [rows, setRows] = useState<Member[]>(members);
   const [email, setEmail] = useState('');
-  const [role, setRole] = useState<'admin' | 'ops'>('ops');
+  const [role, setRole] = useState<string>('ops');
+  const options = roles.length ? roles : [{ key: 'admin', name: 'Admin', permissions: ['*'], builtin: true }];
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
@@ -513,10 +624,10 @@ function MembersPanel({ members, audit, user, onSaved }: {
     <div className="card">
       <h2>Who can sign in</h2>
       <p className="note">
-        An <strong>admin</strong> sees everything. <strong>Ops</strong> records costs and claims
-        and nothing else — no revenue, no units, no settings. Hiding the tabs is only the visible
-        half: the API refuses those routes for an ops account, because a tab that is merely not
-        drawn is still an address anyone can type.
+        Each person has one role, and each role is a set of permissions — defined in
+        <strong> Roles</strong> below. <strong>Admin</strong> is fixed and sees everything. Hiding
+        a tab is only the visible half: the API refuses every route the role does not include,
+        because a tab that is merely not drawn is still an address anyone can type.
       </p>
 
       <table className="units compact">
@@ -535,9 +646,8 @@ function MembersPanel({ members, audit, user, onSaved }: {
               <td>
                 <select value={r.role} disabled={r.is_primary && r.email.toLowerCase() !== me}
                   onChange={e => setRows(prev => prev.map(x =>
-                    x.email === r.email ? { ...x, role: e.target.value as 'admin' | 'ops' } : x))}>
-                  <option value="admin">Admin — everything</option>
-                  <option value="ops">Ops — costs and claims</option>
+                    x.email === r.email ? { ...x, role: e.target.value } : x))}>
+                  {options.map(o => <option key={o.key} value={o.key}>{o.name}</option>)}
                 </select>
               </td>
               <td>
@@ -552,9 +662,8 @@ function MembersPanel({ members, audit, user, onSaved }: {
             <td><input value={email} onChange={e => setEmail(e.target.value)}
                        placeholder="someone@example.com" /></td>
             <td>
-              <select value={role} onChange={e => setRole(e.target.value as 'admin' | 'ops')}>
-                <option value="ops">Ops — costs and claims</option>
-                <option value="admin">Admin — everything</option>
+              <select value={role} onChange={e => setRole(e.target.value)}>
+                {options.map(o => <option key={o.key} value={o.key}>{o.name}</option>)}
               </select>
             </td>
             <td><button className="link" onClick={add} disabled={!email.trim()}>add</button></td>
@@ -571,8 +680,8 @@ function MembersPanel({ members, audit, user, onSaved }: {
       {noAdmin && <p className="banner error">An account needs at least one admin.</p>}
       {wouldLockMeOut && (
         <p className="banner error">
-          You are {user}, and this list does not make you an admin. Saving it would lock you out
-          of everything except costs and claims, with no settings screen left to undo it.
+          You are {user}, and this list does not make you an admin. Saving it would take away
+          your access to this screen, with nothing left to undo it from.
         </p>
       )}
 

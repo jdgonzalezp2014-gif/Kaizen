@@ -16,7 +16,7 @@
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import {
   getOperations, saveTurnover, logInspection, scheduleInspections, cancelInspection,
-  getOpsSettings, saveOpsSettings, cutoverImport,
+  getOpsSettings, saveOpsSettings, cutoverImport, can,
   type OperationsResponse, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
 } from '../api.ts';
 import {
@@ -114,7 +114,7 @@ export function Operations() {
   const views: [View, string][] = [
     ['board', 'Next 10 days'], ['cleaners', 'By cleaner'], ['inspections', 'Inspections'],
     ['notes', 'Notes log'], ['rates', 'Rates & rules'],
-    ...(data?.role === 'admin' ? [['setup', 'Setup'] as [View, string]] : [])
+    ...(can(data?.permissions, 'operations.setup') ? [['setup', 'Setup'] as [View, string]] : [])
   ];
 
   return (
@@ -178,7 +178,7 @@ function ModeBanner({ data, onSetup }: { data: OperationsResponse; onSetup: () =
       ○ <b>Shadow mode.</b> The daily file still decides and still writes to Hostaway; Kaizen works
       alongside it and writes nothing outside itself. Of {compared} checkout(s) both have seen,{' '}
       <b>{compared - s.differing} agree</b>{s.differing > 0 && <> and <b>{s.differing} differ</b></>}.
-      {data.role === 'admin' && <> <button className="link" onClick={onSetup}>Setup →</button></>}
+      {can(data.permissions, 'operations.setup') && <> <button className="link" onClick={onSetup}>Setup →</button></>}
       {data.sheet?.problem && <div>▲ Daily file: {data.sheet.problem}</div>}
       {data.sheet?.warning && <div>▲ Daily file: {data.sheet.warning}</div>}
     </div>
@@ -241,7 +241,7 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
 
       {data.roster.length === 0 && (
         <p className="banner warn">▲ No cleaners on the roster yet, so every clean reads unassigned.
-          {data.role === 'admin' ? ' Setup → import from the daily file, or add them by hand.' : ' An admin sets it up.'}</p>
+          {can(data.permissions, 'operations.setup') ? ' Setup → import from the daily file, or add them by hand.' : ' Someone with Operations setup sets it up.'}</p>
       )}
 
       <div className="row-controls">
@@ -249,7 +249,7 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
           <button key={k} className={filter === k ? 'chip active' : 'chip'} onClick={() => setFilter(k)}>{label}</button>
         ))}
         <input className="date-in" placeholder="Unit, guest or cleaner" value={q} onChange={e => setQ(e.target.value)} />
-        <span className="note right">click a row to change it</span>
+        {can(data.permissions, 'operations.edit') && <span className="note right">click a row to change it</span>}
       </div>
 
       <div className="grid-scroll">
@@ -275,7 +275,10 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
                   return (
                     <Fragment key={key}>
                       <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'}
-                                 open={open === key} onToggle={() => setOpen(open === key ? null : key)} />
+                                 open={open === key} onToggle={() => {
+                                   // Read-only roles see the board; the editor is not offered.
+                                   if (can(data.permissions, 'operations.edit')) setOpen(open === key ? null : key);
+                                 }} />
                       {open === key && (
                         <tr className="ops-edit-row"><td colSpan={9}>
                           <Editor r={r} data={data} onSaved={(set, note) => {
@@ -539,20 +542,22 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
         {!hasHistory && ' No inspection is recorded in Kaizen yet, so no unit is called overdue — import the daily file\'s log in Setup, or log them here.'}
       </p>
 
-      <InspectionForm data={data} editing={editing} onDone={() => { setEditing(null); reload(); }} />
+      {can(data.permissions, 'operations.edit') &&
+        <InspectionForm data={data} editing={editing} onDone={() => { setEditing(null); reload(); }} />}
 
       <div className="group">
         <h3>Scheduled <span className="count">{data.inspectionLog.scheduled.length}</span>{' '}
-          <button className="link" onClick={() => void schedule()}>Auto-schedule what is due</button></h3>
+          {can(data.permissions, 'operations.edit') &&
+            <button className="link" onClick={() => void schedule()}>Auto-schedule what is due</button>}</h3>
         {msg && <p className="note">{msg}</p>}
         <table className="units compact"><tbody>
           {data.inspectionLog.scheduled.map(e => (
             <tr key={e.id}>
               <td>{e.date}</td><td><b>{e.unit}</b></td><td>{e.by}</td><td className="ops-note">{e.notes}</td>
-              <td className="n">
+              <td className="n">{can(data.permissions, 'operations.edit') && <>
                 <button className="link tiny" onClick={() => setEditing(e)}>mark done</button>{' '}
                 <button className="link tiny danger" onClick={() => void cancelInspection(e.id).then(reload)}>cancel</button>
-              </td>
+              </>}</td>
             </tr>
           ))}
           {!data.inspectionLog.scheduled.length && <tr><td className="note">Nothing scheduled.</td></tr>}

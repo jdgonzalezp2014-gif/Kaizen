@@ -26,7 +26,8 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { mayAccess, type Role } from '../_lib/roles.ts';
+import { mayAccess } from '../_lib/roles.ts';
+import { accessOf, type SqlFn } from '../_lib/accounts.ts';
 
 /**
  * Routes that carry their own credential and must not be gated on a
@@ -48,19 +49,16 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
 
   const email = who.email.trim().toLowerCase();
   let allowed: string[] = [];
-  let role: Role = 'admin';
+  let permissions: string[] = [];
   try {
-    const sql = db(ctx.env);
-    const [acc, member] = await Promise.all([
+    const sql = db(ctx.env) as unknown as SqlFn;
+    const [acc, access] = await Promise.all([
       sql`SELECT allowed_emails FROM accounts WHERE id = 1`,
-      sql`SELECT role FROM members WHERE account_id = 1 AND email = ${email}`
-    ]) as [{ allowed_emails: string[] | null }[], { role: Role }[]];
+      // No member row = admin, a missing role = nothing; see accessOf.
+      accessOf(sql, who)
+    ]) as [{ allowed_emails: string[] | null }[], { permissions: string[] }];
     allowed = acc[0]?.allowed_emails ?? [];
-    // No member row means no role has been assigned. Defaulting to
-    // ADMIN preserves what everyone had before roles existed — a
-    // migration must not quietly take access away — and the allow-list
-    // below is still what decides whether they get in at all.
-    role = member[0]?.role ?? 'admin';
+    permissions = access.permissions;
   } catch {
     // A database that is down must not become an open door. It also must
     // not become a lock-out with no explanation, so this says which it is.
@@ -81,10 +79,10 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   // convenience for the person using it; this is the control, because
   // every one of those endpoints is reachable with a URL and a session.
   const url = new URL(ctx.request.url);
-  if (!mayAccess(role, url.pathname, ctx.request.method)) {
+  if (!mayAccess(permissions, url.pathname, ctx.request.method)) {
     return Response.json({
       ok: false, error: 'forbidden',
-      message: `Your account covers operations, the repository, costs and claims. ${url.pathname} is not part of that.`
+      message: `Your role does not include ${url.pathname}. An admin can change that in Settings → Roles.`
     }, { status: 403 });
   }
 

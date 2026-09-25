@@ -21,7 +21,7 @@ export interface Account {
 }
 export interface Connection { ok: boolean; message: string; units?: number }
 export interface Member {
-  email: string; role: 'admin' | 'ops';
+  email: string; role: string;
   /** Cannot be removed or demoted by anyone else. Shown, never hidden. */
   is_primary?: boolean;
   added_at?: string;
@@ -29,10 +29,16 @@ export interface Member {
 export interface MemberAudit {
   actor: string; action: string; email: string; detail: string | null; at: string;
 }
+export interface RoleDef { key: string; name: string; permissions: string[]; builtin: boolean; members?: number }
+export interface PermissionDef { key: string; label: string }
 export interface SettingsResponse {
   ok: boolean; user: string;
-  role: 'admin' | 'ops';
+  role: string;
+  /** What the role permits; '*' is admin. */
+  permissions: string[];
   tabs: string[];
+  roles?: RoleDef[];
+  catalog?: PermissionDef[];
   /** Null for an ops member: they get their identity and their tabs. */
   account: Account | null;
   connection: Connection | null;
@@ -279,7 +285,7 @@ export interface NoteEntry {
 }
 export interface HostNotePush { resId: string; outcome: string; detail: string | null; at: string }
 export interface OperationsResponse {
-  ok: boolean; role: 'admin' | 'ops'; mode: 'shadow' | 'live';
+  ok: boolean; role: string; permissions: string[]; mode: 'shadow' | 'live';
   today: string; end: string; days: number; timeZone: string;
   sheetUrl: string | null; showMoney: boolean;
   rows: BoardRow[]; summary: BoardSummary; panel: UnitInspection[];
@@ -377,3 +383,17 @@ export const revealRepoSecret = (table: string, id: string, column: string) =>
   call<{ ok: true; value: string } | RepoFail>('/api/repository-reveal', {
     method: 'POST', body: JSON.stringify({ table, id, column })
   });
+
+/* ── roles ────────────────────────────────────────────────────────── */
+
+export const can = (permissions: string[] | null | undefined, key: string) =>
+  !!permissions && (permissions.includes('*') || permissions.includes(key));
+
+export const getRoles = () =>
+  call<{ ok: true; roles: RoleDef[]; catalog: PermissionDef[] } | { ok: false; message?: string }>('/api/roles');
+export const saveRole = (role: { key?: string; name: string; permissions: string[] }) =>
+  call<{ ok: true; key: string } | { ok: false; message?: string }>('/api/roles', {
+    method: 'POST', body: JSON.stringify(role)
+  });
+export const deleteRole = (key: string) =>
+  call<{ ok: true } | { ok: false; message?: string }>(`/api/roles?key=${encodeURIComponent(key)}`, { method: 'DELETE' });

@@ -6,7 +6,7 @@ import { Claims } from './screens/Claims.tsx';
 import { Settings } from './screens/Settings.tsx';
 import { Operations } from './screens/Operations.tsx';
 import { Repository } from './screens/Repository.tsx';
-import { getUnits, getSettings, type UnitRow } from './api.ts';
+import { getUnits, getSettings, can, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
 type Tab = 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'settings';
@@ -29,9 +29,9 @@ export function App() {
   // Null until it answers, so nothing is drawn that might then vanish.
   const [allowed, setAllowed] = useState<string[] | null>(null);
   const [loadError, setLoadError] = useState('');
-  // Only decides whether a Reveal button is DRAWN. The server refuses a
-  // reveal from anyone else regardless; this just avoids offering one.
-  const [role, setRole] = useState<'admin' | 'ops'>('ops');
+  // Only decides which controls are DRAWN. The server refuses anything
+  // the role does not permit regardless; this just avoids offering it.
+  const [permissions, setPermissions] = useState<string[]>([]);
 
   useEffect(() => { getUnits().then(r => setUnits(r.units ?? [])).catch(() => {}); }, []);
   useEffect(() => {
@@ -39,7 +39,7 @@ export function App() {
       .then(r => {
         const tabs = r.tabs ?? TABS.map(t => t[0]);
         setAllowed(tabs);
-        setRole(r.role === 'admin' ? 'admin' : 'ops');
+        setPermissions(r.permissions ?? []);
         // Land on the first tab they can actually open. For an admin that
         // is Units, where the decisions are; for ops it is Costs.
         setTab(prev => (prev && tabs.includes(prev)) ? prev : (tabs[0] as Tab));
@@ -97,7 +97,7 @@ export function App() {
       {tab === 'units'    && <Units />}
       {tab === 'revenue'  && <Revenue />}
       {tab === 'operations' && <Operations />}
-      {tab === 'repository' && <Repository canReveal={role === 'admin'} />}
+      {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')} />}
       {tab === 'claims'   && <Claims units={units} />}
       {tab === 'costs'    && <Costs units={units} />}
       {tab === 'settings' && <Settings />}

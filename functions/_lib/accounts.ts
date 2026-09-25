@@ -127,21 +127,28 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
   };
 }
 
+export interface Access { role: string; permissions: string[] }
+
 /**
- * The caller's role, for endpoints that answer both roles but not with
- * the same fields. The middleware decides whether a route may be reached
- * at all; this decides what it may show once it is.
+ * The caller's role and what it permits. Shared by the middleware (may
+ * this route be reached at all) and the endpoints (what may it show once
+ * it is), so the two can never disagree about who someone is.
  *
- * No member row means admin — the same rule as the middleware, for the
- * same reason (roles arrived after people did). Local dev is admin too,
- * since there is nobody to be.
+ * No member row means admin — roles arrived after people did, and a
+ * migration must not quietly take access away; the allow-list still
+ * decides whether they get in at all (§49). A member whose role row is
+ * missing gets NO permissions: a role that cannot be read fails closed.
+ * Local dev is admin, since there is nobody to be.
  */
-export async function roleOf(sql: SqlFn, who: { email: string; local: boolean }): Promise<'admin' | 'ops'> {
-  if (who.local) return 'admin';
+export async function accessOf(sql: SqlFn, who: { email: string; local: boolean }): Promise<Access> {
+  if (who.local) return { role: 'admin', permissions: ['*'] };
   const rows = await sql`
-    SELECT role FROM members WHERE account_id = 1 AND email = ${who.email.trim().toLowerCase()}
-  ` as { role: string }[];
-  return rows[0]?.role === 'ops' ? 'ops' : 'admin';
+    SELECT m.role, r.permissions FROM members m
+      LEFT JOIN roles r ON r.account_id = m.account_id AND r.key = m.role
+     WHERE m.account_id = 1 AND m.email = ${who.email.trim().toLowerCase()}
+  ` as { role: string; permissions: string[] | null }[];
+  if (!rows.length) return { role: 'admin', permissions: ['*'] };
+  return { role: rows[0]!.role, permissions: rows[0]!.permissions ?? [] };
 }
 
 /** The Data Repository API, decrypted. Server-side only. */
