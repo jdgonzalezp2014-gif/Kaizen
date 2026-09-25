@@ -456,13 +456,12 @@ function DailyFilePanel({ account, onSaved }: { account: Account; onSaved: () =>
 function RepositoryPanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
   const [apiUrl, setApiUrl] = useState(account.repoApiUrl ?? '');
   const [apiKey, setApiKey] = useState('');
-  const [appUrl, setAppUrl] = useState(account.repoAppUrl ?? '');
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
   const save = async () => {
     setBusy(true); setMsg({ ok: true, text: 'Checking the link and key against the repository…' });
-    const body: Record<string, unknown> = { repoAppUrl: appUrl };
+    const body: Record<string, unknown> = {};
     if (apiUrl.trim() !== (account.repoApiUrl ?? '') || apiKey.trim()) body.repoApiUrl = apiUrl;
     if (apiKey.trim()) body.repoApiKey = apiKey;
     const r = await saveSettings(body).catch(e => ({ ok: false, error: String(e) }));
@@ -476,7 +475,9 @@ function RepositoryPanel({ account, onSaved }: { account: Account; onSaved: () =
     <div className="card">
       <h2>Data Repository</h2>
       <p className="note">
-        Units, logins and buildings, with their documents, read by the <b>Repository</b> tab. Use
+        Units, logins and buildings, with their documents — read and edited in the <b>Repository</b>
+        tab. The repository's Sheet stays the database and its Drive folders keep the files; Kaizen is
+        the screen and decides who may do what (Roles). Use
         the repository's <b>API</b> deployment (Execute as: Me, access: Anyone). The key is in its
         Apps Script editor → ⚙️ Project Settings → Script properties → <code>API_KEY</code>.
         Passwords stay encrypted in the repository: they reach this app masked, and only roles with
@@ -494,11 +495,6 @@ function RepositoryPanel({ account, onSaved }: { account: Account; onSaved: () =
         API key
         <input type="password" value={apiKey} onChange={e => setApiKey(e.target.value)}
                placeholder={account.hasRepoKey ? 'Stored — type to replace' : 'Not set yet'} />
-      </label>
-      <label>
-        Link people open (the web app, for editing)
-        <input value={appUrl} onChange={e => setAppUrl(e.target.value)}
-               placeholder="https://script.google.com/macros/s/…/exec" />
       </label>
       <div className="button-row">
         <button disabled={busy} onClick={() => void save()}>{busy ? 'Checking…' : 'Save and verify'}</button>

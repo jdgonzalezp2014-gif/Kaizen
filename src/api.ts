@@ -397,3 +397,14 @@ export const saveRole = (role: { key?: string; name: string; permissions: string
   });
 export const deleteRole = (key: string) =>
   call<{ ok: true } | { ok: false; message?: string }>(`/api/roles?key=${encodeURIComponent(key)}`, { method: 'DELETE' });
+
+/* ── the Data Repository: writes ──────────────────────────────────── */
+
+export const repoEdit = (body: Record<string, unknown>) =>
+  call<{ ok: true; data: any } | { ok: false; message?: string }>('/api/repository-edit', {
+    method: 'POST', body: JSON.stringify(body)
+  });
+export const repoStructure = (body: Record<string, unknown>) =>
+  call<{ ok: true; data: any } | { ok: false; message?: string }>('/api/repository-structure', {
+    method: 'POST', body: JSON.stringify(body)
+  });

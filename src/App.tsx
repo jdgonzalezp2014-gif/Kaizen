@@ -97,7 +97,9 @@ export function App() {
       {tab === 'units'    && <Units />}
       {tab === 'revenue'  && <Revenue />}
       {tab === 'operations' && <Operations />}
-      {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')} />}
+      {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')}
+                                           canEdit={can(permissions, 'repository.edit')}
+                                           canStructure={can(permissions, 'repository.structure')} />}
       {tab === 'claims'   && <Claims units={units} />}
       {tab === 'costs'    && <Costs units={units} />}
       {tab === 'settings' && <Settings />}

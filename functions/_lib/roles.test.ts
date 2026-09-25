@@ -34,6 +34,12 @@ test('ops cannot change prices, pay, settings, roles or credentials', () => {
   assert.equal(mayAccess(OPS, '/api/cron', 'POST'), false);
 });
 
+test('ops keep unit records current; only managers change the repository\'s structure', () => {
+  assert.equal(mayAccess(OPS, '/api/repository-edit', 'POST'), true);
+  assert.equal(mayAccess(OPS, '/api/repository-structure', 'POST'), false);
+  assert.equal(mayAccess(MANAGER, '/api/repository-structure', 'POST'), true);
+});
+
 test('a manager sees more than ops and still cannot touch settings', () => {
   assert.equal(mayAccess(MANAGER, '/api/portfolio', 'GET'), true);
   assert.equal(mayAccess(MANAGER, '/api/ops-settings', 'POST'), true);

@@ -42,6 +42,10 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/repository', methods: ['GET'] }] },
   { key: 'repository.reveal', label: 'Repository — reveal passwords (each reveal is logged)', routes: [
     { path: '/api/repository-reveal', methods: ['POST'] }] },
+  { key: 'repository.edit', label: 'Repository — add and edit records, upload and remove documents', routes: [
+    { path: '/api/repository-edit', methods: ['POST'] }] },
+  { key: 'repository.structure', label: 'Repository — sections, tables and columns', routes: [
+    { path: '/api/repository-structure', methods: ['POST'] }] },
   { key: 'costs', label: 'Costs — record expenses, see cleaning costs', tab: 'costs', routes: [
     { path: '/api/expenses', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'claims', label: 'Claims — record and follow guest claims', tab: 'claims', routes: [
@@ -90,7 +94,8 @@ export function can(permissions: string[], key: string): boolean {
 export const SEED_ROLES = [
   { key: 'admin', name: 'Admin', permissions: [ALL], builtin: true },
   { key: 'manager', name: 'Manager', permissions: ['units', 'revenue', 'money', 'operations', 'operations.edit',
-    'operations.setup', 'repository', 'repository.reveal', 'costs', 'claims'], builtin: false },
+    'operations.setup', 'repository', 'repository.reveal', 'repository.edit', 'repository.structure',
+    'costs', 'claims'], builtin: false },
   { key: 'ops', name: 'Operations', permissions: ['operations', 'operations.edit', 'repository',
-    'repository.reveal', 'costs', 'claims'], builtin: false }
+    'repository.reveal', 'repository.edit', 'costs', 'claims'], builtin: false }
 ];

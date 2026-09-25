@@ -1968,3 +1968,61 @@ The daily file's live settings (from the owner's screenshots,
 — note **next-booking horizon 10 days, long vacancy 7 days**, not the
 code defaults. With them, 9 of 15 shared checkouts still differ in the
 same six ways: the team assigns P2 → Veronica and CL → Michelle by hand.
+
+
+## 66. The Repository is edited here — its Sheet stays the database
+
+The owner: the Repository tab should be the Data Repository itself, not a
+viewer that sends people elsewhere. So records, documents and structure
+are edited in Kaizen, through the repository's own API, and the
+repository's web app is no longer needed day to day (the "link people
+open" setting is gone).
+
+**Why its Sheet stays the database, when operations moved to Postgres
+(§64):** here the owner's instinct — Sheets as the database, Drive as the
+files — fits. Tens of records, a few writes a day, and an engine that
+already validates, builds each record's Drive folders and encrypts
+secrets. And uploads go through that engine, so files reach Drive without
+the Google service account the rest of the Drive work is waiting on.
+
+Three permission levels (roles.ts, migration 025): `repository` reads,
+`repository.edit` changes records and documents, `repository.structure`
+changes sections/tables/columns. Seeded: ops edit, manager both.
+
+**Left out on purpose** (`functions/_lib/repository.ts`, per-permission
+allow-lists): deleting a column (it erases that column's data from the
+sheet), deleting tables/sections, hard-deleting rows, users, imports.
+Deleting a record archives its folder; deleting a document sends it to
+Drive's trash (30 days).
+
+**The mask rule.** The API returns secrets as `••••••••`, and its engine
+encrypts whatever it is given. A form that echoed an unchanged secret
+would replace the real password with an encrypted mask — silently and
+permanently. `/api/repository-edit` refuses any value that is all mask
+characters; the UI only ever sends the one field that changed, and a
+secret is SET from an empty field, never edited in place.
+
+**Who did it.** The API runs as the repository's owner, so its
+`updated_by` stamps name the owner for every Kaizen edit. `repo_audit`
+records the real person (secret values never — only that one changed),
+and every call carries `actor`, which the repository ignores today and
+can use once its `currentUser_()` reads it.
+
+**Found on connecting:** in the Units tables, door codes, lockbox, admin /
+backup / cleaner codes and Wi-Fi passwords are text, number or dropdown
+columns — stored in plain text, visible to anyone the sheet is shared
+with, never logged. Only Login → Tools → password is a `secret`. A
+column's type cannot become `secret` in place; the fix is a new secret
+column and a copy of the values, then the old column removed in the
+repository's editor.
+
+**Connecting required the API deployment's access to be "Anyone"**: with
+"Anyone with Google account" a POST gets a 401 HTML page. `repoCall`
+names that case and its fix.
+
+Verified against a stand-in with the engine's behaviour (redirect,
+validation, encrypt-whatever-is-given): edits, the mask refusal, a
+dropdown's validation, setting a secret, create, upload, structure, the
+refusal of `columns.delete`, per-role access, and the audit trail. Writes
+were not exercised against the real repository — the first real edit is
+the owner's to make.

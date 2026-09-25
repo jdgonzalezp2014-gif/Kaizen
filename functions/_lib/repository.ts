@@ -1,21 +1,28 @@
 /**
  * The Data Repository, through its own JSON API.
  *
- * The repository is an Apps Script app over one Google Sheet and one
- * Drive folder. It already has a key-protected API deployment that runs
- * as its owner; this is a client for it, and nothing more. The data stays
- * where it is maintained — a copy in Postgres would be a second version
- * of every login and every unit record, stale from the first edit.
+ * The repository is an Apps Script engine over one Google Sheet (its
+ * database) and one Drive folder (its files). Kaizen OS is the screen and
+ * the access control in front of it (§66): records are read and edited
+ * here, documents uploaded here, and the engine still does what makes a
+ * write safe — validation, row folders, encryption of secrets.
  *
- * Deliberately READ-ONLY from here, with one exception: revealing a
- * secret, which is a read that is logged. Structure, imports, edits and
- * access stay in the repository's own app, which has the validation,
- * the Drive folders and the audit stamps that make those safe. The
- * allow-list below is the whole surface; an action not on it is refused
- * before any request leaves.
+ * The allow-lists below are the whole surface, one per permission; an
+ * action not on them is refused before any request leaves. Left out on
+ * purpose, and done in the repository's own editor if ever:
+ *
+ *   columns.delete   deletes that column's data from the sheet
+ *   tables/sections.delete, rows hard delete, users.*, import.*
  */
 
-const ALLOWED = new Set(['meta', 'list', 'get', 'docs.list', 'reveal']);
+export const READ = new Set(['meta', 'list', 'get', 'docs.list', 'reveal']);
+export const EDIT = new Set(['create', 'update', 'delete', 'docs.upload', 'docs.create', 'docs.rename', 'docs.delete']);
+export const STRUCTURE = new Set(['sections.create', 'sections.rename', 'tables.create', 'tables.rename',
+                                  'columns.add', 'columns.update', 'columns.move']);
+const ALLOWED = new Set([...READ, ...EDIT, ...STRUCTURE]);
+
+/** What the API returns in place of a secret. Writing it back would encrypt the mask. */
+export const SECRET_MASK = '••••••••';
 
 export class RepoError extends Error {}
 
