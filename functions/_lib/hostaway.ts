@@ -136,6 +136,8 @@ export interface HostawayReservation {
   /** For the operations board. Never the portal URL — that is a login token. */
   guestName?: string;
   guests?: number | null;
+  /** Only to recognise the same guest booking again. Never sent to a browser. */
+  phone?: string;
 }
 
 export interface CalendarDay {
@@ -382,7 +384,8 @@ async function pagedReservations(creds: HostawayCredentials, query: string): Pro
         cleaningFee: paid ? firstNumber(r, ['cleaningFee', 'cleaningFeeAmount']) : 0,
         guestName: String(r.guestName ??
           [r.guestFirstName, r.guestLastName].filter(Boolean).join(' ')).trim(),
-        guests: Number(r.numberOfGuests ?? r.adults) || null
+        guests: Number(r.numberOfGuests ?? r.adults) || null,
+        phone: String(r.phone ?? '')
       };
     })
     .filter(r => r.arrival && r.departure && r.listingId);
@@ -585,4 +588,40 @@ export async function fetchCalendars(
   );
   listingIds.forEach((id, i) => { out[id] = results[i]!; });
   return out;
+}
+
+/* ── the Host Note ────────────────────────────────────────────────── */
+
+/**
+ * A reservation's Host Note — the one field on the reservation popup in
+ * Hostaway's calendar the team reads. Confirmed on this account by the
+ * daily file (GET /reservations/{id} → `hostNote`, 2026-09-14).
+ */
+export async function fetchHostNote(creds: HostawayCredentials, reservationId: string): Promise<string | null> {
+  const token = await getAccessToken(creds);
+  const res = await fetch(`${BASE}/reservations/${encodeURIComponent(reservationId)}`, {
+    headers: { Authorization: `Bearer ${token}` }, cache: 'no-store'
+  });
+  if (!res.ok) return null;
+  const json = await res.json() as { result?: Record<string, unknown> };
+  return String(json.result?.hostNote ?? '');
+}
+
+/**
+ * Writes the Host Note — only that field, never the whole reservation,
+ * so nothing typed elsewhere in Hostaway is overwritten — and then READS
+ * IT BACK. A 200 that changed nothing is reported as a failure, the same
+ * rule as every other write in this file.
+ */
+export async function writeHostNote(
+  creds: HostawayCredentials, reservationId: string, note: string
+): Promise<{ ok: boolean; detail: string }> {
+  const token = await getAccessToken(creds);
+  const put = await apiSend(`/reservations/${encodeURIComponent(reservationId)}`, token, { hostNote: note }, 'PUT');
+  if (!put.ok) return { ok: false, detail: `Hostaway answered ${put.status}: ${put.text.slice(0, 160)}` };
+  const back = await fetchHostNote(creds, reservationId);
+  if (back === null) return { ok: false, detail: 'Written, but could not be read back to confirm.' };
+  return back.trim() === note.trim()
+    ? { ok: true, detail: 'written and confirmed' }
+    : { ok: false, detail: 'Hostaway accepted the write but the note reads back differently.' };
 }

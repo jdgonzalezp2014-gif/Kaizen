@@ -25,6 +25,7 @@ import {
   findGaps, leadTimeDays, pickup, median, portfolioAskRatio, verdict
 } from '../../src/lib/revenue.ts';
 import { redListings, edges, compose } from '../../src/lib/alerts.ts';
+import { loadOps, pushHostNotes, recordCleanings } from '../_lib/ops.ts';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
@@ -164,9 +165,28 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     sent.push({ unit: e.unitName, edge: e.edge, outcome: r.outcome, segments: r.segments });
   }
 
+  // ── 4. operations, once Kaizen is the one deciding ────────────────
+  // The cleanings record and the Host Note for every stay on the board.
+  // Edits push immediately; this pass catches what changed without an
+  // edit — a new booking, a next stay that moved a clean between tiers —
+  // and retries whatever failed. Isolated: it must never cost the alerts.
+  let operations: Record<string, unknown> | null = null;
+  try {
+    const s = await loadOps(sql, creds);
+    if (s.mode === 'live') {
+      const recorded = await recordCleanings(sql, s);
+      operations = { recorded, notes: await pushHostNotes(sql, creds, s) };
+    } else {
+      operations = { mode: 'shadow' };
+    }
+  } catch (e) {
+    operations = { error: e instanceof Error ? e.message : String(e) };
+  }
+
   return Response.json({
     ok: true,
     outcomes,
+    operations,
     red: conditions.filter(c => c.active).length,
     changed: changed.length,
     quoLive: quo.live,

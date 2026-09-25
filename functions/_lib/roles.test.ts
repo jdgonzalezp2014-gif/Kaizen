@@ -51,3 +51,10 @@ test('ops can read the repository but never reveal a secret from it', () => {
   assert.equal(mayAccess('ops', '/api/repository-reveal', 'POST'), false);
   assert.equal(mayAccess('admin', '/api/repository-reveal', 'POST'), true);
 });
+
+test('ops run the day but cannot change pay, the roster, or go live', () => {
+  assert.equal(mayAccess('ops', '/api/turnover', 'POST'), true);
+  assert.equal(mayAccess('ops', '/api/inspections', 'POST'), true);
+  assert.equal(mayAccess('ops', '/api/ops-settings', 'GET'), false);
+  assert.equal(mayAccess('ops', '/api/ops-settings', 'POST'), false);
+});

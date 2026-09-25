@@ -84,6 +84,14 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
   const fail = (problem: string): CleaningsImport =>
     ({ ok: false, rows: 0, logged: 0, rated: 0, unmatched: [], problem });
 
+  // Once Kaizen runs operations, the sheet is an archive. Reading it
+  // again would write its stale decisions over Kaizen's own — two
+  // writers on one record, which is what the cutover exists to end.
+  const mode = (await sql`SELECT ops_mode FROM accounts WHERE id = 1`) as { ops_mode?: string }[];
+  if (mode[0]?.ops_mode === 'live') {
+    return fail('Kaizen runs operations now, so the daily file is no longer read. Cleanings are recorded from the Operations board.');
+  }
+
   if (!/^https:\/\/docs\.google\.com\//.test(url)) {
     return fail('That is not a docs.google.com URL. Paste the published-CSV link.');
   }
@@ -187,7 +195,13 @@ export async function importCleanings(sql: Sql, url: string): Promise<CleaningsI
         assignment = EXCLUDED.assignment, guest = EXCLUDED.guest,
         price = EXCLUDED.price, deep = EXCLUDED.deep, urgency = EXCLUDED.urgency,
         reservation_note = EXCLUDED.reservation_note,
-        checkout_time = EXCLUDED.checkout_time, beds = EXCLUDED.beds, imported_at = now()
+        checkout_time = EXCLUDED.checkout_time, beds = EXCLUDED.beds, imported_at = now(),
+        -- Whoever decides owns the row. This import only runs while the
+        -- sheet is deciding (shadow mode), so a row Kaizen wrote during a
+        -- spell in live mode goes back to being the sheet's — otherwise the
+        -- comparison would read it as "not in the daily file" and agree
+        -- with everything.
+        source = 'sheet'
     `;
   }
 

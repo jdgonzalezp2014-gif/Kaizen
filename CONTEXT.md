@@ -1854,3 +1854,78 @@ link cannot sit behind a "connected" label.
 Guest-portal links on Main are HYPERLINK formulas, so a published CSV
 carries the 🌐 label, never the access token. Only the logs are published
 anyway.
+
+
+## 64. Kaizen runs operations; the daily file becomes an archive
+
+§63 read the daily file. The owner's decision (2026-09-25): **Kaizen OS
+manages everything, not only shows it.** Postgres stays the database —
+Google Sheets as a database behind an app means an HTTP call per read,
+per-minute quotas and no transactions, and would have meant rewriting
+everything already on Postgres. **Drive holds files; a Sheet becomes a
+read-only mirror Kaizen writes** (backup people can open, plus a Spanish
+tab per cleaner, which is how the crew keeps seeing its work).
+
+**What moved in** (migration 023, `functions/_lib/ops.ts`,
+`src/lib/operations.ts`):
+
+| was, in the sheet | is, in Kaizen |
+|---|---|
+| Settings → Cleaners, Rules | `cleaners` (roster, both rate cards), `accounts.ops_rules`, `extra_inspectors` — Operations → Setup |
+| the tier rule, deep rule, urgency | `assign()`, `rateFor()`, `sameGuest()` — ported rule for rule, tested |
+| hand edits on Main | `turnover_overrides` — one row per stay; NULL = the rule decides |
+| Notes Log | `stay_notes`, append-only, a change is a row |
+| Inspection Log, auto-schedule | `inspections` (a row with no result is a plan), `proposeInspections()` |
+| Cleanings Log | `cleanings`, `source = 'kaizen'` |
+| Host Note push | `pushHostNotes()` → `host_note_pushes`, every attempt logged |
+
+**Shadow, then live.** `accounts.ops_mode` starts `shadow`: Kaizen decides
+beside the sheet and shows both on every row; nothing leaves Kaizen. Going
+live refuses without an explicit "the sheet no longer writes to Hostaway"
+— two writers on one Host Note is the state this exists to prevent.
+
+**The day it flips, nothing changes under anyone.** Every checkout where
+the sheet decided differently from Kaizen's rule becomes an override
+marked `daily file (cutover)`. Verified on a Neon branch against live
+data: 6 adopted, then 15 of 15 shared checkouts agree on cleaner, pay and
+deep.
+
+**What shadow mode found on the first real run.** Rate cards match the
+code's to the dollar (15 of 15 prices). Assignments do NOT follow the
+tier rule: every P2 unit went to Veronica and every CL unit to Michelle
+regardless of the next booking's value. Either the live thresholds in the
+sheet's hidden `_Settings` differ, or the team assigns by building by
+hand. The cutover keeps those choices; whether the RULE should become
+"by building" is a question for the owner, not something to encode by
+guessing.
+
+**One writer per record, enforced in code, not in a procedure:**
+- `importCleanings` refuses in live mode — the Costs → Cleanings tab
+  auto-imports every three hours and would otherwise write the sheet's
+  stale decisions over Kaizen's.
+- In shadow the import reclaims rows (`source = 'sheet'`): whoever decides
+  owns the row. Found by testing live → shadow: rows Kaizen had written
+  read as "not in the daily file" and the comparison agreed with
+  everything.
+- The per-unit cleaning cost (median of standard cleans, §18a) is now
+  `refreshCleaningRates()` over the record itself, since the import that
+  computed it no longer runs.
+
+**The Host Note.** Read on real reservations before anything writes to it
+(read-only): the sheet writes `Check-out 10:00 AM · Cleaner: Michelle`,
+the same line shape Kaizen owns, so `mergeHostNote()` replaces it in place
+and keeps anything typed by hand. Kaizen spells `❓ TBD` and
+`🚫 Not needed` exactly as the sheet did, so on cutover day a note that
+says the same thing reads as unchanged instead of being rewritten across
+the calendar. A push only happens when OUR block changed since the last
+successful one; edits push after the response (`waitUntil`), the cron pass
+catches the rest and retries failures. Writes are verified by reading the
+note back.
+
+**Roles.** Ops run the day: `/api/turnover`, `/api/inspections`. Roster,
+pay, rules and the live switch (`/api/ops-settings`) are admin only.
+
+**Still to build:** the Sheets mirror and Drive backup (needs a Google
+service account — a human step), guest documents into Drive, and the
+Repository moving into Postgres (needs the repository's API key for the
+one-time export).

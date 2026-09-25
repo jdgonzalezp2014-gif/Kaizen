@@ -265,40 +265,80 @@ export const getCleanings = (
     `&cleaners=${encodeURIComponent(cleaners.join(','))}` +
     `&include=${include.join(',')}`);
 
-/* ── operations: the daily file ───────────────────────────────────── */
+/* ── operations ───────────────────────────────────────────────────── */
 
-import type { BoardRow, BoardSummary, UnitInspection } from './lib/operations.ts';
+import type { BoardRow, BoardSummary, Cleaner, OpsRules, UnitInspection } from './lib/operations.ts';
 
-export interface DailyCleaner {
-  name: string; tier: string;
-  rates: Record<string, number | null>; deepRates: Record<string, number | null>;
+export interface InspectionEntry {
+  id: string; date: string; unit: string; by: string; result: string; notes: string;
+  reservationId: string | null;
 }
-export interface DailySettings {
-  source: 'sheet' | 'defaults';
-  cleanerHighThreshold: number; cleanerLowThreshold: number;
-  longStayPromoteNights: number; deepCleanNights: number; longVacancyDays: number;
-  nextResValueHorizonDays: number; inspectionIntervalDays: number;
-  inspectionSoonDays: number; inspectionValueTrigger: number;
-  cleaners: DailyCleaner[]; inspectors: string[];
-}
-export interface SourceState { ok: boolean; configured: boolean; problem: string | null; rows?: number; warning?: string | null }
 export interface NoteEntry {
-  loggedAt: string; loggedOn: string; checkIn: string; unit: string; guest: string;
-  kind: 'checkin' | 'checkout' | 'other'; notes: string; resId: string;
+  resId: string; kind: 'checkin' | 'checkout'; unit: string | null; guest: string | null;
+  checkIn: string | null; notes: string; source: string; by: string; loggedAt: string;
 }
-export interface InspectionEntry { date: string; unit: string; by: string; result: string; notes: string }
+export interface HostNotePush { resId: string; outcome: string; detail: string | null; at: string }
 export interface OperationsResponse {
-  ok: boolean; role: 'admin' | 'ops'; today: string; end: string; days: number; timeZone: string;
+  ok: boolean; role: 'admin' | 'ops'; mode: 'shadow' | 'live';
+  today: string; end: string; days: number; timeZone: string;
   sheetUrl: string | null; showMoney: boolean;
   rows: BoardRow[]; summary: BoardSummary; panel: UnitInspection[];
-  noteLog: NoteEntry[]; inspectionLog: { done: InspectionEntry[]; scheduled: InspectionEntry[] };
-  settings: DailySettings;
-  sources: Record<'cleanings' | 'notes' | 'inspections' | 'settings', SourceState>;
-  tookMs: number;
+  inspectionLog: { done: InspectionEntry[]; scheduled: InspectionEntry[] };
+  noteLog: NoteEntry[]; pushes: HostNotePush[];
+  rules: OpsRules; extraInspectors: string[]; roster: Cleaner[];
+  sheet: { ok: boolean; problem: string | null; warning: string | null } | null;
+  recorded: number | null; tookMs: number;
   error?: string; message?: string;
 }
+type Fail = { ok: false; error?: string; message?: string };
+
 export const getOperations = (days = 10, refresh = false) =>
   call<OperationsResponse>(`/api/operations?days=${days}${refresh ? '&refresh=1' : ''}`);
+
+export interface TurnoverSet {
+  assignment?: 'assigned' | 'tbd' | 'not_needed' | null; cleaner?: string | null;
+  deep?: boolean | null; checkoutTime?: string | null; checkinTime?: string | null;
+}
+export const saveTurnover = (body: {
+  resId: string; set?: TurnoverSet;
+  note?: { kind: 'checkin' | 'checkout'; text: string };
+  unitId?: string; unit?: string; guest?: string; checkIn?: string;
+}) => call<{ ok: true; push: 'queued' | 'shadow' } | Fail>('/api/turnover', {
+  method: 'POST', body: JSON.stringify(body)
+});
+
+export const logInspection = (body: {
+  id?: string; unit: string; date: string; inspector: string; result: string | null;
+  notes: string; reservationId?: string | null;
+}) => call<{ ok: true } | Fail>('/api/inspections', {
+  method: 'POST', body: JSON.stringify({ action: 'log', ...body })
+});
+export const scheduleInspections = () =>
+  call<{ ok: true; proposed: number; added: number } | Fail>('/api/inspections', {
+    method: 'POST', body: JSON.stringify({ action: 'schedule' })
+  });
+export const cancelInspection = (id: string) =>
+  call<{ ok: true } | Fail>(`/api/inspections?id=${id}`, { method: 'DELETE' });
+
+export interface OpsSettings {
+  ok: true; mode: 'shadow' | 'live'; rules: OpsRules; defaults: OpsRules;
+  extraInspectors: string[]; roster: Cleaner[];
+  counts: { inspections: number; notes: number; overrides: number };
+}
+export const getOpsSettings = () => call<OpsSettings | Fail>('/api/ops-settings');
+export const saveOpsSettings = (body: Record<string, unknown>) =>
+  call<{ ok: true; mode?: string; adopted?: number } | Fail>('/api/ops-settings', {
+    method: 'POST', body: JSON.stringify(body)
+  });
+export interface CutoverPreview {
+  roster: { name: string; tier: string }[]; rules: Record<string, number> | null;
+  inspectors: string[]; inspections: { done: number; scheduled: number }; notes: number;
+  problems: string[];
+}
+export const cutoverImport = (commit: boolean) =>
+  call<{ ok: true; dryRun: boolean; preview: CutoverPreview } | Fail>('/api/ops-settings', {
+    method: 'POST', body: JSON.stringify({ action: 'import', commit })
+  });
 
 /* ── the Data Repository ──────────────────────────────────────────── */
 

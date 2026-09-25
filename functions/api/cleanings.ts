@@ -15,8 +15,8 @@
  *
  *   In the sheet:  File → Share → Publish to web → the sheet, CSV.
  */
-import { parseCsv, parseAmount, pick } from '../_lib/csv.ts';
-import { importCleanings } from '../_lib/cleanings-import.ts';
+import { parseAmount, pick } from '../_lib/csv.ts';
+import { importCleanings, readCleaningsLog } from '../_lib/cleanings-import.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { getAccount, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
@@ -70,7 +70,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
   const byName = new Map(units.map(u => [u.name.toLowerCase().replace(/\s+/g, ''), u.id]));
 
-  const rows = parseCsv(csv);
+  const rows = readCleaningsLog(csv).rows;
   const seen = new Map<string, { name: string; standard: number[]; deep: number[] }>();
   const unmatched: string[] = [];
   let skipped = 0;

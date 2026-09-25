@@ -297,8 +297,10 @@ function DailyFilePanel({ account, onSaved }: { account: Account; onSaved: () =>
     <div className="card">
       <h2>Daily file</h2>
       <p className="note">
-        The operations sheet, read by the <b>Operations</b> tab. In the sheet: File → Share →
-        Publish to web, pick the tab, choose CSV, and paste each link here. Guest-portal links are
+        The operations sheet. Kaizen now runs operations itself; these links are for the
+        <b>one-time import</b> in Operations → Setup (roster, rates, rules, inspection and notes
+        history) and for comparing against the sheet while in shadow mode. In the sheet: File →
+        Share → Publish to web, pick the tab, choose CSV, and paste each link here. Guest-portal links are
         written as HYPERLINK formulas, so a published CSV carries the 🌐 label and never the
         link's access token. The Cleanings Log link is the one under <b>Cleaning cost</b>.
       </p>

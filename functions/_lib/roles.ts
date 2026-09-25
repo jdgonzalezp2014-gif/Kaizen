@@ -26,6 +26,11 @@ const OPS_ALLOWED: { path: string; methods: string[] }[] = [
   // The daily file's board is the day's work itself. Booking values are
   // stripped for ops inside the endpoint; cleaner pay is not.
   { path: '/api/operations', methods: ['GET'] },
+  // Running the day: who cleans, times, notes, logging an inspection.
+  // Roster, pay and the live switch (/api/ops-settings) are NOT here —
+  // those change what everyone is paid.
+  { path: '/api/turnover',    methods: ['POST'] },
+  { path: '/api/inspections', methods: ['POST', 'DELETE'] },
   // Looking things up in the Data Repository. Secrets arrive masked, and
   // /api/repository-reveal is deliberately NOT here.
   { path: '/api/repository', methods: ['GET'] },
