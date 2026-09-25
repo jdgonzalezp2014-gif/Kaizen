@@ -44,6 +44,15 @@ export async function repoCall<T>(
     throw new RepoError(`The repository did not answer: ${e instanceof Error ? e.message : String(e)}`);
   }
 
+  // The deployment exists but only for signed-in visitors, and Kaizen is
+  // not a Google account. A GET is redirected to Google's sign-in page; a
+  // POST gets a 401 with an HTML "page not found". The one cause worth
+  // naming exactly, because it is a setting, not a bug.
+  if (res.status === 401 || res.status === 403 || /accounts\.google\.com/.test(res.url)) {
+    throw new RepoError('The repository asked for a Google sign-in. In its Apps Script editor: Deploy → ' +
+      'Manage deployments → the API deployment → ✏️ → Who has access: "Anyone" (not "Anyone with ' +
+      'Google account") → Version: New version → Deploy. The link stays the same.');
+  }
   const text = await res.text();
   // A deployment that is not public, or a URL for the wrong deployment,
   // answers with Google's sign-in page — a 200 with HTML. Parsing that as
