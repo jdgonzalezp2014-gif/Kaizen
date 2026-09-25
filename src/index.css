@@ -1064,3 +1064,35 @@ button.rb-danger { background: var(--crit); color: #fff; }
   .rb-search input { width: 100%; max-width: none; }
   .rb-bar form { flex: 1 1 100%; }
 }
+
+/* ══ Home: the day at a glance ═══════════════════════════════════════ */
+.home-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+.home-head h2 { margin: 0; font-size: 22px; font-weight: 650; letter-spacing: -.02em; }
+.home-head .note { margin: 2px 0 0; }
+.home-chips { display: flex; gap: 8px; flex-wrap: wrap; }
+.home-chip { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: 6px 12px; font-size: 13px; }
+.home-chip b { font-size: 15px; font-variant-numeric: tabular-nums; }
+.home-chip.bad { border-color: color-mix(in srgb, var(--crit) 50%, transparent); }
+.home-chip.bad b { color: var(--crit); }
+.home-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.home-card { margin: 0; }
+.home-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.home-card-head h3 { margin: 0; font-size: 15px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
+.home-card-head .count { font-size: 12px; font-weight: 600; color: var(--muted); background: var(--tint);
+  border: 1px solid var(--line); border-radius: 999px; padding: 0 8px; }
+.home-list { list-style: none; margin: 0; padding: 0; }
+.home-list li { display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13px; }
+.home-list li:last-child { border-bottom: 0; }
+.home-list li.muted { opacity: .55; }
+.home-time { flex: 0 0 74px; color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; padding-top: 1px; }
+.home-time.today { color: var(--series-1); font-weight: 650; }
+.home-main { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; }
+.home-side { flex: 0 0 auto; text-align: right; max-width: 45%; }
+.home-verdict { font-size: 12px; font-weight: 650; color: var(--crit); }
+.home-reason { flex-basis: 100%; font-size: 12px; color: var(--muted); line-height: 1.45; }
+.home-foot { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+.home-empty { margin: 6px 0; }
+.home-events { display: flex; flex-direction: column; gap: 10px; }
+.home-evgroup h4 { margin: 6px 0 2px; font-size: 11px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
+.home-list .light { margin-top: 3px; }
+@media (max-width: 900px) { .home-grid { grid-template-columns: 1fr; } .home-side { max-width: 55%; } }

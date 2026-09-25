@@ -80,10 +80,14 @@ export function mayAccess(permissions: string[], pathname: string, method: strin
   return PERMISSIONS.some(p => permissions.includes(p.key) && p.routes.some(hit));
 }
 
-/** Tabs to draw, in the app's order. The same module decides routes and tabs, so they cannot drift. */
+/**
+ * Tabs to draw, in the app's order. The same module decides routes and
+ * tabs, so they cannot drift. Home is everyone's: it opens no route of
+ * its own and shows only the parts of the day the role can already see.
+ */
 export function tabsFor(permissions: string[]): string[] {
   const all = permissions.includes(ALL);
-  return PERMISSIONS.filter(p => p.tab && (all || permissions.includes(p.key))).map(p => p.tab!);
+  return ['home', ...PERMISSIONS.filter(p => p.tab && (all || permissions.includes(p.key))).map(p => p.tab!)];
 }
 
 export function can(permissions: string[], key: string): boolean {

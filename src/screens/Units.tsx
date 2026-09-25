@@ -18,10 +18,10 @@ import {
   type RankedUnit, type ForwardUnit, type ForwardState
 } from '../lib/forward.ts';
 import {
-  findGaps, signals, verdict, median, portfolioAskRatio, agreement,
-  type Signal, type Verdict
+  findGaps, median, portfolioAskRatio, agreement, type Verdict
 } from '../lib/revenue.ts';
 import { money, pct, points } from '../lib/format.ts';
+import { diagnose, type Read } from '../lib/verdicts.ts';
 import { channelState } from '../lib/channels.ts';
 import { Loading } from '../components/Loading.tsx';
 import { rememberTiming, recallTiming } from '../lib/progress.ts';
@@ -192,28 +192,6 @@ export function Units() {
 }
 
 /* ── the read ──────────────────────────────────────────────────────── */
-
-interface Read { v: Verdict; rest: Signal[]; orphanNights: number; gaps: ReturnType<typeof findGaps> }
-
-function diagnose(u: RankedUnit, portfolioAdr: number | null,
-                  askRatio: number | null, asOf: string): Read {
-  const gaps = findGaps(u.days);
-  const orphans = gaps.filter(g => g.orphaned);
-  const input = {
-    occupancy: u.occupancy, nightsOpen: u.nightsOpen, pickup7: u.pickup7,
-    leadTime: u.leadTime, adr: u.adr, openAsk: u.openAsk, lastBookedOn: u.lastBookedOn,
-    orphanNights: orphans.reduce((a, g) => a + g.nights, 0),
-    orphanRuns: orphans.length,
-    portfolioAdr: portfolioAdr == null ? null : Math.round(portfolioAdr),
-    portfolioAskRatio: askRatio,
-    today: asOf
-  };
-  const v = verdict(input);
-  // The headline already carries its own evidence; repeating it under
-  // itself is noise, so the signal that produced it is filtered out.
-  const rest = signals(input).filter(s => !v.reason.includes(s.text.slice(0, 24)));
-  return { v, rest, orphanNights: input.orphanNights, gaps };
-}
 
 /* ── the traffic-light row ─────────────────────────────────────────── */
 

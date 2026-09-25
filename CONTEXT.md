@@ -2058,3 +2058,53 @@ repository's own app had solved exactly this. What was taken from it:
 - Optimistic saves with a toast; a refused save restores the old value
   and says why. `/` searches, Escape closes. The table re-reads itself
   every minute, but never under someone editing or with a menu open.
+
+
+## 67. Home: the day at a glance
+
+The first tab, for everyone (`tabsFor` always leads with `home`; it opens
+no route of its own). Four questions in the order they are acted on:
+
+1. **Cleanings today** — the Operations board's departure rows: time,
+   unit, cleaner or ▲ unassigned, pay, same-day / deep / inspection flags.
+2. **Check-ins today** — guest, nights, and whether the unit is ready
+   (who cleaned it today, "no departure today", or ▲ clean not assigned).
+3. **Units in red** — the Units screen's own rule, extracted to
+   `src/lib/verdicts.ts` (`diagnose`, `readPortfolio`, `redUnits`, tested)
+   so the two screens can never disagree: a verdict with tone `bad`
+   (priced above what it earns, or not moving) on a live unit, most money
+   at stake first. The alert pass stays stricter (§44: $2,000 at stake) —
+   a screen may show more than a phone should buzz for.
+4. **Coming up** — inspections scheduled in the next 7 days (and any the
+   board flags today that nobody has scheduled), one-off expenses dated in
+   the next 14, open claims oldest-waiting first.
+
+Nothing is recomputed differently from the screen it summarises; every
+block links to that screen. Each block loads on its own — the red read
+sweeps every calendar and is the slow one, and the day's cleanings must
+not wait for it. A role asks only for what it may see; booking values
+follow the `money` permission.
+
+
+## 68. State on 2026-09-25 — read this before touching operations
+
+- **Production is in `ops_mode = 'live'` since 2026-09-25 06:01 UTC**
+  (6 decisions adopted from the sheet as overrides). No record says who
+  switched it; the Setup screen is the only path. **Kaizen has made 0
+  Host Note writes so far** — they happen on a turnover edit or a cron
+  pass. Before either: confirm the daily file's automatic Hostaway push is
+  off (🏠 Kaizen → 🚫 Disable automatic Hostaway push). If it is not,
+  switch back to shadow in Operations → Setup.
+- The Cleanings Log import refuses in live mode; cleanings are recorded by
+  Kaizen (`source = 'kaizen'`).
+- Roster, both rate cards and the rules are the daily file's live values
+  (horizon 10 days, long vacancy 7 days), from the owner's screenshots.
+- No scheduler calls `/api/cron` yet (no GitHub Action). Until one does,
+  Host Notes change only when someone edits a stay in Kaizen.
+- Repository: connected (API deployment set to "Anyone"); read and
+  write from Kaizen, not yet written to by a real edit.
+- Still to build: the Sheets mirror with the crew's Spanish tabs and the
+  Drive backup (needs a Google service account), guest documents into
+  Drive, crew cleaning sessions (evaluated in chat, not built).
+- The Cleanings Log header row is blank in the live sheet (read by column
+  order, §63); restore it before anyone relies on the sheet as archive.

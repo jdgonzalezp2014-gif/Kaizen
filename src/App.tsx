@@ -6,13 +6,14 @@ import { Claims } from './screens/Claims.tsx';
 import { Settings } from './screens/Settings.tsx';
 import { Operations } from './screens/Operations.tsx';
 import { Repository } from './screens/Repository.tsx';
+import { Home } from './screens/Home.tsx';
 import { getUnits, getSettings, can, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
-type Tab = 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'settings';
+type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'settings';
 
 const TABS: [Tab, string][] = [
-  ['units', 'Units'], ['revenue', 'Revenue'], ['operations', 'Operations'],
+  ['home', 'Home'], ['units', 'Units'], ['revenue', 'Revenue'], ['operations', 'Operations'],
   ['repository', 'Repository'], ['costs', 'Costs'], ['claims', 'Claims'], ['settings', 'Settings']
 ];
 
@@ -40,8 +41,8 @@ export function App() {
         const tabs = r.tabs ?? TABS.map(t => t[0]);
         setAllowed(tabs);
         setPermissions(r.permissions ?? []);
-        // Land on the first tab they can actually open. For an admin that
-        // is Units, where the decisions are; for ops it is Costs.
+        // Land on the first tab they can open — Home, for everyone: the
+        // day at a glance, cut to what their role can see.
         setTab(prev => (prev && tabs.includes(prev)) ? prev : (tabs[0] as Tab));
       })
       .catch(e => {
@@ -96,6 +97,7 @@ export function App() {
       {tab === null && !loadError && <p className="note">Loading…</p>}
       {tab === 'units'    && <Units />}
       {tab === 'revenue'  && <Revenue />}
+      {tab === 'home' && <Home permissions={permissions} onGo={t => { if (allowed?.includes(t)) setTab(t as Tab); }} />}
       {tab === 'operations' && <Operations />}
       {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')}
                                            canEdit={can(permissions, 'repository.edit')}
