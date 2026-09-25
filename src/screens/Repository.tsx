@@ -26,8 +26,11 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { createPortal } from 'react-dom';
 import {
   getRepoMeta, getRepoRows, getRepoDocs, getRepoDocsBatch, searchRepo, revealRepoSecret, repoEdit, repoStructure, uploadRepoFile,
+  importReadFile, importReadLink, importCommit,
   type RepoColumn, type RepoFile, type RepoHit, type RepoRow, type RepoSection, type RepoTable
 } from '../api.ts';
+import { proposeColumns, readBoard, type Board, type ProposedColumn } from '../lib/repo-import.ts';
+import { coerce, type ColumnType } from '../lib/repo.ts';
 
 interface Can { reveal: boolean; edit: boolean; structure: boolean }
 type DocEntry = { folderUrl: string; files: RepoFile[]; truncated?: boolean };
@@ -163,6 +166,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const [openId, setOpenId] = useState<string | null>(null);
   const [pop, setPop] = useState<Pop | null>(null);
   const [editing, setEditing] = useState<string | null>(null);   // `${id}|${col}`
+  const [importing, setImporting] = useState<string | null>(null); // section key, while a Monday board is being imported
   const [say, toast] = useToast();
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -285,7 +289,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
             </div>
             {s.tables.map(t => (
               <div key={t.key} className={`rb-nav-item ${!hits && tableKey === t.key ? 'active' : ''}`}>
-                <button className="rb-nav-link" onClick={() => { setHits(null); setFilter(''); setTableKey(t.key); }}>
+                <button className="rb-nav-link" onClick={() => { setHits(null); setImporting(null); setFilter(''); setTableKey(t.key); }}>
                   {t.title}
                   {rowsBy[t.key] && <span className="rb-nav-count">{rowsBy[t.key]!.length}</span>}
                 </button>
@@ -296,6 +300,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
           </div>
         ))}
         {can.structure && <button className="rb-add-link" onClick={e => setPop({ kind: 'newsection', rect: e.currentTarget.getBoundingClientRect() })}>+ New section</button>}
+        {can.structure && <button className="rb-add-link" onClick={() => { setHits(null); setImporting(sections[0]?.key ?? ''); }}>⇪ Import from Monday</button>}
       </aside>
 
       <div className="rb-main">
@@ -312,7 +317,10 @@ export function Repository({ canReveal, canEdit, canStructure }: {
           {!hits && tableKey && <button className="secondary small" title="Reload" onClick={() => void loadRows(tableKey)}>↻</button>}
         </header>
 
-        {hits ? (
+        {importing !== null ? (
+          <MondayImport sections={sections} initial={importing} say={say} onCancel={() => setImporting(null)}
+            onDone={async key => { setImporting(null); await loadMeta(); setTableKey(key); }} />
+        ) : hits ? (
           <SearchResults hits={hits} tables={tables} onOpen={(t, id) => { setHits(null); setFilter(''); setTableKey(t); setOpenId(id); }} />
         ) : table && (
           <div className={`rb-work ${openRow ? 'with-panel' : ''}`}>
@@ -371,6 +379,8 @@ export function Repository({ canReveal, canEdit, canStructure }: {
         <Popover anchor={pop.rect} onClose={() => setPop(null)} width={280}>
           <NameForm title={`New table in ${pop.section.title}`} placeholder="Table name" extra="ID prefix, e.g. UNI (optional)"
             onSubmit={(title, prefix) => structure({ op: 'tables.create', section: pop.section.key, title, idPrefix: prefix }, `${title} created`)} />
+          <button className="link tiny" onClick={() => { const k = pop.section.key; setPop(null); setHits(null); setImporting(k); }}>
+            ⇪ …or import a Monday board</button>
         </Popover>
       )}
       {pop && pop.kind === 'newsection' && (
@@ -839,6 +849,135 @@ function TableMenu({ table, run }: { table: RepoTable; run: (body: Record<string
       <div className="rb-pop-title">{table.title}</div>
       <button onClick={() => setView('rename')}>✎ Rename</button>
       <button className="danger" onClick={() => setView('archive')}>🗄 Archive table…</button>
+    </div>
+  );
+}
+
+/* ── Monday import (§74) ──────────────────────────────────────────── */
+
+const IMPORT_TYPES: ColumnType[] = ['text', 'longtext', 'number', 'date', 'checkbox', 'select', 'email', 'url', 'secret'];
+
+/**
+ * A Monday board, brought in as a new table — in place, in the main area,
+ * not over it. Three steps: read the export, correct what was guessed,
+ * import. The board is read by Drive (an .xlsx is converted there) and
+ * previewed here, where a person can see every column before anything is
+ * written.
+ */
+function MondayImport({ sections, initial, say, onDone, onCancel }: {
+  sections: RepoSection[]; initial: string; say: (m: string, bad?: boolean) => void;
+  onDone: (key: string) => Promise<void>; onCancel: () => void;
+}) {
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+  const [link, setLink] = useState('');
+  const [board, setBoard] = useState<Board | null>(null);
+  const [cols, setCols] = useState<ProposedColumn[]>([]);
+  const [title, setTitle] = useState('');
+  const [prefix, setPrefix] = useState('');
+  const [section, setSection] = useState(initial || sections[0]?.key || '');
+  const picker = useRef<HTMLInputElement>(null);
+
+  const got = (r: { ok: true; name: string; rows: string[][] } | { ok: false; message?: string }) => {
+    setBusy('');
+    if (!r.ok) { setErr(r.message ?? 'Could not read it.'); return; }
+    // Monday names exports "Board_Name_1777335535.xlsx".
+    const name = r.name.replace(/\.(xlsx|xls|csv)$/i, '').replace(/_\d{9,}$/, '').replace(/_/g, ' ').trim();
+    const b = readBoard(r.rows, name || 'Imported');
+    if (!b.items.length) { setErr('No records were found under a header row.'); return; }
+    setErr(''); setBoard(b); setCols(proposeColumns(b)); setTitle(name || b.title);
+  };
+  const readFile = async (f: File | undefined) => { if (!f) return; setBusy('Reading the board…'); got(await safe(importReadFile(f))); };
+  const readLink = async () => { if (!link.trim()) return; setBusy('Reading the board…'); got(await safe(importReadLink(link.trim()))); };
+
+  const chosen = cols.filter(c => c.include);
+  const set = (i: number, patch: Partial<ProposedColumn>) => setCols(cs => cs.map((c, j) => j === i ? { ...c, ...patch } : c));
+  /** Values a column's type would clear — said before the import, not after. */
+  const lost = (c: ProposedColumn) => !board || c.index === -1 || !['number', 'date'].includes(c.type) ? 0
+    : board.items.filter(it => (it.cells[c.index] ?? '').trim() !== '' && coerce({ type: c.type, options: c.options }, it.cells[c.index]) === '').length;
+
+  const commit = async () => {
+    if (!board || !chosen.length || !title.trim()) return;
+    setBusy(`Importing ${board.items.length} records…`); setErr('');
+    const r = await safe(importCommit({
+      section, title: title.trim(), idPrefix: prefix.trim(),
+      columns: chosen.map(c => ({ index: c.index, title: c.title, type: c.type, options: c.options })),
+      items: board.items
+    }));
+    setBusy('');
+    if (!r.ok) { setErr(r.message ?? 'The import failed.'); return; }
+    say(`${title.trim()}: ${r.records} records imported${r.secrets ? `, ${r.secrets} passwords encrypted` : ''}`);
+    await onDone(r.key);
+  };
+
+  return (
+    <div className="rb-import">
+      <div className="rb-import-head">
+        <h3>Import a Monday board</h3>
+        <span className="rb-spacer" />
+        <button className="secondary small" onClick={onCancel}>Cancel</button>
+      </div>
+      {!board ? (
+        <>
+          <p className="note">In Monday: the board's ⋯ menu → Export → Export board to Excel. Then drop the file here — or paste
+            the Drive link of an export already in Drive.</p>
+          <div className="rb-drop-zone" onClick={() => !busy && picker.current?.click()}
+               onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); if (!busy) void readFile(e.dataTransfer.files[0]); }}>
+            {busy || 'Drop the .xlsx (or .csv) here, or click to choose'}
+            <input ref={picker} type="file" accept=".xlsx,.xls,.csv" hidden onChange={e => { void readFile(e.target.files?.[0]); e.target.value = ''; }} />
+          </div>
+          <form className="rb-import-link" onSubmit={e => { e.preventDefault(); void readLink(); }}>
+            <input className="rb-input" placeholder="…or a Drive link to the export" value={link} onChange={e => setLink(e.target.value)} />
+            <button className="secondary small" disabled={!link.trim() || !!busy}>Read</button>
+          </form>
+        </>
+      ) : (
+        <>
+          <p className="note">
+            <b>{board.items.length}</b> record{board.items.length === 1 ? '' : 's'}
+            {board.groups.length > 1 ? <> in <b>{board.groups.length}</b> groups ({board.groups.join(', ')}) — kept as a Group column</> : null}
+            {board.note && <> · the board says: “{board.note.slice(0, 160)}”</>}
+          </p>
+          <div className="row">
+            <label>Table name <input value={title} onChange={e => setTitle(e.target.value)} /></label>
+            <label>Section
+              <select value={section} onChange={e => setSection(e.target.value)}>
+                {sections.map(s => <option key={s.key} value={s.key}>{s.title}</option>)}
+              </select>
+            </label>
+            <label>ID prefix <input value={prefix} placeholder="e.g. SRV (optional)" onChange={e => setPrefix(e.target.value.toUpperCase())} /></label>
+          </div>
+          <div className="grid-scroll">
+            <table className="units compact rb-import-cols">
+              <thead><tr><th>Import</th><th>Column</th><th>Type</th><th>Examples</th><th className="n">Filled</th></tr></thead>
+              <tbody>
+                {cols.map((c, i) => (
+                  <tr key={`${c.index}-${i}`} className={c.include ? '' : 'rb-off'}>
+                    <td><input type="checkbox" checked={c.include} onChange={e => set(i, { include: e.target.checked })} /></td>
+                    <td><input className="rb-input" value={c.title} onChange={e => set(i, { title: e.target.value })} />
+                      {chosen[0] === c && <div className="sub-n">names each record</div>}</td>
+                    <td>
+                      <select value={c.type} onChange={e => set(i, { type: e.target.value as ColumnType })}>
+                        {IMPORT_TYPES.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
+                      </select>
+                      {c.type === 'secret' && <div className="sub-n">encrypted — values never shown</div>}
+                      {lost(c) > 0 && <div className="breach">▲ {lost(c)} value{lost(c) === 1 ? '' : 's'} would be cleared</div>}
+                    </td>
+                    <td className="sub-n">{c.samples.join(' · ') || '—'}</td>
+                    <td className="n">{c.filled}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <div className="button-row">
+            <button disabled={!!busy || !chosen.length || !title.trim() || !section} onClick={() => void commit()}>
+              {busy || `Import ${board.items.length} records`}</button>
+            <button className="secondary" disabled={!!busy} onClick={() => { setBoard(null); setCols([]); }}>Choose another file</button>
+          </div>
+        </>
+      )}
+      {err && <p className="banner warn">▲ {err}</p>}
     </div>
   );
 }

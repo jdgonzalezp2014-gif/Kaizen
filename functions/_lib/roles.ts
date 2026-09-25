@@ -40,6 +40,8 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/turnover', methods: ['POST'] }, { path: '/api/inspections', methods: ['POST', 'DELETE'] }] },
   { key: 'operations.setup', label: 'Operations — roster, pay, rules and the live switch', routes: [
     { path: '/api/ops-settings', methods: ['GET', 'POST'] }] },
+  { key: 'guests.documents', label: 'Guest documents — see and upload IDs and rental agreements', routes: [
+    { path: '/api/guest-docs', methods: ['POST'] }, { path: '/api/guest-docs-upload', methods: ['POST'] }] },
   { key: 'repository', label: 'Repository — look up records and documents', tab: 'repository', routes: [
     { path: '/api/repository', methods: ['GET'] }] },
   { key: 'repository.reveal', label: 'Repository — reveal passwords (each reveal is logged)', routes: [
@@ -47,7 +49,7 @@ export const PERMISSIONS: Permission[] = [
   { key: 'repository.edit', label: 'Repository — add and edit records, upload and remove documents', routes: [
     { path: '/api/repository-edit', methods: ['POST'] }, { path: '/api/repository-upload', methods: ['POST'] }] },
   { key: 'repository.structure', label: 'Repository — sections, tables and columns', routes: [
-    { path: '/api/repository-structure', methods: ['POST'] }] },
+    { path: '/api/repository-structure', methods: ['POST'] }, { path: '/api/repository-import', methods: ['POST'] }] },
   { key: 'costs', label: 'Costs — record expenses, see cleaning costs', tab: 'costs', routes: [
     { path: '/api/expenses', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'claims', label: 'Claims — record and follow guest claims', tab: 'claims', routes: [

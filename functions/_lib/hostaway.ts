@@ -144,6 +144,12 @@ export interface HostawayReservation {
   cleaningFee: number;
   /** For the operations board. Never the portal URL — that is a login token. */
   guestName?: string;
+  /**
+   * The guest as the daily file names their documents folder: first +
+   * last, else guestName, else "Guest" (cliente-gas 05 documents.js). Kept
+   * apart from guestName so Kaizen finds the SAME folder (§73).
+   */
+  docName?: string;
   guests?: number | null;
   /** Only to recognise the same guest booking again. Never sent to a browser. */
   phone?: string;
@@ -461,6 +467,7 @@ async function pagedReservationsWith(token: string, query: string): Promise<Host
         cleaningFee: paid ? firstNumber(r, ['cleaningFee', 'cleaningFeeAmount']) : 0,
         guestName: String(r.guestName ??
           [r.guestFirstName, r.guestLastName].filter(Boolean).join(' ')).trim(),
+        docName: `${r.guestFirstName ?? ''} ${r.guestLastName ?? ''}`.trim() || String(r.guestName ?? '').trim() || 'Guest',
         guests: Number(r.numberOfGuests ?? r.adults) || null,
         phone: String(r.phone ?? '')
       };
@@ -670,6 +677,33 @@ export async function fetchCalendars(
   ));
   listingIds.forEach((id, i) => { out[id] = results[i]!; });
   return out;
+}
+
+/* ── guest documents (§73) ────────────────────────────────────────── */
+
+/**
+ * One reservation in full. GET /reservations/{id} carries everything the
+ * daily file found for documents (verified there on 2026-08-30): the
+ * signed agreement PDF (`rentalAgreementFileUrl`, null until the guest
+ * finishes the portal) and its state (`reservationAgreement`). The ID
+ * image is never exposed, for any unit.
+ */
+export async function fetchReservationDetail(creds: HostawayCredentials, reservationId: string): Promise<Record<string, unknown> | null> {
+  const token = await getAccessToken(creds);
+  const res = await fetch(`${BASE}/reservations/${encodeURIComponent(reservationId)}`, {
+    headers: { Authorization: `Bearer ${token}` }, cache: 'no-store'
+  });
+  if (!res.ok) return null;
+  return ((await res.json()) as { result?: Record<string, unknown> }).result ?? null;
+}
+
+/** The signed agreement's bytes. Hostaway's own links want the token; others are public. */
+export async function downloadAgreement(creds: HostawayCredentials, url: string): Promise<{ bytes: ArrayBuffer; mimeType: string }> {
+  const headers: Record<string, string> = /hostaway\.com/i.test(new URL(url).hostname)
+    ? { Authorization: `Bearer ${await getAccessToken(creds)}` } : {};
+  const res = await fetch(url, { headers, redirect: 'follow' });
+  if (!res.ok) throw new Error(`The agreement did not download (HTTP ${res.status}).`);
+  return { bytes: await res.arrayBuffer(), mimeType: res.headers.get('Content-Type')?.split(';')[0] || 'application/pdf' };
 }
 
 /* ── the Host Note ────────────────────────────────────────────────── */

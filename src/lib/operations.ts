@@ -27,6 +27,8 @@ export interface OpsReservation {
   arrival: DateStr; departure: DateStr; nights: number;
   totalPaid: number; channel: string;
   guestName?: string; guests?: number | null;
+  /** The name on the guest's documents folder (§73). */
+  docName?: string;
   /** Only used to recognise the same guest booking again. Never shown. */
   phone?: string;
 }
@@ -130,6 +132,8 @@ export interface BoardRow {
   unit: string;
   beds: number | null;
   guest: string;
+  /** The name on the guest's documents folder in Drive (§73). */
+  docName: string;
   guests: number | null;
   nights: number;
   channel: string;
@@ -366,7 +370,7 @@ export function buildBoard(input: {
     const ov = overrides.get(x.reservationId);
     const base: BoardRow = {
       date: x.arrival, kind: 'in', resId: x.reservationId, unitId: l.id, unit: l.name,
-      beds: l.bedrooms, guest: x.guestName ?? '', guests: x.guests ?? null, nights: x.nights,
+      beds: l.bedrooms, guest: x.guestName ?? '', docName: x.docName || x.guestName || 'Guest', guests: x.guests ?? null, nights: x.nights,
       channel: x.channel, total: x.totalPaid, time: '', note: '',
       next: null, auto: { cleaner: null, tier: 'none', reason: '' },
       cleaner: null, assignment: 'unknown', price: null, deep: false, urgency: null,

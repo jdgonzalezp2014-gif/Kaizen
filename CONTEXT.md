@@ -2307,3 +2307,65 @@ days), as the old app did — Drive first, so Kaizen never lists a state
 Drive refused. A pasted link is only ever unlinked. Every one of these is
 in `repo_audit` under the person's name, since Drive shows the connected
 account as the owner.
+
+## 73. Guest documents — ID and rental agreement, in the daily file's folders
+
+The daily file kept each P2 guest's ID and signed rental agreement in Drive
+(cliente-gas 05 documents.js, 06 hostawaycheckin.js). Kaizen does the same
+thing IN THE SAME FOLDERS — found by the same names, so a file dropped in
+from either side is seen by both and nothing was moved:
+
+  The Link / Reservations / 2026 / 2026-09 / 2026-09-24 / "Sep 24 & Guest" / ID
+                                                                          / Rental Agreement
+
+- **The root** is Settings → Google Drive → Guest documents folder
+  (`accounts.guest_docs_root_id`; found by tracing a real reservation folder
+  up — the daily file's own "Kaizen — Guest Documents" folder is empty).
+- **The name** is the daily file's to the letter: `MMM d & first last`,
+  first + last name, else guestName, else "Guest" (`docName` on each
+  reservation, kept apart from guestName; tested against a real folder).
+- **Who needs them:** only the P2 building's units (`src/lib/guestdocs.ts`,
+  the daily file's MANUAL_DOC_UNIT_PREFIX). The board checks and flags only
+  those arrivals (○/✓ ID, ○/✓ agreement); any arrival's editor can still
+  file documents.
+- **The agreement** comes from Hostaway when it can: opening an arrival
+  asks GET /reservations/{id}; with `rentalAgreementFileUrl` present and
+  the folder empty, the PDF is filed as `<unit>-agreement-1.pdf`. Never
+  filed twice. The ID never comes from Hostaway (not exposed, any unit):
+  upload only.
+- **Uploads** go through `/api/guest-docs-upload`, which finds the folder
+  from HOSTAWAY's record of the stay, not the browser's — a file can only
+  land where the daily file would have put it.
+- **Folder IDs** are remembered in `drive_folders` (an address book —
+  folder IDs do not change); the files are listed from Drive each time, in
+  one query per level, not one per stay.
+- **Permission** `guests.documents` — an ID is the most sensitive thing
+  Kaizen holds. Given (migration 030) to the roles that edit Operations.
+- **Not moved yet:** the external guest-identification sheet the P2
+  building reads (18 guestidsync.js). The daily file still writes it, and
+  it sees Kaizen's uploads because the folders are shared.
+
+## 74. Importing a Monday board
+
+What the old repository's Import.js did, in Kaizen: Repository → "⇪ Import
+from Monday" (or the "+" of a section) → drop the board's Excel export, or
+paste the Drive link of one already in Drive → correct the guessed columns
+→ Import. `repository.structure`.
+
+- **Drive reads the file.** An .xlsx is converted into a temporary Google
+  Sheet, exported as CSV, and the copy trashed — Kaizen carries no
+  spreadsheet parser. A .csv is read directly.
+- **What a Monday export looks like** (seen on this account's own): board
+  name, a group name (or a long description), the header; each later group
+  repeats its name and the header. The old importer took those in as
+  records. Now groups become a Group column (when there is more than one)
+  and repeated headers are dropped (`src/lib/repo-import.ts`, tested).
+- **Types are guessed** as the original did, plus: a column titled like a
+  password is proposed as SECRET — encrypted on the way in, its values
+  never shown in the preview. Monday boards on this account hold
+  plaintext passwords (Services, STR Listing Logins). A type that would
+  clear values says how many before the import runs; a dropdown keeps
+  every value the board had.
+- The first chosen column names each record; IDs start at 1 with the
+  chosen prefix. Documents are not pulled out of Monday — the export only
+  holds links.

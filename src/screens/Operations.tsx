@@ -13,13 +13,13 @@
  * Rows open in place, never in a dialog (§22): the list is what a
  * decision is compared against.
  */
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import {
   getCleanings, type Cleaning, type ExcludedCleaning,
   getOperations, saveTurnover, logInspection, scheduleInspections, cancelInspection,
-  getOpsSettings, saveOpsSettings, cutoverImport, can,
-  type OperationsResponse, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
+  getOpsSettings, saveOpsSettings, cutoverImport, can, getGuestDocs, syncAgreement, uploadGuestDoc,
+  type StayDocs, type OperationsResponse, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
 } from '../api.ts';
 import {
   BEDROOM_SIZES, DEFAULT_CHECKIN_TIME, DEFAULT_CHECKOUT_TIME, INSPECTION_RESULTS,
@@ -27,6 +27,7 @@ import {
   type BoardRow, type Cleaner, type InspectionTier, type OpsRules
 } from '../lib/operations.ts';
 import { money, money2 } from '../lib/format.ts';
+import { needsGuestDocs } from '../lib/guestdocs.ts';
 import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
@@ -209,6 +210,22 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
   const [open, setOpen] = useState<string | null>(null);
   const s = data.summary;
 
+  // Guest documents (§73): what each arrival has filed, read from Drive
+  // when the board loads. Only for roles that may see IDs.
+  const canDocs = can(data.permissions, 'guests.documents');
+  const [docs, setDocs] = useState<Record<string, StayDocs>>({});
+  const [docsErr, setDocsErr] = useState('');
+  // Only the stays whose building asks for them (P2) are checked on the board.
+  const docRows = data.rows.filter(r => r.kind === 'in' && needsGuestDocs(r.unit));
+  const arrivalsKey = docRows.map(r => `${r.resId}|${r.date}|${r.docName}`).join(',');
+  useEffect(() => {
+    if (!canDocs || !arrivalsKey) return;
+    const stays = docRows.map(r => ({ resId: r.resId, arrival: r.date, name: r.docName }));
+    getGuestDocs(stays)
+      .then(r => { if (r.ok) { setDocs(r.docs); setDocsErr(''); } else setDocsErr(r.message ?? 'Guest documents could not be read.'); })
+      .catch(e => setDocsErr(String(e)));
+  }, [canDocs, arrivalsKey]);
+
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return data.rows.filter(r =>
@@ -246,6 +263,8 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
         {data.showMoney && <div><dt>Arriving</dt><dd>{money(s.arriving)}</dd></div>}
       </dl>
 
+      {canDocs && docsErr && <p className="banner warn">▲ Guest documents: {docsErr}</p>}
+
       {data.roster.length === 0 && (
         <p className="banner warn">▲ No cleaners on the roster yet, so every clean reads unassigned.
           {can(data.permissions, 'operations.setup') ? ' Setup → import from the daily file, or add them by hand.' : ' Someone with Operations setup sets it up.'}</p>
@@ -282,13 +301,15 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
                   return (
                     <Fragment key={key}>
                       <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'} through={short(data.lookaheadTo)}
+                                 docs={canDocs && r.kind === 'in' && needsGuestDocs(r.unit) ? docs[r.resId] ?? null : undefined}
                                  open={open === key} onToggle={() => {
                                    // Read-only roles see the board; the editor is not offered.
                                    if (can(data.permissions, 'operations.edit')) setOpen(open === key ? null : key);
                                  }} />
                       {open === key && (
                         <tr className="ops-edit-row"><td colSpan={9}>
-                          <Editor r={r} data={data} onSaved={(set, note) => {
+                          <Editor r={r} data={data} docs={canDocs && r.kind === 'in' ? docs[r.resId] : undefined}
+                                  onDocs={d => setDocs(m => ({ ...m, [r.resId]: d }))} onSaved={(set, note) => {
                             patch(r.resId, r.kind, row => {
                               const n = set ? applyEdit(row, set, data.roster, data.rules) : row;
                               return note !== undefined ? { ...n, note } : n;
@@ -308,8 +329,10 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle, through }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs }: {
   r: BoardRow; showMoney: boolean; shadow: boolean; open: boolean; onToggle: () => void;
+  /** An arrival's filed documents: undefined = not shown to this role, null = still reading. */
+  docs?: StayDocs | null;
   /** How far ahead the next booking was looked for — "nothing" means nothing up to here. */
   through: string;
 }) {
@@ -361,6 +384,10 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through }: {
         {r.inspection.key === 'req' && <span className="ops-flag req" title={r.inspection.reason}>🔍 required</span>}
         {r.inspection.key === 'due' && <span className="ops-flag due" title={r.inspection.reason}>🔍 monthly</span>}
         {r.inspection.key === 'ok' && <span className="ops-flag ok" title={r.inspection.reason}>✓ inspected</span>}
+        {docs !== undefined && (docs === null ? <span className="ops-flag ok">… documents</span> : <>
+          <span className={`ops-flag ${docs.id.length ? 'ok' : 'missing'}`}>{docs.id.length ? '✓' : '○'} ID</span>
+          <span className={`ops-flag ${docs.agreement.length ? 'ok' : 'missing'}`}>{docs.agreement.length ? '✓' : '○'} agreement</span>
+        </>)}
       </td>
       <td className="ops-note">{r.note}</td>
     </tr>
@@ -368,8 +395,10 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through }: {
 }
 
 /** One stay's controls, opened in place under its row. */
-function Editor({ r, data, onSaved }: {
+function Editor({ r, data, onSaved, docs, onDocs }: {
   r: BoardRow; data: OperationsResponse; onSaved: (set: TurnoverSet | null, note?: string) => void;
+  /** Present only for an arrival, for a role with guests.documents. */
+  docs: StayDocs | undefined; onDocs: (d: StayDocs) => void;
 }) {
   const out = r.kind === 'out';
   const [time, setTime] = useState(r.manual.time ? r.time : '');
@@ -447,6 +476,82 @@ function Editor({ r, data, onSaved }: {
       <div className="button-row">
         <button className="small" disabled={busy || note === r.note} onClick={() => void send(null, note)}>Save note</button>
         {msg && <span className="note">{msg}</span>}
+      </div>
+      {!out && can(data.permissions, 'guests.documents') && <GuestDocs r={r} docs={docs} onDocs={onDocs} />}
+    </div>
+  );
+}
+
+/**
+ * An arrival's ID and rental agreement (§73), in the reservation's own
+ * Drive folders — the same ones the daily file used. Opening it asks
+ * Hostaway about the signed agreement and files the PDF if Hostaway has
+ * it and the folder is still empty. The ID only ever arrives by upload:
+ * Hostaway never exposes it.
+ */
+function GuestDocs({ r, docs, onDocs }: { r: BoardRow; docs: StayDocs | undefined; onDocs: (d: StayDocs) => void }) {
+  const required = needsGuestDocs(r.unit);
+  const [hostaway, setHostaway] = useState<{ signed: boolean; available: boolean; pulled: boolean } | null>(null);
+  const [busy, setBusy] = useState('');
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    let live = true;
+    syncAgreement(r.resId).then(x => {
+      if (!live) return;
+      if (x.ok) { setHostaway(x); onDocs(x.docs); } else setErr(x.message ?? 'Hostaway could not be asked.');
+    }).catch(e => { if (live) setErr(String(e)); });
+    return () => { live = false; };
+  }, [r.resId]);
+
+  const upload = async (kind: 'id' | 'agreement', list: FileList | null) => {
+    const files = [...(list ?? [])];
+    for (const [i, f] of files.entries()) {
+      setBusy(`Uploading ${i + 1} of ${files.length}…`); setErr('');
+      const x = await uploadGuestDoc(r.resId, kind, f).catch(e => ({ ok: false as const, message: String(e) }));
+      if (x.ok) onDocs(x.docs); else { setErr(`${f.name}: ${x.message ?? 'failed'}`); break; }
+    }
+    setBusy('');
+  };
+
+  return (
+    <div className="ops-docs">
+      <div className="ops-docs-head">
+        <b>Guest documents</b>
+        {!required && <span className="note">not required for this unit — only the P2 building asks for them</span>}
+        {docs?.folderUrl && <a href={docs.folderUrl} target="_blank" rel="noreferrer">Drive folder ↗</a>}
+        <span className="note">
+          {!hostaway ? 'asking Hostaway about the agreement…'
+            : hostaway.pulled ? '✓ signed agreement filed from Hostaway just now'
+            : hostaway.signed ? (hostaway.available ? '✓ signed in Hostaway' : '✓ signed in Hostaway — PDF not ready yet')
+            : '○ agreement not signed in Hostaway yet'}
+        </span>
+      </div>
+      <div className="ops-docs-cols">
+        <DocDrop title="ID" files={docs?.id} busy={busy} onFiles={l => void upload('id', l)} />
+        <DocDrop title="Rental agreement" files={docs?.agreement} busy={busy} onFiles={l => void upload('agreement', l)} />
+      </div>
+      {err && <p className="banner warn">▲ {err}</p>}
+    </div>
+  );
+}
+
+function DocDrop({ title, files, busy, onFiles }: {
+  title: string; files: StayDocs['id'] | undefined; busy: string; onFiles: (l: FileList | null) => void;
+}) {
+  const [hot, setHot] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
+  return (
+    <div className="ops-docs-col">
+      <div className="ops-docs-title">{files?.length ? '✓' : '○'} {title}</div>
+      {files === undefined ? <div className="note loading-dot">Reading</div>
+        : !files.length ? <div className="note">Nothing filed.</div>
+        : files.map(f => <a key={f.fileId} className="ops-docs-file" href={f.url} target="_blank" rel="noreferrer" title={f.name}>{f.name}</a>)}
+      <div className={`rb-drop-zone ${hot ? 'hot' : ''}`} onClick={() => !busy && picker.current?.click()}
+           onDragOver={e => { e.preventDefault(); setHot(true); }} onDragLeave={() => setHot(false)}
+           onDrop={e => { e.preventDefault(); setHot(false); if (!busy) onFiles(e.dataTransfer.files); }}>
+        {busy || 'Drop a file, or click'}
+        <input ref={picker} type="file" multiple hidden onChange={e => { onFiles(e.target.files); e.target.value = ''; }} />
       </div>
     </div>
   );

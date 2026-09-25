@@ -518,6 +518,7 @@ function DrivePanel() {
   const [st, setSt] = useState<DriveStatus | null>(null);
   const [clientId, setClientId] = useState('');
   const [secret, setSecret] = useState('');
+  const [root, setRoot] = useState<string | null>(null);
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(() => {
     const back = new URLSearchParams(location.search).get('drive');
     return back ? { ok: back === 'connected', text: back === 'connected' ? 'Google Drive connected.' : `Not connected: ${back}` } : null;
@@ -526,7 +527,10 @@ function DrivePanel() {
 
   const load = async () => {
     const r = await getDrive().catch(() => null);
-    if (r && r.ok) { setSt(r); setClientId(c => c || r.clientId || ''); }
+    if (r && r.ok) {
+      setSt(r); setClientId(c => c || r.clientId || '');
+      setRoot(v => v ?? (r.guestRootId ? `https://drive.google.com/drive/folders/${r.guestRootId}` : ''));
+    }
   };
   useEffect(() => {
     void load();
@@ -587,6 +591,16 @@ function DrivePanel() {
           {st.connected ? 'Reconnect Google Drive' : 'Connect Google Drive'}</button>
         {st.connected && <button className="secondary" disabled={busy}
                 onClick={() => void run({ action: 'disconnect' }, 'Disconnected. Files already in Drive stay there.')}>Disconnect</button>}
+      </div>
+      <label>
+        Guest documents folder — IDs and rental agreements, one folder per reservation (Operations)
+        <input value={root ?? ''} onChange={e => setRoot(e.target.value)} placeholder="https://drive.google.com/drive/folders/…" />
+      </label>
+      <p className="note">The daily file's folder: year → month → day → "Sep 24 &amp; Guest" → ID / Rental Agreement.
+        Kaizen reads and files into the same folders, so nothing moves.</p>
+      <div className="button-row">
+        <button className="secondary" disabled={busy || root === null}
+                onClick={() => void run({ action: 'guestRoot', folder: root }, 'Guest documents folder saved.')}>Save folder</button>
       </div>
       {msg && <p className={`banner ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
     </div>

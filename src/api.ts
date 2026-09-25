@@ -428,17 +428,52 @@ export async function uploadRepoFile(table: string, id: string, column: string, 
     { ok: true; data: { fileId: string; url: string } } | { ok: false; message?: string };
 }
 
+/* ── Monday import (§74) ──────────────────────────────────────────── */
+
+type ImportRead = { ok: true; name: string; rows: string[][] } | { ok: false; message?: string };
+export async function importReadFile(file: File): Promise<ImportRead> {
+  const form = new FormData();
+  form.set('file', file);
+  const res = await fetch('/api/repository-import', { method: 'POST', body: form });
+  return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as ImportRead;
+}
+export const importReadLink = (link: string) =>
+  call<ImportRead>('/api/repository-import', { method: 'POST', body: JSON.stringify({ op: 'read', link }) });
+export const importCommit = (body: Record<string, unknown>) =>
+  call<{ ok: true; key: string; records: number; secrets: number } | { ok: false; message?: string }>(
+    '/api/repository-import', { method: 'POST', body: JSON.stringify({ ...body, op: 'commit' }) });
+
 /* ── Google Drive (§72) ───────────────────────────────────────────── */
 
 export interface DriveStatus {
   ok: true; clientId: string | null; hasSecret: boolean; connected: boolean; email: string | null;
   redirectUri: string; quota: { usage: number; limit: number | null } | null; problem: string | null;
+  guestRootId: string | null;
 }
 export const getDrive = () => call<DriveStatus | { ok: false; error?: string }>('/api/google-drive');
 export const driveAction = (body: Record<string, unknown>) =>
   call<{ ok: true; url?: string } | { ok: false; error?: string }>('/api/google-drive', {
     method: 'POST', body: JSON.stringify(body)
   });
+
+/* ── guest documents (§73) ────────────────────────────────────────── */
+
+export interface GuestFile { fileId: string; name: string; mimeType: string; url: string; updatedAt: string }
+export interface StayDocs { folderUrl: string | null; id: GuestFile[]; agreement: GuestFile[] }
+export const getGuestDocs = (stays: { resId: string; arrival: string; name: string }[]) =>
+  call<{ ok: true; docs: Record<string, StayDocs> } | { ok: false; message?: string }>('/api/guest-docs', {
+    method: 'POST', body: JSON.stringify({ action: 'status', stays })
+  });
+export const syncAgreement = (resId: string) =>
+  call<{ ok: true; signed: boolean; available: boolean; pulled: boolean; docs: StayDocs } | { ok: false; message?: string }>(
+    '/api/guest-docs', { method: 'POST', body: JSON.stringify({ action: 'agreement', resId }) });
+export async function uploadGuestDoc(resId: string, kind: 'id' | 'agreement', file: File) {
+  const form = new FormData();
+  form.set('resId', resId); form.set('kind', kind); form.set('file', file);
+  const res = await fetch('/api/guest-docs-upload', { method: 'POST', body: form });
+  return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as
+    { ok: true; docs: StayDocs } | { ok: false; message?: string };
+}
 
 export const getRepoDocsBatch = (table: string, column: string, ids: string[]) =>
   call<{ ok: true; docs: Record<string, { folderUrl: string; files: RepoFile[]; truncated: boolean }> } | { ok: false; message?: string }>(
