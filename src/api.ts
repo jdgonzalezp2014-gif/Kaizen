@@ -408,3 +408,7 @@ export const repoStructure = (body: Record<string, unknown>) =>
   call<{ ok: true; data: any } | { ok: false; message?: string }>('/api/repository-structure', {
     method: 'POST', body: JSON.stringify(body)
   });
+export const getRepoDocsBatch = (table: string, column: string, ids: string[]) =>
+  call<{ ok: true; docs: Record<string, { folderUrl: string; files: RepoFile[]; truncated: boolean }> } | { ok: false; message?: string }>(
+    `/api/repository?op=docsbatch&table=${encodeURIComponent(table)}&column=${encodeURIComponent(column)}` +
+    `&ids=${encodeURIComponent(ids.join(','))}`);

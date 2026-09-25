@@ -9,9 +9,13 @@
  *   { op: 'columns.update', table, columnKey, changes: { title?, type?, options?, group?, required? } }
  *   { op: 'columns.move', table, columnKey, direction: 'left' | 'right' }
  *
- * `repository.structure` (roles.ts). Nothing here deletes: removing a
- * column deletes its data from the sheet, and that stays in the
- * repository's own editor, deliberately a trip away.
+ *   { op: 'columns.reorder', table, columnKey, toIndex }
+ *   { op: 'columns.delete', table, columnKey, confirm }   confirm = the column's title
+ *   { op: 'tables.delete', table, confirm }               the sheet is hidden, the folder archived
+ *
+ * `repository.structure` (roles.ts). Deleting a column erases its values
+ * from the sheet, so it demands the column's name typed back — a click
+ * cannot do it by accident — and the sheet's version history is the undo.
  */
 import { db, type Env } from '../_lib/db.ts';
 import { getRepoCredentials, type SqlFn } from '../_lib/accounts.ts';
@@ -74,6 +78,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!Object.keys(changes).length) return fail(400, 'Nothing to change.');
     params = { table: b.table, columnKey: b.columnKey, changes };
     detail = `${b.columnKey}: ${Object.keys(changes).join(', ')}`;
+  } else if (op === 'columns.reorder') {
+    const to = Number(b.toIndex);
+    if (!KEY.test(String(b.table)) || !KEY.test(String(b.columnKey)) || !Number.isInteger(to) || to < 0) {
+      return fail(400, 'Which column, and where to?');
+    }
+    params = { table: b.table, columnKey: b.columnKey, toIndex: to };
+    detail = `${b.columnKey} → position ${to + 1}`;
+  } else if (op === 'columns.delete' || op === 'tables.delete') {
+    if (!KEY.test(String(b.table))) return fail(400, 'Which table?');
+    if (op === 'columns.delete' && !KEY.test(String(b.columnKey))) return fail(400, 'Which column?');
+    // The title typed back, checked against the repository's own record of it.
+    const meta = await repoCall<{ sections: { tables: { key: string; title: string; columns: { key: string; title: string }[] }[] }[] }>(creds, 'meta');
+    const t = meta.sections.flatMap(s => s.tables).find(x => x.key === b.table);
+    const name = op === 'tables.delete' ? t?.title : t?.columns.find(c => c.key === b.columnKey)?.title;
+    if (!name) return fail(404, 'Not found.');
+    if (String(b.confirm ?? '').trim() !== name) return fail(400, `Type “${name}” to confirm.`);
+    params = op === 'tables.delete' ? { table: b.table } : { table: b.table, columnKey: b.columnKey };
+    detail = op === 'tables.delete' ? `archived ${name}` : `deleted column ${name}`;
   } else {
     if (!KEY.test(String(b.table)) || !KEY.test(String(b.columnKey)) || !['left', 'right'].includes(b.direction)) {
       return fail(400, 'Which column, and which way?');

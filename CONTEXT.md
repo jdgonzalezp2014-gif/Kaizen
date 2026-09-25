@@ -1990,10 +1990,13 @@ Three permission levels (roles.ts, migration 025): `repository` reads,
 changes sections/tables/columns. Seeded: ops edit, manager both.
 
 **Left out on purpose** (`functions/_lib/repository.ts`, per-permission
-allow-lists): deleting a column (it erases that column's data from the
-sheet), deleting tables/sections, hard-deleting rows, users, imports.
-Deleting a record archives its folder; deleting a document sends it to
-Drive's trash (30 days).
+allow-lists): deleting a whole section, hard-deleting rows, users (access
+is Kaizen's roles), imports. Deleting a column IS offered, as the
+repository's own app did, but it erases the column's values from the
+sheet, so the route demands the column's name typed back (the sheet's
+version history is the undo). Archiving a table hides its sheet and moves
+its folder to _Archive, same typed confirmation. Deleting a record
+archives its folder; deleting a document sends it to Drive's trash.
 
 **The mask rule.** The API returns secrets as `••••••••`, and its engine
 encrypts whatever it is given. A form that echoed an unchanged secret
@@ -2026,3 +2029,32 @@ dropdown's validation, setting a secret, create, upload, structure, the
 refusal of `columns.delete`, per-role access, and the audit trail. Writes
 were not exercised against the real repository — the first real edit is
 the owner's to make.
+
+
+### The screen, redesigned from the repository's own app (2026-09-25)
+
+The first version was a form stack: text cursor on every cell, a
+three-line address per row, structure behind a "Columns" button, files
+only inside an opened record. The owner found it unpleasant, and the
+repository's own app had solved exactly this. What was taken from it:
+
+- **The grid is the workspace.** One-line, 40px rows clipped with an
+  ellipsis; sticky header and sticky ID + name columns, because 38
+  columns only read next to the name they belong to. Links show their
+  host (`↗ docs.google.com`), full URL on hover.
+- **Everything in place.** A pointer (not a caret) on what can change;
+  click a cell to edit it; dropdowns open a picker that filters and, for
+  structure roles, adds the typed value as an option; long text opens a
+  larger editor; checkboxes toggle.
+- **Structure lives on the header.** Each column's ▾ menu: rename, edit
+  options, change type (saying what happens to the values first), move,
+  delete. The "+" after the last column adds one. Headers drag to reorder.
+- **Documents are visible in the grid** — file glyphs and a count per
+  record, loaded one call per column (`docs.batch`) — and a click opens
+  the list with a drop zone and new Google Doc / Sheet.
+- **Creating is typing** in the empty last row.
+- **The record opens BESIDE the grid** (§22), not over it; below 1100px
+  it becomes a side sheet.
+- Optimistic saves with a toast; a refused save restores the old value
+  and says why. `/` searches, Escape closes. The table re-reads itself
+  every minute, but never under someone editing or with a menu open.

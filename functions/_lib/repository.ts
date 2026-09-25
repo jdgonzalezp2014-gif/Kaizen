@@ -9,16 +9,19 @@
  *
  * The allow-lists below are the whole surface, one per permission; an
  * action not on them is refused before any request leaves. Left out on
- * purpose, and done in the repository's own editor if ever:
+ * purpose: sections.delete (archives every table in it at once), hard
+ * row deletes, users.* (access is Kaizen's roles now) and import.*.
  *
- *   columns.delete   deletes that column's data from the sheet
- *   tables/sections.delete, rows hard delete, users.*, import.*
+ * columns.delete IS here, as the repository's own app offered it, but it
+ * erases that column's values from the sheet — the route demands the
+ * column's name typed back, and the sheet's version history is the undo.
  */
 
-export const READ = new Set(['meta', 'list', 'get', 'docs.list', 'reveal']);
+export const READ = new Set(['meta', 'list', 'get', 'docs.list', 'docs.batch', 'reveal']);
 export const EDIT = new Set(['create', 'update', 'delete', 'docs.upload', 'docs.create', 'docs.rename', 'docs.delete']);
 export const STRUCTURE = new Set(['sections.create', 'sections.rename', 'tables.create', 'tables.rename',
-                                  'columns.add', 'columns.update', 'columns.move']);
+                                  'tables.delete', 'columns.add', 'columns.update', 'columns.move',
+                                  'columns.reorder', 'columns.delete']);
 const ALLOWED = new Set([...READ, ...EDIT, ...STRUCTURE]);
 
 /** What the API returns in place of a secret. Writing it back would encrypt the mask. */

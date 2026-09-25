@@ -60,6 +60,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const r = await repoCall<{ folderUrl: string; files: RepoFile[] }>(creds, 'docs.list', { table, id, column });
       return Response.json({ ok: true, folderUrl: r.folderUrl, files: r.files });
     }
+    if (op === 'docsbatch') {
+      // One call per document column for every row on screen — what lets
+      // the grid show each record's files without opening it.
+      const ids = (url.searchParams.get('ids') ?? '').split(',').map(s => s.trim()).filter(Boolean).slice(0, 200);
+      if (!KEY.test(table) || !KEY.test(column)) return bad('Which document column?');
+      const r = await repoCall<Record<string, { folderUrl: string; files: RepoFile[]; truncated: boolean }>>(
+        creds, 'docs.batch', { table, column, ids, perRow: 8 });
+      return Response.json({ ok: true, docs: r });
+    }
     if (op === 'search') {
       const q = (url.searchParams.get('q') ?? '').trim();
       if (q.length < 2) return bad('Type at least two characters.');

@@ -1,41 +1,157 @@
 /**
  * Repository — the Data Repository, run from Kaizen OS.
  *
- * Its Sheet is still the database and its Drive folders still hold the
- * files; its engine still validates every write, builds each record's
- * folders and encrypts secrets. This screen is where people read and
- * change it, and Kaizen's roles decide who may (§66):
+ * The repository's Sheet is the database and its Drive folders hold the
+ * files; its engine validates, builds folders and encrypts (§66). This is
+ * the screen people work in, redesigned from the repository's own app,
+ * which got the hard part right: THE GRID IS THE WORKSPACE.
  *
- *   repository            read, search, open documents
- *   repository.reveal     show a password (logged, re-masks in 30 s)
- *   repository.edit       records and their documents
- *   repository.structure  sections, tables, columns
+ *   · Rows are one line, 42px, clipped with an ellipsis. A cell that wraps
+ *     turns a table of 21 units into three screens of scrolling.
+ *   · The header and the ID/name columns stay put while the rest scrolls,
+ *     because 38 columns only make sense next to the name they belong to.
+ *   · Everything happens where it is: click a cell to edit it, a dropdown
+ *     opens its picker, a documents cell opens its files with a drop zone,
+ *     each column header carries its own menu, the "+" at the end adds a
+ *     column, and typing in the last, empty row creates a record.
+ *   · The record opens BESIDE the grid, not over it (§22): the list stays
+ *     in view, because it is what the record is compared against.
+ *   · Saves are optimistic and say so; a refused save puts the old value
+ *     back and says why.
  *
- * The sections, tables and columns are whatever the repository says they
- * are today; nothing about its structure is known here in advance.
- *
- * Editing is in place: click a cell, type, Enter. Records open under
- * their row, never in a dialog over the list they belong to (§22).
+ * What each person may do comes from Kaizen's roles: repository (read),
+ * repository.reveal, repository.edit, repository.structure.
  */
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
 import {
-  getRepoMeta, getRepoRows, getRepoDocs, searchRepo, revealRepoSecret, repoEdit, repoStructure,
+  getRepoMeta, getRepoRows, getRepoDocs, getRepoDocsBatch, searchRepo, revealRepoSecret, repoEdit, repoStructure,
   type RepoColumn, type RepoFile, type RepoHit, type RepoRow, type RepoSection, type RepoTable
 } from '../api.ts';
 
-/** Maintained by the engine; shown in the record, never in the grid. */
-const SYSTEM = new Set(['id', 'folder', 'auto']);
-const USER_TYPES: [string, string][] = [
-  ['text', 'Text'], ['longtext', 'Long text'], ['number', 'Number'], ['date', 'Date'],
-  ['checkbox', 'Checkbox'], ['select', 'Dropdown'], ['email', 'E-mail'], ['url', 'Link'],
-  ['secret', 'Secret (encrypted)'], ['doc', 'Documents (Drive folder)']
-];
-/** Types the engine can convert between; the rest are fixed once created. */
-const CONVERTIBLE = new Set(['text', 'longtext', 'number', 'date', 'checkbox', 'select', 'email', 'url']);
+interface Can { reveal: boolean; edit: boolean; structure: boolean }
+type DocEntry = { folderUrl: string; files: RepoFile[]; truncated?: boolean };
+
+/** The engine's own columns: never typed into. */
+const SYSTEM_TYPES = new Set(['id', 'folder', 'auto']);
+const TYPE_LABEL: Record<string, string> = {
+  text: 'Text', longtext: 'Long text', number: 'Number', date: 'Date', checkbox: 'Checkbox',
+  select: 'Dropdown', email: 'E-mail', url: 'Link', ref: 'Reference', secret: 'Secret (encrypted)',
+  doc: 'Documents (Drive)', id: 'ID', folder: 'Row folder', auto: 'Audit'
+};
+/** Types the engine converts between. Secret, documents and reference are fixed once made. */
+const CONVERTIBLE = ['text', 'longtext', 'number', 'date', 'checkbox', 'select', 'email', 'url'];
+const NEW_TYPES = [...CONVERTIBLE, 'secret', 'doc'];
+/** What a conversion does to the values already there — said before it runs. */
+const CONVERSION: Record<string, string> = {
+  date: 'Values become dates (yyyy-mm-dd); anything that is not a date is cleared.',
+  number: 'Text is stripped to digits; anything left over is cleared.',
+  select: 'Only values on the option list are kept; the rest are cleared.',
+  checkbox: 'true / yes / 1 / x become ticked, everything else unticked.'
+};
 const REMASK_MS = 30_000;
 const MAX_UPLOAD = 10 * 1024 * 1024;
+const POLL_MS = 60_000;
 
-interface Can { reveal: boolean; edit: boolean; structure: boolean }
+/* ── small helpers ────────────────────────────────────────────────── */
+
+const text = (v: RepoRow[string] | undefined) => v == null ? '' : String(v);
+const isEmpty = (v: RepoRow[string] | undefined) => text(v).trim() === '';
+const day = (v: RepoRow[string] | undefined) => { const s = text(v); return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : s; };
+const ticked = (v: RepoRow[string] | undefined) => v === true || /^(true|yes|1|x)$/i.test(text(v));
+const host = (u: string) => { try { return new URL(u).hostname.replace(/^www\./, ''); } catch { return u; } };
+const userColumns = (t: RepoTable) => t.columns.filter(c => !c.system && !SYSTEM_TYPES.has(c.type));
+const primaryKey = (t: RepoTable) => t.nameFields[0] ?? userColumns(t).find(c => c.type === 'text')?.key ?? '';
+const fileGlyph = (mime: string) => /image\//.test(mime) ? '🖼' : /pdf/.test(mime) ? '📕'
+  : /spreadsheet|excel|csv/.test(mime) ? '📊' : /presentation/.test(mime) ? '📽' : /document|word/.test(mime) ? '📝' : '📄';
+const readBase64 = (f: File) => new Promise<string>((res, rej) => {
+  const fr = new FileReader();
+  fr.onload = () => res(String(fr.result).split(',')[1] ?? '');
+  fr.onerror = () => rej(fr.error);
+  fr.readAsDataURL(f);
+});
+type Fail = { ok: false; message?: string };
+const safe = <T,>(p: Promise<T>) => p.catch(e => ({ ok: false, message: e instanceof Error ? e.message : String(e) }) as Fail);
+
+/* ── toast and popover ────────────────────────────────────────────── */
+
+function useToast() {
+  const [t, setT] = useState<{ msg: string; bad: boolean; n: number } | null>(null);
+  useEffect(() => {
+    if (!t) return;
+    const id = window.setTimeout(() => setT(null), t.bad ? 6500 : 2200);
+    return () => window.clearTimeout(id);
+  }, [t]);
+  const say = useCallback((msg: string, bad = false) => setT(p => ({ msg, bad, n: (p?.n ?? 0) + 1 })), []);
+  const node = t ? <div className={`rb-toast ${t.bad ? 'bad' : ''}`} role="status">{t.bad ? '▲ ' : '✓ '}{t.msg}</div> : null;
+  return [say, node] as const;
+}
+
+/**
+ * A small panel anchored under what opened it. Fixed-positioned and kept
+ * inside the window; closes on Escape, a click outside, or the grid
+ * scrolling away from it — the three ways people expect a menu to go.
+ */
+function Popover({ anchor, onClose, width = 280, children }: {
+  anchor: DOMRect; onClose: () => void; width?: number; children: ReactNode;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState({ top: anchor.bottom + 6, left: anchor.left });
+  useEffect(() => {
+    const el = ref.current;
+    if (el) {
+      const h = el.offsetHeight;
+      setPos({
+        top: anchor.bottom + 6 + h > window.innerHeight - 10 ? Math.max(10, anchor.top - h - 6) : anchor.bottom + 6,
+        left: Math.max(10, Math.min(anchor.left, window.innerWidth - width - 10))
+      });
+    }
+    const down = (e: MouseEvent) => { if (ref.current && !ref.current.contains(e.target as Node)) onClose(); };
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    const scroll = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
+    window.setTimeout(() => document.addEventListener('mousedown', down), 0);
+    document.addEventListener('keydown', key);
+    window.addEventListener('scroll', scroll, true);
+    return () => {
+      document.removeEventListener('mousedown', down);
+      document.removeEventListener('keydown', key);
+      window.removeEventListener('scroll', scroll, true);
+    };
+  }, []);
+  return createPortal(
+    <div ref={ref} className="rb-pop" style={{ top: pos.top, left: pos.left, width }}>{children}</div>, document.body);
+}
+
+/** A destructive action asks in place; typing the name is required where a click must not be enough. */
+function Confirm({ title, message, typed, action, onConfirm, onCancel }: {
+  title: string; message: string; typed?: string; action: string;
+  onConfirm: (typed: string) => void; onCancel: () => void;
+}) {
+  const [v, setV] = useState('');
+  return (
+    <div className="rb-confirm">
+      <div className="rb-pop-title">{title}</div>
+      <p>{message}</p>
+      {typed && <input autoFocus placeholder={`Type “${typed}”`} value={v} onChange={e => setV(e.target.value)} />}
+      <div className="rb-pop-actions">
+        <button className="secondary small" onClick={onCancel}>Cancel</button>
+        <button className="small rb-danger" disabled={!!typed && v.trim() !== typed} onClick={() => onConfirm(v.trim())}>{action}</button>
+      </div>
+    </div>
+  );
+}
+
+/* ── the screen ───────────────────────────────────────────────────── */
+
+type Pop =
+  | { kind: 'select'; rect: DOMRect; row: RepoRow | null; col: RepoColumn }
+  | { kind: 'docs'; rect: DOMRect; row: RepoRow; col: RepoColumn }
+  | { kind: 'colmenu'; rect: DOMRect; col: RepoColumn }
+  | { kind: 'addcol'; rect: DOMRect }
+  | { kind: 'text'; rect: DOMRect; row: RepoRow; col: RepoColumn }
+  | { kind: 'table'; rect: DOMRect; table: RepoTable }
+  | { kind: 'newtable'; rect: DOMRect; section: RepoSection }
+  | { kind: 'newsection'; rect: DOMRect };
 
 export function Repository({ canReveal, canEdit, canStructure }: {
   canReveal: boolean; canEdit: boolean; canStructure: boolean;
@@ -44,684 +160,861 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const [sections, setSections] = useState<RepoSection[] | null>(null);
   const [err, setErr] = useState('');
   const [tableKey, setTableKey] = useState<string | null>(null);
-  const [q, setQ] = useState('');
+  const [rowsBy, setRowsBy] = useState<Record<string, RepoRow[]>>({});
+  const [docs, setDocs] = useState<Record<string, DocEntry>>({});
+  const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState('');
   const [hits, setHits] = useState<{ q: string; results: RepoHit[]; searched: number } | null>(null);
-  const [searching, setSearching] = useState(false);
+  const [openId, setOpenId] = useState<string | null>(null);
+  const [pop, setPop] = useState<Pop | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);   // `${id}|${col}`
+  const [say, toast] = useToast();
+  const searchRef = useRef<HTMLInputElement>(null);
 
-  const loadMeta = () => getRepoMeta().then(r => {
+  const tables = useMemo(() => (sections ?? []).flatMap(s => s.tables), [sections]);
+  const table = tables.find(t => t.key === tableKey) ?? null;
+  const rows = tableKey ? rowsBy[tableKey] : undefined;
+
+  const loadMeta = useCallback(async () => {
+    const r = await safe(getRepoMeta());
     if (!r.ok) { setErr(r.message ?? 'Could not read the repository.'); return; }
     setSections(r.meta.sections);
-    setTableKey(k => k ?? r.meta.sections.flatMap(s => s.tables)[0]?.key ?? null);
-  }).catch(e => setErr(e instanceof Error ? e.message : String(e)));
-  useEffect(() => { void loadMeta(); }, []);
+    setTableKey(k => k && r.meta.sections.some(s => s.tables.some(t => t.key === k)) ? k
+      : r.meta.sections.flatMap(s => s.tables)[0]?.key ?? null);
+  }, []);
+  const loadRows = useCallback(async (key: string, quiet = false) => {
+    if (!quiet) setLoading(true);
+    const r = await safe(getRepoRows(key));
+    if (!quiet) setLoading(false);
+    if (r.ok) setRowsBy(m => ({ ...m, [key]: r.rows }));
+    else if (!quiet) say(r.message ?? 'Could not read the table.', true);
+  }, [say]);
 
-  const byKey = useMemo(() => new Map((sections ?? []).flatMap(s => s.tables).map(t => [t.key, t])), [sections]);
-  const table = tableKey ? byKey.get(tableKey) ?? null : null;
+  useEffect(() => { void loadMeta(); }, [loadMeta]);
+  useEffect(() => { if (tableKey) { setOpenId(null); void loadRows(tableKey, !!rowsBy[tableKey]); } }, [tableKey]);
 
-  const runSearch = () => {
-    const needle = q.trim();
-    if (needle.length < 2) return;
-    setSearching(true);
-    searchRepo(needle)
-      .then(r => r.ok ? setHits(r) : setErr(r.message ?? 'Search failed.'))
-      .catch(e => setErr(String(e)))
-      .finally(() => setSearching(false));
+  // Files for every visible row: one call per document column, as the
+  // repository's own grid did. The cells show what each record holds
+  // without anyone opening it.
+  useEffect(() => {
+    if (!table || !rows?.length) return;
+    for (const col of table.columns.filter(c => c.type === 'doc')) {
+      const missing = rows.map(r => String(r.id)).filter(id => !docs[`${table.key}|${col.key}|${id}`]).slice(0, 80);
+      if (!missing.length) continue;
+      void safe(getRepoDocsBatch(table.key, col.key, missing)).then(r => {
+        if (!r.ok) return;
+        setDocs(d => ({ ...d, ...Object.fromEntries(Object.entries(r.docs).map(([id, e]) => [`${table.key}|${col.key}|${id}`, e])) }));
+      });
+    }
+  }, [table?.key, rows?.length]);
+
+  // A colleague's edit appears on its own — but never under someone who is
+  // typing, choosing, or reading an open menu, and not in a hidden tab.
+  useEffect(() => {
+    const id = window.setInterval(() => {
+      if (!tableKey || editing || pop || document.visibilityState !== 'visible') return;
+      void loadRows(tableKey, true);
+    }, POLL_MS);
+    return () => window.clearInterval(id);
+  }, [tableKey, editing, pop, loadRows]);
+
+  // "/" searches, Escape closes, as in the repository's app.
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => {
+      const typing = /INPUT|TEXTAREA|SELECT/.test((e.target as HTMLElement).tagName);
+      if (e.key === '/' && !typing) { e.preventDefault(); searchRef.current?.focus(); }
+      if (e.key === 'Escape' && !pop && !typing) setOpenId(null);
+    };
+    document.addEventListener('keydown', key);
+    return () => document.removeEventListener('keydown', key);
+  }, [pop]);
+
+  const replaceRow = (key: string, id: string, row: RepoRow | null) =>
+    setRowsBy(m => ({ ...m, [key]: (m[key] ?? []).flatMap(r => String(r.id) !== id ? [r] : row ? [row] : []) }));
+
+  /** Optimistic: shown at once, put back if the engine refuses. */
+  const saveCell = async (row: RepoRow, col: RepoColumn, value: unknown) => {
+    if (!table) return;
+    const id = String(row.id);
+    if (text(value as RepoRow[string]) === text(row[col.key])) return;
+    replaceRow(table.key, id, { ...row, [col.key]: value as RepoRow[string] });
+    const r = await safe(repoEdit({ op: 'update', table: table.key, id, values: { [col.key]: value } }));
+    if (r.ok) { replaceRow(table.key, id, r.data as RepoRow); say('Saved'); }
+    else { replaceRow(table.key, id, row); say(r.message ?? 'Not saved.', true); }
+  };
+  const createRow = async (values: Record<string, unknown>) => {
+    if (!table) return;
+    const r = await safe(repoEdit({ op: 'create', table: table.key, values }));
+    if (!r.ok) { say(r.message ?? 'Not created.', true); return; }
+    const row = r.data as RepoRow;
+    setRowsBy(m => ({ ...m, [table.key]: [...(m[table.key] ?? []), row] }));
+    say(`Created ${row.id}`);
+    setOpenId(String(row.id));
+  };
+  const structure = async (body: Record<string, unknown>, done: string) => {
+    const r = await safe(repoStructure(body));
+    if (!r.ok) { say(r.message ?? 'Failed.', true); return false; }
+    say(done); setPop(null); await loadMeta();
+    if (tableKey) void loadRows(tableKey, true);
+    return true;
+  };
+  const refreshDocs = async (row: RepoRow, col: RepoColumn) => {
+    if (!table) return;
+    const r = await safe(getRepoDocs(table.key, String(row.id), col.key));
+    if (r.ok) setDocs(d => ({ ...d, [`${table.key}|${col.key}|${row.id}`]: { folderUrl: r.folderUrl, files: r.files } }));
+  };
+
+  const runSearch = async () => {
+    const q = filter.trim();
+    if (q.length < 2) return;
+    setLoading(true);
+    const r = await safe(searchRepo(q));
+    setLoading(false);
+    if (r.ok) setHits(r); else say(r.message ?? 'Search failed.', true);
   };
 
   if (err && !sections) return <p className="banner warn">▲ {err}</p>;
-  if (!sections) return <p className="note loading-dot">Reading the repository…</p>;
+  if (!sections) return <div className="rb"><div className="rb-skel" /></div>;
+
+  const openRow = openId && rows ? rows.find(r => String(r.id) === openId) ?? null : null;
 
   return (
-    <section className="repo">
-      <aside className="repo-nav">
-        <form onSubmit={e => { e.preventDefault(); runSearch(); }}>
-          <input placeholder="Search everything" value={q} onChange={e => setQ(e.target.value)} />
-        </form>
+    <section className="rb">
+      <aside className="rb-nav">
         {sections.map(s => (
-          <div key={s.key} className="repo-section">
-            <div className="repo-section-title">
-              <Rename enabled={can.structure} value={s.title}
-                      onSave={t => repoStructure({ op: 'sections.rename', section: s.key, title: t }).then(r => { if (r.ok) void loadMeta(); return r; })} />
+          <div key={s.key} className="rb-nav-section">
+            <div className="rb-nav-head">
+              <span>{s.title}</span>
+              {can.structure && <button className="rb-icon" title={`New table in ${s.title}`}
+                onClick={e => setPop({ kind: 'newtable', rect: e.currentTarget.getBoundingClientRect(), section: s })}>+</button>}
             </div>
             {s.tables.map(t => (
-              <button key={t.key} className={!hits && tableKey === t.key ? 'repo-table active' : 'repo-table'}
-                      onClick={() => { setHits(null); setTableKey(t.key); }}>
-                {t.title}
-              </button>
+              <div key={t.key} className={`rb-nav-item ${!hits && tableKey === t.key ? 'active' : ''}`}>
+                <button className="rb-nav-link" onClick={() => { setHits(null); setFilter(''); setTableKey(t.key); }}>
+                  {t.title}
+                  {rowsBy[t.key] && <span className="rb-nav-count">{rowsBy[t.key]!.length}</span>}
+                </button>
+                {can.structure && <button className="rb-icon rb-hover" title="Table options"
+                  onClick={e => setPop({ kind: 'table', rect: e.currentTarget.getBoundingClientRect(), table: t })}>⋯</button>}
+              </div>
             ))}
-            {can.structure && <NewTable section={s.key} onDone={k => { void loadMeta().then(() => { setHits(null); setTableKey(k); }); }} />}
           </div>
         ))}
-        {can.structure && <NewSection onDone={() => void loadMeta()} />}
+        {can.structure && <button className="rb-add-link" onClick={e => setPop({ kind: 'newsection', rect: e.currentTarget.getBoundingClientRect() })}>+ New section</button>}
       </aside>
 
-      <div className="repo-main">
-        {err && <p className="banner warn">▲ {err}</p>}
-        {searching && <p className="note loading-dot">Searching every table…</p>}
-        {hits && !searching && (
-          <SearchResults hits={hits} byKey={byKey} can={can}
-                         onOpen={t => { setHits(null); setTableKey(t.key); }} />
+      <div className="rb-main">
+        <header className="rb-bar">
+          <h2>{hits ? `Search: “${hits.q}”` : table?.title ?? ''}</h2>
+          {!hits && rows && <span className="rb-count">{rows.length} record{rows.length === 1 ? '' : 's'}</span>}
+          {loading && <span className="rb-count loading-dot">Loading</span>}
+          <span className="rb-spacer" />
+          <form className="rb-search" onSubmit={e => { e.preventDefault(); void runSearch(); }}>
+            <input ref={searchRef} type="search" value={filter} onChange={e => { setFilter(e.target.value); if (!e.target.value) setHits(null); }}
+                   placeholder={table ? `Filter ${table.title} · Enter = all tables` : 'Search'} />
+          </form>
+          {hits && <button className="secondary small" onClick={() => { setHits(null); setFilter(''); }}>Back to {table?.title}</button>}
+          {!hits && tableKey && <button className="secondary small" title="Reload from the sheet" onClick={() => void loadRows(tableKey)}>↻</button>}
+        </header>
+
+        {hits ? (
+          <SearchResults hits={hits} tables={tables} onOpen={(t, id) => { setHits(null); setFilter(''); setTableKey(t); setOpenId(id); }} />
+        ) : table && (
+          <div className={`rb-work ${openRow ? 'with-panel' : ''}`}>
+            <Grid table={table} rows={rows} filter={filter} can={can} docs={docs} editing={editing} openId={openId}
+                  setEditing={setEditing} setPop={setPop} onOpen={setOpenId} onSave={saveCell} onCreate={createRow}
+                  onReorder={(key, to) => void structure({ op: 'columns.reorder', table: table.key, columnKey: key, toIndex: to }, 'Column moved')}
+                  say={say} />
+            {openRow && (
+              <RecordPanel key={openId!} table={table} row={openRow} can={can} docs={docs} setPop={setPop}
+                           onClose={() => setOpenId(null)} onSave={saveCell} say={say}
+                           onDocs={refreshDocs}
+                           onDeleted={() => { replaceRow(table.key, String(openRow.id), null); setOpenId(null); say('Deleted — its folder is in _Archive'); }} />
+            )}
+          </div>
         )}
-        {!hits && table && <TableView key={table.key} table={table} can={can} byKey={byKey}
-                                      onStructure={() => void loadMeta()} />}
       </div>
+
+      {pop && table && pop.kind === 'select' && (
+        <Popover anchor={pop.rect} onClose={() => setPop(null)} width={240}>
+          <SelectPicker col={pop.col} current={pop.row ? text(pop.row[pop.col.key]) : ''} canAdd={can.structure}
+            onPick={v => { setPop(null); if (pop.row) void saveCell(pop.row, pop.col, v); else void createRow({ [pop.col.key]: v }); }}
+            onAdd={async v => {
+              const ok = await structure({ op: 'columns.update', table: table.key, columnKey: pop.col.key,
+                                           changes: { options: [...(pop.col.options ?? []), v] } }, `“${v}” added to ${pop.col.title}`);
+              if (ok && pop.row) void saveCell(pop.row, { ...pop.col, options: [...(pop.col.options ?? []), v] }, v);
+            }} />
+        </Popover>
+      )}
+      {pop && table && pop.kind === 'text' && (
+        <Popover anchor={pop.rect} onClose={() => setPop(null)} width={360}>
+          <LongText col={pop.col} value={text(pop.row[pop.col.key])} onSave={v => { setPop(null); void saveCell(pop.row, pop.col, v); }} />
+        </Popover>
+      )}
+      {pop && table && pop.kind === 'docs' && (
+        <Popover anchor={pop.rect} onClose={() => setPop(null)} width={340}>
+          <DocsBox table={table} row={pop.row} col={pop.col} can={can} say={say}
+                   entry={docs[`${table.key}|${pop.col.key}|${pop.row.id}`]} onChanged={() => refreshDocs(pop.row, pop.col)} />
+        </Popover>
+      )}
+      {pop && table && pop.kind === 'colmenu' && (
+        <Popover anchor={pop.rect} onClose={() => setPop(null)} width={300}>
+          <ColumnMenu table={table} col={pop.col} run={structure} />
+        </Popover>
+      )}
+      {pop && table && pop.kind === 'addcol' && (
+        <Popover anchor={pop.rect} onClose={() => setPop(null)} width={300}>
+          <ColumnForm onSubmit={spec => structure({ op: 'columns.add', table: table.key, column: spec }, `${spec.title} added`)} />
+        </Popover>
+      )}
+      {pop && pop.kind === 'table' && (
+        <Popover anchor={pop.rect} onClose={() => setPop(null)} width={280}>
+          <TableMenu table={pop.table} run={structure} />
+        </Popover>
+      )}
+      {pop && pop.kind === 'newtable' && (
+        <Popover anchor={pop.rect} onClose={() => setPop(null)} width={280}>
+          <NameForm title={`New table in ${pop.section.title}`} placeholder="Table name" extra="ID prefix, e.g. UNI (optional)"
+            onSubmit={(title, prefix) => structure({ op: 'tables.create', section: pop.section.key, title, idPrefix: prefix }, `${title} created`)} />
+        </Popover>
+      )}
+      {pop && pop.kind === 'newsection' && (
+        <Popover anchor={pop.rect} onClose={() => setPop(null)} width={260}>
+          <NameForm title="New section" placeholder="Section name" onSubmit={title => structure({ op: 'sections.create', title }, `${title} created`)} />
+        </Popover>
+      )}
+      {toast}
     </section>
   );
 }
 
-/* ── sidebar: structure ───────────────────────────────────────────── */
+/* ── the grid ─────────────────────────────────────────────────────── */
 
-function NewSection({ onDone }: { onDone: () => void }) {
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [msg, setMsg] = useState('');
-  if (!open) return <button className="link tiny" onClick={() => setOpen(true)}>+ section</button>;
-  return (
-    <form className="repo-inline-form" onSubmit={async e => {
-      e.preventDefault();
-      const r = await repoStructure({ op: 'sections.create', title });
-      if (!r.ok) { setMsg(r.message ?? 'Failed.'); return; }
-      setOpen(false); setTitle(''); onDone();
-    }}>
-      <input autoFocus placeholder="Section name" value={title} onChange={e => setTitle(e.target.value)} />
-      <button className="small" disabled={!title.trim()}>Add</button>
-      {msg && <span className="breach">{msg}</span>}
-    </form>
-  );
-}
-
-function NewTable({ section, onDone }: { section: string; onDone: (key: string) => void }) {
-  const [open, setOpen] = useState(false);
-  const [title, setTitle] = useState('');
-  const [prefix, setPrefix] = useState('');
-  const [msg, setMsg] = useState('');
-  if (!open) return <button className="link tiny" onClick={() => setOpen(true)}>+ table</button>;
-  return (
-    <form className="repo-inline-form" onSubmit={async e => {
-      e.preventDefault();
-      const r = await repoStructure({ op: 'tables.create', section, title, idPrefix: prefix });
-      if (!r.ok) { setMsg(r.message ?? 'Failed.'); return; }
-      setOpen(false); setTitle(''); setPrefix(''); onDone(r.data?.key ?? '');
-    }}>
-      <input autoFocus placeholder="Table name" value={title} onChange={e => setTitle(e.target.value)} />
-      <input placeholder="ID prefix, e.g. UNI (optional)" value={prefix} onChange={e => setPrefix(e.target.value)} />
-      <button className="small" disabled={!title.trim()}>Create</button>
-      {msg && <span className="breach">{msg}</span>}
-    </form>
-  );
-}
-
-/** A title that becomes an input on click, for those allowed to rename. */
-function Rename({ enabled, value, onSave }: {
-  enabled: boolean; value: string; onSave: (v: string) => Promise<{ ok: boolean; message?: string }>;
+function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, setPop, onOpen, onSave, onCreate, onReorder, say }: {
+  table: RepoTable; rows: RepoRow[] | undefined; filter: string; can: Can; docs: Record<string, DocEntry>;
+  editing: string | null; openId: string | null; setEditing: (k: string | null) => void; setPop: (p: Pop) => void;
+  onOpen: (id: string) => void; onSave: (row: RepoRow, col: RepoColumn, v: unknown) => Promise<void>;
+  onCreate: (values: Record<string, unknown>) => Promise<void>; onReorder: (key: string, to: number) => void;
+  say: (m: string, bad?: boolean) => void;
 }) {
-  const [editing, setEditing] = useState(false);
-  const [v, setV] = useState(value);
-  const [msg, setMsg] = useState('');
-  if (!enabled || !editing) {
-    return <span onDoubleClick={() => enabled && setEditing(true)} title={enabled ? 'Double-click to rename' : undefined}>{value}</span>;
-  }
-  const commit = async () => {
-    if (!v.trim() || v === value) { setEditing(false); return; }
-    const r = await onSave(v.trim());
-    if (r.ok) setEditing(false); else setMsg(r.message ?? 'Failed.');
-  };
-  return (
-    <>
-      <input autoFocus value={v} onChange={e => setV(e.target.value)} onBlur={() => void commit()}
-             onKeyDown={e => { if (e.key === 'Enter') void commit(); if (e.key === 'Escape') { setV(value); setEditing(false); } }} />
-      {msg && <span className="breach"> {msg}</span>}
-    </>
-  );
-}
-
-/* ── search ───────────────────────────────────────────────────────── */
-
-function SearchResults({ hits, byKey, can, onOpen }: {
-  hits: { q: string; results: RepoHit[]; searched: number };
-  byKey: Map<string, RepoTable>; can: Can; onOpen: (t: RepoTable) => void;
-}) {
-  const found = hits.results.filter(r => r.total > 0);
-  const failed = hits.results.filter(r => r.problem);
-  return (
-    <>
-      <h2 className="screen-title">“{hits.q}”</h2>
-      <p className="note">
-        {found.reduce((a, r) => a + r.total, 0)} match(es) across {hits.searched} table(s).
-        Encrypted passwords are never searched — they arrive masked.
-      </p>
-      {/* A table that could not be read was NOT searched, and "no results"
-          must not be allowed to mean both. */}
-      {failed.map(f => <p key={f.table} className="banner warn">▲ {f.title} could not be searched: {f.problem}</p>)}
-      {found.map(h => {
-        const t = byKey.get(h.table);
-        if (!t) return null;
-        return (
-          <div className="group" key={h.table}>
-            <h3>{h.section} · {h.title} <span className="count">{h.total}</span>{' '}
-              <button className="link" onClick={() => onOpen(t)}>open the table</button></h3>
-            <Grid table={t} rows={h.rows} can={{ ...can, edit: false }} byKey={byKey} onRows={() => {}} />
-            {h.total > h.rows.length && <p className="note">First {h.rows.length} of {h.total} — open the table for the rest.</p>}
-          </div>
-        );
-      })}
-      {!found.length && !failed.length && <p className="note">Nothing matches.</p>}
-    </>
-  );
-}
-
-/* ── a table ──────────────────────────────────────────────────────── */
-
-function TableView({ table, can, byKey, onStructure }: {
-  table: RepoTable; can: Can; byKey: Map<string, RepoTable>; onStructure: () => void;
-}) {
-  const [rows, setRows] = useState<RepoRow[] | null>(null);
-  const [err, setErr] = useState('');
-  const [filter, setFilter] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [columns, setColumns] = useState(false);
-
-  useEffect(() => {
-    getRepoRows(table.key)
-      .then(r => r.ok ? setRows(r.rows) : setErr(r.message ?? 'Could not read the table.'))
-      .catch(e => setErr(String(e)));
-  }, [table.key]);
-
+  const cols = userColumns(table);
+  const primary = primaryKey(table);
+  const [dragCol, setDragCol] = useState<string | null>(null);
+  const [dropCol, setDropCol] = useState<string | null>(null);
   const shown = useMemo(() => {
     const n = filter.trim().toLowerCase();
     return !n ? rows ?? [] : (rows ?? []).filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(n)));
   }, [rows, filter]);
 
+  if (!rows) return <div className="rb-board"><div className="rb-skel" /></div>;
+
+  return (
+    <div className="rb-board">
+      <table className="rb-grid">
+        <thead>
+          <tr>
+            <th className="rb-sticky rb-idcol">ID</th>
+            {cols.map(c => (
+              <th key={c.key} className={`${c.key === primary ? 'rb-sticky rb-primary' : ''} ${dropCol === c.key ? 'rb-drop' : ''}`}
+                  draggable={can.structure}
+                  onDragStart={() => setDragCol(c.key)}
+                  onDragOver={e => { if (dragCol && dragCol !== c.key) { e.preventDefault(); setDropCol(c.key); } }}
+                  onDragLeave={() => setDropCol(null)}
+                  onDrop={() => { if (dragCol) onReorder(dragCol, cols.findIndex(x => x.key === c.key)); setDragCol(null); setDropCol(null); }}
+                  onDragEnd={() => { setDragCol(null); setDropCol(null); }}>
+                <span className="rb-th">
+                  <span className="rb-th-title" title={`${c.title} · ${TYPE_LABEL[c.type] ?? c.type}`}>{c.title}</span>
+                  {can.structure && <button className="rb-th-menu" title="Column options"
+                    onClick={e => setPop({ kind: 'colmenu', rect: e.currentTarget.getBoundingClientRect(), col: c })}>▾</button>}
+                </span>
+              </th>
+            ))}
+            {can.structure
+              ? <th className="rb-addcol"><button className="rb-icon" title="Add a column"
+                   onClick={e => setPop({ kind: 'addcol', rect: e.currentTarget.getBoundingClientRect() })}>+</button></th>
+              : <th />}
+          </tr>
+        </thead>
+        <tbody>
+          {shown.map(row => {
+            const id = String(row.id);
+            return (
+              <tr key={id} className={openId === id ? 'rb-open' : undefined}>
+                <td className="rb-sticky rb-idcol"><button className="rb-idlink" onClick={() => onOpen(id)} title="Open the record">{id}</button></td>
+                {cols.map(c => (
+                  <Cell key={c.key} table={table} row={row} col={c} can={can} primary={c.key === primary}
+                        docs={docs[`${table.key}|${c.key}|${id}`]} editing={editing === `${id}|${c.key}`}
+                        setEditing={v => setEditing(v ? `${id}|${c.key}` : null)} setPop={setPop}
+                        onSave={v => onSave(row, c, v)} say={say} />
+                ))}
+                <td className="rb-rowend"><button className="rb-open-btn" title="Open the record" onClick={() => onOpen(id)}>›</button></td>
+              </tr>
+            );
+          })}
+          {filter && !shown.length && <tr><td className="rb-empty" colSpan={cols.length + 2}>Nothing in {table.title} matches “{filter}”. Press Enter to search every table.</td></tr>}
+          {can.edit && !filter && <GhostRow cols={cols} primary={primary} setPop={setPop} onCreate={onCreate} />}
+        </tbody>
+      </table>
+      {!rows.length && !can.edit && <p className="rb-empty">No records yet.</p>}
+    </div>
+  );
+}
+
+/** One cell: the value as it reads, and — for those who may — its editor in place. */
+function Cell({ table, row, col, can, primary, docs, editing, setEditing, setPop, onSave, say }: {
+  table: RepoTable; row: RepoRow; col: RepoColumn; can: Can; primary: boolean; docs: DocEntry | undefined;
+  editing: boolean; setEditing: (on: boolean) => void; setPop: (p: Pop) => void;
+  onSave: (v: unknown) => Promise<void>; say: (m: string, bad?: boolean) => void;
+}) {
+  const v = row[col.key];
+  const editable = can.edit && col.editable && !['secret', 'doc', 'ref'].includes(col.type) || (can.edit && col.type === 'ref');
+  const cls = ['rb-cell', primary ? 'rb-sticky rb-primary' : '', editable ? 'rb-editable' : '', `t-${col.type}`].join(' ');
+  const rect = (e: React.MouseEvent) => (e.currentTarget as HTMLElement).getBoundingClientRect();
+
+  if (editing) {
+    return <td className={`${cls} rb-editing`}><InlineInput col={col} value={v} onDone={val => { setEditing(false); if (val !== undefined) void onSave(val); }} /></td>;
+  }
+  const click = (e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).closest('a')) return;
+    if (col.type === 'doc') { setPop({ kind: 'docs', rect: rect(e), row, col }); return; }
+    if (!editable) return;
+    if (col.type === 'checkbox') { void onSave(!ticked(v)); return; }
+    if (col.type === 'select') { setPop({ kind: 'select', rect: rect(e), row, col }); return; }
+    if (col.type === 'longtext') { setPop({ kind: 'text', rect: rect(e), row, col }); return; }
+    setEditing(true);
+  };
+  return (
+    <td className={cls} onClick={click} title={col.type === 'longtext' || col.type === 'text' ? text(v) : undefined}>
+      {col.type === 'secret'
+        ? <SecretInline table={table} row={row} col={col} can={can} say={say} />
+        : <Value col={col} v={v} docs={docs} editable={editable} />}
+    </td>
+  );
+}
+
+function Pill({ col, value }: { col: RepoColumn; value: string }) {
+  const i = (col.options ?? []).indexOf(value);
+  return <span className={`rb-pill ${i >= 0 ? `c${i % 6}` : ''}`}>{value}</span>;
+}
+
+function Value({ col, v, docs, editable }: { col: RepoColumn; v: RepoRow[string] | undefined; docs?: DocEntry; editable: boolean }) {
+  switch (col.type) {
+    case 'select':
+      // Always drawn as a control: a dropdown must look like one whether
+      // it holds a value or not.
+      return <span className="rb-selectbox">{isEmpty(v) ? (editable ? <span className="rb-hint">Choose</span> : null) : <Pill col={col} value={text(v)} />}
+        {editable && <span className="rb-caret">▾</span>}</span>;
+    case 'checkbox': return <span className={`rb-check ${ticked(v) ? 'on' : ''}`}>{ticked(v) ? '✓' : ''}</span>;
+    case 'url': return isEmpty(v) ? null
+      : <span className="rb-url"><a href={text(v)} target="_blank" rel="noreferrer" title={text(v)}>↗ {host(text(v))}</a></span>;
+    case 'email': return isEmpty(v) ? null : <a href={`mailto:${text(v)}`}>{text(v)}</a>;
+    case 'date': return <>{day(v)}</>;
+    case 'doc': {
+      if (!docs) return <span className="rb-hint">…</span>;
+      if (!docs.files.length) return editable ? <span className="rb-docadd">+ Add files</span> : <span className="rb-hint">—</span>;
+      const first = docs.files.slice(0, 4);
+      return <span className="rb-docs">{first.map(f => <span key={f.fileId} title={f.name}>{fileGlyph(f.mimeType)}</span>)}
+        <span className="rb-doccount">{docs.files.length}{docs.truncated ? '+' : ''}</span></span>;
+    }
+    default: return <>{text(v)}</>;
+  }
+}
+
+/** The in-cell editor for plain values. Enter or leaving saves, Escape puts it back. */
+function InlineInput({ col, value, onDone }: { col: RepoColumn; value: RepoRow[string] | undefined; onDone: (v?: unknown) => void }) {
+  const [v, setV] = useState(col.type === 'date' ? day(value) : text(value));
+  const [refs, setRefs] = useState<string[]>([]);
+  const done = useRef(false);
+  const finish = (save: boolean) => {
+    if (done.current) return;
+    done.current = true;
+    onDone(save ? (col.type === 'number' && v !== '' ? Number(v) : v) : undefined);
+  };
+  useEffect(() => {
+    if (col.type !== 'ref' || !col.reference) return;
+    void safe(getRepoRows(col.reference.table)).then(r => {
+      if (r.ok) setRefs([...new Set(r.rows.map(x => text(x[col.reference!.column])).filter(Boolean))].sort());
+    });
+  }, [col]);
+  const type = { number: 'number', date: 'date', email: 'email', url: 'url' }[col.type] ?? 'text';
   return (
     <>
-      <div className="row-controls">
-        <h2 className="screen-title">
-          <Rename enabled={can.structure} value={table.title}
-                  onSave={t => repoStructure({ op: 'tables.rename', table: table.key, title: t }).then(r => { if (r.ok) onStructure(); return r; })} />
-        </h2>
-        {rows && <span className="note">{shown.length === rows.length ? rows.length : `${shown.length} of ${rows.length}`} record(s)</span>}
-        <input className="date-in" placeholder={`Filter ${table.title}`} value={filter} onChange={e => setFilter(e.target.value)} />
-        {can.edit && <button className="chip" onClick={() => setAdding(a => !a)}>{adding ? 'Cancel' : '+ New record'}</button>}
-        {can.structure && <button className={columns ? 'chip active' : 'chip'} onClick={() => setColumns(c => !c)}>Columns</button>}
-      </div>
-      {err && <p className="banner warn">▲ {err}</p>}
-      {columns && <ColumnsPanel table={table} onChanged={onStructure} />}
-      {adding && rows && (
-        <NewRecord table={table} byKey={byKey} onCreated={row => { setRows([row, ...rows]); setAdding(false); }} />
-      )}
-      {!rows && !err && <p className="note loading-dot">Loading…</p>}
-      {rows && <Grid table={table} rows={shown} can={can} byKey={byKey}
-                     onRows={f => setRows(rs => rs ? f(rs) : rs)} />}
-      {rows && !rows.length && <p className="note">No records yet.</p>}
+      <input className="rb-input" autoFocus type={type} value={v} list={col.type === 'ref' ? `ref-${col.key}` : undefined}
+             onFocus={e => e.currentTarget.select()} onChange={e => setV(e.target.value)} onBlur={() => finish(true)}
+             onKeyDown={e => { if (e.key === 'Enter') finish(true); if (e.key === 'Escape') finish(false); }} />
+      {col.type === 'ref' && <datalist id={`ref-${col.key}`}>{refs.map(r => <option key={r} value={r} />)}</datalist>}
     </>
   );
 }
 
-function Grid({ table, rows, can, byKey, onRows }: {
-  table: RepoTable; rows: RepoRow[]; can: Can; byKey: Map<string, RepoTable>;
-  onRows: (f: (rs: RepoRow[]) => RepoRow[]) => void;
+/** The empty last row: typing in it creates the record, with its ID and folders. */
+function GhostRow({ cols, primary, setPop, onCreate }: {
+  cols: RepoColumn[]; primary: string; setPop: (p: Pop) => void; onCreate: (values: Record<string, unknown>) => Promise<void>;
 }) {
-  const [open, setOpen] = useState<string | null>(null);
-  const cols = table.columns.filter(c => !SYSTEM.has(c.type) && c.type !== 'doc');
-  const idCol = table.columns.find(c => c.type === 'id');
-  const replace = (id: string, row: RepoRow | null) =>
-    onRows(rs => row ? rs.map(r => String(r.id) === id ? row : r) : rs.filter(r => String(r.id) !== id));
-
+  const [at, setAt] = useState<string | null>(null);
   return (
-    <div className="grid-scroll">
-      <table className="units compact repo-grid">
-        <thead><tr>{idCol && <th>ID</th>}{cols.map(c => <th key={c.key}>{c.title}</th>)}<th></th></tr></thead>
-        <tbody>
-          {rows.map(r => {
-            const id = String(r.id);
-            const isOpen = open === id;
-            return (
-              <Fragment key={id}>
-                <tr className={isOpen ? 'repo-row open' : 'repo-row'}>
-                  {idCol && <td className="sub-n" onClick={() => setOpen(isOpen ? null : id)}>{id}</td>}
-                  {cols.map(c => (
-                    <td key={c.key}>
-                      <Cell table={table} col={c} row={r} can={can} byKey={byKey} onSaved={row => replace(id, row)} />
-                    </td>
-                  ))}
-                  <td className="n"><button className="link" onClick={() => setOpen(isOpen ? null : id)}>{isOpen ? '▾' : '›'}</button></td>
-                </tr>
-                {isOpen && (
-                  <tr className="repo-detail-row">
-                    <td colSpan={cols.length + 2}>
-                      <Record table={table} row={r} can={can} byKey={byKey}
-                              onSaved={row => replace(id, row)} onDeleted={() => { setOpen(null); replace(id, null); }} />
-                    </td>
-                  </tr>
-                )}
-              </Fragment>
-            );
-          })}
-        </tbody>
-      </table>
-    </div>
+    <tr className="rb-ghost">
+      <td className="rb-sticky rb-idcol rb-hint">new</td>
+      {cols.map(c => {
+        const typable = c.editable && !['secret', 'doc', 'checkbox'].includes(c.type);
+        if (at === c.key) {
+          return <td key={c.key} className={`rb-editing ${c.key === primary ? 'rb-sticky rb-primary' : ''}`}>
+            <InlineInput col={c} value="" onDone={v => { setAt(null); if (v !== undefined && String(v).trim() !== '') void onCreate({ [c.key]: v }); }} />
+          </td>;
+        }
+        return (
+          <td key={c.key} className={`${c.key === primary ? 'rb-sticky rb-primary' : ''} ${typable ? 'rb-editable' : ''}`}
+              onClick={e => {
+                if (!typable) return;
+                if (c.type === 'select') setPop({ kind: 'select', rect: (e.currentTarget as HTMLElement).getBoundingClientRect(), row: null, col: c });
+                else setAt(c.key);
+              }}>
+            {c.key === primary && <span className="rb-hint">+ New record</span>}
+          </td>
+        );
+      })}
+      <td />
+    </tr>
   );
 }
 
-/* ── values: show and edit ────────────────────────────────────────── */
-
-const asText = (v: RepoRow[string] | undefined) => v == null ? '' : String(v);
-/** Dates come back as ISO timestamps from the sheet; a field wants the day. */
-const asDay = (v: RepoRow[string] | undefined) => {
-  const s = asText(v);
-  return /^\d{4}-\d{2}-\d{2}/.test(s) ? s.slice(0, 10) : s;
-};
-const isChecked = (v: RepoRow[string] | undefined) => v === true || /^(true|yes|1)$/i.test(asText(v));
-
-function Show({ col, value }: { col: RepoColumn; value: RepoRow[string] | undefined }) {
-  const v = asText(value);
-  if (col.type === 'checkbox') return <>{isChecked(value) ? '✓' : ''}</>;
-  if (!v) return null;
-  if (col.type === 'secret') return <span className="mono">••••••••</span>;
-  if (col.type === 'url' || col.type === 'folder' || col.type === 'doc') {
-    return <a href={v} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}>
-      {col.type === 'url' ? v.replace(/^https?:\/\//, '').slice(0, 40) : 'open ↗'}</a>;
-  }
-  if (col.type === 'email') return <a href={`mailto:${v}`} onClick={e => e.stopPropagation()}>{v}</a>;
-  if (col.type === 'select') return <span className="repo-pill">{v}</span>;
-  if (col.type === 'date') return <>{asDay(value)}</>;
-  if (col.type === 'longtext') return <span className="repo-long">{v}</span>;
-  return <>{v}</>;
-}
-
-/** Only the field that changed is ever sent — see the mask rule in /api/repository-edit. */
-async function saveField(table: RepoTable, row: RepoRow, col: RepoColumn, value: unknown) {
-  return repoEdit({ op: 'update', table: table.key, id: String(row.id), values: { [col.key]: value } });
-}
-
-/** One grid cell: shows the value; a click turns it into the right input for its type. */
-function Cell({ table, col, row, can, byKey, onSaved }: {
-  table: RepoTable; col: RepoColumn; row: RepoRow; can: Can; byKey: Map<string, RepoTable>;
-  onSaved: (row: RepoRow) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
-  // Secrets are changed from the record, where "set a new password" is
-  // said in words; a grid cell is too easy to type into by accident.
-  const editable = can.edit && col.editable && col.type !== 'secret';
-
-  const commit = async (value: unknown) => {
-    setEditing(false);
-    if (asText(value as RepoRow[string]) === asText(row[col.key])) return;
-    setBusy(true); setMsg('');
-    const r = await saveField(table, row, col, value).catch(e => ({ ok: false as const, message: String(e) }));
-    setBusy(false);
-    if (r.ok) onSaved(r.data as RepoRow); else setMsg(r.message ?? 'Not saved.');
-  };
-
-  if (editable && col.type === 'checkbox') {
-    return <input type="checkbox" disabled={busy} checked={isChecked(row[col.key])} onChange={e => void commit(e.target.checked)} />;
-  }
-  if (editing) return <Editor col={col} value={row[col.key]} byKey={byKey} onCommit={v => void commit(v)} onCancel={() => setEditing(false)} />;
-  return (
-    <span className={editable ? 'repo-cell editable' : 'repo-cell'} onClick={() => editable && setEditing(true)}
-          title={msg || (editable ? 'Click to edit' : undefined)}>
-      {busy ? <span className="note loading-dot">saving</span> : <Show col={col} value={row[col.key]} />}
-      {msg && <span className="breach"> ▲ {msg}</span>}
-    </span>
-  );
-}
-
-/** The input for a type. Enter or leaving the field saves; Escape cancels. */
-function Editor({ col, value, byKey, onCommit, onCancel }: {
-  col: RepoColumn; value: RepoRow[string] | undefined; byKey: Map<string, RepoTable>;
-  onCommit: (v: unknown) => void; onCancel: () => void;
-}) {
-  const [v, setV] = useState(col.type === 'date' ? asDay(value) : asText(value));
-  const [refOptions, setRefOptions] = useState<string[] | null>(null);
-  const done = useRef(false);
-  const commit = () => {
-    if (done.current) return;
-    done.current = true;
-    onCommit(col.type === 'number' ? (v === '' ? '' : Number(v)) : v);
-  };
-  const keys = (e: { key: string }) => {
-    if (e.key === 'Escape') { done.current = true; onCancel(); }
-    if (e.key === 'Enter' && col.type !== 'longtext') commit();
-  };
-  useEffect(() => {
-    if (col.type !== 'ref' || !col.reference) return;
-    getRepoRows(col.reference.table).then(r => {
-      if (r.ok) setRefOptions([...new Set(r.rows.map(x => asText(x[col.reference!.column])).filter(Boolean))].sort());
-    });
-  }, [col]);
-
-  if (col.type === 'select' || col.type === 'ref') {
-    const opts = col.type === 'select' ? (col.options ?? []) : (refOptions ?? []);
-    return (
-      <select autoFocus value={v} onChange={e => { setV(e.target.value); done.current = true; onCommit(e.target.value); }}
-              onBlur={() => { if (!done.current) onCancel(); }} onKeyDown={keys}>
-        <option value="">—</option>
-        {v && !opts.includes(v) && <option value={v}>{v}</option>}
-        {opts.map(o => <option key={o} value={o}>{o}</option>)}
-        {col.type === 'ref' && !refOptions && <option disabled>loading {byKey.get(col.reference?.table ?? '')?.title ?? ''}…</option>}
-      </select>
-    );
-  }
-  if (col.type === 'longtext') {
-    return <textarea autoFocus rows={3} value={v} onChange={e => setV(e.target.value)} onBlur={commit} onKeyDown={keys} />;
-  }
-  const type = col.type === 'number' ? 'number' : col.type === 'date' ? 'date'
-    : col.type === 'email' ? 'email' : col.type === 'url' ? 'url' : 'text';
-  return <input autoFocus type={type} value={v} onChange={e => setV(e.target.value)} onBlur={commit} onKeyDown={keys} />;
-}
-
-/* ── a new record ─────────────────────────────────────────────────── */
-
-function NewRecord({ table, byKey, onCreated }: {
-  table: RepoTable; byKey: Map<string, RepoTable>; onCreated: (row: RepoRow) => void;
-}) {
-  // The fields that name the record, plus anything required — the rest
-  // are filled in on the record itself afterwards.
-  const fields = table.columns.filter(c => c.editable && c.type !== 'doc' && c.type !== 'secret' &&
-    (c.required || table.nameFields.includes(c.key)));
-  const first = fields.length ? fields : table.columns.filter(c => c.editable && c.type === 'text').slice(0, 1);
-  const [values, setValues] = useState<Record<string, unknown>>({});
-  const [msg, setMsg] = useState('');
-  const [busy, setBusy] = useState(false);
-
-  const create = async () => {
-    setBusy(true); setMsg('');
-    const clean = Object.fromEntries(Object.entries(values).filter(([, v]) => v !== '' && v !== undefined));
-    const r = await repoEdit({ op: 'create', table: table.key, values: clean }).catch(e => ({ ok: false as const, message: String(e) }));
-    setBusy(false);
-    if (!r.ok) { setMsg(r.message ?? 'Not created.'); return; }
-    onCreated(r.data as RepoRow);
-  };
-
-  return (
-    <div className="card repo-new">
-      <div className="row">
-        {first.map(c => (
-          <label key={c.key}>{c.title}{c.required ? ' *' : ''}
-            {c.type === 'select'
-              ? <select value={String(values[c.key] ?? '')} onChange={e => setValues(v => ({ ...v, [c.key]: e.target.value }))}>
-                  <option value="">—</option>{(c.options ?? []).map(o => <option key={o}>{o}</option>)}</select>
-              : <input value={String(values[c.key] ?? '')} onChange={e => setValues(v => ({ ...v, [c.key]: e.target.value }))} />}
-          </label>
-        ))}
-        <button disabled={busy} onClick={() => void create()}>{busy ? 'Creating…' : 'Create'}</button>
-      </div>
-      <p className="note">Creates the record with its ID and its Drive folders. Everything else is filled in on the record.</p>
-      {msg && <p className="banner error">{msg}</p>}
-    </div>
-  );
-}
-
-/* ── a record, opened ─────────────────────────────────────────────── */
-
-function Record({ table, row, can, byKey, onSaved, onDeleted }: {
-  table: RepoTable; row: RepoRow; can: Can; byKey: Map<string, RepoTable>;
-  onSaved: (row: RepoRow) => void; onDeleted: () => void;
-}) {
-  const groups = useMemo(() => {
-    const m = new Map<string, RepoColumn[]>();
-    table.columns.filter(c => c.type !== 'doc').forEach(c => m.set(c.group || 'Details', [...(m.get(c.group || 'Details') ?? []), c]));
-    // The engine's own bookkeeping reads last: it is looked up least.
-    return [...m.entries()].sort((a, b) => Number(a[0] === 'System') - Number(b[0] === 'System'));
-  }, [table]);
-  const docCols = table.columns.filter(c => c.type === 'doc');
-  const [confirm, setConfirm] = useState(false);
-  const [msg, setMsg] = useState('');
-
-  const remove = async () => {
-    const r = await repoEdit({ op: 'delete', table: table.key, id: String(row.id) }).catch(e => ({ ok: false as const, message: String(e) }));
-    if (r.ok) onDeleted(); else setMsg(r.message ?? 'Not deleted.');
-  };
-
-  return (
-    <div className="repo-record">
-      <div className="repo-fields">
-        {groups.map(([g, cols]) => (
-          <dl key={g} className="repo-group">
-            <dt className="repo-group-title">{g}</dt>
-            {cols.map(c => (
-              <div key={c.key} className="repo-field">
-                <span className="repo-label">{c.title}</span>
-                <span>
-                  {c.type === 'secret'
-                    ? <Secret table={table} row={row} col={c} can={can} onSaved={onSaved} />
-                    : <Cell table={table} col={c} row={row} can={can} byKey={byKey} onSaved={onSaved} />}
-                </span>
-              </div>
-            ))}
-          </dl>
-        ))}
-      </div>
-      {docCols.map(c => <Docs key={c.key} table={table} id={String(row.id)} column={c} can={can} />)}
-      {can.edit && (
-        <div className="button-row">
-          {!confirm
-            ? <button className="link danger" onClick={() => setConfirm(true)}>Delete record…</button>
-            : <>
-                <span className="note">Removes the row; its Drive folder moves to the table's _Archive, nothing is erased.</span>
-                <button className="small danger-btn" onClick={() => void remove()}>Delete {String(row.id)}</button>
-                <button className="link" onClick={() => setConfirm(false)}>keep it</button>
-              </>}
-          {msg && <span className="breach">{msg}</span>}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** Loaded when the record opens, not with the table: Drive is the slow part. */
-function Docs({ table, id, column, can }: { table: RepoTable; id: string; column: RepoColumn; can: Can }) {
-  const [files, setFiles] = useState<RepoFile[] | null>(null);
-  const [folderUrl, setFolderUrl] = useState('');
-  const [err, setErr] = useState('');
-  const [busy, setBusy] = useState('');
-  const [drag, setDrag] = useState(false);
-  const [confirmDel, setConfirmDel] = useState<string | null>(null);
-
-  const load = () => getRepoDocs(table.key, id, column.key)
-    .then(r => { if (r.ok) { setFiles(r.files); setFolderUrl(r.folderUrl); } else setErr(r.message ?? 'Could not list.'); })
-    .catch(e => setErr(String(e)));
-  useEffect(() => { void load(); }, [table.key, id, column.key]);
-
-  const upload = async (list: FileList | null) => {
-    if (!list?.length) return;
-    setErr('');
-    const all = [...list];
-    for (const [i, f] of all.entries()) {
-      if (f.size > MAX_UPLOAD) { setErr(`${f.name} is over 10 MB.`); continue; }
-      setBusy(`Uploading ${i + 1} of ${all.length}…`);
-      const data = await new Promise<string>((res, rej) => {
-        const fr = new FileReader();
-        fr.onload = () => res(String(fr.result).split(',')[1] ?? '');
-        fr.onerror = () => rej(fr.error);
-        fr.readAsDataURL(f);
-      });
-      const r = await repoEdit({ op: 'docs.upload', table: table.key, id, column: column.key,
-                                 name: f.name, mimeType: f.type || 'application/octet-stream', data })
-        .catch(e => ({ ok: false as const, message: String(e) }));
-      if (!r.ok) setErr(`${f.name}: ${r.message ?? 'failed'}`);
-    }
-    setBusy(''); void load();
-  };
-  const act = async (body: Record<string, unknown>, label: string) => {
-    setBusy(label);
-    const r = await repoEdit(body).catch(e => ({ ok: false as const, message: String(e) }));
-    setBusy(''); setConfirmDel(null);
-    if (!r.ok) setErr(r.message ?? 'Failed.'); else void load();
-  };
-
-  return (
-    <div className={`repo-docs ${drag ? 'dragging' : ''}`}
-         onDragOver={e => { if (can.edit) { e.preventDefault(); setDrag(true); } }}
-         onDragLeave={() => setDrag(false)}
-         onDrop={e => { e.preventDefault(); setDrag(false); if (can.edit) void upload(e.dataTransfer.files); }}>
-      <div className="repo-group-title">
-        {column.title}{' '}
-        {folderUrl && <a href={folderUrl} target="_blank" rel="noreferrer">folder ↗</a>}
-      </div>
-      {err && <div className="breach">▲ {err}</div>}
-      {busy && <div className="note loading-dot">{busy}</div>}
-      {!files && !err && <span className="note loading-dot">Listing files…</span>}
-      {files && !files.length && <span className="note">No files yet.{can.edit ? ' Drop files here.' : ''}</span>}
-      {files?.map(f => (
-        <div key={f.fileId} className="repo-file">
-          <a href={f.url} target="_blank" rel="noreferrer">{f.name}</a>
-          <span className="sub-n"> · {Math.max(1, Math.round(f.size / 1024))} KB · {f.updatedAt.slice(0, 10)}</span>
-          {can.edit && (confirmDel === f.fileId
-            ? <> <button className="link tiny danger" onClick={() => void act({ op: 'docs.delete', fileId: f.fileId }, 'Moving to Drive\'s trash…')}>to trash (30 days)</button>
-                 <button className="link tiny" onClick={() => setConfirmDel(null)}>keep</button></>
-            : <> <button className="link tiny" onClick={() => {
-                   const name = window.prompt('New name', f.name);
-                   if (name && name !== f.name) void act({ op: 'docs.rename', fileId: f.fileId, name }, 'Renaming…');
-                 }}>rename</button>
-                 <button className="link tiny danger" onClick={() => setConfirmDel(f.fileId)}>remove</button></>)}
-        </div>
-      ))}
-      {can.edit && (
-        <div className="button-row">
-          <label className="chip file-chip">Upload files<input type="file" multiple hidden onChange={e => void upload(e.target.files)} /></label>
-          <button className="link tiny" onClick={() => void act({ op: 'docs.create', table: table.key, id, column: column.key, kind: 'doc' }, 'Creating a Google Doc…')}>+ Google Doc</button>
-          <button className="link tiny" onClick={() => void act({ op: 'docs.create', table: table.key, id, column: column.key, kind: 'sheet' }, 'Creating a Google Sheet…')}>+ Google Sheet</button>
-        </div>
-      )}
-    </div>
-  );
-}
+/* ── pickers and editors in popovers ──────────────────────────────── */
 
 /**
- * A password: masked, revealed on request (logged), and SET, never
- * edited — the field starts empty and only a typed value is ever sent,
- * so the mask can never be written back as the password.
+ * The dropdown, drawn here rather than by the browser: it always opens,
+ * filters as you type, and — for those who shape the table — offers to
+ * add the value typed when it is not on the list yet.
  */
-function Secret({ table, row, col, can, onSaved }: {
-  table: RepoTable; row: RepoRow; col: RepoColumn; can: Can; onSaved: (row: RepoRow) => void;
+function SelectPicker({ col, current, canAdd, onPick, onAdd }: {
+  col: RepoColumn; current: string; canAdd: boolean; onPick: (v: string) => void; onAdd: (v: string) => void;
 }) {
-  const [value, setValue] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState('');
-  const [copied, setCopied] = useState(false);
-  const [setting, setSetting] = useState(false);
-  const [next, setNext] = useState('');
-  const has = !!asText(row[col.key]);
-
-  useEffect(() => {
-    if (value === null) return;
-    const t = window.setTimeout(() => { setValue(null); setCopied(false); }, REMASK_MS);
-    return () => window.clearTimeout(t);
-  }, [value]);
-
-  const reveal = () => {
-    setBusy(true); setErr('');
-    revealRepoSecret(table.key, String(row.id), col.key)
-      .then(r => r.ok ? setValue(r.value) : setErr(r.message ?? 'Refused.'))
-      .catch(e => setErr(String(e)))
-      .finally(() => setBusy(false));
-  };
-  const save = async () => {
-    setBusy(true); setErr('');
-    const r = await saveField(table, row, col, next).catch(e => ({ ok: false as const, message: String(e) }));
-    setBusy(false);
-    if (!r.ok) { setErr(r.message ?? 'Not saved.'); return; }
-    setSetting(false); setNext(''); setValue(null); onSaved(r.data as RepoRow);
-  };
-
-  if (setting) {
-    return (
-      <span className="repo-secret">
-        <input type="password" autoFocus autoComplete="new-password" value={next} placeholder="New value"
-               onChange={e => setNext(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && next) void save(); }} />{' '}
-        <button className="link tiny" disabled={!next || busy} onClick={() => void save()}>save</button>{' '}
-        <button className="link tiny" onClick={() => { setSetting(false); setNext(''); }}>cancel</button>
-        {err && <span className="breach"> {err}</span>}
-      </span>
-    );
-  }
-  if (value !== null) {
-    return (
-      <span className="repo-secret">
-        <code>{value}</code>{' '}
-        <button className="link tiny" onClick={() => navigator.clipboard?.writeText(value).then(() => setCopied(true))}>{copied ? 'copied' : 'copy'}</button>{' '}
-        <button className="link tiny" onClick={() => setValue(null)}>hide</button>
-        <span className="sub-n"> · hides itself in 30s · this reveal was logged</span>
-      </span>
-    );
-  }
+  const [q, setQ] = useState('');
+  const opts = (col.options ?? []).filter(o => !q || o.toLowerCase().includes(q.trim().toLowerCase()));
+  const exact = (col.options ?? []).some(o => o.toLowerCase() === q.trim().toLowerCase());
   return (
-    <span className="repo-secret">
-      {has ? <span className="mono">••••••••</span> : <span className="note">not set</span>}{' '}
-      {has && can.reveal && <button className="link tiny" disabled={busy} onClick={reveal}>{busy ? 'decrypting…' : 'reveal'}</button>}
-      {can.edit && <> <button className="link tiny" onClick={() => setSetting(true)}>{has ? 'change' : 'set'}</button></>}
-      {err && <span className="breach"> {err}</span>}
-    </span>
+    <div>
+      <input className="rb-input" autoFocus placeholder="Filter, or type a new value" value={q} onChange={e => setQ(e.target.value)}
+             onKeyDown={e => {
+               if (e.key === 'Enter') { if (opts[0]) onPick(opts[0]); else if (q.trim() && canAdd) onAdd(q.trim()); }
+             }} />
+      <div className="rb-picklist">
+        {opts.map(o => (
+          <button key={o} className={`rb-pickitem ${o === current ? 'current' : ''}`} onClick={() => onPick(o)}>
+            <Pill col={col} value={o} />{o === current && <span className="rb-spacer" />}{o === current && '✓'}
+          </button>
+        ))}
+        {q.trim() && !exact && (canAdd
+          ? <button className="rb-pickitem add" onClick={() => onAdd(q.trim())}>+ Add “{q.trim()}” as an option</button>
+          : <div className="rb-pickitem muted">Not an option — someone with structure access can add it</div>)}
+        {!opts.length && !q && <div className="rb-pickitem muted">No options yet</div>}
+        {current && <button className="rb-pickitem clear" onClick={() => onPick('')}>Clear</button>}
+      </div>
+    </div>
   );
 }
 
-/* ── columns (structure) ──────────────────────────────────────────── */
+function LongText({ col, value, onSave }: { col: RepoColumn; value: string; onSave: (v: string) => void }) {
+  const [v, setV] = useState(value);
+  return (
+    <div>
+      <div className="rb-pop-title">{col.title}</div>
+      <textarea className="rb-input" autoFocus rows={6} value={v} onChange={e => setV(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) onSave(v); }} />
+      <div className="rb-pop-actions"><span className="rb-hint">Ctrl+Enter saves</span><span className="rb-spacer" />
+        <button className="small" disabled={v === value} onClick={() => onSave(v)}>Save</button></div>
+    </div>
+  );
+}
 
-function ColumnsPanel({ table, onChanged }: { table: RepoTable; onChanged: () => void }) {
-  const cols = table.columns.filter(c => !SYSTEM.has(c.type));
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+/** A documents cell, opened: every file, a drop zone, and new Google files. */
+function DocsBox({ table, row, col, entry, can, say, onChanged, bare = false }: {
+  table: RepoTable; row: RepoRow; col: RepoColumn; entry: DocEntry | undefined; can: Can;
+  say: (m: string, bad?: boolean) => void; onChanged: () => Promise<void>;
+  /** Inside the record, where the section already names the column. */
+  bare?: boolean;
+}) {
+  const [busy, setBusy] = useState('');
+  const [hot, setHot] = useState(false);
+  const [confirmDel, setConfirmDel] = useState<RepoFile | null>(null);
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const picker = useRef<HTMLInputElement>(null);
+  useEffect(() => { void onChanged(); }, []);
+
+  const upload = async (list: FileList | null) => {
+    const files = [...(list ?? [])];
+    if (!files.length) return;
+    let done = 0;
+    for (const f of files) {
+      if (f.size > MAX_UPLOAD) { say(`${f.name} is over 10 MB`, true); continue; }
+      setBusy(`Uploading ${done + 1} of ${files.length}…`);
+      const r = await safe(repoEdit({ op: 'docs.upload', table: table.key, id: String(row.id), column: col.key,
+        name: f.name, mimeType: f.type || 'application/octet-stream', data: await readBase64(f) }));
+      if (r.ok) done++; else say(`${f.name}: ${r.message ?? 'failed'}`, true);
+    }
+    setBusy('');
+    if (done) say(done === 1 ? 'File uploaded' : `${done} files uploaded`);
+    await onChanged();
+  };
+  const act = async (body: Record<string, unknown>, label: string, doneMsg: string) => {
+    setBusy(label);
+    const r = await safe(repoEdit(body));
+    setBusy(''); setConfirmDel(null); setRenaming(null);
+    if (r.ok) { say(doneMsg); await onChanged(); } else say(r.message ?? 'Failed.', true);
+  };
+
+  if (confirmDel) {
+    return <Confirm title={`Remove “${confirmDel.name}”?`} message="It goes to Drive's trash, where it can be restored for 30 days."
+      action="Move to trash" onCancel={() => setConfirmDel(null)}
+      onConfirm={() => void act({ op: 'docs.delete', fileId: confirmDel.fileId }, 'Removing…', 'Moved to Drive\'s trash')} />;
+  }
+  return (
+    <div>
+      {!bare && <div className="rb-pop-title">{col.title} <span className="rb-hint">· {String(row.id)}</span><span className="rb-spacer" />
+        {entry?.folderUrl && <a href={entry.folderUrl} target="_blank" rel="noreferrer">Folder ↗</a>}</div>}
+      <div className="rb-files">
+        {!entry && <div className="rb-hint loading-dot">Listing files</div>}
+        {entry && !entry.files.length && <div className="rb-hint">No files yet.</div>}
+        {entry?.files.map(f => (
+          <div key={f.fileId} className="rb-file">
+            <span className="rb-glyph">{fileGlyph(f.mimeType)}</span>
+            {renaming === f.fileId
+              ? <input className="rb-input" autoFocus defaultValue={f.name}
+                       onKeyDown={e => {
+                         const v = (e.target as HTMLInputElement).value.trim();
+                         if (e.key === 'Enter' && v && v !== f.name) void act({ op: 'docs.rename', fileId: f.fileId, name: v }, 'Renaming…', 'Renamed');
+                         if (e.key === 'Escape') setRenaming(null);
+                       }} onBlur={() => setRenaming(null)} />
+              : <a className="rb-file-name" href={f.url} target="_blank" rel="noreferrer" title={f.name}>{f.name}</a>}
+            {can.edit && renaming !== f.fileId && <>
+              <button className="rb-icon rb-hover" title="Rename" onClick={() => setRenaming(f.fileId)}>✎</button>
+              <button className="rb-icon rb-hover danger" title="Remove" onClick={() => setConfirmDel(f)}>✕</button>
+            </>}
+          </div>
+        ))}
+      </div>
+      {can.edit && (
+        <>
+          <div className={`rb-drop-zone ${hot ? 'hot' : ''}`} onClick={() => picker.current?.click()}
+               onDragOver={e => { e.preventDefault(); setHot(true); }} onDragLeave={() => setHot(false)}
+               onDrop={e => { e.preventDefault(); setHot(false); void upload(e.dataTransfer.files); }}>
+            {busy || 'Drop files here, or click to choose'}
+            <input ref={picker} type="file" multiple hidden onChange={e => void upload(e.target.files)} />
+          </div>
+          <div className="rb-pop-actions">
+            <button className="link tiny" onClick={() => void act({ op: 'docs.create', table: table.key, id: String(row.id), column: col.key, kind: 'doc' }, 'Creating…', 'Google Doc created')}>+ Google Doc</button>
+            <button className="link tiny" onClick={() => void act({ op: 'docs.create', table: table.key, id: String(row.id), column: col.key, kind: 'sheet' }, 'Creating…', 'Google Sheet created')}>+ Google Sheet</button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Each column's own menu: the whole structure edit, without leaving the grid. */
+function ColumnMenu({ table, col, run }: {
+  table: RepoTable; col: RepoColumn; run: (body: Record<string, unknown>, done: string) => Promise<boolean>;
+}) {
+  const [view, setView] = useState<'menu' | 'rename' | 'options' | 'type' | 'delete'>('menu');
+  const [title, setTitle] = useState(col.title);
+  const [opts, setOpts] = useState((col.options ?? []).join('\n'));
+  const [type, setType] = useState(col.type);
+  const cols = userColumns(table);
+  const at = cols.findIndex(c => c.key === col.key);
+  const base = { table: table.key, columnKey: col.key };
+  const list = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean);
+
+  if (view === 'rename') return (
+    <form onSubmit={e => { e.preventDefault(); if (title.trim() && title !== col.title) void run({ op: 'columns.update', ...base, changes: { title } }, 'Renamed'); }}>
+      <div className="rb-pop-title">Rename column</div>
+      <input className="rb-input" autoFocus value={title} onChange={e => setTitle(e.target.value)} />
+      <div className="rb-pop-actions"><span className="rb-spacer" /><button className="small" disabled={!title.trim() || title === col.title}>Rename</button></div>
+    </form>
+  );
+  if (view === 'options') return (
+    <div>
+      <div className="rb-pop-title">Options · {col.title}</div>
+      <textarea className="rb-input" autoFocus rows={7} value={opts} onChange={e => setOpts(e.target.value)} />
+      <div className="rb-pop-actions"><span className="rb-hint">One per line</span><span className="rb-spacer" />
+        <button className="small" disabled={!list(opts).length} onClick={() => void run({ op: 'columns.update', ...base, changes: { options: list(opts) } }, 'Options saved')}>Save</button></div>
+    </div>
+  );
+  if (view === 'type') return (
+    <div>
+      <div className="rb-pop-title">Type · {col.title}</div>
+      {CONVERTIBLE.includes(col.type) ? (
+        <>
+          <select className="rb-input" value={type} onChange={e => setType(e.target.value)}>
+            {CONVERTIBLE.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
+          </select>
+          {type === 'select' && col.type !== 'select' && (
+            <textarea className="rb-input" rows={4} placeholder="Options, one per line" value={opts} onChange={e => setOpts(e.target.value)} />
+          )}
+          <p className="rb-note">{type === col.type ? 'This is the current type.' : (CONVERSION[type] ?? 'Values are kept as they are.')} The sheet's column is rewritten.</p>
+          <div className="rb-pop-actions"><span className="rb-spacer" />
+            <button className="small" disabled={type === col.type || (type === 'select' && !list(opts).length)}
+              onClick={() => void run({ op: 'columns.update', ...base, changes: type === 'select' ? { type, options: list(opts) } : { type } }, `Now ${TYPE_LABEL[type]}`)}>
+              Change type</button></div>
+        </>
+      ) : <p className="rb-note">{TYPE_LABEL[col.type]} columns are fixed once created. To change it, add a new column.</p>}
+    </div>
+  );
+  if (view === 'delete') return (
+    <Confirm title={`Delete the column “${col.title}”?`} typed={col.title} action="Delete column" onCancel={() => setView('menu')}
+      message="Its values are erased from the sheet for every record (the sheet's version history can bring them back). Document folders stay in Drive."
+      onConfirm={v => void run({ op: 'columns.delete', ...base, confirm: v }, 'Column deleted')} />
+  );
+  return (
+    <div className="rb-menu">
+      <div className="rb-pop-title">{col.title} <span className="rb-hint">· {TYPE_LABEL[col.type] ?? col.type}</span></div>
+      <button onClick={() => setView('rename')}>✎ Rename</button>
+      {col.type === 'select' && <button onClick={() => setView('options')}>☰ Edit options</button>}
+      <button onClick={() => setView('type')}>⇆ Change type</button>
+      <button disabled={at <= 0} onClick={() => void run({ op: 'columns.move', ...base, direction: 'left' }, 'Moved')}>← Move left</button>
+      <button disabled={at >= cols.length - 1} onClick={() => void run({ op: 'columns.move', ...base, direction: 'right' }, 'Moved')}>→ Move right</button>
+      <button className="danger" onClick={() => setView('delete')}>✕ Delete column…</button>
+      <p className="rb-note">Tip: drag a column's header to move it further.</p>
+    </div>
+  );
+}
+
+function ColumnForm({ onSubmit }: { onSubmit: (spec: { title: string; type: string; options?: string[] }) => Promise<boolean> }) {
   const [title, setTitle] = useState('');
   const [type, setType] = useState('text');
-  const [options, setOptions] = useState('');
-  const [busy, setBusy] = useState(false);
+  const [opts, setOpts] = useState('');
+  const list = opts.split('\n').map(x => x.trim()).filter(Boolean);
+  return (
+    <form onSubmit={e => { e.preventDefault(); if (title.trim()) void onSubmit({ title: title.trim(), type, options: type === 'select' ? list : undefined }); }}>
+      <div className="rb-pop-title">New column</div>
+      <input className="rb-input" autoFocus placeholder="Column name" value={title} onChange={e => setTitle(e.target.value)} />
+      <select className="rb-input" value={type} onChange={e => setType(e.target.value)}>
+        {NEW_TYPES.map(t => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}
+      </select>
+      {type === 'select' && <textarea className="rb-input" rows={4} placeholder="Options, one per line" value={opts} onChange={e => setOpts(e.target.value)} />}
+      {type === 'secret' && <p className="rb-note">Encrypted, masked everywhere, and every reveal is logged.</p>}
+      {type === 'doc' && <p className="rb-note">Creates a Drive folder for this column inside every record.</p>}
+      <div className="rb-pop-actions"><span className="rb-spacer" /><button className="small" disabled={!title.trim() || (type === 'select' && !list.length)}>Add column</button></div>
+    </form>
+  );
+}
 
-  const run = async (body: Record<string, unknown>, done: string) => {
-    setBusy(true);
-    const r = await repoStructure({ table: table.key, ...body }).catch(e => ({ ok: false as const, message: String(e) }));
-    setBusy(false);
-    setMsg(r.ok ? { ok: true, text: done } : { ok: false, text: r.message ?? 'Failed.' });
-    if (r.ok) onChanged();
+function TableMenu({ table, run }: { table: RepoTable; run: (body: Record<string, unknown>, done: string) => Promise<boolean> }) {
+  const [view, setView] = useState<'menu' | 'rename' | 'archive'>('menu');
+  const [title, setTitle] = useState(table.title);
+  if (view === 'rename') return (
+    <form onSubmit={e => { e.preventDefault(); if (title.trim() && title !== table.title) void run({ op: 'tables.rename', table: table.key, title }, 'Renamed'); }}>
+      <div className="rb-pop-title">Rename table</div>
+      <input className="rb-input" autoFocus value={title} onChange={e => setTitle(e.target.value)} />
+      <div className="rb-pop-actions"><span className="rb-spacer" /><button className="small">Rename</button></div>
+    </form>
+  );
+  if (view === 'archive') return (
+    <Confirm title={`Archive “${table.title}”?`} typed={table.title} action="Archive table" onCancel={() => setView('menu')}
+      message="The table disappears from here. Its sheet is hidden and its Drive folder moved to _Archive — nothing is erased."
+      onConfirm={v => void run({ op: 'tables.delete', table: table.key, confirm: v }, 'Table archived')} />
+  );
+  return (
+    <div className="rb-menu">
+      <div className="rb-pop-title">{table.title}</div>
+      <button onClick={() => setView('rename')}>✎ Rename</button>
+      <button className="danger" onClick={() => setView('archive')}>🗄 Archive table…</button>
+    </div>
+  );
+}
+
+function NameForm({ title, placeholder, extra, onSubmit }: {
+  title: string; placeholder: string; extra?: string; onSubmit: (name: string, extra: string) => Promise<boolean>;
+}) {
+  const [name, setName] = useState('');
+  const [x, setX] = useState('');
+  return (
+    <form onSubmit={e => { e.preventDefault(); if (name.trim()) void onSubmit(name.trim(), x.trim()); }}>
+      <div className="rb-pop-title">{title}</div>
+      <input className="rb-input" autoFocus placeholder={placeholder} value={name} onChange={e => setName(e.target.value)} />
+      {extra && <input className="rb-input" placeholder={extra} value={x} onChange={e => setX(e.target.value)} />}
+      <div className="rb-pop-actions"><span className="rb-spacer" /><button className="small" disabled={!name.trim()}>Create</button></div>
+    </form>
+  );
+}
+
+/* ── secrets ──────────────────────────────────────────────────────── */
+
+/** In the grid: masked; a click reveals it (logged), and it masks itself again. */
+function SecretInline({ table, row, col, can, say }: { table: RepoTable; row: RepoRow; col: RepoColumn; can: Can; say: (m: string, bad?: boolean) => void }) {
+  const [value, setValue] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => {
+    if (value === null) return;
+    const t = window.setTimeout(() => setValue(null), REMASK_MS);
+    return () => window.clearTimeout(t);
+  }, [value]);
+  if (isEmpty(row[col.key])) return null;
+  if (value !== null) {
+    return <span className="rb-secret-open" onClick={e => e.stopPropagation()}>
+      <code>{value}</code>
+      <button className="rb-icon" title="Copy" onClick={() => void navigator.clipboard?.writeText(value).then(() => say('Copied'))}>⧉</button>
+    </span>;
+  }
+  return (
+    <span className={`rb-secret ${can.reveal ? 'can' : ''}`} title={can.reveal ? 'Click to reveal — logged' : 'Your role cannot reveal passwords'}
+          onClick={e => {
+            e.stopPropagation();
+            if (!can.reveal || busy) return;
+            setBusy(true);
+            void safe(revealRepoSecret(table.key, String(row.id), col.key)).then(r => {
+              setBusy(false);
+              if (r.ok) setValue(r.value); else say(r.message ?? 'Refused.', true);
+            });
+          }}>{busy ? 'decrypting…' : '••••••••'}</span>
+  );
+}
+
+/* ── the record, beside the grid ──────────────────────────────────── */
+
+function RecordPanel({ table, row, can, docs, setPop, onClose, onSave, onDocs, onDeleted, say }: {
+  table: RepoTable; row: RepoRow; can: Can; docs: Record<string, DocEntry>; setPop: (p: Pop) => void;
+  onClose: () => void; onSave: (row: RepoRow, col: RepoColumn, v: unknown) => Promise<void>;
+  onDocs: (row: RepoRow, col: RepoColumn) => Promise<void>; onDeleted: () => void; say: (m: string, bad?: boolean) => void;
+}) {
+  const [confirm, setConfirm] = useState(false);
+  const id = String(row.id);
+  const primary = primaryKey(table);
+  const fields = table.columns.filter(c => !SYSTEM_TYPES.has(c.type) && c.type !== 'doc');
+  const docCols = table.columns.filter(c => c.type === 'doc');
+  const groups = useMemo(() => {
+    const m = new Map<string, RepoColumn[]>();
+    fields.forEach(c => m.set(c.group || 'Details', [...(m.get(c.group || 'Details') ?? []), c]));
+    return [...m.entries()];
+  }, [table]);
+  useEffect(() => { docCols.forEach(c => void onDocs(row, c)); }, [id]);
+
+  const remove = async () => {
+    const r = await safe(repoEdit({ op: 'delete', table: table.key, id }));
+    if (r.ok) onDeleted(); else say(r.message ?? 'Not deleted.', true);
   };
-  const split = (s: string) => s.split(/[,\n]/).map(x => x.trim()).filter(Boolean);
+  const stamp = (k: string) => text(row[k]);
 
   return (
-    <div className="card repo-columns">
-      <h2>Columns of {table.title}</h2>
-      <table className="units compact">
-        <thead><tr><th>Name</th><th>Type</th><th>Dropdown options</th><th></th></tr></thead>
-        <tbody>
-          {cols.map((c, i) => (
-            <tr key={c.key}>
-              <td><Rename enabled value={c.title} onSave={t => repoStructure({ op: 'columns.update', table: table.key, columnKey: c.key, changes: { title: t } })
-                  .then(r => { if (r.ok) onChanged(); return r; })} /></td>
-              <td>
-                {CONVERTIBLE.has(c.type)
-                  ? <select value={c.type} disabled={busy} onChange={e => void run({ op: 'columns.update', columnKey: c.key, changes: { type: e.target.value } }, `${c.title} is now ${e.target.value}.`)}>
-                      {USER_TYPES.filter(([k]) => CONVERTIBLE.has(k)).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-                    </select>
-                  : <span className="sub-n">{USER_TYPES.find(([k]) => k === c.type)?.[1] ?? c.type} · fixed</span>}
-              </td>
-              <td>{c.type === 'select' && (
-                <input defaultValue={(c.options ?? []).join(', ')} disabled={busy}
-                       onBlur={e => {
-                         const next = split(e.target.value);
-                         if (next.join('|') !== (c.options ?? []).join('|')) void run({ op: 'columns.update', columnKey: c.key, changes: { options: next } }, `${c.title}: options saved.`);
-                       }} />
-              )}</td>
-              <td className="n">
-                <button className="link tiny" disabled={busy || i === 0} onClick={() => void run({ op: 'columns.move', columnKey: c.key, direction: 'left' }, 'Moved.')}>←</button>
-                <button className="link tiny" disabled={busy || i === cols.length - 1} onClick={() => void run({ op: 'columns.move', columnKey: c.key, direction: 'right' }, 'Moved.')}>→</button>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="row">
-        <label>New column<input value={title} onChange={e => setTitle(e.target.value)} placeholder="e.g. Insurance expiry" /></label>
-        <label>Type<select value={type} onChange={e => setType(e.target.value)}>
-          {USER_TYPES.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-        {type === 'select' && <label>Options (comma-separated)<input value={options} onChange={e => setOptions(e.target.value)} /></label>}
-        <button disabled={busy || !title.trim()} onClick={() => void run({ op: 'columns.add', column: { title, type, options: split(options) } }, `${title} added.`).then(() => { setTitle(''); setOptions(''); })}>Add</button>
+    <aside className="rb-panel" aria-label={`Record ${id}`}>
+      <header className="rb-panel-head">
+        <div>
+          <div className="rb-hint">{table.title} · {id}</div>
+          <h3>{text(row[primary]) || id}</h3>
+        </div>
+        <span className="rb-spacer" />
+        {stamp('folder') && <a className="secondary small rb-btnlink" href={stamp('folder')} target="_blank" rel="noreferrer">Folder ↗</a>}
+        <button className="rb-icon" title="Close (Esc)" onClick={onClose}>✕</button>
+      </header>
+      <div className="rb-panel-body">
+        {groups.map(([g, cols]) => (
+          <section key={g} className="rb-fieldset">
+            {groups.length > 1 && <h4>{g}</h4>}
+            {cols.map(c => (
+              <div key={c.key} className="rb-field">
+                <label>{c.title}{c.required ? ' *' : ''}</label>
+                <FieldValue table={table} row={row} col={c} can={can} setPop={setPop} say={say} onSave={v => onSave(row, c, v)} />
+              </div>
+            ))}
+          </section>
+        ))}
+        {docCols.map(c => (
+          <section key={c.key} className="rb-fieldset">
+            <h4>{c.title}{docs[`${table.key}|${c.key}|${id}`]?.folderUrl &&
+              <> · <a href={docs[`${table.key}|${c.key}|${id}`]!.folderUrl} target="_blank" rel="noreferrer">folder ↗</a></>}</h4>
+            <DocsBox bare table={table} row={row} col={c} can={can} say={say} entry={docs[`${table.key}|${c.key}|${id}`]} onChanged={() => onDocs(row, c)} />
+          </section>
+        ))}
+        {(stamp('updated_at') || stamp('created_at')) && (
+          <p className="rb-note">
+            {stamp('created_at') && <>Created {day(stamp('created_at'))}{stamp('created_by') ? ` by ${stamp('created_by')}` : ''}. </>}
+            {stamp('updated_at') && <>Last changed {stamp('updated_at').replace('T', ' ').slice(0, 16)}.</>}
+          </p>
+        )}
       </div>
-      <p className="note">
-        Double-click a name to rename it. Text, numbers, dates, links and dropdowns convert into one another; secret,
-        document and reference columns are fixed once created. Deleting a column erases its data from the sheet, so it is
-        not offered here.
-      </p>
-      {msg && <p className={`banner ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
+      {can.edit && (
+        <footer className="rb-panel-foot">
+          {!confirm ? <button className="link danger" onClick={() => setConfirm(true)}>Delete record…</button>
+            : <Confirm title={`Delete ${id}?`} action="Delete record" onCancel={() => setConfirm(false)} onConfirm={() => void remove()}
+                message="The row is removed; its Drive folder moves to the table's _Archive, so nothing is erased." />}
+        </footer>
+      )}
+    </aside>
+  );
+}
+
+/** A field in the record: always shows its value, and edits in place like the grid. */
+function FieldValue({ table, row, col, can, setPop, say, onSave }: {
+  table: RepoTable; row: RepoRow; col: RepoColumn; can: Can; setPop: (p: Pop) => void;
+  say: (m: string, bad?: boolean) => void; onSave: (v: unknown) => Promise<void>;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [newSecret, setNewSecret] = useState<string | null>(null);
+  const v = row[col.key];
+  const editable = can.edit && col.editable;
+
+  if (col.type === 'secret') {
+    return (
+      <div className="rb-fieldval">
+        {newSecret === null ? <>
+          {isEmpty(v) ? <span className="rb-hint">not set</span> : <SecretInline table={table} row={row} col={col} can={can} say={say} />}
+          {editable && <button className="link tiny" onClick={() => setNewSecret('')}>{isEmpty(v) ? 'set' : 'change'}</button>}
+        </> : (
+          // Set from an empty field, never edited in place: only a typed
+          // value is sent, so the mask can never be saved as the password.
+          <form className="rb-inline-form" onSubmit={e => { e.preventDefault(); if (newSecret) { void onSave(newSecret); setNewSecret(null); } }}>
+            <input className="rb-input" type="password" autoFocus autoComplete="new-password" placeholder="New value"
+                   value={newSecret} onChange={e => setNewSecret(e.target.value)} />
+            <button className="small" disabled={!newSecret}>Save</button>
+            <button type="button" className="link tiny" onClick={() => setNewSecret(null)}>cancel</button>
+          </form>
+        )}
+      </div>
+    );
+  }
+  if (editing) return <div className="rb-fieldval rb-editing"><InlineInput col={col} value={v} onDone={val => { setEditing(false); if (val !== undefined) void onSave(val); }} /></div>;
+  const click = (e: React.MouseEvent) => {
+    if (!editable || (e.target as HTMLElement).closest('a')) return;
+    if (col.type === 'checkbox') { void onSave(!ticked(v)); return; }
+    if (col.type === 'select') { setPop({ kind: 'select', rect: (e.currentTarget as HTMLElement).getBoundingClientRect(), row, col }); return; }
+    if (col.type === 'longtext') { setPop({ kind: 'text', rect: (e.currentTarget as HTMLElement).getBoundingClientRect(), row, col }); return; }
+    setEditing(true);
+  };
+  return (
+    <div className={`rb-fieldval ${editable ? 'rb-editable' : ''} t-${col.type}`} onClick={click}>
+      {col.type === 'longtext' ? <span className="rb-longtext">{text(v)}</span> : <Value col={col} v={v} editable={editable} />}
+      {editable && isEmpty(v) && !['select', 'checkbox'].includes(col.type) && <span className="rb-hint">Add…</span>}
+    </div>
+  );
+}
+
+/* ── search across tables ─────────────────────────────────────────── */
+
+function SearchResults({ hits, tables, onOpen }: {
+  hits: { q: string; results: RepoHit[]; searched: number }; tables: RepoTable[]; onOpen: (table: string, id: string) => void;
+}) {
+  const found = hits.results.filter(r => r.total > 0);
+  const failed = hits.results.filter(r => r.problem);
+  return (
+    <div className="rb-results">
+      <p className="rb-note">{found.reduce((a, r) => a + r.total, 0)} match(es) across {hits.searched} table(s). Encrypted passwords are never searched.</p>
+      {/* A table that could not be read was NOT searched; "no results" must not mean both. */}
+      {failed.map(f => <p key={f.table} className="banner warn">▲ {f.title} could not be searched: {f.problem}</p>)}
+      {found.map(h => {
+        const t = tables.find(x => x.key === h.table);
+        if (!t) return null;
+        const p = primaryKey(t);
+        return (
+          <div key={h.table} className="rb-hitgroup">
+            <h4>{h.section} · {h.title} <span className="rb-count">{h.total}</span></h4>
+            {h.rows.map(r => (
+              <button key={String(r.id)} className="rb-hit" onClick={() => onOpen(h.table, String(r.id))}>
+                <b>{text(r[p]) || String(r.id)}</b>
+                <span className="rb-hint">{String(r.id)} · {Object.entries(r).filter(([k, v]) => k !== p && String(v).toLowerCase().includes(hits.q.toLowerCase())).map(([k]) => t.columns.find(c => c.key === k)?.title ?? k).slice(0, 3).join(', ')}</span>
+              </button>
+            ))}
+          </div>
+        );
+      })}
+      {!found.length && !failed.length && <p className="rb-empty">Nothing matches.</p>}
     </div>
   );
 }
