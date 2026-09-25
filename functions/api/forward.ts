@@ -17,7 +17,7 @@
  * which is exactly the kind of confident wrong answer that gets a price
  * cut on a unit that was never available.
  */
-import { fetchListings, fetchCalendars, fetchAllReservations } from '../_lib/hostaway.ts';
+import { fetchListings, fetchCalendars, fetchStudyReservations } from '../_lib/hostaway.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
@@ -69,17 +69,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // what the guest is charged, and the gap between them is margin that
   // nothing else in this app would show.
   // Reservations are needed for lead time and pickup — the two numbers
-  // that say whether demand is moving rather than where it stands. They
-  // are fetched account-wide (Hostaway ignores per-listing filters) and
-  // grouped locally, so this is a handful of requests, not one per unit.
+  // that say whether demand is moving rather than where it stands. Asked
+  // live and scoped to what the study uses (fetchStudyReservations): the
+  // window, the 90 days before it, and the last 30 days of activity —
+  // not two years of history on every load.
   const pickupSince = addDays(asOf, -7);
-  const resFrom = addDays(asOf, -400);
   const [listings, costRows, reservations] = await Promise.all([
     fetchListings(creds),
     sql`SELECT id, cleaning_fee FROM units WHERE account_id = 1 AND cleaning_fee IS NOT NULL`,
-    fetchAllReservations(creds, resFrom, addDays(asOf, 400))
+    fetchStudyReservations(creds, asOf, to)
   ]) as [Awaited<ReturnType<typeof fetchListings>>, { id: string; cleaning_fee: string }[],
-         Awaited<ReturnType<typeof fetchAllReservations>>];
+         Awaited<ReturnType<typeof fetchStudyReservations>>];
 
   const resByUnit = new Map<string, typeof reservations>();
   for (const r of reservations) {

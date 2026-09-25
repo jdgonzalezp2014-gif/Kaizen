@@ -63,6 +63,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   return Response.json({
     ok: true, role: access.role, permissions: access.permissions, mode: s.mode, today: s.today, end: s.end, days: s.days, timeZone: OPS_TZ,
+    lookaheadTo: s.lookaheadTo,
     sheetUrl: account.cleaningsSheetUrl, showMoney,
     rows: s.rows, summary: s.summary, panel: s.panel,
     inspectionLog: { done: s.inspections.done.slice(0, 200), scheduled: s.inspections.scheduled },

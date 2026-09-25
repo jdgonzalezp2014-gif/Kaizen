@@ -12,7 +12,7 @@
  * Deliberately has no UI. It is called by a scheduler, or by hand with
  * the ingest token while there is no scheduler.
  */
-import { fetchListings, fetchCalendars, fetchAllReservations } from '../_lib/hostaway.ts';
+import { fetchListings, fetchCalendars, fetchStudyReservations } from '../_lib/hostaway.ts';
 import { resolveOutcomes } from '../_lib/outcomes.ts';
 import { sendSms } from '../_lib/quo.ts';
 import { decrypt } from '../_lib/crypto.ts';
@@ -58,7 +58,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const to = addDays(now, account.fwdStudyDays - 1);
   const [listings, reservations] = await Promise.all([
     fetchListings(creds),
-    fetchAllReservations(creds, addDays(now, -400), addDays(now, 400))
+    // The same scoped study the Units screen reads, so an alert and the
+    // screen it points at are judged on the same reservations.
+    fetchStudyReservations(creds, now, to)
   ]);
   const calendars = await fetchCalendars(creds, listings.map(l => l.listingId), now, to);
   const parked = new Set(((await sql`SELECT id FROM units WHERE account_id = 1 AND parked`) as

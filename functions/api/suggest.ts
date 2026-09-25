@@ -20,7 +20,7 @@ import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { addDays, today } from '../../src/lib/dates.ts';
 import { findGaps, leadTimeDays, pickup, median, portfolioAskRatio } from '../../src/lib/revenue.ts';
-import { fetchAllReservations } from '../_lib/hostaway.ts';
+import { fetchStudyReservations } from '../_lib/hostaway.ts';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -51,11 +51,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const [listings, cal, reservations, costRow] = await Promise.all([
     fetchListings(creds),
     fetchCalendar(creds, listingId, from, to),
-    fetchAllReservations(creds, addDays(from, -400), addDays(from, 400)),
+    fetchStudyReservations(creds, from, to),
     sql`SELECT cleaning_fee FROM units WHERE account_id = 1 AND id = ${listingId}`
   ]) as [Awaited<ReturnType<typeof fetchListings>>,
          Awaited<ReturnType<typeof fetchCalendar>>,
-         Awaited<ReturnType<typeof fetchAllReservations>>,
+         Awaited<ReturnType<typeof fetchStudyReservations>>,
          { cleaning_fee: string | null }[]];
 
   const listing = listings.find(l => l.listingId === listingId);

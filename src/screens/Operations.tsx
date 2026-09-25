@@ -274,7 +274,7 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
                   const key = `${r.resId}-${r.kind}`;
                   return (
                     <Fragment key={key}>
-                      <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'}
+                      <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'} through={short(data.lookaheadTo)}
                                  open={open === key} onToggle={() => {
                                    // Read-only roles see the board; the editor is not offered.
                                    if (can(data.permissions, 'operations.edit')) setOpen(open === key ? null : key);
@@ -301,8 +301,10 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through }: {
   r: BoardRow; showMoney: boolean; shadow: boolean; open: boolean; onToggle: () => void;
+  /** How far ahead the next booking was looked for — "nothing" means nothing up to here. */
+  through: string;
 }) {
   const out = r.kind === 'out';
   return (
@@ -320,7 +322,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle }: {
       <td className={r.manual.time ? 'ops-manual' : undefined}>{r.time}</td>
       <td>
         {!out ? (r.preppedBy ? <span className="sub-n">prepped by {r.preppedBy}</span> : null)
-          : !r.next ? <span className="breach">▲ nothing booked</span>
+          : !r.next ? <span className="breach">▲ nothing booked through {through}</span>
           : (<>
               {short(r.next.arrival)}{' '}
               {r.next.gapDays === 0 ? <b className="breach">same day</b>
@@ -479,7 +481,7 @@ function ByCleaner({ data }: { data: OperationsResponse }) {
               <td><b>{j.unit}</b>{j.beds ? <span className="sub-n"> {j.beds}BR</span> : null}</td>
               <td>{j.time}</td>
               <td>{j.next ? (j.next.gapDays === 0 ? <b className="breach">same day</b> : `${short(j.next.arrival)} · +${j.next.gapDays}d`)
-                : <span className="note">nothing booked</span>}</td>
+                : <span className="note">nothing booked through {short(data.lookaheadTo)}</span>}</td>
               <td>
                 {j.deep && <span className="ops-flag deep">🧽 deep</span>}
                 {(j.inspection.key === 'req' || j.inspection.key === 'due') && <span className="ops-flag due">🔍 inspection</span>}

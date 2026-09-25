@@ -27,10 +27,19 @@
  *     321-night owner block was quietly billing its unit.
  */
 
+export interface HostawayToken { value: string; expires: number }
+
 export interface HostawayCredentials {
   accountId: string;
   apiKey: string;
+  /** A token kept from an earlier request (accounts.ts), reused while valid. */
+  token?: HostawayToken | null;
+  /** Told about a new token, or null when Hostaway refused the kept one. */
+  onToken?: (t: HostawayToken | null) => Promise<void>;
 }
+
+/** Hostaway refused the token itself — distinct from any other failure, because it has a fix. */
+export class HostawayAuthError extends Error {}
 
 import type { DateStr } from '../../src/lib/dates.ts';
 import { addDays, daysBetween } from '../../src/lib/dates.ts';
@@ -153,15 +162,37 @@ export interface CalendarDay {
   minStay: number | null;
 }
 
-let cachedToken: { token: string; expires: number } | null = null;
+/**
+ * Per ACCOUNT, never one module-wide slot: a token belongs to one Hostaway
+ * account, and a shared slot would hand one tenant's token to the next
+ * request in the same isolate.
+ */
+const warm = new Map<string, HostawayToken>();
+const pending = new Map<string, Promise<HostawayToken>>();
+const valid = (t: HostawayToken | null | undefined) => !!t && t.expires > Date.now() + 60_000;
 
 /**
- * Tokens last hours; a Worker instance lives minutes. Caching in module
- * scope helps within one warm isolate and costs nothing on a cold one.
+ * A token for this account, in the cheapest way available: the one kept
+ * from an earlier request (stored encrypted, accounts.ts), the one this
+ * isolate already holds, or — only when neither is valid — a new one.
+ * Requests racing for a new token share ONE request to Hostaway.
  */
 export async function getAccessToken(creds: HostawayCredentials): Promise<string> {
-  if (cachedToken && cachedToken.expires > Date.now() + 60_000) return cachedToken.token;
+  if (valid(creds.token)) return creds.token!.value;
+  const held = warm.get(creds.accountId);
+  if (valid(held)) return held!.value;
 
+  let inflight = pending.get(creds.accountId);
+  if (!inflight) {
+    inflight = requestToken(creds).finally(() => pending.delete(creds.accountId));
+    pending.set(creds.accountId, inflight);
+  }
+  const t = await inflight;
+  creds.token = t;
+  return t.value;
+}
+
+async function requestToken(creds: HostawayCredentials): Promise<HostawayToken> {
   const { accountId, apiKey } = creds;
   if (!accountId || !apiKey) {
     throw new Error('Hostaway credentials are missing from the environment.');
@@ -187,11 +218,30 @@ export async function getAccessToken(creds: HostawayCredentials): Promise<string
   const json = await res.json() as { access_token?: string; expires_in?: number };
   if (!json.access_token) throw new Error('Hostaway returned no access token.');
 
-  cachedToken = {
-    token: json.access_token,
-    expires: Date.now() + (json.expires_in ?? 3600) * 1000
-  };
-  return cachedToken.token;
+  const t = { value: json.access_token, expires: Date.now() + (json.expires_in ?? 3600) * 1000 };
+  warm.set(accountId, t);
+  // Kept for the next request. A failure to store it costs speed, never
+  // the request.
+  await creds.onToken?.(t).catch(() => {});
+  return t;
+}
+
+/**
+ * Runs `fn` with a token, and if Hostaway refuses that token — a key
+ * rotated, a token revoked — drops it everywhere it is kept and tries
+ * once more with a new one. Once: a second refusal is a real failure.
+ */
+async function withToken<T>(creds: HostawayCredentials, fn: (token: string) => Promise<T>): Promise<T> {
+  const token = await getAccessToken(creds);
+  try {
+    return await fn(token);
+  } catch (e) {
+    if (!(e instanceof HostawayAuthError)) throw e;
+    warm.delete(creds.accountId);
+    creds.token = null;
+    await creds.onToken?.(null).catch(() => {});
+    return fn(await getAccessToken(creds));
+  }
 }
 
 async function apiGetEnvelope<T>(path: string, token: string): Promise<{ result: T[]; count: number }> {
@@ -208,6 +258,7 @@ async function apiGetEnvelope<T>(path: string, token: string): Promise<{ result:
       await new Promise(r => setTimeout(r, 400 * (attempt + 1) ** 2));
       continue;
     }
+    if (res.status === 401 || res.status === 403) throw new HostawayAuthError(`Hostaway refused the access token (${res.status}).`);
     if (!res.ok) throw new Error(`Hostaway ${path} returned ${res.status}.`);
 
     const json = await res.json() as { result?: T[]; count?: number } | T[];
@@ -235,8 +286,8 @@ function asDate(v: unknown): DateStr | '' {
 }
 
 export async function fetchListings(creds: HostawayCredentials, token?: string): Promise<HostawayListing[]> {
-  const t = token ?? await getAccessToken(creds);
-  const raw = await apiGet<Record<string, any>>('/listings', t);
+  const raw = token ? await apiGet<Record<string, any>>('/listings', token)
+    : await withToken(creds, t => apiGet<Record<string, any>>('/listings', t));
 
   return raw.map(l => ({
     listingId: String(l.id),
@@ -295,60 +346,82 @@ export function reservationCounts(status: string): boolean {
   return !NON_COUNTING.has(String(status).toLowerCase().replace(/[^a-z]/g, ''));
 }
 
-const PAGE = 500;
+/**
+ * Small pages, fetched side by side. Hostaway's time grows with the rows
+ * in a page but pages run concurrently — measured: one page of 500 in
+ * 3.9 s, seven pages of 100 together in 1.4 s. The cap keeps a year of
+ * history from becoming a burst Hostaway answers with 429s.
+ */
+const PAGE = 100;
+const CONCURRENT_PAGES = 8;
 
 /**
- * Every reservation in the account, paginated.
+ * Every stay that touches [from, to]: departs on or after `from` AND
+ * arrives on or before `to` — exactly the overlap test the account-wide
+ * pull applied locally, asked of Hostaway instead.
  *
- * NOT one request per listing, and that is a correctness fix rather than
- * an optimisation. Two documented Hostaway behaviours compound:
- *
- *   · `/reservations` ignores `listingMapId` and returns account-wide
- *     rows anyway, which is why every result is re-filtered by listing.
- *   · It pages at 100 rows by default and says so only in a `limit`
- *     field nobody reads.
- *
- * Together those truncated silently: we asked for one listing, got 100
- * rows belonging to the whole account, and kept the two that matched.
- * Across 27 listings that returned 57 of 2,020 reservations — revenue at
- * three percent of reality, with nothing erroring.
- *
- * Fetching account-wide and grouping locally is also five requests
- * instead of twenty-nine, and about a second instead of seventeen.
+ * This is what makes a screen fast without making it stale. Measured on
+ * this account: the stays touching the next 30 days are 62 rows in 1.2 s,
+ * against 2,050 rows in five pages for the whole history. Nothing is
+ * cached; a different range is simply a different question, asked live.
+ * Still clamped locally, in case Hostaway ever stops honouring a filter —
+ * then this is slow, never wrong.
  */
-export async function fetchAllReservations(
+export async function fetchReservationsTouching(
   creds: HostawayCredentials, from: DateStr, to: DateStr
 ): Promise<HostawayReservation[]> {
-  return (await pagedReservations(creds, ''))
-    // Overlap, not containment: a stay that began before the window and
-    // runs into it still earns nights inside it.
+  return (await pagedReservations(creds, `&departureStartDate=${from}&arrivalEndDate=${to}`))
     .filter(r => r.departure >= from && r.arrival <= to);
 }
 
 /**
- * Only the stays ARRIVING in a range, asked of Hostaway rather than
- * filtered from the whole history.
- *
- * The account-wide pull reads every reservation the account has ever
- * had — 16 seconds of it, measured, for a board that needs a few weeks.
- * The daily file has always asked with `arrivalStartDate` /
- * `arrivalEndDate`, and that is proven on this account. Results are
- * still clamped here, because this API has ignored its own filters
- * before (§14); if it does again this is merely slow, never wrong.
+ * Every reservation with activity — a booking, a change — since `since`,
+ * whatever its stay dates. The only way to ask "who booked lately" of
+ * Hostaway: it ignores a booking-date filter (`reservationDateStart`
+ * returns all 2,050 rows) but honours `latestActivityStart` (65 rows for
+ * one week, 0.7 s).
  */
-export async function fetchReservationsArriving(
-  creds: HostawayCredentials, arrivalFrom: DateStr, arrivalTo: DateStr
+export async function fetchReservationsActiveSince(
+  creds: HostawayCredentials, since: DateStr
 ): Promise<HostawayReservation[]> {
-  return (await pagedReservations(creds, `&arrivalStartDate=${arrivalFrom}&arrivalEndDate=${arrivalTo}`))
-    .filter(r => r.arrival >= arrivalFrom && r.arrival <= arrivalTo);
+  return pagedReservations(creds, `&latestActivityStart=${since}`);
 }
 
-async function pagedReservations(creds: HostawayCredentials, query: string): Promise<HostawayReservation[]> {
-  const token = await getAccessToken(creds);
+/**
+ * What a forward study of [asOf, to] needs, and no more:
+ *
+ *   · the stays touching the window, and the last 90 days before it —
+ *     occupancy, pickup, and a recent sample for lead time
+ *   · anything booked or changed in the last 30 days, whatever its dates —
+ *     so "no booking of any kind for 21 days" is judged on real activity
+ *
+ * Lead time is therefore the median over RECENT stays rather than two
+ * years of them — how the unit books now, which is the question.
+ */
+export async function fetchStudyReservations(
+  creds: HostawayCredentials, asOf: DateStr, to: DateStr
+): Promise<HostawayReservation[]> {
+  const [window, recent] = await Promise.all([
+    fetchReservationsTouching(creds, addDaysIso(asOf, -STUDY_LOOKBACK_DAYS), to),
+    fetchReservationsActiveSince(creds, addDaysIso(asOf, -RECENT_ACTIVITY_DAYS))
+  ]);
+  const byId = new Map<string, HostawayReservation>();
+  for (const r of [...window, ...recent]) byId.set(r.reservationId, r);
+  return [...byId.values()];
+}
+const STUDY_LOOKBACK_DAYS = 90;
+const RECENT_ACTIVITY_DAYS = 30;
+const addDaysIso = (d: DateStr, n: number): DateStr =>
+  new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 
-  // The first page reports the total, so the rest are fetched at once
-  // rather than discovered one round trip at a time. Sequential paging
-  // cost ~3 seconds per page.
+async function pagedReservations(creds: HostawayCredentials, query: string): Promise<HostawayReservation[]> {
+  return withToken(creds, token => pagedReservationsWith(token, query));
+}
+
+async function pagedReservationsWith(token: string, query: string): Promise<HostawayReservation[]> {
+
+  // The first page reports the total, so the rest are fetched together
+  // rather than discovered one round trip at a time.
   const first = await apiGetEnvelope<Record<string, any>>(`/reservations?limit=${PAGE}&offset=0${query}`, token);
   const raw: Record<string, any>[] = [...first.result];
 
@@ -356,10 +429,14 @@ async function pagedReservations(creds: HostawayCredentials, query: string): Pro
   const offsets: number[] = [];
   for (let o = PAGE; o < total; o += PAGE) offsets.push(o);
 
-  if (offsets.length) {
-    const pages = await Promise.all(offsets.map(o =>
-      apiGet<Record<string, any>>(`/reservations?limit=${PAGE}&offset=${o}${query}`, token)
-        .catch(() => [])));
+  // A page that still fails after apiGetEnvelope's retries FAILS the
+  // request. It used to be swallowed as an empty page, which quietly
+  // returned part of the reservations — revenue short by a page, with
+  // nothing on screen saying so. A refusal is honest; a partial total is
+  // not.
+  for (let i = 0; i < offsets.length; i += CONCURRENT_PAGES) {
+    const pages = await Promise.all(offsets.slice(i, i + CONCURRENT_PAGES).map(o =>
+      apiGet<Record<string, any>>(`/reservations?limit=${PAGE}&offset=${o}${query}`, token)));
     pages.forEach(pg => raw.push(...pg));
   }
 
@@ -395,7 +472,7 @@ async function pagedReservations(creds: HostawayCredentials, query: string): Pro
 export async function fetchReservations(
   creds: HostawayCredentials, listingId: string, from: DateStr, to: DateStr
 ): Promise<HostawayReservation[]> {
-  const all = await fetchAllReservations(creds, from, to);
+  const all = await fetchReservationsTouching(creds, from, to);
   return all.filter(r => r.listingId === String(listingId));
 }
 
@@ -581,11 +658,16 @@ export async function updateListingDiscounts(
 export async function fetchCalendars(
   creds: HostawayCredentials, listingIds: string[], from: DateStr, to: DateStr
 ): Promise<Record<string, CalendarDay[]>> {
-  const token = await getAccessToken(creds);
   const out: Record<string, CalendarDay[]> = {};
-  const results = await Promise.all(
-    listingIds.map(id => fetchCalendar(creds, id, from, to, token).catch(() => [] as CalendarDay[]))
-  );
+  // One listing's calendar failing leaves that unit "unknown" on screen,
+  // which says so. A refused TOKEN is different — it would fail every
+  // one — so it is let through to be renewed rather than swallowed.
+  const results = await withToken(creds, token => Promise.all(
+    listingIds.map(id => fetchCalendar(creds, id, from, to, token).catch(e => {
+      if (e instanceof HostawayAuthError) throw e;
+      return [] as CalendarDay[];
+    }))
+  ));
   listingIds.forEach((id, i) => { out[id] = results[i]!; });
   return out;
 }

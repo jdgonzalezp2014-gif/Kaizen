@@ -21,11 +21,6 @@ export interface Env extends AuthEnv {
   HOSTAWAY_API_KEY?: string;
   QUO_API_KEY?: string;
   QUO_FROM?: string;
-  // How far either side of today to pull reservations. Wide enough that
-  // any range the UI offers is already in hand; overridable per
-  // environment without a deploy.
-  LEDGER_BACK_DAYS?: string;
-  LEDGER_FWD_DAYS?: string;
 }
 
 export function db(env: Env) {

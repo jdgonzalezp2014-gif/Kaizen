@@ -7,7 +7,7 @@
  * once on load rather than once per interaction — which is what makes a
  * 1–3 second Hostaway sweep acceptable here.
  */
-import { fetchAllReservations, fetchListings } from '../_lib/hostaway.ts';
+import { fetchReservationsTouching, fetchListings } from '../_lib/hostaway.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
@@ -25,12 +25,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const started = Date.now();
   const now = today();
-  // Three years back by default. Reservations are fetched one call per
-  // listing WITH a date range, so widening the window costs no extra
-  // requests — only a larger response. Hostaway is the system of record
-  // for booking history; there is no reason to ask it for less than it has.
-  const from = addDays(now, -Number(env.LEDGER_BACK_DAYS ?? 1095));
-  const to   = addDays(now,  Number(env.LEDGER_FWD_DAYS ?? 365));
+  // The range on screen, and only that — asked live every time. The whole
+  // history is still one date change away; what changed is that nobody
+  // waits for four years of reservations to read the last thirty days.
+  // Measured: a month is ~1–2 s, a year ~6 s, all history ~10 s.
+  const url = new URL(request.url);
+  const iso = /^\d{4}-\d{2}-\d{2}$/;
+  const qFrom = url.searchParams.get('from') ?? '';
+  const qTo = url.searchParams.get('to') ?? '';
+  const from = iso.test(qFrom) ? qFrom : addDays(now, -29);
+  const to = iso.test(qTo) && qTo >= from ? qTo : now;
 
   const sql = db(env) as unknown as SqlFn;
 
@@ -50,11 +54,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // one before starting the other.
   const [listings, reservations, expenses, claims, parkedRows] = await Promise.all([
     fetchListings(creds),
-    fetchAllReservations(creds, from, to),
+    fetchReservationsTouching(creds, from, to),
     sql`SELECT unit_id, shared, start_date, end_date, category, frequency, amount
-        FROM expenses WHERE end_date IS NULL OR end_date >= ${from}` as unknown as Promise<CostRowDb[]>,
+        FROM expenses WHERE (end_date IS NULL OR end_date >= ${from}) AND start_date <= ${to}` as unknown as Promise<CostRowDb[]>,
     sql`SELECT unit_id, occurred_on, category, severity, status, refund, repair_cost
-        FROM claims WHERE occurred_on >= ${from}`,
+        FROM claims WHERE occurred_on >= ${from} AND occurred_on <= ${to}`,
     // The parked verdict, computed at sync time. Reading it costs one
     // cheap query; recomputing it would cost 27 calendar requests on
     // every dashboard load.

@@ -2108,3 +2108,65 @@ follow the `money` permission.
   Drive, crew cleaning sessions (evaluated in chat, not built).
 - The Cleanings Log header row is blank in the live sheet (read by column
   order, §63); restore it before anyone relies on the sheet as archive.
+
+
+## 69. Faster, and still live: ask Hostaway only for the dates on screen
+
+The owner's rule (2026-09-25): **no cache of data** — every figure is
+asked of Hostaway at the moment it is shown — and **all history stays one
+date change away**. Within that rule, three changes, each measured on this
+account:
+
+**1. Only the stays that touch the dates on screen.**
+`fetchReservationsTouching(from, to)` sends Hostaway
+`departureStartDate=from & arrivalEndDate=to` — exactly the overlap test
+the account-wide pull applied locally, and still clamped locally so an
+ignored filter can only make it slow, never wrong. Verified identical to
+the full pull in six windows (a single day, a month, a year, all
+history): same reservation ids, no extra, none missing.
+
+| screen | asked for |
+|---|---|
+| Revenue | the selected range only; **default "Last 30 days"**; a new range is a new live request, sent once the range stops moving |
+| Operations / Home | stays still in the building today or arriving within the board + 45 days (`NEXT_STAY_LOOKAHEAD`); "nothing booked" now says *through which date* |
+| Units, cron alerts, AI suggestions | `fetchStudyReservations`: the window, the 90 days before it, and anything with activity in the last 30 days (`latestActivityStart`) |
+
+Consequences, stated rather than hidden:
+- **Lead time** is the median over recent stays (last 90 days + the
+  window), not two years — how a unit books now.
+- **AI suggestions' peer rate** is the peers' recent average, not a
+  two-year one.
+- **"Gone quiet"** (no booking for 21+ days) is judged on real activity
+  from the last 30 days; beyond that the signal still fires, and the day
+  count shown can read longer than the truth.
+- Units' red list was compared before and after on live data: the same
+  eight units.
+
+Hostaway ignores a booking-date filter (`reservationDateStart` returns
+all 2,050 rows) but honours `latestActivityStart`.
+
+**2. Small pages, side by side.** Hostaway's time grows with rows per page
+but pages run concurrently: one page of 500 took 3.9 s, seven pages of 100
+together 1.4 s. `PAGE = 100`, eight at a time. The year's reservations
+went from ~7.6 s to ~3.0 s. And a page that still fails after retries now
+**fails the request** — it used to be swallowed as an empty page, which
+silently returned part of the reservations.
+
+**3. The Hostaway token is kept** (migration 026). Every request was
+buying a new one first — 1.5–2 s, for a token valid 731 days. It is a
+credential, not data, so keeping it cannot make a figure stale: stored
+encrypted per account, cleared with a new API key, renewed and the call
+retried once if Hostaway refuses it; concurrent requests share one
+renewal; the in-memory copy is per account (it was module-wide, which
+would hand one tenant's token to another). `hostaway.test.ts` pins it.
+
+`fetchAllReservations` and `fetchReservationsArriving` are removed;
+`LEDGER_BACK_DAYS` / `LEDGER_FWD_DAYS` are gone. Measured from a
+development machine in Colombia (production runs nearer both Hostaway and
+Neon): Revenue 30 days ~4 s (was ~12–20 s, whole history every time),
+Operations ~3–4 s (was 10–16 s), Units ~6 s (was 15–20 s). What remains is
+Hostaway answering — listings alone vary 0.8–6 s.
+
+**Not done, and worth a click:** Cloudflare → the Pages project →
+Settings → Functions → Placement → **Smart**, so functions run near
+Hostaway and Neon rather than near the visitor. No code change.

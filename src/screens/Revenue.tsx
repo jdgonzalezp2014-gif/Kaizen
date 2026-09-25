@@ -27,25 +27,39 @@ const money = fmtMoney;
 export function Revenue() {
   const [data, setData] = useState<Portfolio | null>(null);
   const [error, setError] = useState('');
-  const [preset, setPreset] = useState<PresetId | 'custom'>('mtd');
+  // Thirty days by default: the question most mornings, and the cheapest
+  // to ask. Any other range is one click away and fetched just as live.
+  const [preset, setPreset] = useState<PresetId | 'custom'>('last30');
   const [filter, setFilter] = useState<FilterState>(EMPTY_FILTER);
   const [openUnit, setOpenUnit] = useState<string | null>(null);
-  const [period, setPeriod] = useState<Period>(() => resolvePreset('mtd')!);
+  const [period, setPeriod] = useState<Period>(() => resolvePreset('last30')!);
+  const [busy, setBusy] = useState(true);
 
+  // Each range is asked of Hostaway live — nothing is kept from an earlier
+  // answer, so a figure on screen is never older than the last change of
+  // range. Settled first: a drag fires on every step, and only the range
+  // it stops on is worth a request. The previous figures stay, dimmed,
+  // until the new ones land, so the screen never blanks.
   useEffect(() => {
-    const started = Date.now();
-    fetch('/api/portfolio')
-      .then(r => r.json() as Promise<Portfolio & { ok?: boolean; message?: string; error?: string }>)
-      .then(j => {
-        rememberTiming('portfolio', Date.now() - started);
-        return j.ok === false ? setError(j.message ?? j.error ?? 'Request failed') : setData(j);
-      })
-      .catch(e => setError(String(e)));
-  }, []);
+    let cancelled = false;
+    setBusy(true); setError('');
+    const id = window.setTimeout(() => {
+      const started = Date.now();
+      fetch(`/api/portfolio?from=${period.from}&to=${period.to}`)
+        .then(r => r.json() as Promise<Portfolio & { ok?: boolean; message?: string; error?: string }>)
+        .then(j => {
+          if (cancelled) return;
+          rememberTiming('portfolio', Date.now() - started);
+          if (j.ok === false) setError(j.message ?? j.error ?? 'Request failed'); else setData(j);
+        })
+        .catch(e => { if (!cancelled) setError(String(e)); })
+        .finally(() => { if (!cancelled) setBusy(false); });
+    }, 300);
+    return () => { cancelled = true; window.clearTimeout(id); };
+  }, [period.from, period.to]);
 
-  // Everything below recomputes in the browser, so dragging the range
-  // never touches the network. That is the whole reason the API serves
-  // period-free rows.
+  // Everything below is computed in the browser from the rows of THIS
+  // range: the stays that touch it, prorated to the nights inside it.
   const view = useMemo(() => {
     if (!data) return null;
     const set: Dataset = {
@@ -94,7 +108,7 @@ export function Revenue() {
       estimateMs={recallTiming('portfolio', 12000)}
       stages={[
         'Asking Hostaway for the listings',
-        'Fetching every reservation',
+        'Fetching the reservations in this range',
         'Reading costs and claims',
         'Prorating the period'
       ]}
@@ -109,6 +123,8 @@ export function Revenue() {
     <>
       <RangePicker period={period} preset={preset}
                    onChange={(p, id) => { setPeriod(p); setPreset(id); }} />
+      {busy && <p className="note loading-dot">Fetching {period.from} → {period.to} from Hostaway</p>}
+      <div className={busy ? 'is-stale' : undefined}>
 
       {!view.anyCosts && (
         // Stating the limitation on screen, not only in a comment. With no
@@ -206,6 +222,7 @@ export function Revenue() {
           By {view.granularity}, chosen from the length of the range rather than picked.
         </p>
         <NetOverTime points={view.series} />
+      </div>
       </div>
     </>
   );

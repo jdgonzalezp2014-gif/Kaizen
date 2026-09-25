@@ -15,7 +15,7 @@
  *           Host Note. The sheet's import is no longer read, so the two
  *           never write the same key.
  */
-import { fetchListings, fetchReservationsArriving, fetchHostNote, writeHostNote,
+import { fetchListings, fetchReservationsTouching, fetchHostNote, writeHostNote,
          type HostawayCredentials } from './hostaway.ts';
 import { importCleanings } from './cleanings-import.ts';
 import type { SqlFn } from './accounts.ts';
@@ -27,8 +27,14 @@ import {
 
 /** The daily file's own zone (its manifest), so "today" is the same day in both. */
 export const OPS_TZ = 'America/New_York';
-const NEXT_STAY_HORIZON = 120;
-const STAY_LOOKBACK = 120;
+/**
+ * How far past the board the next booking is looked for. Every rule that
+ * reads the next stay fits inside it — the value horizon (10 days), a long
+ * vacancy (7), a big booking forcing an inspection (45) — and a unit with
+ * nothing inside it says "nothing booked through <date>", never a flat
+ * "nothing booked" it has not checked.
+ */
+export const NEXT_STAY_LOOKAHEAD = 45;
 const SHEET_FRESH_MINUTES = 30;
 
 export type OpsMode = 'shadow' | 'live';
@@ -79,7 +85,9 @@ export interface OpsState {
   summary: ReturnType<typeof summarize>;
   panel: ReturnType<typeof inspectionPanel>;
   inspections: Awaited<ReturnType<typeof inspectionLog>>;
-  reservations: Awaited<ReturnType<typeof fetchReservationsArriving>>;
+  reservations: Awaited<ReturnType<typeof fetchReservationsTouching>>;
+  /** The last day the next booking was looked for. */
+  lookaheadTo: string;
   sheet: { ok: boolean; problem: string | null; warning: string | null } | null;
   timings: Record<string, number>;
 }
@@ -118,8 +126,10 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
 
   const [listings, reservations, inspections, overrideRows, noteRows] = await Promise.all([
     timed('listings', fetchListings(creds)),
-    timed('reservations', fetchReservationsArriving(creds, addDays(today, -STAY_LOOKBACK),
-                                                     addDays(end, NEXT_STAY_HORIZON))),
+    // One live question: every stay still in the building today or
+    // arriving before the look-ahead ends. Stays that began months ago but
+    // check out this week are included by construction.
+    timed('reservations', fetchReservationsTouching(creds, today, addDays(end, NEXT_STAY_LOOKAHEAD))),
     inspectionLog(sql),
     sql`SELECT reservation_id, assignment, cleaner, deep, checkout_time, checkin_time
           FROM turnover_overrides WHERE account_id = 1`,
@@ -128,7 +138,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     sql`SELECT DISTINCT ON (reservation_id, kind) reservation_id, kind, notes
           FROM stay_notes WHERE account_id = 1
          ORDER BY reservation_id, kind, id DESC`
-  ]) as [Awaited<ReturnType<typeof fetchListings>>, Awaited<ReturnType<typeof fetchReservationsArriving>>,
+  ]) as [Awaited<ReturnType<typeof fetchListings>>, Awaited<ReturnType<typeof fetchReservationsTouching>>,
          Awaited<ReturnType<typeof inspectionLog>>,
          { reservation_id: string; assignment: Override['assignment']; cleaner: string | null;
            deep: boolean | null; checkout_time: string | null; checkin_time: string | null }[],
@@ -163,7 +173,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
 
   return { mode: cfg.mode, today, end, days, rules: cfg.rules, roster: cfg.roster,
            extraInspectors: cfg.extraInspectors, rows, summary: summarize(rows), panel,
-           inspections, reservations, sheet, timings };
+           inspections, reservations, sheet, timings, lookaheadTo: addDays(end, NEXT_STAY_LOOKAHEAD) };
 }
 
 /* ── live mode: the record and the push ───────────────────────────── */

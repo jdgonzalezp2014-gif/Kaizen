@@ -287,6 +287,8 @@ export interface HostNotePush { resId: string; outcome: string; detail: string |
 export interface OperationsResponse {
   ok: boolean; role: string; permissions: string[]; mode: 'shadow' | 'live';
   today: string; end: string; days: number; timeZone: string;
+  /** The last day the next booking after each checkout was looked for. */
+  lookaheadTo: string;
   sheetUrl: string | null; showMoney: boolean;
   rows: BoardRow[]; summary: BoardSummary; panel: UnitInspection[];
   inspectionLog: { done: InspectionEntry[]; scheduled: InspectionEntry[] };

@@ -174,9 +174,11 @@ export async function getCredentials(
   sql: SqlFn, encryptionKey: string, accountId = 1
 ): Promise<HostawayCredentials> {
   const rows = await sql`
-    SELECT hostaway_account_id, hostaway_api_key_enc
+    SELECT hostaway_account_id, hostaway_api_key_enc, hostaway_token_enc,
+           extract(epoch FROM hostaway_token_expires_at) * 1000 AS token_expires
     FROM accounts WHERE id = ${accountId}
-  ` as { hostaway_account_id: string | null; hostaway_api_key_enc: string | null }[];
+  ` as { hostaway_account_id: string | null; hostaway_api_key_enc: string | null;
+         hostaway_token_enc: string | null; token_expires: string | null }[];
 
   const r = rows[0];
   if (!r?.hostaway_account_id || !r.hostaway_api_key_enc) {
@@ -186,9 +188,26 @@ export async function getCredentials(
     );
   }
 
+  // The token kept from an earlier request — see migration 026. A copy
+  // that will not decrypt is simply not used; a new one is requested.
+  let token: { value: string; expires: number } | null = null;
+  if (r.hostaway_token_enc && r.token_expires) {
+    try { token = { value: await decrypt(r.hostaway_token_enc, encryptionKey), expires: Number(r.token_expires) }; }
+    catch { token = null; }
+  }
+
   return {
     accountId: r.hostaway_account_id,
-    apiKey: await decrypt(r.hostaway_api_key_enc, encryptionKey)
+    apiKey: await decrypt(r.hostaway_api_key_enc, encryptionKey),
+    token,
+    onToken: async t => {
+      if (!t) {
+        await sql`UPDATE accounts SET hostaway_token_enc = NULL, hostaway_token_expires_at = NULL WHERE id = ${accountId}`;
+      } else {
+        await sql`UPDATE accounts SET hostaway_token_enc = ${await encrypt(t.value, encryptionKey)},
+                         hostaway_token_expires_at = to_timestamp(${t.expires / 1000}) WHERE id = ${accountId}`;
+      }
+    }
   };
 }
 
@@ -197,10 +216,12 @@ export async function saveCredentials(
   hostawayAccountId: string, hostawayApiKey: string, accountId = 1
 ): Promise<void> {
   const enc = await encrypt(hostawayApiKey, encryptionKey);
+  // A new key invalidates the token derived from the old one.
   await sql`
     UPDATE accounts
        SET hostaway_account_id = ${hostawayAccountId},
-           hostaway_api_key_enc = ${enc}
+           hostaway_api_key_enc = ${enc},
+           hostaway_token_enc = NULL, hostaway_token_expires_at = NULL
      WHERE id = ${accountId}
   `;
 }
