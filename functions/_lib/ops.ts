@@ -88,6 +88,8 @@ export interface OpsState {
   reservations: Awaited<ReturnType<typeof fetchReservationsTouching>>;
   /** The last day the next booking was looked for. */
   lookaheadTo: string;
+  /** Who made each override, for the record's `decided_by`. */
+  overrideBy: Map<string, string>;
   sheet: { ok: boolean; problem: string | null; warning: string | null } | null;
   timings: Record<string, number>;
 }
@@ -131,7 +133,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     // check out this week are included by construction.
     timed('reservations', fetchReservationsTouching(creds, today, addDays(end, NEXT_STAY_LOOKAHEAD))),
     inspectionLog(sql),
-    sql`SELECT reservation_id, assignment, cleaner, deep, checkout_time, checkin_time
+    sql`SELECT reservation_id, assignment, cleaner, deep, checkout_time, checkin_time, updated_by
           FROM turnover_overrides WHERE account_id = 1`,
     // The current note per stay and end: the latest row, including a
     // blank one — a cleared note is the current note.
@@ -141,13 +143,14 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
   ]) as [Awaited<ReturnType<typeof fetchListings>>, Awaited<ReturnType<typeof fetchReservationsTouching>>,
          Awaited<ReturnType<typeof inspectionLog>>,
          { reservation_id: string; assignment: Override['assignment']; cleaner: string | null;
-           deep: boolean | null; checkout_time: string | null; checkin_time: string | null }[],
+           deep: boolean | null; checkout_time: string | null; checkin_time: string | null; updated_by: string }[],
          { reservation_id: string; kind: string; notes: string }[]];
 
   const overrides = new Map<string, Override>(overrideRows.map(o => [o.reservation_id, {
     assignment: o.assignment, cleaner: o.cleaner, deep: o.deep,
     checkoutTime: o.checkout_time, checkinTime: o.checkin_time }]));
   const notes = new Map(noteRows.map(n => [`${n.reservation_id}|${n.kind}`, n.notes]));
+  const overrideBy = new Map(overrideRows.map(o => [o.reservation_id, o.updated_by]));
 
   let sheetMap: Map<string, OpsCleaning> | null = null;
   if (cfg.mode === 'shadow') {
@@ -173,7 +176,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
 
   return { mode: cfg.mode, today, end, days, rules: cfg.rules, roster: cfg.roster,
            extraInspectors: cfg.extraInspectors, rows, summary: summarize(rows), panel,
-           inspections, reservations, sheet, timings, lookaheadTo: addDays(end, NEXT_STAY_LOOKAHEAD) };
+           inspections, reservations, sheet, timings, lookaheadTo: addDays(end, NEXT_STAY_LOOKAHEAD), overrideBy };
 }
 
 /* ── live mode: the record and the push ───────────────────────────── */
@@ -182,38 +185,124 @@ const URGENCY_LABEL: Record<string, string> = { turnover: '⚡', same_guest: '�
 
 /**
  * The cleanings record for every checkout on the board — what the
- * Cleanings Log was. Upserted on the reservation, so a changed cleaner
- * corrects the row rather than adding one. A stay that has vanished from
- * the future window (cancelled) is removed, but only rows Kaizen wrote
- * and only ahead of today: the past is a record, not a forecast.
+ * Cleanings Log was, and what cleaners are paid from (§70). Four rules:
+ *
+ *   · One row per reservation, upserted: a changed cleaner corrects the
+ *     row rather than adding one.
+ *   · THE PAST IS FROZEN. A row whose checkout has passed is never
+ *     rewritten here — a rate changed today must not reprice a clean done
+ *     last week.
+ *   · Nothing is deleted. A stay that no longer checks out in the window
+ *     is either MOVED (its new date is recorded) or gone from Hostaway —
+ *     then it is excluded (`void_reason`), still visible, never paid, and
+ *     counted again if the booking comes back.
+ *   · Every row says who decided it: the rule, a person, or the sheet.
  */
 export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> {
   const outs = s.rows.filter(r => r.kind === 'out');
+  const decidedBy = (r: BoardRow) => r.manual.cleaner ? `override:${s.overrideBy.get(r.resId) ?? 'someone'}`
+    : r.sameDayOf ? `rule: one clean per unit per day (${r.sameDayOf})` : 'rule';
   if (outs.length) {
     await sql`
       INSERT INTO cleanings (account_id, key, unit_id, unit_name, checkout_on, cleaner, assignment,
-                             guest, price, deep, urgency, checkout_time, beds, source)
-      SELECT 1, k, u, n, d, c, a, g, p, dp, ug, tm, bd, 'kaizen'
+                             guest, price, deep, urgency, checkout_time, beds, source, decided_by)
+      SELECT 1, k, u, n, d, c, a, g, p, dp, ug, tm, bd, 'kaizen', db
         FROM unnest(${outs.map(r => r.resId)}::text[], ${outs.map(r => r.unitId)}::text[],
                     ${outs.map(r => r.unit)}::text[], ${outs.map(r => r.date)}::date[],
                     ${outs.map(r => r.cleaner)}::text[], ${outs.map(r => r.assignment === 'unknown' ? 'tbd' : r.assignment)}::text[],
                     ${outs.map(r => r.guest || null)}::text[], ${outs.map(r => r.price)}::numeric[],
                     ${outs.map(r => r.deep)}::boolean[], ${outs.map(r => (r.urgency && URGENCY_LABEL[r.urgency]) || null)}::text[],
-                    ${outs.map(r => r.time)}::text[], ${outs.map(r => r.beds)}::smallint[])
-             AS t(k, u, n, d, c, a, g, p, dp, ug, tm, bd)
+                    ${outs.map(r => r.time)}::text[], ${outs.map(r => r.beds)}::smallint[], ${outs.map(decidedBy)}::text[])
+             AS t(k, u, n, d, c, a, g, p, dp, ug, tm, bd, db)
       ON CONFLICT (account_id, key) DO UPDATE SET
         unit_id = EXCLUDED.unit_id, unit_name = EXCLUDED.unit_name, checkout_on = EXCLUDED.checkout_on,
         cleaner = EXCLUDED.cleaner, assignment = EXCLUDED.assignment, guest = EXCLUDED.guest,
         price = EXCLUDED.price, deep = EXCLUDED.deep, urgency = EXCLUDED.urgency,
         checkout_time = EXCLUDED.checkout_time, beds = EXCLUDED.beds, source = 'kaizen',
-        imported_at = now()`;
+        decided_by = EXCLUDED.decided_by, void_reason = NULL, imported_at = now()
+      WHERE cleanings.checkout_on >= ${s.today}::date`;
+  }
+
+  // Rows in the window whose reservation is not checking out in it.
+  const onBoard = outs.map(r => r.resId);
+  const stale = await sql`
+    SELECT key FROM cleanings WHERE account_id = 1 AND key ~ '^[0-9]+$' AND void_reason IS NULL
+       AND checkout_on >= ${s.today}::date AND checkout_on <= ${s.end}::date
+       AND NOT (key = ANY(${onBoard}::text[]))` as { key: string }[];
+  const known = new Map(s.reservations.map(r => [r.reservationId, r]));
+  for (const { key } of stale) {
+    const moved = known.get(key);
+    if (moved) {
+      // Extended or shortened: the clean moves with the checkout.
+      await sql`UPDATE cleanings SET checkout_on = ${moved.departure}, imported_at = now()
+                 WHERE account_id = 1 AND key = ${key}`;
+    } else {
+      await sql`UPDATE cleanings SET void_reason = 'booking cancelled in Hostaway', imported_at = now()
+                 WHERE account_id = 1 AND key = ${key}`;
+    }
   }
   await refreshCleaningRates(sql);
-  await sql`
-    DELETE FROM cleanings WHERE account_id = 1 AND source = 'kaizen'
-       AND checkout_on > ${s.today}::date AND checkout_on <= ${s.end}::date
-       AND NOT (key = ANY(${outs.map(r => r.resId)}::text[]))`;
   return outs.length;
+}
+
+/**
+ * The recent past, checked against Hostaway: rows already recorded for
+ * the last `days` days whose booking was cancelled, whose checkout moved,
+ * or which share their unit and day with another row. Run by the daily
+ * pass — the board only ever looks forward from today, so without this a
+ * booking cancelled the day before its checkout stays "paid" forever.
+ */
+export async function reconcileRecent(sql: SqlFn, creds: HostawayCredentials, today: string, days = 45) {
+  const from = addDays(today, -days);
+  const [rows, stays] = await Promise.all([
+    sql`SELECT key, unit_id, checkout_on::text AS day, void_reason FROM cleanings
+         WHERE account_id = 1 AND key ~ '^[0-9]+$' AND checkout_on >= ${from}::date AND checkout_on < ${today}::date` as
+      Promise<{ key: string; unit_id: string | null; day: string; void_reason: string | null }[]>,
+    fetchReservationsTouching(creds, from, today)
+  ]);
+  const byId = new Map(stays.map(r => [r.reservationId, r]));
+  const out = { cancelled: 0, moved: 0, restored: 0, sameDay: 0 };
+
+  for (const r of rows) {
+    const stay = byId.get(r.key);
+    if (!stay) {
+      if (!r.void_reason) {
+        await sql`UPDATE cleanings SET void_reason = 'booking cancelled in Hostaway' WHERE account_id = 1 AND key = ${r.key}`;
+        out.cancelled++;
+      }
+    } else {
+      if (r.void_reason === 'booking cancelled in Hostaway') {
+        await sql`UPDATE cleanings SET void_reason = NULL WHERE account_id = 1 AND key = ${r.key}`;
+        out.restored++;
+      }
+      if (stay.departure !== r.day) {
+        await sql`UPDATE cleanings SET checkout_on = ${stay.departure} WHERE account_id = 1 AND key = ${r.key}`;
+        r.day = stay.departure;
+        out.moved++;
+      }
+    }
+  }
+
+  // One unit, one day, one clean — the same rule as the board, applied to
+  // what was already recorded. The owner is the real guest stay: not an
+  // iCal block, then the higher value.
+  const live = rows.filter(r => byId.has(r.key));
+  const groups = new Map<string, typeof live>();
+  for (const r of live) if (r.unit_id) groups.set(`${r.unit_id}|${r.day}`, [...(groups.get(`${r.unit_id}|${r.day}`) ?? []), r]);
+  for (const g of groups.values()) {
+    const counted = g.filter(r => !r.void_reason || r.void_reason.startsWith('same unit and day'));
+    if (counted.length < 2) continue;
+    const weight = (key: string) => { const s = byId.get(key)!; return (/ical|block/i.test(s.channel) || s.totalPaid <= 0 ? 0 : 1e9) + s.totalPaid; };
+    const owner = [...counted].sort((a, b) => weight(b.key) - weight(a.key))[0]!;
+    for (const r of counted) {
+      if (r === owner) continue;
+      await sql`UPDATE cleanings SET void_reason = ${`same unit and day as reservation ${owner.key} — one clean`}
+                 WHERE account_id = 1 AND key = ${r.key}`;
+      out.sameDay++;
+    }
+  }
+  await refreshCleaningRates(sql);
+  return out;
 }
 
 /**
@@ -232,7 +321,7 @@ export async function refreshCleaningRates(sql: SqlFn): Promise<void> {
              percentile_cont(0.5) WITHIN GROUP (ORDER BY price) FILTER (WHERE NOT deep) AS std,
              percentile_cont(0.5) WITHIN GROUP (ORDER BY price) AS any_clean
         FROM cleanings
-       WHERE account_id = 1 AND unit_id IS NOT NULL AND assignment = 'assigned'
+       WHERE account_id = 1 AND unit_id IS NOT NULL AND assignment = 'assigned' AND void_reason IS NULL
          AND price IS NOT NULL AND price > 0
          AND checkout_on <= CURRENT_DATE AND checkout_on > CURRENT_DATE - 180
        GROUP BY unit_id)
@@ -253,7 +342,13 @@ export async function refreshCleaningRates(sql: SqlFn): Promise<void> {
 export async function pushHostNotes(
   sql: SqlFn, creds: HostawayCredentials, s: OpsState, only?: string[]
 ): Promise<{ pushed: number; unchanged: number; failed: number; skipped: number }> {
-  const ids = [...new Set(s.rows.map(r => r.resId))].filter(id => !only || only.includes(id));
+  // Hostaway refuses every write to an archived listing ("You can't
+  // perform this action for an archived listing", 403). Asking anyway
+  // fails on every pass forever; the note stays in Kaizen, and the editor
+  // says so.
+  const archived = new Set(s.rows.filter(r => !r.listed).map(r => r.resId));
+  const ids = [...new Set(s.rows.map(r => r.resId))]
+    .filter(id => (!only || only.includes(id)) && !archived.has(id));
   const last = ids.length ? await sql`
     SELECT DISTINCT ON (reservation_id) reservation_id, block, outcome FROM host_note_pushes
      WHERE account_id = 1 AND reservation_id = ANY(${ids}::text[])

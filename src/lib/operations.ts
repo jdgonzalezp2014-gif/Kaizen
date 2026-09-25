@@ -153,6 +153,17 @@ export interface BoardRow {
   inDailyFile: boolean;
   /** Shadow mode: fields where the sheet and Kaizen disagree. */
   differs: ('cleaner' | 'price' | 'deep')[];
+  /**
+   * Another reservation leaving this unit the same day owns the clean.
+   * One unit, one day, one clean — see oneCleanPerUnitDay.
+   */
+  sameDayOf: string | null;
+  /**
+   * The listing is live in Hostaway. An archived listing can still have a
+   * stay on the board (it earned what it earned, §50), but Hostaway
+   * refuses any write to it — a Host Note included.
+   */
+  listed: boolean;
   /* arrivals */
   preppedBy: string | null;
 }
@@ -361,7 +372,7 @@ export function buildBoard(input: {
       cleaner: null, assignment: 'unknown', price: null, deep: false, urgency: null,
       manual: { cleaner: false, deep: false, time: false },
       inspection: { key: 'none', reason: '' }, sheet: null, inDailyFile: false, differs: [],
-      preppedBy: null
+      sameDayOf: null, listed: l.active, preppedBy: null
     };
 
     if (x.arrival >= today && x.arrival <= end) {
@@ -413,6 +424,7 @@ export function buildBoard(input: {
   // guest — then unit, so the order is the order the day happens in.
   rows.sort((a, b) => a.date.localeCompare(b.date) ||
     (a.kind === b.kind ? 0 : a.kind === 'out' ? -1 : 1) || a.unit.localeCompare(b.unit));
+  oneCleanPerUnitDay(rows, overrides);
 
   // Inspections, the sheet's way: in date order, so the monthly flag
   // lands on a unit's FIRST turnover in the window and not every one.
@@ -446,6 +458,42 @@ export function buildBoard(input: {
     row.preppedBy = prep?.cleaner ?? null;
   }
   return rows;
+}
+
+/** An iCal import: a block mirrored from elsewhere, not a guest stay of its own. */
+const isBlock = (r: BoardRow) => /ical|block/i.test(r.channel) || r.total <= 0;
+
+/**
+ * One unit, one day, one clean.
+ *
+ * Two reservations can leave the same unit on the same day — most often
+ * an iCal block mirrored inside a real stay (Kingsford Home, 22 Sep: a
+ * two-month direct stay and an "Airbnb (Not available)" block both ending
+ * that day, recorded as $200 + $350 for one checkout). Only one clean
+ * happens. It belongs to the real guest stay — not a block, the higher
+ * value, the longer stay — and every other departure that day reads "no
+ * clean needed", saying which reservation the clean belongs to.
+ *
+ * A person's choice still wins: a stay someone assigned by hand keeps it.
+ */
+export function oneCleanPerUnitDay(rows: BoardRow[], overrides: Map<string, Override>): void {
+  const groups = new Map<string, BoardRow[]>();
+  for (const r of rows) if (r.kind === 'out') groups.set(`${r.unitId}|${r.date}`, [...(groups.get(`${r.unitId}|${r.date}`) ?? []), r]);
+  for (const group of groups.values()) {
+    if (group.length < 2) continue;
+    const owner = [...group].sort((a, b) =>
+      Number(isBlock(a)) - Number(isBlock(b)) || b.total - a.total || b.nights - a.nights)[0]!;
+    for (const r of group) {
+      if (r === owner) continue;
+      r.sameDayOf = owner.resId;
+      if (overrides.get(r.resId)?.assignment) continue;
+      r.assignment = 'not_needed';
+      r.cleaner = null;
+      r.price = null;
+      r.auto = { cleaner: null, tier: 'none',
+        reason: `reservation ${owner.resId} also checks out of this unit today and carries the clean` };
+    }
+  }
 }
 
 export interface BoardSummary {

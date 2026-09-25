@@ -79,10 +79,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rowsQ = sql`
     SELECT key, unit_id, unit_name, checkout_on, cleaner, assignment, guest,
-           price, deep, urgency, reservation_note,
+           price, deep, urgency, reservation_note, checkout_time, decided_by,
            (checkout_on > ${now}) AS future
       FROM cleanings
-     WHERE account_id = 1
+     WHERE account_id = 1 AND void_reason IS NULL
        AND (${scope} = 'all'
             OR (${scope} = 'done' AND checkout_on <= ${now})
             OR (${scope} = 'scheduled' AND checkout_on > ${now}))
@@ -104,33 +104,47 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     SELECT
       COUNT(*) FILTER (WHERE checkout_on <= ${now})::int AS done,
       COUNT(*) FILTER (WHERE checkout_on >  ${now})::int AS scheduled
-    FROM cleanings WHERE account_id = 1`;
+    FROM cleanings WHERE account_id = 1 AND void_reason IS NULL`;
 
   // Real cleaners only, for the filter. "Not needed" and "TBD" are not
   // people and must not appear in a list of who to filter by.
   const crewQ = sql`
     SELECT cleaner, COUNT(*)::int AS n FROM cleanings
-     WHERE account_id = 1 AND assignment = 'assigned' AND cleaner IS NOT NULL
+     WHERE account_id = 1 AND assignment = 'assigned' AND cleaner IS NOT NULL AND void_reason IS NULL
      GROUP BY cleaner ORDER BY n DESC`;
 
   // Counted over the whole table, not the current selection, so a chip
   // that is switched off can still say how much it is holding back.
   const statesQ = sql`
     SELECT assignment, COUNT(*)::int AS n FROM cleanings
-     WHERE account_id = 1 AND assignment <> 'assigned'
+     WHERE account_id = 1 AND assignment <> 'assigned' AND void_reason IS NULL
      GROUP BY assignment`;
 
-  const [rows, counts, crew, states] = await Promise.all([rowsQ, countsQ, crewQ, statesQ]) as [
+  // What is NOT counted in this range, and why — cancelled bookings,
+  // one unit's second row on one day, history lines captured twice. Shown
+  // beside the record, never mixed into it: checking an invoice needs
+  // both what was paid and what was deliberately left out.
+  const excludedQ = sql`
+    SELECT key, unit_name, checkout_on, cleaner, price, void_reason
+      FROM cleanings
+     WHERE account_id = 1 AND void_reason IS NOT NULL
+       AND (${from}::date IS NULL OR checkout_on >= ${from}::date)
+       AND (${to}::date IS NULL OR checkout_on <= ${to}::date)
+     ORDER BY checkout_on DESC LIMIT 200`;
+
+  const [rows, counts, crew, states, excluded] = await Promise.all([rowsQ, countsQ, crewQ, statesQ, excludedQ]) as [
     Record<string, unknown>[],
     { done: number; scheduled: number }[],
     { cleaner: string; n: number }[],
-    { assignment: string; n: number }[]
+    { assignment: string; n: number }[],
+    Record<string, unknown>[]
   ];
 
   return Response.json({
     ok: true, today: now, scope, sheetUrl, selected: cleaners, cleaners: crew,
     states: Object.fromEntries(states.map(r => [r.assignment, r.n])),
     cleanings: rows,
+    excluded,
     doneCount: counts[0]?.done ?? 0,
     scheduledAhead: counts[0]?.scheduled ?? 0
   });

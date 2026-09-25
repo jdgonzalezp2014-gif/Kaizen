@@ -256,6 +256,13 @@ export interface Cleaning {
   reservation_note: string | null;
   assignment: 'assigned' | 'tbd' | 'not_needed';
   future?: boolean;
+  checkout_time?: string | null;
+  /** 'rule', 'override:<email>', 'sheet', 'history'… — who chose the cleaner. */
+  decided_by?: string | null;
+}
+export interface ExcludedCleaning {
+  key: string; unit_name: string; checkout_on: string; cleaner: string | null;
+  price: string | null; void_reason: string;
 }
 export type CleaningScope = 'done' | 'scheduled' | 'all';
 export const getCleanings = (
@@ -266,7 +273,7 @@ export const getCleanings = (
          selected: string[];
          cleaners: { cleaner: string; n: number }[];
          states: Record<string, number>;
-         cleanings: Cleaning[]; doneCount: number; scheduledAhead: number }>(
+         cleanings: Cleaning[]; excluded: ExcludedCleaning[]; doneCount: number; scheduledAhead: number }>(
     `/api/cleaning-log?from=${from}&to=${to}&scope=${scope}` +
     `&cleaners=${encodeURIComponent(cleaners.join(','))}` +
     `&include=${include.join(',')}`);
@@ -311,7 +318,7 @@ export const saveTurnover = (body: {
   resId: string; set?: TurnoverSet;
   note?: { kind: 'checkin' | 'checkout'; text: string };
   unitId?: string; unit?: string; guest?: string; checkIn?: string;
-}) => call<{ ok: true; push: 'queued' | 'shadow' } | Fail>('/api/turnover', {
+}) => call<{ ok: true; push: 'queued' | 'shadow' | 'archived' } | Fail>('/api/turnover', {
   method: 'POST', body: JSON.stringify(body)
 });
 

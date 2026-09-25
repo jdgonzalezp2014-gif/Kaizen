@@ -229,3 +229,31 @@ test('stored rules over defaults: a blank never reads as zero', () => {
   assert.equal(r.cleanerHighThreshold, 1500);
   assert.equal(r.inspectionIntervalDays, 90);
 });
+
+/* ── one clean per unit per day ── */
+
+test('an iCal block inside a real stay, ending the same day, is not a second clean', () => {
+  // Kingsford Home, 22 Sep: recorded as $200 + $350 for one checkout.
+  const rows = board([
+    res('stay', '1', '2026-08-22', '2026-09-26', 14700, 35),
+    res('block', '1', '2026-09-20', '2026-09-26', 0, 6, { channel: 'customIcal' })
+  ]);
+  assert.equal(out(rows, 'stay').assignment, 'assigned');
+  assert.equal(out(rows, 'block').assignment, 'not_needed');
+  assert.equal(out(rows, 'block').sameDayOf, 'stay');
+  assert.equal(out(rows, 'block').price, null);
+  assert.equal(summarize(rows).cleanings, 1);
+});
+
+test('two real stays leaving the same unit the same day are one clean, owned by the bigger one', () => {
+  const rows = board([res('small', '1', '2026-09-23', '2026-09-26', 300, 3), res('big', '1', '2026-09-20', '2026-09-26', 900, 6)]);
+  assert.equal(out(rows, 'big').assignment, 'assigned');
+  assert.equal(out(rows, 'small').sameDayOf, 'big');
+});
+
+test('a person who assigned the second departure keeps that choice', () => {
+  const ov = new Map<string, Override>([['small', { assignment: 'assigned', cleaner: 'Michelle', deep: null, checkoutTime: null, checkinTime: null }]]);
+  const rows = board([res('small', '1', '2026-09-23', '2026-09-26', 300, 3), res('big', '1', '2026-09-20', '2026-09-26', 900, 6)], { overrides: ov });
+  assert.equal(out(rows, 'small').cleaner, 'Michelle');
+  assert.equal(out(rows, 'small').sameDayOf, 'big');
+});

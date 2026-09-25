@@ -19,7 +19,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import { getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { loadOps, opsConfig, pushHostNotes } from '../_lib/ops.ts';
+import { loadOps, opsConfig, pushHostNotes, recordCleanings } from '../_lib/ops.ts';
 
 const TIME = /^(1[0-2]|0?[1-9]):[0-5]\d\s?(AM|PM)$/i;
 const ASSIGNMENTS = new Set(['assigned', 'tbd', 'not_needed']);
@@ -99,13 +99,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     }
   }
 
-  let push: 'queued' | 'shadow' = 'shadow';
+  let push: 'queued' | 'shadow' | 'archived' = 'shadow';
   if (cfg.mode === 'live') {
     push = 'queued';
     waitUntil((async () => {
       try {
         const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
         const s = await loadOps(sql, creds);
+        // The record follows the edit at once — not whenever someone next
+        // opens the board — so a cleaner changed at 9am is who gets paid.
+        await recordCleanings(sql, s);
         await pushHostNotes(sql, creds, s, [resId]);
       } catch { /* the scheduled pass retries whatever did not land */ }
     })());

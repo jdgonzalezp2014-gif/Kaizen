@@ -25,7 +25,7 @@ import {
   findGaps, leadTimeDays, pickup, median, portfolioAskRatio, verdict
 } from '../../src/lib/revenue.ts';
 import { redListings, edges, compose } from '../../src/lib/alerts.ts';
-import { loadOps, pushHostNotes, recordCleanings } from '../_lib/ops.ts';
+import { loadOps, pushHostNotes, recordCleanings, reconcileRecent } from '../_lib/ops.ts';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
@@ -177,7 +177,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const s = await loadOps(sql, creds);
     if (s.mode === 'live') {
       const recorded = await recordCleanings(sql, s);
-      operations = { recorded, notes: await pushHostNotes(sql, creds, s) };
+      // The recent past against Hostaway: cancellations, moved checkouts,
+      // two rows for one unit and day. The board only looks forward.
+      const reconciled = await reconcileRecent(sql, creds, s.today);
+      operations = { recorded, reconciled, notes: await pushHostNotes(sql, creds, s) };
     } else {
       operations = { mode: 'shadow' };
     }

@@ -11,9 +11,8 @@
  * a second version of the truth.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { getCleanings, type Cleaning, type CleaningScope } from '../api.ts';
+import { getCleanings, type Cleaning, type CleaningScope, type ExcludedCleaning } from '../api.ts';
 import { money2 } from '../lib/format.ts';
-import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 
 const RANGES: [string, number][] = [['30 days', 30], ['90 days', 90], ['This year', 365]];
 
@@ -47,10 +46,9 @@ export function Cleanings() {
   // Off by default. A row with nobody on it is not an answer to "who
   // cleaned what", so it has to be asked for.
   const [include, setInclude] = useState<string[]>([]);
-  const [view, setView] = useState<'list' | 'calendar'>('list');
-  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [showExcluded, setShowExcluded] = useState(false);
   const [data, setData] = useState<{
-    cleanings: Cleaning[]; cleaners: { cleaner: string; n: number }[];
+    cleanings: Cleaning[]; excluded: ExcludedCleaning[]; cleaners: { cleaner: string; n: number }[];
     states: Record<string, number>; sheetUrl: string | null;
     scheduledAhead: number; doneCount: number; today: string } | null>(null);
   const [err, setErr] = useState('');
@@ -60,21 +58,10 @@ export function Cleanings() {
   // report waiting to happen.
   const [busy, setBusy] = useState(true);
 
+  // The month calendar for reconciling an invoice moved to Operations →
+  // Calendar: it is about who cleaned which day, which is the day's work.
+  // This view is the COST of cleaning over a range.
   useEffect(() => {
-    // The calendar asks for one CLOSED month — an invoice covers a month,
-    // and a window open at either end cannot be reconciled against one.
-    // It also ignores the scope: a September invoice includes cleans
-    // after today if today is in September.
-    if (view === 'calendar') {
-      const [y, m] = month.split('-').map(Number);
-      const last = new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
-      setBusy(true);
-      getCleanings(`${month}-01`, 'all', picked, last, include)
-        .then(r => r.ok ? setData(r) : setErr('Could not load.'))
-        .catch(e => setErr(String(e)))
-        .finally(() => setBusy(false));
-      return;
-    }
     setBusy(true);
     // Scheduled work is ahead of today, so a backward window would ask for
     // a range that cannot contain any of it — the dates are dropped rather
@@ -84,7 +71,7 @@ export function Cleanings() {
       .then(r => r.ok ? setData(r) : setErr('Could not load.'))
       .catch(e => setErr(String(e)))
       .finally(() => setBusy(false));
-  }, [from, to, scope, picked, include, view, month]);
+  }, [from, to, scope, picked, include]);
 
   const usePreset = (n: number) => {
     setPreset(n); setFrom(daysAgo(n)); setTo(iso(new Date()));
@@ -127,16 +114,11 @@ export function Cleanings() {
   return (
     <section>
       <div className="row-controls">
-        <button className={view === 'list' ? 'chip active' : 'chip'}
-                onClick={() => setView('list')}>List</button>
-        <button className={view === 'calendar' ? 'chip active' : 'chip'}
-                onClick={() => setView('calendar')}>Calendar</button>
-        <span className="note">|</span>
-        {view === 'list' && SCOPES.map(([k, label]) => (
+        {SCOPES.map(([k, label]) => (
           <button key={k} className={scope === k ? 'chip active' : 'chip'}
                   onClick={() => setScope(k)}>{label}</button>
         ))}
-        {view === 'list' && scope !== 'scheduled' && (
+        {scope !== 'scheduled' && (
           <>
             <span className="note">over</span>
             {RANGES.map(([label, n]) => (
@@ -159,7 +141,6 @@ export function Cleanings() {
         )}
         <span className="note right">
           {busy ? <span className="loading-dot">Loading…</span>
-           : view === 'calendar' ? 'one whole month, for checking an invoice'
            : scope === 'done' ? 'up to and including today'
            : scope === 'scheduled' ? 'after today — not yet paid'
            : 'paid and committed together'}
@@ -211,11 +192,7 @@ export function Cleanings() {
       {!data && !err && <p className="note">Loading…</p>}
 
       <div className={busy && data ? 'is-stale' : undefined}>
-      {data && view === 'calendar' && (
-        <CleaningCalendar month={month} cleanings={data.cleanings} onMonth={setMonth} />
-      )}
-
-      {data && view === 'list' && (
+      {data && (
         <>
           <dl className="strip">
             <div><dt>Cleans</dt><dd>{stats.total}</dd></div>
@@ -283,7 +260,7 @@ export function Cleanings() {
             <thead>
               <tr>
                 <th>Checkout</th><th>Unit</th><th>Cleaner</th>
-                <th className="n">Paid</th>
+                <th>Decided by</th><th className="n">Paid</th>
               </tr>
             </thead>
             <tbody>
@@ -309,13 +286,14 @@ export function Cleanings() {
                     {c.deep && <span className="sub-n"> deep</span>}
                     {c.urgency && <span className="breach"> {c.urgency}</span>}
                   </td>
+                  <td className="sub-n">{decidedLabel(c.decided_by)}</td>
                   <td className="n">{c.price == null
                     ? <span className="note">not priced</span> : money2(Number(c.price))}</td>
 
                 </tr>
               ))}
               {data.cleanings.length === 0 && (
-                <tr><td colSpan={4} className="note">
+                <tr><td colSpan={5} className="note">
                   {data.doneCount + data.scheduledAhead === 0
                     ? 'No cleanings imported yet. Settings → Cleaning cost → Pull now reads the sheet.'
                     : 'Nothing in this range. Try a longer window, or another scope.'}
@@ -323,9 +301,41 @@ export function Cleanings() {
               )}
             </tbody>
           </table>
+
+          {/* Never mixed into the figures above, never hidden either:
+              checking an invoice needs what was left out, and why. */}
+          {data.excluded.length > 0 && (
+            <div className="group">
+              <h3>Not counted in this range <span className="count">{data.excluded.length}</span>{' '}
+                <button className="link" onClick={() => setShowExcluded(v => !v)}>{showExcluded ? 'hide' : 'show'}</button></h3>
+              <p className="note">Rows the record keeps but does not pay: cancelled bookings, a second row for one unit on
+                one day, history lines captured twice. A booking that comes back is counted again.</p>
+              {showExcluded && (
+                <table className="units compact">
+                  <tbody>
+                    {data.excluded.map(x => (
+                      <tr key={x.key} className="muted-row">
+                        <td>{x.checkout_on.slice(0, 10)}</td><td>{x.unit_name}</td><td>{x.cleaner ?? ''}</td>
+                        <td className="n"><s>{x.price == null ? '' : money2(Number(x.price))}</s></td>
+                        <td className="sub-n">{x.void_reason}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          )}
         </>
       )}
       </div>
     </section>
   );
+}
+
+/** Who chose the cleaner, in words. */
+function decidedLabel(d: string | null | undefined): string {
+  if (!d) return '';
+  if (d.startsWith('override:')) return `by hand · ${d.slice(9).replace(/@.*/, '')}`;
+  if (d.startsWith('rule: one clean')) return 'rule · one clean per day';
+  return ({ rule: 'rule', sheet: 'daily file', history: 'history', 'daily file (cutover)': 'daily file' } as Record<string, string>)[d] ?? d;
 }

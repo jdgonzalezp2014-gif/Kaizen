@@ -32,8 +32,10 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/portfolio', methods: ['GET'] }] },
   // No route of its own: it decides what /api/operations includes.
   { key: 'money', label: 'See booking values on the operations board', routes: [] },
-  { key: 'operations', label: 'Operations — see the board, inspections and notes', tab: 'operations', routes: [
-    { path: '/api/operations', methods: ['GET'] }] },
+  { key: 'operations', label: 'Operations — see the board, the cleanings calendar, inspections and notes', tab: 'operations', routes: [
+    { path: '/api/operations', methods: ['GET'] },
+    // The cleanings calendar lives in Operations; it reads the record.
+    { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'operations.edit', label: 'Operations — assign cleaners, times, notes, log inspections', routes: [
     { path: '/api/turnover', methods: ['POST'] }, { path: '/api/inspections', methods: ['POST', 'DELETE'] }] },
   { key: 'operations.setup', label: 'Operations — roster, pay, rules and the live switch', routes: [

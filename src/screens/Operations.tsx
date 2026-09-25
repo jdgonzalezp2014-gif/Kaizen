@@ -14,7 +14,9 @@
  * decision is compared against.
  */
 import { Fragment, useEffect, useMemo, useState } from 'react';
+import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import {
+  getCleanings, type Cleaning, type ExcludedCleaning,
   getOperations, saveTurnover, logInspection, scheduleInspections, cancelInspection,
   getOpsSettings, saveOpsSettings, cutoverImport, can,
   type OperationsResponse, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
@@ -29,7 +31,7 @@ import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
 
-type View = 'board' | 'cleaners' | 'inspections' | 'notes' | 'rates' | 'setup';
+type View = 'board' | 'calendar' | 'cleaners' | 'inspections' | 'notes' | 'rates' | 'setup';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -53,8 +55,10 @@ function applyEdit(r: BoardRow, set: TurnoverSet, roster: Cleaner[], rules: OpsR
   const n: BoardRow = { ...r, manual: { ...r.manual } };
   if (set.assignment !== undefined) {
     if (set.assignment === null) {
-      n.assignment = r.auto.cleaner ? 'assigned' : 'tbd';
-      n.cleaner = r.auto.cleaner; n.manual.cleaner = false;
+      // Back to the rule — which, for a second departure the same day,
+      // is "no clean needed".
+      n.assignment = r.sameDayOf ? 'not_needed' : r.auto.cleaner ? 'assigned' : 'tbd';
+      n.cleaner = r.sameDayOf ? null : r.auto.cleaner; n.manual.cleaner = false;
     } else {
       n.assignment = set.assignment;
       n.cleaner = set.assignment === 'assigned' ? (set.cleaner ?? null) : null;
@@ -112,7 +116,7 @@ export function Operations() {
     });
 
   const views: [View, string][] = [
-    ['board', 'Next 10 days'], ['cleaners', 'By cleaner'], ['inspections', 'Inspections'],
+    ['board', 'Next 10 days'], ['calendar', 'Calendar'], ['cleaners', 'By cleaner'], ['inspections', 'Inspections'],
     ['notes', 'Notes log'], ['rates', 'Rates & rules'],
     ...(can(data?.permissions, 'operations.setup') ? [['setup', 'Setup'] as [View, string]] : [])
   ];
@@ -145,6 +149,7 @@ export function Operations() {
 
       <div className={busy && data ? 'is-stale' : undefined}>
         {data && view === 'board' && <Board data={data} patch={patch} />}
+        {view === 'calendar' && <CleaningsMonth />}
         {data && view === 'cleaners' && <ByCleaner data={data} />}
         {data && view === 'inspections' && <Inspections data={data} reload={() => load()} />}
         {data && view === 'notes' && <Notes data={data} />}
@@ -163,7 +168,9 @@ export function Operations() {
 function ModeBanner({ data, onSetup }: { data: OperationsResponse; onSetup: () => void }) {
   const s = data.summary;
   if (data.mode === 'live') {
-    const failed = data.pushes.filter(p => p.outcome === 'failed').length;
+    // A refusal because the listing is archived is not a fault to retry —
+    // Kaizen no longer asks — so it is not counted as one.
+    const failed = data.pushes.filter(p => p.outcome === 'failed' && !/archived listing/i.test(p.detail ?? '')).length;
     return (
       <p className={`banner ${failed ? 'warn' : 'ok'}`}>
         ● <b>Live.</b> Kaizen decides the cleans and writes the Host Note in Hostaway.
@@ -337,6 +344,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through }: {
               {r.assignment === 'tbd' ? '▲ ' : ''}{r.assignment === 'assigned' ? r.cleaner : r.assignment === 'not_needed' ? 'no clean needed' : 'unassigned'}
             </span>
             {r.manual.cleaner && <span className="sub-n"> · set by hand</span>}
+            {r.sameDayOf && !r.manual.cleaner && <div className="sub-n">another stay leaves today — one clean</div>}
             {shadow && r.differs.includes('cleaner') && r.sheet && <div className="ops-diff">sheet: {sheetText(r.sheet)}</div>}
             {shadow && !r.inDailyFile && <div className="sub-n">not in the daily file yet</div>}
           </>
@@ -381,7 +389,8 @@ function Editor({ r, data, onSaved }: {
     setBusy(false);
     if (!r2.ok) { setMsg(r2.message ?? 'Could not save.'); return; }
     onSaved(set, text);
-    setMsg(r2.push === 'queued' ? 'Saved — the Host Note is being updated in Hostaway.'
+    setMsg(!r.listed ? 'Saved in Kaizen. This listing is archived in Hostaway, which refuses notes on it — nothing was sent.'
+      : r2.push === 'queued' ? 'Saved — the Host Note is being updated in Hostaway.'
       : 'Saved in Kaizen. Shadow mode: nothing is written to Hostaway.');
   };
 
@@ -390,6 +399,7 @@ function Editor({ r, data, onSaved }: {
 
   return (
     <div className="ops-editor" onClick={e => e.stopPropagation()}>
+      {!r.listed && <div className="note">○ This listing is archived in Hostaway. Changes are kept in Kaizen; Hostaway refuses notes on an archived listing, so none is sent.</div>}
       {out && (
         <div className="ops-editor-why">
           <b>The rule says {r.auto.cleaner ?? 'nobody'}</b> — {r.auto.reason}.
@@ -900,6 +910,79 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
         <div className="button-row">
           <button onClick={() => void save({ rules, extraInspectors: extra.split(',') }, 'Rules saved.')}>Save rules</button>
         </div>
+      </div>
+    </>
+  );
+}
+
+/* ── Calendar — a month of cleans, for checking an invoice ────────── */
+
+/**
+ * Moved here from Costs: which day each unit was cleaned, by whom, is the
+ * day's work. A cleaner sends a total for a month; this answers which
+ * days it covers and whether the count matches — a missing Tuesday is a
+ * hole, not an absence to notice.
+ *
+ * One CLOSED month, every row in it (a September invoice includes cleans
+ * after today if today is in September), counted from the record — so a
+ * cancelled booking, or one unit's second row on one day, is not in the
+ * total, and is listed below with why.
+ */
+function CleaningsMonth() {
+  const [month, setMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [picked, setPicked] = useState<string[]>([]);
+  const [include, setInclude] = useState<string[]>(['not_needed']);
+  const [data, setData] = useState<{ cleanings: Cleaning[]; excluded: ExcludedCleaning[];
+    cleaners: { cleaner: string; n: number }[]; states: Record<string, number> } | null>(null);
+  const [busy, setBusy] = useState(true);
+  const [err, setErr] = useState('');
+
+  useEffect(() => {
+    const [y, m] = month.split('-').map(Number);
+    const last = new Date(Date.UTC(y!, m!, 0)).toISOString().slice(0, 10);
+    setBusy(true); setErr('');
+    getCleanings(`${month}-01`, 'all', picked, last, include)
+      .then(r => r.ok ? setData(r) : setErr('Could not load the cleanings record.'))
+      .catch(e => setErr(String(e)))
+      .finally(() => setBusy(false));
+  }, [month, picked, include]);
+
+  const flip = (list: string[], v: string) => list.includes(v) ? list.filter(x => x !== v) : [...list, v];
+
+  return (
+    <>
+      <div className="row-controls">
+        <span className="note">Cleaner</span>
+        {/* "Everyone" is the empty selection — one state, not two that can disagree. */}
+        <button className={picked.length === 0 ? 'chip active' : 'chip'} onClick={() => setPicked([])}>Everyone</button>
+        {(data?.cleaners ?? []).map(c => (
+          <button key={c.cleaner} className={picked.includes(c.cleaner) ? 'chip active' : 'chip'}
+                  onClick={() => setPicked(p => flip(p, c.cleaner))}>{c.cleaner}</button>
+        ))}
+        <span className="note">|</span>
+        <button className={include.includes('tbd') ? 'chip active' : 'chip'} onClick={() => setInclude(i => flip(i, 'tbd'))}>
+          Unassigned {data?.states.tbd ? <b>{data.states.tbd}</b> : null}</button>
+        <button className={include.includes('not_needed') ? 'chip active' : 'chip'} onClick={() => setInclude(i => flip(i, 'not_needed'))}>
+          No clean needed {data?.states.not_needed ? <b>{data.states.not_needed}</b> : null}</button>
+        {busy && <span className="note right loading-dot">Loading</span>}
+      </div>
+      {err && <p className="banner warn">{err}</p>}
+      <div className={busy && data ? 'is-stale' : undefined}>
+        {data && <CleaningCalendar month={month} cleanings={data.cleanings} onMonth={setMonth} />}
+        {data && data.excluded.length > 0 && (
+          <div className="group">
+            <h3>Not counted this month <span className="count">{data.excluded.length}</span></h3>
+            <table className="units compact"><tbody>
+              {data.excluded.map(x => (
+                <tr key={x.key} className="muted-row">
+                  <td>{x.checkout_on.slice(0, 10)}</td><td>{x.unit_name}</td><td>{x.cleaner ?? ''}</td>
+                  <td className="n"><s>{x.price == null ? '' : money2(Number(x.price))}</s></td>
+                  <td className="sub-n">{x.void_reason}</td>
+                </tr>
+              ))}
+            </tbody></table>
+          </div>
+        )}
       </div>
     </>
   );

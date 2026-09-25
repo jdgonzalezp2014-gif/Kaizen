@@ -2170,3 +2170,50 @@ Hostaway answering — listings alone vary 0.8–6 s.
 **Not done, and worth a click:** Cloudflare → the Pages project →
 Settings → Functions → Placement → **Smart**, so functions run near
 Hostaway and Neon rather than near the visitor. No code change.
+
+
+## 70. The cleanings record, fit to pay from — and its calendar moved to Operations
+
+Checked on live data (2026-09-25), the record would have paid **$2,940**
+for 22 rows that were not cleans:
+
+| cause | rows | now |
+|---|---|---|
+| history lines captured twice (same unit, day, price) | 17 | excluded — the daily file's own folding rule (§ its README) |
+| a history line that is the same clean as a reservation's row | 1 | excluded; the reservation's row wins |
+| bookings cancelled in Hostaway, still "paid" | 3 | excluded, restored if the booking returns |
+| an iCal block ending inside a real stay the same day (Kingsford Home, 22 Sep: $200 + $350 for one checkout) | 1 | excluded — one unit, one day, one clean |
+
+Rules (`src/lib/operations.ts` `oneCleanPerUnitDay`; `functions/_lib/ops.ts`
+`recordCleanings`, `reconcileRecent`; migration 027):
+
+- **Excluded, never deleted.** `void_reason` says why; every total, the
+  calendar and the per-unit rate read `void_reason IS NULL`; the excluded
+  rows are listed beside them. A record you can only see the corrected
+  version of cannot be checked against an invoice.
+- **One unit, one day, one clean.** Several departures from one unit on
+  one day: the clean belongs to the real guest stay (not an iCal block,
+  then higher value, then longer), the others read "no clean needed" with
+  the reservation that owns it. A person's choice still wins.
+- **The past is frozen.** A row whose checkout has passed is never
+  rewritten by the recorder — a rate changed today does not reprice last
+  week.
+- **Who decided** is on every row (`decided_by`: rule, override:<email>,
+  daily file, history) and shown in Costs → Cleanings.
+- **The record follows an edit at once** (the turnover route records in
+  the background), and the daily pass reconciles the last 45 days against
+  Hostaway: cancellations, moved checkouts, same-day doubles.
+- The remaining ambiguity is left counted and named: two history rows,
+  same unit and day, DIFFERENT cleaners (invoice vs chat sighting) — one
+  clean or two cannot be told; neither changes the money.
+
+**The calendar moved** from Costs → Cleanings to **Operations → Calendar**:
+which day each unit was cleaned, and by whom, is the day's work. Costs
+keeps the cost view over a range. `/api/cleaning-log` GET is now also
+under the `operations` permission.
+
+**Archived listings take no Host Note.** Hostaway answers 403 ("You can't
+perform this action for an archived listing"). Found live: three failed
+writes for one edited stay on the archived listing. Kaizen no longer
+tries, the editor says the change stays in Kaizen, and those refusals are
+not counted as failures in the live banner.
