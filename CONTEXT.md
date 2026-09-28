@@ -2581,3 +2581,9 @@ it. The confirmation did not say which.
   `restore` brings back exactly those — a sub-task removed earlier on its
   own stays removed. Both are written on the task's (and claim's) timeline.
 - Data: task 7 restored, its sub-task 8 removed, as meant.
+
+## 83. Timelines show the last three
+
+A task's or a claim's updates show the three most recent, newest at the
+bottom beside the box to add one; "Show N earlier" opens the rest in place
+(the owner, 2026-09-28). What happened lately is what is read.

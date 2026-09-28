@@ -549,6 +549,9 @@ export function Timeline({ load, post, version = 0 }: {
   const [list, setList] = useState<WorkUpdate[] | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
+  // The last three, newest at the bottom beside the box; the earlier ones
+  // one tap away, in place — what happened lately is what is read.
+  const [earlier, setEarlier] = useState(false);
   const read = () => load().then(r => setList(r.ok ? r.updates : [])).catch(() => setList([]));
   useEffect(() => { void read(); }, [version]);
 
@@ -565,7 +568,13 @@ export function Timeline({ load, post, version = 0 }: {
       <div className="timeline-title">Updates</div>
       {list === null ? <p className="note loading-dot">Reading</p> : !list.length ? <p className="note">No updates yet.</p> : (
         <ol className="timeline-list">
-          {list.map(u => (
+          {list.length > 3 && (
+            <li className="tl-earlier">
+              <button type="button" className="link tiny home-more" onClick={() => setEarlier(!earlier)}>
+                {earlier ? 'Hide earlier ▾' : `Show ${list.length - 3} earlier ▴`}</button>
+            </li>
+          )}
+          {(earlier ? list : list.slice(-3)).map(u => (
             <li key={u.id} className={`tl-${u.kind}`}>
               <span className="tl-when">{u.createdAt.slice(5, 10)} {u.createdAt.slice(11, 16)}</span>
               <span className="tl-who">{u.createdBy?.split('@')[0] ?? '—'}</span>

@@ -1299,3 +1299,6 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .todo-undo { display: flex; gap: 10px; align-items: center; }
 .todo-edit .button-row .rb-spacer { flex: 1; }
 @media (max-width: 720px) { .todo-x { padding: 6px 10px; font-size: 14px; } }
+
+/* §83: a timeline shows its last three; the earlier ones open in place. */
+.timeline-list li.tl-earlier { display: block; }
