@@ -2608,3 +2608,21 @@ cleaning is tied (§79). Migration 036 adds `reservation_id` and
   carries it over. A claim saved from a form that does not send the stay
   keeps it (the server changes it only when it is sent).
 - Rows show it as 🛏 guest · dates, on to-dos, work orders and claims.
+
+## 85. The to-do list in lanes — to-dos, repairs, claims
+
+The owner (2026-09-28): the list mixed to-dos, claims and linked work in
+one column and read as clutter. Now every item sits in exactly ONE lane,
+by what it is — **To-dos**, then **🔧 Repairs** (work orders), then
+**⚑ Claims** — and links show as chips (⚑ its claim, 🛏 its stay).
+
+- Each lane has its count, what needs attention (▲ overdue, ● today;
+  ▲ claims with no work yet, or how many are high/critical) and its own
+  "+ Add" — you add where you are looking; the separate add row is gone.
+- Home: three per lane, "Show N more" in place; an empty lane is one line
+  with its "+". Operations → To-do: the same lanes, in full. A kind
+  filter, or a claim's own list, is a single list.
+- Claims are named by what happened ("P2-4308 · Missing Fob"), their
+  category a chip — "CL2260 · Claim" said nothing.
+- A sub-task shows only what differs from its parent (unit, claim, stay).
+- "Work orders" read as **Repairs** where people choose them.

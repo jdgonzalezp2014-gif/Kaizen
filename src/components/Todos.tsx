@@ -13,7 +13,7 @@
  * Add in one line; open a row to change it, in place (§22: no modals).
  * Everything is read from the server as it is now.
  */
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   getClaims, getClaimUpdates, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, saveClaim, todoAction,
   type Claim, type StayOnDay, type Todo, type WorkUpdate
@@ -30,8 +30,12 @@ import { CLAIM_CATEGORIES, CLAIM_SEVERITY } from '../lib/claims.ts';
 type Unit = { id: string; name: string; active: boolean };
 type Act = (b: Record<string, unknown>) => Promise<boolean>;
 
-const claimLabel = (c: Pick<Claim, 'unit_name' | 'category' | 'occurred_on'>) =>
-  `${c.unit_name ?? 'Portfolio'} · ${c.category ?? 'claim'} · ${c.occurred_on.slice(0, 10)}`;
+/** What a claim is called: its unit and what happened — the words someone wrote, not the word "claim". */
+const claimWhat = (c: Pick<Claim, 'category' | 'description'>) => {
+  const d = (c.description ?? '').trim();
+  return d ? (d.length > 48 ? `${d.slice(0, 46)}…` : d) : c.category ?? 'Claim';
+};
+const claimLabel = (c: Pick<Claim, 'unit_name' | 'category' | 'description'>) => `${c.unit_name ?? 'Portfolio'} · ${claimWhat(c)}`;
 
 const claimOpen = (c: Claim) => c.status === 'Open' || c.status === 'In progress';
 /** Weighted as on the Claims screen: a lockout outranks five slow-wifi complaints. */
@@ -67,9 +71,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const [showDone, setShowDone] = useState(!!claim);
   const [openClaim, setOpenClaim] = useState<string | null>(null);
   const [adding, setAdding] = useState<null | TaskKind | 'claim'>(null);
-  // Home (§81): one "+ Add", and three lines until asked for more.
-  const [addMenu, setAddMenu] = useState(false);
-  const [showAll, setShowAll] = useState(false);
+  // Home (§81, §85): three lines per lane until asked for more.
+  const [laneAll, setLaneAll] = useState<Record<string, boolean>>({});
   // Open claims sit in the list as cases (§77), above the work — not inside a claim.
   const showClaims = canClaims && !claim;
 
@@ -126,21 +129,6 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     for (const t of todos ?? []) if (t.claimId && !isClosed(t.status)) m.set(t.claimId, (m.get(t.claimId) ?? 0) + 1);
     return m;
   }, [todos]);
-  // Home (§81): one list, ordered by what needs acting on — overdue or
-  // urgent work, then serious claims, then what is due today, then the
-  // rest — three lines, the others one tap away in place.
-  type Item = { kind: 'case'; c: Claim } | { kind: 'task'; t: Todo };
-  const rankOf = (i: Item) => i.kind === 'case'
-    ? (['Critical', 'High'].includes(i.c.severity) ? 1 : 3)
-    : (i.t.priority === 'urgent' || dueOf(i.t, today) === 'overdue' ? 0 : dueOf(i.t, today) === 'today' ? 2 : 4);
-  const merged: Item[] = compact
-    ? [...cases.map(c => ({ kind: 'case' as const, c })), ...openList.map(t => ({ kind: 'task' as const, t }))]
-        .map((i, n) => ({ i, n })).sort((a, b) => rankOf(a.i) - rankOf(b.i) || a.n - b.n).map(x => x.i)
-    : [];
-  const compactShown = showAll ? merged : merged.slice(0, 3);
-  const shownCases = compact ? [] : cases;
-  const shown = compact ? [] : openList;
-  const hidden = merged.length - compactShown.length;
   const ctx = { today, names, units, claims, claimNames, act, inClaim: !!claim, kids, byId, flat: filtering,
                 canClaims: showClaims, onClaimsChanged: () => void loadClaims(), compact };
 
@@ -162,14 +150,15 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
       <div className="todo-line">
         <span className="case-flag" aria-hidden="true">⚑</span>
         <button className="todo-title" onClick={() => setOpenClaim(openClaim === String(c.id) ? null : String(c.id))}
-                title="Open the claim">{c.unit_name ?? 'Portfolio'} · {c.category ?? 'Claim'}</button>
+                title="Open the claim">{c.unit_name ?? 'Portfolio'} · {claimWhat(c)}</button>
+        {c.category && c.description && <span className="todo-unit">{c.category}</span>}
         <span className={`todo-status sev s-${c.severity.toLowerCase()}`}>{c.severity}</span>
         <span className="todo-status">{c.status === 'Open' ? '○ Open' : '◐ In progress'}</span>
         <span className="sub-n">{ageDays(c, today)}d open</span>
         {c.reservation_label && <span className="todo-stay">🛏 {c.reservation_label}</span>}
         {openWorkBy.get(String(c.id)) ? <span className="sub-n">· {openWorkBy.get(String(c.id))} open task{openWorkBy.get(String(c.id)) === 1 ? '' : 's'}</span>
           : <span className="todo-due">▲ no work yet</span>}
-        {c.description && <span className="sub-n case-desc" title={c.description}>— {c.description}</span>}
+        {(c.description ?? '').trim().length > 48 && <span className="sub-n case-desc" title={c.description!}>— {c.description}</span>}
       </div>
       {openClaim === String(c.id) && (
         <ClaimCase claim={c} canWork today={today} onSaved={() => { void loadClaims(); void loadTodos(); }} />
@@ -177,34 +166,78 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     </li>
   );
 
+  // Lanes (§85): one per kind of work — to-dos first, then repairs, then
+  // claims — each with its count, what needs attention, and its own "+".
+  // Everything is in exactly one lane, by what it is; links show as chips
+  // (⚑ its claim, 🛏 its stay). A kind filter, or a claim's own list,
+  // stays a single list.
+  const lanesOn = !claim && kindFilter === '';
+  const taskItems = openList.filter(t => t.kind === 'task');
+  const repairItems = openList.filter(t => t.kind === 'work_order');
+  const late = (list: Todo[]) => list.filter(t => dueOf(t, today) === 'overdue').length;
+  const dueToday = (list: Todo[]) => list.filter(t => dueOf(t, today) === 'today').length;
+  const noWork = cases.filter(c => !openWorkBy.get(String(c.id))).length;
+  const serious = cases.filter(c => ['High', 'Critical'].includes(c.severity)).length;
+  const workAlert = (list: Todo[]) => late(list) ? <span className="breach">▲ {late(list)} overdue</span>
+    : dueToday(list) ? <span className="home-today">● {dueToday(list)} today</span> : null;
+
+  const addForm = (kind: TaskKind | 'claim') => adding !== kind ? null : kind === 'claim' ? (
+    <QuickClaim units={units} today={today} onCancel={() => setAdding(null)}
+                onSaved={() => { setAdding(null); void loadClaims(); }} />
+  ) : (
+    <TodoForm key={kind} units={units} claims={claims} canClaims={canClaims} submitLabel="Add" startKind={kind}
+              onCancel={() => setAdding(null)}
+              onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAdding(null); return ok; }} />
+  );
+  const taskRow = (t: Todo) => <TodoRow key={t.id} t={t} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
+
+  const lane = (key: 'task' | 'work_order' | 'claims', title: string, rows: ReactNode[], alert: ReactNode, empty: string) => {
+    const kind = key === 'claims' ? 'claim' : key;
+    const all = !compact || laneAll[key];
+    return (
+      <section key={key} className={`todo-lane lane-${key} ${rows.length ? '' : 'is-empty'}`}>
+        <div className="lane-head">
+          <h4>{title}</h4>
+          <span className="count">{rows.length}</span>
+          {alert && <span className="lane-alert">{alert}</span>}
+          <span className="rb-spacer" />
+          {adding !== kind && <button className="link tiny lane-add" onClick={() => setAdding(kind)}>+ Add</button>}
+        </div>
+        {addForm(kind)}
+        {rows.length > 0 && <ul className="todo-list">{all ? rows : rows.slice(0, 3)}</ul>}
+        {!rows.length && !compact && adding !== kind && <p className="note lane-empty">{empty}</p>}
+        {compact && rows.length > 3 && (
+          <button className="link tiny home-more" onClick={() => setLaneAll(m => ({ ...m, [key]: !m[key] }))}>
+            {laneAll[key] ? 'Show less ▴' : `Show ${rows.length - 3} more ▾`}</button>
+        )}
+      </section>
+    );
+  };
+
   return (
     <div className={`todos ${compact ? 'compact' : ''}`}>
-      {/* Buttons first; the form opens only for what is being added. */}
-      {!adding && compact && !addMenu ? (
+      {/* Outside the lanes (a claim's own list, a kind filter): one row of adds. */}
+      {!lanesOn && (!adding ? (
         <div className="todo-add-buttons">
-          <button className="small secondary" onClick={() => setAddMenu(true)}>+ Add</button>
-        </div>
-      ) : !adding ? (
-        <div className="todo-add-buttons">
-          <button className="small secondary" onClick={() => setAdding('task')}>+ To-do</button>
-          <button className="small secondary" onClick={() => setAdding('work_order')}>+ 🔧 Work order</button>
-          {showClaims && <button className="small secondary" onClick={() => setAdding('claim')}>+ ⚑ Claim</button>}
+          {kindFilter !== 'work_order' && kindFilter !== 'claims' && <button className="small secondary" onClick={() => setAdding('task')}>+ To-do</button>}
+          {kindFilter !== 'task' && kindFilter !== 'claims' && <button className="small secondary" onClick={() => setAdding('work_order')}>+ 🔧 Repair</button>}
+          {showClaims && kindFilter === 'claims' && <button className="small secondary" onClick={() => setAdding('claim')}>+ ⚑ Claim</button>}
         </div>
       ) : adding === 'claim' ? (
-        <QuickClaim units={units} today={today} onCancel={() => { setAdding(null); setAddMenu(false); }}
-                    onSaved={() => { setAdding(null); setAddMenu(false); void loadClaims(); }} />
+        <QuickClaim units={units} today={today} onCancel={() => setAdding(null)}
+                    onSaved={() => { setAdding(null); void loadClaims(); }} />
       ) : (
         <TodoForm key={adding} units={units} claims={claims} canClaims={canClaims && !claim} submitLabel="Add"
-                  startKind={adding} onCancel={() => { setAdding(null); setAddMenu(false); }}
+                  startKind={adding} onCancel={() => setAdding(null)}
                   fixed={claim ? { claimId: claim.id, unitIds: claim.unitId ? [claim.unitId] : [],
                                    reservationId: claim.reservationId ?? null, reservationLabel: claim.reservationLabel ?? null } : undefined}
-                  onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) { setAdding(null); setAddMenu(false); } return ok; }} />
-      )}
+                  onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAdding(null); return ok; }} />
+      ))}
       {!compact && !claim && (
         <div className="row-controls">
-          {([['', 'Everything'], ['task', 'To-dos'], ['work_order', '🔧 Work orders'],
+          {([['', 'Everything'], ['task', 'To-dos'], ['work_order', '🔧 Repairs'],
              ...(showClaims ? [['claims', '⚑ Claims']] : [])] as ['' | TaskKind | 'claims', string][]).map(([k, l]) => (
-            <button key={k} className={kindFilter === k ? 'chip active' : 'chip'} onClick={() => setKindFilter(k)}>{l}</button>
+            <button key={k} className={kindFilter === k ? 'chip active' : 'chip'} onClick={() => { setKindFilter(k); setAdding(null); }}>{l}</button>
           ))}
           <select value={prioFilter} aria-label="Urgency" onChange={e => setPrioFilter(e.target.value as '' | 'high' | 'urgent')}>
             <option value="">Any urgency</option>
@@ -222,8 +255,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
             <option value="">Every listing</option>
             {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
-          <span className="note">{openList.length} open</span>
-          {(filtering || kindFilter === 'claims') && (
+          {(filtering || kindFilter !== '') && (
             <button className="link tiny" onClick={() => { setKindFilter(''); setPrioFilter(''); setDueFilter(''); setUnitFilter(''); }}>clear filters</button>
           )}
         </div>
@@ -236,36 +268,25 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
           <button className="link tiny" aria-label="Dismiss" onClick={() => setRemoved(null)}>✕</button>
         </p>
       )}
-      {shownCases.length > 0 && <ul className="todo-list cases">{shownCases.map(caseRow)}</ul>}
-      {compact && todos !== null && (
-        !merged.length ? <p className="note">Nothing open. ✓</p> : (
-          <ul className="todo-list">
-            {compactShown.map(i => i.kind === 'case' ? caseRow(i.c)
-              : <TodoRow key={i.t.id} t={i.t} open={open === i.t.id} onOpen={() => setOpen(open === i.t.id ? null : i.t.id)} {...ctx} />)}
-          </ul>
-        )
-      )}
       {todos === null ? <p className="note loading-dot">Reading</p>
-        : compact ? null
-        : kindFilter === 'claims' ? (!cases.length && <p className="note">No open claims. ✓</p>)
-        : !openList.length ? (!shownCases.length && <p className="note">{claim ? 'No open work on this claim.' : filtering ? 'Nothing matches these filters.' : 'Nothing open. ✓'}</p>) : (
-        <ul className="todo-list">
-          {shown.map(t => <TodoRow key={t.id} t={t} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />)}
-        </ul>
-      )}
-      {compact && (hidden > 0 || showAll) && merged.length > 3 && (
-        <button className="link tiny home-more" onClick={() => setShowAll(!showAll)}>
-          {showAll ? 'Show less ▴' : `Show ${hidden} more ▾`}</button>
-      )}
+        : lanesOn ? (
+          <div className="todo-lanes">
+            {lane('task', 'To-dos', taskItems.map(taskRow), workAlert(taskItems), filtering ? 'None match.' : 'Nothing to do. ✓')}
+            {lane('work_order', '🔧 Repairs', repairItems.map(taskRow), workAlert(repairItems), filtering ? 'None match.' : 'No repairs open. ✓')}
+            {showClaims && lane('claims', '⚑ Claims', cases.map(caseRow),
+              noWork ? <span className="breach">▲ {noWork} with no work yet</span>
+                : serious ? <span className="breach">{serious} high or critical</span> : null,
+              'No open claims. ✓')}
+          </div>
+        )
+        : kindFilter === 'claims' ? (cases.length ? <ul className="todo-list cases">{cases.map(caseRow)}</ul> : <p className="note">No open claims. ✓</p>)
+        : !openList.length ? <p className="note">{claim ? 'No open work on this claim.' : filtering ? 'Nothing matches these filters.' : 'Nothing open. ✓'}</p>
+        : <ul className="todo-list">{openList.map(taskRow)}</ul>}
       {!compact && doneList.length > 0 && (
         <>
           <button className="link tiny" onClick={() => setShowDone(!showDone)}>
             {showDone ? '▾' : '▸'} {claim ? 'Closed' : 'Closed in the last 14 days'} ({doneList.length})</button>
-          {showDone && (
-            <ul className="todo-list done">
-              {doneList.map(t => <TodoRow key={t.id} t={t} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />)}
-            </ul>
-          )}
+          {showDone && <ul className="todo-list done">{doneList.map(taskRow)}</ul>}
         </>
       )}
     </div>
@@ -319,9 +340,12 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
         {t.priority !== 'normal' && !closed && <span className={`todo-prio ${t.priority}`}>{PRIORITY_LABEL[t.priority]}</span>}
         {(t.status === 'in_progress' || t.status === 'waiting' || t.status === 'cancelled') &&
           <span className={`todo-status s-${t.status}`}>{STATUS_LABEL[t.status]}</span>}
-        {t.unitIds.map(id => <span key={id} className="todo-unit">{names.get(id) ?? 'unit'}</span>)}
-        {t.reservationLabel && <span className="todo-stay" title="The stay it is about">🛏 {t.reservationLabel}</span>}
-        {t.claimId && !inClaim && <span className="todo-claim" title="Belongs to a claim">⚑ {claimNames.get(t.claimId) ?? 'claim'}</span>}
+        {/* A sub-task says only what differs from its parent: the same unit
+            and claim under the same parent are noise. */}
+        {t.unitIds.filter(id => !(parent && !flat && parent.unitIds.includes(id))).map(id => <span key={id} className="todo-unit">{names.get(id) ?? 'unit'}</span>)}
+        {t.reservationLabel && !(parent && !flat && parent.reservationId === t.reservationId) &&
+          <span className="todo-stay" title="The stay it is about">🛏 {t.reservationLabel}</span>}
+        {t.claimId && !inClaim && !(parent && !flat && parent.claimId === t.claimId) && <span className="todo-claim" title="Belongs to a claim">⚑ {claimNames.get(t.claimId) ?? 'claim'}</span>}
         {t.assignee && <span className="sub-n">→ {t.assignee}</span>}
         {t.kind === 'work_order' && t.vendor && <span className="sub-n">· {t.vendor}</span>}
         {t.kind === 'work_order' && t.scheduledOn && !closed && <span className="sub-n">· booked {shortDay(t.scheduledOn)}</span>}

@@ -1312,3 +1312,18 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .stay-work { display: flex; gap: 8px; align-items: center; flex: 1 1 100%; flex-wrap: wrap; }
 .stay-work input { flex: 1; min-width: 220px; }
 .ops-manual-actions .link { color: var(--series-1); font-weight: 600; opacity: 1; }
+
+/* §85: lanes — to-dos, repairs, claims. */
+.todo-lanes { display: flex; flex-direction: column; gap: 14px; }
+.todo-lane { display: flex; flex-direction: column; gap: 4px; }
+.lane-head { display: flex; align-items: center; gap: 8px; padding-bottom: 4px; border-bottom: 1px solid var(--line); }
+.lane-head h4 { margin: 0; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 650; }
+.lane-head .count { font-size: 11px; padding: 0 7px; border-radius: 999px; background: var(--tint); color: var(--muted); }
+.lane-alert { font-size: 12px; }
+.lane-alert .home-today { color: var(--warn); font-weight: 600; }
+.link.lane-add { color: var(--series-1); font-weight: 600; opacity: 1; }
+.todo-lane .todo-list .todo:first-child { border-top: 0; }
+.todo-lane.is-empty .lane-head { border-bottom-style: dashed; }
+.lane-empty { margin: 2px 0 0; font-size: 12.5px; }
+.todos.compact .todo-lanes { gap: 10px; }
+.link.lane-add { font-size: 12.5px; }
