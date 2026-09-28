@@ -13,7 +13,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getClaims, saveClaim, deleteClaim, type Claim, type UnitRow } from '../api.ts';
 import { money2 } from '../lib/format.ts';
-import { ClaimCase } from '../components/Todos.tsx';
+import { ClaimCase, StayPicker } from '../components/Todos.tsx';
 import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
 
 const SEVERITY = CLAIM_SEVERITY;
@@ -66,7 +66,8 @@ export function Claims({ units, canWork = false }: {
       id: c.id, unitId: c.unit_id ?? null, occurredOn: c.occurred_on,
       category: c.category, severity: c.severity, status: c.status, source: c.source,
       description: c.description, refund: Number(c.refund) || 0,
-      repairCost: Number(c.repair_cost) || 0
+      repairCost: Number(c.repair_cost) || 0,
+      reservationId: c.reservation_id ?? null, reservationLabel: c.reservation_label ?? null
     });
     setBusy(false);
     if (!r.ok) { setErr(r.error ?? 'Could not save.'); return; }
@@ -127,7 +128,9 @@ export function Claims({ units, canWork = false }: {
                   <button className="link" onClick={() => setEditing(c)}>edit</button>
                 </span>
               </div>
-              {c.description && <p className="claim-desc">{c.description}</p>}
+              {(c.description || c.reservation_label) && (
+                <p className="claim-desc">{c.reservation_label && <span className="todo-stay">🛏 {c.reservation_label}</span>} {c.description}</p>
+              )}
               {openId === String(c.id) && (
                 <ClaimCase claim={c} canWork={canWork} onSaved={() => void load()} />
               )}
@@ -163,7 +166,8 @@ function ClaimForm({ claim, units, busy, onCancel, onSave }: {
                  onChange={e => set('occurred_on', e.target.value)} />
         </label>
         <label>Unit
-          <select value={c.unit_id ?? ''} onChange={e => set('unit_id', e.target.value || null)}>
+          <select value={c.unit_id ?? ''} onChange={e => setC(prev => ({ ...prev, unit_id: e.target.value || null,
+                                                                          reservation_id: null, reservation_label: null }))}>
             <option value="">Portfolio-wide</option>
             {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
@@ -197,6 +201,12 @@ function ClaimForm({ claim, units, busy, onCancel, onSave }: {
           <input type="number" value={c.repair_cost ?? ''}
                  onChange={e => set('repair_cost', e.target.value)} />
         </label>
+      </div>
+      <div className="claim-stay">
+        <StayPicker unitId={c.unit_id ?? null}
+                    value={c.reservation_id ? { id: c.reservation_id, label: c.reservation_label ?? '' } : null}
+                    today={c.occurred_on?.slice(0, 10)}
+                    onChange={x => setC(p => ({ ...p, reservation_id: x?.id ?? null, reservation_label: x?.label ?? null }))} />
       </div>
       <label>What happened
         <input value={c.description ?? ''} onChange={e => set('description', e.target.value)}

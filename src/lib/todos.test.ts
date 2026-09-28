@@ -1,12 +1,17 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { childrenBy, dueLabel, dueOf, matchesFilter, progress, sortTodos, workCost, type Todo } from './todos.ts';
+import { childrenBy, dueLabel, dueOf, matchesFilter, progress, sortTodos, stayLabel, workCost, type Todo } from './todos.ts';
+
+test('a stay is named by its guest and dates', () => {
+  assert.equal(stayLabel('Jason Smith', '2026-09-25', '2026-10-02'), 'Jason Smith · Sep 25 → Oct 2');
+  assert.equal(stayLabel('  ', '2026-12-30', '2027-01-03'), 'Guest · Dec 30 → Jan 3');
+});
 
 const t = (id: string, over: Partial<Todo> = {}): Todo => ({
   id, title: id, unitIds: [], dueOn: null, createdAt: `2026-09-01T00:00:0${id.length % 10}Z`, createdBy: null,
   doneAt: null, doneBy: null, kind: 'task', status: 'open', priority: 'normal', assignee: null, claimId: null,
   vendor: null, scheduledOn: null, costEstimate: null, costActual: null, updates: 0,
-  description: null, parentId: null, ...over
+  description: null, parentId: null, reservationId: null, reservationLabel: null, ...over
 });
 
 test('filters: kind, urgency, date and listing', () => {

@@ -15,11 +15,11 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import {
-  getClaims, getClaimUpdates, getTaskUpdates, getTodos, getUnits, postClaimNote, saveClaim, todoAction,
-  type Claim, type Todo, type WorkUpdate
+  getClaims, getClaimUpdates, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, saveClaim, todoAction,
+  type Claim, type StayOnDay, type Todo, type WorkUpdate
 } from '../api.ts';
 import {
-  KIND_LABEL, PRIORITY_LABEL, STATUS_LABEL, STATUSES, childrenBy, dueLabel, dueOf, isClosed, isFiltering, matchesFilter,
+  KIND_LABEL, PRIORITY_LABEL, STATUS_LABEL, STATUSES, childrenBy, stayLabel, dueLabel, dueOf, isClosed, isFiltering, matchesFilter,
   progress, shortDay, sortTodos, workCost,
   type Priority, type TaskKind, type TaskStatus, type WorkFilter
 } from '../lib/todos.ts';
@@ -48,8 +48,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   compact?: boolean; onMore?: () => void;
   /** Whether this person may see claims (to link work to one). */
   canClaims?: boolean;
-  /** Inside a claim: only its work, and new work belongs to it. */
-  claim?: { id: string; unitId: string | null };
+  /** Inside a claim: only its work, and new work belongs to it (and to its stay, §84). */
+  claim?: { id: string; unitId: string | null; reservationId?: string | null; reservationLabel?: string | null };
   /** The list as it now is — the claim uses it for what its work costs. */
   onChange?: (list: Todo[]) => void;
   /** Home: the counts its card shows, folded or not. */
@@ -166,6 +166,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
         <span className={`todo-status sev s-${c.severity.toLowerCase()}`}>{c.severity}</span>
         <span className="todo-status">{c.status === 'Open' ? '○ Open' : '◐ In progress'}</span>
         <span className="sub-n">{ageDays(c, today)}d open</span>
+        {c.reservation_label && <span className="todo-stay">🛏 {c.reservation_label}</span>}
         {openWorkBy.get(String(c.id)) ? <span className="sub-n">· {openWorkBy.get(String(c.id))} open task{openWorkBy.get(String(c.id)) === 1 ? '' : 's'}</span>
           : <span className="todo-due">▲ no work yet</span>}
         {c.description && <span className="sub-n case-desc" title={c.description}>— {c.description}</span>}
@@ -195,7 +196,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
       ) : (
         <TodoForm key={adding} units={units} claims={claims} canClaims={canClaims && !claim} submitLabel="Add"
                   startKind={adding} onCancel={() => { setAdding(null); setAddMenu(false); }}
-                  fixed={claim ? { claimId: claim.id, unitIds: claim.unitId ? [claim.unitId] : [] } : undefined}
+                  fixed={claim ? { claimId: claim.id, unitIds: claim.unitId ? [claim.unitId] : [],
+                                   reservationId: claim.reservationId ?? null, reservationLabel: claim.reservationLabel ?? null } : undefined}
                   onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) { setAdding(null); setAddMenu(false); } return ok; }} />
       )}
       {!compact && !claim && (
@@ -318,6 +320,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
         {(t.status === 'in_progress' || t.status === 'waiting' || t.status === 'cancelled') &&
           <span className={`todo-status s-${t.status}`}>{STATUS_LABEL[t.status]}</span>}
         {t.unitIds.map(id => <span key={id} className="todo-unit">{names.get(id) ?? 'unit'}</span>)}
+        {t.reservationLabel && <span className="todo-stay" title="The stay it is about">🛏 {t.reservationLabel}</span>}
         {t.claimId && !inClaim && <span className="todo-claim" title="Belongs to a claim">⚑ {claimNames.get(t.claimId) ?? 'claim'}</span>}
         {t.assignee && <span className="sub-n">→ {t.assignee}</span>}
         {t.kind === 'work_order' && t.vendor && <span className="sub-n">· {t.vendor}</span>}
@@ -372,7 +375,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
               ) : (
                 <TodoForm key={addingSub} units={units} claims={claims} canClaims={false} submitLabel="Add" startKind={addingSub}
                           onCancel={() => setAddingSub(null)}
-                          fixed={{ parentId: t.id, claimId: t.claimId, unitIds: t.unitIds }}
+                          fixed={{ parentId: t.id, claimId: t.claimId, unitIds: t.unitIds, reservationId: t.reservationId, reservationLabel: t.reservationLabel }}
                           onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAddingSub(null); return ok; }} />
               )}
             </div>
@@ -407,6 +410,7 @@ type FormValue = {
   claimId: string | null; vendor: string | null; scheduledOn: string | null;
   costEstimate: number | null; costActual: number | null; status?: TaskStatus;
   description: string | null; parentId?: string;
+  reservationId: string | null; reservationLabel: string | null;
 };
 
 /**
@@ -416,7 +420,7 @@ type FormValue = {
 function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, startKind = 'task', onCancel }: {
   units: Unit[]; claims: Claim[]; canClaims: boolean; initial?: Todo; submitLabel: string;
   /** What the context pre-sets: a claim (and its unit), or a parent task (its listings and claim). */
-  fixed?: { claimId?: string | null; unitIds: string[]; parentId?: string };
+  fixed?: { claimId?: string | null; unitIds: string[]; parentId?: string; reservationId?: string | null; reservationLabel?: string | null };
   onSubmit: (v: FormValue) => Promise<boolean>;
   /** Adding: the kind the button chose. */
   startKind?: TaskKind; onCancel?: () => void;
@@ -424,13 +428,14 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   const blank = (): FormValue => ({
     title: '', kind: startKind, unitIds: fixed?.unitIds ?? [], dueOn: null, priority: 'normal', assignee: null,
     claimId: fixed?.claimId ?? null, vendor: null, scheduledOn: null, costEstimate: null, costActual: null,
-    description: null, ...(fixed?.parentId ? { parentId: fixed.parentId } : {})
+    description: null, ...(fixed?.parentId ? { parentId: fixed.parentId } : {}),
+    reservationId: fixed?.reservationId ?? null, reservationLabel: fixed?.reservationLabel ?? null
   });
   const [v, setV] = useState<FormValue>(() => initial ? {
     title: initial.title, kind: initial.kind, unitIds: initial.unitIds, dueOn: initial.dueOn, priority: initial.priority,
     assignee: initial.assignee, claimId: initial.claimId, vendor: initial.vendor, scheduledOn: initial.scheduledOn,
     costEstimate: initial.costEstimate, costActual: initial.costActual, status: initial.status,
-    description: initial.description
+    description: initial.description, reservationId: initial.reservationId, reservationLabel: initial.reservationLabel
   } : blank());
   const [more, setMore] = useState(!!initial);
   // The description: always there when editing; one click away when adding.
@@ -516,6 +521,10 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
                 {openClaims.map(c => <option key={c.id} value={String(c.id)}>{claimLabel(c)}</option>)}
               </select></label>
           )}
+          <div className="todo-stay-pick">
+            <StayPicker unitId={v.unitIds[0] ?? null} value={v.reservationId ? { id: v.reservationId, label: v.reservationLabel ?? '' } : null}
+                        onChange={x => setV(p => ({ ...p, reservationId: x?.id ?? null, reservationLabel: x?.label ?? null }))} />
+          </div>
           {wo && <>
             <label>Vendor
               <input value={v.vendor ?? ''} placeholder="Plumber, handyman…" onChange={e => set('vendor', e.target.value || null)} /></label>
@@ -594,6 +603,60 @@ export function Timeline({ load, post, version = 0 }: {
 }
 
 /**
+ * Which stay this is about (§84) — the same picker as a manual clean
+ * (§79): the unit (the first listing), a day, and the stays Hostaway has
+ * in it that day. Optional everywhere; a stay once chosen shows as its
+ * guest and dates, and can be cleared.
+ */
+export function StayPicker({ unitId, value, onChange, today }: {
+  unitId: string | null; value: { id: string; label: string } | null;
+  onChange: (v: { id: string; label: string } | null) => void; today?: DateStr;
+}) {
+  const [day, setDay] = useState<string>(today ?? new Date().toISOString().slice(0, 10));
+  const [stays, setStays] = useState<StayOnDay[] | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => {
+    if (!unitId || !picking) return;
+    setStays(null); setErr('');
+    void getStaysOnDay(unitId, day).then(r => { if (r.ok) setStays(r.stays); else { setErr(r.message ?? 'Hostaway did not answer.'); setStays([]); } })
+      .catch(e => { setErr(String(e)); setStays([]); });
+  }, [unitId, day, picking]);
+
+  if (value && !picking) {
+    return (
+      <span className="stay-pick">
+        <span className="sub-n">Stay</span> <span className="todo-stay">🛏 {value.label || value.id}</span>
+        <button type="button" className="link tiny" onClick={() => setPicking(true)}>change</button>
+        <button type="button" className="link tiny" onClick={() => onChange(null)}>clear</button>
+      </span>
+    );
+  }
+  if (!picking) {
+    return (
+      <span className="stay-pick">
+        <button type="button" className="link tiny" disabled={!unitId} onClick={() => setPicking(true)}
+                title={unitId ? 'Tie it to a reservation' : 'Pick a listing first'}>🛏 + stay{unitId ? '' : ' (pick a listing first)'}</button>
+      </span>
+    );
+  }
+  return (
+    <span className="stay-pick">
+      <label className="todo-inline">Day <input type="date" value={day} onChange={e => setDay(e.target.value)} /></label>
+      <select value="" disabled={stays === null} onChange={e => {
+        const st = (stays ?? []).find(x => x.resId === e.target.value);
+        if (st) { onChange({ id: st.resId, label: stayLabel(st.guest, st.arrival, st.departure) }); setPicking(false); }
+      }}>
+        <option value="">{stays === null ? 'Asking Hostaway…' : stays.length ? 'Which stay?' : 'No stay that day'}</option>
+        {(stays ?? []).map(st => <option key={st.resId} value={st.resId}>{stayLabel(st.guest, st.arrival, st.departure)}</option>)}
+      </select>
+      <button type="button" className="link tiny" onClick={() => setPicking(false)}>cancel</button>
+      {err && <span className="breach">▲ {err}</span>}
+    </span>
+  );
+}
+
+/**
  * Log a claim from the work list (§77). A claim stands on its own — a late
  * checkout, a noise complaint — and gets work linked to it only if there is
  * work to do. The essentials here; the rest (refund, source) on the Claims
@@ -606,6 +669,7 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
   const [unitId, setUnitId] = useState('');
   const [category, setCategory] = useState('');
   const [severity, setSeverity] = useState('Medium');
+  const [stay, setStay] = useState<{ id: string; label: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -613,7 +677,8 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
     if (!what.trim() || busy) return;
     setBusy(true); setErr('');
     const r = await saveClaim({ unitId: unitId || null, occurredOn: today, category: category || null, severity,
-                                status: 'Open', description: what.trim(), refund: 0, repairCost: 0 })
+                                status: 'Open', description: what.trim(), refund: 0, repairCost: 0,
+                                reservationId: stay?.id ?? null, reservationLabel: stay?.label ?? null })
       .catch(e => ({ ok: false, error: String(e) }));
     setBusy(false);
     if (r.ok) onSaved(); else setErr(r.error ?? 'Not saved.');
@@ -627,7 +692,7 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
                onChange={e => setWhat(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') onCancel(); }} />
       </div>
       <div className="todo-meta">
-        <select value={unitId} onChange={e => setUnitId(e.target.value)} aria-label="Unit">
+        <select value={unitId} onChange={e => { setUnitId(e.target.value); setStay(null); }} aria-label="Unit">
           <option value="">Unit (optional)</option>
           {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
@@ -638,6 +703,7 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
         <select value={severity} onChange={e => setSeverity(e.target.value)} aria-label="Severity">
           {CLAIM_SEVERITY.map(s => <option key={s}>{s}</option>)}
         </select>
+        <StayPicker unitId={unitId || null} value={stay} onChange={setStay} today={today} />
         <span className="rb-spacer" />
         <button type="button" className="link tiny" onClick={onCancel}>Cancel</button>
         <button className="small" disabled={!what.trim() || busy}>{busy ? '…' : 'Log claim'}</button>
@@ -695,7 +761,8 @@ export function ClaimCase({ claim, canWork, today, onSaved }: {
             )}
             {msg && <span className="note">{msg}</span>}
           </div>
-          <TodoList today={day} claim={{ id: String(claim.id), unitId: claim.unit_id }} onChange={setWork} />
+          <TodoList today={day} claim={{ id: String(claim.id), unitId: claim.unit_id, reservationId: claim.reservation_id,
+                                         reservationLabel: claim.reservation_label }} onChange={setWork} />
         </div>
       )}
       <Timeline load={() => getClaimUpdates(String(claim.id))}

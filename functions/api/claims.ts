@@ -32,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const claims = await sql`
     SELECT c.id, c.unit_id, c.occurred_on, c.category, c.severity, c.status,
            c.source, c.description, c.refund, c.repair_cost, c.resolved_on,
-           c.created_by, c.created_at, u.name AS unit_name
+           c.created_by, c.created_at, u.name AS unit_name, c.reservation_id, c.reservation_label
       FROM claims c
       LEFT JOIN units u ON u.account_id = c.account_id AND u.id = c.unit_id
      WHERE c.account_id = 1
@@ -57,6 +57,9 @@ interface Body {
   refund?: number;
   repairCost?: number;
   resolvedOn?: string | null;
+  /** The stay it is about (§84), from the stay picker. */
+  reservationId?: string | null;
+  reservationLabel?: string | null;
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -76,6 +79,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ ok: true });
   }
 
+  const resId = b.reservationId && /^\d{1,20}$/.test(String(b.reservationId)) ? String(b.reservationId) : null;
+  const resLabel = resId && typeof b.reservationLabel === 'string' ? b.reservationLabel.trim().slice(0, 160) || null : null;
   const severity = SEVERITY.includes(String(b.severity)) ? b.severity : 'Medium';
   const status = STATUS.includes(String(b.status)) ? b.status : 'Open';
   const refund = Number(b.refund) || 0;
@@ -104,7 +109,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         refund = ${refund}, repair_cost = ${repair},
         -- Cleared when a case is reopened, so a claim never carries a
         -- resolution date while it is open.
-        resolved_on = ${closing ? resolvedOn : null}
+        resolved_on = ${closing ? resolvedOn : null},
+        -- The stay changes only when it is sent: a form that does not show
+        -- it must not clear it.
+        reservation_id = CASE WHEN ${b.reservationId !== undefined} THEN ${resId} ELSE reservation_id END,
+        reservation_label = CASE WHEN ${b.reservationId !== undefined} THEN ${resLabel} ELSE reservation_label END
       WHERE account_id = 1 AND id = ${b.id}
       RETURNING id`;
     return Response.json({ ok: rows.length > 0, id: rows[0]?.id });
@@ -113,11 +122,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await sql`
     INSERT INTO claims
       (account_id, unit_id, occurred_on, category, severity, status, source,
-       description, refund, repair_cost, resolved_on, created_by)
+       description, refund, repair_cost, resolved_on, created_by, reservation_id, reservation_label)
     VALUES (1, ${b.unitId || null},
             ${b.occurredOn || new Date().toISOString().slice(0, 10)},
             ${b.category ?? null}, ${severity}, ${status}, ${b.source ?? null},
-            ${b.description ?? null}, ${refund}, ${repair}, ${resolvedOn}, ${who.email})
+            ${b.description ?? null}, ${refund}, ${repair}, ${resolvedOn}, ${who.email}, ${resId}, ${resLabel})
     RETURNING id`;
   if (rows[0]?.id != null) {
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)

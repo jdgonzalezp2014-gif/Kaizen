@@ -16,14 +16,15 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { TodoList } from '../components/Todos.tsx';
-import { todayIn } from '../lib/dates.ts';
+import { addDays, todayIn } from '../lib/dates.ts';
+import { stayLabel } from '../lib/todos.ts';
 import {
   getCleanings, type Cleaning, type ExcludedCleaning,
   getOperations, saveTurnover, logInspection, scheduleInspections, cancelInspection,
   getOpsSettings, saveOpsSettings, cutoverImport, can, getGuestDocs, syncAgreement, uploadGuestDoc, getUnits, getTodos,
   type Todo,
   type StayDocs, type OperationsResponse, type ManualClean, type ManualCleanKind, type StayOnDay,
-  getStaysOnDay, manualClean, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
+  getStaysOnDay, manualClean, todoAction, saveClaim, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
 } from '../api.ts';
 import {
   BEDROOM_SIZES, DEFAULT_CHECKIN_TIME, DEFAULT_CHECKOUT_TIME, INSPECTION_RESULTS,
@@ -532,6 +533,7 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean }: {
         <button className="small" disabled={busy || note === r.note} onClick={() => void send(null, note)}>Save note</button>
         {msg && <span className="note">{msg}</span>}
       </div>
+      {(can(data.permissions, 'todos') || can(data.permissions, 'claims')) && <StayWork r={r} data={data} />}
       {out && (
         <div className="button-row ops-manual-actions">
           <span className="note">Cleaned outside the checkout?</span>
@@ -541,6 +543,56 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean }: {
         </div>
       )}
       {!out && can(data.permissions, 'guests.documents') && <GuestDocs r={r} docs={docs} onDocs={onDocs} required={(data.guestDocUnits ?? []).includes(r.unitId)} />}
+    </div>
+  );
+}
+
+/* ── work for a stay (§84) ────────────────────────────────────────── */
+
+/**
+ * A to-do or a claim about THIS stay, started from its row — tied to the
+ * reservation, its unit and its guest, the way a manual clean is.
+ */
+function StayWork({ r, data }: { r: BoardRow; data: OperationsResponse }) {
+  const [mode, setMode] = useState<null | 'todo' | 'claim'>(null);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const arrival = r.kind === 'in' ? r.date : addDays(r.date, -r.nights);
+  const departure = r.kind === 'in' ? addDays(r.date, r.nights) : r.date;
+  const label = stayLabel(r.guest, arrival, departure);
+
+  const save = async () => {
+    if (!text.trim() || busy) return;
+    setBusy(true); setMsg('');
+    const res = mode === 'todo'
+      ? await todoAction({ action: 'create', title: text.trim(), unitIds: [r.unitId], reservationId: r.resId, reservationLabel: label })
+          .catch(e => ({ ok: false as const, message: String(e) }))
+      : await saveClaim({ unitId: r.unitId, occurredOn: data.today, severity: 'Medium', status: 'Open', description: text.trim(),
+                          refund: 0, repairCost: 0, reservationId: r.resId, reservationLabel: label })
+          .then(x => x.ok ? { ok: true as const } : { ok: false as const, message: x.error })
+          .catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
+    if (res.ok) { setMsg(mode === 'todo' ? '✓ Added — it is in To-do, tied to this stay.' : '✓ Claim logged — it is in Claims, tied to this stay.');
+                  setText(''); setMode(null); }
+    else setMsg(('message' in res && res.message) || 'Not saved.');
+  };
+
+  return (
+    <div className="button-row ops-manual-actions">
+      <span className="note">🛏 {label}</span>
+      {!mode && can(data.permissions, 'todos') && <button className="link tiny" onClick={() => setMode('todo')}>+ To-do for this stay</button>}
+      {!mode && can(data.permissions, 'claims') && <button className="link tiny" onClick={() => setMode('claim')}>+ Claim for this stay</button>}
+      {mode && (
+        <form className="stay-work" onSubmit={e => { e.preventDefault(); void save(); }}>
+          <input autoFocus value={text} maxLength={mode === 'todo' ? 120 : 500}
+                 placeholder={mode === 'todo' ? 'What needs doing? e.g. Return the parking pass' : 'What happened? e.g. Guest reports no hot water'}
+                 onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setMode(null); }} />
+          <button className="small" disabled={!text.trim() || busy}>{busy ? '…' : mode === 'todo' ? 'Add to-do' : 'Log claim'}</button>
+          <button type="button" className="link tiny" onClick={() => setMode(null)}>Cancel</button>
+        </form>
+      )}
+      {msg && <span className="note">{msg}</span>}
     </div>
   );
 }

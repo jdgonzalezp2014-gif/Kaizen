@@ -27,7 +27,15 @@ export interface Todo {
   description: string | null;
   /** The task this is a sub-task of; one level deep. */
   parentId: string | null;
+  /** The stay it is about, when there is one (§84). */
+  reservationId: string | null; reservationLabel: string | null;
 }
+
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+const md = (d: DateStr) => `${MON[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}`;
+/** "Jason Smith · Sep 25 → Sep 29" — how a stay is named wherever work points at it. */
+export const stayLabel = (guest: string, arrival: DateStr, departure: DateStr) =>
+  `${guest.trim() || 'Guest'} · ${md(arrival)} → ${md(departure)}`;
 
 /** The list's filters (§78). Empty = no filter. */
 export interface WorkFilter {

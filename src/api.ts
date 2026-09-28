@@ -239,6 +239,8 @@ export interface Claim {
   source: string | null; description: string | null;
   refund: string; repair_cost: string; resolved_on: string | null;
   created_by: string; created_at: string;
+  /** The stay it is about, when there is one (§84). */
+  reservation_id: string | null; reservation_label: string | null;
 }
 export const getClaims = () => call<{ ok: boolean; claims: Claim[] }>('/api/claims');
 export const saveClaim = (body: Record<string, unknown>) =>
@@ -319,7 +321,7 @@ export interface ManualClean {
 }
 export interface StayOnDay { resId: string; guest: string; arrival: string; departure: string; channel: string }
 export const getStaysOnDay = (unitId: string, date: string) =>
-  call<{ ok: true; stays: StayOnDay[] } | Fail>(`/api/manual-clean?unitId=${encodeURIComponent(unitId)}&date=${date}`);
+  call<{ ok: true; stays: StayOnDay[] } | Fail>(`/api/stays?unitId=${encodeURIComponent(unitId)}&date=${date}`);
 export const manualClean = (body: Record<string, unknown>) =>
   call<{ ok: true; key?: string; price?: number | null; restored?: boolean } | Fail>('/api/manual-clean', {
     method: 'POST', body: JSON.stringify(body)

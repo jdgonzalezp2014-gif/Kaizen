@@ -42,6 +42,7 @@ interface Row {
   kind: string; status: string; priority: string; assignee: string | null; claim_id: string | null;
   vendor: string | null; scheduled_on: string | null; cost_estimate: string | null; cost_actual: string | null;
   updates: number; description: string | null; parent_id: string | null;
+  reservation_id: string | null; reservation_label: string | null;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
 const num = (v: string | null) => v == null ? null : Number(v);
@@ -50,7 +51,8 @@ const out = (r: Row) => ({
   createdAt: iso(r.created_at)!, createdBy: r.created_by, doneAt: iso(r.done_at), doneBy: r.done_by,
   kind: r.kind, status: r.status, priority: r.priority, assignee: r.assignee, claimId: r.claim_id,
   vendor: r.vendor, scheduledOn: r.scheduled_on, costEstimate: num(r.cost_estimate), costActual: num(r.cost_actual),
-  updates: Number(r.updates ?? 0), description: r.description, parentId: r.parent_id
+  updates: Number(r.updates ?? 0), description: r.description, parentId: r.parent_id,
+  reservationId: r.reservation_id, reservationLabel: r.reservation_label
 });
 
 async function list(sql: SqlFn, claim?: string) {
@@ -58,6 +60,7 @@ async function list(sql: SqlFn, claim?: string) {
     SELECT t.id, t.title, t.unit_ids, t.due_on::text AS due_on, t.created_at, t.created_by, t.done_at, t.done_by,
            t.kind, t.status, t.priority, t.assignee, t.claim_id, t.vendor, t.scheduled_on::text AS scheduled_on,
            t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
+           t.reservation_id, t.reservation_label,
            (SELECT count(*)::int FROM work_updates w
              WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
       FROM todos t
@@ -114,8 +117,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     status: b.status === undefined ? undefined : String(b.status),
     // The description keeps its line breaks; the title does not.
     description: b.description === null ? null : typeof b.description === 'string' ? (b.description.trim().slice(0, 4000) || null) : undefined,
-    parentId: b.parentId === null || b.parentId === '' || b.parentId === undefined ? undefined : String(b.parentId)
+    parentId: b.parentId === null || b.parentId === '' || b.parentId === undefined ? undefined : String(b.parentId),
+    // The stay it is about (§84): an id from the stay picker, with its label.
+    reservationId: b.reservationId === null || b.reservationId === '' ? null : b.reservationId === undefined ? undefined : String(b.reservationId),
+    reservationLabel: typeof b.reservationLabel === 'string' ? b.reservationLabel.trim().slice(0, 160) || null : null
   };
+  if (f.reservationId && !/^\d{1,20}$/.test(f.reservationId)) return bad('Which stay?');
   let parentTitle = '';
   if (f.parentId) {
     if (!ID.test(f.parentId)) return bad('Which parent task?');
@@ -152,11 +159,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const status = f.status && !['done', 'cancelled'].includes(f.status) ? f.status : 'open';
     const row = (await sql`
       INSERT INTO todos (account_id, title, unit_ids, due_on, created_by, kind, status, priority, assignee,
-                         claim_id, vendor, scheduled_on, cost_estimate, cost_actual, description, parent_id)
+                         claim_id, vendor, scheduled_on, cost_estimate, cost_actual, description, parent_id,
+                         reservation_id, reservation_label)
       VALUES (1, ${f.title}, ${unitIds ?? []}, ${f.dueOn ?? null}, ${who.email}, ${f.kind ?? 'task'}, ${status},
               ${f.priority ?? 'normal'}, ${f.assignee ?? null}, ${f.claimId ?? null}, ${f.vendor ?? null},
               ${f.scheduledOn ?? null}, ${f.costEstimate ?? null}, ${f.costActual ?? null},
-              ${f.description ?? null}, ${f.parentId ?? null})
+              ${f.description ?? null}, ${f.parentId ?? null},
+              ${f.reservationId ?? null}, ${f.reservationId ? f.reservationLabel : null})
       RETURNING id`)[0] as { id: string };
     const what = (f.kind ?? 'task') === 'work_order' ? 'Work order' : 'To-do';
     await note(sql, 'task', String(row.id), 'status',
@@ -182,7 +191,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const before = (await sql`SELECT title, status, priority, assignee, due_on::text AS due_on, claim_id, vendor,
-                                   scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids, description
+                                   scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids, description,
+                                   reservation_id, reservation_label
                               FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`)[0] as Record<string, any> | undefined;
   if (!before) return Response.json({ ok: false, message: 'That task is gone — someone removed it.' }, { status: 404 });
   const scope = b.claimScope ? String(b.claimScope) : undefined;
@@ -206,9 +216,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const category = typeof b.category === 'string' && b.category.trim() ? b.category.trim().slice(0, 60) : null;
     const detail = (await sql`SELECT description FROM todos WHERE id = ${id}`)[0]?.description as string | null;
     const c = (await sql`
-      INSERT INTO claims (account_id, unit_id, occurred_on, category, severity, status, description, refund, repair_cost, created_by)
+      INSERT INTO claims (account_id, unit_id, occurred_on, category, severity, status, description, refund, repair_cost, created_by,
+                          reservation_id, reservation_label)
       VALUES (1, ${(before.unit_ids ?? [])[0] ?? null}, ${new Date().toISOString().slice(0, 10)}, ${category}, ${severity}, 'Open',
-              ${[before.title, detail].filter(Boolean).join(' — ').slice(0, 2000)}, 0, 0, ${who.email})
+              ${[before.title, detail].filter(Boolean).join(' — ').slice(0, 2000)}, 0, 0, ${who.email},
+              ${before.reservation_id ?? null}, ${before.reservation_label ?? null})
       RETURNING id`)[0] as { id: string | number };
     const claimId = String(c.id);
     await sql`UPDATE todos SET claim_id = ${claimId}, updated_at = now() WHERE account_id = 1 AND id = ${id}`;
@@ -249,6 +261,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       kind          = COALESCE(${f.kind ?? null}, kind),
       priority      = COALESCE(${f.priority ?? null}, priority),
       description   = CASE WHEN ${f.description !== undefined} THEN ${f.description ?? null} ELSE description END,
+      reservation_id    = CASE WHEN ${f.reservationId !== undefined} THEN ${f.reservationId ?? null} ELSE reservation_id END,
+      reservation_label = CASE WHEN ${f.reservationId !== undefined} THEN ${f.reservationId ? f.reservationLabel : null} ELSE reservation_label END,
       status        = COALESCE(${status ?? null}, status),
       done_at       = CASE WHEN ${status === undefined} THEN done_at WHEN ${closedNow} THEN COALESCE(done_at, now()) ELSE NULL END,
       done_by       = CASE WHEN ${status === undefined} THEN done_by WHEN ${closedNow} THEN COALESCE(done_by, ${who.email}) ELSE NULL END,
@@ -274,6 +288,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   cmp('Vendor', before.vendor, f.vendor);
   cmp('Priority', before.priority, f.priority);
   cmp('Kind', before.kind, f.kind);
+  if (f.reservationId !== undefined && (before.reservation_id ?? '') !== (f.reservationId ?? '')) {
+    changed.push(f.reservationId ? `Stay: ${f.reservationLabel ?? f.reservationId}` : 'No longer tied to a stay');
+  }
   if (f.description !== undefined && (before.description ?? '') !== (f.description ?? '')) {
     changed.push(f.description ? 'Description updated' : 'Description cleared');
   }

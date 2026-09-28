@@ -38,11 +38,11 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'operations.edit', label: 'Operations — assign cleaners, times, notes, log inspections', routes: [
     { path: '/api/turnover', methods: ['POST'] }, { path: '/api/inspections', methods: ['POST', 'DELETE'] },
-    { path: '/api/manual-clean', methods: ['GET', 'POST'] }] },
+    { path: '/api/manual-clean', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] }] },
   { key: 'operations.setup', label: 'Operations — roster, pay, rules and the live switch', routes: [
     { path: '/api/ops-settings', methods: ['GET', 'POST'] }] },
   { key: 'todos', label: 'To-do list — see, add and tick off the team\'s to-dos', routes: [
-    { path: '/api/todos', methods: ['GET', 'POST'] }] },
+    { path: '/api/todos', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] }] },
   { key: 'guests.documents', label: 'Guest documents — see and upload IDs and rental agreements', routes: [
     { path: '/api/guest-docs', methods: ['POST'] }, { path: '/api/guest-docs-upload', methods: ['POST'] }] },
   { key: 'repository', label: 'Repository — look up records and documents', tab: 'repository', routes: [
@@ -56,7 +56,7 @@ export const PERMISSIONS: Permission[] = [
   { key: 'costs', label: 'Costs — record expenses, see cleaning costs', tab: 'costs', routes: [
     { path: '/api/expenses', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'claims', label: 'Claims — record and follow guest claims', tab: 'claims', routes: [
-    { path: '/api/claims', methods: ['GET', 'POST', 'DELETE'] }] },
+    { path: '/api/claims', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/stays', methods: ['GET'] }] },
   { key: 'settings', label: 'Settings — credentials, members, roles, integrations', tab: 'settings', routes: [
     { path: '/api/settings', methods: ['POST'] }, { path: '/api/roles', methods: ['GET', 'POST', 'DELETE'] },
     { path: '/api/sync-units', methods: ['POST'] }, { path: '/api/import', methods: ['POST'] },

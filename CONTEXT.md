@@ -2542,8 +2542,9 @@ stay, flags and notes were off screen in a table to drag.
   occupancy, then the diagnosis, nights open and money at stake. Revenue:
   name and net, then occupancy and vs target — labelled in the row, since
   the column header is hidden. An opened unit's figures sit two to a line.
-- Verify with `shotm.mjs` (mobile emulation, deviceScaleFactor 2): the
-  page width must equal the viewport.
+- Verify with `node scripts/screenshot.mjs <Tab> <out.png> 390` (mobile
+  emulation, 2× pixels) against the local server: the page width must
+  equal the viewport, and it lists anything wider.
 
 ## 81. Home is a summary — every card folds, three items each
 
@@ -2587,3 +2588,23 @@ it. The confirmation did not say which.
 A task's or a claim's updates show the three most recent, newest at the
 bottom beside the box to add one; "Show N earlier" opens the rest in place
 (the owner, 2026-09-28). What happened lately is what is read.
+
+## 84. Work and claims tied to a stay
+
+The owner (2026-09-28): tie work to a reservation the way an early
+cleaning is tied (§79). Migration 036 adds `reservation_id` and
+`reservation_label` ("Michal Thomas · Sep 26 → Sep 29", `stayLabel`) to
+`todos` and `claims`.
+
+- **One stay picker** for manual cleans, to-dos, work orders and claims:
+  the unit (a task's first listing), a day, and the stays Hostaway has
+  in it that day (`/api/stays`, open to operations.edit, todos and claims).
+  Optional everywhere; the label is kept so lists name the guest without
+  asking Hostaway again.
+- **From the board**: every stay's editor has "+ To-do for this stay" and
+  "+ Claim for this stay", tied to its reservation, unit and guest.
+- It follows the work: a sub-task takes its parent's stay, work added
+  inside a claim takes the claim's, and registering a to-do as a claim
+  carries it over. A claim saved from a form that does not send the stay
+  keeps it (the server changes it only when it is sent).
+- Rows show it as 🛏 guest · dates, on to-dos, work orders and claims.
