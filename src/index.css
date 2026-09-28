@@ -1197,3 +1197,56 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .todo-kids { margin: 4px 0 2px 24px; border-left: 2px solid var(--line); padding-left: 10px; }
 .todo-kids .todo { border-top: 0; padding: 3px 0; }
 .todo-subs { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
+
+/* ── Phones (§80): the onsite team's screen ─────────────────────────
+   Checked at 390px: the page must never scroll sideways, and the board —
+   what the team works from — shows every field of a row without dragging
+   a table. Each row becomes a card: kind, unit and time on top; the guest;
+   then next stay, cleaner and pay, flags, notes. */
+@media (max-width: 720px) {
+  header nav { max-width: 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; padding-bottom: 2px; }
+  header nav::-webkit-scrollbar, .subtabs::-webkit-scrollbar { display: none; }
+  header nav .tab, .subtabs .tab { flex: 0 0 auto; }
+  .subtabs { display: flex; max-width: 100%; overflow-x: auto; flex-wrap: nowrap; scrollbar-width: none; }
+
+  .grid-scroll:has(> table.ops-board) { overflow: visible; border: 0; border-radius: 0; }
+  table.ops-board, table.ops-board tbody { display: block; width: 100%; min-width: 0; }
+  table.ops-board thead { display: none; }
+  table.ops-board tr.ops-day, table.ops-board tr.ops-day > td,
+  table.ops-board tr.ops-edit-row, table.ops-board tr.ops-edit-row > td { display: block; }
+  table.ops-board tr.ops-day > td { padding: 10px 4px 6px; border: 0; font-weight: 650; }
+  table.ops-board tr.ops-line {
+    display: grid; grid-template-columns: auto 1fr auto; gap: 3px 10px; align-items: baseline;
+    grid-template-areas: "kind unit time" "guest guest guest" "next next next"
+                         "cleaner cleaner pays" "flags flags flags" "notes notes notes";
+    margin: 0 0 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card, var(--bg));
+  }
+  table.ops-board tr.ops-line > td { display: block; padding: 0; border: 0; min-width: 0; }
+  table.ops-board tr.ops-line > td:empty { display: none; }
+  table.ops-board tr.ops-line > td:nth-child(1) { grid-area: kind; }
+  table.ops-board tr.ops-line > td:nth-child(2) { grid-area: unit; }
+  table.ops-board tr.ops-line > td:nth-child(3) { grid-area: guest; }
+  table.ops-board tr.ops-line > td:nth-child(4) { grid-area: time; font-weight: 600; }
+  table.ops-board tr.ops-line > td:nth-child(5) { grid-area: next; }
+  table.ops-board tr.ops-line > td:nth-child(6) { grid-area: cleaner; }
+  table.ops-board tr.ops-line > td:nth-child(7) { grid-area: pays; }
+  table.ops-board tr.ops-line > td:nth-child(8) { grid-area: flags; }
+  table.ops-board tr.ops-line > td:nth-child(9) { grid-area: notes; }
+  table.ops-board td[data-label]:not(:empty)::before { content: attr(data-label) ' · '; color: var(--muted); font-size: 12px; }
+  table.ops-board .ops-note { max-width: none; }
+  table.ops-board tr.ops-edit-row > td { padding: 0 0 10px; border: 0; }
+  .ops-editor .row { flex-direction: column; align-items: stretch; }
+  /* Fingers, not cursors: 40px targets for what is tapped all day. */
+  .todo-line input[type=checkbox] { width: 20px; height: 20px; }
+  .todo-title { padding: 4px 0; }
+  .chip, .tab { min-height: 36px; }
+  .ops-manual-actions .link { font-size: 14px; padding: 6px 0; }
+  /* Repository: a list to look things up, the record opens full screen. */
+  .rb-phone-list { list-style: none; margin: 8px 0; padding: 0; border: 1px solid var(--line); border-radius: 10px; }
+  .rb-phone-list li + li { border-top: 1px solid var(--line); }
+  .rb-phone-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 10px 14px;
+    background: none; border: 0; text-align: left; color: var(--ink); font: inherit; cursor: pointer; }
+  .rb-phone-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .rb-phone-go { font-size: 20px; color: var(--muted); }
+  .rb-panel-head { padding: 14px 16px 10px; }
+}

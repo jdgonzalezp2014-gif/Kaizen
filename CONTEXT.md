@@ -2516,3 +2516,25 @@ twice. Migration 035.
   "Guest left early…" / "+ Mid-stay clean". The stays for that unit and day
   are asked of Hostaway. Manual cleans show on their day in the board as
   CLEAN rows. Permission: operations.edit.
+
+## 80. Phones — the onsite team's screen
+
+Checked at 390px (an iPhone) against live data, 2026-09-28. Before: the
+page scrolled sideways (the tab bar did not fit), and the board — what the
+onsite team works from — showed only Unit and Guest; time, cleaner, next
+stay, flags and notes were off screen in a table to drag.
+
+- **Nothing scrolls sideways.** The tab bar and Operations' sub-tabs scroll
+  inside themselves; the open tab is brought into view (sideways only, so
+  the page never jumps).
+- **The board is cards on a phone** (CSS only, same markup): kind, unit and
+  time; the guest; next stay; cleaner and pay; flags; notes — labelled,
+  since there are no column headers. Tapping a card opens its editor below
+  it, fields stacked. Manual cleans (§79) and to-dos read the same way.
+- **The Repository is a list on a phone** (`usePhone`): the team looks
+  things up — a lockbox, a wifi password — so a tap opens the record full
+  screen instead of editing a cell; editing is inside the record.
+- Tap targets: checkboxes 20px, chips and tabs 36px high.
+- Home and the To-do list already read as one column.
+- Verify with `shotm.mjs` (mobile emulation, deviceScaleFactor 2): the
+  page width must equal the viewport.

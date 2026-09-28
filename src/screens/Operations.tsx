@@ -305,7 +305,7 @@ function Board({ data, patch, reload }: {
         ))}
         <input className="date-in" placeholder="Unit, guest or cleaner" value={q} onChange={e => setQ(e.target.value)} />
         {canEdit && <button className="small secondary" onClick={() => setAddingClean({})}>+ Manual clean</button>}
-        {canEdit && <span className="note right">click a row to change it</span>}
+        {canEdit && <span className="note right">click or tap a row to change it</span>}
       </div>
 
       {addingClean && (
@@ -392,7 +392,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos 
         </div>
       </td>
       <td className={r.manual.time ? 'ops-manual' : undefined}>{r.time}</td>
-      <td>
+      <td data-label={out ? 'Next stay' : undefined}>
         {!out ? (r.preppedBy ? <span className="sub-n">prepped by {r.preppedBy}</span> : null)
           : !r.next ? <span className="breach">▲ nothing booked through {through}</span>
           : (<>
@@ -402,7 +402,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos 
               {showMoney && r.next.total != null && <div className="sub-n">{money(r.next.total)}</div>}
             </>)}
       </td>
-      <td>
+      <td data-label={out ? 'Cleaner' : undefined}>
         {out && (
           <>
             <span className={r.assignment === 'tbd' ? 'breach' : r.assignment === 'not_needed' ? 'note' : undefined}>

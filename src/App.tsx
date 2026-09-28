@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Revenue } from './screens/Revenue.tsx';
 import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
@@ -23,6 +23,18 @@ export function App() {
   // and fired /api/forward, which answers 403 for them. The flash was
   // the visible part; the forbidden request was the rest of it.
   const [tab, setTab] = useState<Tab | null>(null);
+  // On a phone the tab bar scrolls sideways; the open tab is brought into
+  // view — sideways only, so the page itself never jumps (§80).
+  const navRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    const nav = navRef.current;
+    const active = nav?.querySelector<HTMLElement>('.tab.active');
+    if (!nav || !active || nav.scrollWidth <= nav.clientWidth) return;
+    const left = active.offsetLeft - nav.offsetLeft;
+    if (left < nav.scrollLeft || left + active.offsetWidth > nav.scrollLeft + nav.clientWidth) {
+      nav.scrollLeft = Math.max(0, left - 16);
+    }
+  }, [tab]);
   /** A door from Home straight into one of Operations' views ("operations:todos"). */
   const [opsView, setOpsView] = useState<string | undefined>(undefined);
   // Fetched once at the top: three screens need the same unit list, and
@@ -68,7 +80,7 @@ export function App() {
             argument about, and a slogan nobody reads is pure vertical
             space on a screen whose job is a list. */}
         <h1>Kaizen OS</h1>
-        <nav>
+        <nav ref={navRef}>
           {/* Nothing until the role is known. A tab that appears and then
               vanishes has already told the reader it exists. */}
           {allowed?.map(t => {

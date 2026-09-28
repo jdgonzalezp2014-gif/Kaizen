@@ -31,6 +31,7 @@ import {
 } from '../api.ts';
 import { proposeColumns, readBoard, type Board, type ProposedColumn } from '../lib/repo-import.ts';
 import { coerce, type ColumnType } from '../lib/repo.ts';
+import { usePhone } from '../components/usePhone.ts';
 
 interface Can { reveal: boolean; edit: boolean; structure: boolean }
 type DocEntry = { folderUrl: string; files: RepoFile[]; truncated?: boolean };
@@ -411,7 +412,29 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
     return !n ? rows ?? [] : (rows ?? []).filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(n)));
   }, [rows, filter]);
 
+  const phone = usePhone();
+
   if (!rows) return <div className="rb-board"><div className="rb-skel" /></div>;
+
+  // On a phone the team LOOKS THINGS UP (a lockbox, a wifi password):
+  // a list that opens the record on tap, not a grid that edits on tap.
+  // Editing is still there, inside the record (§80).
+  if (phone) {
+    return (
+      <ul className="rb-phone-list">
+        {shown.map(r => (
+          <li key={String(r.id)}>
+            <button className="rb-phone-row" onClick={() => onOpen(String(r.id))}>
+              <b>{text(r[primary]) || String(r.id)}</b>
+              <span className="rb-hint">{String(r.id)}</span>
+              <span className="rb-phone-go" aria-hidden="true">›</span>
+            </button>
+          </li>
+        ))}
+        {!shown.length && <li className="rb-hint">No records match.</li>}
+      </ul>
+    );
+  }
 
   return (
     <div className="rb-board">
