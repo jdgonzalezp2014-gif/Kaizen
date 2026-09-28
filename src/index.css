@@ -1177,3 +1177,8 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .todo-status.sev.s-critical, .todo-status.sev.s-high { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 45%, transparent); }
 .case-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
 .todo-list.cases { margin-bottom: 4px; }
+.todo-add-buttons { display: flex; gap: 8px; flex-wrap: wrap; }
+.todo-adding { font-size: 13px; white-space: nowrap; }
+.todos .todo-form { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
+.todo-edit .todo-form { padding: 0; border: 0; }
+.todo-meta .rb-spacer { flex: 1; }

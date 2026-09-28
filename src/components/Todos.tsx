@@ -24,6 +24,7 @@ import {
 } from '../lib/todos.ts';
 import type { DateStr } from '../lib/dates.ts';
 import { money2 } from '../lib/format.ts';
+import { CLAIM_CATEGORIES, CLAIM_SEVERITY } from '../lib/claims.ts';
 
 type Unit = { id: string; name: string; active: boolean };
 type Act = (b: Record<string, unknown>) => Promise<boolean>;
@@ -57,6 +58,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const [kindFilter, setKindFilter] = useState<'' | TaskKind | 'claims'>('');
   const [showDone, setShowDone] = useState(!!claim);
   const [openClaim, setOpenClaim] = useState<string | null>(null);
+  const [adding, setAdding] = useState<null | TaskKind | 'claim'>(null);
   // Open claims sit in the list as cases (§77), above the work — not inside a claim.
   const showClaims = canClaims && !claim;
 
@@ -102,9 +104,22 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
 
   return (
     <div className={`todos ${compact ? 'compact' : ''}`}>
-      <TodoForm units={units} claims={claims} canClaims={canClaims && !claim} submitLabel="Add"
-                fixed={claim ? { claimId: claim.id, unitIds: claim.unitId ? [claim.unitId] : [] } : undefined}
-                onSubmit={v => act({ action: 'create', ...v })} />
+      {/* Buttons first; the form opens only for what is being added. */}
+      {!adding ? (
+        <div className="todo-add-buttons">
+          <button className="small secondary" onClick={() => setAdding('task')}>+ To-do</button>
+          <button className="small secondary" onClick={() => setAdding('work_order')}>+ 🔧 Work order</button>
+          {showClaims && <button className="small secondary" onClick={() => setAdding('claim')}>+ ⚑ Claim</button>}
+        </div>
+      ) : adding === 'claim' ? (
+        <QuickClaim units={units} today={today} onCancel={() => setAdding(null)}
+                    onSaved={() => { setAdding(null); void loadClaims(); }} />
+      ) : (
+        <TodoForm key={adding} units={units} claims={claims} canClaims={canClaims && !claim} submitLabel="Add"
+                  startKind={adding} onCancel={() => setAdding(null)}
+                  fixed={claim ? { claimId: claim.id, unitIds: claim.unitId ? [claim.unitId] : [] } : undefined}
+                  onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAdding(null); return ok; }} />
+      )}
       {!compact && !claim && (
         <div className="row-controls">
           {([['', 'Everything'], ['task', 'To-dos'], ['work_order', '🔧 Work orders'],
@@ -225,13 +240,15 @@ type FormValue = {
  * Add (one line, "more" for the rest) or change a piece of work. `fixed`
  * is what a claim pre-sets: the claim itself, and its unit.
  */
-function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit }: {
+function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, startKind = 'task', onCancel }: {
   units: Unit[]; claims: Claim[]; canClaims: boolean; initial?: Todo; submitLabel: string;
   fixed?: { claimId: string; unitIds: string[] };
   onSubmit: (v: FormValue) => Promise<boolean>;
+  /** Adding: the kind the button chose. */
+  startKind?: TaskKind; onCancel?: () => void;
 }) {
   const blank = (): FormValue => ({
-    title: '', kind: 'task', unitIds: fixed?.unitIds ?? [], dueOn: null, priority: 'normal', assignee: null,
+    title: '', kind: startKind, unitIds: fixed?.unitIds ?? [], dueOn: null, priority: 'normal', assignee: null,
     claimId: fixed?.claimId ?? null, vendor: null, scheduledOn: null, costEstimate: null, costActual: null
   });
   const [v, setV] = useState<FormValue>(() => initial ? {
@@ -261,14 +278,18 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   return (
     <form className="todo-form" onSubmit={e => { e.preventDefault(); void submit(); }}>
       <div className="todo-first">
-        <div className="todo-kind" role="group" aria-label="Kind">
-          {(['task', 'work_order'] as TaskKind[]).map(k => (
-            <button key={k} type="button" className={v.kind === k ? 'chip active' : 'chip'} onClick={() => set('kind', k)}>{KIND_LABEL[k]}</button>
-          ))}
-        </div>
-        <input className="todo-text" value={v.title} maxLength={300}
-               placeholder={initial ? '' : wo ? 'What needs repairing or servicing…' : 'Add a to-do…'}
-               onChange={e => set('title', e.target.value)} />
+        {/* The kind is chosen by the button when adding; it can still be changed when editing. */}
+        {initial ? (
+          <div className="todo-kind" role="group" aria-label="Kind">
+            {(['task', 'work_order'] as TaskKind[]).map(k => (
+              <button key={k} type="button" className={v.kind === k ? 'chip active' : 'chip'} onClick={() => set('kind', k)}>{KIND_LABEL[k]}</button>
+            ))}
+          </div>
+        ) : <b className="todo-adding">{wo ? '🔧 New work order' : 'New to-do'}</b>}
+        <input className="todo-text" value={v.title} maxLength={300} autoFocus={!initial}
+               placeholder={initial ? '' : wo ? 'What needs repairing or servicing?' : 'What needs doing?'}
+               onChange={e => set('title', e.target.value)}
+               onKeyDown={e => { if (e.key === 'Escape' && onCancel) onCancel(); }} />
       </div>
       <div className="todo-meta">
         {v.unitIds.map(id => (
@@ -282,7 +303,10 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
         </select>
         <label className="todo-inline">Deadline
           <input type="date" value={v.dueOn ?? ''} onChange={e => set('dueOn', e.target.value || null)} /></label>
-        {!initial && <button type="button" className="link tiny" onClick={() => setMore(!more)}>{more ? 'fewer options' : 'more options'}</button>}
+        {!initial && <button type="button" className="link tiny" onClick={() => setMore(!more)}>
+          {more ? 'fewer options' : wo ? 'vendor, cost, owner…' : 'owner, priority…'}</button>}
+        {!initial && <span className="rb-spacer" />}
+        {!initial && onCancel && <button type="button" className="link tiny" onClick={onCancel}>Cancel</button>}
         {!initial && <button className="small" disabled={!v.title.trim() || busy}>{busy ? '…' : submitLabel}</button>}
       </div>
       {more && (
@@ -300,9 +324,9 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
           <label>Owner
             <input value={v.assignee ?? ''} placeholder="Who is on it" onChange={e => set('assignee', e.target.value || null)} /></label>
           {canClaims && (
-            <label>Claim
+            <label>Part of a claim? (optional)
               <select value={v.claimId ?? ''} onChange={e => set('claimId', e.target.value || null)}>
-                <option value="">No claim</option>
+                <option value="">No — standalone</option>
                 {openClaims.map(c => <option key={c.id} value={String(c.id)}>{claimLabel(c)}</option>)}
               </select></label>
           )}
@@ -371,6 +395,60 @@ export function Timeline({ load, post, version = 0 }: {
         <button className="small" disabled={!text.trim() || busy}>{busy ? '…' : 'Post update'}</button>
       </form>
     </div>
+  );
+}
+
+/**
+ * Log a claim from the work list (§77). A claim stands on its own — a late
+ * checkout, a noise complaint — and gets work linked to it only if there is
+ * work to do. The essentials here; the rest (refund, source) on the Claims
+ * screen.
+ */
+function QuickClaim({ units, today, onSaved, onCancel }: {
+  units: Unit[]; today: DateStr; onSaved: () => void; onCancel: () => void;
+}) {
+  const [what, setWhat] = useState('');
+  const [unitId, setUnitId] = useState('');
+  const [category, setCategory] = useState('');
+  const [severity, setSeverity] = useState('Medium');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+
+  const save = async () => {
+    if (!what.trim() || busy) return;
+    setBusy(true); setErr('');
+    const r = await saveClaim({ unitId: unitId || null, occurredOn: today, category: category || null, severity,
+                                status: 'Open', description: what.trim(), refund: 0, repairCost: 0 })
+      .catch(e => ({ ok: false, error: String(e) }));
+    setBusy(false);
+    if (r.ok) onSaved(); else setErr(r.error ?? 'Not saved.');
+  };
+
+  return (
+    <form className="todo-form" onSubmit={e => { e.preventDefault(); void save(); }}>
+      <div className="todo-first">
+        <b className="todo-adding">⚑ New claim</b>
+        <input className="todo-text" autoFocus value={what} maxLength={500} placeholder="What happened? e.g. guest asked for a 2pm late checkout"
+               onChange={e => setWhat(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') onCancel(); }} />
+      </div>
+      <div className="todo-meta">
+        <select value={unitId} onChange={e => setUnitId(e.target.value)} aria-label="Unit">
+          <option value="">Unit (optional)</option>
+          {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        <select value={category} onChange={e => setCategory(e.target.value)} aria-label="Kind of claim">
+          <option value="">Kind of claim</option>
+          {CLAIM_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+        </select>
+        <select value={severity} onChange={e => setSeverity(e.target.value)} aria-label="Severity">
+          {CLAIM_SEVERITY.map(s => <option key={s}>{s}</option>)}
+        </select>
+        <span className="rb-spacer" />
+        <button type="button" className="link tiny" onClick={onCancel}>Cancel</button>
+        <button className="small" disabled={!what.trim() || busy}>{busy ? '…' : 'Log claim'}</button>
+      </div>
+      {err && <p className="banner warn">▲ {err}</p>}
+    </form>
   );
 }
 

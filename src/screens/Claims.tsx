@@ -14,12 +14,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { getClaims, saveClaim, deleteClaim, type Claim, type UnitRow } from '../api.ts';
 import { money2 } from '../lib/format.ts';
 import { ClaimCase } from '../components/Todos.tsx';
+import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
 
-const SEVERITY = ['Low', 'Medium', 'High', 'Critical'];
-const STATUS = ['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'];
-const CATEGORIES = ['Cleanliness', 'Maintenance', 'Noise', 'Access', 'Amenity',
-                    'Wifi', 'Damage', 'Safety', 'Other'];
-const SOURCES = ['Airbnb', 'Booking.com', 'Vrbo', 'Expedia', 'Direct', 'In person'];
+const SEVERITY = CLAIM_SEVERITY;
+const STATUS = CLAIM_STATUS;
+const CATEGORIES = CLAIM_CATEGORIES;
+const SOURCES = CLAIM_SOURCES;
 
 /**
  * Weighted 1/2/4/8, the same as the old panel.

@@ -2447,3 +2447,15 @@ reads whole in one place.
   and a ⚑ Claims filter. Opening one shows the same case panel as the
   Claims screen (`ClaimCase` in Todos.tsx): its work, what it cost, and its
   timeline. Home's six lines count cases first, then work.
+- **Adding starts with a button** (owner, 2026-09-28: the always-open form
+  was too much): + To-do, + 🔧 Work order, + ⚑ Claim. Each opens only what
+  it needs — what, listing, deadline — and the rest behind one link
+  (owner and priority; vendor and cost for a work order). Escape or Cancel
+  closes it.
+- **A claim stands on its own.** A late checkout or a noise complaint is a
+  claim with no work order behind it; work is linked to a claim only when
+  there is work to do ("Part of a claim? — No, standalone" by default).
+  Late checkout and Early check-in are claim categories
+  (`src/lib/claims.ts`, one list for both screens). "+ ⚑ Claim" logs the
+  essentials (what happened, unit, kind, severity); refund and source are
+  set on the Claims screen.
