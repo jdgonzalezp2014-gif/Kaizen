@@ -4,6 +4,7 @@
  *   GET                         open work, and what closed in the last 14 days
  *   GET ?claim=ID               every piece of work on one claim, however old
  *   GET ?updates=ID             one task's timeline
+ *   GET ?history=1&from&to[&removed=1]   the done log (§87): closed — and, if asked, removed — in a range
  *   POST { action: 'create', title, kind?, unitIds?, dueOn?, priority?, assignee?, claimId?,
  *          vendor?, scheduledOn?, costEstimate?, costActual? }
  *   POST { action: 'update', id, …any of the above, status? }     null clears a field
@@ -92,6 +93,33 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
                             ORDER BY created_at, id`;
     return Response.json({ ok: true, updates: rows.map((r: any) => ({ id: String(r.id), kind: r.kind, body: r.body,
       createdBy: r.created_by, createdAt: iso(r.created_at) })) }, { headers: { 'Cache-Control': 'no-store' } });
+  }
+  // The done log (§87): everything closed in the range, by when it was
+  // closed; removed ones too when asked — who removed what is audit too.
+  if (url.searchParams.get('history')) {
+    const DAYRX = /^\d{4}-\d{2}-\d{2}$/;
+    const from = url.searchParams.get('from') ?? '';
+    const to = url.searchParams.get('to') ?? '';
+    if (!DAYRX.test(from) || !DAYRX.test(to)) return bad('A date range, please.');
+    const removed = url.searchParams.get('removed') === '1';
+    const rows = await sql`
+      SELECT t.id, t.title, t.unit_ids, t.due_on::text AS due_on, t.created_at, t.created_by, t.done_at, t.done_by,
+             t.kind, t.status, t.priority, t.assignee, t.claim_id, t.vendor, t.scheduled_on::text AS scheduled_on,
+             t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
+             t.reservation_id, t.reservation_label, t.deleted_at, t.deleted_by,
+             (SELECT count(*)::int FROM work_updates w
+               WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
+        FROM todos t
+       WHERE t.account_id = 1
+         -- Days are New York days: an evening close belongs to that day, not UTC's next one.
+         AND ((t.deleted_at IS NULL AND t.done_at IS NOT NULL
+               AND (t.done_at AT TIME ZONE 'America/New_York')::date BETWEEN ${from}::date AND ${to}::date)
+           OR (${removed} AND t.deleted_at IS NOT NULL
+               AND (t.deleted_at AT TIME ZONE 'America/New_York')::date BETWEEN ${from}::date AND ${to}::date))
+       ORDER BY COALESCE(t.deleted_at, t.done_at) DESC
+       LIMIT 3000` as (Row & { deleted_at: string | Date | null; deleted_by: string | null })[];
+    return Response.json({ ok: true, rows: rows.map(r => ({ ...out(r), deletedAt: iso(r.deleted_at), deletedBy: r.deleted_by })) },
+                         { headers: { 'Cache-Control': 'no-store' } });
   }
   const claim = url.searchParams.get('claim') ?? undefined;
   if (claim !== undefined && !ID.test(claim) && !/^[\w-]{1,64}$/.test(claim)) return bad('Which claim?');

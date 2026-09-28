@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { childrenBy, dueLabel, dueOf, matchesFilter, progress, sortTodos, stayLabel, workCost, type Todo } from './todos.ts';
+import { auditCsv, childrenBy, daysTaken, dueLabel, dueOf, matchesFilter, outcomeOf, progress, sortTodos, stayLabel, workCost,
+         type AuditRow, type Todo } from './todos.ts';
 
 test('a stay is named by its guest and dates', () => {
   assert.equal(stayLabel('Jason Smith', '2026-09-25', '2026-10-02'), 'Jason Smith · Sep 25 → Oct 2');
@@ -69,4 +70,19 @@ test('what a claim’s work costs: actual where known, the estimate otherwise, c
     t('d', { status: 'open' })
   ]);
   assert.deepEqual(c, { actual: 280, estimated: 150, open: 2 });
+});
+
+test('the done log: how it ended, how long it took, and a CSV an auditor can open', () => {
+  const base = t('x', { title: 'Fix "AC", unit 2', createdAt: '2026-09-20T10:00:00Z', createdBy: 'ana@x.com',
+                       status: 'done', doneAt: '2026-09-23T09:00:00Z', doneBy: 'luis@x.com', unitIds: ['u1'], kind: 'work_order', costActual: 120 });
+  const row: AuditRow = { ...base, deletedAt: null, deletedBy: null };
+  assert.equal(outcomeOf(row), 'done');
+  assert.equal(daysTaken(row), 2);
+  assert.equal(outcomeOf({ ...row, status: 'cancelled' }), 'cancelled');
+  assert.equal(outcomeOf({ ...row, deletedAt: '2026-09-24T00:00:00Z', deletedBy: 'ana@x.com' }), 'removed');
+  const csv = auditCsv([row], () => 'CL1250', () => '');
+  const [head, line] = csv.split('\n');
+  assert.match(head!, /^Closed \(New York\),Outcome,Closed by,Title/);
+  // 09:00 UTC is 05:00 in New York (EDT) — the audit reads the team's clock.
+  assert.match(line!, /^2026-09-23 05:00,done,luis@x.com,"Fix ""AC"", unit 2",Repair,CL1250,/);
 });

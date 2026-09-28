@@ -15,7 +15,7 @@
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
-import { TodoList } from '../components/Todos.tsx';
+import { WorkView } from '../components/Todos.tsx';
 import { addDays, todayIn } from '../lib/dates.ts';
 import { stayLabel } from '../lib/todos.ts';
 import {
@@ -156,7 +156,7 @@ export function Operations({ permissions, initialView }: { permissions: string[]
 
       <div className={busy && data ? 'is-stale' : undefined}>
         {data && view === 'board' && <Board data={data} patch={patch} reload={() => load()} />}
-        {view === 'todos' && canTodos && <TodoList today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} />}
+        {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} />}
         {view === 'calendar' && <CleaningsMonth />}
         {data && view === 'cleaners' && <ByCleaner data={data} />}
         {data && view === 'inspections' && <Inspections data={data} reload={() => load()} />}

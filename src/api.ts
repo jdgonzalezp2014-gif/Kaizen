@@ -485,6 +485,10 @@ export type { Todo } from './lib/todos.ts';
 type TodosResult = { ok: true; todos: import('./lib/todos.ts').Todo[] } | { ok: false; message?: string };
 export const getTodos = (claimId?: string) =>
   call<TodosResult>(`/api/todos${claimId ? `?claim=${encodeURIComponent(claimId)}` : ''}`);
+/** The done log (§87): closed (and optionally removed) work in a range of days. */
+export const getDoneLog = (from: string, to: string, removed: boolean) =>
+  call<{ ok: true; rows: import('./lib/todos.ts').AuditRow[] } | { ok: false; message?: string }>(
+    `/api/todos?history=1&from=${from}&to=${to}${removed ? '&removed=1' : ''}`);
 export const todoAction = (body: Record<string, unknown>) =>
   call<TodosResult & { id?: string }>('/api/todos', { method: 'POST', body: JSON.stringify(body) });
 

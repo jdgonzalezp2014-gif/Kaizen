@@ -15,11 +15,12 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  deleteClaim, getClaims, getClaimUpdates, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
+  deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
   type Claim, type StayOnDay, type Todo, type WorkUpdate
 } from '../api.ts';
 import {
-  KIND_LABEL, PRIORITY_LABEL, STATUS_LABEL, STATUSES, childrenBy, stayLabel, dueLabel, dueOf, isClosed, isFiltering, matchesFilter,
+  KIND_LABEL, PRIORITY_LABEL, STATUS_LABEL, STATUSES, auditCsv, childrenBy, daysTaken, nyParts, outcomeOf, stayLabel,
+  type AuditRow, dueLabel, dueOf, isClosed, isFiltering, matchesFilter,
   progress, shortDay, sortTodos, workCost,
   type Priority, type TaskKind, type TaskStatus, type WorkFilter
 } from '../lib/todos.ts';
@@ -582,9 +583,11 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
  * every update in words, oldest first, with a box to add one. Shared by a
  * task and a claim.
  */
-export function Timeline({ load, post, version = 0 }: {
+export function Timeline({ load, post, version = 0, readOnly = false }: {
   load: () => Promise<{ ok: true; updates: WorkUpdate[] } | { ok: false; message?: string; error?: string }>;
   post: (body: string) => Promise<boolean>;
+  /** The done log reads a timeline; it does not add to it. */
+  readOnly?: boolean;
   /** Re-read when this changes (the parent saw a new update count). */
   version?: number;
 }) {
@@ -618,19 +621,19 @@ export function Timeline({ load, post, version = 0 }: {
           )}
           {(earlier ? list : list.slice(-3)).map(u => (
             <li key={u.id} className={`tl-${u.kind}`}>
-              <span className="tl-when">{u.createdAt.slice(5, 10)} {u.createdAt.slice(11, 16)}</span>
+              <span className="tl-when" title="New York time">{nyParts(u.createdAt).short}</span>
               <span className="tl-who">{u.createdBy?.split('@')[0] ?? '—'}</span>
               <span className="tl-body">{u.kind === 'note' ? u.body : <i>{u.body}</i>}</span>
             </li>
           ))}
         </ol>
       )}
-      <form className="timeline-add" onSubmit={e => { e.preventDefault(); void send(); }}>
+      {!readOnly && <form className="timeline-add" onSubmit={e => { e.preventDefault(); void send(); }}>
         <textarea rows={2} value={text} placeholder="Add an update — what happened, what's next, who you're waiting on"
                   onChange={e => setText(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void send(); }} />
         <button className="small" disabled={!text.trim() || busy}>{busy ? '…' : 'Post update'}</button>
-      </form>
+      </form>}
     </div>
   );
 }
@@ -880,6 +883,144 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
       <Timeline load={() => getClaimUpdates(String(claim.id))}
                 post={async body => (await postClaimNote(String(claim.id), body).catch(() => ({ ok: false }))).ok}
                 version={work.length} />
+    </div>
+  );
+}
+
+/* ── the done log (§87) ─────────────────────────────────────────────── */
+
+/**
+ * Operations → To-do: the open work, or the done log — one switch.
+ */
+export function WorkView({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
+  const [mode, setMode] = useState<'open' | 'log'>('open');
+  return (
+    <>
+      <div className="row-controls work-mode">
+        <button className={mode === 'open' ? 'chip active' : 'chip'} onClick={() => setMode('open')}>Open work</button>
+        <button className={mode === 'log' ? 'chip active' : 'chip'} onClick={() => setMode('log')}>✓ Done log</button>
+      </div>
+      {mode === 'open' ? <TodoList today={today} canClaims={canClaims} /> : <DoneLog today={today} canClaims={canClaims} />}
+    </>
+  );
+}
+
+const OUTCOME_WORD = { done: '✓ Done', cancelled: '✕ Cancelled', removed: '🗑 Removed' } as const;
+
+/**
+ * Every task closed in a range — who closed it, when, how long it took,
+ * what it cost — and, if asked, what was removed and by whom. Read from
+ * the database as it is; each row opens its whole timeline, read-only.
+ * Exports as CSV for whoever audits it.
+ */
+function DoneLog({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
+  const [from, setFrom] = useState(() => {
+    const d = new Date(`${today}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - 30); return d.toISOString().slice(0, 10);
+  });
+  const [to, setTo] = useState(today);
+  const [withRemoved, setWithRemoved] = useState(false);
+  const [rows, setRows] = useState<AuditRow[] | null>(null);
+  const [err, setErr] = useState('');
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [claims, setClaims] = useState<Claim[]>([]);
+  const [who, setWho] = useState('');
+  const [kind, setKind] = useState<'' | TaskKind>('');
+  const [unit, setUnit] = useState('');
+  const [open, setOpen] = useState<string | null>(null);
+
+  useEffect(() => {
+    void getUnits().then(r => setUnits((r.units ?? []).map(u => ({ id: u.id, name: u.name, active: u.active }))
+      .sort((a, b) => a.name.localeCompare(b.name))));
+    if (canClaims) void getClaims().then(r => setClaims(r.claims ?? []));
+  }, []);
+  useEffect(() => {
+    if (!from || !to || from > to) return;
+    setRows(null); setErr('');
+    void getDoneLog(from, to, withRemoved).then(r => r.ok ? setRows(r.rows) : (setErr(r.message ?? 'Could not read the log.'), setRows([])))
+      .catch(e => { setErr(String(e)); setRows([]); });
+  }, [from, to, withRemoved]);
+
+  const names = new Map(units.map(u => [u.id, u.name]));
+  const claimNames = new Map(claims.map(c => [String(c.id), claimLabel(c)]));
+  const closer = (t: AuditRow) => (t.deletedBy ?? t.doneBy ?? '').split('@')[0] ?? '';
+  const people = [...new Set((rows ?? []).map(t => t.deletedBy ?? t.doneBy ?? '').filter(Boolean))].sort();
+  const shown = (rows ?? []).filter(t => (!who || (t.deletedBy ?? t.doneBy) === who) && (!kind || t.kind === kind)
+    && (!unit || t.unitIds.includes(unit)));
+  const count = (o: string) => shown.filter(t => outcomeOf(t) === o).length;
+  const taken = shown.filter(t => outcomeOf(t) === 'done').map(t => daysTaken(t) ?? 0).sort((a, b) => a - b);
+  const median = taken.length ? taken[Math.floor(taken.length / 2)] : null;
+  const repairCost = shown.filter(t => outcomeOf(t) === 'done').reduce((a, t) => a + (t.costActual ?? 0), 0);
+
+  const exportCsv = () => {
+    const csv = auditCsv(shown, id => names.get(id) ?? id, id => claimNames.get(id) ?? `claim ${id}`);
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = `kaizen-done-log-${from}-to-${to}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  return (
+    <div className="done-log">
+      <div className="row-controls">
+        <label className="todo-inline">From <input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} /></label>
+        <label className="todo-inline">to <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)} /></label>
+        <select value={kind} aria-label="Kind" onChange={e => setKind(e.target.value as '' | TaskKind)}>
+          <option value="">To-dos and repairs</option><option value="task">To-dos</option><option value="work_order">🔧 Repairs</option>
+        </select>
+        <select value={who} aria-label="Closed by" onChange={e => setWho(e.target.value)}>
+          <option value="">Anyone</option>{people.map(p => <option key={p} value={p}>{p.split('@')[0]}</option>)}
+        </select>
+        <select value={unit} aria-label="Listing" onChange={e => setUnit(e.target.value)}>
+          <option value="">Every listing</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        <label className="check done-removed"><input type="checkbox" checked={withRemoved} onChange={e => setWithRemoved(e.target.checked)} /> include removed</label>
+        <span className="rb-spacer" />
+        <button className="small secondary" disabled={!shown.length} onClick={exportCsv}>Export CSV</button>
+      </div>
+      {err && <p className="banner warn">▲ {err}</p>}
+      {rows === null ? <p className="note loading-dot">Reading the log</p> : (
+        <>
+          <p className="note done-summary">
+            <b>{shown.length}</b> closed · {count('done')} done · {count('cancelled')} cancelled
+            {withRemoved && <> · {count('removed')} removed</>}
+            {median !== null && <> · median {median === 0 ? 'same day' : `${median} day${median === 1 ? '' : 's'}`} to done</>}
+            {repairCost > 0 && <> · repairs {money2(repairCost)}</>}
+          </p>
+          {!shown.length ? <p className="note">Nothing closed in this range.</p> : (
+            <ul className="todo-list done-rows">
+              {shown.map(t => {
+                const o = outcomeOf(t);
+                const d = daysTaken(t);
+                return (
+                  <li key={t.id} className={`todo done-row o-${o}`}>
+                    <div className="todo-line">
+                      <span className="done-when" title="New York time">{nyParts(t.deletedAt ?? t.doneAt ?? t.createdAt).short}</span>
+                      <span className={`done-outcome o-${o}`}>{OUTCOME_WORD[o]}</span>
+                      {t.kind === 'work_order' && <span title="Repair">🔧</span>}
+                      <button className="todo-title" onClick={() => setOpen(open === t.id ? null : t.id)}>{t.title}</button>
+                      {t.unitIds.map(id => <span key={id} className="todo-unit">{names.get(id) ?? 'unit'}</span>)}
+                      {t.reservationLabel && <span className="todo-stay">🛏 {t.reservationLabel}</span>}
+                      {t.claimId && claimNames.has(t.claimId) && <span className="todo-claim">⚑ {claimNames.get(t.claimId)}</span>}
+                      <span className="sub-n">by {closer(t) || '—'}</span>
+                      {d !== null && <span className="sub-n">· took {d === 0 ? 'same day' : `${d}d`}</span>}
+                      {t.costActual != null && <span className="sub-n">· {money2(t.costActual)}</span>}
+                    </div>
+                    {open === t.id && (
+                      <div className="todo-edit">
+                        <p className="note">Written by {t.createdBy?.split('@')[0] ?? '—'} on {nyParts(t.createdAt).short}
+                          {t.assignee ? ` · owner ${t.assignee}` : ''}{t.vendor ? ` · vendor ${t.vendor}` : ''}</p>
+                        {t.description && <p className="todo-desc-full">{t.description}</p>}
+                        <Timeline readOnly load={() => getTaskUpdates(t.id)} post={async () => false} />
+                      </div>
+                    )}
+                  </li>
+                );
+              })}
+            </ul>
+          )}
+        </>
+      )}
     </div>
   );
 }

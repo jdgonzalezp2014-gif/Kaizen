@@ -2645,3 +2645,22 @@ in the list could only be created and opened.
   undoable too.
 - Verify layouts with `scripts/screenshot.mjs`; chained clicks
   ("css:.a >> Edit claim") open nested panels.
+
+## 87. The done log — closed work, for audit
+
+The owner (2026-09-28): track the tasks done, for audit. Operations →
+To-do → "✓ Done log" (the switch beside "Open work").
+
+- Everything closed in a range (default: the last 30 days), newest first:
+  when (New York time), how it ended (✓ Done, ✕ Cancelled — and 🗑 Removed
+  with "include removed"), who closed or removed it, its listings, stay and
+  claim, how many days it took from written to closed, and a repair's
+  actual cost. A summary line counts them, gives the median days to done
+  and the repairs' total.
+- Filters: kind, who closed it, listing. A row opens its whole timeline,
+  READ-ONLY — the log is read, not written into.
+- "Export CSV": the filtered rows, one per task, for whoever audits it
+  (`auditCsv`, tested).
+- **Times are New York time everywhere** — the log, the CSV, the range's
+  days (`AT TIME ZONE 'America/New_York'`) and every timeline. They were
+  UTC: a 7:35 PM close read as 23:35, and fell on the next day.

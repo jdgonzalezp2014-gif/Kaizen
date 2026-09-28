@@ -1167,7 +1167,7 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .timeline { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .timeline-title { font-size: 12px; font-weight: 650; margin-bottom: 4px; }
 .timeline-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
-.timeline-list li { display: grid; grid-template-columns: 90px 90px 1fr; gap: 8px; font-size: 12.5px; }
+.timeline-list li { display: grid; grid-template-columns: 118px 110px 1fr; gap: 8px; font-size: 12.5px; }
 .timeline-list .tl-when, .timeline-list .tl-who { color: var(--muted); font-size: 11.5px; }
 .timeline-list li.tl-status .tl-body, .timeline-list li.tl-change .tl-body { color: var(--muted); }
 .timeline-add { display: flex; gap: 8px; align-items: flex-end; }
@@ -1332,3 +1332,15 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .claim-case-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
 .claim-edit { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px dashed var(--line); }
 .claim-edit textarea { width: 100%; }
+
+/* §87: the done log. */
+.work-mode { margin-bottom: 8px; }
+.done-log .done-removed { margin: 0; }
+.done-summary { margin: 4px 0 8px; }
+.done-when { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; min-width: 104px; }
+.done-outcome { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); }
+.done-outcome.o-done { color: var(--good); border-color: color-mix(in srgb, var(--good) 45%, transparent); }
+.done-outcome.o-cancelled { color: var(--muted); }
+.done-outcome.o-removed { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 40%, transparent); }
+.done-row.o-removed .todo-title { text-decoration: line-through; color: var(--muted); }
+.todo-desc-full { white-space: pre-wrap; font-size: 13px; margin: 4px 0 8px; }

@@ -148,3 +148,53 @@ export function workCost(list: Todo[]): { actual: number; estimated: number; ope
   }
   return { actual, estimated, open };
 }
+
+/* ── the done log (§87) ─────────────────────────────────────────────── */
+
+/**
+ * A moment as the team lived it — New York time, where the units are —
+ * never the server's UTC: "23:35" was a 7:35 PM close.
+ */
+const NY = 'America/New_York';
+export function nyParts(iso: string): { date: string; time: string; short: string } {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: NY, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(iso)).map(x => [x.type, x.value]));
+  const short = new Intl.DateTimeFormat('en-US', { timeZone: NY, month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    .format(new Date(iso));
+  return { date: `${p.year}-${p.month}-${p.day}`, time: `${p.hour}:${p.minute}`, short };
+}
+
+/** A closed or removed task, as the audit reads it. */
+export interface AuditRow extends Todo {
+  deletedAt: string | null; deletedBy: string | null;
+}
+
+/** How it ended: done, cancelled, or removed (removed wins — it is the last thing that happened). */
+export const outcomeOf = (t: AuditRow): 'done' | 'cancelled' | 'removed' =>
+  t.deletedAt ? 'removed' : t.status === 'cancelled' ? 'cancelled' : 'done';
+
+/** Whole days from written to closed (or removed); 0 means the same day. */
+export function daysTaken(t: Pick<AuditRow, 'createdAt' | 'doneAt' | 'deletedAt'>): number | null {
+  const end = t.deletedAt ?? t.doneAt;
+  if (!end) return null;
+  return Math.max(0, Math.floor((Date.parse(end) - Date.parse(t.createdAt)) / 864e5));
+}
+
+const cell = (v: unknown) => {
+  const s = v == null ? '' : String(v);
+  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+};
+
+/** The log as CSV, for whoever audits it — one row per task, in the order shown. */
+export function auditCsv(rows: AuditRow[], unitName: (id: string) => string, claimName: (id: string) => string): string {
+  const stamp = (iso: string | null) => { if (!iso) return ''; const p = nyParts(iso); return `${p.date} ${p.time}`; };
+  const head = ['Closed (New York)', 'Outcome', 'Closed by', 'Title', 'Kind', 'Listings', 'Stay', 'Claim', 'Owner',
+                'Created (New York)', 'Created by', 'Days taken', 'Vendor', 'Actual cost', 'Description'];
+  const lines = rows.map(t => [
+    stamp(t.deletedAt ?? t.doneAt), outcomeOf(t), t.deletedBy ?? t.doneBy ?? '',
+    t.title, t.kind === 'work_order' ? 'Repair' : 'To-do', t.unitIds.map(unitName).join('; '), t.reservationLabel ?? '',
+    t.claimId ? claimName(t.claimId) : '', t.assignee ?? '', stamp(t.createdAt), t.createdBy ?? '',
+    daysTaken(t) ?? '', t.vendor ?? '', t.costActual ?? '', t.description ?? ''
+  ].map(cell).join(','));
+  return [head.join(','), ...lines].join('\n');
+}
