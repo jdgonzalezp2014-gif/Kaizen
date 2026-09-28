@@ -1140,3 +1140,40 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .todo-edit .button-row { align-items: center; gap: 10px; }
 .home-todos { grid-column: 1 / -1; }
 .todos > .link { align-self: flex-start; }
+
+/* Work (§77): kinds, status, priority, claims, and the timeline. */
+.todo-first { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.todo-first .todo-text { flex: 1; min-width: 220px; }
+.todo-kind { display: flex; gap: 4px; }
+.todo-kind .chip { font-size: 12px; padding: 3px 9px; }
+.todo-inline { display: inline-flex; align-items: center; gap: 5px; margin: 0; font-size: 12px; }
+.todo-inline > input { display: inline-block; width: auto; margin: 0; }
+.todo-more { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px 12px; }
+.todo-more label { margin: 0; }
+.todo-prio { font-size: 11px; font-weight: 700; color: var(--warn); }
+.todo-prio.urgent { color: var(--crit); }
+.todo-status { font-size: 11px; font-weight: 600; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); }
+.todo-status.s-in_progress { color: var(--series-1); border-color: color-mix(in srgb, var(--series-1) 45%, transparent); }
+.todo-status.s-waiting { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); }
+.todo-status.s-cancelled { color: var(--muted); }
+.todo-claim { font-size: 11px; padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+  border: 1px solid color-mix(in srgb, var(--crit) 40%, transparent); color: var(--ink); }
+.todo.prio-urgent:not(.is-done) { box-shadow: inset 3px 0 0 var(--crit); padding-left: 8px; }
+.timeline { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
+.timeline-title { font-size: 12px; font-weight: 650; margin-bottom: 4px; }
+.timeline-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.timeline-list li { display: grid; grid-template-columns: 90px 90px 1fr; gap: 8px; font-size: 12.5px; }
+.timeline-list .tl-when, .timeline-list .tl-who { color: var(--muted); font-size: 11.5px; }
+.timeline-list li.tl-status .tl-body, .timeline-list li.tl-change .tl-body { color: var(--muted); }
+.timeline-add { display: flex; gap: 8px; align-items: flex-end; }
+.timeline-add textarea { flex: 1; }
+.claim-case { margin: 8px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--card, transparent); }
+.claim-case-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px; }
+@media (max-width: 640px) { .timeline-list li { grid-template-columns: 1fr; gap: 0; } }
+/* Claims in the work list: cases above the work, worst first. */
+.todo.case { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--crit) 55%, transparent); padding-left: 8px; }
+.todo.case.sev-low, .todo.case.sev-medium { box-shadow: inset 3px 0 0 var(--line); }
+.case-flag { color: var(--crit); }
+.todo-status.sev.s-critical, .todo-status.sev.s-high { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 45%, transparent); }
+.case-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
+.todo-list.cases { margin-bottom: 4px; }

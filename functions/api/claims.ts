@@ -20,6 +20,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
   if (!who) return unauthorised();
   const sql = db(env);
+  // A claim's timeline (§77): notes, status changes, work added and closed.
+  const updates = new URL(request.url).searchParams.get('updates');
+  if (updates) {
+    const rows = await sql`SELECT id, kind, body, created_by, created_at FROM work_updates
+                            WHERE account_id = 1 AND subject = 'claim' AND subject_id = ${updates}
+                            ORDER BY created_at, id`;
+    return Response.json({ ok: true, updates: rows.map((r: any) => ({ id: String(r.id), kind: r.kind, body: r.body,
+      createdBy: r.created_by, createdAt: new Date(r.created_at).toISOString() })) });
+  }
   const claims = await sql`
     SELECT c.id, c.unit_id, c.occurred_on, c.category, c.severity, c.status,
            c.source, c.description, c.refund, c.repair_cost, c.resolved_on,
@@ -54,7 +63,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
   if (!who) return unauthorised();
   const sql = db(env);
-  const b = await request.json().catch(() => ({})) as Body;
+  const b = await request.json().catch(() => ({})) as Body & { action?: string; body?: string };
+
+  // An update on the case, in words (§77). Appended, never edited.
+  if (b.action === 'note') {
+    const text = String(b.body ?? '').trim().slice(0, 4000);
+    if (!b.id || !text) return Response.json({ ok: false, error: 'An update needs words.' }, { status: 400 });
+    const found = await sql`SELECT 1 FROM claims WHERE account_id = 1 AND id::text = ${String(b.id)}`;
+    if (!found.length) return Response.json({ ok: false, error: 'That claim is gone.' }, { status: 404 });
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'claim', ${String(b.id)}, 'note', ${text}, ${who.email})`;
+    return Response.json({ ok: true });
+  }
 
   const severity = SEVERITY.includes(String(b.severity)) ? b.severity : 'Medium';
   const status = STATUS.includes(String(b.status)) ? b.status : 'Open';
@@ -70,6 +90,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const resolvedOn = b.resolvedOn ?? (closing ? new Date().toISOString().slice(0, 10) : null);
 
   if (b.id) {
+    const before = (await sql`SELECT status FROM claims WHERE account_id = 1 AND id = ${b.id}`)[0] as { status: string } | undefined;
+    if (before && before.status !== status) {
+      await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+                VALUES (1, 'claim', ${String(b.id)}, 'status', ${`${before.status} → ${status}`}, ${who.email})`;
+    }
     const rows = await sql`
       UPDATE claims SET
         unit_id = ${b.unitId || null},
@@ -94,6 +119,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
             ${b.category ?? null}, ${severity}, ${status}, ${b.source ?? null},
             ${b.description ?? null}, ${refund}, ${repair}, ${resolvedOn}, ${who.email})
     RETURNING id`;
+  if (rows[0]?.id != null) {
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'claim', ${String(rows[0].id)}, 'status', ${`Claim opened — ${status}`}, ${who.email})`;
+  }
   return Response.json({ ok: true, id: rows[0]?.id });
 };
 
@@ -104,5 +133,7 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {
   if (!id) return Response.json({ ok: false, error: 'id is required.' }, { status: 400 });
   const sql = db(env);
   const rows = await sql`DELETE FROM claims WHERE account_id = 1 AND id = ${id} RETURNING id`;
+  // Its work stays — a repair was still done — but no longer points at a case that is gone.
+  if (rows.length) await sql`UPDATE todos SET claim_id = NULL WHERE account_id = 1 AND claim_id = ${String(id)}`;
   return Response.json({ ok: rows.length > 0 });
 };

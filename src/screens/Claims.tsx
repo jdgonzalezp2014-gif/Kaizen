@@ -13,6 +13,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getClaims, saveClaim, deleteClaim, type Claim, type UnitRow } from '../api.ts';
 import { money2 } from '../lib/format.ts';
+import { ClaimCase } from '../components/Todos.tsx';
 
 const SEVERITY = ['Low', 'Medium', 'High', 'Critical'];
 const STATUS = ['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'];
@@ -30,9 +31,14 @@ const WEIGHT: Record<string, number> = { Low: 1, Medium: 2, High: 4, Critical: 8
 
 const OPEN = (c: Claim) => c.status === 'Open' || c.status === 'In progress';
 
-export function Claims({ units }: { units: UnitRow[] }) {
+export function Claims({ units, canWork = false }: {
+  units: UnitRow[];
+  /** May see and add work (to-dos, work orders) — the `todos` permission. */
+  canWork?: boolean;
+}) {
   const [claims, setClaims] = useState<Claim[] | null>(null);
   const [editing, setEditing] = useState<Partial<Claim> | null>(null);
+  const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -116,10 +122,15 @@ export function Claims({ units }: { units: UnitRow[] }) {
                 <span className="note">{c.status}</span>
                 <span className="n">{money2(Number(c.refund) + Number(c.repair_cost))}</span>
                 <span>
+                  <button className="link" onClick={() => setOpenId(openId === String(c.id) ? null : String(c.id))}>
+                    {openId === String(c.id) ? 'close' : 'open'}</button>{' '}
                   <button className="link" onClick={() => setEditing(c)}>edit</button>
                 </span>
               </div>
               {c.description && <p className="claim-desc">{c.description}</p>}
+              {openId === String(c.id) && (
+                <ClaimCase claim={c} canWork={canWork} onSaved={() => void load()} />
+              )}
             </div>
           ))}
         </div>

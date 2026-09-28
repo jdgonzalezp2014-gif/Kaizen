@@ -2403,3 +2403,47 @@ if it has one.
 - Permission `todos`, given to every role (admin has everything); an
   admin can take it away per role.
 - Listings are Hostaway listing IDs Kaizen knows (units), checked on save.
+
+## 77. Work, connected — to-dos, work orders and claims on one backbone
+
+The owner asked for the to-do list to connect with claims and repair work
+("órdenes de servicio"), with updates. Inspections stay where they are
+(Operations): they have their own cycle and rules.
+
+**One backbone, not three lists.** The unit of work is the task (`todos`,
+extended in migration 033):
+- **kind** — a to-do, or a 🔧 WORK ORDER: a repair or service job with a
+  vendor, the day it is booked for, an estimate and the actual cost.
+- **status** — one vocabulary for all work: ○ To do → ◐ In progress →
+  ‖ Waiting → ✓ Done (or ✕ Cancelled). The checkbox is Done / To do.
+- **owner** (who it is waiting on), **priority** (normal, ▲ high,
+  ▲▲ urgent — urgent sorts to the top), listings, deadline.
+- **claim** — the case it resolves. The claim is the CASE (what the guest
+  raised, what it cost); its to-dos and work orders are how it gets
+  resolved. `claim_id` is text matched to `claims.id::text`; deleting a
+  claim unlinks its work, it does not delete it (the repair was done).
+
+**Updates** (`work_updates`, one table for tasks and claims): appended,
+never edited. Every status or field change writes its own line on the
+server — so "what happened to this" has an answer even when nobody typed
+one — and anyone can post an update in words. Work added to, closed on, or
+removed from a claim is also written on the CLAIM's timeline, so the case
+reads whole in one place.
+
+**Where it shows**
+- Home: open work, urgent first. Operations → To-do: everything, filtered
+  by kind and listing, closed work of the last 14 days. The board flags a
+  unit's open 🔧 work orders and ☐ to-dos.
+- Claims → open: the claim's work (add a to-do or work order already tied
+  to it and its unit), what the work has cost (actual, plus estimates not
+  yet invoiced) beside the claim's repair cost — one click to use it; the
+  repair cost itself stays a figure a person sets, because a negotiated
+  refund is not a sum of invoices — and the claim's timeline.
+- Permissions: work is `todos`; the claim link and the claim's timeline
+  need `claims` as well.
+- **Claims are in the list too** (for roles with `claims`): open claims
+  sit above the work as ⚑ cases — worst severity first, then the oldest —
+  with their age, how much open work they have ("▲ no work yet" when none),
+  and a ⚑ Claims filter. Opening one shows the same case panel as the
+  Claims screen (`ClaimCase` in Todos.tsx): its work, what it cost, and its
+  timeline. Home's six lines count cases first, then work.

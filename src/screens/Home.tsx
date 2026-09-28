@@ -122,7 +122,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
               <h3>To-do</h3>
               {canOps && <button className="link" onClick={() => onGo('operations:todos')}>All to-dos →</button>}
             </div>
-            <TodoList today={today} compact onMore={canOps ? () => onGo('operations:todos') : undefined} />
+            <TodoList today={today} compact canClaims={canClaims} onMore={canOps ? () => onGo('operations:todos') : undefined} />
           </div>
         )}
         {canOps && (

@@ -1,14 +1,20 @@
 /**
- * /api/todos — the team's to-do list (§76), `todos`.
+ * /api/todos — work (§76, §77): to-dos and work orders, `todos`.
  *
- *   GET                                         open to-dos, and those done in the last 14 days
- *   POST { action: 'create', title, unitIds?, dueOn? }
- *   POST { action: 'update', id, title?, unitIds?, dueOn? }     dueOn: null clears it
- *   POST { action: 'done', id, done }                            tick, or untick
- *   POST { action: 'delete', id }                                stamped, never erased
+ *   GET                         open work, and what closed in the last 14 days
+ *   GET ?claim=ID               every piece of work on one claim, however old
+ *   GET ?updates=ID             one task's timeline
+ *   POST { action: 'create', title, kind?, unitIds?, dueOn?, priority?, assignee?, claimId?,
+ *          vendor?, scheduledOn?, costEstimate?, costActual? }
+ *   POST { action: 'update', id, …any of the above, status? }     null clears a field
+ *   POST { action: 'done', id, done }                             the checkbox
+ *   POST { action: 'note', id, body }                             an update, in words
+ *   POST { action: 'delete', id }                                 stamped, never erased
  *
- * Every read is the table as it is now. Listings are Hostaway listing IDs
- * that Kaizen knows (units); none is fine — not every to-do is about a unit.
+ * Every change of status or of a field writes its own line in the task's
+ * timeline (work_updates), so "what happened to this" has an answer even
+ * when nobody typed one. Work added to a claim is also said on the claim's
+ * timeline — the claim is the case, and its history should read whole.
  */
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
@@ -16,29 +22,68 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
+const KINDS = ['task', 'work_order'];
+const STATUSES = ['open', 'in_progress', 'waiting', 'done', 'cancelled'];
+const PRIORITIES = ['normal', 'high', 'urgent'];
+const STATUS_WORD: Record<string, string> = {
+  open: 'To do', in_progress: 'In progress', waiting: 'Waiting', done: 'Done', cancelled: 'Cancelled'
+};
 
 interface Row {
   id: string; title: string; unit_ids: string[]; due_on: string | null;
   created_at: string | Date; created_by: string | null; done_at: string | Date | null; done_by: string | null;
+  kind: string; status: string; priority: string; assignee: string | null; claim_id: string | null;
+  vendor: string | null; scheduled_on: string | null; cost_estimate: string | null; cost_actual: string | null;
+  updates: number;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
-const out = (r: Row) => ({ id: String(r.id), title: r.title, unitIds: r.unit_ids ?? [], dueOn: r.due_on,
-  createdAt: iso(r.created_at)!, createdBy: r.created_by, doneAt: iso(r.done_at), doneBy: r.done_by });
+const num = (v: string | null) => v == null ? null : Number(v);
+const out = (r: Row) => ({
+  id: String(r.id), title: r.title, unitIds: r.unit_ids ?? [], dueOn: r.due_on,
+  createdAt: iso(r.created_at)!, createdBy: r.created_by, doneAt: iso(r.done_at), doneBy: r.done_by,
+  kind: r.kind, status: r.status, priority: r.priority, assignee: r.assignee, claimId: r.claim_id,
+  vendor: r.vendor, scheduledOn: r.scheduled_on, costEstimate: num(r.cost_estimate), costActual: num(r.cost_actual),
+  updates: Number(r.updates ?? 0)
+});
 
-async function list(sql: SqlFn) {
+async function list(sql: SqlFn, claim?: string) {
   const rows = await sql`
-    SELECT id, title, unit_ids, due_on::text AS due_on, created_at, created_by, done_at, done_by
-      FROM todos WHERE account_id = 1 AND deleted_at IS NULL
-       AND (done_at IS NULL OR done_at > now() - interval '14 days')
-     ORDER BY created_at` as Row[];
+    SELECT t.id, t.title, t.unit_ids, t.due_on::text AS due_on, t.created_at, t.created_by, t.done_at, t.done_by,
+           t.kind, t.status, t.priority, t.assignee, t.claim_id, t.vendor, t.scheduled_on::text AS scheduled_on,
+           t.cost_estimate, t.cost_actual,
+           (SELECT count(*)::int FROM work_updates w
+             WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
+      FROM todos t
+     WHERE t.account_id = 1 AND t.deleted_at IS NULL
+       AND (${claim ?? null}::text IS NULL AND (t.done_at IS NULL OR t.done_at > now() - interval '14 days')
+            OR t.claim_id = ${claim ?? null})
+     ORDER BY t.created_at` as Row[];
   return rows.map(out);
+}
+
+async function note(sql: SqlFn, subject: 'task' | 'claim', id: string, kind: 'note' | 'status' | 'change',
+                    body: string, who: string) {
+  await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+            VALUES (1, ${subject}, ${id}, ${kind}, ${body.slice(0, 4000)}, ${who})`;
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
   if (!who) return unauthorised();
   const sql = db(env) as unknown as SqlFn;
-  return Response.json({ ok: true, todos: await list(sql) }, { headers: { 'Cache-Control': 'no-store' } });
+  const url = new URL(request.url);
+  const updates = url.searchParams.get('updates');
+  if (updates) {
+    if (!ID.test(updates)) return bad('Which task?');
+    const rows = await sql`SELECT id, kind, body, created_by, created_at FROM work_updates
+                            WHERE account_id = 1 AND subject = 'task' AND subject_id = ${updates}
+                            ORDER BY created_at, id`;
+    return Response.json({ ok: true, updates: rows.map((r: any) => ({ id: String(r.id), kind: r.kind, body: r.body,
+      createdBy: r.created_by, createdAt: iso(r.created_at) })) }, { headers: { 'Cache-Control': 'no-store' } });
+  }
+  const claim = url.searchParams.get('claim') ?? undefined;
+  if (claim !== undefined && !ID.test(claim) && !/^[\w-]{1,64}$/.test(claim)) return bad('Which claim?');
+  return Response.json({ ok: true, todos: await list(sql, claim) }, { headers: { 'Cache-Control': 'no-store' } });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -47,9 +92,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
   const b = await request.json().catch(() => ({})) as Record<string, any>;
 
-  const title = typeof b.title === 'string' ? b.title.trim().replace(/\s+/g, ' ').slice(0, 300) : undefined;
-  const dueOn = b.dueOn === null || b.dueOn === '' ? null : typeof b.dueOn === 'string' ? b.dueOn : undefined;
-  if (dueOn && !DAY.test(dueOn)) return bad('A deadline is a date.');
+  // Each field: undefined = not being changed; null = cleared.
+  const text = (v: unknown, max: number) => v === null ? null : typeof v === 'string' ? (v.trim().replace(/\s+/g, ' ').slice(0, max) || null) : undefined;
+  const date = (v: unknown) => v === null || v === '' ? null : typeof v === 'string' ? v : undefined;
+  const money = (v: unknown) => v === null || v === '' ? null : v === undefined ? undefined : Number(v);
+  const f = {
+    title: text(b.title, 300), dueOn: date(b.dueOn), scheduledOn: date(b.scheduledOn),
+    assignee: text(b.assignee, 120), vendor: text(b.vendor, 120),
+    claimId: b.claimId === null || b.claimId === '' ? null : b.claimId === undefined ? undefined : String(b.claimId),
+    costEstimate: money(b.costEstimate), costActual: money(b.costActual),
+    kind: b.kind === undefined ? undefined : String(b.kind), priority: b.priority === undefined ? undefined : String(b.priority),
+    status: b.status === undefined ? undefined : String(b.status)
+  };
+  for (const d of [f.dueOn, f.scheduledOn]) if (d && !DAY.test(d)) return bad('Dates are dates.');
+  for (const m of [f.costEstimate, f.costActual]) if (m != null && (!Number.isFinite(m) || m < 0)) return bad('Costs are amounts, not below zero.');
+  if (f.kind !== undefined && !KINDS.includes(f.kind)) return bad('A to-do or a work order.');
+  if (f.priority !== undefined && !PRIORITIES.includes(f.priority)) return bad('Priority is normal, high or urgent.');
+  if (f.status !== undefined && !STATUSES.includes(f.status)) return bad('Unknown status.');
   let unitIds: string[] | undefined;
   if (Array.isArray(b.unitIds)) {
     unitIds = [...new Set((b.unitIds as unknown[]).map(String))];
@@ -58,36 +117,109 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (unitIds.some(u => !known.has(u))) return bad('One of those listings is not known to Kaizen — sync units in Settings.');
     }
   }
+  let claimLabel = '';
+  if (f.claimId) {
+    const c = (await sql`SELECT c.id, c.category, u.name AS unit FROM claims c LEFT JOIN units u ON u.id = c.unit_id
+                          WHERE c.account_id = 1 AND c.id::text = ${f.claimId}`)[0] as { category: string | null; unit: string | null } | undefined;
+    if (!c) return bad('That claim does not exist.');
+    claimLabel = [c.unit, c.category].filter(Boolean).join(' · ');
+  }
 
   if (b.action === 'create') {
-    if (!title) return bad('A to-do needs words.');
-    await sql`INSERT INTO todos (account_id, title, unit_ids, due_on, created_by)
-              VALUES (1, ${title}, ${unitIds ?? []}, ${dueOn ?? null}, ${who.email})`;
-    return Response.json({ ok: true, todos: await list(sql) });
+    if (!f.title) return bad('Work needs a name.');
+    const status = f.status && !['done', 'cancelled'].includes(f.status) ? f.status : 'open';
+    const row = (await sql`
+      INSERT INTO todos (account_id, title, unit_ids, due_on, created_by, kind, status, priority, assignee,
+                         claim_id, vendor, scheduled_on, cost_estimate, cost_actual)
+      VALUES (1, ${f.title}, ${unitIds ?? []}, ${f.dueOn ?? null}, ${who.email}, ${f.kind ?? 'task'}, ${status},
+              ${f.priority ?? 'normal'}, ${f.assignee ?? null}, ${f.claimId ?? null}, ${f.vendor ?? null},
+              ${f.scheduledOn ?? null}, ${f.costEstimate ?? null}, ${f.costActual ?? null})
+      RETURNING id`)[0] as { id: string };
+    const what = (f.kind ?? 'task') === 'work_order' ? 'Work order' : 'To-do';
+    await note(sql, 'task', String(row.id), 'status', `${what} created${claimLabel ? ` for the claim ${claimLabel}` : ''}.`, who.email);
+    if (f.claimId) await note(sql, 'claim', f.claimId, 'change', `${what} added: ${f.title}`, who.email);
+    return Response.json({ ok: true, id: String(row.id), todos: await list(sql, b.claimScope ? f.claimId ?? undefined : undefined) });
   }
 
   const id = String(b.id ?? '');
-  if (!ID.test(id)) return bad('Which to-do?');
-  const exists = await sql`SELECT 1 FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`;
-  if (!exists.length) return Response.json({ ok: false, message: 'That to-do is gone — someone removed it.' }, { status: 404 });
+  if (!ID.test(id)) return bad('Which task?');
+  const before = (await sql`SELECT title, status, priority, assignee, due_on::text AS due_on, claim_id, vendor,
+                                   scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids
+                              FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`)[0] as Record<string, any> | undefined;
+  if (!before) return Response.json({ ok: false, message: 'That task is gone — someone removed it.' }, { status: 404 });
+  const scope = b.claimScope ? String(b.claimScope) : undefined;
 
-  if (b.action === 'update') {
-    if (title === '') return bad('A to-do needs words.');
-    await sql`UPDATE todos SET
-                title = COALESCE(${title ?? null}, title),
-                unit_ids = COALESCE(${unitIds ?? null}::text[], unit_ids),
-                due_on = CASE WHEN ${dueOn !== undefined} THEN ${dueOn ?? null}::date ELSE due_on END,
-                updated_at = now()
-              WHERE account_id = 1 AND id = ${id}`;
-  } else if (b.action === 'done') {
-    const done = b.done !== false;
-    await sql`UPDATE todos SET done_at = ${done ? new Date().toISOString() : null},
-                               done_by = ${done ? who.email : null}, updated_at = now()
-              WHERE account_id = 1 AND id = ${id}`;
-  } else if (b.action === 'delete') {
+  if (b.action === 'note') {
+    const body = typeof b.body === 'string' ? b.body.trim().slice(0, 4000) : '';
+    if (!body) return bad('An update needs words.');
+    await note(sql, 'task', id, 'note', body, who.email);
+    return Response.json({ ok: true, todos: await list(sql, scope) });
+  }
+
+  if (b.action === 'delete') {
     await sql`UPDATE todos SET deleted_at = now(), deleted_by = ${who.email} WHERE account_id = 1 AND id = ${id}`;
-  } else return bad('Unknown action.');
-  return Response.json({ ok: true, todos: await list(sql) });
+    if (before.claim_id) await note(sql, 'claim', before.claim_id, 'change', `Removed: ${before.title}`, who.email);
+    return Response.json({ ok: true, todos: await list(sql, scope) });
+  }
+
+  // update / done — work out the new status, then write what changed.
+  let status = f.status;
+  if (b.action === 'done') status = b.done === false ? 'open' : 'done';
+  else if (b.action !== 'update') return bad('Unknown action.');
+  if (b.action === 'update' && f.title === null) return bad('Work needs a name.');
+
+  const closedNow = status !== undefined && ['done', 'cancelled'].includes(status);
+  await sql`UPDATE todos SET
+      title         = COALESCE(${f.title ?? null}, title),
+      unit_ids      = COALESCE(${unitIds ?? null}::text[], unit_ids),
+      due_on        = CASE WHEN ${f.dueOn !== undefined} THEN ${f.dueOn ?? null}::date ELSE due_on END,
+      scheduled_on  = CASE WHEN ${f.scheduledOn !== undefined} THEN ${f.scheduledOn ?? null}::date ELSE scheduled_on END,
+      assignee      = CASE WHEN ${f.assignee !== undefined} THEN ${f.assignee ?? null} ELSE assignee END,
+      vendor        = CASE WHEN ${f.vendor !== undefined} THEN ${f.vendor ?? null} ELSE vendor END,
+      claim_id      = CASE WHEN ${f.claimId !== undefined} THEN ${f.claimId ?? null} ELSE claim_id END,
+      cost_estimate = CASE WHEN ${f.costEstimate !== undefined} THEN ${f.costEstimate ?? null}::numeric ELSE cost_estimate END,
+      cost_actual   = CASE WHEN ${f.costActual !== undefined} THEN ${f.costActual ?? null}::numeric ELSE cost_actual END,
+      kind          = COALESCE(${f.kind ?? null}, kind),
+      priority      = COALESCE(${f.priority ?? null}, priority),
+      status        = COALESCE(${status ?? null}, status),
+      done_at       = CASE WHEN ${status === undefined} THEN done_at WHEN ${closedNow} THEN COALESCE(done_at, now()) ELSE NULL END,
+      done_by       = CASE WHEN ${status === undefined} THEN done_by WHEN ${closedNow} THEN COALESCE(done_by, ${who.email}) ELSE NULL END,
+      updated_at    = now()
+    WHERE account_id = 1 AND id = ${id}`;
+
+  // The timeline, in words.
+  if (status !== undefined && status !== before.status) {
+    await note(sql, 'task', id, 'status', `${STATUS_WORD[before.status]} → ${STATUS_WORD[status]}`, who.email);
+    if (before.claim_id && ['done', 'cancelled'].includes(status)) {
+      await note(sql, 'claim', before.claim_id, 'change', `${STATUS_WORD[status]}: ${before.title}`, who.email);
+    }
+  }
+  const changed: string[] = [];
+  const cmp = (label: string, was: unknown, now: unknown, show = (v: unknown) => v == null || v === '' ? '—' : String(v)) => {
+    if (now === undefined || String(was ?? '') === String(now ?? '')) return;
+    changed.push(`${label}: ${show(was)} → ${show(now)}`);
+  };
+  cmp('Title', before.title, f.title ?? undefined);
+  cmp('Deadline', before.due_on, f.dueOn);
+  cmp('Scheduled', before.scheduled_on, f.scheduledOn);
+  cmp('Owner', before.assignee, f.assignee);
+  cmp('Vendor', before.vendor, f.vendor);
+  cmp('Priority', before.priority, f.priority);
+  cmp('Kind', before.kind, f.kind);
+  cmp('Estimate', before.cost_estimate == null ? null : Number(before.cost_estimate), f.costEstimate, v => v == null ? '—' : `$${Number(v).toFixed(2)}`);
+  cmp('Actual cost', before.cost_actual == null ? null : Number(before.cost_actual), f.costActual, v => v == null ? '—' : `$${Number(v).toFixed(2)}`);
+  if (f.claimId !== undefined && String(before.claim_id ?? '') !== String(f.claimId ?? '')) {
+    changed.push(f.claimId ? `Linked to the claim ${claimLabel}` : 'Unlinked from its claim');
+    if (f.claimId) await note(sql, 'claim', f.claimId, 'change', `Linked: ${f.title ?? before.title}`, who.email);
+  }
+  const same = (a: string[], c: string[]) => [...a].sort((x, y) => x.localeCompare(y)).join() === [...c].sort((x, y) => x.localeCompare(y)).join();
+  if (unitIds && !same(unitIds, before.unit_ids ?? [])) {
+    const names = unitIds.length ? (await sql`SELECT name FROM units WHERE id = ANY(${unitIds}) ORDER BY name`).map((r: any) => r.name).join(', ') : 'none';
+    changed.push(`Listings: ${names}`);
+  }
+  if (changed.length) await note(sql, 'task', id, 'change', changed.join(' · '), who.email);
+
+  return Response.json({ ok: true, todos: await list(sql, scope) });
 };
 
 function bad(message: string): Response {

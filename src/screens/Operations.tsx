@@ -154,7 +154,7 @@ export function Operations({ permissions, initialView }: { permissions: string[]
 
       <div className={busy && data ? 'is-stale' : undefined}>
         {data && view === 'board' && <Board data={data} patch={patch} />}
-        {view === 'todos' && canTodos && <TodoList today={data?.today ?? todayIn('America/New_York')} />}
+        {view === 'todos' && canTodos && <TodoList today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} />}
         {view === 'calendar' && <CleaningsMonth />}
         {data && view === 'cleaners' && <ByCleaner data={data} />}
         {data && view === 'inspections' && <Inspections data={data} reload={() => load()} />}
@@ -405,8 +405,17 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos 
         {r.inspection.key === 'req' && <span className="ops-flag req" title={r.inspection.reason}>🔍 required</span>}
         {r.inspection.key === 'due' && <span className="ops-flag due" title={r.inspection.reason}>🔍 monthly</span>}
         {r.inspection.key === 'ok' && <span className="ops-flag ok" title={r.inspection.reason}>✓ inspected</span>}
-        {!!todos?.length && <span className="ops-flag due" title={todos.map(t => `☐ ${t.title}`).join('\n')}>
-          ☐ {todos.length} to-do{todos.length === 1 ? '' : 's'}</span>}
+        {(() => {
+          // Open work on this unit: repairs said apart from to-dos, the titles on hover.
+          const wo = (todos ?? []).filter(t => t.kind === 'work_order');
+          const td = (todos ?? []).filter(t => t.kind !== 'work_order');
+          return <>
+            {wo.length > 0 && <span className="ops-flag urgent" title={wo.map(t => `🔧 ${t.title}`).join('\n')}>
+              🔧 {wo.length} work order{wo.length === 1 ? '' : 's'}</span>}
+            {td.length > 0 && <span className="ops-flag due" title={td.map(t => `☐ ${t.title}`).join('\n')}>
+              ☐ {td.length} to-do{td.length === 1 ? '' : 's'}</span>}
+          </>;
+        })()}
         {docs !== undefined && (docs === null ? <span className="ops-flag ok">… documents</span> : <>
           <span className={`ops-flag ${docs.id.length ? 'ok' : 'missing'}`}>{docs.id.length ? '✓' : '○'} ID</span>
           <span className={`ops-flag ${docs.agreement.length ? 'ok' : 'missing'}`}>{docs.agreement.length ? '✓' : '○'} agreement</span>

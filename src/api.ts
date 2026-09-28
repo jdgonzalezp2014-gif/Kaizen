@@ -462,9 +462,19 @@ export const driveAction = (body: Record<string, unknown>) =>
 
 export type { Todo } from './lib/todos.ts';
 type TodosResult = { ok: true; todos: import('./lib/todos.ts').Todo[] } | { ok: false; message?: string };
-export const getTodos = () => call<TodosResult>('/api/todos');
+export const getTodos = (claimId?: string) =>
+  call<TodosResult>(`/api/todos${claimId ? `?claim=${encodeURIComponent(claimId)}` : ''}`);
 export const todoAction = (body: Record<string, unknown>) =>
-  call<TodosResult>('/api/todos', { method: 'POST', body: JSON.stringify(body) });
+  call<TodosResult & { id?: string }>('/api/todos', { method: 'POST', body: JSON.stringify(body) });
+
+/* ── updates — the timeline of a task or a claim (§77) ──────────────── */
+
+export type { WorkUpdate } from './lib/todos.ts';
+type UpdatesResult = { ok: true; updates: import('./lib/todos.ts').WorkUpdate[] } | { ok: false; message?: string; error?: string };
+export const getTaskUpdates = (id: string) => call<UpdatesResult>(`/api/todos?updates=${encodeURIComponent(id)}`);
+export const getClaimUpdates = (id: string) => call<UpdatesResult>(`/api/claims?updates=${encodeURIComponent(id)}`);
+export const postClaimNote = (id: string, body: string) =>
+  call<{ ok: boolean; error?: string }>('/api/claims', { method: 'POST', body: JSON.stringify({ action: 'note', id, body }) });
 
 /* ── guest documents (§73) ────────────────────────────────────────── */
 
