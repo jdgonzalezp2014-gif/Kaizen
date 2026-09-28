@@ -22,7 +22,8 @@ import {
   getOperations, saveTurnover, logInspection, scheduleInspections, cancelInspection,
   getOpsSettings, saveOpsSettings, cutoverImport, can, getGuestDocs, syncAgreement, uploadGuestDoc, getUnits, getTodos,
   type Todo,
-  type StayDocs, type OperationsResponse, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
+  type StayDocs, type OperationsResponse, type ManualClean, type ManualCleanKind, type StayOnDay,
+  getStaysOnDay, manualClean, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
 } from '../api.ts';
 import {
   BEDROOM_SIZES, DEFAULT_CHECKIN_TIME, DEFAULT_CHECKOUT_TIME, INSPECTION_RESULTS,
@@ -153,7 +154,7 @@ export function Operations({ permissions, initialView }: { permissions: string[]
       {data && <ModeBanner data={data} onSetup={() => setView('setup')} />}
 
       <div className={busy && data ? 'is-stale' : undefined}>
-        {data && view === 'board' && <Board data={data} patch={patch} />}
+        {data && view === 'board' && <Board data={data} patch={patch} reload={() => load()} />}
         {view === 'todos' && canTodos && <TodoList today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} />}
         {view === 'calendar' && <CleaningsMonth />}
         {data && view === 'cleaners' && <ByCleaner data={data} />}
@@ -209,7 +210,17 @@ function needsAttention(r: BoardRow): boolean {
     r.inspection.key === 'req' || r.inspection.key === 'due' || r.urgency === 'turnover';
 }
 
-function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, k: 'in' | 'out', f: (r: BoardRow) => BoardRow) => void }) {
+function Board({ data, patch, reload }: {
+  data: OperationsResponse; patch: (id: string, k: 'in' | 'out', f: (r: BoardRow) => BoardRow) => void; reload: () => void;
+}) {
+  const canEdit = can(data.permissions, 'operations.edit');
+  // A manual clean being added (§79): empty, or started from a stay's own row.
+  const [addingClean, setAddingClean] = useState<null | { unitId?: string; resId?: string; kind?: ManualCleanKind }>(null);
+  const manualBy = useMemo(() => {
+    const m = new Map<string, ManualClean[]>();
+    for (const c of data.manualCleans ?? []) m.set(c.date, [...(m.get(c.date) ?? []), c]);
+    return m;
+  }, [data.manualCleans]);
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<string | null>(null);
@@ -293,8 +304,14 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
           <button key={k} className={filter === k ? 'chip active' : 'chip'} onClick={() => setFilter(k)}>{label}</button>
         ))}
         <input className="date-in" placeholder="Unit, guest or cleaner" value={q} onChange={e => setQ(e.target.value)} />
-        {can(data.permissions, 'operations.edit') && <span className="note right">click a row to change it</span>}
+        {canEdit && <button className="small secondary" onClick={() => setAddingClean({})}>+ Manual clean</button>}
+        {canEdit && <span className="note right">click a row to change it</span>}
       </div>
+
+      {addingClean && (
+        <ManualCleanForm data={data} initial={addingClean} onCancel={() => setAddingClean(null)}
+                         onDone={() => { setAddingClean(null); reload(); }} />
+      )}
 
       <div className="grid-scroll">
         <table className="units compact ops-board">
@@ -304,16 +321,19 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
           </thead>
           {days.map(d => {
             const dayRows = rows.filter(r => r.date === d);
-            if (!dayRows.length && (filter !== 'all' || q)) return null;
+            const manual = (manualBy.get(d) ?? []).filter(c => !q || `${c.unit} ${c.guest ?? ''} ${c.cleaner ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()));
+            if (!dayRows.length && !manual.length && (filter !== 'all' || q)) return null;
             return (
               <tbody key={d}>
                 <tr className="ops-day">
                   <td colSpan={9}>
                     {dayLabel(d)}{d === data.today ? ' · today' : ''}{isWeekend(d) ? ' · weekend' : ''}
-                    <span className="sub-n"> {dayRows.filter(r => r.kind === 'out').length} out · {dayRows.filter(r => r.kind === 'in').length} in</span>
+                    <span className="sub-n"> {dayRows.filter(r => r.kind === 'out').length} out · {dayRows.filter(r => r.kind === 'in').length} in
+                      {manual.length > 0 && ` · ${manual.length} manual clean${manual.length === 1 ? '' : 's'}`}</span>
                   </td>
                 </tr>
-                {!dayRows.length && <tr><td colSpan={9} className="note ops-quiet">no arrivals or departures</td></tr>}
+                {!dayRows.length && !manual.length && <tr><td colSpan={9} className="note ops-quiet">no arrivals or departures</td></tr>}
+                {manual.map(c => <ManualLine key={c.key} c={c} canEdit={canEdit} onChanged={reload} />)}
                 {dayRows.map(r => {
                   const key = `${r.resId}-${r.kind}`;
                   return (
@@ -328,6 +348,7 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
                       {open === key && (
                         <tr className="ops-edit-row"><td colSpan={9}>
                           <Editor r={r} data={data} docs={canDocs && r.kind === 'in' ? docs[r.resId] : undefined}
+                                  onManualClean={kind => setAddingClean({ unitId: r.unitId, resId: r.resId, kind })}
                                   onDocs={d => setDocs(m => ({ ...m, [r.resId]: d }))} onSaved={(set, note) => {
                             patch(r.resId, r.kind, row => {
                               const n = set ? applyEdit(row, set, data.roster, data.rules) : row;
@@ -427,8 +448,10 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos 
 }
 
 /** One stay's controls, opened in place under its row. */
-function Editor({ r, data, onSaved, docs, onDocs }: {
+function Editor({ r, data, onSaved, docs, onDocs, onManualClean }: {
   r: BoardRow; data: OperationsResponse; onSaved: (set: TurnoverSet | null, note?: string) => void;
+  /** Start a manual clean for this stay (§79): the guest left early, or a mid-stay clean. */
+  onManualClean: (kind: ManualCleanKind) => void;
   /** Present only for an arrival, for a role with guests.documents. */
   docs: StayDocs | undefined; onDocs: (d: StayDocs) => void;
 }) {
@@ -509,7 +532,147 @@ function Editor({ r, data, onSaved, docs, onDocs }: {
         <button className="small" disabled={busy || note === r.note} onClick={() => void send(null, note)}>Save note</button>
         {msg && <span className="note">{msg}</span>}
       </div>
+      {out && (
+        <div className="button-row ops-manual-actions">
+          <span className="note">Cleaned outside the checkout?</span>
+          <button className="link tiny" onClick={() => onManualClean('early_departure')}
+                  title="The unit is cleaned now; this checkout's clean becomes “no clean needed”">Guest left early…</button>
+          <button className="link tiny" onClick={() => onManualClean('mid_stay')}>+ Mid-stay clean</button>
+        </div>
+      )}
       {!out && can(data.permissions, 'guests.documents') && <GuestDocs r={r} docs={docs} onDocs={onDocs} required={(data.guestDocUnits ?? []).includes(r.unitId)} />}
+    </div>
+  );
+}
+
+/* ── manual cleans (§79) ──────────────────────────────────────────── */
+
+const MANUAL_WORD: Record<ManualCleanKind, string> = {
+  early_departure: 'Guest left early', mid_stay: 'Mid-stay clean', extra: 'Extra clean'
+};
+
+/** A manual clean on its day: what, who, what it pays — and a way to undo it. */
+function ManualLine({ c, canEdit, onChanged }: { c: ManualClean; canEdit: boolean; onChanged: () => void }) {
+  const [confirm, setConfirm] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const cancel = async () => {
+    setBusy(true); setErr('');
+    const r = await manualClean({ action: 'cancel', key: c.key }).catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
+    if (r.ok) onChanged(); else setErr(r.message ?? 'Not cancelled.');
+  };
+  return (
+    <tr className="ops-line ops-manual">
+      <td><span className="ops-kind clean">CLEAN</span></td>
+      <td><b>{c.unit}</b></td>
+      <td>{MANUAL_WORD[c.kind]}{c.guest ? <div className="sub-n">{c.guest}</div> : null}</td>
+      <td></td>
+      <td className="sub-n">{c.kind === 'early_departure' ? 'checkout clean → not needed' : ''}</td>
+      <td>{c.cleaner ?? <span className="breach">▲ unassigned</span>}</td>
+      <td className="n">{c.price != null ? money2(c.price) : c.cleaner ? <span className="note">not priced</span> : null}</td>
+      <td>{c.deep && <span className="ops-flag deep">🧽 deep</span>}</td>
+      <td className="ops-note">
+        {c.note}
+        {canEdit && (!confirm
+          ? <div><button className="link tiny danger" onClick={() => setConfirm(true)}>cancel…</button></div>
+          : <div><span className="note">Cancel this clean{c.kind === 'early_departure' ? ' (the checkout clean comes back)' : ''}? </span>
+              <button className="small danger" disabled={busy} onClick={() => void cancel()}>Cancel it</button>{' '}
+              <button className="link tiny" onClick={() => setConfirm(false)}>keep</button></div>)}
+        {err && <div className="breach">▲ {err}</div>}
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * Add a manual clean: a unit, a day, why, which stay, who. For "guest left
+ * early" the stay is required — its checkout clean is what becomes "no
+ * clean needed"; for a mid-stay clean it is optional; an extra clean has
+ * none. The stays are asked of Hostaway for that unit and day.
+ */
+function ManualCleanForm({ data, initial, onDone, onCancel }: {
+  data: OperationsResponse; initial: { unitId?: string; resId?: string; kind?: ManualCleanKind };
+  onDone: () => void; onCancel: () => void;
+}) {
+  const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
+  const [unitId, setUnitId] = useState(initial.unitId ?? '');
+  const [date, setDate] = useState(data.today);
+  const [kind, setKind] = useState<ManualCleanKind>(initial.kind ?? 'mid_stay');
+  const [stays, setStays] = useState<StayOnDay[] | null>(null);
+  const [resId, setResId] = useState(initial.resId ?? '');
+  const [cleaner, setCleaner] = useState('');
+  const [deep, setDeep] = useState(false);
+  const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const active = data.roster.filter(c => c.active);
+
+  useEffect(() => {
+    void getUnits().then(r => setUnits((r.units ?? []).filter(u => u.active).map(u => ({ id: u.id, name: u.name }))
+      .sort((a, b) => a.name.localeCompare(b.name))));
+  }, []);
+  // Who was staying in that unit that day — asked of Hostaway, now.
+  useEffect(() => {
+    if (!unitId || kind === 'extra') { setStays(null); return; }
+    setStays(null);
+    void getStaysOnDay(unitId, date).then(r => {
+      if (!r.ok) { setErr(r.message ?? 'Could not ask Hostaway.'); setStays([]); return; }
+      setStays(r.stays);
+      setResId(prev => r.stays.some(s => s.resId === prev) ? prev : r.stays.length === 1 ? r.stays[0]!.resId : '');
+    });
+  }, [unitId, date, kind]);
+
+  const needsStay = kind === 'early_departure';
+  const save = async () => {
+    setBusy(true); setErr('');
+    const r = await manualClean({ action: 'create', unitId, date, kind, reservationId: kind === 'extra' ? null : resId || null,
+                                  cleaner: cleaner || null, deep, note: note || null })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
+    if (r.ok) onDone(); else setErr(r.message ?? 'Not saved.');
+  };
+
+  return (
+    <div className="card ops-manual-form">
+      <h3>Manual clean</h3>
+      <div className="todo-kind" role="group" aria-label="Why">
+        {(['early_departure', 'mid_stay', 'extra'] as ManualCleanKind[]).map(k => (
+          <button key={k} type="button" className={kind === k ? 'chip active' : 'chip'} onClick={() => setKind(k)}>{MANUAL_WORD[k]}</button>
+        ))}
+      </div>
+      {kind === 'early_departure' && <p className="note">The unit is cleaned on this day, and the stay's checkout clean becomes
+        “no clean needed” — it is not cleaned twice. Cancelling this puts the checkout clean back.</p>}
+      <div className="row">
+        <label>Unit
+          <select value={unitId} onChange={e => { setUnitId(e.target.value); setResId(''); }}>
+            <option value="">Choose…</option>
+            {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select></label>
+        <label>Day cleaned
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
+        {kind !== 'extra' && (
+          <label>Stay {needsStay ? '' : '(optional)'}
+            <select value={resId} disabled={!unitId || stays === null} onChange={e => setResId(e.target.value)}>
+              <option value="">{!unitId ? 'Choose a unit first' : stays === null ? 'Asking Hostaway…' : stays.length ? (needsStay ? 'Which stay?' : 'None') : 'No stay that day'}</option>
+              {(stays ?? []).map(s => <option key={s.resId} value={s.resId}>{s.guest || 'Guest'} · {short(s.arrival)} → {short(s.departure)}</option>)}
+            </select></label>
+        )}
+        <label>Cleaner
+          <select value={cleaner} onChange={e => setCleaner(e.target.value)}>
+            <option value="">Not assigned yet</option>
+            {active.map(c => <option key={c.name} value={c.name}>{c.name} — {c.tier}</option>)}
+          </select></label>
+        <label className="check"><input type="checkbox" checked={deep} onChange={e => setDeep(e.target.checked)} /> Deep clean</label>
+      </div>
+      <label>Note <input value={note} maxLength={500} placeholder="e.g. guest checked out at 7am, left keys in the lockbox"
+                         onChange={e => setNote(e.target.value)} /></label>
+      {err && <p className="banner warn">▲ {err}</p>}
+      <div className="button-row">
+        <button disabled={busy || !unitId || !date || (needsStay && !resId)} onClick={() => void save()}>{busy ? 'Saving…' : 'Add clean'}</button>
+        <button className="secondary" onClick={onCancel}>Cancel</button>
+        <span className="note">Paid at the cleaner's rate for the unit's size; it counts in Costs and the calendar like any clean.</span>
+      </div>
     </div>
   );
 }

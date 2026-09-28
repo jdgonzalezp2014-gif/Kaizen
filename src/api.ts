@@ -303,11 +303,27 @@ export interface OperationsResponse {
   rules: OpsRules; extraInspectors: string[]; roster: Cleaner[];
   /** Units whose guests must have an ID and agreement on file (§73), by listing ID. */
   guestDocUnits: string[];
+  /** Cleans no checkout scheduled (§79), in the window. */
+  manualCleans: ManualClean[];
   sheet: { ok: boolean; problem: string | null; warning: string | null } | null;
   recorded: number | null; tookMs: number;
   error?: string; message?: string;
 }
 type Fail = { ok: false; error?: string; message?: string };
+
+export type ManualCleanKind = 'early_departure' | 'mid_stay' | 'extra';
+export interface ManualClean {
+  key: string; unitId: string | null; unit: string; date: string; cleaner: string | null; assignment: string;
+  price: number | null; deep: boolean; kind: ManualCleanKind; resId: string | null; guest: string | null;
+  note: string | null; by: string | null;
+}
+export interface StayOnDay { resId: string; guest: string; arrival: string; departure: string; channel: string }
+export const getStaysOnDay = (unitId: string, date: string) =>
+  call<{ ok: true; stays: StayOnDay[] } | Fail>(`/api/manual-clean?unitId=${encodeURIComponent(unitId)}&date=${date}`);
+export const manualClean = (body: Record<string, unknown>) =>
+  call<{ ok: true; key?: string; price?: number | null; restored?: boolean } | Fail>('/api/manual-clean', {
+    method: 'POST', body: JSON.stringify(body)
+  });
 
 export const getOperations = (days = 10, refresh = false) =>
   call<OperationsResponse>(`/api/operations?days=${days}${refresh ? '&refresh=1' : ''}`);

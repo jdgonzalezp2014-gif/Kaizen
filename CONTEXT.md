@@ -2487,3 +2487,32 @@ it might just be "send a message to someone". Migration 034.
   no deadline) and listing. With no filter, sub-tasks sit under their
   task; with a filter the list is flat and each sub-task says whose it is
   (`matchesFilter`, `childrenBy`, `progress` in src/lib/todos.ts, tested).
+
+## 79. Manual cleans — early departures and mid-stay cleans
+
+The owner (2026-09-28): some cleans are not scheduled by any checkout — a
+guest leaves early, or asks for a clean mid-stay. They must be done and
+paid; and when the guest left early, the clean their checkout would
+schedule later must be "not needed", or the unit is cleaned (and paid)
+twice. Migration 035.
+
+- **In the record.** A manual clean is a row in `cleanings` keyed
+  `MAN-<n>`, `source = 'manual'`, with `kind` (early_departure, mid_stay,
+  extra), `for_reservation` and `created_by`. It is paid at the cleaner's
+  rate for the unit's size (rateFor), and the calendar, Costs and the
+  per-unit rate count it like any clean. The record's passes only touch
+  reservation keys (digits), so they never move or void a manual row.
+- **Early departure.** The stay is required and checked with Hostaway (it
+  must be in that unit; the day must be before its checkout). Its checkout
+  clean becomes "no clean needed" as a person's decision
+  (`turnover_overrides`); if that checkout is already in the record — its
+  day passed, so no pass will rewrite it — the row is corrected directly.
+  A line is added to the checkout note (kept with what was there); in live
+  mode the record and the Host Note follow at once.
+- **Undo.** Cancelling voids the manual row (`cancelled by …`), puts the
+  checkout clean back to the rule (a past one back to "unassigned", to be
+  reassigned by a person), and takes the line out of the checkout note.
+- **Where.** Operations → "+ Manual clean", or from a departure's own row:
+  "Guest left early…" / "+ Mid-stay clean". The stays for that unit and day
+  are asked of Hostaway. Manual cleans show on their day in the board as
+  CLEAN rows. Permission: operations.edit.

@@ -37,7 +37,8 @@ export const PERMISSIONS: Permission[] = [
     // The cleanings calendar lives in Operations; it reads the record.
     { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'operations.edit', label: 'Operations — assign cleaners, times, notes, log inspections', routes: [
-    { path: '/api/turnover', methods: ['POST'] }, { path: '/api/inspections', methods: ['POST', 'DELETE'] }] },
+    { path: '/api/turnover', methods: ['POST'] }, { path: '/api/inspections', methods: ['POST', 'DELETE'] },
+    { path: '/api/manual-clean', methods: ['GET', 'POST'] }] },
   { key: 'operations.setup', label: 'Operations — roster, pay, rules and the live switch', routes: [
     { path: '/api/ops-settings', methods: ['GET', 'POST'] }] },
   { key: 'todos', label: 'To-do list — see, add and tick off the team\'s to-dos', routes: [

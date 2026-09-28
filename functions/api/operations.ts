@@ -48,14 +48,23 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   // Newest first, bounded: a log is read from the top.
-  const [noteLog, pushes] = await Promise.all([
+  const [noteLog, pushes, manualCleans] = await Promise.all([
     sql`SELECT n.reservation_id AS "resId", n.kind, n.unit_name AS unit, n.guest,
                n.check_in::text AS "checkIn", n.notes, n.source, n.created_by AS "by",
                to_char(n.created_at AT TIME ZONE ${OPS_TZ}, 'YYYY-MM-DD HH24:MI') AS "loggedAt"
           FROM stay_notes n WHERE n.account_id = 1 ORDER BY n.id DESC LIMIT 400`,
     sql`SELECT reservation_id AS "resId", outcome, detail,
                to_char(at AT TIME ZONE ${OPS_TZ}, 'YYYY-MM-DD HH24:MI') AS at
-          FROM host_note_pushes WHERE account_id = 1 ORDER BY id DESC LIMIT 60`
+          FROM host_note_pushes WHERE account_id = 1 ORDER BY id DESC LIMIT 60`,
+    // Manual cleans (§79) in the board's window, from the last week on: an
+    // early departure recorded after the fact still shows where it happened.
+    sql`SELECT key, unit_id AS "unitId", unit_name AS unit, checkout_on::text AS date, cleaner, assignment,
+               price::float AS price, deep, kind, for_reservation AS "resId", guest, reservation_note AS note,
+               created_by AS "by"
+          FROM cleanings
+         WHERE account_id = 1 AND key LIKE 'MAN-%' AND void_reason IS NULL
+           AND checkout_on >= ${s.today}::date - 7 AND checkout_on <= ${s.end}::date
+         ORDER BY checkout_on, key`
   ]);
 
   // Booking values are what the portfolio earns (§49): only for roles that hold `money`.
@@ -68,7 +77,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     rows: s.rows, summary: s.summary, panel: s.panel,
     inspectionLog: { done: s.inspections.done.slice(0, 200), scheduled: s.inspections.scheduled },
     noteLog, pushes,
-    rules: s.rules, extraInspectors: s.extraInspectors, guestDocUnits: s.guestDocUnits,
+    rules: s.rules, extraInspectors: s.extraInspectors, guestDocUnits: s.guestDocUnits, manualCleans,
     // Pay per size is cost data ops already record; names and tiers are
     // what the edit menus need.
     roster: s.roster,
