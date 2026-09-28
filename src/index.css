@@ -1344,3 +1344,8 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .done-outcome.o-removed { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 40%, transparent); }
 .done-row.o-removed .todo-title { text-decoration: line-through; color: var(--muted); }
 .todo-desc-full { white-space: pre-wrap; font-size: 13px; margin: 4px 0 8px; }
+
+/* §88: the claim's case on the platform. */
+.case-link { font-size: 11.5px; font-weight: 600; color: var(--series-1); white-space: nowrap; }
+.claim-caselink { grid-column: span 2; }
+.quick-caselink { flex: 1 1 260px; font-size: 12.5px; padding: 4px 8px; }

@@ -12,3 +12,17 @@ export const CLAIM_STATUS = ['Open', 'In progress', 'Resolved', 'Refunded', 'Dis
 export const CLAIM_CATEGORIES = ['Late checkout', 'Early check-in', 'Cleanliness', 'Maintenance', 'Noise', 'Access',
                                  'Amenity', 'Wifi', 'Damage', 'Safety', 'Other'];
 export const CLAIM_SOURCES = ['Airbnb', 'Booking.com', 'Vrbo', 'Expedia', 'Direct', 'In person'];
+
+/** "↗ Airbnb case" — the platform a case link points at, by its host (§88). */
+export function caseHost(url: string | null | undefined): string | null {
+  if (!url) return null;
+  let host: string;
+  try { host = new URL(url).hostname.replace(/^www\./, ''); } catch { return null; }
+  if (/airbnb\./.test(host)) return 'Airbnb';
+  if (/booking\.com$/.test(host)) return 'Booking.com';
+  if (/vrbo\.|homeaway\./.test(host)) return 'Vrbo';
+  if (/expedia\./.test(host)) return 'Expedia';
+  return host;
+}
+/** A case link as typed: https only, trimmed — or nothing. */
+export const cleanCaseUrl = (v: string) => { const t = v.trim(); return /^https:\/\/\S+$/.test(t) ? t : null; };

@@ -32,7 +32,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const claims = await sql`
     SELECT c.id, c.unit_id, c.occurred_on, c.category, c.severity, c.status,
            c.source, c.description, c.refund, c.repair_cost, c.resolved_on,
-           c.created_by, c.created_at, u.name AS unit_name, c.reservation_id, c.reservation_label
+           c.created_by, c.created_at, u.name AS unit_name, c.reservation_id, c.reservation_label, c.case_url
       FROM claims c
       LEFT JOIN units u ON u.account_id = c.account_id AND u.id = c.unit_id
      WHERE c.account_id = 1 AND c.deleted_at IS NULL
@@ -60,6 +60,8 @@ interface Body {
   /** The stay it is about (§84), from the stay picker. */
   reservationId?: string | null;
   reservationLabel?: string | null;
+  /** The case on the platform (§88): https only. */
+  caseUrl?: string | null;
 }
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -92,6 +94,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const resId = b.reservationId && /^\d{1,20}$/.test(String(b.reservationId)) ? String(b.reservationId) : null;
   const resLabel = resId && typeof b.reservationLabel === 'string' ? b.reservationLabel.trim().slice(0, 160) || null : null;
+  const caseUrl = typeof b.caseUrl === 'string' && /^https:\/\/\S+$/.test(b.caseUrl.trim()) ? b.caseUrl.trim().slice(0, 1000) : null;
+  if (typeof b.caseUrl === 'string' && b.caseUrl.trim() && !caseUrl) {
+    return Response.json({ ok: false, error: 'The case link is the https:// address of the case.' }, { status: 400 });
+  }
   const severity = SEVERITY.includes(String(b.severity)) ? b.severity : 'Medium';
   const status = STATUS.includes(String(b.status)) ? b.status : 'Open';
   const refund = Number(b.refund) || 0;
@@ -124,7 +130,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         -- The stay changes only when it is sent: a form that does not show
         -- it must not clear it.
         reservation_id = CASE WHEN ${b.reservationId !== undefined} THEN ${resId} ELSE reservation_id END,
-        reservation_label = CASE WHEN ${b.reservationId !== undefined} THEN ${resLabel} ELSE reservation_label END
+        reservation_label = CASE WHEN ${b.reservationId !== undefined} THEN ${resLabel} ELSE reservation_label END,
+        case_url = CASE WHEN ${b.caseUrl !== undefined} THEN ${caseUrl} ELSE case_url END
       WHERE account_id = 1 AND id = ${b.id}
       RETURNING id`;
     return Response.json({ ok: rows.length > 0, id: rows[0]?.id });
@@ -133,11 +140,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const rows = await sql`
     INSERT INTO claims
       (account_id, unit_id, occurred_on, category, severity, status, source,
-       description, refund, repair_cost, resolved_on, created_by, reservation_id, reservation_label)
+       description, refund, repair_cost, resolved_on, created_by, reservation_id, reservation_label, case_url)
     VALUES (1, ${b.unitId || null},
             ${b.occurredOn || new Date().toISOString().slice(0, 10)},
             ${b.category ?? null}, ${severity}, ${status}, ${b.source ?? null},
-            ${b.description ?? null}, ${refund}, ${repair}, ${resolvedOn}, ${who.email}, ${resId}, ${resLabel})
+            ${b.description ?? null}, ${refund}, ${repair}, ${resolvedOn}, ${who.email}, ${resId}, ${resLabel}, ${caseUrl})
     RETURNING id`;
   if (rows[0]?.id != null) {
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)

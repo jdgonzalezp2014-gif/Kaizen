@@ -26,7 +26,11 @@ import {
 } from '../lib/todos.ts';
 import type { DateStr } from '../lib/dates.ts';
 import { money2 } from '../lib/format.ts';
-import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
+import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS, caseHost, cleanCaseUrl } from '../lib/claims.ts';
+
+/** The claim's case on the platform, one tap away (§88). */
+const CaseLink = ({ url }: { url: string | null }) => url
+  ? <a className="case-link" href={url} target="_blank" rel="noreferrer" title={url}>↗ {caseHost(url)} case</a> : null;
 
 type Unit = { id: string; name: string; active: boolean };
 type Act = (b: Record<string, unknown>) => Promise<boolean>;
@@ -158,6 +162,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
         <span className="todo-status">{c.status === 'Open' ? '○ Open' : '◐ In progress'}</span>
         <span className="sub-n">{ageDays(c, today)}d open</span>
         {c.reservation_label && <span className="todo-stay">🛏 {c.reservation_label}</span>}
+        <CaseLink url={c.case_url} />
         {openWorkBy.get(String(c.id)) ? <span className="sub-n">· {openWorkBy.get(String(c.id))} open task{openWorkBy.get(String(c.id)) === 1 ? '' : 's'}</span>
           : <span className="todo-due">▲ no work yet</span>}
         {(c.description ?? '').trim().length > 48 && <span className="sub-n case-desc" title={c.description!}>— {c.description}</span>}
@@ -706,15 +711,18 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
   const [category, setCategory] = useState('');
   const [severity, setSeverity] = useState('Medium');
   const [stay, setStay] = useState<{ id: string; label: string } | null>(null);
+  const [link, setLink] = useState('');
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
   const save = async () => {
     if (!what.trim() || busy) return;
+    if (link.trim() && !cleanCaseUrl(link)) { setErr('The case link is the https:// address of the case.'); return; }
     setBusy(true); setErr('');
     const r = await saveClaim({ unitId: unitId || null, occurredOn: today, category: category || null, severity,
                                 status: 'Open', description: what.trim(), refund: 0, repairCost: 0,
-                                reservationId: stay?.id ?? null, reservationLabel: stay?.label ?? null })
+                                reservationId: stay?.id ?? null, reservationLabel: stay?.label ?? null,
+                                caseUrl: cleanCaseUrl(link) ?? '' })
       .catch(e => ({ ok: false, error: String(e) }));
     setBusy(false);
     if (r.ok) onSaved(); else setErr(r.error ?? 'Not saved.');
@@ -740,6 +748,8 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
           {CLAIM_SEVERITY.map(s => <option key={s}>{s}</option>)}
         </select>
         <StayPicker unitId={unitId || null} value={stay} onChange={setStay} today={today} />
+        <input type="url" className="quick-caselink" value={link} placeholder="Case link (optional) — https://…"
+               onChange={e => setLink(e.target.value)} aria-label="Case link" />
         <span className="rb-spacer" />
         <button type="button" className="link tiny" onClick={onCancel}>Cancel</button>
         <button className="small" disabled={!what.trim() || busy}>{busy ? '…' : 'Log claim'}</button>
@@ -761,11 +771,13 @@ function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) =
   useEffect(() => { void getUnits().then(r => setUnits((r.units ?? []).map(u => ({ id: u.id, name: u.name, active: u.active })))); }, []);
   const set = (p: Partial<Claim>) => setC(x => ({ ...x, ...p }));
   const save = async () => {
+    if (c.case_url && !cleanCaseUrl(c.case_url)) { setErr('The case link is the https:// address of the case.'); return; }
     setBusy(true); setErr('');
     const r = await saveClaim({ id: c.id, unitId: c.unit_id, occurredOn: c.occurred_on.slice(0, 10), category: c.category,
       severity: c.severity, status: c.status, source: c.source, description: c.description,
       refund: Number(c.refund) || 0, repairCost: Number(c.repair_cost) || 0,
-      reservationId: c.reservation_id, reservationLabel: c.reservation_label }).catch(e => ({ ok: false, error: String(e) }));
+      reservationId: c.reservation_id, reservationLabel: c.reservation_label,
+      caseUrl: c.case_url ?? '' }).catch(e => ({ ok: false, error: String(e) }));
     setBusy(false);
     if (r.ok) onDone(true); else setErr(r.error ?? 'Not saved.');
   };
@@ -794,6 +806,9 @@ function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) =
           </select></label>
         <label>Refunded <input type="number" min={0} step="0.01" value={c.refund ?? ''} onChange={e => set({ refund: e.target.value })} /></label>
         <label>Repair cost <input type="number" min={0} step="0.01" value={c.repair_cost ?? ''} onChange={e => set({ repair_cost: e.target.value })} /></label>
+        <label className="claim-caselink">Case link (Airbnb, Booking.com, Vrbo…)
+          <input type="url" value={c.case_url ?? ''} placeholder="https://www.airbnb.com/mediation/…"
+                 onChange={e => set({ case_url: e.target.value || null })} /></label>
         <div className="todo-stay-pick">
           <StayPicker unitId={c.unit_id} today={c.occurred_on.slice(0, 10)}
                       value={c.reservation_id ? { id: c.reservation_id, label: c.reservation_label ?? '' } : null}
@@ -853,6 +868,8 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
       {/* The case itself: edit every field in place, or remove it — named, undoable (§86). */}
       <div className="claim-case-actions">
         {!editing && <button className="link tiny lane-add" onClick={() => setEditing(true)}>✎ Edit claim</button>}
+        {claim.case_url ? <CaseLink url={claim.case_url} />
+          : !editing && <span className="note">No case link yet — add it in ✎ Edit claim</span>}
         <span className="rb-spacer" />
         {!confirmDel
           ? <button className="link tiny danger" onClick={() => setConfirmDel(true)}>Remove this claim…</button>

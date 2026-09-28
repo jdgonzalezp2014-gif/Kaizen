@@ -241,6 +241,8 @@ export interface Claim {
   created_by: string; created_at: string;
   /** The stay it is about, when there is one (§84). */
   reservation_id: string | null; reservation_label: string | null;
+  /** The case on Airbnb / Booking.com / Vrbo (§88). */
+  case_url: string | null;
 }
 export const getClaims = () => call<{ ok: boolean; claims: Claim[] }>('/api/claims');
 export const saveClaim = (body: Record<string, unknown>) =>

@@ -14,6 +14,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { getClaims, saveClaim, deleteClaim, restoreClaim, type Claim, type UnitRow } from '../api.ts';
 import { money2 } from '../lib/format.ts';
 import { ClaimCase, StayPicker } from '../components/Todos.tsx';
+import { caseHost } from '../lib/claims.ts';
 import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
 
 const SEVERITY = CLAIM_SEVERITY;
@@ -68,7 +69,8 @@ export function Claims({ units, canWork = false }: {
       category: c.category, severity: c.severity, status: c.status, source: c.source,
       description: c.description, refund: Number(c.refund) || 0,
       repairCost: Number(c.repair_cost) || 0,
-      reservationId: c.reservation_id ?? null, reservationLabel: c.reservation_label ?? null
+      reservationId: c.reservation_id ?? null, reservationLabel: c.reservation_label ?? null,
+      caseUrl: c.case_url ?? ''
     });
     setBusy(false);
     if (!r.ok) { setErr(r.error ?? 'Could not save.'); return; }
@@ -136,8 +138,9 @@ export function Claims({ units, canWork = false }: {
                   <button className="link" onClick={() => setEditing(c)}>edit</button>
                 </span>
               </div>
-              {(c.description || c.reservation_label) && (
-                <p className="claim-desc">{c.reservation_label && <span className="todo-stay">🛏 {c.reservation_label}</span>} {c.description}</p>
+              {(c.description || c.reservation_label || c.case_url) && (
+                <p className="claim-desc">{c.reservation_label && <span className="todo-stay">🛏 {c.reservation_label}</span>} {c.description}
+                  {c.case_url && <> <a className="case-link" href={c.case_url} target="_blank" rel="noreferrer">↗ {caseHost(c.case_url)} case</a></>}</p>
               )}
               {openId === String(c.id) && (
                 <ClaimCase claim={c} canWork={canWork} onSaved={() => void load()} onRemoved={x => { setRemoved(x); setOpenId(null); }} />
@@ -218,6 +221,10 @@ function ClaimForm({ claim, units, busy, onCancel, onSave, onRemoved }: {
                     today={c.occurred_on?.slice(0, 10)}
                     onChange={x => setC(p => ({ ...p, reservation_id: x?.id ?? null, reservation_label: x?.label ?? null }))} />
       </div>
+      <label>Case link (Airbnb, Booking.com, Vrbo…)
+        <input type="url" value={c.case_url ?? ''} placeholder="https://www.airbnb.com/mediation/…"
+               onChange={e => setC(p => ({ ...p, case_url: e.target.value || null }))} />
+      </label>
       <label>What happened
         <input value={c.description ?? ''} onChange={e => set('description', e.target.value)}
                placeholder="e.g. AC out on arrival, guest moved to CL1339 for one night" />

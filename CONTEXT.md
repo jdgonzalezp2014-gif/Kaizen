@@ -2664,3 +2664,17 @@ To-do → "✓ Done log" (the switch beside "Open work").
 - **Times are New York time everywhere** — the log, the CSV, the range's
   days (`AT TIME ZONE 'America/New_York'`) and every timeline. They were
   UTC: a 7:35 PM close read as 23:35, and fell on the next day.
+
+## 88. A claim's case link on the platform
+
+The owner (2026-09-28): the link to the claim on Airbnb / Booking.com /
+Vrbo — the page where it is actually argued — was being pasted into
+updates, one line among many. Migration 038 adds `claims.case_url`
+(https only).
+
+- Shown as "↗ Airbnb case" (the platform named from the link, `caseHost`,
+  tested) on the claim's row, in its panel, and on the Claims screen; set
+  when logging a claim, in ✎ Edit claim, or in the Claims form. Like the
+  stay, it changes only when sent — a form that does not show it keeps it.
+- Backfilled once: a claim whose timeline already held an Airbnb /
+  Booking / Vrbo / Expedia link got it (Missing Fob → its Airbnb case).
