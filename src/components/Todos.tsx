@@ -87,10 +87,19 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
 
   const names = useMemo(() => new Map(units.map(u => [u.id, u.name])), [units]);
   const claimNames = useMemo(() => new Map(claims.map(c => [String(c.id), claimLabel(c)])), [claims]);
+  // The last removal, for Undo (§82): what went, and how many sub-tasks with it.
+  const [removed, setRemoved] = useState<{ id: string; title: string; kids: number } | null>(null);
   const act: Act = async body => {
+    const gone = body.action === 'delete' ? (todos ?? []).find(t => t.id === body.id) : undefined;
     const r = await todoAction({ ...body, ...(claim ? { claimScope: claim.id } : {}) })
       .catch(e => ({ ok: false as const, message: String(e) }));
-    if (r.ok) { take(r.todos); setErr(''); return true; }
+    if (r.ok) {
+      take(r.todos); setErr('');
+      if (gone) setRemoved({ id: gone.id, title: gone.title,
+                             kids: (todos ?? []).filter(t => t.parentId === gone.id && !isClosed(t.status)).length });
+      if (body.action === 'restore') setRemoved(null);
+      return true;
+    }
     setErr(r.message ?? 'Not saved.'); return false;
   };
 
@@ -218,6 +227,13 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
         </div>
       )}
       {err && <p className="banner warn">▲ {err}</p>}
+      {removed && (
+        <p className="banner ok todo-undo">
+          Removed “{removed.title}”{removed.kids ? ` and its ${removed.kids} sub-task${removed.kids === 1 ? '' : 's'}` : ''}.
+          <button className="link" onClick={() => void act({ action: 'restore', id: removed.id })}>Undo</button>
+          <button className="link tiny" aria-label="Dismiss" onClick={() => setRemoved(null)}>✕</button>
+        </p>
+      )}
       {shownCases.length > 0 && <ul className="todo-list cases">{shownCases.map(caseRow)}</ul>}
       {compact && todos !== null && (
         !merged.length ? <p className="note">Nothing open. ✓</p> : (
@@ -272,6 +288,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [addingSub, setAddingSub] = useState<null | TaskKind>(null);
+  const [lineDel, setLineDel] = useState(false);
   const [openSub, setOpenSub] = useState<string | null>(null);
   const [msg, setMsg] = useState('');
   const closed = isClosed(t.status);
@@ -309,8 +326,21 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
         {(t.costActual ?? t.costEstimate) != null &&
           <span className="sub-n">{t.costActual != null ? money2(t.costActual) : `~${money2(t.costEstimate!)}`}</span>}
         {t.updates > 1 && <span className="sub-n" title="Updates">💬 {t.updates}</span>}
+        {/* A sub-task is removed from its own line, naming itself — never
+            through the parent's Remove, which takes the whole task (§82). */}
+        {t.parentId && !open && (
+          <button className="todo-x" title={`Remove the sub-task “${t.title}”`} aria-label={`Remove the sub-task ${t.title}`}
+                  onClick={() => setLineDel(true)}>✕</button>
+        )}
         {closed && t.doneAt && <span className="sub-n">{t.status === 'cancelled' ? '✕' : '✓'} {t.doneBy?.split('@')[0]} · {t.doneAt.slice(5, 10)}</span>}
       </div>
+      {lineDel && (
+        <div className="todo-confirm">
+          <span className="note">Remove the sub-task “{t.title}”?</span>
+          <button className="small danger" disabled={busy} onClick={() => void act({ action: 'delete', id: t.id })}>Remove</button>
+          <button className="link tiny" onClick={() => setLineDel(false)}>Keep</button>
+        </div>
+      )}
       {t.description && !open && <div className="todo-desc" title={t.description}>{t.description}</div>}
       {/* Sub-tasks sit under their task when the list is not filtered (§78). */}
       {!flat && !open && !compact && mine.some(k => !isClosed(k.status)) && (
@@ -354,9 +384,15 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
             {canClaims && !inClaim && !t.claimId && !t.parentId &&
               <button className="link tiny" disabled={busy} onClick={() => void toClaim()}
                       title="It is a guest case — open a claim for it, linked to this to-do">⚑ Register as a claim</button>}
+            <span className="rb-spacer" />
+            {/* The destructive action sits apart, at the end, and says exactly what it removes. */}
             {!confirmDel
-              ? <button className="link tiny danger" onClick={() => setConfirmDel(true)}>Remove…</button>
-              : <><span className="note">Remove this {t.kind === 'work_order' ? 'work order' : 'to-do'}?</span>
+              ? <button className="link tiny danger" onClick={() => setConfirmDel(true)}>
+                  Remove this {t.parentId ? 'sub-task' : t.kind === 'work_order' ? 'work order' : 'to-do'}…</button>
+              : <><span className="note">
+                    Remove “{t.title}”{mine.filter(k => !isClosed(k.status)).length
+                      ? <b> and its {mine.filter(k => !isClosed(k.status)).length} sub-task{mine.filter(k => !isClosed(k.status)).length === 1 ? '' : 's'}</b> : ''}?
+                  </span>
                   <button className="small danger" onClick={() => void act({ action: 'delete', id: t.id })}>Remove</button>
                   <button className="link tiny" onClick={() => setConfirmDel(false)}>Keep</button></>}
           </div>

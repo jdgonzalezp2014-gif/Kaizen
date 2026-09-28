@@ -2563,3 +2563,21 @@ card may outgrow it:
   work, then High/Critical claims, then what is due today, then the rest.
   One "+ Add" opens the three kinds; sub-tasks show as progress (☑ 1/3)
   instead of being listed. Operations → To-do keeps the full list.
+
+## 82. Removing says what it removes — and can be undone
+
+Found 2026-09-28: the owner meant to remove a SUB-TASK ("Turn down
+utilites") and the whole task went ("Shan Eviction", with it). In an opened
+task the only Remove sat at the bottom, under the list of sub-tasks — it
+read as removing the sub-task, and removed the parent and everything in
+it. The confirmation did not say which.
+
+- **Each sub-task has its own ✕ on its line**, with a confirmation that
+  names it ("Remove the sub-task “…”?"). The parent's action sits apart,
+  says whose it is ("Remove this to-do…"), and its confirmation names the
+  task and how many sub-tasks go with it.
+- **Undo.** Every removal leaves "Removed “…” (and its N sub-tasks). Undo".
+  A removal stamps the task and the sub-tasks it takes with ONE instant;
+  `restore` brings back exactly those — a sub-task removed earlier on its
+  own stays removed. Both are written on the task's (and claim's) timeline.
+- Data: task 7 restored, its sub-task 8 removed, as meant.

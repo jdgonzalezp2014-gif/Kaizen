@@ -10,6 +10,7 @@
  *   POST { action: 'done', id, done }                             the checkbox
  *   POST { action: 'note', id, body }                             an update, in words
  *   POST { action: 'delete', id }                                 stamped, never erased (its sub-tasks too)
+ *   POST { action: 'restore', id }                                undo a removal, with what it took (§82)
  *   POST { action: 'toClaim', id, category?, severity? }          register it as a claim (§78)
  *
  * §78: a task has a title and a `description`; `parentId` makes it a
@@ -167,6 +168,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   const id = String(b.id ?? '');
   if (!ID.test(id)) return bad('Which task?');
+  // Undo of a removal (§82): the task, and the sub-tasks removed in the same instant.
+  if (b.action === 'restore') {
+    const gone = (await sql`SELECT title, deleted_at, claim_id FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NOT NULL`)[0] as
+      { title: string; deleted_at: string | Date; claim_id: string | null } | undefined;
+    if (!gone) return bad('Nothing to restore — it is not removed.');
+    const kids = await sql`UPDATE todos SET deleted_at = NULL, deleted_by = NULL, updated_at = now()
+                            WHERE account_id = 1 AND parent_id = ${id} AND deleted_at = ${gone.deleted_at} RETURNING id`;
+    await sql`UPDATE todos SET deleted_at = NULL, deleted_by = NULL, updated_at = now() WHERE account_id = 1 AND id = ${id}`;
+    await note(sql, 'task', id, 'change', `Restored${kids.length ? ` with its ${kids.length} sub-task${kids.length === 1 ? '' : 's'}` : ''}`, who.email);
+    if (gone.claim_id) await note(sql, 'claim', gone.claim_id, 'change', `Restored: ${gone.title}`, who.email);
+    return Response.json({ ok: true, todos: await list(sql, b.claimScope ? String(b.claimScope) : undefined) });
+  }
+
   const before = (await sql`SELECT title, status, priority, assignee, due_on::text AS due_on, claim_id, vendor,
                                    scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids, description
                               FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`)[0] as Record<string, any> | undefined;
@@ -204,10 +218,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   if (b.action === 'delete') {
-    await sql`UPDATE todos SET deleted_at = now(), deleted_by = ${who.email} WHERE account_id = 1 AND id = ${id}`;
-    // Its sub-tasks go with it — they were parts of it.
-    await sql`UPDATE todos SET deleted_at = now(), deleted_by = ${who.email}
-               WHERE account_id = 1 AND parent_id = ${id} AND deleted_at IS NULL`;
+    // One instant for the task and the sub-tasks that go with it, so an
+    // undo brings back exactly what this removal took — no more, no less.
+    const at = new Date().toISOString();
+    await sql`UPDATE todos SET deleted_at = ${at}, deleted_by = ${who.email} WHERE account_id = 1 AND id = ${id}`;
+    const kids = await sql`UPDATE todos SET deleted_at = ${at}, deleted_by = ${who.email}
+                            WHERE account_id = 1 AND parent_id = ${id} AND deleted_at IS NULL RETURNING id`;
+    await note(sql, 'task', id, 'change', `Removed${kids.length ? ` with its ${kids.length} sub-task${kids.length === 1 ? '' : 's'}` : ''}`, who.email);
     if (before.claim_id) await note(sql, 'claim', before.claim_id, 'change', `Removed: ${before.title}`, who.email);
     return Response.json({ ok: true, todos: await list(sql, scope) });
   }
