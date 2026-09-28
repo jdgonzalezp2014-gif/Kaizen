@@ -23,6 +23,48 @@ export interface Todo {
   costEstimate: number | null; costActual: number | null;
   /** How many updates it has — the timeline itself is read when it is opened. */
   updates: number;
+  /** The detail, so the title can stay a title (§78). */
+  description: string | null;
+  /** The task this is a sub-task of; one level deep. */
+  parentId: string | null;
+}
+
+/** The list's filters (§78). Empty = no filter. */
+export interface WorkFilter {
+  kind?: '' | TaskKind;
+  /** 'urgent' = urgent only; 'high' = high or urgent. */
+  priority?: '' | 'high' | 'urgent';
+  due?: '' | 'overdue' | 'today' | 'week' | 'none';
+  unitId?: string;
+}
+
+export const isFiltering = (f: WorkFilter) => !!(f.kind || f.priority || f.due || f.unitId);
+
+export function matchesFilter(t: Todo, f: WorkFilter, today: DateStr): boolean {
+  if (f.kind && t.kind !== f.kind) return false;
+  if (f.priority === 'urgent' && t.priority !== 'urgent') return false;
+  if (f.priority === 'high' && t.priority === 'normal') return false;
+  if (f.unitId && !t.unitIds.includes(f.unitId)) return false;
+  if (f.due) {
+    const d = dueOf(t, today);
+    if (f.due === 'overdue' && d !== 'overdue') return false;
+    if (f.due === 'today' && d !== 'today') return false;
+    // "This week" counts what is already late too: it is due this week at the latest.
+    if (f.due === 'week' && !(d === 'overdue' || d === 'today' || d === 'soon')) return false;
+    if (f.due === 'none' && d !== 'none') return false;
+  }
+  return true;
+}
+
+/** Sub-tasks by parent, and how far along each parent is. */
+export function childrenBy(list: Todo[]): Map<string, Todo[]> {
+  const m = new Map<string, Todo[]>();
+  for (const t of list) if (t.parentId) m.set(t.parentId, [...(m.get(t.parentId) ?? []), t]);
+  return m;
+}
+export function progress(children: Todo[] | undefined): { done: number; total: number } {
+  const live = (children ?? []).filter(c => c.status !== 'cancelled');
+  return { done: live.filter(c => c.status === 'done').length, total: live.length };
 }
 
 export interface WorkUpdate {

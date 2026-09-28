@@ -1182,3 +1182,13 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .todos .todo-form { padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; }
 .todo-edit .todo-form { padding: 0; border: 0; }
 .todo-meta .rb-spacer { flex: 1; }
+/* §78: descriptions and sub-tasks. */
+.todo-desc { font-size: 12px; color: var(--muted); margin: 2px 0 0 24px; overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; max-width: 90%; }
+.todo-descin { width: 100%; font-size: 13px; }
+.todo-descbtn { align-self: flex-start; }
+.todo-prog { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.todo-prog.all { color: var(--good); border-color: color-mix(in srgb, var(--good) 45%, transparent); }
+.todo-kids { margin: 4px 0 2px 24px; border-left: 2px solid var(--line); padding-left: 10px; }
+.todo-kids .todo { border-top: 0; padding: 3px 0; }
+.todo-subs { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }

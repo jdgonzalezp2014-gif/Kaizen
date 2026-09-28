@@ -9,7 +9,12 @@
  *   POST { action: 'update', id, …any of the above, status? }     null clears a field
  *   POST { action: 'done', id, done }                             the checkbox
  *   POST { action: 'note', id, body }                             an update, in words
- *   POST { action: 'delete', id }                                 stamped, never erased
+ *   POST { action: 'delete', id }                                 stamped, never erased (its sub-tasks too)
+ *   POST { action: 'toClaim', id, category?, severity? }          register it as a claim (§78)
+ *
+ * §78: a task has a title and a `description`; `parentId` makes it a
+ * sub-task (one level deep). A to-do can hold any number of sub-tasks of
+ * any kind, or none.
  *
  * Every change of status or of a field writes its own line in the task's
  * timeline (work_updates), so "what happened to this" has an answer even
@@ -17,8 +22,9 @@
  * timeline — the claim is the case, and its history should read whole.
  */
 import { db, type Env } from '../_lib/db.ts';
-import type { SqlFn } from '../_lib/accounts.ts';
+import { accessOf, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
+import { can } from '../_lib/roles.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -34,7 +40,7 @@ interface Row {
   created_at: string | Date; created_by: string | null; done_at: string | Date | null; done_by: string | null;
   kind: string; status: string; priority: string; assignee: string | null; claim_id: string | null;
   vendor: string | null; scheduled_on: string | null; cost_estimate: string | null; cost_actual: string | null;
-  updates: number;
+  updates: number; description: string | null; parent_id: string | null;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
 const num = (v: string | null) => v == null ? null : Number(v);
@@ -43,19 +49,21 @@ const out = (r: Row) => ({
   createdAt: iso(r.created_at)!, createdBy: r.created_by, doneAt: iso(r.done_at), doneBy: r.done_by,
   kind: r.kind, status: r.status, priority: r.priority, assignee: r.assignee, claimId: r.claim_id,
   vendor: r.vendor, scheduledOn: r.scheduled_on, costEstimate: num(r.cost_estimate), costActual: num(r.cost_actual),
-  updates: Number(r.updates ?? 0)
+  updates: Number(r.updates ?? 0), description: r.description, parentId: r.parent_id
 });
 
 async function list(sql: SqlFn, claim?: string) {
   const rows = await sql`
     SELECT t.id, t.title, t.unit_ids, t.due_on::text AS due_on, t.created_at, t.created_by, t.done_at, t.done_by,
            t.kind, t.status, t.priority, t.assignee, t.claim_id, t.vendor, t.scheduled_on::text AS scheduled_on,
-           t.cost_estimate, t.cost_actual,
+           t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
            (SELECT count(*)::int FROM work_updates w
              WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
       FROM todos t
      WHERE t.account_id = 1 AND t.deleted_at IS NULL
-       AND (${claim ?? null}::text IS NULL AND (t.done_at IS NULL OR t.done_at > now() - interval '14 days')
+       AND (${claim ?? null}::text IS NULL AND (t.done_at IS NULL OR t.done_at > now() - interval '14 days'
+              -- A sub-task closed long ago still belongs under its open parent.
+              OR t.parent_id IN (SELECT p.id FROM todos p WHERE p.account_id = 1 AND p.deleted_at IS NULL AND p.done_at IS NULL))
             OR t.claim_id = ${claim ?? null})
      ORDER BY t.created_at` as Row[];
   return rows.map(out);
@@ -102,8 +110,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     claimId: b.claimId === null || b.claimId === '' ? null : b.claimId === undefined ? undefined : String(b.claimId),
     costEstimate: money(b.costEstimate), costActual: money(b.costActual),
     kind: b.kind === undefined ? undefined : String(b.kind), priority: b.priority === undefined ? undefined : String(b.priority),
-    status: b.status === undefined ? undefined : String(b.status)
+    status: b.status === undefined ? undefined : String(b.status),
+    // The description keeps its line breaks; the title does not.
+    description: b.description === null ? null : typeof b.description === 'string' ? (b.description.trim().slice(0, 4000) || null) : undefined,
+    parentId: b.parentId === null || b.parentId === '' || b.parentId === undefined ? undefined : String(b.parentId)
   };
+  let parentTitle = '';
+  if (f.parentId) {
+    if (!ID.test(f.parentId)) return bad('Which parent task?');
+    const p = (await sql`SELECT title, parent_id FROM todos WHERE account_id = 1 AND id = ${f.parentId} AND deleted_at IS NULL`)[0] as
+      { title: string; parent_id: string | null } | undefined;
+    if (!p) return bad('That parent task is gone.');
+    // One level: a sub-task holds no sub-tasks, so a list never becomes a maze.
+    if (p.parent_id) return bad('A sub-task cannot have sub-tasks of its own.');
+    parentTitle = p.title;
+  }
   for (const d of [f.dueOn, f.scheduledOn]) if (d && !DAY.test(d)) return bad('Dates are dates.');
   for (const m of [f.costEstimate, f.costActual]) if (m != null && (!Number.isFinite(m) || m < 0)) return bad('Costs are amounts, not below zero.');
   if (f.kind !== undefined && !KINDS.includes(f.kind)) return bad('A to-do or a work order.');
@@ -130,13 +151,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const status = f.status && !['done', 'cancelled'].includes(f.status) ? f.status : 'open';
     const row = (await sql`
       INSERT INTO todos (account_id, title, unit_ids, due_on, created_by, kind, status, priority, assignee,
-                         claim_id, vendor, scheduled_on, cost_estimate, cost_actual)
+                         claim_id, vendor, scheduled_on, cost_estimate, cost_actual, description, parent_id)
       VALUES (1, ${f.title}, ${unitIds ?? []}, ${f.dueOn ?? null}, ${who.email}, ${f.kind ?? 'task'}, ${status},
               ${f.priority ?? 'normal'}, ${f.assignee ?? null}, ${f.claimId ?? null}, ${f.vendor ?? null},
-              ${f.scheduledOn ?? null}, ${f.costEstimate ?? null}, ${f.costActual ?? null})
+              ${f.scheduledOn ?? null}, ${f.costEstimate ?? null}, ${f.costActual ?? null},
+              ${f.description ?? null}, ${f.parentId ?? null})
       RETURNING id`)[0] as { id: string };
     const what = (f.kind ?? 'task') === 'work_order' ? 'Work order' : 'To-do';
-    await note(sql, 'task', String(row.id), 'status', `${what} created${claimLabel ? ` for the claim ${claimLabel}` : ''}.`, who.email);
+    await note(sql, 'task', String(row.id), 'status',
+      `${what} created${parentTitle ? ` under “${parentTitle}”` : ''}${claimLabel ? ` for the claim ${claimLabel}` : ''}.`, who.email);
+    if (f.parentId) await note(sql, 'task', f.parentId, 'change', `Sub-task added: ${f.title}`, who.email);
     if (f.claimId) await note(sql, 'claim', f.claimId, 'change', `${what} added: ${f.title}`, who.email);
     return Response.json({ ok: true, id: String(row.id), todos: await list(sql, b.claimScope ? f.claimId ?? undefined : undefined) });
   }
@@ -144,7 +168,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const id = String(b.id ?? '');
   if (!ID.test(id)) return bad('Which task?');
   const before = (await sql`SELECT title, status, priority, assignee, due_on::text AS due_on, claim_id, vendor,
-                                   scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids
+                                   scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids, description
                               FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`)[0] as Record<string, any> | undefined;
   if (!before) return Response.json({ ok: false, message: 'That task is gone — someone removed it.' }, { status: 404 });
   const scope = b.claimScope ? String(b.claimScope) : undefined;
@@ -156,8 +180,34 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ ok: true, todos: await list(sql, scope) });
   }
 
+  // Register a to-do as a claim (§78): everything can start as a to-do, and
+  // become a case when it turns out to be one. The claim is created on the
+  // Claims side and this task is linked to it — both timelines say so.
+  if (b.action === 'toClaim') {
+    if (!can((await accessOf(sql, who)).permissions, 'claims')) {
+      return Response.json({ ok: false, message: 'Your role does not include claims.' }, { status: 403 });
+    }
+    if (before.claim_id) return bad('It already belongs to a claim.');
+    const severity = ['Low', 'Medium', 'High', 'Critical'].includes(String(b.severity)) ? String(b.severity) : 'Medium';
+    const category = typeof b.category === 'string' && b.category.trim() ? b.category.trim().slice(0, 60) : null;
+    const detail = (await sql`SELECT description FROM todos WHERE id = ${id}`)[0]?.description as string | null;
+    const c = (await sql`
+      INSERT INTO claims (account_id, unit_id, occurred_on, category, severity, status, description, refund, repair_cost, created_by)
+      VALUES (1, ${(before.unit_ids ?? [])[0] ?? null}, ${new Date().toISOString().slice(0, 10)}, ${category}, ${severity}, 'Open',
+              ${[before.title, detail].filter(Boolean).join(' — ').slice(0, 2000)}, 0, 0, ${who.email})
+      RETURNING id`)[0] as { id: string | number };
+    const claimId = String(c.id);
+    await sql`UPDATE todos SET claim_id = ${claimId}, updated_at = now() WHERE account_id = 1 AND id = ${id}`;
+    await note(sql, 'claim', claimId, 'status', `Claim opened from the to-do “${before.title}”`, who.email);
+    await note(sql, 'task', id, 'change', 'Registered as a claim', who.email);
+    return Response.json({ ok: true, claimId, todos: await list(sql, scope) });
+  }
+
   if (b.action === 'delete') {
     await sql`UPDATE todos SET deleted_at = now(), deleted_by = ${who.email} WHERE account_id = 1 AND id = ${id}`;
+    // Its sub-tasks go with it — they were parts of it.
+    await sql`UPDATE todos SET deleted_at = now(), deleted_by = ${who.email}
+               WHERE account_id = 1 AND parent_id = ${id} AND deleted_at IS NULL`;
     if (before.claim_id) await note(sql, 'claim', before.claim_id, 'change', `Removed: ${before.title}`, who.email);
     return Response.json({ ok: true, todos: await list(sql, scope) });
   }
@@ -181,6 +231,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       cost_actual   = CASE WHEN ${f.costActual !== undefined} THEN ${f.costActual ?? null}::numeric ELSE cost_actual END,
       kind          = COALESCE(${f.kind ?? null}, kind),
       priority      = COALESCE(${f.priority ?? null}, priority),
+      description   = CASE WHEN ${f.description !== undefined} THEN ${f.description ?? null} ELSE description END,
       status        = COALESCE(${status ?? null}, status),
       done_at       = CASE WHEN ${status === undefined} THEN done_at WHEN ${closedNow} THEN COALESCE(done_at, now()) ELSE NULL END,
       done_by       = CASE WHEN ${status === undefined} THEN done_by WHEN ${closedNow} THEN COALESCE(done_by, ${who.email}) ELSE NULL END,
@@ -206,6 +257,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   cmp('Vendor', before.vendor, f.vendor);
   cmp('Priority', before.priority, f.priority);
   cmp('Kind', before.kind, f.kind);
+  if (f.description !== undefined && (before.description ?? '') !== (f.description ?? '')) {
+    changed.push(f.description ? 'Description updated' : 'Description cleared');
+  }
   cmp('Estimate', before.cost_estimate == null ? null : Number(before.cost_estimate), f.costEstimate, v => v == null ? '—' : `$${Number(v).toFixed(2)}`);
   cmp('Actual cost', before.cost_actual == null ? null : Number(before.cost_actual), f.costActual, v => v == null ? '—' : `$${Number(v).toFixed(2)}`);
   if (f.claimId !== undefined && String(before.claim_id ?? '') !== String(f.claimId ?? '')) {

@@ -1,11 +1,36 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { dueLabel, dueOf, sortTodos, workCost, type Todo } from './todos.ts';
+import { childrenBy, dueLabel, dueOf, matchesFilter, progress, sortTodos, workCost, type Todo } from './todos.ts';
 
 const t = (id: string, over: Partial<Todo> = {}): Todo => ({
   id, title: id, unitIds: [], dueOn: null, createdAt: `2026-09-01T00:00:0${id.length % 10}Z`, createdBy: null,
   doneAt: null, doneBy: null, kind: 'task', status: 'open', priority: 'normal', assignee: null, claimId: null,
-  vendor: null, scheduledOn: null, costEstimate: null, costActual: null, updates: 0, ...over
+  vendor: null, scheduledOn: null, costEstimate: null, costActual: null, updates: 0,
+  description: null, parentId: null, ...over
+});
+
+test('filters: kind, urgency, date and listing', () => {
+  const T = '2026-09-27';
+  const late = t('late', { dueOn: '2026-09-20', priority: 'high' });
+  const wo = t('wo', { kind: 'work_order', dueOn: '2026-10-01', unitIds: ['u1'] });
+  const undated = t('undated', { priority: 'urgent' });
+  const all = [late, wo, undated];
+  const pick = (f: Parameters<typeof matchesFilter>[1]) => all.filter(x => matchesFilter(x, f, T)).map(x => x.id);
+  assert.deepEqual(pick({ kind: 'work_order' }), ['wo']);
+  assert.deepEqual(pick({ priority: 'high' }), ['late', 'undated']);
+  assert.deepEqual(pick({ priority: 'urgent' }), ['undated']);
+  assert.deepEqual(pick({ due: 'overdue' }), ['late']);
+  assert.deepEqual(pick({ due: 'week' }), ['late', 'wo']);
+  assert.deepEqual(pick({ due: 'none' }), ['undated']);
+  assert.deepEqual(pick({ unitId: 'u1' }), ['wo']);
+});
+
+test('sub-tasks: grouped by parent; progress ignores the cancelled', () => {
+  const kids = childrenBy([t('p'), t('a', { parentId: 'p', status: 'done' }), t('b', { parentId: 'p' }),
+                           t('c', { parentId: 'p', status: 'cancelled' })]);
+  assert.deepEqual(kids.get('p')!.map(x => x.id), ['a', 'b', 'c']);
+  assert.deepEqual(progress(kids.get('p')), { done: 1, total: 2 });
+  assert.deepEqual(progress(undefined), { done: 0, total: 0 });
 });
 const TODAY = '2026-09-27';
 

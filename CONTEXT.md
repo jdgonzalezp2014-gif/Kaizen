@@ -2459,3 +2459,31 @@ reads whole in one place.
   (`src/lib/claims.ts`, one list for both screens). "+ ⚑ Claim" logs the
   essentials (what happened, unit, kind, severity); refund and source are
   set on the Claims screen.
+
+## 78. Work as a tree — everything starts as a to-do
+
+The owner (2026-09-28): filters by type, urgency and date; a title AND a
+description so a task is not a paragraph; and child tasks — a to-do can
+hold several things (work orders, other to-dos) or nothing at all, because
+it might just be "send a message to someone". Migration 034.
+
+- **Title + description.** The title is short (120 characters in the form);
+  the detail goes in `description`, shown as a muted line under the title
+  and in full when the task is opened.
+- **Sub-tasks, one level deep** (`parent_id`). Any task can hold sub-tasks
+  of any kind; a sub-task holds none, so the list never becomes a maze. A
+  parent shows ☑ done/total (cancelled ones not counted). New sub-tasks
+  take the parent's listings and claim. Removing a parent removes its
+  sub-tasks. A sub-task closed long ago is still listed under its open
+  parent.
+- **Everything starts as a to-do; the type comes after.** A to-do can be
+  turned into a work order (kind) or **registered as a claim** — the claim
+  is created on the Claims side from its title, description and first
+  listing, the to-do is linked to it, and both timelines say so. Needs the
+  `claims` permission, checked on the server.
+- **Filters** (Operations → To-do): kind (to-dos, work orders, claims),
+  urgency (high or urgent, urgent only — for claims, High/Critical and
+  Critical), date (overdue, today, this week — which includes the overdue —
+  no deadline) and listing. With no filter, sub-tasks sit under their
+  task; with a filter the list is flat and each sub-task says whose it is
+  (`matchesFilter`, `childrenBy`, `progress` in src/lib/todos.ts, tested).
