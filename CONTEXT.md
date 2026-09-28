@@ -2536,5 +2536,11 @@ stay, flags and notes were off screen in a table to drag.
   screen instead of editing a cell; editing is inside the record.
 - Tap targets: checkboxes 20px, chips and tabs 36px high.
 - Home and the To-do list already read as one column.
+- **Units and Revenue on a phone** (the owner asked for both): each unit
+  is two placed lines, not flowed ones — auto-placement had left the money
+  figure alone on a third line and dropped "vs target". Units: name and
+  occupancy, then the diagnosis, nights open and money at stake. Revenue:
+  name and net, then occupancy and vs target — labelled in the row, since
+  the column header is hidden. An opened unit's figures sit two to a line.
 - Verify with `shotm.mjs` (mobile emulation, deviceScaleFactor 2): the
   page width must equal the viewport.

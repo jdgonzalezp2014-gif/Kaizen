@@ -1249,4 +1249,32 @@ button.rb-danger { background: var(--crit); color: #fff; }
   .rb-phone-row b { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .rb-phone-go { font-size: 20px; color: var(--muted); }
   .rb-panel-head { padding: 14px 16px 10px; }
+
+  /* Units and Revenue lists: two lines per unit, placed, not flowed —
+     auto-placement left the money figure alone on a third line. */
+  .ulist-head { display: none; }
+  .urow-head { gap: 2px 10px; padding: 10px 12px; align-items: baseline; }
+  .urow-head:not(.rev):not(.claim) {
+    grid-template-columns: 12px minmax(0, 1fr) auto auto 14px;
+    grid-template-areas: "light name name occ chev" ". state open stake .";
+  }
+  .urow-head.rev {
+    grid-template-columns: 12px minmax(0, 1fr) auto 14px;
+    grid-template-areas: "light name net chev" ". state delta .";
+  }
+  .urow-head > .light { grid-area: light; align-self: center; }
+  .urow-head > .uname { grid-area: name; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .urow-head > .ustate { grid-area: state; min-width: 0; }
+  .urow-head > .uchev { grid-area: chev; }
+  .urow-head:not(.rev):not(.claim) > .ubar { display: none; }
+  .urow-head:not(.rev):not(.claim) > .uocc { grid-area: occ; font-weight: 650; }
+  .urow-head:not(.rev):not(.claim) > .uopen { grid-area: open; display: block; font-size: 12px; color: var(--muted); }
+  .urow-head:not(.rev):not(.claim) > .ustake { grid-area: stake; display: block; font-size: 12px; color: var(--muted); }
+  .urow-head.rev > .uocc { grid-area: net; font-weight: 650; }
+  .urow-head.rev > .uocc::after { content: ' net'; font-size: 11px; font-weight: 400; color: var(--muted); }
+  .urow-head.rev > .uopen { grid-area: delta; display: block; font-size: 12px; color: var(--muted); text-align: right; }
+  .urow-head.rev > .uopen::after { content: ' vs target'; }
+  .urow-head.rev > .ustake { display: none; }
+  /* An opened unit's figures: two to a line, not one per screen height. */
+  .facts-grid { grid-template-columns: 1fr 1fr; gap: 10px 16px; }
 }
