@@ -23,6 +23,8 @@ export function App() {
   // and fired /api/forward, which answers 403 for them. The flash was
   // the visible part; the forbidden request was the rest of it.
   const [tab, setTab] = useState<Tab | null>(null);
+  /** A door from Home straight into one of Operations' views ("operations:todos"). */
+  const [opsView, setOpsView] = useState<string | undefined>(undefined);
   // Fetched once at the top: three screens need the same unit list, and
   // three copies of it drift the moment one of them is stale.
   const [units, setUnits] = useState<UnitRow[]>([]);
@@ -99,8 +101,11 @@ export function App() {
       {tab === null && !loadError && <p className="note">Loading…</p>}
       {tab === 'units'    && <Units />}
       {tab === 'revenue'  && <Revenue />}
-      {tab === 'home' && <Home permissions={permissions} onGo={t => { if (allowed?.includes(t)) setTab(t as Tab); }} />}
-      {tab === 'operations' && <Operations />}
+      {tab === 'home' && <Home permissions={permissions} onGo={to => {
+        const [t, sub] = to.split(':');
+        if (allowed?.includes(t!)) { setOpsView(sub); setTab(t as Tab); }
+      }} />}
+      {tab === 'operations' && <Operations permissions={permissions} initialView={opsView} />}
       {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')}
                                            canEdit={can(permissions, 'repository.edit')}
                                            canStructure={can(permissions, 'repository.structure')} />}

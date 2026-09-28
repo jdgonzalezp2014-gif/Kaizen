@@ -458,6 +458,14 @@ export const driveAction = (body: Record<string, unknown>) =>
     method: 'POST', body: JSON.stringify(body)
   });
 
+/* ── to-dos (§76) ──────────────────────────────────────────────────── */
+
+export type { Todo } from './lib/todos.ts';
+type TodosResult = { ok: true; todos: import('./lib/todos.ts').Todo[] } | { ok: false; message?: string };
+export const getTodos = () => call<TodosResult>('/api/todos');
+export const todoAction = (body: Record<string, unknown>) =>
+  call<TodosResult>('/api/todos', { method: 'POST', body: JSON.stringify(body) });
+
 /* ── guest documents (§73) ────────────────────────────────────────── */
 
 export interface GuestFile { fileId: string; name: string; mimeType: string; url: string; updatedAt: string }

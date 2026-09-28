@@ -15,10 +15,13 @@
  */
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
+import { TodoList } from '../components/Todos.tsx';
+import { todayIn } from '../lib/dates.ts';
 import {
   getCleanings, type Cleaning, type ExcludedCleaning,
   getOperations, saveTurnover, logInspection, scheduleInspections, cancelInspection,
-  getOpsSettings, saveOpsSettings, cutoverImport, can, getGuestDocs, syncAgreement, uploadGuestDoc, getUnits,
+  getOpsSettings, saveOpsSettings, cutoverImport, can, getGuestDocs, syncAgreement, uploadGuestDoc, getUnits, getTodos,
+  type Todo,
   type StayDocs, type OperationsResponse, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
 } from '../api.ts';
 import {
@@ -31,7 +34,8 @@ import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
 
-type View = 'board' | 'calendar' | 'cleaners' | 'inspections' | 'notes' | 'rates' | 'setup';
+type View = 'board' | 'todos' | 'calendar' | 'cleaners' | 'inspections' | 'notes' | 'rates' | 'setup';
+const VIEWS: View[] = ['board', 'todos', 'calendar', 'cleaners', 'inspections', 'notes', 'rates', 'setup'];
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -87,11 +91,12 @@ function applyEdit(r: BoardRow, set: TurnoverSet, roster: Cleaner[], rules: OpsR
   return n;
 }
 
-export function Operations() {
+export function Operations({ permissions, initialView }: { permissions: string[]; initialView?: string }) {
   const [data, setData] = useState<OperationsResponse | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(true);
-  const [view, setView] = useState<View>('board');
+  const [view, setView] = useState<View>(VIEWS.includes(initialView as View) ? initialView as View : 'board');
+  const canTodos = can(permissions, 'todos');
 
   const load = (refresh = false) => {
     setBusy(true); setErr('');
@@ -116,7 +121,7 @@ export function Operations() {
     });
 
   const views: [View, string][] = [
-    ['board', 'Next 10 days'], ['calendar', 'Calendar'], ['cleaners', 'By cleaner'], ['inspections', 'Inspections'],
+    ['board', 'Next 10 days'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['cleaners', 'By cleaner'], ['inspections', 'Inspections'],
     ['notes', 'Notes log'], ['rates', 'Rates & rules'],
     ...(can(data?.permissions, 'operations.setup') ? [['setup', 'Setup'] as [View, string]] : [])
   ];
@@ -149,6 +154,7 @@ export function Operations() {
 
       <div className={busy && data ? 'is-stale' : undefined}>
         {data && view === 'board' && <Board data={data} patch={patch} />}
+        {view === 'todos' && canTodos && <TodoList today={data?.today ?? todayIn('America/New_York')} />}
         {view === 'calendar' && <CleaningsMonth />}
         {data && view === 'cleaners' && <ByCleaner data={data} />}
         {data && view === 'inspections' && <Inspections data={data} reload={() => load()} />}
@@ -216,6 +222,18 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
   const [docsErr, setDocsErr] = useState('');
   // Only the units set up to ask for them (Setup → Guest documents) are checked on the board.
   const docUnits = new Set(data.guestDocUnits ?? []);
+
+  // Open to-dos per listing (§76), flagged on the unit's rows.
+  const [todos, setTodos] = useState<Todo[]>([]);
+  useEffect(() => {
+    if (!can(data.permissions, 'todos')) return;
+    getTodos().then(r => { if (r.ok) setTodos(r.todos.filter(t => !t.doneAt)); }).catch(() => {});
+  }, []);
+  const todosBy = useMemo(() => {
+    const m = new Map<string, Todo[]>();
+    for (const t of todos) for (const u of t.unitIds) m.set(u, [...(m.get(u) ?? []), t]);
+    return m;
+  }, [todos]);
   const docRows = data.rows.filter(r => r.kind === 'in' && docUnits.has(r.unitId));
   const arrivalsKey = docRows.map(r => `${r.resId}|${r.date}|${r.docName}`).join(',');
   useEffect(() => {
@@ -302,6 +320,7 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
                     <Fragment key={key}>
                       <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'} through={short(data.lookaheadTo)}
                                  docs={canDocs && r.kind === 'in' && docUnits.has(r.unitId) ? docs[r.resId] ?? null : undefined}
+                                 todos={todosBy.get(r.unitId)}
                                  open={open === key} onToggle={() => {
                                    // Read-only roles see the board; the editor is not offered.
                                    if (can(data.permissions, 'operations.edit')) setOpen(open === key ? null : key);
@@ -329,10 +348,12 @@ function Board({ data, patch }: { data: OperationsResponse; patch: (id: string, 
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos }: {
   r: BoardRow; showMoney: boolean; shadow: boolean; open: boolean; onToggle: () => void;
   /** An arrival's filed documents: undefined = not shown to this role, null = still reading. */
   docs?: StayDocs | null;
+  /** Open to-dos about this unit. */
+  todos?: Todo[];
   /** How far ahead the next booking was looked for — "nothing" means nothing up to here. */
   through: string;
 }) {
@@ -384,6 +405,8 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs }: {
         {r.inspection.key === 'req' && <span className="ops-flag req" title={r.inspection.reason}>🔍 required</span>}
         {r.inspection.key === 'due' && <span className="ops-flag due" title={r.inspection.reason}>🔍 monthly</span>}
         {r.inspection.key === 'ok' && <span className="ops-flag ok" title={r.inspection.reason}>✓ inspected</span>}
+        {!!todos?.length && <span className="ops-flag due" title={todos.map(t => `☐ ${t.title}`).join('\n')}>
+          ☐ {todos.length} to-do{todos.length === 1 ? '' : 's'}</span>}
         {docs !== undefined && (docs === null ? <span className="ops-flag ok">… documents</span> : <>
           <span className={`ops-flag ${docs.id.length ? 'ok' : 'missing'}`}>{docs.id.length ? '✓' : '○'} ID</span>
           <span className={`ops-flag ${docs.agreement.length ? 'ok' : 'missing'}`}>{docs.agreement.length ? '✓' : '○'} agreement</span>

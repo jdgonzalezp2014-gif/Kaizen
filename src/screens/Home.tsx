@@ -28,6 +28,7 @@ import {
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
 import { todayIn, addDays } from '../lib/dates.ts';
+import { TodoList } from '../components/Todos.tsx';
 import { money, money2 } from '../lib/format.ts';
 import type { BoardRow } from '../lib/operations.ts';
 
@@ -56,6 +57,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   const canUnits = can(permissions, 'units');
   const canCosts = can(permissions, 'costs');
   const canClaims = can(permissions, 'claims');
+  const canTodos = can(permissions, 'todos');
 
   const ops = useLoad(canOps, async () => {
     const r = await getOperations(1);
@@ -114,6 +116,15 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
       )}
 
       <div className="home-grid">
+        {canTodos && (
+          <div className="card home-card home-todos">
+            <div className="home-card-head">
+              <h3>To-do</h3>
+              {canOps && <button className="link" onClick={() => onGo('operations:todos')}>All to-dos →</button>}
+            </div>
+            <TodoList today={today} compact onMore={canOps ? () => onGo('operations:todos') : undefined} />
+          </div>
+        )}
         {canOps && (
           <Card title="Cleanings today" count={cleans.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
                 foot={todays.tomorrowOuts ? `Tomorrow: ${todays.tomorrowOuts} clean${todays.tomorrowOuts === 1 ? '' : 's'}` : undefined}>

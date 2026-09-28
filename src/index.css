@@ -1116,3 +1116,27 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .home-evgroup h4 { margin: 6px 0 2px; font-size: 11px; font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .home-list .light { margin-top: 3px; }
 @media (max-width: 900px) { .home-grid { grid-template-columns: 1fr; } .home-side { max-width: 55%; } }
+
+/* To-do list (§76) — Home and Operations. */
+.todos { display: flex; flex-direction: column; gap: 8px; }
+.todo-form { display: flex; flex-direction: column; gap: 6px; }
+.todo-form .todo-text { width: 100%; }
+.todo-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.todo-meta select, .todo-meta input[type=date] { width: auto; font-size: 12.5px; padding: 3px 6px; }
+.todo-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
+.todo { border-top: 1px solid var(--line); padding: 6px 0; }
+.todo-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; }
+.todo-line input[type=checkbox] { width: auto; margin: 0; }
+.todo-title { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.todo-title:hover { text-decoration: underline; }
+.todo.is-done .todo-title { color: var(--muted); text-decoration: line-through; }
+.todo-unit { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 1px 7px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+.todo-unit button { background: none; border: 0; padding: 0 0 0 2px; color: var(--muted); cursor: pointer; font-size: 12px; }
+.todo-due { font-size: 11.5px; color: var(--muted); white-space: nowrap; }
+.todo.due-overdue .todo-due { color: var(--crit); font-weight: 600; }
+.todo.due-today .todo-due { color: var(--warn); font-weight: 600; }
+.todo-edit { margin: 8px 0 4px 24px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.todo-edit .button-row { align-items: center; gap: 10px; }
+.home-todos { grid-column: 1 / -1; }
+.todos > .link { align-self: flex-start; }

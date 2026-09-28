@@ -2384,3 +2384,22 @@ below the fold — and any other panel's save reloaded Settings and wiped
 unsaved ticks. Now each tick (and a rename, on leaving the field) saves at
 once, in order, and says so; a refused save puts the box back and says
 why. Verified with a real click in a browser against the database.
+
+## 76. The to-do list — on Home and in Operations
+
+One list for the team (`todos`, migration 032; `src/components/Todos.tsx`
+shared by both screens). A to-do is a sentence, with any number of
+listings — or none, not every task is about a unit — and a deadline only
+if it has one.
+
+- **Home** shows the open ones first (overdue, then by deadline, then the
+  undated in the order written — `src/lib/todos.ts`, tested), six at most,
+  with a door to the full list. **Operations → To-do** has them all, a
+  filter by listing, and what was done in the last 14 days. The board
+  flags a unit that has open to-dos (☐ n to-dos, the titles on hover).
+- Add in one line; tick to close (and untick to reopen); click one to
+  change it in place. Due words carry a shape (▲ overdue, ● today, ○ later).
+- Done and removed are stamped with who and when, never erased.
+- Permission `todos`, given to every role (admin has everything); an
+  admin can take it away per role.
+- Listings are Hostaway listing IDs Kaizen knows (units), checked on save.
