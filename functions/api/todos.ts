@@ -149,7 +149,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   let claimLabel = '';
   if (f.claimId) {
     const c = (await sql`SELECT c.id, c.category, u.name AS unit FROM claims c LEFT JOIN units u ON u.id = c.unit_id
-                          WHERE c.account_id = 1 AND c.id::text = ${f.claimId}`)[0] as { category: string | null; unit: string | null } | undefined;
+                          WHERE c.account_id = 1 AND c.id::text = ${f.claimId} AND c.deleted_at IS NULL`)[0] as { category: string | null; unit: string | null } | undefined;
     if (!c) return bad('That claim does not exist.');
     claimLabel = [c.unit, c.category].filter(Boolean).join(' · ');
   }

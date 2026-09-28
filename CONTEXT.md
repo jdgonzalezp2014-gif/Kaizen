@@ -2626,3 +2626,22 @@ by what it is — **To-dos**, then **🔧 Repairs** (work orders), then
   category a chip — "CL2260 · Claim" said nothing.
 - A sub-task shows only what differs from its parent (unit, claim, stay).
 - "Work orders" read as **Repairs** where people choose them.
+
+## 86. Full CRUD on every item in the work list
+
+The owner (2026-09-28): every item must be creatable, editable and
+removable from where it is seen. To-dos and repairs already were; a claim
+in the list could only be created and opened.
+
+- **A claim is edited in place**: "✎ Edit claim" in its panel — what
+  happened, unit, stay, raised on, kind, severity, status, source, refund,
+  repair cost — on the Claims screen and in the work list alike.
+- **A claim is removed, never erased** (migration 037: `deleted_at`,
+  `deleted_by`). "Remove this claim…" names it and says its work stays; the
+  list offers Undo. Every reader skips removed claims — the claims list,
+  Home, linking work, and Revenue's claim costs. Its work keeps the link,
+  so a restore brings the case back whole; both steps are on its timeline.
+  The Claims screen's own delete no longer uses a browser confirm and is
+  undoable too.
+- Verify layouts with `scripts/screenshot.mjs`; chained clicks
+  ("css:.a >> Edit claim") open nested panels.

@@ -15,7 +15,7 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  getClaims, getClaimUpdates, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, saveClaim, todoAction,
+  deleteClaim, getClaims, getClaimUpdates, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
   type Claim, type StayOnDay, type Todo, type WorkUpdate
 } from '../api.ts';
 import {
@@ -25,7 +25,7 @@ import {
 } from '../lib/todos.ts';
 import type { DateStr } from '../lib/dates.ts';
 import { money2 } from '../lib/format.ts';
-import { CLAIM_CATEGORIES, CLAIM_SEVERITY } from '../lib/claims.ts';
+import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
 
 type Unit = { id: string; name: string; active: boolean };
 type Act = (b: Record<string, unknown>) => Promise<boolean>;
@@ -92,6 +92,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const claimNames = useMemo(() => new Map(claims.map(c => [String(c.id), claimLabel(c)])), [claims]);
   // The last removal, for Undo (§82): what went, and how many sub-tasks with it.
   const [removed, setRemoved] = useState<{ id: string; title: string; kids: number } | null>(null);
+  const [removedClaim, setRemovedClaim] = useState<Claim | null>(null);
   const act: Act = async body => {
     const gone = body.action === 'delete' ? (todos ?? []).find(t => t.id === body.id) : undefined;
     const r = await todoAction({ ...body, ...(claim ? { claimScope: claim.id } : {}) })
@@ -161,7 +162,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
         {(c.description ?? '').trim().length > 48 && <span className="sub-n case-desc" title={c.description!}>— {c.description}</span>}
       </div>
       {openClaim === String(c.id) && (
-        <ClaimCase claim={c} canWork today={today} onSaved={() => { void loadClaims(); void loadTodos(); }} />
+        <ClaimCase claim={c} canWork today={today} onSaved={() => { void loadClaims(); void loadTodos(); }}
+                   onRemoved={x => { setRemovedClaim(x); setOpenClaim(null); }} />
       )}
     </li>
   );
@@ -268,6 +270,13 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
           <button className="link tiny" aria-label="Dismiss" onClick={() => setRemoved(null)}>✕</button>
         </p>
       )}
+      {removedClaim && (
+        <p className="banner ok todo-undo">
+          Removed the claim “{claimLabel(removedClaim)}”.
+          <button className="link" onClick={() => void restoreClaim(String(removedClaim.id)).then(() => { setRemovedClaim(null); void loadClaims(); })}>Undo</button>
+          <button className="link tiny" aria-label="Dismiss" onClick={() => setRemovedClaim(null)}>✕</button>
+        </p>
+      )}
       {todos === null ? <p className="note loading-dot">Reading</p>
         : lanesOn ? (
           <div className="todo-lanes">
@@ -345,7 +354,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
         {t.unitIds.filter(id => !(parent && !flat && parent.unitIds.includes(id))).map(id => <span key={id} className="todo-unit">{names.get(id) ?? 'unit'}</span>)}
         {t.reservationLabel && !(parent && !flat && parent.reservationId === t.reservationId) &&
           <span className="todo-stay" title="The stay it is about">🛏 {t.reservationLabel}</span>}
-        {t.claimId && !inClaim && !(parent && !flat && parent.claimId === t.claimId) && <span className="todo-claim" title="Belongs to a claim">⚑ {claimNames.get(t.claimId) ?? 'claim'}</span>}
+        {t.claimId && !inClaim && !(parent && !flat && parent.claimId === t.claimId) && (!claims.length || claimNames.has(t.claimId)) && <span className="todo-claim" title="Belongs to a claim">⚑ {claimNames.get(t.claimId) ?? 'claim'}</span>}
         {t.assignee && <span className="sub-n">→ {t.assignee}</span>}
         {t.kind === 'work_order' && t.vendor && <span className="sub-n">· {t.vendor}</span>}
         {t.kind === 'work_order' && t.scheduledOn && !closed && <span className="sub-n">· booked {shortDay(t.scheduledOn)}</span>}
@@ -738,6 +747,66 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
 }
 
 /**
+ * Every field of a claim, changed in place (§86) — what the Claims screen's
+ * form does, where the claim is being looked at.
+ */
+function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) => void }) {
+  const [c, setC] = useState(claim);
+  const [units, setUnits] = useState<Unit[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  useEffect(() => { void getUnits().then(r => setUnits((r.units ?? []).map(u => ({ id: u.id, name: u.name, active: u.active })))); }, []);
+  const set = (p: Partial<Claim>) => setC(x => ({ ...x, ...p }));
+  const save = async () => {
+    setBusy(true); setErr('');
+    const r = await saveClaim({ id: c.id, unitId: c.unit_id, occurredOn: c.occurred_on.slice(0, 10), category: c.category,
+      severity: c.severity, status: c.status, source: c.source, description: c.description,
+      refund: Number(c.refund) || 0, repairCost: Number(c.repair_cost) || 0,
+      reservationId: c.reservation_id, reservationLabel: c.reservation_label }).catch(e => ({ ok: false, error: String(e) }));
+    setBusy(false);
+    if (r.ok) onDone(true); else setErr(r.error ?? 'Not saved.');
+  };
+  return (
+    <div className="claim-edit">
+      <label>What happened
+        <textarea rows={2} value={c.description ?? ''} onChange={e => set({ description: e.target.value })} /></label>
+      <div className="todo-more">
+        <label>Unit
+          <select value={c.unit_id ?? ''} onChange={e => set({ unit_id: e.target.value || null, reservation_id: null, reservation_label: null })}>
+            <option value="">Portfolio-wide</option>
+            {units.filter(u => u.active || u.id === c.unit_id).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select></label>
+        <label>Raised on <input type="date" value={c.occurred_on.slice(0, 10)} onChange={e => set({ occurred_on: e.target.value })} /></label>
+        <label>Kind
+          <select value={c.category ?? ''} onChange={e => set({ category: e.target.value || null })}>
+            <option value="">—</option>{CLAIM_CATEGORIES.map(x => <option key={x}>{x}</option>)}
+          </select></label>
+        <label>Severity
+          <select value={c.severity} onChange={e => set({ severity: e.target.value })}>{CLAIM_SEVERITY.map(x => <option key={x}>{x}</option>)}</select></label>
+        <label>Status
+          <select value={c.status} onChange={e => set({ status: e.target.value })}>{CLAIM_STATUS.map(x => <option key={x}>{x}</option>)}</select></label>
+        <label>Source
+          <select value={c.source ?? ''} onChange={e => set({ source: e.target.value || null })}>
+            <option value="">—</option>{CLAIM_SOURCES.map(x => <option key={x}>{x}</option>)}
+          </select></label>
+        <label>Refunded <input type="number" min={0} step="0.01" value={c.refund ?? ''} onChange={e => set({ refund: e.target.value })} /></label>
+        <label>Repair cost <input type="number" min={0} step="0.01" value={c.repair_cost ?? ''} onChange={e => set({ repair_cost: e.target.value })} /></label>
+        <div className="todo-stay-pick">
+          <StayPicker unitId={c.unit_id} today={c.occurred_on.slice(0, 10)}
+                      value={c.reservation_id ? { id: c.reservation_id, label: c.reservation_label ?? '' } : null}
+                      onChange={x => set({ reservation_id: x?.id ?? null, reservation_label: x?.label ?? null })} />
+        </div>
+      </div>
+      {err && <p className="banner warn">▲ {err}</p>}
+      <div className="button-row">
+        <button className="small" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save claim'}</button>
+        <button className="link tiny" onClick={() => onDone(false)}>Cancel</button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * A claim, opened in place (§77) — on the Claims screen and in the work
  * list alike: the work that resolves it (to-dos and work orders), what that
  * work has cost, and the case's timeline.
@@ -747,11 +816,19 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
  * sum of invoices), but the work's total sits beside it, one click from
  * being used.
  */
-export function ClaimCase({ claim, canWork, today, onSaved }: {
+export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
   claim: Claim; canWork: boolean; today?: DateStr; onSaved?: () => void;
+  /** After a removal, so the list can offer Undo (§86). */
+  onRemoved?: (c: Claim) => void;
 }) {
   const [work, setWork] = useState<Todo[]>([]);
   const [msg, setMsg] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [confirmDel, setConfirmDel] = useState(false);
+  const remove = async () => {
+    const r = await deleteClaim(String(claim.id)).catch(() => ({ ok: false }));
+    if (r.ok) { onRemoved?.(claim); onSaved?.(); } else setMsg('Not removed.');
+  };
   const cost = workCost(work);
   const total = cost.actual + cost.estimated;
   const recorded = Number(claim.repair_cost) || 0;
@@ -770,6 +847,17 @@ export function ClaimCase({ claim, canWork, today, onSaved }: {
 
   return (
     <div className="claim-case">
+      {/* The case itself: edit every field in place, or remove it — named, undoable (§86). */}
+      <div className="claim-case-actions">
+        {!editing && <button className="link tiny lane-add" onClick={() => setEditing(true)}>✎ Edit claim</button>}
+        <span className="rb-spacer" />
+        {!confirmDel
+          ? <button className="link tiny danger" onClick={() => setConfirmDel(true)}>Remove this claim…</button>
+          : <><span className="note">Remove the claim “{claimLabel(claim)}”? Its work stays.</span>
+              <button className="small danger" onClick={() => void remove()}>Remove</button>
+              <button className="link tiny" onClick={() => setConfirmDel(false)}>Keep</button></>}
+      </div>
+      {editing && <ClaimEdit claim={claim} onDone={saved => { setEditing(false); if (saved) onSaved?.(); }} />}
       {canWork && (
         <div className="claim-case-work">
           <div className="claim-case-head">

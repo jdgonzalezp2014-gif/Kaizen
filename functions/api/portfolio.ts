@@ -58,7 +58,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     sql`SELECT unit_id, shared, start_date, end_date, category, frequency, amount
         FROM expenses WHERE (end_date IS NULL OR end_date >= ${from}) AND start_date <= ${to}` as unknown as Promise<CostRowDb[]>,
     sql`SELECT unit_id, occurred_on, category, severity, status, refund, repair_cost
-        FROM claims WHERE occurred_on >= ${from} AND occurred_on <= ${to}`,
+        FROM claims WHERE occurred_on >= ${from} AND occurred_on <= ${to} AND deleted_at IS NULL`,
     // The parked verdict, computed at sync time. Reading it costs one
     // cheap query; recomputing it would cost 27 calendar requests on
     // every dashboard load.

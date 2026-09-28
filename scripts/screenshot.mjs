@@ -6,7 +6,7 @@
  *
  * Needs the app served locally (wrangler pages dev on :8799) and Chrome.
  * width ≤ 720 emulates a phone (mobile, 2× pixels). `click` is a button's
- * text, or `css:<selector>` to click an element. Prints the page width and
+ * text, or `css:<selector>` to click an element; several are joined by " >> ". Prints the page width and
  * anything wider than the viewport — the page width must equal the viewport.
  */
 import { spawn } from 'node:child_process';
@@ -29,7 +29,11 @@ const clickText = async (sel, text) => { for (let i = 0; i < 60; i++) { if (awai
 await clickText('nav button', tab);
 if (sub) await clickText('.subtabs button', sub);
 for (let i = 0; i < 90; i++) { await sleep(1000); if (!(await ev(`!!document.querySelector('.loading-dot, .loading')`))) break; }
-if (click) { if (click.startsWith('css:')) await ev(`document.querySelector(${JSON.stringify(click.slice(4))})?.click()`); else await clickText('button', click); await sleep(3000); }
+// Several clicks in a row: "css:.a >> Edit claim".
+for (const step of (click ?? '').split(' >> ').filter(Boolean)) {
+  if (step.startsWith('css:')) await ev(`document.querySelector(${JSON.stringify(step.slice(4))})?.click()`); else await clickText('button', step);
+  await sleep(2500);
+}
 await sleep(800);
 console.log('page width', await ev('document.documentElement.scrollWidth'), '| viewport', W);
 console.log(await ev(`[...document.querySelectorAll('body *')].filter(e => e.getBoundingClientRect().right > ${W + 5} && !e.closest('nav, .subtabs'))

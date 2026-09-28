@@ -249,6 +249,9 @@ export const saveClaim = (body: Record<string, unknown>) =>
   });
 export const deleteClaim = (id: string) =>
   call<{ ok: boolean }>(`/api/claims?id=${id}`, { method: 'DELETE' });
+/** Undo a removal (§86). */
+export const restoreClaim = (id: string) =>
+  call<{ ok: boolean; error?: string }>('/api/claims', { method: 'POST', body: JSON.stringify({ action: 'restore', id }) });
 
 export interface Cleaning {
   key: string; unit_id: string | null; unit_name: string;

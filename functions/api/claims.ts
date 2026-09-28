@@ -35,7 +35,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            c.created_by, c.created_at, u.name AS unit_name, c.reservation_id, c.reservation_label
       FROM claims c
       LEFT JOIN units u ON u.account_id = c.account_id AND u.id = c.unit_id
-     WHERE c.account_id = 1
+     WHERE c.account_id = 1 AND c.deleted_at IS NULL
      ORDER BY
        -- Open cases first regardless of age: a three-month-old open
        -- claim is the one that needs attention, and sorting purely by
@@ -68,11 +68,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env);
   const b = await request.json().catch(() => ({})) as Body & { action?: string; body?: string };
 
+  // Undo a removal (§86): the claim comes back with its figures, its
+  // timeline and its linked work, which never lost the link.
+  if (b.action === 'restore') {
+    const rows = await sql`UPDATE claims SET deleted_at = NULL, deleted_by = NULL
+                            WHERE account_id = 1 AND id::text = ${String(b.id ?? '')} AND deleted_at IS NOT NULL RETURNING id`;
+    if (!rows.length) return Response.json({ ok: false, error: 'Nothing to restore.' }, { status: 404 });
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'claim', ${String(b.id)}, 'change', 'Restored', ${who.email})`;
+    return Response.json({ ok: true });
+  }
+
   // An update on the case, in words (§77). Appended, never edited.
   if (b.action === 'note') {
     const text = String(b.body ?? '').trim().slice(0, 4000);
     if (!b.id || !text) return Response.json({ ok: false, error: 'An update needs words.' }, { status: 400 });
-    const found = await sql`SELECT 1 FROM claims WHERE account_id = 1 AND id::text = ${String(b.id)}`;
+    const found = await sql`SELECT 1 FROM claims WHERE account_id = 1 AND id::text = ${String(b.id)} AND deleted_at IS NULL`;
     if (!found.length) return Response.json({ ok: false, error: 'That claim is gone.' }, { status: 404 });
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
               VALUES (1, 'claim', ${String(b.id)}, 'note', ${text}, ${who.email})`;
@@ -141,8 +152,13 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {
   const id = new URL(request.url).searchParams.get('id');
   if (!id) return Response.json({ ok: false, error: 'id is required.' }, { status: 400 });
   const sql = db(env);
-  const rows = await sql`DELETE FROM claims WHERE account_id = 1 AND id = ${id} RETURNING id`;
-  // Its work stays — a repair was still done — but no longer points at a case that is gone.
-  if (rows.length) await sql`UPDATE todos SET claim_id = NULL WHERE account_id = 1 AND claim_id = ${String(id)}`;
+  // Removed, never erased (§86): stamped, skipped by every reader, and
+  // restorable. Its work keeps the link, so an undo brings it all back.
+  const rows = await sql`UPDATE claims SET deleted_at = now(), deleted_by = ${who.email}
+                          WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL RETURNING id`;
+  if (rows.length) {
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'claim', ${String(id)}, 'change', 'Removed', ${who.email})`;
+  }
   return Response.json({ ok: rows.length > 0 });
 };

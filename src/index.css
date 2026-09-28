@@ -1327,3 +1327,8 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .lane-empty { margin: 2px 0 0; font-size: 12.5px; }
 .todos.compact .todo-lanes { gap: 10px; }
 .link.lane-add { font-size: 12.5px; }
+
+/* §86: a claim edited and removed in place. */
+.claim-case-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.claim-edit { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px dashed var(--line); }
+.claim-edit textarea { width: 100%; }

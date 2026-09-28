@@ -11,7 +11,7 @@
  * buries it under yesterday's resolved ones.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { getClaims, saveClaim, deleteClaim, type Claim, type UnitRow } from '../api.ts';
+import { getClaims, saveClaim, deleteClaim, restoreClaim, type Claim, type UnitRow } from '../api.ts';
 import { money2 } from '../lib/format.ts';
 import { ClaimCase, StayPicker } from '../components/Todos.tsx';
 import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
@@ -39,6 +39,7 @@ export function Claims({ units, canWork = false }: {
   const [claims, setClaims] = useState<Claim[] | null>(null);
   const [editing, setEditing] = useState<Partial<Claim> | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [removed, setRemoved] = useState<Claim | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
@@ -86,6 +87,13 @@ export function Claims({ units, canWork = false }: {
       </div>
 
       {err && <p className="banner error">{err}</p>}
+      {removed && (
+        <p className="banner ok todo-undo">
+          Removed the claim “{removed.unit_name ?? 'Portfolio'} · {removed.description || removed.category || 'claim'}”.
+          <button className="link" onClick={() => void restoreClaim(String(removed.id)).then(() => { setRemoved(null); void load(); })}>Undo</button>
+          <button className="link tiny" aria-label="Dismiss" onClick={() => setRemoved(null)}>✕</button>
+        </p>
+      )}
 
       {claims && (
         <dl className="strip">
@@ -99,7 +107,7 @@ export function Claims({ units, canWork = false }: {
 
       {editing && (
         <ClaimForm claim={editing} units={units} busy={busy}
-          onCancel={() => setEditing(null)} onSave={save} />
+          onCancel={() => setEditing(null)} onSave={save} onRemoved={x => { setRemoved(x); void load(); }} />
       )}
 
       {claims && claims.length > 0 && (
@@ -132,7 +140,7 @@ export function Claims({ units, canWork = false }: {
                 <p className="claim-desc">{c.reservation_label && <span className="todo-stay">🛏 {c.reservation_label}</span>} {c.description}</p>
               )}
               {openId === String(c.id) && (
-                <ClaimCase claim={c} canWork={canWork} onSaved={() => void load()} />
+                <ClaimCase claim={c} canWork={canWork} onSaved={() => void load()} onRemoved={x => { setRemoved(x); setOpenId(null); }} />
               )}
             </div>
           ))}
@@ -149,9 +157,11 @@ export function Claims({ units, canWork = false }: {
   );
 }
 
-function ClaimForm({ claim, units, busy, onCancel, onSave }: {
+function ClaimForm({ claim, units, busy, onCancel, onSave, onRemoved }: {
   claim: Partial<Claim>; units: UnitRow[]; busy: boolean;
   onCancel: () => void; onSave: (c: Partial<Claim>) => void;
+  /** Removed (never erased, §86): the screen offers Undo. */
+  onRemoved?: (c: Claim) => void;
 }) {
   const [c, setC] = useState<Partial<Claim>>(claim);
   const set = (k: keyof Claim, v: unknown) => setC(prev => ({ ...prev, [k]: v }));
@@ -224,7 +234,7 @@ function ClaimForm({ claim, units, busy, onCancel, onSave }: {
         <button onClick={() => onSave(c)} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
         {c.id && (
           <button className="link danger"
-            onClick={() => { if (confirm('Delete this claim?')) void deleteClaim(c.id!).then(onCancel); }}>
+            onClick={() => void deleteClaim(c.id!).then(() => { onRemoved?.(c as Claim); onCancel(); })}>
             delete
           </button>
         )}
