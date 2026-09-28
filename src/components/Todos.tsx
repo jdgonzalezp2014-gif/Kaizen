@@ -39,7 +39,10 @@ const WEIGHT: Record<string, number> = { Low: 1, Medium: 2, High: 4, Critical: 8
 const ageDays = (c: Claim, today: DateStr) =>
   Math.max(0, Math.round((Date.parse(`${today}T12:00:00Z`) - Date.parse(c.occurred_on.slice(0, 10) + 'T12:00:00Z')) / 864e5));
 
-export function TodoList({ today, compact = false, onMore, canClaims = false, claim, onChange }: {
+/** What Home's folded card says (§81). */
+export interface WorkSum { open: number; overdue: number; today: number; urgent: number; cases: number }
+
+export function TodoList({ today, compact = false, onMore, canClaims = false, claim, onChange, onSummary }: {
   today: DateStr;
   /** Home: open work only, the first few, and a door to the full list. */
   compact?: boolean; onMore?: () => void;
@@ -49,6 +52,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   claim?: { id: string; unitId: string | null };
   /** The list as it now is — the claim uses it for what its work costs. */
   onChange?: (list: Todo[]) => void;
+  /** Home: the counts its card shows, folded or not. */
+  onSummary?: (s: WorkSum) => void;
 }) {
   const [todos, setTodos] = useState<Todo[] | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -62,6 +67,9 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const [showDone, setShowDone] = useState(!!claim);
   const [openClaim, setOpenClaim] = useState<string | null>(null);
   const [adding, setAdding] = useState<null | TaskKind | 'claim'>(null);
+  // Home (§81): one "+ Add", and three lines until asked for more.
+  const [addMenu, setAddMenu] = useState(false);
+  const [showAll, setShowAll] = useState(false);
   // Open claims sit in the list as cases (§77), above the work — not inside a claim.
   const showClaims = canClaims && !claim;
 
@@ -109,30 +117,77 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     for (const t of todos ?? []) if (t.claimId && !isClosed(t.status)) m.set(t.claimId, (m.get(t.claimId) ?? 0) + 1);
     return m;
   }, [todos]);
-  // Home keeps six lines in all: cases first, then work.
-  const shownCases = compact ? cases.slice(0, 6) : cases;
-  const shown = compact ? openList.slice(0, Math.max(0, 6 - shownCases.length)) : openList;
-  const hidden = cases.length - shownCases.length + openList.length - shown.length;
+  // Home (§81): one list, ordered by what needs acting on — overdue or
+  // urgent work, then serious claims, then what is due today, then the
+  // rest — three lines, the others one tap away in place.
+  type Item = { kind: 'case'; c: Claim } | { kind: 'task'; t: Todo };
+  const rankOf = (i: Item) => i.kind === 'case'
+    ? (['Critical', 'High'].includes(i.c.severity) ? 1 : 3)
+    : (i.t.priority === 'urgent' || dueOf(i.t, today) === 'overdue' ? 0 : dueOf(i.t, today) === 'today' ? 2 : 4);
+  const merged: Item[] = compact
+    ? [...cases.map(c => ({ kind: 'case' as const, c })), ...openList.map(t => ({ kind: 'task' as const, t }))]
+        .map((i, n) => ({ i, n })).sort((a, b) => rankOf(a.i) - rankOf(b.i) || a.n - b.n).map(x => x.i)
+    : [];
+  const compactShown = showAll ? merged : merged.slice(0, 3);
+  const shownCases = compact ? [] : cases;
+  const shown = compact ? [] : openList;
+  const hidden = merged.length - compactShown.length;
   const ctx = { today, names, units, claims, claimNames, act, inClaim: !!claim, kids, byId, flat: filtering,
-                canClaims: showClaims, onClaimsChanged: () => void loadClaims() };
+                canClaims: showClaims, onClaimsChanged: () => void loadClaims(), compact };
+
+  // The counts Home's card shows, folded or not.
+  useEffect(() => {
+    if (!onSummary || todos === null) return;
+    const live = (todos ?? []).filter(t => !isClosed(t.status));
+    onSummary({
+      open: live.filter(t => !t.parentId).length + (showClaims ? claims.filter(claimOpen).length : 0),
+      overdue: live.filter(t => dueOf(t, today) === 'overdue').length,
+      today: live.filter(t => dueOf(t, today) === 'today').length,
+      urgent: live.filter(t => t.priority === 'urgent').length,
+      cases: showClaims ? claims.filter(claimOpen).length : 0
+    });
+  }, [todos, claims]);
+
+  const caseRow = (c: Claim) => (
+    <li key={`case-${c.id}`} className={`todo case sev-${c.severity.toLowerCase()}`}>
+      <div className="todo-line">
+        <span className="case-flag" aria-hidden="true">⚑</span>
+        <button className="todo-title" onClick={() => setOpenClaim(openClaim === String(c.id) ? null : String(c.id))}
+                title="Open the claim">{c.unit_name ?? 'Portfolio'} · {c.category ?? 'Claim'}</button>
+        <span className={`todo-status sev s-${c.severity.toLowerCase()}`}>{c.severity}</span>
+        <span className="todo-status">{c.status === 'Open' ? '○ Open' : '◐ In progress'}</span>
+        <span className="sub-n">{ageDays(c, today)}d open</span>
+        {openWorkBy.get(String(c.id)) ? <span className="sub-n">· {openWorkBy.get(String(c.id))} open task{openWorkBy.get(String(c.id)) === 1 ? '' : 's'}</span>
+          : <span className="todo-due">▲ no work yet</span>}
+        {c.description && <span className="sub-n case-desc" title={c.description}>— {c.description}</span>}
+      </div>
+      {openClaim === String(c.id) && (
+        <ClaimCase claim={c} canWork today={today} onSaved={() => { void loadClaims(); void loadTodos(); }} />
+      )}
+    </li>
+  );
 
   return (
     <div className={`todos ${compact ? 'compact' : ''}`}>
       {/* Buttons first; the form opens only for what is being added. */}
-      {!adding ? (
+      {!adding && compact && !addMenu ? (
+        <div className="todo-add-buttons">
+          <button className="small secondary" onClick={() => setAddMenu(true)}>+ Add</button>
+        </div>
+      ) : !adding ? (
         <div className="todo-add-buttons">
           <button className="small secondary" onClick={() => setAdding('task')}>+ To-do</button>
           <button className="small secondary" onClick={() => setAdding('work_order')}>+ 🔧 Work order</button>
           {showClaims && <button className="small secondary" onClick={() => setAdding('claim')}>+ ⚑ Claim</button>}
         </div>
       ) : adding === 'claim' ? (
-        <QuickClaim units={units} today={today} onCancel={() => setAdding(null)}
-                    onSaved={() => { setAdding(null); void loadClaims(); }} />
+        <QuickClaim units={units} today={today} onCancel={() => { setAdding(null); setAddMenu(false); }}
+                    onSaved={() => { setAdding(null); setAddMenu(false); void loadClaims(); }} />
       ) : (
         <TodoForm key={adding} units={units} claims={claims} canClaims={canClaims && !claim} submitLabel="Add"
-                  startKind={adding} onCancel={() => setAdding(null)}
+                  startKind={adding} onCancel={() => { setAdding(null); setAddMenu(false); }}
                   fixed={claim ? { claimId: claim.id, unitIds: claim.unitId ? [claim.unitId] : [] } : undefined}
-                  onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAdding(null); return ok; }} />
+                  onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) { setAdding(null); setAddMenu(false); } return ok; }} />
       )}
       {!compact && !claim && (
         <div className="row-controls">
@@ -163,37 +218,27 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
         </div>
       )}
       {err && <p className="banner warn">▲ {err}</p>}
-      {shownCases.length > 0 && (
-        <ul className="todo-list cases">
-          {shownCases.map(c => (
-            <li key={c.id} className={`todo case sev-${c.severity.toLowerCase()}`}>
-              <div className="todo-line">
-                <span className="case-flag" aria-hidden="true">⚑</span>
-                <button className="todo-title" onClick={() => setOpenClaim(openClaim === String(c.id) ? null : String(c.id))}
-                        title="Open the claim">{c.unit_name ?? 'Portfolio'} · {c.category ?? 'Claim'}</button>
-                <span className={`todo-status sev s-${c.severity.toLowerCase()}`}>{c.severity}</span>
-                <span className="todo-status">{c.status === 'Open' ? '○ Open' : '◐ In progress'}</span>
-                <span className="sub-n">{ageDays(c, today)}d open</span>
-                {openWorkBy.get(String(c.id)) ? <span className="sub-n">· {openWorkBy.get(String(c.id))} open task{openWorkBy.get(String(c.id)) === 1 ? '' : 's'}</span>
-                  : <span className="todo-due">▲ no work yet</span>}
-                {c.description && <span className="sub-n case-desc" title={c.description}>— {c.description}</span>}
-              </div>
-              {openClaim === String(c.id) && (
-                <ClaimCase claim={c} canWork today={today} onSaved={() => { void loadClaims(); void loadTodos(); }} />
-              )}
-            </li>
-          ))}
-        </ul>
+      {shownCases.length > 0 && <ul className="todo-list cases">{shownCases.map(caseRow)}</ul>}
+      {compact && todos !== null && (
+        !merged.length ? <p className="note">Nothing open. ✓</p> : (
+          <ul className="todo-list">
+            {compactShown.map(i => i.kind === 'case' ? caseRow(i.c)
+              : <TodoRow key={i.t.id} t={i.t} open={open === i.t.id} onOpen={() => setOpen(open === i.t.id ? null : i.t.id)} {...ctx} />)}
+          </ul>
+        )
       )}
       {todos === null ? <p className="note loading-dot">Reading</p>
+        : compact ? null
         : kindFilter === 'claims' ? (!cases.length && <p className="note">No open claims. ✓</p>)
         : !openList.length ? (!shownCases.length && <p className="note">{claim ? 'No open work on this claim.' : filtering ? 'Nothing matches these filters.' : 'Nothing open. ✓'}</p>) : (
         <ul className="todo-list">
           {shown.map(t => <TodoRow key={t.id} t={t} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />)}
         </ul>
       )}
-      {compact && hidden > 0 && onMore &&
-        <button className="link" onClick={onMore}>{hidden} more in Operations →</button>}
+      {compact && (hidden > 0 || showAll) && merged.length > 3 && (
+        <button className="link tiny home-more" onClick={() => setShowAll(!showAll)}>
+          {showAll ? 'Show less ▴' : `Show ${hidden} more ▾`}</button>
+      )}
       {!compact && doneList.length > 0 && (
         <>
           <button className="link tiny" onClick={() => setShowDone(!showDone)}>
@@ -218,10 +263,12 @@ type RowCtx = {
   flat: boolean;
   /** May register a to-do as a claim. */
   canClaims: boolean; onClaimsChanged: () => void;
+  /** Home: sub-tasks are summed up (☑ 1/3), not listed. */
+  compact?: boolean;
 };
 
 function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void }) {
-  const { t, today, names, units, claims, claimNames, open, onOpen, act, inClaim, kids, byId, flat, canClaims, onClaimsChanged } = props;
+  const { t, today, names, units, claims, claimNames, open, onOpen, act, inClaim, kids, byId, flat, canClaims, onClaimsChanged, compact } = props;
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [addingSub, setAddingSub] = useState<null | TaskKind>(null);
@@ -266,7 +313,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
       </div>
       {t.description && !open && <div className="todo-desc" title={t.description}>{t.description}</div>}
       {/* Sub-tasks sit under their task when the list is not filtered (§78). */}
-      {!flat && !open && mine.some(k => !isClosed(k.status)) && (
+      {!flat && !open && !compact && mine.some(k => !isClosed(k.status)) && (
         <ul className="todo-list todo-kids">
           {mine.filter(k => !isClosed(k.status)).map(k => (
             <TodoRow key={k.id} {...props} t={k} open={openSub === k.id} onOpen={() => setOpenSub(openSub === k.id ? null : k.id)} />

@@ -2544,3 +2544,22 @@ stay, flags and notes were off screen in a table to drag.
   the column header is hidden. An opened unit's figures sit two to a line.
 - Verify with `shotm.mjs` (mobile emulation, deviceScaleFactor 2): the
   page width must equal the viewport.
+
+## 81. Home is a summary — every card folds, three items each
+
+The owner (2026-09-28): with many tasks, the to-do list would push the
+day's other topics off Home. Home is a SUMMARY, not a workspace, so no one
+card may outgrow it:
+
+- **Every card folds** to its title, its count and what needs attention
+  (▲ unassigned cleans, ▲ check-ins not ready, the to-do counts:
+  ▲ overdue · ● today · ▲▲ urgent · ⚑ claims). Folded or not is remembered
+  per card on that device (localStorage — a convenience, never data).
+- **Three items, the rest in place.** Each list shows three and
+  "Show N more" opens the rest right there; the order puts what needs
+  acting on first, so the three shown are the three that matter —
+  unassigned cleans, check-ins whose unit is not ready, serious events.
+- **The to-do card mixes work and claims by urgency**: overdue or urgent
+  work, then High/Critical claims, then what is due today, then the rest.
+  One "+ Add" opens the three kinds; sub-tasks show as progress (☑ 1/3)
+  instead of being listed. Operations → To-do keeps the full list.

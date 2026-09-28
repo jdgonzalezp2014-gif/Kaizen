@@ -28,7 +28,7 @@ import {
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
 import { todayIn, addDays } from '../lib/dates.ts';
-import { TodoList } from '../components/Todos.tsx';
+import { TodoList, type WorkSum } from '../components/Todos.tsx';
 import { money, money2 } from '../lib/format.ts';
 import type { BoardRow } from '../lib/operations.ts';
 
@@ -94,6 +94,11 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   const openClaims = (claims.data ?? []).filter(c => c.status === 'Open' || c.status === 'In progress');
   const cleans = todays.outs.filter(r => r.assignment !== 'not_needed');
   const unassigned = cleans.filter(r => r.assignment === 'tbd' || r.assignment === 'unknown');
+  const isOpen = (r: BoardRow) => r.assignment === 'tbd' || r.assignment === 'unknown';
+  // A check-in is ready when its unit's clean today is assigned, or nobody left today.
+  const readyFor = (r: BoardRow) => { const c = todays.outs.find(o => o.unitId === r.unitId); return !c || c.assignment !== 'tbd' && c.assignment !== 'unknown'; };
+  const notReady = todays.ins.filter(r => !readyFor(r)).length;
+  const [todoSum, setTodoSum] = useState<WorkSum | null>(null);
 
   return (
     <section className="home">
@@ -117,31 +122,31 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
 
       <div className="home-grid">
         {canTodos && (
-          <div className="card home-card home-todos">
-            <div className="home-card-head">
-              <h3>To-do</h3>
-              {canOps && <button className="link" onClick={() => onGo('operations:todos')}>All to-dos →</button>}
-            </div>
-            <TodoList today={today} compact canClaims={canClaims} onMore={canOps ? () => onGo('operations:todos') : undefined} />
-          </div>
+          <Card id="todo" title="To-do" count={todoSum?.open} className="home-todos" load={{ data: true, err: '', busy: false }}
+                summary={todoSum && <WorkSummary s={todoSum} />}
+                action={canOps ? 'All to-dos' : undefined} onAction={() => onGo('operations:todos')}>
+            <TodoList today={today} compact canClaims={canClaims} onSummary={setTodoSum}
+                      onMore={canOps ? () => onGo('operations:todos') : undefined} />
+          </Card>
         )}
         {canOps && (
-          <Card title="Cleanings today" count={cleans.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
+          <Card id="cleans" title="Cleanings today" count={cleans.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
+                summary={unassigned.length ? <span className="breach">▲ {unassigned.length} unassigned</span> : undefined}
                 foot={todays.tomorrowOuts ? `Tomorrow: ${todays.tomorrowOuts} clean${todays.tomorrowOuts === 1 ? '' : 's'}` : undefined}>
             {!todays.outs.length ? <Empty>No departures today.</Empty> : (
-              <ul className="home-list">
-                {todays.outs.map(r => <CleanItem key={r.resId} r={r} />)}
-              </ul>
+              // Unassigned first: the three shown are the three that need someone.
+              <ShowMore items={[...todays.outs].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))}
+                        render={r => <CleanItem key={r.resId} r={r} />} />
             )}
           </Card>
         )}
 
         {canOps && (
-          <Card title="Check-ins today" count={todays.ins.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
+          <Card id="checkins" title="Check-ins today" count={todays.ins.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
+                summary={notReady ? <span className="breach">▲ {notReady} not ready</span> : undefined}
                 foot={todays.tomorrowIns ? `Tomorrow: ${todays.tomorrowIns} arrival${todays.tomorrowIns === 1 ? '' : 's'}` : undefined}>
             {!todays.ins.length ? <Empty>No arrivals today.</Empty> : (
-              <ul className="home-list">
-                {todays.ins.map(r => {
+              <ShowMore items={[...todays.ins].sort((a, b) => Number(!readyFor(b)) - Number(!readyFor(a)))} render={r => {
                   // Ready means a clean is recorded for this unit today, or
                   // nobody left today (it was already empty).
                   const clean = todays.outs.find(o => o.unitId === r.unitId);
@@ -153,33 +158,30 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
                       <span className={`home-side ${ready.startsWith('▲') ? 'breach' : 'sub-n'}`}>{ready}</span>
                     </li>
                   );
-                })}
-              </ul>
+                }} />
             )}
           </Card>
         )}
 
         {canUnits && (
-          <Card title="Units in red" count={red.data?.list.length} load={red} action="Open Units" onAction={() => onGo('units')}
+          <Card id="red" title="Units in red" count={red.data?.list.length} load={red} action="Open Units" onAction={() => onGo('units')}
                 busyText="Reading every calendar…"
                 foot={red.data ? `By the Units screen's analysis, of ${red.data.total} live units` : undefined}>
             {red.data && !red.data.list.length ? <Empty>No unit is red. ● All live units are filling, full or too early to tell.</Empty> : (
-              <ul className="home-list">
-                {red.data?.list.map(({ unit: u, read }) => (
+              <ShowMore items={red.data?.list ?? []} render={({ unit: u, read }) => (
                   <li key={u.listingId}>
                     <span className="light tone-bad" aria-hidden="true" />
                     <span className="home-main"><b>{u.name}</b> <span className="home-verdict">{read.v.label}</span>
                       <span className="home-reason">{read.v.reason}</span></span>
                     {can(permissions, 'money') && u.exposure > 0 && <span className="home-side sub-n">{money(u.exposure)} open</span>}
                   </li>
-                ))}
-              </ul>
+                )} />
             )}
           </Card>
         )}
 
         {(canOps || canCosts || canClaims) && (
-          <Card title="Coming up" load={{ data: true, err: [ops.err, spend.err, claims.err].filter(Boolean).join(' · '), busy: ops.busy || spend.busy || claims.busy }}
+          <Card id="coming" title="Coming up" load={{ data: true, err: [ops.err, spend.err, claims.err].filter(Boolean).join(' · '), busy: ops.busy || spend.busy || claims.busy }}
                 action={canCosts ? 'Open Costs' : undefined} onAction={() => onGo('costs')}>
             <div className="home-events">
               {canOps && (
@@ -197,9 +199,9 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
               )}
               {canClaims && (
                 <EventGroup title="Open claims" empty="No open claims."
-                  items={openClaims.slice(0, 5).map((c: Claim) => ({ key: c.id, when: short(c.occurred_on.slice(0, 10)), what: c.unit_name ?? 'shared',
+                  items={openClaims.map((c: Claim) => ({ key: c.id, when: short(c.occurred_on.slice(0, 10)), what: c.unit_name ?? 'shared',
                     note: `${c.severity} · ${c.category ?? ''} · waiting ${Math.max(0, Math.round((Date.parse(today) - Date.parse(c.occurred_on)) / 864e5))}d`, warn: c.severity === 'Critical' || c.severity === 'High' }))}
-                  onMore={() => onGo('claims')} more={openClaims.length > 5 ? `${openClaims.length - 5} more` : undefined} />
+                  onMore={() => onGo('claims')} more="Open Claims" />
               )}
             </div>
           </Card>
@@ -221,25 +223,74 @@ function Chip({ n, label, warn, busy, bad }: { n: number; label: string; warn?: 
   );
 }
 
-function Card<T>({ title, count, load, action, onAction, foot, busyText, children }: {
-  title: string; count?: number; load: Load<T>; action?: string; onAction?: () => void;
-  foot?: string; busyText?: string; children: ReactNode;
+/**
+ * A Home card (§81). Home is a summary, not a workspace: every card can
+ * fold to its title, its count and what needs attention — and stays folded
+ * on this device — so no one card can push the others off the screen.
+ */
+function Card<T>({ id, title, count, summary, load, action, onAction, foot, busyText, children, className = '' }: {
+  id: string; title: string; count?: number; summary?: ReactNode; load: Load<T>; action?: string; onAction?: () => void;
+  foot?: string; busyText?: string; children: ReactNode; className?: string;
 }) {
+  const [folded, toggle] = useFolded(id);
   return (
-    <div className="card home-card">
+    <div className={`card home-card ${folded ? 'folded' : ''} ${className}`}>
       <div className="home-card-head">
-        <h3>{title}{count != null && !load.busy && <span className="count">{count}</span>}</h3>
+        <button className="home-fold" onClick={toggle} aria-expanded={!folded} title={folded ? 'Show' : 'Fold'}>
+          <span className="home-caret" aria-hidden="true">{folded ? '▸' : '▾'}</span>
+          <h3>{title}{count != null && !load.busy && <span className="count">{count}</span>}</h3>
+        </button>
+        {summary && !load.busy && <span className="home-summary">{summary}</span>}
         {action && <button className="link" onClick={onAction}>{action} →</button>}
       </div>
-      {load.busy ? <p className="note loading-dot">{busyText ?? 'Loading'}</p>
+      {!folded && (load.busy ? <p className="note loading-dot">{busyText ?? 'Loading'}</p>
         : load.err ? <p className="banner warn">▲ {load.err}</p>
-        : children}
-      {foot && !load.busy && !load.err && <p className="home-foot">{foot}</p>}
+        : children)}
+      {!folded && foot && !load.busy && !load.err && <p className="home-foot">{foot}</p>}
     </div>
   );
 }
 
+/** Folded or not, remembered per card on this device (a per-person convenience, never data). */
+function useFolded(id: string): [boolean, () => void] {
+  const key = `kaizen.home.folded.${id}`;
+  const [folded, setFolded] = useState(() => { try { return localStorage.getItem(key) === '1'; } catch { return false; } });
+  const toggle = () => setFolded(v => {
+    try { localStorage.setItem(key, v ? '0' : '1'); } catch { /* private window: it just is not remembered */ }
+    return !v;
+  });
+  return [folded, toggle];
+}
+
+/**
+ * The first three, and the rest one tap away — in place, not on another
+ * screen. Three is what a glance holds; the order puts what needs acting
+ * on first, so the three shown are the three that matter.
+ */
+function ShowMore<T>({ items, render, limit = 3 }: { items: T[]; render: (x: T) => ReactNode; limit?: number }) {
+  const [all, setAll] = useState(false);
+  return (
+    <>
+      <ul className="home-list">{(all ? items : items.slice(0, limit)).map(render)}</ul>
+      {items.length > limit && (
+        <button className="link tiny home-more" onClick={() => setAll(!all)}>
+          {all ? 'Show less ▴' : `Show ${items.length - limit} more ▾`}</button>
+      )}
+    </>
+  );
+}
+
 const Empty = ({ children }: { children: ReactNode }) => <p className="note home-empty">{children}</p>;
+
+/** The to-do card's line when folded — the counts that say whether to open it. */
+function WorkSummary({ s }: { s: WorkSum }) {
+  const parts: ReactNode[] = [];
+  if (s.overdue) parts.push(<span key="o" className="breach">▲ {s.overdue} overdue</span>);
+  if (s.today) parts.push(<span key="t" className="home-today">● {s.today} today</span>);
+  if (s.urgent) parts.push(<span key="u" className="breach">▲▲ {s.urgent} urgent</span>);
+  if (s.cases) parts.push(<span key="c">⚑ {s.cases} claim{s.cases === 1 ? '' : 's'}</span>);
+  return parts.length ? <>{parts.map((p, i) => <span key={i}>{i > 0 && ' · '}{p}</span>)}</> : <span className="sub-n">nothing urgent</span>;
+}
 
 function CleanItem({ r }: { r: BoardRow }) {
   const who = r.assignment === 'assigned' ? r.cleaner
@@ -268,16 +319,15 @@ function EventGroup({ title, items, empty, onMore, more }: {
     <div className="home-evgroup">
       <h4>{title}</h4>
       {!items.length ? <p className="note home-empty">{empty}</p> : (
-        <ul className="home-list">
-          {items.map(i => (
-            <li key={i.key}>
-              <span className={`home-time ${i.when === 'today' ? 'today' : ''}`}>{i.when}</span>
-              <span className="home-main"><b>{i.what}</b> <span className={i.warn ? 'breach' : 'sub-n'}>{i.note}</span></span>
-            </li>
-          ))}
-        </ul>
+        // What needs acting on first, then by date.
+        <ShowMore items={[...items].sort((a, b) => Number(b.warn) - Number(a.warn))} render={i => (
+          <li key={i.key}>
+            <span className={`home-time ${i.when === 'today' ? 'today' : ''}`}>{i.when}</span>
+            <span className="home-main"><b>{i.what}</b> <span className={i.warn ? 'breach' : 'sub-n'}>{i.note}</span></span>
+          </li>
+        )} />
       )}
-      {more && onMore && <button className="link tiny" onClick={onMore}>{more} →</button>}
+      {more && onMore && <button className="link tiny home-more" onClick={onMore}>{more} →</button>}
     </div>
   );
 }
