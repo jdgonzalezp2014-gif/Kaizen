@@ -105,6 +105,9 @@ export function withDefaults(raw: Record<string, unknown> | null | undefined): O
   return out;
 }
 
+/** A reservation in Hostaway's dashboard (§90) — one place, so the link is fixed once if Hostaway moves it. */
+export const hostawayReservationUrl = (resId: string) => `https://dashboard.hostaway.com/reservations/${encodeURIComponent(resId)}`;
+
 export const DEFAULT_CHECKOUT_TIME = '10:00 AM';
 export const DEFAULT_CHECKIN_TIME = '4:00 PM';
 export const IMPLICIT_INSPECTORS = ['Manager', 'Owner'];

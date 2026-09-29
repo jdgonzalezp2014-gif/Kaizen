@@ -15,8 +15,9 @@ import { accessOf, getAccount, getCredentials, type SqlFn } from '../_lib/accoun
 import { can } from '../_lib/roles.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadOps, recordCleanings, trimForOps, OPS_TZ } from '../_lib/ops.ts';
+import { syncUnits } from '../_lib/sync.ts';
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const who = identify(request, env);
   if (!who) return unauthorised();
 
@@ -66,6 +67,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            AND checkout_on >= ${s.today}::date - 7 AND checkout_on <= ${s.end}::date
          ORDER BY checkout_on, key`
   ]);
+
+  // A listing new to Hostaway is on the board before it is in `units`, and
+  // until it is there it cannot be ticked in Setup, claimed against or
+  // costed (§90: P2-4212 and P2-4315). The board is the first
+  // place a new listing shows up, so it is what triggers the sync, after
+  // the response, so nobody waits on it.
+  const known = new Set((await sql`SELECT id FROM units WHERE account_id = 1` as { id: string }[]).map(u => u.id));
+  if (s.rows.some(r => r.unitId && !known.has(r.unitId))) {
+    waitUntil(getCredentials(sql, env.ENCRYPTION_KEY)
+      .then(creds => syncUnits(creds, sql, account.offlineAfterDays ?? 45))
+      .catch(() => { /* Settings → Sync units remains the manual way */ }));
+  }
 
   // Booking values are what the portfolio earns (§49): only for roles that hold `money`.
   if (!showMoney) trimForOps(s);

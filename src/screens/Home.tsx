@@ -23,14 +23,14 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  can, getClaims, getForward, getGuestDocs, getOperations, getVariable,
+  can, getClaims, getForward, getGuestDocs, getOperations, getVariable, uploadGuestDoc,
   type Claim, type OperationsResponse, type VariableExpense
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
 import { todayIn, addDays } from '../lib/dates.ts';
 import { TodoList, type WorkSum } from '../components/Todos.tsx';
 import { money, money2 } from '../lib/format.ts';
-import type { BoardRow } from '../lib/operations.ts';
+import { hostawayReservationUrl, type BoardRow } from '../lib/operations.ts';
 
 const TZ = 'America/New_York';
 const WEEK = 7;
@@ -117,6 +117,17 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   }, [canDocs, arrivalsKey]);
   const signed = (r: BoardRow) => r.agreement === 'signed';
   const unsigned = arrivals.filter(r => r.agreement === 'not_signed').length;
+  const needsCopy = new Set(ops.data?.guestDocUnits ?? []);
+  const [uploading, setUploading] = useState<string | null>(null);
+  const [upErr, setUpErr] = useState('');
+  // The building's copy of the ID (§90): one tap from Home to the reservation's Drive folder.
+  const uploadId = async (r: BoardRow, file: File | undefined) => {
+    if (!file) return;
+    setUploading(r.resId); setUpErr('');
+    const x = await uploadGuestDoc(r.resId, 'id', file).catch(e => ({ ok: false as const, message: String(e) }));
+    setUploading(null);
+    if (x.ok) setIds(m => ({ ...m, [r.resId]: x.docs.id.length > 0 })); else setUpErr(`${r.unit}: ${x.message ?? 'not uploaded'}`);
+  };
   const arrivalRow = (r: BoardRow, isToday: boolean) => {
     const clean = isToday ? todays.outs.find(o => o.unitId === r.unitId) : undefined;
     const ready = !isToday ? null : !clean ? 'no departure today' : clean.assignment === 'assigned' ? `cleaned by ${clean.cleaner}` : '▲ clean not assigned';
@@ -127,9 +138,20 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
           {ready && <span className={`home-ready ${ready.startsWith('▲') ? 'breach' : 'sub-n'}`}> · {ready}</span>}</span>
         <span className="home-side home-docs">
           {r.agreement && <span className={signed(r) ? 'doc-ok' : 'breach'}>{signed(r) ? '✓ Signed' : '▲ Not signed'}</span>}
-          {/* ID: verified in Hostaway, or a copy filed in Drive. */}
-          {(() => { const ok = r.idVerified || (canDocs && ids[r.resId]);
-            return <span className={ok ? 'doc-ok' : 'sub-n'} title={r.idVerified ? 'Verified in Hostaway' : ok ? 'Copy in Drive' : 'Not verified yet'}>{ok ? '✓ ID' : '○ ID'}</span>; })()}
+          {/* Hostaway's own check, only when it says so: an ID the guest
+              uploaded in the portal is not "verified" there, and "○ ID" read
+              as missing when it was not (§90). */}
+          {r.idVerified && <span className="doc-ok" title="ID verified in Hostaway">✓ ID verified</span>}
+          {/* The building's copy, where one is needed — and the way to add it. */}
+          {canDocs && needsCopy.has(r.unitId) && r.resId in ids && (ids[r.resId]
+            ? <span className="doc-ok" title="A copy of the ID is in the reservation's Drive folder">✓ ID in Drive</span>
+            : <label className="home-upload" title="Upload the guest's ID to the reservation's Drive folder">
+                {uploading === r.resId ? 'Uploading…' : '⇪ ID to Drive'}
+                <input type="file" accept="image/*,.pdf" hidden disabled={!!uploading}
+                       onChange={e => { void uploadId(r, e.target.files?.[0]); e.target.value = ''; }} />
+              </label>)}
+          <a className="home-hostaway" href={hostawayReservationUrl(r.resId)} target="_blank" rel="noreferrer"
+             title="Open the reservation in Hostaway — the ID and the agreement are there">↗ Hostaway</a>
         </span>
       </li>
     );
@@ -190,6 +212,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
                   {unsigned > 0 && notReady > 0 && ' · '}
                   {notReady > 0 && <span className="breach">▲ {notReady} not ready</span>}
                 </> : undefined}>
+            {upErr && <p className="banner warn">▲ {upErr}</p>}
             <DayGroup label={`Today · ${dayWord(today)}`} empty="No arrivals today.">
               {todays.ins.length > 0 && <ShowMore items={bySigned(todays.ins)} render={r => arrivalRow(r, true)} />}
             </DayGroup>

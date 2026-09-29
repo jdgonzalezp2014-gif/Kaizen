@@ -32,6 +32,7 @@ import {
   type BoardRow, type Cleaner, type InspectionTier, type OpsRules
 } from '../lib/operations.ts';
 import { money, money2 } from '../lib/format.ts';
+import { hostawayReservationUrl } from '../lib/operations.ts';
 import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
@@ -386,6 +387,8 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos 
       <td><b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}</td>
       <td>
         {r.guest || <span className="note">—</span>}
+        {' '}<a className="ops-hostaway" href={hostawayReservationUrl(r.resId)} target="_blank" rel="noreferrer"
+                onClick={e => e.stopPropagation()} title="Open the reservation in Hostaway">↗</a>
         <div className="sub-n">
           {r.nights} night{r.nights === 1 ? '' : 's'}{r.guests ? ` · ${r.guests} guests` : ''}
           {r.channel ? ` · ${channelLabel(r.channel)}` : ''}
@@ -445,8 +448,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos 
             {signed ? '✓ signed' : '▲ not signed'}</span>;
         })()}
         {/* The ID: verified in Hostaway for every guest; a copy in Drive where the building needs one (§89). */}
-        {r.kind === 'in' && <span className={`ops-flag ${r.idVerified ? 'ok' : 'missing'}`}
-          title={r.idVerified ? 'ID verified in Hostaway' : 'ID not verified in Hostaway yet'}>{r.idVerified ? '✓ ID verified' : '○ ID'}</span>}
+        {r.kind === 'in' && r.idVerified && <span className="ops-flag ok" title="ID verified in Hostaway">✓ ID verified</span>}
         {docs !== undefined && (docs === null ? <span className="ops-flag ok">… Drive</span>
           : <span className={`ops-flag ${docs.id.length ? 'ok' : 'missing'}`} title="A copy of the ID in the reservation's Drive folder">
               {docs.id.length ? '✓' : '○'} ID in Drive</span>)}

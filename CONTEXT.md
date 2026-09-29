@@ -2704,3 +2704,30 @@ Drive stays a per-unit choice (§73) — for now only the P2 building.
   archived in Hostaway (it refuses edits, 403); 3 are not active in Kaizen.
   Every change is in `listing_text_changes` (migration 039) with the text
   as it was — any listing can be put back exactly.
+
+## 90. The ID where the building can see it; a link to the reservation
+
+The owner (2026-09-28), on P2-4212: the guest's ID IS in Hostaway (the
+portal took it) while Kaizen showed "○ ID" — what is missing is the copy in
+Drive the building reads.
+
+- **"○ ID" is gone.** Hostaway's `isGuestIdentityVerified` /
+  `isGuestVerifiedByGovernmentId` stay 0 when a guest uploads an ID in the
+  portal, so "not verified" read as "no ID". Only a positive "✓ ID
+  verified" is shown. The public API has no endpoint for the uploaded image
+  (reservation detail has no file field; `/reservations/{id}/documents`
+  and similar are 404, checked 2026-09-28), so the Drive copy cannot be
+  automatic: download it from Hostaway, upload it in Kaizen.
+- **Signed ⇒ ID?** Only if the portal makes the ID step required before
+  the agreement — a portal setting, not something the API reports.
+- **Home → Check-ins**, for units that keep a copy (§73): "✓ ID in Drive",
+  or "⇪ ID to Drive" — pick the file, it lands in the reservation's `ID`
+  folder (the same upload as the board's guest documents).
+- **"↗ Hostaway"** on each arrival (Home) and each guest (board):
+  `hostawayReservationUrl` in `src/lib/operations.ts`, one place to fix if
+  Hostaway moves it.
+- **New listings reach `units` on their own.** P2-4212 and P2-4315 were on
+  the board but not in `units` (no sync since they were listed), so they
+  could not be ticked in Setup. `/api/operations` now starts a units sync
+  after responding whenever a board row's listing is unknown. Both were
+  synced and ticked for a Drive copy, like the rest of P2.
