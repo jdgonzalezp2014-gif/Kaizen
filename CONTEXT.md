@@ -2731,3 +2731,32 @@ Drive the building reads.
   could not be ticked in Setup. `/api/operations` now starts a units sync
   after responding whenever a board row's listing is unknown. Both were
   synced and ticked for a Drive copy, like the rest of P2.
+
+## 91. Home, designed for a glance
+
+The owner (2026-09-28): the UX works, the design can do better — "as a
+designer with a neuroscience background". What changed, and why:
+
+- **Colour means one thing.** An outline or a colour only on what needs a
+  person: red = a failure (unassigned clean, High/Critical claim, unit in
+  red), amber = attention (not signed, due today, Medium claim, same-day
+  turnover), green = confirmed, blue = something to click. The eye finds an
+  odd one out pre-attentively only when there are few; a red flag on every
+  Medium claim taught it to ignore red.
+- **Labels step back.** On a work row the unit, stay, claim, progress and
+  status are soft fills with no outline (only Waiting / High / Critical keep
+  one); every outline read as one more object competing with the title.
+- **Titles outrank labels:** row titles 14px under 16px card headings (they
+  were 16 under 15).
+- **The day first.** Check-outs and Check-ins (they have a clock) above the
+  to-do card (the backlog).
+- **The header is the day's pulse**: each figure a button to its screen, a
+  colour and ▲ only when someone must act ("▲ 1 unassigned", "▲ 2 not
+  signed"), "✓ all assigned" / "✓ all signed" when not, zeros greyed.
+  Singular/plural fixed ("1 clean").
+- **No noise.** "Coming up" with nothing in it is one line under the cards;
+  an empty group inside it is one clause, not a heading; open claims are
+  not repeated there when the to-do card already lists them; "0d open"
+  reads "new today"; "+ Add" and "Show more" were at 45% opacity
+  (`button.link.tiny` outranked them) — actions are solid now.
+- **Phone:** an arrival's flags go under the guest instead of squeezing it.

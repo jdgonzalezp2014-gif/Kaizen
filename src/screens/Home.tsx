@@ -117,6 +117,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   }, [canDocs, arrivalsKey]);
   const signed = (r: BoardRow) => r.agreement === 'signed';
   const unsigned = arrivals.filter(r => r.agreement === 'not_signed').length;
+  const unsignedToday = todays.ins.filter(r => r.agreement === 'not_signed').length;
   const needsCopy = new Set(ops.data?.guestDocUnits ?? []);
   const [uploading, setUploading] = useState<string | null>(null);
   const [upErr, setUpErr] = useState('');
@@ -159,20 +160,47 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   // Not signed first — the three shown are the three to chase.
   const bySigned = (list: BoardRow[]) => [...list].sort((a, b) => Number(signed(a)) - Number(signed(b)));
   const [todoSum, setTodoSum] = useState<WorkSum | null>(null);
+  // Coming up (§91). Open claims only when the to-do card is not already
+  // showing them in its Claims lane — the same case twice on one screen
+  // makes the eye check whether they differ.
+  type Ev = { key: string; when: string; what: string; note: string; warn: boolean };
+  const comingGroups: { title: string; items: Ev[]; quiet: string; onMore?: () => void; more?: string }[] = [
+    ...(canOps ? [{ title: 'Inspections', quiet: 'no inspections in the next 7 days', onMore: () => onGo('operations'), items: [
+      ...dueOnBoard.filter(r => !inspections.some(i => i.date === today && i.unit === r.unit))
+        .map(r => ({ key: `due-${r.resId}`, when: 'today', what: r.unit, note: r.inspection.key === 'req' ? 'required before the next guest — not yet scheduled' : 'due this turnover — not yet scheduled', warn: true })),
+      ...inspections.map(i => ({ key: i.id, when: i.date === today ? 'today' : short(i.date), what: i.unit, note: i.by ? `by ${i.by}` : '', warn: false }))
+    ] }] : []),
+    ...(canCosts ? [{ title: 'Expenses', quiet: 'no one-off expenses in the next 14 days',
+      items: upcoming.map((e: VariableExpense) => ({ key: e.id, when: e.start_date.slice(0, 10) === today ? 'today' : short(e.start_date.slice(0, 10)),
+        what: e.label || e.category, note: `${e.unit_name ?? 'shared'} · ${money2(Number(e.amount))}`, warn: false })) }] : []),
+    ...(canClaims && !canTodos ? [{ title: 'Open claims', quiet: 'no open claims', onMore: () => onGo('claims'), more: 'Open Claims',
+      items: openClaims.map((c: Claim) => ({ key: c.id, when: short(c.occurred_on.slice(0, 10)), what: c.unit_name ?? 'shared',
+        note: [c.description || c.category, c.severity, `waiting ${Math.max(0, Math.round((Date.parse(today) - Date.parse(c.occurred_on)) / 864e5))}d`]
+          .filter(Boolean).join(' · '), warn: c.severity === 'Critical' || c.severity === 'High' })) }] : [])
+  ];
+  const comingCount = comingGroups.reduce((a, g) => a + g.items.length, 0);
+  const comingErr = [ops.err, spend.err, claims.err].filter(Boolean).join(' · ');
 
   return (
     <section className="home">
       <header className="home-head">
         <div>
           <h2>{long(today)}</h2>
-          <p className="note">New York time · everything below is today unless it says otherwise</p>
+          <p className="note">New York time</p>
         </div>
-        {/* The day in one line, each figure a door to its block. */}
-        <div className="home-chips">
-          {canOps && <Chip n={cleans.length} label="cleans" warn={unassigned.length ? `${unassigned.length} unassigned` : ''} busy={ops.busy} />}
-          {canOps && <Chip n={todays.ins.length} label="check-ins" busy={ops.busy} />}
-          {canUnits && <Chip n={red.data?.list.length ?? 0} label="units in red" busy={red.busy} bad={!!red.data?.list.length} />}
-          {canOps && <Chip n={inspections.length} label={`inspection${inspections.length === 1 ? '' : 's'} this week`} busy={ops.busy} />}
+        {/* The day in one line, each figure a door to its screen (§91). Colour
+            only where something needs a person; a zero steps back. */}
+        <div className="home-pulses">
+          {canOps && <Pulse n={cleans.length} one="clean" many="cleans" busy={ops.busy} onClick={() => onGo('operations')}
+                            tone={unassigned.length ? 'bad' : undefined}
+                            note={unassigned.length ? `▲ ${unassigned.length} unassigned` : cleans.length ? '✓ all assigned' : ''} />}
+          {canOps && <Pulse n={todays.ins.length} one="check-in" many="check-ins" busy={ops.busy} onClick={() => onGo('operations')}
+                            tone={unsignedToday ? 'warn' : undefined}
+                            note={unsignedToday ? `▲ ${unsignedToday} not signed` : todays.ins.length && todays.ins.every(signed) ? '✓ all signed' : ''} />}
+          {canUnits && <Pulse n={red.data?.list.length ?? 0} one="unit in red" many="units in red" busy={red.busy}
+                              onClick={() => onGo('units')} tone={red.data?.list.length ? 'bad' : undefined} />}
+          {canOps && <Pulse n={inspections.length} one="inspection this week" many="inspections this week" busy={ops.busy}
+                            onClick={() => onGo('operations')} />}
         </div>
       </header>
 
@@ -181,14 +209,6 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
       )}
 
       <div className="home-grid">
-        {canTodos && (
-          <Card id="todo" title="To-do" count={todoSum?.open} className="home-todos" load={{ data: true, err: '', busy: false }}
-                summary={todoSum && <WorkSummary s={todoSum} />}
-                action={canOps ? 'All to-dos' : undefined} onAction={() => onGo('operations:todos')}>
-            <TodoList today={today} compact canClaims={canClaims} onSummary={setTodoSum}
-                      onMore={canOps ? () => onGo('operations:todos') : undefined} />
-          </Card>
-        )}
         {canOps && (
           <Card id="cleans" title="Check-outs" count={cleans.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
                 summary={unassigned.length || todays.outs2.some(isOpen)
@@ -222,6 +242,14 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
           </Card>
         )}
 
+        {canTodos && (
+          <Card id="todo" title="To-do" count={todoSum?.open} className="home-todos" load={{ data: true, err: '', busy: false }}
+                summary={todoSum && <WorkSummary s={todoSum} />}
+                action={canOps ? 'All to-dos' : undefined} onAction={() => onGo('operations:todos')}>
+            <TodoList today={today} compact canClaims={canClaims} onSummary={setTodoSum}
+                      onMore={canOps ? () => onGo('operations:todos') : undefined} />
+          </Card>
+        )}
         {canUnits && (
           <Card id="red" title="Units in red" count={red.data?.list.length} load={red} action="Open Units" onAction={() => onGo('units')}
                 busyText="Reading every calendar…"
@@ -239,32 +267,23 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
           </Card>
         )}
 
-        {(canOps || canCosts || canClaims) && (
-          <Card id="coming" title="Coming up" load={{ data: true, err: [ops.err, spend.err, claims.err].filter(Boolean).join(' · '), busy: ops.busy || spend.busy || claims.busy }}
+        {comingGroups.length > 0 && (comingCount > 0 || comingErr) && (
+          <Card id="coming" title="Coming up" count={comingCount}
+                load={{ data: true, err: comingErr, busy: ops.busy || spend.busy || claims.busy }}
                 action={canCosts ? 'Open Costs' : undefined} onAction={() => onGo('costs')}>
             <div className="home-events">
-              {canOps && (
-                <EventGroup title="Inspections" empty="Nothing scheduled in the next 7 days."
-                  items={[
-                    ...dueOnBoard.filter(r => !inspections.some(i => i.date === today && i.unit === r.unit))
-                      .map(r => ({ key: `due-${r.resId}`, when: 'today', what: r.unit, note: r.inspection.key === 'req' ? 'required before the next guest — not yet scheduled' : 'due this turnover — not yet scheduled', warn: true })),
-                    ...inspections.map(i => ({ key: i.id, when: i.date === today ? 'today' : short(i.date), what: i.unit, note: i.by ? `by ${i.by}` : '', warn: false }))
-                  ]} onMore={() => onGo('operations')} />
-              )}
-              {canCosts && (
-                <EventGroup title="Expenses" empty="No one-off expenses dated in the next 14 days."
-                  items={upcoming.map((e: VariableExpense) => ({ key: e.id, when: e.start_date.slice(0, 10) === today ? 'today' : short(e.start_date.slice(0, 10)),
-                    what: e.label || e.category, note: `${e.unit_name ?? 'shared'} · ${money2(Number(e.amount))}`, warn: false }))} />
-              )}
-              {canClaims && (
-                <EventGroup title="Open claims" empty="No open claims."
-                  items={openClaims.map((c: Claim) => ({ key: c.id, when: short(c.occurred_on.slice(0, 10)), what: c.unit_name ?? 'shared',
-                    note: [c.description || c.category, c.severity, `waiting ${Math.max(0, Math.round((Date.parse(today) - Date.parse(c.occurred_on)) / 864e5))}d`]
-                      .filter(Boolean).join(' · '), warn: c.severity === 'Critical' || c.severity === 'High' }))}
-                  onMore={() => onGo('claims')} more="Open Claims" />
+              {comingGroups.filter(g => g.items.length).map(g => (
+                <EventGroup key={g.title} title={g.title} items={g.items} onMore={g.onMore} more={g.more} />
+              ))}
+              {/* Empty groups say so in one quiet line, not a heading each (§91). */}
+              {comingGroups.some(g => !g.items.length) && (
+                <p className="note home-empty">{cap(comingGroups.filter(g => !g.items.length).map(g => g.quiet).join(' · '))}.</p>
               )}
             </div>
           </Card>
+        )}
+        {comingGroups.length > 0 && comingCount === 0 && !comingErr && !ops.busy && !spend.busy && !claims.busy && (
+          <p className="note home-quiet">Nothing coming up — {comingGroups.map(g => g.quiet).join(' · ')}.</p>
         )}
       </div>
 
@@ -275,11 +294,19 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   );
 }
 
-function Chip({ n, label, warn, busy, bad }: { n: number; label: string; warn?: string; busy: boolean; bad?: boolean }) {
+/**
+ * One figure of the day (§91): a count, what it is, and — only when a person
+ * must act — a colour and a ▲. A zero steps back rather than disappearing,
+ * so "none today" is still an answer.
+ */
+function Pulse({ n, one, many, note, tone, busy, onClick }: {
+  n: number; one: string; many: string; note?: string; tone?: 'bad' | 'warn'; busy: boolean; onClick: () => void;
+}) {
   return (
-    <span className={`home-chip ${bad ? 'bad' : ''}`}>
-      <b>{busy ? '…' : n}</b> {label}{warn && !busy && <span className="breach"> · {warn}</span>}
-    </span>
+    <button className={`home-pulse ${tone && !busy ? tone : ''} ${!busy && !n && !tone ? 'zero' : ''}`} onClick={onClick}>
+      <b>{busy ? '…' : n}</b> {n === 1 ? one : many}
+      {note && !busy && <span className="home-pulse-note">{note}</span>}
+    </button>
   );
 }
 
@@ -342,6 +369,8 @@ function ShowMore<T>({ items, render, limit = 3 }: { items: T[]; render: (x: T) 
 
 const Empty = ({ children }: { children: ReactNode }) => <p className="note home-empty">{children}</p>;
 
+const cap = (x: string) => x.charAt(0).toUpperCase() + x.slice(1);
+
 /** "Mon Sep 28" */
 const dayWord = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 
@@ -385,22 +414,20 @@ function CleanItem({ r }: { r: BoardRow }) {
   );
 }
 
-function EventGroup({ title, items, empty, onMore, more }: {
-  title: string; empty: string; onMore?: () => void; more?: string;
+function EventGroup({ title, items, onMore, more }: {
+  title: string; onMore?: () => void; more?: string;
   items: { key: string; when: string; what: string; note: string; warn: boolean }[];
 }) {
   return (
     <div className="home-evgroup">
       <h4>{title}</h4>
-      {!items.length ? <p className="note home-empty">{empty}</p> : (
-        // What needs acting on first, then by date.
-        <ShowMore items={[...items].sort((a, b) => Number(b.warn) - Number(a.warn))} render={i => (
-          <li key={i.key}>
-            <span className={`home-time ${i.when === 'today' ? 'today' : ''}`}>{i.when}</span>
-            <span className="home-main"><b>{i.what}</b> <span className={i.warn ? 'breach' : 'sub-n'}>{i.note}</span></span>
-          </li>
-        )} />
-      )}
+      {/* What needs acting on first, then by date. */}
+      <ShowMore items={[...items].sort((a, b) => Number(b.warn) - Number(a.warn))} render={i => (
+        <li key={i.key}>
+          <span className={`home-time ${i.when === 'today' ? 'today' : ''}`}>{i.when}</span>
+          <span className="home-main"><b>{i.what}</b> <span className={i.warn ? 'breach' : 'sub-n'}>{i.note}</span></span>
+        </li>
+      )} />
       {more && onMore && <button className="link tiny home-more" onClick={onMore}>{more} →</button>}
     </div>
   );

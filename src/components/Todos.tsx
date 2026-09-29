@@ -160,7 +160,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
         {c.category && c.description && <span className="todo-unit">{c.category}</span>}
         <span className={`todo-status sev s-${c.severity.toLowerCase()}`}>{c.severity}</span>
         <span className="todo-status">{c.status === 'Open' ? '○ Open' : '◐ In progress'}</span>
-        <span className="sub-n">{ageDays(c, today)}d open</span>
+        <span className="sub-n">{ageDays(c, today) ? `${ageDays(c, today)}d open` : 'new today'}</span>
         {c.reservation_label && <span className="todo-stay">🛏 {c.reservation_label}</span>}
         <CaseLink url={c.case_url} />
         {openWorkBy.get(String(c.id)) ? <span className="sub-n">· {openWorkBy.get(String(c.id))} open task{openWorkBy.get(String(c.id)) === 1 ? '' : 's'}</span>
