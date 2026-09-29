@@ -23,7 +23,7 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  can, getClaims, getForward, getOperations, getVariable,
+  can, getClaims, getForward, getGuestDocs, getOperations, getVariable,
   type Claim, type OperationsResponse, type VariableExpense
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
@@ -60,7 +60,8 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   const canTodos = can(permissions, 'todos');
 
   const ops = useLoad(canOps, async () => {
-    const r = await getOperations(1);
+    // Today and tomorrow (§89): the team prepares a day ahead.
+    const r = await getOperations(2);
     if (!r.ok) throw new Error(r.message ?? r.error ?? 'Could not load the board.');
     return r;
   });
@@ -78,11 +79,14 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     return r.claims ?? [];
   });
 
+  const tomorrow = addDays(today, 1);
   const todays = useMemo(() => {
     const rows = ops.data?.rows ?? [];
     return {
       outs: rows.filter(r => r.kind === 'out' && r.date === today),
       ins: rows.filter(r => r.kind === 'in' && r.date === today),
+      outs2: rows.filter(r => r.kind === 'out' && r.date === tomorrow),
+      ins2: rows.filter(r => r.kind === 'in' && r.date === tomorrow),
       tomorrowOuts: rows.filter(r => r.kind === 'out' && r.date === addDays(today, 1) && r.assignment !== 'not_needed').length,
       tomorrowIns: rows.filter(r => r.kind === 'in' && r.date === addDays(today, 1)).length
     };
@@ -98,6 +102,40 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   // A check-in is ready when its unit's clean today is assigned, or nobody left today.
   const readyFor = (r: BoardRow) => { const c = todays.outs.find(o => o.unitId === r.unitId); return !c || c.assignment !== 'tbd' && c.assignment !== 'unknown'; };
   const notReady = todays.ins.filter(r => !readyFor(r)).length;
+  // Every guest signs the rental agreement (§89): Hostaway's guest portal
+  // says whether they have; the ID is what is filed in Drive.
+  const canDocs = can(permissions, 'guests.documents');
+  const [ids, setIds] = useState<Record<string, boolean>>({});
+  const arrivals = [...todays.ins, ...todays.ins2];
+  const arrivalsKey = arrivals.map(r => r.resId).join();
+  useEffect(() => {
+    if (!canDocs || !arrivals.length) return;
+    const need = new Set(ops.data?.guestDocUnits ?? []);
+    const stays = arrivals.filter(r => need.has(r.unitId)).map(r => ({ resId: r.resId, arrival: r.date, name: r.docName }));
+    if (!stays.length) return;
+    void getGuestDocs(stays).then(x => { if (x.ok) setIds(Object.fromEntries(Object.entries(x.docs).map(([k, d]) => [k, d.id.length > 0]))); });
+  }, [canDocs, arrivalsKey]);
+  const signed = (r: BoardRow) => r.agreement === 'signed';
+  const unsigned = arrivals.filter(r => r.agreement === 'not_signed').length;
+  const arrivalRow = (r: BoardRow, isToday: boolean) => {
+    const clean = isToday ? todays.outs.find(o => o.unitId === r.unitId) : undefined;
+    const ready = !isToday ? null : !clean ? 'no departure today' : clean.assignment === 'assigned' ? `cleaned by ${clean.cleaner}` : '▲ clean not assigned';
+    return (
+      <li key={r.resId}>
+        <span className="home-time">{r.time}</span>
+        <span className="home-main"><b>{r.unit}</b> <span className="sub-n">· {r.guest || 'guest'} · {r.nights} night{r.nights === 1 ? '' : 's'}{r.guests ? ` · ${r.guests} guests` : ''}</span>
+          {ready && <span className={`home-ready ${ready.startsWith('▲') ? 'breach' : 'sub-n'}`}> · {ready}</span>}</span>
+        <span className="home-side home-docs">
+          {r.agreement && <span className={signed(r) ? 'doc-ok' : 'breach'}>{signed(r) ? '✓ Signed' : '▲ Not signed'}</span>}
+          {/* ID: verified in Hostaway, or a copy filed in Drive. */}
+          {(() => { const ok = r.idVerified || (canDocs && ids[r.resId]);
+            return <span className={ok ? 'doc-ok' : 'sub-n'} title={r.idVerified ? 'Verified in Hostaway' : ok ? 'Copy in Drive' : 'Not verified yet'}>{ok ? '✓ ID' : '○ ID'}</span>; })()}
+        </span>
+      </li>
+    );
+  };
+  // Not signed first — the three shown are the three to chase.
+  const bySigned = (list: BoardRow[]) => [...list].sort((a, b) => Number(signed(a)) - Number(signed(b)));
   const [todoSum, setTodoSum] = useState<WorkSum | null>(null);
 
   return (
@@ -130,36 +168,34 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
           </Card>
         )}
         {canOps && (
-          <Card id="cleans" title="Cleanings today" count={cleans.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
-                summary={unassigned.length ? <span className="breach">▲ {unassigned.length} unassigned</span> : undefined}
-                foot={todays.tomorrowOuts ? `Tomorrow: ${todays.tomorrowOuts} clean${todays.tomorrowOuts === 1 ? '' : 's'}` : undefined}>
-            {!todays.outs.length ? <Empty>No departures today.</Empty> : (
-              // Unassigned first: the three shown are the three that need someone.
-              <ShowMore items={[...todays.outs].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))}
-                        render={r => <CleanItem key={r.resId} r={r} />} />
-            )}
+          <Card id="cleans" title="Check-outs" count={cleans.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
+                summary={unassigned.length || todays.outs2.some(isOpen)
+                  ? <span className="breach">▲ {unassigned.length + todays.outs2.filter(isOpen).length} clean{unassigned.length + todays.outs2.filter(isOpen).length === 1 ? '' : 's'} unassigned</span> : undefined}>
+            {/* Today and tomorrow, unassigned first: the three shown are the three that need someone. */}
+            <DayGroup label={`Today · ${dayWord(today)}`} empty="No departures today.">
+              {todays.outs.length > 0 && <ShowMore items={[...todays.outs].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))}
+                                                   render={r => <CleanItem key={r.resId} r={r} />} />}
+            </DayGroup>
+            <DayGroup label={`Tomorrow · ${dayWord(tomorrow)}`} empty="No departures tomorrow.">
+              {todays.outs2.length > 0 && <ShowMore items={[...todays.outs2].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))}
+                                                    render={r => <CleanItem key={r.resId} r={r} />} />}
+            </DayGroup>
           </Card>
         )}
 
         {canOps && (
-          <Card id="checkins" title="Check-ins today" count={todays.ins.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
-                summary={notReady ? <span className="breach">▲ {notReady} not ready</span> : undefined}
-                foot={todays.tomorrowIns ? `Tomorrow: ${todays.tomorrowIns} arrival${todays.tomorrowIns === 1 ? '' : 's'}` : undefined}>
-            {!todays.ins.length ? <Empty>No arrivals today.</Empty> : (
-              <ShowMore items={[...todays.ins].sort((a, b) => Number(!readyFor(b)) - Number(!readyFor(a)))} render={r => {
-                  // Ready means a clean is recorded for this unit today, or
-                  // nobody left today (it was already empty).
-                  const clean = todays.outs.find(o => o.unitId === r.unitId);
-                  const ready = !clean ? 'no departure today' : clean.assignment === 'assigned' ? `cleaned by ${clean.cleaner}` : '▲ clean not assigned';
-                  return (
-                    <li key={r.resId}>
-                      <span className="home-time">{r.time}</span>
-                      <span className="home-main"><b>{r.unit}</b> <span className="sub-n">· {r.guest || 'guest'} · {r.nights} night{r.nights === 1 ? '' : 's'}{r.guests ? ` · ${r.guests} guests` : ''}</span></span>
-                      <span className={`home-side ${ready.startsWith('▲') ? 'breach' : 'sub-n'}`}>{ready}</span>
-                    </li>
-                  );
-                }} />
-            )}
+          <Card id="checkins" title="Check-ins" count={todays.ins.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
+                summary={(unsigned || notReady) ? <>
+                  {unsigned > 0 && <span className="breach">▲ {unsigned} not signed</span>}
+                  {unsigned > 0 && notReady > 0 && ' · '}
+                  {notReady > 0 && <span className="breach">▲ {notReady} not ready</span>}
+                </> : undefined}>
+            <DayGroup label={`Today · ${dayWord(today)}`} empty="No arrivals today.">
+              {todays.ins.length > 0 && <ShowMore items={bySigned(todays.ins)} render={r => arrivalRow(r, true)} />}
+            </DayGroup>
+            <DayGroup label={`Tomorrow · ${dayWord(tomorrow)}`} empty="No arrivals tomorrow.">
+              {todays.ins2.length > 0 && <ShowMore items={bySigned(todays.ins2)} render={r => arrivalRow(r, false)} />}
+            </DayGroup>
           </Card>
         )}
 
@@ -200,7 +236,8 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
               {canClaims && (
                 <EventGroup title="Open claims" empty="No open claims."
                   items={openClaims.map((c: Claim) => ({ key: c.id, when: short(c.occurred_on.slice(0, 10)), what: c.unit_name ?? 'shared',
-                    note: `${c.severity} · ${c.category ?? ''} · waiting ${Math.max(0, Math.round((Date.parse(today) - Date.parse(c.occurred_on)) / 864e5))}d`, warn: c.severity === 'Critical' || c.severity === 'High' }))}
+                    note: [c.description || c.category, c.severity, `waiting ${Math.max(0, Math.round((Date.parse(today) - Date.parse(c.occurred_on)) / 864e5))}d`]
+                      .filter(Boolean).join(' · '), warn: c.severity === 'Critical' || c.severity === 'High' }))}
                   onMore={() => onGo('claims')} more="Open Claims" />
               )}
             </div>
@@ -281,6 +318,20 @@ function ShowMore<T>({ items, render, limit = 3 }: { items: T[]; render: (x: T) 
 }
 
 const Empty = ({ children }: { children: ReactNode }) => <p className="note home-empty">{children}</p>;
+
+/** "Mon Sep 28" */
+const dayWord = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+
+/** A day inside a card (§89): today, then tomorrow. */
+function DayGroup({ label, empty, children }: { label: string; empty: string; children: ReactNode }) {
+  const has = Array.isArray(children) ? children.some(Boolean) : !!children;
+  return (
+    <div className="home-day">
+      <h4>{label}</h4>
+      {has ? children : <p className="note home-empty">{empty}</p>}
+    </div>
+  );
+}
 
 /** The to-do card's line when folded — the counts that say whether to open it. */
 function WorkSummary({ s }: { s: WorkSum }) {

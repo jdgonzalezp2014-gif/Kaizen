@@ -150,6 +150,10 @@ export interface HostawayReservation {
    * apart from guestName so Kaizen finds the SAME folder (§73).
    */
   docName?: string;
+  /** The rental agreement, as Hostaway's guest portal has it (§89): signed or not. */
+  agreement?: 'signed' | 'not_signed' | null;
+  /** Hostaway's own identity verification (guest portal / channel): ID checked or not (§89). */
+  idVerified?: boolean;
   guests?: number | null;
   /** Only to recognise the same guest booking again. Never sent to a browser. */
   phone?: string;
@@ -468,6 +472,8 @@ async function pagedReservationsWith(token: string, query: string): Promise<Host
         guestName: String(r.guestName ??
           [r.guestFirstName, r.guestLastName].filter(Boolean).join(' ')).trim(),
         docName: `${r.guestFirstName ?? ''} ${r.guestLastName ?? ''}`.trim() || String(r.guestName ?? '').trim() || 'Guest',
+        agreement: (r.reservationAgreement === 'signed' ? 'signed' : r.reservationAgreement ? 'not_signed' : null) as 'signed' | 'not_signed' | null,
+        idVerified: Number(r.isGuestIdentityVerified) === 1 || Number(r.isGuestVerifiedByGovernmentId) === 1,
         guests: Number(r.numberOfGuests ?? r.adults) || null,
         phone: String(r.phone ?? '')
       };

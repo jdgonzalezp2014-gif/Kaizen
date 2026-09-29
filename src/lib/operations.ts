@@ -29,6 +29,10 @@ export interface OpsReservation {
   guestName?: string; guests?: number | null;
   /** The name on the guest's documents folder (§73). */
   docName?: string;
+  /** The rental agreement in Hostaway's guest portal (§89). */
+  agreement?: 'signed' | 'not_signed' | null;
+  /** Hostaway's identity verification (§89). */
+  idVerified?: boolean;
   /** Only used to recognise the same guest booking again. Never shown. */
   phone?: string;
 }
@@ -134,6 +138,10 @@ export interface BoardRow {
   guest: string;
   /** The name on the guest's documents folder in Drive (§73). */
   docName: string;
+  /** Rental agreement signed in Hostaway's guest portal (§89); null when Hostaway says nothing. */
+  agreement: 'signed' | 'not_signed' | null;
+  /** The guest's ID verified in Hostaway (§89). */
+  idVerified: boolean;
   guests: number | null;
   nights: number;
   channel: string;
@@ -370,7 +378,7 @@ export function buildBoard(input: {
     const ov = overrides.get(x.reservationId);
     const base: BoardRow = {
       date: x.arrival, kind: 'in', resId: x.reservationId, unitId: l.id, unit: l.name,
-      beds: l.bedrooms, guest: x.guestName ?? '', docName: x.docName || x.guestName || 'Guest', guests: x.guests ?? null, nights: x.nights,
+      beds: l.bedrooms, guest: x.guestName ?? '', docName: x.docName || x.guestName || 'Guest', agreement: x.agreement ?? null, idVerified: !!x.idVerified, guests: x.guests ?? null, nights: x.nights,
       channel: x.channel, total: x.totalPaid, time: '', note: '',
       next: null, auto: { cleaner: null, tier: 'none', reason: '' },
       cleaner: null, assignment: 'unknown', price: null, deep: false, urgency: null,

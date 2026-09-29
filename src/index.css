@@ -1349,3 +1349,10 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .case-link { font-size: 11.5px; font-weight: 600; color: var(--series-1); white-space: nowrap; }
 .claim-caselink { grid-column: span 2; }
 .quick-caselink { flex: 1 1 260px; font-size: 12.5px; padding: 4px 8px; }
+
+/* §89: today and tomorrow on Home; the agreement and the ID per arrival. */
+.home-day + .home-day { margin-top: 10px; }
+.home-day h4 { margin: 0 0 2px; font-size: 11.5px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 650; }
+.home-docs { display: inline-flex; gap: 8px; white-space: nowrap; font-size: 12px; }
+.home-docs .doc-ok { color: var(--good); font-weight: 600; }
+.home-ready { font-size: 12px; }

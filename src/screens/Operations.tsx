@@ -438,10 +438,18 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos 
               ☐ {td.length} to-do{td.length === 1 ? '' : 's'}</span>}
           </>;
         })()}
-        {docs !== undefined && (docs === null ? <span className="ops-flag ok">… documents</span> : <>
-          <span className={`ops-flag ${docs.id.length ? 'ok' : 'missing'}`}>{docs.id.length ? '✓' : '○'} ID</span>
-          <span className={`ops-flag ${docs.agreement.length ? 'ok' : 'missing'}`}>{docs.agreement.length ? '✓' : '○'} agreement</span>
-        </>)}
+        {/* The agreement: signed in Hostaway's guest portal, or its PDF filed in Drive (§89). */}
+        {r.kind === 'in' && (r.agreement || docs) && (() => {
+          const signed = r.agreement === 'signed' || !!docs?.agreement.length;
+          return <span className={`ops-flag ${signed ? 'ok' : 'urgent'}`} title={signed ? 'Rental agreement signed' : 'Rental agreement not signed yet'}>
+            {signed ? '✓ signed' : '▲ not signed'}</span>;
+        })()}
+        {/* The ID: verified in Hostaway for every guest; a copy in Drive where the building needs one (§89). */}
+        {r.kind === 'in' && <span className={`ops-flag ${r.idVerified ? 'ok' : 'missing'}`}
+          title={r.idVerified ? 'ID verified in Hostaway' : 'ID not verified in Hostaway yet'}>{r.idVerified ? '✓ ID verified' : '○ ID'}</span>}
+        {docs !== undefined && (docs === null ? <span className="ops-flag ok">… Drive</span>
+          : <span className={`ops-flag ${docs.id.length ? 'ok' : 'missing'}`} title="A copy of the ID in the reservation's Drive folder">
+              {docs.id.length ? '✓' : '○'} ID in Drive</span>)}
       </td>
       <td className="ops-note">{r.note}</td>
     </tr>
@@ -1302,10 +1310,10 @@ function GuestDocUnits({ initial, onSave }: { initial: string[]; onSave: (ids: s
 
   return (
     <div className="card">
-      <h2>Guest documents</h2>
-      <p className="note">Units that ask each guest for an ID and a signed rental agreement. Only ask where the
-        building allows it. These arrivals show ○/✓ ID and agreement on the board; any other arrival can still
-        have documents filed, optionally.</p>
+      <h2>Guest documents — copy in Drive</h2>
+      <p className="note">Every guest is asked for an ID and a signed rental agreement through Hostaway's guest
+        portal, and the board shows both for every arrival. Tick the units whose building also needs a COPY of
+        the ID and agreement kept in Drive; those arrivals also show ○/✓ ID in Drive.</p>
       {!units ? <p className="note loading-dot">Reading units</p> : (
         <div className="docunits">
           {groups.map(([b, us]) => {

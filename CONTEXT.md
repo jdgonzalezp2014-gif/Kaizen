@@ -2678,3 +2678,29 @@ updates, one line among many. Migration 038 adds `claims.case_url`
   stay, it changes only when sent — a form that does not show it keeps it.
 - Backfilled once: a claim whose timeline already held an Airbnb /
   Booking / Vrbo / Expedia link got it (Missing Fob → its Airbnb case).
+
+## 89. Every guest: ID and agreement, asked in Hostaway, shown in Kaizen
+
+The owner (2026-09-28): every guest must sign the rental agreement and give
+an ID — asked for ALL listings through Hostaway's guest portal (the owner
+sets up the portal); Kaizen shows where each arrival stands. A copy in
+Drive stays a per-unit choice (§73) — for now only the P2 building.
+
+- **From Hostaway, for every arrival** (the reservation list carries both,
+  no per-stay calls): `reservationAgreement` → ✓ signed / ▲ not signed, and
+  `isGuestIdentityVerified` / `isGuestVerifiedByGovernmentId` → ✓ ID
+  verified / ○ ID. On the board's arrivals, and on Home.
+- **Home: today and tomorrow.** "Check-ins": each arrival with ✓ Signed /
+  ▲ Not signed and ✓ ID / ○ ID (verified in Hostaway, or a copy in Drive),
+  not-signed first; the folded card says "▲ N not signed". "Check-outs":
+  today and tomorrow, unassigned cleans first.
+- **Operations → Setup → "Guest documents — copy in Drive"**: which units
+  also keep a copy in Drive (P2). Those arrivals also show ○/✓ ID in Drive.
+- **House rules** (`scripts/house-rules-id-notice.mjs`, `--dry` first):
+  the notice "Identity verification: This property is subject to local
+  regulations that require us to verify the identity of every guest…" was
+  appended to the house rules of 19 active listings on 2026-09-28, keeping
+  every word already there and read back to confirm. 7 listings are
+  archived in Hostaway (it refuses edits, 403); 3 are not active in Kaizen.
+  Every change is in `listing_text_changes` (migration 039) with the text
+  as it was — any listing can be put back exactly.
