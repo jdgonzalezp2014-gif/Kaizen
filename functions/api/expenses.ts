@@ -59,7 +59,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const rows = await sql`
     SELECT e.id, e.label, e.unit_id, e.shared, e.start_date, e.end_date, e.category,
-           e.frequency, e.amount, e.notes, e.created_by, e.created_at, u.name AS unit_name
+           e.frequency, e.amount, e.notes, e.created_by, e.created_at, u.name AS unit_name, e.source, e.external_ref
       FROM expenses e LEFT JOIN units u ON u.account_id = e.account_id AND u.id = e.unit_id
      WHERE e.account_id = 1 AND e.frequency <> 'Monthly'
      ORDER BY e.start_date DESC LIMIT 500`;
@@ -148,6 +148,8 @@ export const onRequestDelete: PagesFunction<Env> = async ({ request, env }) => {
   const id = new URL(request.url).searchParams.get('id');
   if (!id) return Response.json({ ok: false, error: 'id is required.' }, { status: 400 });
   const sql = db(env);
-  const rows = await sql`DELETE FROM expenses WHERE account_id = 1 AND id = ${id} RETURNING id`;
+  // §95: a repair's expense is the repair's — changed or removed from the repair, never here.
+  const rows = await sql`DELETE FROM expenses WHERE account_id = 1 AND id = ${id} AND source IS DISTINCT FROM 'repair' RETURNING id`;
+  if (!rows.length) return Response.json({ ok: false, error: 'This is a repair\'s cost — change or reopen the repair in the to-do list.' }, { status: 409 });
   return Response.json({ ok: rows.length > 0, deleted: rows.length });
 };

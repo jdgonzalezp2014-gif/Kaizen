@@ -24,7 +24,7 @@ const shiftMonth = (m: string, by: number) => {
   return d.toISOString().slice(0, 7);
 };
 const CATEGORIES = ['Lease', 'Electricity', 'Gas', 'Water', 'Internet', 'Cleaning',
-                    'Restock', 'Handyman', 'Software', 'Insurance', 'General'];
+                    'Restock', 'Handyman', 'Repairs', 'Software', 'Insurance', 'General'];
 
 export function Costs({ units }: { units: UnitRow[] }) {
   // Cleanings belong here rather than in a tab of their own: they are a
@@ -342,9 +342,12 @@ function Variable({ units }: { units: UnitRow[] }) {
               <td>{r.unit_name ?? <span className="muted">Shared</span>}</td>
               <td>{r.category}</td>
               <td className="n">{money(Number(r.amount))}</td>
-              <td>{r.notes}</td>
+              <td>{r.source === 'repair' ? <>🔧 {r.label}{r.notes ? <span className="muted"> · {r.notes}</span> : null}</> : r.notes}</td>
               <td className="muted">{r.created_by?.split('@')[0]}</td>
-              <td><button className="link danger" onClick={() => deleteExpense(r.id).then(load)}>remove</button></td>
+              {/* §95: a repair's cost follows the repair — changed or removed there. */}
+              <td>{r.source === 'repair'
+                ? <span className="muted" title="Change the cost, or reopen the repair, in the to-do list">from repair</span>
+                : <button className="link danger" onClick={() => deleteExpense(r.id).then(load)}>remove</button>}</td>
             </tr>
           ))}
           {rows.length === 0 && <tr><td colSpan={7} className="note">Nothing recorded yet.</td></tr>}

@@ -126,6 +126,8 @@ export interface FixedLine {
 }
 export interface VariableExpense extends FixedLine {
   start_date: string; end_date: string | null; frequency: string; created_by: string;
+  /** 'repair' = written by a completed repair (§95), external_ref = its task. */
+  source?: string | null; external_ref?: string | null;
 }
 
 export const getFixed = (month: string) =>

@@ -35,6 +35,7 @@ import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { can } from '../_lib/roles.ts';
 import { mirrorOn, people, pullAll, pushWork } from '../_lib/hostaway-tasks.ts';
+import { settleRepair } from '../_lib/repair-costs.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -58,6 +59,7 @@ interface Row {
   hostaway_task_id?: string | null; hostaway_error?: string | null; source?: string;
   assignee_user_id?: number | null; supervisor_user_id?: number | null; supervisor?: string | null;
   start_time?: string | null; due_time?: string | null; resolution_note?: string | null;
+  charge_owner?: boolean; hostaway_expense_id?: string | null;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
 const num = (v: string | null) => v == null ? null : Number(v);
@@ -70,7 +72,8 @@ const out = (r: Row) => ({
   reservationId: r.reservation_id, reservationLabel: r.reservation_label,
   hostawayTaskId: r.hostaway_task_id ?? null, hostawayError: r.hostaway_error ?? null, source: r.source ?? 'kaizen',
   assigneeUserId: r.assignee_user_id ?? null, supervisorUserId: r.supervisor_user_id ?? null, supervisor: r.supervisor ?? null,
-  startTime: r.start_time ?? null, dueTime: r.due_time ?? null, resolutionNote: r.resolution_note ?? null
+  startTime: r.start_time ?? null, dueTime: r.due_time ?? null, resolutionNote: r.resolution_note ?? null,
+  chargeOwner: !!r.charge_owner, hostawayExpenseId: r.hostaway_expense_id ?? null
 });
 
 async function list(sql: SqlFn, claim?: string) {
@@ -80,7 +83,7 @@ async function list(sql: SqlFn, claim?: string) {
            t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
            t.reservation_id, t.reservation_label, t.hostaway_task_id, t.hostaway_error, t.source,
            t.assignee_user_id, t.supervisor_user_id, t.supervisor, to_char(t.start_time, 'HH24:MI') AS start_time,
-           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note,
+           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note, t.charge_owner, t.hostaway_expense_id,
            (SELECT count(*)::int FROM work_updates w
              WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
       FROM todos t
@@ -171,6 +174,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     if (!(await mirrorOn(sql))) return;
     await pushWork(sql, await getCredentials(sql, env.ENCRYPTION_KEY), id);
   })().catch(() => { /* kept on the row as hostaway_error by pushWork, or retried on the next pull */ }));
+  // §95: the repair's expense in Costs (and the owner's charge in Hostaway) follows what just changed.
+  const settle = (id: string) => settleRepair(sql, id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY));
 
   // Each field: undefined = not being changed; null = cleared.
   const text = (v: unknown, max: number) => v === null ? null : typeof v === 'string' ? (v.trim().replace(/\s+/g, ' ').slice(0, max) || null) : undefined;
@@ -194,7 +199,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     supervisorUserId: b.supervisorUserId === null || b.supervisorUserId === '' ? null : b.supervisorUserId === undefined ? undefined : Number(b.supervisorUserId),
     startTime: b.startTime === null || b.startTime === '' ? null : typeof b.startTime === 'string' ? b.startTime.slice(0, 5) : undefined,
     dueTime: b.dueTime === null || b.dueTime === '' ? null : typeof b.dueTime === 'string' ? b.dueTime.slice(0, 5) : undefined,
-    resolutionNote: b.resolutionNote === null ? null : typeof b.resolutionNote === 'string' ? (b.resolutionNote.trim().slice(0, 2000) || null) : undefined
+    resolutionNote: b.resolutionNote === null ? null : typeof b.resolutionNote === 'string' ? (b.resolutionNote.trim().slice(0, 2000) || null) : undefined,
+    // §95: a repair's cost also charged to the owner, as an expense in Hostaway.
+    chargeOwner: typeof b.chargeOwner === 'boolean' ? b.chargeOwner : undefined
   };
   for (const tm of [f.startTime, f.dueTime]) if (tm && !TIME.test(tm)) return bad('Times are HH:MM.');
   // The people are Hostaway's: an id they do not have is refused, and the name is theirs.
@@ -251,12 +258,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         INSERT INTO todos (account_id, title, unit_ids, due_on, due_time, created_by, kind, status, priority,
                            assignee_user_id, assignee, supervisor_user_id, supervisor,
                            claim_id, vendor, scheduled_on, start_time, cost_estimate, cost_actual, description, parent_id,
-                           reservation_id, reservation_label)
+                           reservation_id, reservation_label, charge_owner)
         VALUES (1, ${f.title}, ${units}, ${f.dueOn ?? null}, ${f.dueTime ?? null}::time, ${who.email}, ${f.kind ?? 'task'}, ${status},
                 ${f.priority ?? 'none'}, ${f.assigneeUserId ?? null}, ${assigneeName ?? null},
                 ${f.supervisorUserId ?? null}, ${supervisorName ?? null}, ${f.claimId ?? null}, ${f.vendor ?? null},
                 ${f.scheduledOn ?? null}, ${f.startTime ?? null}::time, ${f.costEstimate ?? null}, ${f.costActual ?? null},
-                ${f.description ?? null}, ${f.parentId ?? null}, ${stay}, ${stay ? f.reservationLabel : null})
+                ${f.description ?? null}, ${f.parentId ?? null}, ${stay}, ${stay ? f.reservationLabel : null}, ${f.chargeOwner ?? false})
         RETURNING id`)[0] as { id: string };
       ids.push(String(row.id));
       const what = (f.kind ?? 'task') === 'work_order' ? 'Work order' : 'To-do';
@@ -266,6 +273,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       if (f.parentId) await note(sql, 'task', f.parentId, 'change', `Sub-task added: ${f.title}`, who.email);
       if (f.claimId) await note(sql, 'claim', f.claimId, 'change', `${what} added: ${f.title}`, who.email);
       if (!f.parentId) mirror(String(row.id));
+      await settle(String(row.id));
     }
     return Response.json({ ok: true, id: ids[0], ids, todos: await list(sql, b.claimScope ? f.claimId ?? undefined : undefined) });
   }
@@ -282,12 +290,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     await sql`UPDATE todos SET deleted_at = NULL, deleted_by = NULL, updated_at = now() WHERE account_id = 1 AND id = ${id}`;
     await note(sql, 'task', id, 'change', `Restored${kids.length ? ` with its ${kids.length} sub-task${kids.length === 1 ? '' : 's'}` : ''}`, who.email);
     if (gone.claim_id) await note(sql, 'claim', gone.claim_id, 'change', `Restored: ${gone.title}`, who.email);
+    for (const x of [id, ...kids.map((k: any) => String(k.id))]) await settle(x);
     mirror(id);
     return Response.json({ ok: true, todos: await list(sql, b.claimScope ? String(b.claimScope) : undefined) });
   }
 
   const before = (await sql`SELECT title, status, priority, assignee, supervisor, due_on::text AS due_on, claim_id, vendor,
-                                   to_char(start_time, 'HH24:MI') AS start_time, to_char(due_time, 'HH24:MI') AS due_time, resolution_note,
+                                   to_char(start_time, 'HH24:MI') AS start_time, to_char(due_time, 'HH24:MI') AS due_time, resolution_note, charge_owner,
                                    scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids, description,
                                    reservation_id, reservation_label
                               FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`)[0] as Record<string, any> | undefined;
@@ -335,6 +344,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
                             WHERE account_id = 1 AND parent_id = ${id} AND deleted_at IS NULL RETURNING id`;
     await note(sql, 'task', id, 'change', `Removed${kids.length ? ` with its ${kids.length} sub-task${kids.length === 1 ? '' : 's'}` : ''}`, who.email);
     if (before.claim_id) await note(sql, 'claim', before.claim_id, 'change', `Removed: ${before.title}`, who.email);
+    for (const x of [id, ...kids.map((k: any) => String(k.id))]) await settle(x);
     mirror(id);
     return Response.json({ ok: true, todos: await list(sql, scope) });
   }
@@ -360,6 +370,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       start_time    = CASE WHEN ${f.startTime !== undefined} THEN ${f.startTime ?? null}::time ELSE start_time END,
       due_time      = CASE WHEN ${f.dueTime !== undefined} THEN ${f.dueTime ?? null}::time ELSE due_time END,
       resolution_note = CASE WHEN ${f.resolutionNote !== undefined} THEN ${f.resolutionNote ?? null} ELSE resolution_note END,
+      charge_owner  = COALESCE(${f.chargeOwner ?? null}::boolean, charge_owner),
       vendor        = CASE WHEN ${f.vendor !== undefined} THEN ${f.vendor ?? null} ELSE vendor END,
       claim_id      = CASE WHEN ${f.claimId !== undefined} THEN ${f.claimId ?? null} ELSE claim_id END,
       cost_estimate = CASE WHEN ${f.costEstimate !== undefined} THEN ${f.costEstimate ?? null}::numeric ELSE cost_estimate END,
@@ -417,7 +428,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     const names = unitIds.length ? (await sql`SELECT name FROM units WHERE id = ANY(${unitIds}) ORDER BY name`).map((r: any) => r.name).join(', ') : 'none';
     changed.push(`Listings: ${names}`);
   }
+  if (f.chargeOwner !== undefined && f.chargeOwner !== before.charge_owner) changed.push(f.chargeOwner ? 'Charged to the owner' : 'No longer charged to the owner');
   if (changed.length) await note(sql, 'task', id, 'change', changed.join(' · '), who.email);
+  await settle(id);
   mirror(id);
 
   return Response.json({ ok: true, todos: await list(sql, scope) });

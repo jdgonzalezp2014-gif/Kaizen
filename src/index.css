@@ -1662,3 +1662,6 @@ button.link.lane-add, button.link.home-more { opacity: 1; }
 .todo-resolution-in { grid-column: 1 / -1; }
 .todo-resolution-in textarea { width: 100%; font-family: inherit; font-size: 13px; margin-top: 5px; }
 .todo-status.s-confirmed { color: var(--ink); }
+/* §95: a repair's money. */
+.todo-charge { grid-column: 1 / -1; margin: 4px 0 0; color: var(--ink); }
+.todo-costnote { grid-column: 1 / -1; margin: 0; }

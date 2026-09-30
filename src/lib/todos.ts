@@ -24,6 +24,8 @@ export interface Todo {
   startTime?: string | null; dueTime?: string | null;
   /** Written when it is completed — how it was resolved. */
   resolutionNote?: string | null;
+  /** §95: a repair's cost also charged to the owner (an expense in Hostaway), and that expense. */
+  chargeOwner?: boolean; hostawayExpenseId?: string | null;
   /** The claim this work resolves, if any. */
   claimId: string | null;
   /** Start from (any work); a repair's vendor, and what it costs. */

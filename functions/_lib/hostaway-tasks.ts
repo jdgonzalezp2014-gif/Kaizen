@@ -20,6 +20,7 @@ import {
   type HostawayTask, type HostawayUser, type SyncState, type WorkForSync, type WorkPatch
 } from '../../src/lib/hostaway-tasks.ts';
 import { stayLabel } from '../../src/lib/todos.ts';
+import { settleRepair } from './repair-costs.ts';
 
 const BASE = 'https://api.hostaway.com/v1';
 /** How often a page load may ask Hostaway for changes. */
@@ -185,6 +186,8 @@ export async function pullAll(sql: SqlFn, creds: HostawayCredentials, force = fa
     if (!r.deleted_at && said.length) {
       await applyPatch(sql, r.id, patch, patch.reservationId !== undefined ? await labelFor(patch.reservationId) : null);
       await note(sql, r.id, patch.status ? 'status' : 'change', `In Hostaway: ${said.join(' · ')}`, 'Hostaway');
+      // §95: completed with a cost there = the repair's expense here.
+      await settleRepair(sql, r.id, 'Hostaway', async () => creds);
       out.changed++;
     }
     await saveState(sql, r.id, now);

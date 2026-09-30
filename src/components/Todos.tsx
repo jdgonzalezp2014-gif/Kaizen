@@ -374,6 +374,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
         {closed && t.resolutionNote && <span className="sub-n todo-resolution" title="Resolution">— {t.resolutionNote}</span>}
         {(t.costActual ?? t.costEstimate) != null &&
           <span className="sub-n">{t.costActual != null ? money2(t.costActual) : `~${money2(t.costEstimate!)}`}</span>}
+        {t.kind === 'work_order' && t.chargeOwner && <span className="todo-ha" title={t.hostawayExpenseId ? `Expense #${t.hostawayExpenseId} in Hostaway` : 'Charged when completed with a cost'}>
+          {t.hostawayExpenseId ? '↗ billed to owner' : '↗ owner pays'}</span>}
         {t.updates > 1 && <span className="sub-n" title="Updates">💬 {t.updates}</span>}
         {t.hostawayError ? <span className="todo-ha err" title={`Not yet in Hostaway: ${t.hostawayError} — retried on the next sync`}>⚠ Hostaway</span>
           : t.hostawayTaskId && <span className="todo-ha" title={`Hostaway task #${t.hostawayTaskId}${t.source === 'hostaway' ? ' — written in Hostaway' : ''}`}>⇄ Hostaway</span>}
@@ -461,6 +463,8 @@ type FormValue = {
   assigneeUserId: number | null; supervisorUserId: number | null;
   claimId: string | null; vendor: string | null;
   costEstimate: number | null; costActual: number | null; status?: TaskStatus; resolutionNote: string | null;
+  /** §95: the repair's cost also charged to the owner, in Hostaway. */
+  chargeOwner: boolean;
   description: string | null; parentId?: string;
   reservationId: string | null; reservationLabel: string | null;
 };
@@ -509,7 +513,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   const blank = (): FormValue => ({
     title: '', kind: startKind, unitIds: fixed?.unitIds ?? [], priority: 'none',
     scheduledOn: null, startTime: null, dueOn: null, dueTime: null, assigneeUserId: null, supervisorUserId: null,
-    claimId: fixed?.claimId ?? null, vendor: null, costEstimate: null, costActual: null, resolutionNote: null,
+    claimId: fixed?.claimId ?? null, vendor: null, costEstimate: null, costActual: null, resolutionNote: null, chargeOwner: false,
     description: null, ...(fixed?.parentId ? { parentId: fixed.parentId } : {}),
     reservationId: fixed?.reservationId ?? null, reservationLabel: fixed?.reservationLabel ?? null
   });
@@ -518,7 +522,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
     scheduledOn: initial.scheduledOn, startTime: initial.startTime ?? null, dueOn: initial.dueOn, dueTime: initial.dueTime ?? null,
     assigneeUserId: initial.assigneeUserId ?? null, supervisorUserId: initial.supervisorUserId ?? null,
     claimId: initial.claimId, vendor: initial.vendor, costEstimate: initial.costEstimate, costActual: initial.costActual,
-    status: initial.status, resolutionNote: initial.resolutionNote ?? null,
+    status: initial.status, resolutionNote: initial.resolutionNote ?? null, chargeOwner: initial.chargeOwner ?? false,
     description: initial.description, reservationId: initial.reservationId, reservationLabel: initial.reservationLabel
   } : blank());
   const [more, setMore] = useState(!!initial);
@@ -631,6 +635,13 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
             <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
           </>}
           <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
+          {wo && (
+            <label className="check todo-charge" title={v.unitIds.length ? '' : 'Needs a listing — the expense goes on it'}>
+              <input type="checkbox" checked={v.chargeOwner} disabled={!v.unitIds.length} onChange={e => set('chargeOwner', e.target.checked)} />
+              Charge to owner <span className="sub-n">— when completed, the cost is also an expense on the listing in Hostaway (owner statements)</span>
+            </label>
+          )}
+          {wo && <p className="note todo-costnote">A completed repair's cost is recorded in Costs → Repairs, with or without a claim.</p>}
           {initial && closing && (
             <label className="todo-resolution-in">Resolution — how it was resolved
               <textarea rows={2} value={v.resolutionNote ?? ''} maxLength={2000} onChange={e => set('resolutionNote', e.target.value || null)} /></label>
