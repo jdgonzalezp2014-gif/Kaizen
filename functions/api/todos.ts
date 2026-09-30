@@ -13,6 +13,11 @@
  *   POST { action: 'delete', id }                                 stamped, never erased (its sub-tasks too)
  *   POST { action: 'restore', id }                                undo a removal, with what it took (§82)
  *   POST { action: 'toClaim', id, category?, severity? }          register it as a claim (§78)
+ *   POST { action: 'hostawaySync', force? }                       pull changes from Hostaway tasks (§93)
+ *
+ * §93: with the Hostaway mirror on, every change here is pushed to the
+ * work's Hostaway task after the response (waitUntil), and a page load
+ * asks for Hostaway's changes at most every two minutes.
  *
  * §78: a task has a title and a `description`; `parentId` makes it a
  * sub-task (one level deep). A to-do can hold any number of sub-tasks of
@@ -24,9 +29,10 @@
  * timeline — the claim is the case, and its history should read whole.
  */
 import { db, type Env } from '../_lib/db.ts';
-import { accessOf, type SqlFn } from '../_lib/accounts.ts';
+import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { can } from '../_lib/roles.ts';
+import { mirrorOn, pullAll, pushWork } from '../_lib/hostaway-tasks.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -44,6 +50,7 @@ interface Row {
   vendor: string | null; scheduled_on: string | null; cost_estimate: string | null; cost_actual: string | null;
   updates: number; description: string | null; parent_id: string | null;
   reservation_id: string | null; reservation_label: string | null;
+  hostaway_task_id?: string | null; hostaway_error?: string | null; source?: string;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
 const num = (v: string | null) => v == null ? null : Number(v);
@@ -53,7 +60,8 @@ const out = (r: Row) => ({
   kind: r.kind, status: r.status, priority: r.priority, assignee: r.assignee, claimId: r.claim_id,
   vendor: r.vendor, scheduledOn: r.scheduled_on, costEstimate: num(r.cost_estimate), costActual: num(r.cost_actual),
   updates: Number(r.updates ?? 0), description: r.description, parentId: r.parent_id,
-  reservationId: r.reservation_id, reservationLabel: r.reservation_label
+  reservationId: r.reservation_id, reservationLabel: r.reservation_label,
+  hostawayTaskId: r.hostaway_task_id ?? null, hostawayError: r.hostaway_error ?? null, source: r.source ?? 'kaizen'
 });
 
 async function list(sql: SqlFn, claim?: string) {
@@ -61,7 +69,7 @@ async function list(sql: SqlFn, claim?: string) {
     SELECT t.id, t.title, t.unit_ids, t.due_on::text AS due_on, t.created_at, t.created_by, t.done_at, t.done_by,
            t.kind, t.status, t.priority, t.assignee, t.claim_id, t.vendor, t.scheduled_on::text AS scheduled_on,
            t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
-           t.reservation_id, t.reservation_label,
+           t.reservation_id, t.reservation_label, t.hostaway_task_id, t.hostaway_error, t.source,
            (SELECT count(*)::int FROM work_updates w
              WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
       FROM todos t
@@ -126,11 +134,26 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   return Response.json({ ok: true, todos: await list(sql, claim) }, { headers: { 'Cache-Control': 'no-store' } });
 };
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const who = identify(request, env);
   if (!who) return unauthorised();
   const sql = db(env) as unknown as SqlFn;
   const b = await request.json().catch(() => ({})) as Record<string, any>;
+
+  // §93: Hostaway's side of the work — changes there, and tasks written there.
+  if (b.action === 'hostawaySync') {
+    try {
+      const sync = await pullAll(sql, await getCredentials(sql, env.ENCRYPTION_KEY), b.force === true);
+      return Response.json({ ok: true, sync, todos: await list(sql) });
+    } catch (e) {
+      return Response.json({ ok: false, message: `Hostaway tasks: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 });
+    }
+  }
+  // After the response: this work's Hostaway task follows what just changed.
+  const mirror = (id: string) => waitUntil((async () => {
+    if (!(await mirrorOn(sql))) return;
+    await pushWork(sql, await getCredentials(sql, env.ENCRYPTION_KEY), id);
+  })().catch(() => { /* kept on the row as hostaway_error by pushWork, or retried on the next pull */ }));
 
   // Each field: undefined = not being changed; null = cleared.
   const text = (v: unknown, max: number) => v === null ? null : typeof v === 'string' ? (v.trim().replace(/\s+/g, ' ').slice(0, max) || null) : undefined;
@@ -200,6 +223,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       `${what} created${parentTitle ? ` under “${parentTitle}”` : ''}${claimLabel ? ` for the claim ${claimLabel}` : ''}.`, who.email);
     if (f.parentId) await note(sql, 'task', f.parentId, 'change', `Sub-task added: ${f.title}`, who.email);
     if (f.claimId) await note(sql, 'claim', f.claimId, 'change', `${what} added: ${f.title}`, who.email);
+    if (!f.parentId) mirror(String(row.id));
     return Response.json({ ok: true, id: String(row.id), todos: await list(sql, b.claimScope ? f.claimId ?? undefined : undefined) });
   }
 
@@ -215,6 +239,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await sql`UPDATE todos SET deleted_at = NULL, deleted_by = NULL, updated_at = now() WHERE account_id = 1 AND id = ${id}`;
     await note(sql, 'task', id, 'change', `Restored${kids.length ? ` with its ${kids.length} sub-task${kids.length === 1 ? '' : 's'}` : ''}`, who.email);
     if (gone.claim_id) await note(sql, 'claim', gone.claim_id, 'change', `Restored: ${gone.title}`, who.email);
+    mirror(id);
     return Response.json({ ok: true, todos: await list(sql, b.claimScope ? String(b.claimScope) : undefined) });
   }
 
@@ -266,6 +291,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
                             WHERE account_id = 1 AND parent_id = ${id} AND deleted_at IS NULL RETURNING id`;
     await note(sql, 'task', id, 'change', `Removed${kids.length ? ` with its ${kids.length} sub-task${kids.length === 1 ? '' : 's'}` : ''}`, who.email);
     if (before.claim_id) await note(sql, 'claim', before.claim_id, 'change', `Removed: ${before.title}`, who.email);
+    mirror(id);
     return Response.json({ ok: true, todos: await list(sql, scope) });
   }
 
@@ -334,6 +360,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     changed.push(`Listings: ${names}`);
   }
   if (changed.length) await note(sql, 'task', id, 'change', changed.join(' · '), who.email);
+  mirror(id);
 
   return Response.json({ ok: true, todos: await list(sql, scope) });
 };

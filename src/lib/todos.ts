@@ -29,6 +29,8 @@ export interface Todo {
   parentId: string | null;
   /** The stay it is about, when there is one (§84). */
   reservationId: string | null; reservationLabel: string | null;
+  /** §93: its Hostaway task, the last push that failed, and where it was first written. */
+  hostawayTaskId?: string | null; hostawayError?: string | null; source?: 'kaizen' | 'hostaway';
 }
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

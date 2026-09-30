@@ -2795,3 +2795,52 @@ articles, and the option to write new ones and attach them to features.
   clean, log and follow a claim, repairs, a new listing, and the article
   "How we write and keep SOPs" — written from how the screens work, left
   as drafts for the owner to correct and publish.
+
+## 93. Work ↔ Hostaway tasks (and the road to Slack)
+
+The owner (2026-09-30): connect the to-dos to Hostaway's tasks, and
+eventually to Slack.
+
+**What Hostaway had** (read 2026-09-30): 668 tasks, every one an automatic
+"Cleaning – Guest (dates)" from an automation (`autoTaskId` 375343), all
+pending or cancelled, none assigned — unused. 5 Hostaway users. The API
+takes tasks with or without a listing, partial PUTs, statuses pending /
+confirmed / inProgress / completed / cancelled, and reads times as UTC
+"YYYY-MM-DD HH:mm:ss". There is no "updated at" on a task.
+
+**The mirror** (Operations → Setup → Hostaway tasks; off until turned on,
+migration 041):
+- *Kaizen → Hostaway*, after every change (waitUntil): each to-do and
+  repair — not sub-tasks — is a Hostaway task on its first listing and its
+  stay; deadline = 23:59 New York; repairs titled "🔧 …"; the owner is the
+  Hostaway user whose email / full name / unique first name matches, else
+  named in a footer ("— Kaizen OS · Repair #12 · Vendor … · Estimate …")
+  that Kaizen strips when reading back. Actual cost → cost. Removed in
+  Kaizen = cancelled there, never deleted. Closed or removed work is never
+  created there. A failed push is kept on the row (⚠ Hostaway) and retried
+  on the next pull.
+- *Hostaway → Kaizen*, when a work list opens (at most every 2 minutes;
+  `hostawaySync`): each linked task is compared with `hostaway_state`, the
+  last state both sides agreed on; only fields that moved THERE are applied
+  (status, title, description, owner, deadline, cost), each as a timeline
+  line "In Hostaway: status completed · cost $42.00 — “resolution note”".
+  A task deleted there is unlinked, not deleted here. Tasks written by hand
+  in Hostaway, still open, come in as to-dos (source 'hostaway'); automatic
+  ones and Kaizen's own (they carry the footer) never do.
+- Owners: Hostaway's users are offered as names in the owner field.
+- "Send the N open items to Hostaway" in Setup backfills what was open
+  before the switch.
+- Verified 2026-09-30 end to end on the real account: created, renamed,
+  completed in Hostaway with a cost and note → done in Kaizen with both;
+  a second pull changed nothing; test task and to-do removed after.
+
+**Slack — the plan.** Every event in the work already lands in
+`work_updates` (created, status, owner, "In Hostaway: …", claims). Slack is
+a reader of that stream:
+1. *Notifications* — a Slack incoming webhook per channel (Settings), and
+   which events go where: work assigned, overdue, done in Hostaway, claim
+   opened, arrivals still unsigned at a set hour. Outbound only: no
+   Cloudflare Access change.
+2. *Two-way* — a Slack app: buttons on those messages (Done, Take it) and
+   `/kaizen todo …`. Needs one public endpoint outside Cloudflare Access
+   that verifies Slack's request signature, like /api/observations.

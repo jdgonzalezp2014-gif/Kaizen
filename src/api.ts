@@ -364,7 +364,10 @@ export interface OpsSettings {
   ok: true; mode: 'shadow' | 'live'; rules: OpsRules; defaults: OpsRules;
   extraInspectors: string[]; roster: Cleaner[]; guestDocUnits: string[];
   counts: { inspections: number; notes: number; overrides: number };
+  hostawayTasks: HostawayTasksState;
 }
+/** §93: work ↔ Hostaway tasks, as Setup shows it. */
+export interface HostawayTasksState { mode: 'off' | 'mirror'; pulledAt: string | null; linked: number; errors: number; imported: number; unsent: number }
 export const getOpsSettings = () => call<OpsSettings | Fail>('/api/ops-settings');
 export const saveOpsSettings = (body: Record<string, unknown>) =>
   call<{ ok: true; mode?: string; adopted?: number } | Fail>('/api/ops-settings', {
@@ -485,6 +488,11 @@ export const driveAction = (body: Record<string, unknown>) =>
 
 export type { Todo } from './lib/todos.ts';
 type TodosResult = { ok: true; todos: import('./lib/todos.ts').Todo[] } | { ok: false; message?: string };
+export interface HostawaySync { skipped?: string; changed: number; imported: number; unlinked: number; retried: number; people: string[] }
+/** §93: ask Hostaway for what the team changed there (at most every two minutes unless forced). */
+export const syncHostawayTasks = (force = false) =>
+  call<{ ok: true; sync: HostawaySync; todos: import('./lib/todos.ts').Todo[] } | { ok: false; message?: string }>('/api/todos', {
+    method: 'POST', body: JSON.stringify({ action: 'hostawaySync', force }) });
 export const getTodos = (claimId?: string) =>
   call<TodosResult>(`/api/todos${claimId ? `?claim=${encodeURIComponent(claimId)}` : ''}`);
 /** The done log (§87): closed (and optionally removed) work in a range of days. */

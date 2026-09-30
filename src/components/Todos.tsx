@@ -16,8 +16,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
-  type Claim, type StayOnDay, type Todo, type WorkUpdate
-} from '../api.ts';
+  type Claim, type StayOnDay, type Todo, type WorkUpdate, syncHostawayTasks } from '../api.ts';
 import {
   KIND_LABEL, PRIORITY_LABEL, STATUS_LABEL, STATUSES, auditCsv, childrenBy, daysTaken, nyParts, outcomeOf, stayLabel,
   type AuditRow, dueLabel, dueOf, isClosed, isFiltering, matchesFilter,
@@ -85,6 +84,16 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const loadClaims = () => getClaims().then(r => setClaims(r.claims ?? [])).catch(() => {});
   const loadTodos = () => getTodos(claim?.id).then(r => r.ok ? take(r.todos) : setErr(r.message ?? 'Could not read the list.'))
     .catch(e => setErr(String(e)));
+  // §93: then whatever the team changed in Hostaway — in the background, so the list never waits on it.
+  const [people, setPeople] = useState<string[]>([]);
+  useEffect(() => {
+    if (claim) return;
+    void syncHostawayTasks().then(r => {
+      if (!r.ok) return;
+      if (r.sync.people.length) setPeople(r.sync.people);
+      if (r.sync.changed || r.sync.imported || r.sync.unlinked) take(r.todos);
+    }).catch(() => { /* the list stands without it */ });
+  }, []);
   useEffect(() => {
     void loadTodos();
     // Every unit, for the names work already carries; the pickers offer the active ones.
@@ -224,6 +233,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
 
   return (
     <div className={`todos ${compact ? 'compact' : ''}`}>
+      {/* §93: Hostaway's users, offered as owners — a name typed as Hostaway knows it becomes the task's assignee there. */}
+      {people.length > 0 && <datalist id="kaizen-people">{people.map(p => <option key={p} value={p} />)}</datalist>}
       {/* Outside the lanes (a claim's own list, a kind filter): one row of adds. */}
       {!lanesOn && (!adding ? (
         <div className="todo-add-buttons">
@@ -368,6 +379,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
         {(t.costActual ?? t.costEstimate) != null &&
           <span className="sub-n">{t.costActual != null ? money2(t.costActual) : `~${money2(t.costEstimate!)}`}</span>}
         {t.updates > 1 && <span className="sub-n" title="Updates">💬 {t.updates}</span>}
+        {t.hostawayError ? <span className="todo-ha err" title={`Not yet in Hostaway: ${t.hostawayError} — retried on the next sync`}>⚠ Hostaway</span>
+          : t.hostawayTaskId && <span className="todo-ha" title={`Hostaway task #${t.hostawayTaskId}${t.source === 'hostaway' ? ' — written in Hostaway' : ''}`}>⇄ Hostaway</span>}
         {/* A sub-task is removed from its own line, naming itself — never
             through the parent's Remove, which takes the whole task (§82). */}
         {t.parentId && !open && (
@@ -552,7 +565,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
               {(['normal', 'high', 'urgent'] as Priority[]).map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
             </select></label>
           <label>Owner
-            <input value={v.assignee ?? ''} placeholder="Who is on it" onChange={e => set('assignee', e.target.value || null)} /></label>
+            <input value={v.assignee ?? ''} placeholder="Who is on it" list="kaizen-people" onChange={e => set('assignee', e.target.value || null)} /></label>
           {canClaims && (
             <label>Part of a claim? (optional)
               <select value={v.claimId ?? ''} onChange={e => set('claimId', e.target.value || null)}>

@@ -8,6 +8,8 @@
  *   POST { guestDocUnits: [listingId, …] }     units that ask guests for ID + agreement (§73)
  *   POST { action: 'import', commit }          one-time cutover from the daily file
  *   POST { mode: 'live' | 'shadow', confirmSheetOff }
+ *   POST { hostawayTasks: 'off' | 'mirror' }  work ↔ Hostaway tasks (§93)
+ *   POST { action: 'hostawayBackfill' }        send the open work that has no Hostaway task yet
  *
  * Admin only (roles.ts). These change who gets paid what, for everyone.
  *
@@ -19,6 +21,7 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
+import { listUsers, pushWork } from '../_lib/hostaway-tasks.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadOps, opsConfig } from '../_lib/ops.ts';
 import {
@@ -39,7 +42,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT COUNT(*)::int FROM stay_notes WHERE account_id = 1) AS notes,
            (SELECT COUNT(*)::int FROM turnover_overrides WHERE account_id = 1) AS overrides` as
     { inspections: number; notes: number; overrides: number }[];
-  return Response.json({ ok: true, ...cfg, defaults: DEFAULT_RULES, counts });
+  return Response.json({ ok: true, ...cfg, defaults: DEFAULT_RULES, counts, hostawayTasks: await hostawayTasksState(sql) });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -107,6 +110,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     if (body.action === 'import') return await cutoverImport(sql, body.commit === true);
+
+    // §93 — the mirror's switch, and sending what was open before it was on.
+    if (body.hostawayTasks === 'off' || body.hostawayTasks === 'mirror') {
+      await sql`UPDATE accounts SET hostaway_tasks = ${body.hostawayTasks}, hostaway_tasks_pulled_at = NULL WHERE id = 1`;
+      return Response.json({ ok: true, hostawayTasks: await hostawayTasksState(sql) });
+    }
+    if (body.action === 'hostawayBackfill') {
+      const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
+      const users = await listUsers(creds);
+      const open = await sql`SELECT id::text FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND parent_id IS NULL
+                               AND hostaway_task_id IS NULL AND status NOT IN ('done', 'cancelled') ORDER BY created_at LIMIT 200` as { id: string }[];
+      const tally: Record<string, number> = { created: 0, failed: 0, skipped: 0, updated: 0 };
+      for (const r of open) tally[await pushWork(sql, creds, r.id, users)]!++;
+      return Response.json({ ok: true, sent: tally, hostawayTasks: await hostawayTasksState(sql) });
+    }
 
     if (body.mode === 'live' || body.mode === 'shadow') {
       if (body.mode === 'live') {
@@ -248,4 +266,18 @@ async function adoptSheetDecisions(sql: SqlFn, env: Env, _actor: string): Promis
 
 function bad(message: string): Response {
   return Response.json({ ok: false, error: 'bad_request', message }, { status: 400 });
+}
+
+/** The mirror as Setup shows it: on or off, what is linked, what failed, what is still to send. */
+async function hostawayTasksState(sql: SqlFn) {
+  const [r] = await sql`
+    SELECT a.hostaway_tasks AS mode, a.hostaway_tasks_pulled_at AS pulled_at,
+           (SELECT count(*)::int FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND hostaway_task_id IS NOT NULL) AS linked,
+           (SELECT count(*)::int FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND hostaway_error IS NOT NULL) AS errors,
+           (SELECT count(*)::int FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND source = 'hostaway') AS imported,
+           (SELECT count(*)::int FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND parent_id IS NULL
+               AND hostaway_task_id IS NULL AND status NOT IN ('done', 'cancelled')) AS unsent
+      FROM accounts a WHERE a.id = 1` as { mode: string; pulled_at: string | Date | null; linked: number; errors: number; imported: number; unsent: number }[];
+  return { mode: r?.mode ?? 'off', pulledAt: r?.pulled_at ? new Date(r.pulled_at).toISOString() : null,
+           linked: r?.linked ?? 0, errors: r?.errors ?? 0, imported: r?.imported ?? 0, unsent: r?.unsent ?? 0 };
 }

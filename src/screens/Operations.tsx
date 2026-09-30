@@ -22,7 +22,7 @@ import {
   getCleanings, type Cleaning, type ExcludedCleaning,
   getOperations, saveTurnover, logInspection, scheduleInspections, cancelInspection,
   getOpsSettings, saveOpsSettings, cutoverImport, can, getGuestDocs, syncAgreement, uploadGuestDoc, getUnits, getTodos,
-  type Todo,
+  type Todo, type HostawayTasksState,
   type StayDocs, type OperationsResponse, type ManualClean, type ManualCleanKind, type StayOnDay,
   getStaysOnDay, manualClean, todoAction, saveClaim, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
 } from '../api.ts';
@@ -1283,6 +1283,7 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
       </div>
 
       <GuestDocUnits initial={cfg.guestDocUnits ?? []} onSave={ids => save({ guestDocUnits: ids }, 'Guest documents saved.')} />
+      {cfg.hostawayTasks && <HostawayTasks state={cfg.hostawayTasks} onChanged={() => void fetchCfg()} />}
     </>
   );
 }
@@ -1346,6 +1347,52 @@ function GuestDocUnits({ initial, onSave }: { initial: string[]; onSave: (ids: s
         <button disabled={!dirty || busy} onClick={() => { setBusy(true); void onSave([...on]).finally(() => setBusy(false)); }}>
           {busy ? 'Saving…' : 'Save guest documents'}</button>
         {dirty && <span className="note">unsaved changes</span>}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Work ↔ Hostaway tasks (§93). Off until turned on: from then, every to-do
+ * and repair (not sub-tasks) is a Hostaway task too, and what the team does
+ * with it there — start, finish, assign, cost — comes back to Kaizen.
+ */
+function HostawayTasks({ state, onChanged }: { state: HostawayTasksState; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const on = state.mode === 'mirror';
+  const post = async (body: Record<string, unknown>, done: (r: Record<string, any>) => string) => {
+    setBusy(true); setMsg('');
+    const r = await saveOpsSettings(body).catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
+    setMsg(r.ok ? done(r as Record<string, any>) : (('message' in r && r.message) || 'Not saved.'));
+    onChanged();
+  };
+  return (
+    <div className="card ha-tasks">
+      <h2>Hostaway tasks</h2>
+      <p className="note">
+        When on, every to-do and repair is also a task in Hostaway — on its listing and stay, with its deadline and owner —
+        so the team can work it from Hostaway and its mobile app. What they change there (started, done, assigned, cost)
+        comes back here, on the task's timeline. Tasks written by hand in Hostaway come in as to-dos. Hostaway's automatic
+        cleaning tasks stay out: the board runs the cleans. Removing work here cancels its Hostaway task; nothing is deleted there.
+      </p>
+      <div className="ha-state">
+        <span className={`ha-mode ${on ? 'on' : ''}`}>{on ? '● On' : '○ Off'}</span>
+        {on && <span className="sub-n">{state.linked} linked · {state.imported} from Hostaway
+          {state.pulledAt ? ` · last checked ${new Date(state.pulledAt).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' })}` : ''}</span>}
+        {on && state.errors > 0 && <span className="breach">▲ {state.errors} not sent yet — retried on the next check</span>}
+      </div>
+      <div className="button-row">
+        <button className={on ? 'secondary' : ''} disabled={busy}
+                onClick={() => void post({ hostawayTasks: on ? 'off' : 'mirror' }, () => on ? 'Turned off. Links are kept; nothing is sent until it is on again.' : 'On. New and changed work goes to Hostaway from now.')}>
+          {on ? 'Turn off' : 'Turn on'}</button>
+        {on && state.unsent > 0 && (
+          <button className="secondary" disabled={busy}
+                  onClick={() => void post({ action: 'hostawayBackfill' }, r => `Sent: ${r.sent?.created ?? 0} created${r.sent?.failed ? `, ${r.sent.failed} failed` : ''}.`)}>
+            {busy ? 'Sending…' : `Send the ${state.unsent} open item${state.unsent === 1 ? '' : 's'} to Hostaway`}</button>
+        )}
+        {msg && <span className="note">{msg}</span>}
       </div>
     </div>
   );
