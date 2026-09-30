@@ -57,6 +57,11 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/expenses', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'claims', label: 'Claims — record and follow guest claims', tab: 'claims', routes: [
     { path: '/api/claims', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/stays', methods: ['GET'] }] },
+  // SOPs (§92): the library tab, and each screen's "SOPs" button. Drafts are for editors only.
+  { key: 'sops', label: 'SOPs — read the procedures and articles', tab: 'sops', routes: [
+    { path: '/api/sops', methods: ['GET'] }] },
+  { key: 'sops.edit', label: 'SOPs — write, publish, review and archive procedures and sections', routes: [
+    { path: '/api/sops', methods: ['POST'] }] },
   { key: 'settings', label: 'Settings — credentials, members, roles, integrations', tab: 'settings', routes: [
     { path: '/api/settings', methods: ['POST'] }, { path: '/api/roles', methods: ['GET', 'POST', 'DELETE'] },
     { path: '/api/sync-units', methods: ['POST'] }, { path: '/api/import', methods: ['POST'] },
@@ -107,7 +112,7 @@ export const SEED_ROLES = [
   { key: 'admin', name: 'Admin', permissions: [ALL], builtin: true },
   { key: 'manager', name: 'Manager', permissions: ['units', 'revenue', 'money', 'operations', 'operations.edit',
     'operations.setup', 'repository', 'repository.reveal', 'repository.edit', 'repository.structure',
-    'costs', 'claims'], builtin: false },
+    'costs', 'claims', 'sops', 'sops.edit'], builtin: false },
   { key: 'ops', name: 'Operations', permissions: ['operations', 'operations.edit', 'repository',
-    'repository.reveal', 'repository.edit', 'costs', 'claims'], builtin: false }
+    'repository.reveal', 'repository.edit', 'costs', 'claims', 'sops'], builtin: false }
 ];

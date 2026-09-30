@@ -94,11 +94,16 @@ function applyEdit(r: BoardRow, set: TurnoverSet, roster: Cleaner[], rules: OpsR
   return n;
 }
 
-export function Operations({ permissions, initialView }: { permissions: string[]; initialView?: string }) {
+export function Operations({ permissions, initialView, onView }: {
+  permissions: string[]; initialView?: string;
+  /** Told which view is showing, so the top bar's SOPs button can follow it (§92). */
+  onView?: (view: string) => void;
+}) {
   const [data, setData] = useState<OperationsResponse | null>(null);
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(true);
   const [view, setView] = useState<View>(VIEWS.includes(initialView as View) ? initialView as View : 'board');
+  useEffect(() => { onView?.(view); }, [view]);
   const canTodos = can(permissions, 'todos');
 
   const load = (refresh = false) => {

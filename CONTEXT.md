@@ -2760,3 +2760,38 @@ designer with a neuroscience background". What changed, and why:
   reads "new today"; "+ Add" and "Show more" were at 45% opacity
   (`button.link.tiny` outranked them) — actions are solid now.
 - **Phone:** an arrival's flags go under the guest instead of squeezing it.
+
+## 92. SOPs: the procedure next to the work
+
+The owner (2026-09-30): SOP sections, a button for each section's SOPs or
+articles, and the option to write new ones and attach them to features.
+
+- **Two axes.** A *section* is a process area of the business, in value-
+  chain order (Guest lifecycle → Buildings & compliance → Turnovers →
+  Inspections → Maintenance → Claims → Pricing → Costs → Systems → Team);
+  the library is browsed by it and editors can add, rename or remove (when
+  empty) sections. The *features* are this app's screens
+  (`src/lib/sops.ts` FEATURES, Operations per view): an SOP ticks the
+  screens it belongs on, and each screen's **📘 SOPs** button in the top
+  bar lists them in a side panel — read, write one for that screen, or go
+  to the library.
+- **Anatomy.** An SOP: purpose, when to use it (trigger), owner, numbered
+  steps each with who, "done when", details. An article is free text. The
+  text understands `## heading`, `- bullet`, `1. numbered`, `**bold**` and
+  https links, parsed to data and drawn as elements — never HTML.
+- **Governance.** Draft → published → archived; readers see published
+  only. Every change to what an SOP *says* is a new version with a note
+  (`sop_versions`); re-filing (section, screens, status) is not. A
+  published SOP has a review cadence (default 6 months): editing or
+  publishing restarts it, "✓ Mark reviewed" restarts it without an edit,
+  overdue ones are flagged and sorted first. A published SOP needs a step.
+- **The library measures itself:** published, drafts, review overdue, and
+  screens covered by at least one published SOP — with the uncovered
+  screens listed as one-click "+ write one" chips (the backlog).
+- **Permissions:** `sops` reads (every role, migration 040), `sops.edit`
+  writes (roles that hold `operations.setup`; admin).
+- **Starter drafts** (`scripts/seed-sops.mjs`, idempotent): check-in
+  readiness (agreement + ID, P2 Drive copy), early departure / mid-stay
+  clean, log and follow a claim, repairs, a new listing, and the article
+  "How we write and keep SOPs" — written from how the screens work, left
+  as drafts for the owner to correct and publish.

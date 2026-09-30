@@ -7,14 +7,17 @@ import { Settings } from './screens/Settings.tsx';
 import { Operations } from './screens/Operations.tsx';
 import { Repository } from './screens/Repository.tsx';
 import { Home } from './screens/Home.tsx';
+import { Sops } from './screens/Sops.tsx';
+import { SopButton } from './components/Sops.tsx';
+import { featureOf } from './lib/sops.ts';
 import { getUnits, getSettings, can, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
-type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'settings';
+type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings';
 
 const TABS: [Tab, string][] = [
   ['home', 'Home'], ['units', 'Units'], ['revenue', 'Revenue'], ['operations', 'Operations'],
-  ['repository', 'Repository'], ['costs', 'Costs'], ['claims', 'Claims'], ['settings', 'Settings']
+  ['repository', 'Repository'], ['costs', 'Costs'], ['claims', 'Claims'], ['sops', 'SOPs'], ['settings', 'Settings']
 ];
 
 export function App() {
@@ -37,6 +40,10 @@ export function App() {
   }, [tab]);
   /** A door from Home straight into one of Operations' views ("operations:todos"). */
   const [opsView, setOpsView] = useState<string | undefined>(undefined);
+  // Which Operations view is showing — its SOPs button lists that view's procedures (§92).
+  const [opsNow, setOpsNow] = useState<string | undefined>(undefined);
+  /** An SOP to open when the library tab opens from a screen's SOPs panel. */
+  const [sopFocus, setSopFocus] = useState<string | undefined>(undefined);
   // Fetched once at the top: three screens need the same unit list, and
   // three copies of it drift the moment one of them is stale.
   const [units, setUnits] = useState<UnitRow[]>([]);
@@ -90,6 +97,11 @@ export function App() {
                       onClick={() => setTab(t as Tab)}>{label}</button>
             ) : null;
           })}
+          {/* The procedures for the screen someone is on (§92). */}
+          {tab && tab !== 'sops' && allowed?.includes('sops') && featureOf(tab, opsNow) && (
+            <SopButton key={featureOf(tab, opsNow)!} feature={featureOf(tab, opsNow)!} canEdit={can(permissions, 'sops.edit')}
+                       onLibrary={id => { setSopFocus(id); setTab('sops'); }} />
+          )}
           <ThemeToggle />
         </nav>
       </header>
@@ -117,12 +129,13 @@ export function App() {
         const [t, sub] = to.split(':');
         if (allowed?.includes(t!)) { setOpsView(sub); setTab(t as Tab); }
       }} />}
-      {tab === 'operations' && <Operations permissions={permissions} initialView={opsView} />}
+      {tab === 'operations' && <Operations permissions={permissions} initialView={opsView} onView={setOpsNow} />}
       {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')}
                                            canEdit={can(permissions, 'repository.edit')}
                                            canStructure={can(permissions, 'repository.structure')} />}
       {tab === 'claims'   && <Claims units={units} canWork={can(permissions, 'todos')} />}
       {tab === 'costs'    && <Costs units={units} />}
+      {tab === 'sops'     && <Sops focus={sopFocus} onFocused={() => setSopFocus(undefined)} />}
       {tab === 'settings' && <Settings />}
     </main>
   );

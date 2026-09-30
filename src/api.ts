@@ -526,3 +526,12 @@ export const getRepoDocsBatch = (table: string, column: string, ids: string[]) =
   call<{ ok: true; docs: Record<string, { folderUrl: string; files: RepoFile[]; truncated: boolean }> } | { ok: false; message?: string }>(
     `/api/repository?op=docsbatch&table=${encodeURIComponent(table)}&column=${encodeURIComponent(column)}` +
     `&ids=${encodeURIComponent(ids.join(','))}`);
+
+/* ── SOPs (§92) ──────────────────────────────────────────────────────── */
+import type { Sop, SopSection, SopVersion } from './lib/sops.ts';
+export interface SopsResult { ok: boolean; canEdit?: boolean; sections?: SopSection[]; sops?: Sop[]; error?: string }
+export const getSops = () => call<SopsResult>('/api/sops');
+export const getSopVersions = (id: string) =>
+  call<{ ok: boolean; versions?: SopVersion[]; error?: string }>(`/api/sops?versions=${encodeURIComponent(id)}`);
+export const sopAction = (body: Record<string, unknown>) =>
+  call<{ ok: boolean; sop?: Sop; key?: string; newVersion?: boolean; error?: string }>('/api/sops', { method: 'POST', body: JSON.stringify(body) });
