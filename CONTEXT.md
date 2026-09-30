@@ -2844,3 +2844,38 @@ a reader of that stream:
 2. *Two-way* — a Slack app: buttons on those messages (Done, Take it) and
    `/kaizen todo …`. Needs one public endpoint outside Cloudflare Access
    that verifies Slack's request signature, like /api/observations.
+
+## 94. The task manager on Hostaway's model
+
+The owner (2026-09-30), after §93: rethink the task manager to match
+Hostaway rather than translate to it. Cleans stay out — they are the
+board's, not the team's to-do list.
+
+Kaizen's task is now Hostaway's task, field for field (migration 042):
+- **Status** — Hostaway's five: Pending, Confirmed (the owner accepted it),
+  In progress, Completed, Cancelled. "Waiting" is gone (never used).
+  Existing tasks: To do → Pending, Done → Completed.
+- **Priority** — none, low, medium, high, urgent = Hostaway null, 1, 2, 3, 4.
+  Hostaway takes any number and documents no scale (probed 2026-09-30);
+  PRIORITY_NUMBER in src/lib/hostaway-tasks.ts is the one place to flip it
+  if Hostaway's screen reads the numbers the other way round.
+- **Owner and supervisor** — Hostaway users, picked from a list kept in
+  `hostaway_users` (re-read at most twice a day, and on every pull); the
+  name as it was is kept on the task.
+- **One listing per task** — as in Hostaway. Several listings chosen when
+  adding = one task each; editing keeps one.
+- **Start from / Finish by** — a day and an optional time each
+  (scheduled_on + start_time, due_on + due_time), New York; sent to
+  Hostaway as UTC, 09:00 / 23:59 when no time is given.
+- **Cost** and the **resolution note** (asked for once it is completed).
+
+Kaizen's own, not in Hostaway: the kind (to-do / repair, shown there as
+"🔧 …"), the vendor and the estimate (named in the description footer),
+sub-tasks, and the claim. The mirror (§93) now copies both ways; the pull
+brings back every field above that moved in Hostaway.
+
+Verified 2026-09-30 on the real account: owner, supervisor, priority,
+start and finish times pushed exactly; Confirmed, then Completed with
+urgent priority, a new finish-by, a cost and a resolution note in Hostaway
+came back as the same in Kaizen, each on the timeline; a second pull
+changed nothing; the test task and to-do were removed after.
