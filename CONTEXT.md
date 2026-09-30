@@ -2879,3 +2879,35 @@ start and finish times pushed exactly; Confirmed, then Completed with
 urgent priority, a new finish-by, a cost and a resolution note in Hostaway
 came back as the same in Kaizen, each on the timeline; a second pull
 changed nothing; the test task and to-do were removed after.
+
+## 95. A repair's money
+
+The owner (2026-09-30): a repair's cost belongs in Kaizen's cost records
+whether or not the repair is part of a claim.
+
+- **Costs.** Every repair (work order) completed with a cost is a
+  one-time expense in Costs, category **Repairs**, on its listing
+  (portfolio-wide without one), dated the New York day it was completed —
+  `source 'repair'`, `external_ref` = the task id (the existing unique
+  index keeps it single). `settleRepair` (functions/_lib/repair-costs.ts)
+  runs after every change, from Kaizen or pulled from Hostaway: cost
+  changed → updated; reopened, cancelled or removed → deleted; each step
+  said on the repair's timeline. Costs shows these rows as "🔧 … · from
+  repair" and refuses to delete them there (409): the repair owns them.
+  Revenue nets expenses only, so a repair counts once; a claim's own
+  repair-cost field stays the claim's case figure.
+- **Charge to owner** (a checkbox on a repair, off by default, needs a
+  listing): when the repair is completed with a cost, Kaizen also writes
+  it as an expense on the listing in Hostaway (`POST /expenses`, amount
+  negative as Hostaway keeps them, concept "🔧 Title — vendor",
+  `generatedFromTaskId` = its Hostaway task), kept in `hostaway_expense_id`,
+  updated (PUT) and removed (DELETE) with the repair. Hostaway puts no
+  expense on an owner statement by itself (checked); the statement picks
+  it up as any other expense on the listing.
+- Hostaway's task `expense` object also generates a linked expense, but
+  cannot be updated or removed from Kaizen afterwards; the direct
+  `/expenses` route can, so it is the one used. (All probed 2026-09-30,
+  every test task and expense removed after.)
+- Verified end to end through /api/todos: completed $85 → Costs; $90 →
+  updated; charged → Hostaway expense −90 on P2-4212; uncharged → removed;
+  reopened → gone from Costs.
