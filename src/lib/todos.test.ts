@@ -10,7 +10,7 @@ test('a stay is named by its guest and dates', () => {
 
 const t = (id: string, over: Partial<Todo> = {}): Todo => ({
   id, title: id, unitIds: [], dueOn: null, createdAt: `2026-09-01T00:00:0${id.length % 10}Z`, createdBy: null,
-  doneAt: null, doneBy: null, kind: 'task', status: 'open', priority: 'normal', assignee: null, claimId: null,
+  doneAt: null, doneBy: null, kind: 'task', status: 'pending', priority: 'none', assignee: null, claimId: null,
   vendor: null, scheduledOn: null, costEstimate: null, costActual: null, updates: 0,
   description: null, parentId: null, reservationId: null, reservationLabel: null, ...over
 });
@@ -32,7 +32,7 @@ test('filters: kind, urgency, date and listing', () => {
 });
 
 test('sub-tasks: grouped by parent; progress ignores the cancelled', () => {
-  const kids = childrenBy([t('p'), t('a', { parentId: 'p', status: 'done' }), t('b', { parentId: 'p' }),
+  const kids = childrenBy([t('p'), t('a', { parentId: 'p', status: 'completed' }), t('b', { parentId: 'p' }),
                            t('c', { parentId: 'p', status: 'cancelled' })]);
   assert.deepEqual(kids.get('p')!.map(x => x.id), ['a', 'b', 'c']);
   assert.deepEqual(progress(kids.get('p')), { done: 1, total: 2 });
@@ -51,11 +51,11 @@ test('due, in words, with a shape as well as a colour', () => {
   assert.equal(dueLabel({ dueOn: null }, TODAY), '');
 });
 
-test('open before closed; urgent on top; by deadline; high before normal on the same day', () => {
+test('open before closed; urgent on top; by deadline; high before none on the same day', () => {
   const list = [
     t('undated'), t('late', { dueOn: '2026-09-20' }), t('next', { dueOn: '2026-10-01' }),
     t('nextHigh', { dueOn: '2026-10-01', priority: 'high' }), t('urgentUndated', { priority: 'urgent' }),
-    t('doneOld', { status: 'done', doneAt: '2026-09-20T10:00:00Z' }),
+    t('doneOld', { status: 'completed', doneAt: '2026-09-20T10:00:00Z' }),
     t('cancelledNew', { status: 'cancelled', doneAt: '2026-09-26T10:00:00Z' })
   ];
   assert.deepEqual(sortTodos(list).map(x => x.id),
@@ -64,19 +64,19 @@ test('open before closed; urgent on top; by deadline; high before normal on the 
 
 test('what a claim’s work costs: actual where known, the estimate otherwise, cancelled not at all', () => {
   const c = workCost([
-    t('a', { kind: 'work_order', status: 'done', costEstimate: 300, costActual: 280 }),
+    t('a', { kind: 'work_order', status: 'completed', costEstimate: 300, costActual: 280 }),
     t('b', { kind: 'work_order', status: 'in_progress', costEstimate: 150 }),
     t('c', { kind: 'work_order', status: 'cancelled', costEstimate: 999 }),
-    t('d', { status: 'open' })
+    t('d', { status: 'pending' })
   ]);
   assert.deepEqual(c, { actual: 280, estimated: 150, open: 2 });
 });
 
 test('the done log: how it ended, how long it took, and a CSV an auditor can open', () => {
   const base = t('x', { title: 'Fix "AC", unit 2', createdAt: '2026-09-20T10:00:00Z', createdBy: 'ana@x.com',
-                       status: 'done', doneAt: '2026-09-23T09:00:00Z', doneBy: 'luis@x.com', unitIds: ['u1'], kind: 'work_order', costActual: 120 });
+                       status: 'completed', doneAt: '2026-09-23T09:00:00Z', doneBy: 'luis@x.com', unitIds: ['u1'], kind: 'work_order', costActual: 120 });
   const row: AuditRow = { ...base, deletedAt: null, deletedBy: null };
-  assert.equal(outcomeOf(row), 'done');
+  assert.equal(outcomeOf(row), 'completed');
   assert.equal(daysTaken(row), 2);
   assert.equal(outcomeOf({ ...row, status: 'cancelled' }), 'cancelled');
   assert.equal(outcomeOf({ ...row, deletedAt: '2026-09-24T00:00:00Z', deletedBy: 'ana@x.com' }), 'removed');
@@ -84,5 +84,5 @@ test('the done log: how it ended, how long it took, and a CSV an auditor can ope
   const [head, line] = csv.split('\n');
   assert.match(head!, /^Closed \(New York\),Outcome,Closed by,Title/);
   // 09:00 UTC is 05:00 in New York (EDT) — the audit reads the team's clock.
-  assert.match(line!, /^2026-09-23 05:00,done,luis@x.com,"Fix ""AC"", unit 2",Repair,CL1250,/);
+  assert.match(line!, /^2026-09-23 05:00,completed,luis@x.com,"Fix ""AC"", unit 2",Repair,CL1250,/);
 });

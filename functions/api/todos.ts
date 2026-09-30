@@ -5,10 +5,12 @@
  *   GET ?claim=ID               every piece of work on one claim, however old
  *   GET ?updates=ID             one task's timeline
  *   GET ?history=1&from&to[&removed=1]   the done log (§87): closed — and, if asked, removed — in a range
- *   POST { action: 'create', title, kind?, unitIds?, dueOn?, priority?, assignee?, claimId?,
- *          vendor?, scheduledOn?, costEstimate?, costActual? }
+ *   GET ?people=1               Hostaway's users, for the owner and supervisor pickers (§94)
+ *   POST { action: 'create', title, kind?, unitIds?, dueOn?, dueTime?, scheduledOn?, startTime?, priority?,
+ *          assigneeUserId?, supervisorUserId?, claimId?, vendor?, costEstimate?, costActual?, resolutionNote? }
+ *        — several unitIds = one task per listing (§94)
  *   POST { action: 'update', id, …any of the above, status? }     null clears a field
- *   POST { action: 'done', id, done }                             the checkbox
+ *   POST { action: 'done', id, done }                             the checkbox: completed / pending
  *   POST { action: 'note', id, body }                             an update, in words
  *   POST { action: 'delete', id }                                 stamped, never erased (its sub-tasks too)
  *   POST { action: 'restore', id }                                undo a removal, with what it took (§82)
@@ -32,16 +34,19 @@ import { db, type Env } from '../_lib/db.ts';
 import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { can } from '../_lib/roles.ts';
-import { mirrorOn, pullAll, pushWork } from '../_lib/hostaway-tasks.ts';
+import { mirrorOn, people, pullAll, pushWork } from '../_lib/hostaway-tasks.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
 const KINDS = ['task', 'work_order'];
-const STATUSES = ['open', 'in_progress', 'waiting', 'done', 'cancelled'];
-const PRIORITIES = ['normal', 'high', 'urgent'];
+// Hostaway's task model, word for word (§94).
+const STATUSES = ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'];
+const CLOSED = ['completed', 'cancelled'];
+const PRIORITIES = ['none', 'low', 'medium', 'high', 'urgent'];
 const STATUS_WORD: Record<string, string> = {
-  open: 'To do', in_progress: 'In progress', waiting: 'Waiting', done: 'Done', cancelled: 'Cancelled'
+  pending: 'Pending', confirmed: 'Confirmed', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled'
 };
+const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
 interface Row {
   id: string; title: string; unit_ids: string[]; due_on: string | null;
@@ -51,6 +56,8 @@ interface Row {
   updates: number; description: string | null; parent_id: string | null;
   reservation_id: string | null; reservation_label: string | null;
   hostaway_task_id?: string | null; hostaway_error?: string | null; source?: string;
+  assignee_user_id?: number | null; supervisor_user_id?: number | null; supervisor?: string | null;
+  start_time?: string | null; due_time?: string | null; resolution_note?: string | null;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
 const num = (v: string | null) => v == null ? null : Number(v);
@@ -61,7 +68,9 @@ const out = (r: Row) => ({
   vendor: r.vendor, scheduledOn: r.scheduled_on, costEstimate: num(r.cost_estimate), costActual: num(r.cost_actual),
   updates: Number(r.updates ?? 0), description: r.description, parentId: r.parent_id,
   reservationId: r.reservation_id, reservationLabel: r.reservation_label,
-  hostawayTaskId: r.hostaway_task_id ?? null, hostawayError: r.hostaway_error ?? null, source: r.source ?? 'kaizen'
+  hostawayTaskId: r.hostaway_task_id ?? null, hostawayError: r.hostaway_error ?? null, source: r.source ?? 'kaizen',
+  assigneeUserId: r.assignee_user_id ?? null, supervisorUserId: r.supervisor_user_id ?? null, supervisor: r.supervisor ?? null,
+  startTime: r.start_time ?? null, dueTime: r.due_time ?? null, resolutionNote: r.resolution_note ?? null
 });
 
 async function list(sql: SqlFn, claim?: string) {
@@ -70,6 +79,8 @@ async function list(sql: SqlFn, claim?: string) {
            t.kind, t.status, t.priority, t.assignee, t.claim_id, t.vendor, t.scheduled_on::text AS scheduled_on,
            t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
            t.reservation_id, t.reservation_label, t.hostaway_task_id, t.hostaway_error, t.source,
+           t.assignee_user_id, t.supervisor_user_id, t.supervisor, to_char(t.start_time, 'HH24:MI') AS start_time,
+           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note,
            (SELECT count(*)::int FROM work_updates w
              WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
       FROM todos t
@@ -115,6 +126,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
              t.kind, t.status, t.priority, t.assignee, t.claim_id, t.vendor, t.scheduled_on::text AS scheduled_on,
              t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
              t.reservation_id, t.reservation_label, t.deleted_at, t.deleted_by,
+             t.assignee_user_id, t.supervisor_user_id, t.supervisor, t.resolution_note,
              (SELECT count(*)::int FROM work_updates w
                WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
         FROM todos t
@@ -128,6 +140,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
        LIMIT 3000` as (Row & { deleted_at: string | Date | null; deleted_by: string | null })[];
     return Response.json({ ok: true, rows: rows.map(r => ({ ...out(r), deletedAt: iso(r.deleted_at), deletedBy: r.deleted_by })) },
                          { headers: { 'Cache-Control': 'no-store' } });
+  }
+  // §94: Hostaway's users, for the owner and supervisor pickers.
+  if (url.searchParams.get('people')) {
+    const list = await people(sql, () => getCredentials(sql, env.ENCRYPTION_KEY)).catch(() => []);
+    return Response.json({ ok: true, people: list }, { headers: { 'Cache-Control': 'no-store' } });
   }
   const claim = url.searchParams.get('claim') ?? undefined;
   if (claim !== undefined && !ID.test(claim) && !/^[\w-]{1,64}$/.test(claim)) return bad('Which claim?');
@@ -161,7 +178,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const money = (v: unknown) => v === null || v === '' ? null : v === undefined ? undefined : Number(v);
   const f = {
     title: text(b.title, 300), dueOn: date(b.dueOn), scheduledOn: date(b.scheduledOn),
-    assignee: text(b.assignee, 120), vendor: text(b.vendor, 120),
+    vendor: text(b.vendor, 120),
     claimId: b.claimId === null || b.claimId === '' ? null : b.claimId === undefined ? undefined : String(b.claimId),
     costEstimate: money(b.costEstimate), costActual: money(b.costActual),
     kind: b.kind === undefined ? undefined : String(b.kind), priority: b.priority === undefined ? undefined : String(b.priority),
@@ -171,8 +188,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     parentId: b.parentId === null || b.parentId === '' || b.parentId === undefined ? undefined : String(b.parentId),
     // The stay it is about (§84): an id from the stay picker, with its label.
     reservationId: b.reservationId === null || b.reservationId === '' ? null : b.reservationId === undefined ? undefined : String(b.reservationId),
-    reservationLabel: typeof b.reservationLabel === 'string' ? b.reservationLabel.trim().slice(0, 160) || null : null
+    reservationLabel: typeof b.reservationLabel === 'string' ? b.reservationLabel.trim().slice(0, 160) || null : null,
+    // §94: owner and supervisor are Hostaway users; times go with Start from / Finish by.
+    assigneeUserId: b.assigneeUserId === null || b.assigneeUserId === '' ? null : b.assigneeUserId === undefined ? undefined : Number(b.assigneeUserId),
+    supervisorUserId: b.supervisorUserId === null || b.supervisorUserId === '' ? null : b.supervisorUserId === undefined ? undefined : Number(b.supervisorUserId),
+    startTime: b.startTime === null || b.startTime === '' ? null : typeof b.startTime === 'string' ? b.startTime.slice(0, 5) : undefined,
+    dueTime: b.dueTime === null || b.dueTime === '' ? null : typeof b.dueTime === 'string' ? b.dueTime.slice(0, 5) : undefined,
+    resolutionNote: b.resolutionNote === null ? null : typeof b.resolutionNote === 'string' ? (b.resolutionNote.trim().slice(0, 2000) || null) : undefined
   };
+  for (const tm of [f.startTime, f.dueTime]) if (tm && !TIME.test(tm)) return bad('Times are HH:MM.');
+  // The people are Hostaway's: an id they do not have is refused, and the name is theirs.
+  const personName = async (id: number | null | undefined) => {
+    if (id == null) return id;
+    const [u] = await sql`SELECT name FROM hostaway_users WHERE account_id = 1 AND id = ${id}` as { name: string }[];
+    return u ? u.name : false;
+  };
+  const assigneeName = await personName(f.assigneeUserId);
+  const supervisorName = await personName(f.supervisorUserId);
+  if (assigneeName === false || supervisorName === false) return bad('That person is not a Hostaway user.');
   if (f.reservationId && !/^\d{1,20}$/.test(f.reservationId)) return bad('Which stay?');
   let parentTitle = '';
   if (f.parentId) {
@@ -187,8 +220,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   for (const d of [f.dueOn, f.scheduledOn]) if (d && !DAY.test(d)) return bad('Dates are dates.');
   for (const m of [f.costEstimate, f.costActual]) if (m != null && (!Number.isFinite(m) || m < 0)) return bad('Costs are amounts, not below zero.');
   if (f.kind !== undefined && !KINDS.includes(f.kind)) return bad('A to-do or a work order.');
-  if (f.priority !== undefined && !PRIORITIES.includes(f.priority)) return bad('Priority is normal, high or urgent.');
   if (f.status !== undefined && !STATUSES.includes(f.status)) return bad('Unknown status.');
+  if (f.priority !== undefined && !PRIORITIES.includes(f.priority)) return bad('Priority is none, low, medium, high or urgent.');
   let unitIds: string[] | undefined;
   if (Array.isArray(b.unitIds)) {
     unitIds = [...new Set((b.unitIds as unknown[]).map(String))];
@@ -207,24 +240,34 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
 
   if (b.action === 'create') {
     if (!f.title) return bad('Work needs a name.');
-    const status = f.status && !['done', 'cancelled'].includes(f.status) ? f.status : 'open';
-    const row = (await sql`
-      INSERT INTO todos (account_id, title, unit_ids, due_on, created_by, kind, status, priority, assignee,
-                         claim_id, vendor, scheduled_on, cost_estimate, cost_actual, description, parent_id,
-                         reservation_id, reservation_label)
-      VALUES (1, ${f.title}, ${unitIds ?? []}, ${f.dueOn ?? null}, ${who.email}, ${f.kind ?? 'task'}, ${status},
-              ${f.priority ?? 'normal'}, ${f.assignee ?? null}, ${f.claimId ?? null}, ${f.vendor ?? null},
-              ${f.scheduledOn ?? null}, ${f.costEstimate ?? null}, ${f.costActual ?? null},
-              ${f.description ?? null}, ${f.parentId ?? null},
-              ${f.reservationId ?? null}, ${f.reservationId ? f.reservationLabel : null})
-      RETURNING id`)[0] as { id: string };
-    const what = (f.kind ?? 'task') === 'work_order' ? 'Work order' : 'To-do';
-    await note(sql, 'task', String(row.id), 'status',
-      `${what} created${parentTitle ? ` under “${parentTitle}”` : ''}${claimLabel ? ` for the claim ${claimLabel}` : ''}.`, who.email);
-    if (f.parentId) await note(sql, 'task', f.parentId, 'change', `Sub-task added: ${f.title}`, who.email);
-    if (f.claimId) await note(sql, 'claim', f.claimId, 'change', `${what} added: ${f.title}`, who.email);
-    if (!f.parentId) mirror(String(row.id));
-    return Response.json({ ok: true, id: String(row.id), todos: await list(sql, b.claimScope ? f.claimId ?? undefined : undefined) });
+    const status = f.status && !CLOSED.includes(f.status) ? f.status : 'pending';
+    // One listing per task, as in Hostaway (§94): several listings chosen = one task each.
+    const targets: string[][] = unitIds && unitIds.length > 1 ? unitIds.map(u => [u]) : [unitIds ?? []];
+    const ids: string[] = [];
+    for (const units of targets) {
+      // A stay belongs to one listing: it rides along only when there is one.
+      const stay = targets.length === 1 ? f.reservationId ?? null : null;
+      const row = (await sql`
+        INSERT INTO todos (account_id, title, unit_ids, due_on, due_time, created_by, kind, status, priority,
+                           assignee_user_id, assignee, supervisor_user_id, supervisor,
+                           claim_id, vendor, scheduled_on, start_time, cost_estimate, cost_actual, description, parent_id,
+                           reservation_id, reservation_label)
+        VALUES (1, ${f.title}, ${units}, ${f.dueOn ?? null}, ${f.dueTime ?? null}::time, ${who.email}, ${f.kind ?? 'task'}, ${status},
+                ${f.priority ?? 'none'}, ${f.assigneeUserId ?? null}, ${assigneeName ?? null},
+                ${f.supervisorUserId ?? null}, ${supervisorName ?? null}, ${f.claimId ?? null}, ${f.vendor ?? null},
+                ${f.scheduledOn ?? null}, ${f.startTime ?? null}::time, ${f.costEstimate ?? null}, ${f.costActual ?? null},
+                ${f.description ?? null}, ${f.parentId ?? null}, ${stay}, ${stay ? f.reservationLabel : null})
+        RETURNING id`)[0] as { id: string };
+      ids.push(String(row.id));
+      const what = (f.kind ?? 'task') === 'work_order' ? 'Work order' : 'To-do';
+      await note(sql, 'task', String(row.id), 'status',
+        `${what} created${parentTitle ? ` under “${parentTitle}”` : ''}${claimLabel ? ` for the claim ${claimLabel}` : ''}` +
+        `${targets.length > 1 ? ` (one of ${targets.length}, one per listing)` : ''}.`, who.email);
+      if (f.parentId) await note(sql, 'task', f.parentId, 'change', `Sub-task added: ${f.title}`, who.email);
+      if (f.claimId) await note(sql, 'claim', f.claimId, 'change', `${what} added: ${f.title}`, who.email);
+      if (!f.parentId) mirror(String(row.id));
+    }
+    return Response.json({ ok: true, id: ids[0], ids, todos: await list(sql, b.claimScope ? f.claimId ?? undefined : undefined) });
   }
 
   const id = String(b.id ?? '');
@@ -243,7 +286,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     return Response.json({ ok: true, todos: await list(sql, b.claimScope ? String(b.claimScope) : undefined) });
   }
 
-  const before = (await sql`SELECT title, status, priority, assignee, due_on::text AS due_on, claim_id, vendor,
+  const before = (await sql`SELECT title, status, priority, assignee, supervisor, due_on::text AS due_on, claim_id, vendor,
+                                   to_char(start_time, 'HH24:MI') AS start_time, to_char(due_time, 'HH24:MI') AS due_time, resolution_note,
                                    scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids, description,
                                    reservation_id, reservation_label
                               FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`)[0] as Record<string, any> | undefined;
@@ -297,17 +341,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
 
   // update / done — work out the new status, then write what changed.
   let status = f.status;
-  if (b.action === 'done') status = b.done === false ? 'open' : 'done';
+  if (b.action === 'done') status = b.done === false ? 'pending' : 'completed';
   else if (b.action !== 'update') return bad('Unknown action.');
   if (b.action === 'update' && f.title === null) return bad('Work needs a name.');
+  // One listing per task (§94); a new one is written as its own task.
+  if (unitIds && unitIds.length > 1) return bad('A task is on one listing — add another task for the next one.');
 
-  const closedNow = status !== undefined && ['done', 'cancelled'].includes(status);
+  const closedNow = status !== undefined && CLOSED.includes(status);
   await sql`UPDATE todos SET
       title         = COALESCE(${f.title ?? null}, title),
       unit_ids      = COALESCE(${unitIds ?? null}::text[], unit_ids),
       due_on        = CASE WHEN ${f.dueOn !== undefined} THEN ${f.dueOn ?? null}::date ELSE due_on END,
       scheduled_on  = CASE WHEN ${f.scheduledOn !== undefined} THEN ${f.scheduledOn ?? null}::date ELSE scheduled_on END,
-      assignee      = CASE WHEN ${f.assignee !== undefined} THEN ${f.assignee ?? null} ELSE assignee END,
+      assignee_user_id   = CASE WHEN ${f.assigneeUserId !== undefined} THEN ${f.assigneeUserId ?? null}::int ELSE assignee_user_id END,
+      assignee           = CASE WHEN ${f.assigneeUserId !== undefined} THEN ${assigneeName ?? null} ELSE assignee END,
+      supervisor_user_id = CASE WHEN ${f.supervisorUserId !== undefined} THEN ${f.supervisorUserId ?? null}::int ELSE supervisor_user_id END,
+      supervisor         = CASE WHEN ${f.supervisorUserId !== undefined} THEN ${supervisorName ?? null} ELSE supervisor END,
+      start_time    = CASE WHEN ${f.startTime !== undefined} THEN ${f.startTime ?? null}::time ELSE start_time END,
+      due_time      = CASE WHEN ${f.dueTime !== undefined} THEN ${f.dueTime ?? null}::time ELSE due_time END,
+      resolution_note = CASE WHEN ${f.resolutionNote !== undefined} THEN ${f.resolutionNote ?? null} ELSE resolution_note END,
       vendor        = CASE WHEN ${f.vendor !== undefined} THEN ${f.vendor ?? null} ELSE vendor END,
       claim_id      = CASE WHEN ${f.claimId !== undefined} THEN ${f.claimId ?? null} ELSE claim_id END,
       cost_estimate = CASE WHEN ${f.costEstimate !== undefined} THEN ${f.costEstimate ?? null}::numeric ELSE cost_estimate END,
@@ -326,7 +378,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   // The timeline, in words.
   if (status !== undefined && status !== before.status) {
     await note(sql, 'task', id, 'status', `${STATUS_WORD[before.status]} → ${STATUS_WORD[status]}`, who.email);
-    if (before.claim_id && ['done', 'cancelled'].includes(status)) {
+    if (before.claim_id && CLOSED.includes(status)) {
       await note(sql, 'claim', before.claim_id, 'change', `${STATUS_WORD[status]}: ${before.title}`, who.email);
     }
   }
@@ -336,9 +388,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     changed.push(`${label}: ${show(was)} → ${show(now)}`);
   };
   cmp('Title', before.title, f.title ?? undefined);
-  cmp('Deadline', before.due_on, f.dueOn);
-  cmp('Scheduled', before.scheduled_on, f.scheduledOn);
-  cmp('Owner', before.assignee, f.assignee);
+  cmp('Finish by', before.due_on, f.dueOn);
+  cmp('Start from', before.scheduled_on, f.scheduledOn);
+  cmp('Owner', before.assignee, f.assigneeUserId !== undefined ? assigneeName ?? null : undefined);
+  cmp('Supervisor', before.supervisor, f.supervisorUserId !== undefined ? supervisorName ?? null : undefined);
+  cmp('Start time', before.start_time, f.startTime);
+  cmp('Finish-by time', before.due_time, f.dueTime);
+  if (f.resolutionNote !== undefined && (before.resolution_note ?? '') !== (f.resolutionNote ?? '')) {
+    changed.push(f.resolutionNote ? `Resolution: ${f.resolutionNote}` : 'Resolution cleared');
+  }
   cmp('Vendor', before.vendor, f.vendor);
   cmp('Priority', before.priority, f.priority);
   cmp('Kind', before.kind, f.kind);

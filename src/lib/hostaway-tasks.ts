@@ -1,13 +1,21 @@
 /**
- * Kaizen work ↔ Hostaway tasks (§93) — the mapping, with no I/O.
+ * Kaizen work ↔ Hostaway tasks (§93, §94) — the mapping, with no I/O.
  *
- * Hostaway's task has no "updated at", so each linked to-do keeps the
- * state both sides last agreed on (SyncState). A pull compares Hostaway's
- * task with it field by field: a field that moved there was changed there.
- * Kaizen's own edits are pushed as they happen, so they never need finding.
+ * Since §94 Kaizen's task IS Hostaway's task — same statuses, priority,
+ * owner, supervisor, listing, stay, start and finish, cost, resolution —
+ * so this is a copy, field for field. Only Kaizen's extras (the kind, the
+ * vendor, the estimate, sub-tasks, the claim) stay Kaizen's; the first
+ * three are named in a footer on the description for Hostaway readers,
+ * which Kaizen strips when reading back.
+ *
+ * Hostaway's task has no "updated at", so each linked task keeps the state
+ * both sides last agreed on (SyncState). A pull compares Hostaway's task
+ * with it field by field: a field that moved there was changed there.
  *
  * Times: Hostaway reads and writes `canStartFrom` / `shouldEndBy` as UTC
- * "YYYY-MM-DD HH:mm:ss" (checked 2026-09-30); Kaizen's dates are New York days.
+ * "YYYY-MM-DD HH:mm:ss" (checked 2026-09-30); Kaizen's are New York.
+ * Priority: Hostaway takes a number and does not document a scale; Kaizen
+ * writes none/low/medium/high/urgent as null/1/2/3/4 (PRIORITY_NUMBER).
  */
 import type { Priority, TaskKind, TaskStatus } from './todos.ts';
 
@@ -15,49 +23,60 @@ export type HostawayStatus = 'pending' | 'confirmed' | 'inProgress' | 'completed
 
 export interface HostawayTask {
   id: number; listingMapId: number | null; reservationId: number | null; autoTaskId: number | null;
-  assigneeUserId: number | null; createdByUserId: number | null;
+  assigneeUserId: number | null; supervisorUserId: number | null; createdByUserId: number | null;
   title: string; description: string | null; canStartFrom: string | null; shouldEndBy: string | null;
-  status: string; resolutionNote: string | null; cost: number | null; costCurrency: string | null;
+  status: string; priority: number | null; resolutionNote: string | null; cost: number | null; costCurrency: string | null;
   completedAt: string | null;
 }
 export interface HostawayUser { id: number; email: string | null; firstName: string | null; lastName: string | null }
 
-/** What syncs, both ways — as Hostaway holds it. */
+/** What syncs, both ways — as Hostaway holds it, times as New York "YYYY-MM-DD HH:MM". */
 export interface SyncState {
   title: string;
-  /** The description without Kaizen's footer. */
+  /** Without Kaizen's footer. */
   description: string;
   status: HostawayStatus;
+  priority: number | null;
   assigneeUserId: number | null;
-  /** The deadline as a New York day. */
-  due: string | null;
+  supervisorUserId: number | null;
+  listingMapId: number | null;
+  reservationId: number | null;
+  start: string | null;
+  end: string | null;
   cost: number | null;
+  resolutionNote: string;
 }
 
-/** The fields of a Kaizen to-do the mirror needs. */
+/** The fields of a Kaizen task the mirror needs. */
 export interface WorkForSync {
   id: string; title: string; description: string | null; kind: TaskKind; status: TaskStatus; priority: Priority;
-  unitIds: string[]; reservationId: string | null; dueOn: string | null; scheduledOn: string | null;
-  assignee: string | null; vendor: string | null; costEstimate: number | null; costActual: number | null; createdAt: string;
+  unitIds: string[]; reservationId: string | null;
+  scheduledOn: string | null; startTime: string | null; dueOn: string | null; dueTime: string | null;
+  assigneeUserId: number | null; supervisorUserId: number | null;
+  vendor: string | null; costEstimate: number | null; costActual: number | null; resolutionNote: string | null;
 }
 
 const TZ = 'America/New_York';
+/** When a day is given without a time. */
+export const DEFAULT_START = '09:00';
+export const DEFAULT_END = '23:59';
 
-export const toHostawayStatus = (s: TaskStatus): HostawayStatus =>
-  s === 'in_progress' ? 'inProgress' : s === 'done' ? 'completed' : s === 'cancelled' ? 'cancelled' : 'pending';
-
-/** "Confirmed" is the assignee accepting it — still to do. */
+export const toHostawayStatus = (s: TaskStatus): HostawayStatus => s === 'in_progress' ? 'inProgress' : s;
 export const fromHostawayStatus = (s: string): TaskStatus =>
-  s === 'inProgress' ? 'in_progress' : s === 'completed' ? 'done' : s === 'cancelled' ? 'cancelled' : 'open';
+  s === 'inProgress' ? 'in_progress' : (['confirmed', 'completed', 'cancelled'] as const).find(x => x === s) ?? 'pending';
+const asStatus = (s: string): HostawayStatus => toHostawayStatus(fromHostawayStatus(s));
 
-const asStatus = (s: string): HostawayStatus =>
-  (['pending', 'confirmed', 'inProgress', 'completed', 'cancelled'] as const).find(x => x === s) ?? 'pending';
+export const PRIORITY_NUMBER: Record<Priority, number | null> = { none: null, low: 1, medium: 2, high: 3, urgent: 4 };
+const BY_NUMBER: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
+/** Anything above 4 is urgent; nothing, or 0, is none. */
+export const priorityOf = (n: number | null | undefined): Priority => BY_NUMBER[Math.min(Math.max(Math.round(n ?? 0), 0), 4)]!;
 
 /* ── time ───────────────────────────────────────────────────────────── */
 
 /** A New York wall-clock time as Hostaway's UTC string. */
-export function nyToUtc(day: string, hh: number, mm = 0): string {
+export function nyToUtc(day: string, time = '00:00'): string {
   const [y, m, d] = day.split('-').map(Number) as [number, number, number];
+  const [hh, mm] = time.split(':').map(Number) as [number, number];
   // New York is UTC-4 or UTC-5; take the offset that gives back the asked-for hour.
   for (const off of [4, 5]) {
     const t = new Date(Date.UTC(y, m - 1, d, hh + off, mm));
@@ -67,27 +86,26 @@ export function nyToUtc(day: string, hh: number, mm = 0): string {
   return new Date(Date.UTC(y, m - 1, d, hh + 5, mm)).toISOString().slice(0, 19).replace('T', ' ');
 }
 
-/** Hostaway's UTC string as a New York day. */
-export function utcToNyDay(s: string | null | undefined): string | null {
+/** Hostaway's UTC string as New York "YYYY-MM-DD HH:MM". */
+export function utcToNy(s: string | null | undefined): string | null {
   if (!s) return null;
   const t = new Date(`${s.replace(' ', 'T')}Z`);
   if (!Number.isFinite(t.getTime())) return null;
-  return new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(t);
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(t).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
 }
+export const utcToNyDay = (s: string | null | undefined) => utcToNy(s)?.slice(0, 10) ?? null;
+
+/** A day and an optional time as "YYYY-MM-DD HH:MM", the default filling a missing time. */
+const at = (day: string | null, time: string | null, dflt: string) => day ? `${day} ${(time ?? dflt).slice(0, 5)}` : null;
+/** Back into a day and a time — the default time reads as "no time". */
+const split = (v: string | null, dflt: string): { day: string | null; time: string | null } =>
+  !v ? { day: null, time: null } : { day: v.slice(0, 10), time: v.slice(11, 16) === dflt ? null : v.slice(11, 16) };
 
 /* ── people ─────────────────────────────────────────────────────────── */
 
 export const userName = (u: HostawayUser) => [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.email || `User ${u.id}`;
-
-/** Kaizen's owner is free text: a Hostaway user by email, full name or first name — or nobody. */
-export function matchUser(text: string | null, users: HostawayUser[]): HostawayUser | null {
-  const q = (text ?? '').trim().toLowerCase();
-  if (!q) return null;
-  return users.find(u => (u.email ?? '').toLowerCase() === q)
-    ?? users.find(u => userName(u).toLowerCase() === q)
-    ?? (users.filter(u => (u.firstName ?? '').trim().toLowerCase() === q).length === 1
-        ? users.find(u => (u.firstName ?? '').trim().toLowerCase() === q)! : null);
-}
 
 /* ── the description footer ─────────────────────────────────────────── */
 
@@ -96,11 +114,9 @@ export const FOOTER_MARK = '\n\n— Kaizen OS';
 /** Kaizen's own description, without the footer it adds for Hostaway readers. */
 export const coreOf = (description: string | null | undefined) => (description ?? '').split(FOOTER_MARK)[0]!.trim();
 
-function footer(w: WorkForSync, owner: string | null, unitNames: string[]): string {
+/** What only Kaizen holds, said for Hostaway readers. */
+function footer(w: WorkForSync): string {
   const bits = [`${w.kind === 'work_order' ? 'Repair' : 'To-do'} #${w.id}`];
-  if (w.priority !== 'normal') bits.push(w.priority === 'urgent' ? 'URGENT' : 'High priority');
-  if (unitNames.length > 1) bits.push(`Listings: ${unitNames.join(', ')}`);
-  if (owner) bits.push(`Owner: ${owner}`);
   if (w.vendor) bits.push(`Vendor: ${w.vendor}`);
   if (w.costEstimate != null && w.costActual == null) bits.push(`Estimate $${w.costEstimate.toFixed(2)}`);
   return `${FOOTER_MARK} · ${bits.join(' · ')}`;
@@ -108,26 +124,24 @@ function footer(w: WorkForSync, owner: string | null, unitNames: string[]): stri
 
 /* ── Kaizen → Hostaway ──────────────────────────────────────────────── */
 
-/**
- * The body for POST /tasks or PUT /tasks/{id}. A to-do on several
- * listings goes on the first; the footer names the rest. An owner who is
- * not a Hostaway user (a vendor, a cleaner) is named in the footer.
- */
-export function toHostawayBody(w: WorkForSync, users: HostawayUser[], unitNames: string[] = []) {
-  const user = matchUser(w.assignee, users);
-  const start = w.scheduledOn ?? w.dueOn ?? w.createdAt.slice(0, 10);
-  const core = coreOf(w.description);
+/** The body for POST /tasks or PUT /tasks/{id}: the same task, field for field. */
+export function toHostawayBody(w: WorkForSync) {
+  const start = at(w.scheduledOn, w.startTime, DEFAULT_START);
+  const end = at(w.dueOn, w.dueTime, DEFAULT_END);
   return {
     listingMapId: w.unitIds[0] ? Number(w.unitIds[0]) : null,
     reservationId: w.reservationId ? Number(w.reservationId) : null,
     title: w.kind === 'work_order' ? `🔧 ${w.title}` : w.title,
-    description: `${core}${footer(w, user ? null : w.assignee, unitNames)}`.trim(),
-    canStartFrom: nyToUtc(start, 9),
-    shouldEndBy: w.dueOn ? nyToUtc(w.dueOn, 23, 59) : null,
+    description: `${coreOf(w.description)}${footer(w)}`.trim(),
+    canStartFrom: start ? nyToUtc(start.slice(0, 10), start.slice(11)) : null,
+    shouldEndBy: end ? nyToUtc(end.slice(0, 10), end.slice(11)) : null,
     status: toHostawayStatus(w.status),
-    assigneeUserId: user?.id ?? null,
+    priority: PRIORITY_NUMBER[w.priority],
+    assigneeUserId: w.assigneeUserId,
+    supervisorUserId: w.supervisorUserId,
     cost: w.costActual,
-    costCurrency: w.costActual != null ? 'USD' : null
+    costCurrency: w.costActual != null ? 'USD' : null,
+    resolutionNote: w.resolutionNote
   };
 }
 
@@ -135,41 +149,63 @@ export function toHostawayBody(w: WorkForSync, users: HostawayUser[], unitNames:
 
 const cleanTitle = (t: string) => t.replace(/^🔧\s*/, '').trim();
 
-export function stateOf(h: Pick<HostawayTask, 'title' | 'description' | 'status' | 'assigneeUserId' | 'shouldEndBy' | 'cost'>): SyncState {
+export function stateOf(h: Pick<HostawayTask, 'title' | 'description' | 'status' | 'priority' | 'assigneeUserId' | 'supervisorUserId'
+  | 'listingMapId' | 'reservationId' | 'canStartFrom' | 'shouldEndBy' | 'cost' | 'resolutionNote'>): SyncState {
   return {
     title: cleanTitle(h.title ?? ''), description: coreOf(h.description), status: asStatus(h.status),
-    assigneeUserId: h.assigneeUserId ?? null, due: utcToNyDay(h.shouldEndBy),
-    cost: h.cost == null ? null : Number(h.cost)
+    priority: h.priority || null, assigneeUserId: h.assigneeUserId ?? null, supervisorUserId: h.supervisorUserId ?? null,
+    listingMapId: h.listingMapId ?? null, reservationId: h.reservationId ?? null,
+    start: utcToNy(h.canStartFrom), end: utcToNy(h.shouldEndBy),
+    cost: h.cost == null ? null : Number(h.cost), resolutionNote: (h.resolutionNote ?? '').trim()
   };
 }
 
-/** A change to apply to the Kaizen to-do, and the timeline line that says so. */
-export interface PulledChange {
-  patch: { title?: string; description?: string | null; status?: TaskStatus; assignee?: string | null; dueOn?: string | null; costActual?: number | null };
-  said: string[];
+/** The Kaizen fields a Hostaway task sets. */
+export interface WorkPatch {
+  title?: string; description?: string | null; status?: TaskStatus; priority?: Priority;
+  assigneeUserId?: number | null; assignee?: string | null; supervisorUserId?: number | null; supervisor?: string | null;
+  unitIds?: string[]; reservationId?: string | null;
+  scheduledOn?: string | null; startTime?: string | null; dueOn?: string | null; dueTime?: string | null;
+  costActual?: number | null; resolutionNote?: string | null;
+}
+
+const nameOf = (id: number | null, users: HostawayUser[]) => { const u = users.find(x => x.id === id); return u ? userName(u) : null; };
+
+/** Everything a Hostaway task says, as Kaizen fields — for a task that comes in from Hostaway. */
+export function workFromState(s: SyncState, users: HostawayUser[]): Required<Omit<WorkPatch, never>> {
+  const st = split(s.start, DEFAULT_START), en = split(s.end, DEFAULT_END);
+  return {
+    title: s.title, description: s.description || null, status: fromHostawayStatus(s.status), priority: priorityOf(s.priority),
+    assigneeUserId: s.assigneeUserId, assignee: nameOf(s.assigneeUserId, users),
+    supervisorUserId: s.supervisorUserId, supervisor: nameOf(s.supervisorUserId, users),
+    unitIds: s.listingMapId != null ? [String(s.listingMapId)] : [], reservationId: s.reservationId != null ? String(s.reservationId) : null,
+    scheduledOn: st.day, startTime: st.time, dueOn: en.day, dueTime: en.time,
+    costActual: s.cost, resolutionNote: s.resolutionNote || null
+  };
 }
 
 /**
- * What moved in Hostaway since the two sides last agreed. Only fields
- * that differ from the snapshot count: a field nobody touched there never
+ * What moved in Hostaway since the two sides last agreed. Only fields that
+ * differ from the snapshot count: a field nobody touched there never
  * overwrites what Kaizen holds.
  */
-export function changesFrom(prev: SyncState, now: SyncState, users: HostawayUser[]): PulledChange {
-  const patch: PulledChange['patch'] = {};
+export function changesFrom(prev: SyncState, now: SyncState, users: HostawayUser[]): { patch: WorkPatch; said: string[] } {
+  const w = workFromState(now, users);
+  const patch: WorkPatch = {};
   const said: string[] = [];
-  if (now.status !== prev.status && fromHostawayStatus(now.status) !== fromHostawayStatus(prev.status)) {
-    patch.status = fromHostawayStatus(now.status);
-    said.push(`status ${now.status === 'inProgress' ? 'in progress' : now.status}`);
-  }
-  if (now.title !== prev.title && now.title) { patch.title = now.title; said.push(`title “${now.title}”`); }
-  if (now.description !== prev.description) { patch.description = now.description || null; said.push('description'); }
-  if (now.assigneeUserId !== prev.assigneeUserId) {
-    const u = users.find(x => x.id === now.assigneeUserId);
-    patch.assignee = u ? userName(u) : null;
-    said.push(u ? `assigned to ${userName(u)}` : 'unassigned');
-  }
-  if (now.due !== prev.due) { patch.dueOn = now.due; said.push(now.due ? `deadline ${now.due}` : 'no deadline'); }
-  if (now.cost !== prev.cost) { patch.costActual = now.cost; said.push(now.cost == null ? 'cost cleared' : `cost $${now.cost.toFixed(2)}`); }
+  const moved = <K extends keyof SyncState>(k: K) => JSON.stringify(prev[k]) !== JSON.stringify(now[k]);
+  if (moved('status')) { patch.status = w.status; said.push(`status ${now.status === 'inProgress' ? 'in progress' : now.status}`); }
+  if (moved('title') && now.title) { patch.title = w.title; said.push(`title “${now.title}”`); }
+  if (moved('description')) { patch.description = w.description; said.push('description'); }
+  if (moved('priority')) { patch.priority = w.priority; said.push(`priority ${w.priority}`); }
+  if (moved('assigneeUserId')) { patch.assigneeUserId = w.assigneeUserId; patch.assignee = w.assignee; said.push(w.assignee ? `assigned to ${w.assignee}` : 'unassigned'); }
+  if (moved('supervisorUserId')) { patch.supervisorUserId = w.supervisorUserId; patch.supervisor = w.supervisor; said.push(w.supervisor ? `supervisor ${w.supervisor}` : 'no supervisor'); }
+  if (moved('listingMapId')) { patch.unitIds = w.unitIds; said.push(w.unitIds.length ? 'listing changed' : 'no listing'); }
+  if (moved('reservationId')) { patch.reservationId = w.reservationId; said.push(w.reservationId ? 'stay changed' : 'no stay'); }
+  if (moved('start')) { patch.scheduledOn = w.scheduledOn; patch.startTime = w.startTime; said.push(now.start ? `start ${now.start}` : 'no start'); }
+  if (moved('end')) { patch.dueOn = w.dueOn; patch.dueTime = w.dueTime; said.push(now.end ? `finish by ${now.end}` : 'no finish-by'); }
+  if (moved('cost')) { patch.costActual = w.costActual; said.push(now.cost == null ? 'cost cleared' : `cost $${now.cost.toFixed(2)}`); }
+  if (moved('resolutionNote')) { patch.resolutionNote = w.resolutionNote; if (now.resolutionNote) said.push(`resolution “${now.resolutionNote}”`); }
   return { patch, said };
 }
 
@@ -177,6 +213,7 @@ export const sameState = (a: SyncState, b: SyncState) => JSON.stringify(a) === J
 
 /**
  * A task the team wrote by hand in Hostaway, still open — it becomes
- * Kaizen work. Automatic tasks (the per-reservation "Cleaning – …") never do.
+ * Kaizen work. Automatic tasks (the per-reservation "Cleaning – …") never do:
+ * cleans are the board's, not the team's to-do list.
  */
 export const importable = (h: HostawayTask) => h.autoTaskId == null && !['completed', 'cancelled'].includes(h.status);

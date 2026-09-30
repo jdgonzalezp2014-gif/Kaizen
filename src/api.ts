@@ -488,7 +488,10 @@ export const driveAction = (body: Record<string, unknown>) =>
 
 export type { Todo } from './lib/todos.ts';
 type TodosResult = { ok: true; todos: import('./lib/todos.ts').Todo[] } | { ok: false; message?: string };
-export interface HostawaySync { skipped?: string; changed: number; imported: number; unlinked: number; retried: number; people: string[] }
+export interface HostawaySync { skipped?: string; changed: number; imported: number; unlinked: number; retried: number }
+/** §94: Hostaway's users — owners and supervisors are theirs. */
+export interface Person { id: number; name: string; email: string | null }
+export const getPeople = () => call<{ ok: boolean; people?: Person[] }>('/api/todos?people=1');
 /** §93: ask Hostaway for what the team changed there (at most every two minutes unless forced). */
 export const syncHostawayTasks = (force = false) =>
   call<{ ok: true; sync: HostawaySync; todos: import('./lib/todos.ts').Todo[] } | { ok: false; message?: string }>('/api/todos', {

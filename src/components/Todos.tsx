@@ -16,9 +16,9 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
-  type Claim, type StayOnDay, type Todo, type WorkUpdate, syncHostawayTasks } from '../api.ts';
+  type Claim, type StayOnDay, type Todo, type WorkUpdate, syncHostawayTasks, getPeople, type Person } from '../api.ts';
 import {
-  KIND_LABEL, PRIORITY_LABEL, STATUS_LABEL, STATUSES, auditCsv, childrenBy, daysTaken, nyParts, outcomeOf, stayLabel,
+  KIND_LABEL, PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, auditCsv, childrenBy, daysTaken, nyParts, outcomeOf, stayLabel,
   type AuditRow, dueLabel, dueOf, isClosed, isFiltering, matchesFilter,
   progress, shortDay, sortTodos, workCost,
   type Priority, type TaskKind, type TaskStatus, type WorkFilter
@@ -85,13 +85,10 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const loadTodos = () => getTodos(claim?.id).then(r => r.ok ? take(r.todos) : setErr(r.message ?? 'Could not read the list.'))
     .catch(e => setErr(String(e)));
   // §93: then whatever the team changed in Hostaway — in the background, so the list never waits on it.
-  const [people, setPeople] = useState<string[]>([]);
   useEffect(() => {
     if (claim) return;
     void syncHostawayTasks().then(r => {
-      if (!r.ok) return;
-      if (r.sync.people.length) setPeople(r.sync.people);
-      if (r.sync.changed || r.sync.imported || r.sync.unlinked) take(r.todos);
+      if (r.ok && (r.sync.changed || r.sync.imported || r.sync.unlinked)) take(r.todos);
     }).catch(() => { /* the list stands without it */ });
   }, []);
   useEffect(() => {
@@ -233,8 +230,6 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
 
   return (
     <div className={`todos ${compact ? 'compact' : ''}`}>
-      {/* §93: Hostaway's users, offered as owners — a name typed as Hostaway knows it becomes the task's assignee there. */}
-      {people.length > 0 && <datalist id="kaizen-people">{people.map(p => <option key={p} value={p} />)}</datalist>}
       {/* Outside the lanes (a claim's own list, a kind filter): one row of adds. */}
       {!lanesOn && (!adding ? (
         <div className="todo-add-buttons">
@@ -363,8 +358,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
         <button className="todo-title" onClick={onOpen} title="Open it">{t.title}</button>
         {prog.total > 0 && <span className={`todo-prog ${prog.done === prog.total ? 'all' : ''}`} title="Sub-tasks done">
           ☑ {prog.done}/{prog.total}</span>}
-        {t.priority !== 'normal' && !closed && <span className={`todo-prio ${t.priority}`}>{PRIORITY_LABEL[t.priority]}</span>}
-        {(t.status === 'in_progress' || t.status === 'waiting' || t.status === 'cancelled') &&
+        {t.priority !== 'none' && !closed && <span className={`todo-prio ${t.priority}`}>{PRIORITY_LABEL[t.priority]}</span>}
+        {(t.status === 'confirmed' || t.status === 'in_progress' || t.status === 'cancelled') &&
           <span className={`todo-status s-${t.status}`}>{STATUS_LABEL[t.status]}</span>}
         {/* A sub-task says only what differs from its parent: the same unit
             and claim under the same parent are noise. */}
@@ -374,8 +369,9 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
         {t.claimId && !inClaim && !(parent && !flat && parent.claimId === t.claimId) && (!claims.length || claimNames.has(t.claimId)) && <span className="todo-claim" title="Belongs to a claim">⚑ {claimNames.get(t.claimId) ?? 'claim'}</span>}
         {t.assignee && <span className="sub-n">→ {t.assignee}</span>}
         {t.kind === 'work_order' && t.vendor && <span className="sub-n">· {t.vendor}</span>}
-        {t.kind === 'work_order' && t.scheduledOn && !closed && <span className="sub-n">· booked {shortDay(t.scheduledOn)}</span>}
-        {!closed && t.dueOn && <span className="todo-due">{dueLabel(t, today)}</span>}
+        {t.scheduledOn && !closed && t.scheduledOn > today && <span className="sub-n">· starts {shortDay(t.scheduledOn)}{t.startTime ? ` ${t.startTime}` : ''}</span>}
+        {!closed && t.dueOn && <span className="todo-due">{dueLabel(t, today)}{t.dueTime ? ` · ${t.dueTime}` : ''}</span>}
+        {closed && t.resolutionNote && <span className="sub-n todo-resolution" title="Resolution">— {t.resolutionNote}</span>}
         {(t.costActual ?? t.costEstimate) != null &&
           <span className="sub-n">{t.costActual != null ? money2(t.costActual) : `~${money2(t.costEstimate!)}`}</span>}
         {t.updates > 1 && <span className="sub-n" title="Updates">💬 {t.updates}</span>}
@@ -458,16 +454,48 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
 }
 
 type FormValue = {
-  title: string; kind: TaskKind; unitIds: string[]; dueOn: string | null; priority: Priority; assignee: string | null;
-  claimId: string | null; vendor: string | null; scheduledOn: string | null;
-  costEstimate: number | null; costActual: number | null; status?: TaskStatus;
+  title: string; kind: TaskKind; unitIds: string[]; priority: Priority;
+  /** §94: Start from / Finish by, each a day with an optional time. */
+  scheduledOn: string | null; startTime: string | null; dueOn: string | null; dueTime: string | null;
+  /** §94: Hostaway users. */
+  assigneeUserId: number | null; supervisorUserId: number | null;
+  claimId: string | null; vendor: string | null;
+  costEstimate: number | null; costActual: number | null; status?: TaskStatus; resolutionNote: string | null;
   description: string | null; parentId?: string;
   reservationId: string | null; reservationLabel: string | null;
 };
 
+/** Hostaway's users (§94), read once per page — every form on it shares them. */
+let peopleOnce: Promise<Person[]> | null = null;
+function usePeople(): Person[] {
+  const [list, setList] = useState<Person[]>([]);
+  useEffect(() => {
+    peopleOnce ??= getPeople().then(r => r.people ?? []).catch(() => { peopleOnce = null; return []; });
+    void peopleOnce.then(setList);
+  }, []);
+  return list;
+}
+
+/** Owner or supervisor: one of Hostaway's users, or nobody. A name no longer there still shows. */
+function PersonPick({ label, value, name, people, onChange }: {
+  label: string; value: number | null; name?: string | null; people: Person[]; onChange: (id: number | null) => void;
+}) {
+  const gone = value != null && !people.some(p => p.id === value);
+  return (
+    <label>{label}
+      <select value={value ?? ''} onChange={e => onChange(e.target.value ? Number(e.target.value) : null)}>
+        <option value="">Nobody</option>
+        {people.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+        {gone && <option value={value!}>{name ?? `User ${value}`}</option>}
+      </select></label>
+  );
+}
+
 /**
  * Add (one line, "more" for the rest) or change a piece of work. `fixed`
- * is what a claim pre-sets: the claim itself, and its unit.
+ * is what a claim pre-sets: the claim itself, and its unit. The fields are
+ * Hostaway's task, field for field (§94); the kind, vendor, estimate, claim
+ * and sub-tasks are Kaizen's own.
  */
 function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, startKind = 'task', onCancel }: {
   units: Unit[]; claims: Claim[]; canClaims: boolean; initial?: Todo; submitLabel: string;
@@ -477,16 +505,20 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   /** Adding: the kind the button chose. */
   startKind?: TaskKind; onCancel?: () => void;
 }) {
+  const people = usePeople();
   const blank = (): FormValue => ({
-    title: '', kind: startKind, unitIds: fixed?.unitIds ?? [], dueOn: null, priority: 'normal', assignee: null,
-    claimId: fixed?.claimId ?? null, vendor: null, scheduledOn: null, costEstimate: null, costActual: null,
+    title: '', kind: startKind, unitIds: fixed?.unitIds ?? [], priority: 'none',
+    scheduledOn: null, startTime: null, dueOn: null, dueTime: null, assigneeUserId: null, supervisorUserId: null,
+    claimId: fixed?.claimId ?? null, vendor: null, costEstimate: null, costActual: null, resolutionNote: null,
     description: null, ...(fixed?.parentId ? { parentId: fixed.parentId } : {}),
     reservationId: fixed?.reservationId ?? null, reservationLabel: fixed?.reservationLabel ?? null
   });
   const [v, setV] = useState<FormValue>(() => initial ? {
-    title: initial.title, kind: initial.kind, unitIds: initial.unitIds, dueOn: initial.dueOn, priority: initial.priority,
-    assignee: initial.assignee, claimId: initial.claimId, vendor: initial.vendor, scheduledOn: initial.scheduledOn,
-    costEstimate: initial.costEstimate, costActual: initial.costActual, status: initial.status,
+    title: initial.title, kind: initial.kind, unitIds: initial.unitIds, priority: initial.priority,
+    scheduledOn: initial.scheduledOn, startTime: initial.startTime ?? null, dueOn: initial.dueOn, dueTime: initial.dueTime ?? null,
+    assigneeUserId: initial.assigneeUserId ?? null, supervisorUserId: initial.supervisorUserId ?? null,
+    claimId: initial.claimId, vendor: initial.vendor, costEstimate: initial.costEstimate, costActual: initial.costActual,
+    status: initial.status, resolutionNote: initial.resolutionNote ?? null,
     description: initial.description, reservationId: initial.reservationId, reservationLabel: initial.reservationLabel
   } : blank());
   const [more, setMore] = useState(!!initial);
@@ -497,6 +529,9 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   const name = (id: string) => units.find(u => u.id === id)?.name ?? 'unit';
   const wo = v.kind === 'work_order';
   const openClaims = claims.filter(c => c.status === 'Open' || c.status === 'In progress' || String(c.id) === v.claimId);
+  // One listing per task (§94). Adding may pick several — each becomes its own task.
+  const manyListings = !initial && v.unitIds.length > 1;
+  const closing = v.status === 'completed' || v.status === 'cancelled';
 
   const submit = async () => {
     if (!v.title.trim() || busy) return;
@@ -540,32 +575,43 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
             <button type="button" aria-label={`Remove ${name(id)}`} onClick={() => set('unitIds', v.unitIds.filter(x => x !== id))}>×</button>
           </span>
         ))}
-        <select value="" aria-label="Add a listing" onChange={e => { const x = e.target.value; if (x) set('unitIds', [...v.unitIds, x]); }}>
-          <option value="">{v.unitIds.length ? '+ listing' : 'Listing (optional)'}</option>
-          {units.filter(u => u.active && !v.unitIds.includes(u.id)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
-        <label className="todo-inline">Deadline
+        {(!initial || !v.unitIds.length) && (
+          <select value="" aria-label="Add a listing" onChange={e => { const x = e.target.value; if (x) set('unitIds', initial ? [x] : [...v.unitIds, x]); }}>
+            <option value="">{v.unitIds.length ? '+ listing' : 'Listing (optional)'}</option>
+            {units.filter(u => u.active && !v.unitIds.includes(u.id)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select>
+        )}
+        <label className="todo-inline">Finish by
           <input type="date" value={v.dueOn ?? ''} onChange={e => set('dueOn', e.target.value || null)} /></label>
         {!initial && <button type="button" className="link tiny" onClick={() => setMore(!more)}>
-          {more ? 'fewer options' : wo ? 'vendor, cost, owner…' : 'owner, priority…'}</button>}
+          {more ? 'fewer options' : wo ? 'owner, vendor, cost…' : 'owner, priority, start…'}</button>}
         {!initial && <span className="rb-spacer" />}
         {!initial && onCancel && <button type="button" className="link tiny" onClick={onCancel}>Cancel</button>}
-        {!initial && <button className="small" disabled={!v.title.trim() || busy}>{busy ? '…' : submitLabel}</button>}
+        {!initial && <button className="small" disabled={!v.title.trim() || busy}>{busy ? '…' : manyListings ? `${submitLabel} ${v.unitIds.length}` : submitLabel}</button>}
       </div>
+      {manyListings && <p className="note todo-many">One task per listing, as in Hostaway: this adds {v.unitIds.length} tasks, one on each.</p>}
       {more && (
         <div className="todo-more">
           {initial && (
             <label>Status
               <select value={v.status} onChange={e => set('status', e.target.value as TaskStatus)}>
-                {STATUSES.map(s => <option key={s} value={s}>{STATUS_LABEL[s]}</option>)}
+                {STATUSES.map(x => <option key={x} value={x}>{STATUS_LABEL[x]}</option>)}
               </select></label>
           )}
           <label>Priority
             <select value={v.priority} onChange={e => set('priority', e.target.value as Priority)}>
-              {(['normal', 'high', 'urgent'] as Priority[]).map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
+              {PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
             </select></label>
-          <label>Owner
-            <input value={v.assignee ?? ''} placeholder="Who is on it" list="kaizen-people" onChange={e => set('assignee', e.target.value || null)} /></label>
+          <PersonPick label="Owner" value={v.assigneeUserId} name={initial?.assignee} people={people} onChange={x => set('assigneeUserId', x)} />
+          <PersonPick label="Supervisor" value={v.supervisorUserId} name={initial?.supervisor} people={people} onChange={x => set('supervisorUserId', x)} />
+          <label>Start from
+            <span className="todo-when">
+              <input type="date" value={v.scheduledOn ?? ''} onChange={e => set('scheduledOn', e.target.value || null)} />
+              <input type="time" value={v.startTime ?? ''} disabled={!v.scheduledOn} aria-label="Start time"
+                     onChange={e => set('startTime', e.target.value || null)} />
+            </span></label>
+          <label>Finish by — time
+            <input type="time" value={v.dueTime ?? ''} disabled={!v.dueOn} onChange={e => set('dueTime', e.target.value || null)} /></label>
           {canClaims && (
             <label>Part of a claim? (optional)
               <select value={v.claimId ?? ''} onChange={e => set('claimId', e.target.value || null)}>
@@ -573,18 +619,22 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
                 {openClaims.map(c => <option key={c.id} value={String(c.id)}>{claimLabel(c)}</option>)}
               </select></label>
           )}
-          <div className="todo-stay-pick">
-            <StayPicker unitId={v.unitIds[0] ?? null} value={v.reservationId ? { id: v.reservationId, label: v.reservationLabel ?? '' } : null}
-                        onChange={x => setV(p => ({ ...p, reservationId: x?.id ?? null, reservationLabel: x?.label ?? null }))} />
-          </div>
+          {!manyListings && (
+            <div className="todo-stay-pick">
+              <StayPicker unitId={v.unitIds[0] ?? null} value={v.reservationId ? { id: v.reservationId, label: v.reservationLabel ?? '' } : null}
+                          onChange={x => setV(p => ({ ...p, reservationId: x?.id ?? null, reservationLabel: x?.label ?? null }))} />
+            </div>
+          )}
           {wo && <>
             <label>Vendor
               <input value={v.vendor ?? ''} placeholder="Plumber, handyman…" onChange={e => set('vendor', e.target.value || null)} /></label>
-            <label>Booked for
-              <input type="date" value={v.scheduledOn ?? ''} onChange={e => set('scheduledOn', e.target.value || null)} /></label>
             <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
-            <label>Actual cost {moneyIn(v.costActual, 'costActual')}</label>
           </>}
+          <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
+          {initial && closing && (
+            <label className="todo-resolution-in">Resolution — how it was resolved
+              <textarea rows={2} value={v.resolutionNote ?? ''} maxLength={2000} onChange={e => set('resolutionNote', e.target.value || null)} /></label>
+          )}
         </div>
       )}
       {initial && (
@@ -935,7 +985,7 @@ export function WorkView({ today, canClaims }: { today: DateStr; canClaims: bool
   );
 }
 
-const OUTCOME_WORD = { done: '✓ Done', cancelled: '✕ Cancelled', removed: '🗑 Removed' } as const;
+const OUTCOME_WORD = { completed: '✓ Completed', cancelled: '✕ Cancelled', removed: '🗑 Removed' } as const;
 
 /**
  * Every task closed in a range — who closed it, when, how long it took,
@@ -977,9 +1027,9 @@ function DoneLog({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
   const shown = (rows ?? []).filter(t => (!who || (t.deletedBy ?? t.doneBy) === who) && (!kind || t.kind === kind)
     && (!unit || t.unitIds.includes(unit)));
   const count = (o: string) => shown.filter(t => outcomeOf(t) === o).length;
-  const taken = shown.filter(t => outcomeOf(t) === 'done').map(t => daysTaken(t) ?? 0).sort((a, b) => a - b);
+  const taken = shown.filter(t => outcomeOf(t) === 'completed').map(t => daysTaken(t) ?? 0).sort((a, b) => a - b);
   const median = taken.length ? taken[Math.floor(taken.length / 2)] : null;
-  const repairCost = shown.filter(t => outcomeOf(t) === 'done').reduce((a, t) => a + (t.costActual ?? 0), 0);
+  const repairCost = shown.filter(t => outcomeOf(t) === 'completed').reduce((a, t) => a + (t.costActual ?? 0), 0);
 
   const exportCsv = () => {
     const csv = auditCsv(shown, id => names.get(id) ?? id, id => claimNames.get(id) ?? `claim ${id}`);
@@ -1012,7 +1062,7 @@ function DoneLog({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
       {rows === null ? <p className="note loading-dot">Reading the log</p> : (
         <>
           <p className="note done-summary">
-            <b>{shown.length}</b> closed · {count('done')} done · {count('cancelled')} cancelled
+            <b>{shown.length}</b> closed · {count('completed')} completed · {count('cancelled')} cancelled
             {withRemoved && <> · {count('removed')} removed</>}
             {median !== null && <> · median {median === 0 ? 'same day' : `${median} day${median === 1 ? '' : 's'}`} to done</>}
             {repairCost > 0 && <> · repairs {money2(repairCost)}</>}

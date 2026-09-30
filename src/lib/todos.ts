@@ -6,8 +6,10 @@
 import { addDays, daysBetween, type DateStr } from './dates.ts';
 
 export type TaskKind = 'task' | 'work_order';
-export type TaskStatus = 'open' | 'in_progress' | 'waiting' | 'done' | 'cancelled';
-export type Priority = 'normal' | 'high' | 'urgent';
+/** Hostaway's task statuses, word for word (§94). */
+export type TaskStatus = 'pending' | 'confirmed' | 'in_progress' | 'completed' | 'cancelled';
+/** Hostaway's priority: none, then 1–4. */
+export type Priority = 'none' | 'low' | 'medium' | 'high' | 'urgent';
 
 export interface Todo {
   id: string; title: string; unitIds: string[]; dueOn: DateStr | null;
@@ -15,10 +17,16 @@ export interface Todo {
   /** When it was closed (done or cancelled), and by whom. */
   doneAt: string | null; doneBy: string | null;
   kind: TaskKind; status: TaskStatus; priority: Priority;
-  assignee: string | null;
+  /** Owner and supervisor: Hostaway users (§94) — the id, and the name as it was when set. */
+  assignee: string | null; assigneeUserId?: number | null;
+  supervisor?: string | null; supervisorUserId?: number | null;
+  /** Optional times on "Start from" (scheduledOn) and "Finish by" (dueOn), "HH:MM". */
+  startTime?: string | null; dueTime?: string | null;
+  /** Written when it is completed — how it was resolved. */
+  resolutionNote?: string | null;
   /** The claim this work resolves, if any. */
   claimId: string | null;
-  /** Work orders: who does it, when, and what it costs. */
+  /** Start from (any work); a repair's vendor, and what it costs. */
   vendor: string | null; scheduledOn: DateStr | null;
   costEstimate: number | null; costActual: number | null;
   /** How many updates it has — the timeline itself is read when it is opened. */
@@ -53,7 +61,7 @@ export const isFiltering = (f: WorkFilter) => !!(f.kind || f.priority || f.due |
 export function matchesFilter(t: Todo, f: WorkFilter, today: DateStr): boolean {
   if (f.kind && t.kind !== f.kind) return false;
   if (f.priority === 'urgent' && t.priority !== 'urgent') return false;
-  if (f.priority === 'high' && t.priority === 'normal') return false;
+  if (f.priority === 'high' && t.priority !== 'high' && t.priority !== 'urgent') return false;
   if (f.unitId && !t.unitIds.includes(f.unitId)) return false;
   if (f.due) {
     const d = dueOf(t, today);
@@ -74,23 +82,24 @@ export function childrenBy(list: Todo[]): Map<string, Todo[]> {
 }
 export function progress(children: Todo[] | undefined): { done: number; total: number } {
   const live = (children ?? []).filter(c => c.status !== 'cancelled');
-  return { done: live.filter(c => c.status === 'done').length, total: live.length };
+  return { done: live.filter(c => c.status === 'completed').length, total: live.length };
 }
 
 export interface WorkUpdate {
   id: string; kind: 'note' | 'status' | 'change'; body: string; createdBy: string | null; createdAt: string;
 }
 
-export const STATUSES: TaskStatus[] = ['open', 'in_progress', 'waiting', 'done', 'cancelled'];
+export const STATUSES: TaskStatus[] = ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'];
 
-/** Shape + word, never colour alone (the house rule). */
+/** Shape + word, never colour alone (the house rule). Hostaway's words. */
 export const STATUS_LABEL: Record<TaskStatus, string> = {
-  open: '○ To do', in_progress: '◐ In progress', waiting: '‖ Waiting', done: '✓ Done', cancelled: '✕ Cancelled'
+  pending: '○ Pending', confirmed: '◔ Confirmed', in_progress: '◐ In progress', completed: '✓ Completed', cancelled: '✕ Cancelled'
 };
-export const PRIORITY_LABEL: Record<Priority, string> = { normal: 'Normal', high: '▲ High', urgent: '▲▲ Urgent' };
+export const PRIORITIES: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
+export const PRIORITY_LABEL: Record<Priority, string> = { none: 'No priority', low: 'Low', medium: 'Medium', high: '▲ High', urgent: '▲▲ Urgent' };
 export const KIND_LABEL: Record<TaskKind, string> = { task: 'To-do', work_order: '🔧 Work order' };
 
-export const isClosed = (s: TaskStatus) => s === 'done' || s === 'cancelled';
+export const isClosed = (s: TaskStatus) => s === 'completed' || s === 'cancelled';
 
 export type Due = 'overdue' | 'today' | 'soon' | 'later' | 'none';
 
@@ -128,7 +137,7 @@ const closed = (t: Pick<Todo, 'status' | 'doneAt'>) => isClosed(t.status) || !!t
  * Closed last, most recently closed first.
  */
 export function sortTodos(list: Todo[]): Todo[] {
-  const rank = (p: Priority) => p === 'urgent' ? 0 : p === 'high' ? 1 : 2;
+  const rank = (p: Priority) => PRIORITIES.length - 1 - PRIORITIES.indexOf(p);
   return [...list].sort((a, b) => {
     if (closed(a) !== closed(b)) return closed(a) ? 1 : -1;
     if (closed(a)) return (b.doneAt ?? '').localeCompare(a.doneAt ?? '');
@@ -171,9 +180,9 @@ export interface AuditRow extends Todo {
   deletedAt: string | null; deletedBy: string | null;
 }
 
-/** How it ended: done, cancelled, or removed (removed wins — it is the last thing that happened). */
-export const outcomeOf = (t: AuditRow): 'done' | 'cancelled' | 'removed' =>
-  t.deletedAt ? 'removed' : t.status === 'cancelled' ? 'cancelled' : 'done';
+/** How it ended: completed, cancelled, or removed (removed wins — it is the last thing that happened). */
+export const outcomeOf = (t: AuditRow): 'completed' | 'cancelled' | 'removed' =>
+  t.deletedAt ? 'removed' : t.status === 'cancelled' ? 'cancelled' : 'completed';
 
 /** Whole days from written to closed (or removed); 0 means the same day. */
 export function daysTaken(t: Pick<AuditRow, 'createdAt' | 'doneAt' | 'deletedAt'>): number | null {
@@ -190,13 +199,13 @@ const cell = (v: unknown) => {
 /** The log as CSV, for whoever audits it — one row per task, in the order shown. */
 export function auditCsv(rows: AuditRow[], unitName: (id: string) => string, claimName: (id: string) => string): string {
   const stamp = (iso: string | null) => { if (!iso) return ''; const p = nyParts(iso); return `${p.date} ${p.time}`; };
-  const head = ['Closed (New York)', 'Outcome', 'Closed by', 'Title', 'Kind', 'Listings', 'Stay', 'Claim', 'Owner',
-                'Created (New York)', 'Created by', 'Days taken', 'Vendor', 'Actual cost', 'Description'];
+  const head = ['Closed (New York)', 'Outcome', 'Closed by', 'Title', 'Kind', 'Listing', 'Stay', 'Claim', 'Owner', 'Supervisor',
+                'Priority', 'Created (New York)', 'Created by', 'Days taken', 'Vendor', 'Actual cost', 'Resolution', 'Description'];
   const lines = rows.map(t => [
     stamp(t.deletedAt ?? t.doneAt), outcomeOf(t), t.deletedBy ?? t.doneBy ?? '',
     t.title, t.kind === 'work_order' ? 'Repair' : 'To-do', t.unitIds.map(unitName).join('; '), t.reservationLabel ?? '',
-    t.claimId ? claimName(t.claimId) : '', t.assignee ?? '', stamp(t.createdAt), t.createdBy ?? '',
-    daysTaken(t) ?? '', t.vendor ?? '', t.costActual ?? '', t.description ?? ''
+    t.claimId ? claimName(t.claimId) : '', t.assignee ?? '', t.supervisor ?? '', t.priority === 'none' ? '' : t.priority,
+    stamp(t.createdAt), t.createdBy ?? '', daysTaken(t) ?? '', t.vendor ?? '', t.costActual ?? '', t.resolutionNote ?? '', t.description ?? ''
   ].map(cell).join(','));
   return [head.join(','), ...lines].join('\n');
 }

@@ -21,7 +21,7 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
-import { listUsers, pushWork } from '../_lib/hostaway-tasks.ts';
+import { pushWork } from '../_lib/hostaway-tasks.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadOps, opsConfig } from '../_lib/ops.ts';
 import {
@@ -118,11 +118,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
     if (body.action === 'hostawayBackfill') {
       const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
-      const users = await listUsers(creds);
       const open = await sql`SELECT id::text FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND parent_id IS NULL
-                               AND hostaway_task_id IS NULL AND status NOT IN ('done', 'cancelled') ORDER BY created_at LIMIT 200` as { id: string }[];
+                               AND hostaway_task_id IS NULL AND status NOT IN ('completed', 'cancelled') ORDER BY created_at LIMIT 200` as { id: string }[];
       const tally: Record<string, number> = { created: 0, failed: 0, skipped: 0, updated: 0 };
-      for (const r of open) tally[await pushWork(sql, creds, r.id, users)]!++;
+      for (const r of open) tally[await pushWork(sql, creds, r.id)]!++;
       return Response.json({ ok: true, sent: tally, hostawayTasks: await hostawayTasksState(sql) });
     }
 
@@ -276,7 +275,7 @@ async function hostawayTasksState(sql: SqlFn) {
            (SELECT count(*)::int FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND hostaway_error IS NOT NULL) AS errors,
            (SELECT count(*)::int FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND source = 'hostaway') AS imported,
            (SELECT count(*)::int FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND parent_id IS NULL
-               AND hostaway_task_id IS NULL AND status NOT IN ('done', 'cancelled')) AS unsent
+               AND hostaway_task_id IS NULL AND status NOT IN ('completed', 'cancelled')) AS unsent
       FROM accounts a WHERE a.id = 1` as { mode: string; pulled_at: string | Date | null; linked: number; errors: number; imported: number; unsent: number }[];
   return { mode: r?.mode ?? 'off', pulledAt: r?.pulled_at ? new Date(r.pulled_at).toISOString() : null,
            linked: r?.linked ?? 0, errors: r?.errors ?? 0, imported: r?.imported ?? 0, unsent: r?.unsent ?? 0 };
