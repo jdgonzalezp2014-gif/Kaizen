@@ -181,6 +181,7 @@ export interface DigestInput {
   today: string; tomorrow: string;
   arrivals: { resId?: string; date: string; time: string; unit: string; guest: string; agreement: 'signed' | 'not_signed' | null; needsId: boolean; idInDrive: boolean | null }[];
   departures: { resId?: string; date: string; time: string; unit: string; cleaner: string | null; assigned: boolean; notNeeded: boolean; sameDay: boolean }[];
+  /** Every open top-level task, flagged when late or due today. */
   tasks: { title: string; unit?: string | null; overdue: boolean; dueToday: boolean; owner?: string | null }[];
   claims: { label: string; severity: string; days: number }[];
 }
@@ -194,56 +195,123 @@ export function missingFor(a: DigestInput['arrivals'][number], cleanOpen: boolea
   return m;
 }
 
+/** The days a reminder covers: the morning, today and tomorrow; the afternoon, tomorrow. */
+export const daysOf = (d: Pick<DigestInput, 'today' | 'tomorrow'>, kind: 'morning' | 'afternoon') => kind === 'morning' ? [d.today, d.tomorrow] : [d.tomorrow];
+const manage = (action_id: string, days: string[], urgent: boolean): Block =>
+  ({ type: 'button', text: plain('Manage'), action_id, value: JSON.stringify({ days }), ...(urgent ? { style: 'primary' } : {}) });
+
 /**
- * Morning: the whole day, and tomorrow's gaps. Afternoon: what is still
- * missing for tomorrow, so it gets fixed before the end of the day.
+ * The reminder (§102): one short message — a line per section with what
+ * matters (how many, what is missing) and a "Manage" button that opens the
+ * section in a pop-up, where it is worked. Reading and acting are apart:
+ * the channel gets one message, the work happens in the pop-ups.
+ * Morning: today and tomorrow, plus tasks and claims. Afternoon: what is
+ * still missing for tomorrow.
  */
 export function digestMessage(d: DigestInput, kind: 'morning' | 'afternoon', appUrl?: string, helpUrl?: string): { text: string; blocks: Block[]; missing: number } {
-  const days = kind === 'morning' ? [d.today, d.tomorrow] : [d.tomorrow];
-  const blocks: Block[] = [section(kind === 'morning' ? `*☀ Today, ${day(d.today)}*` : `*🕒 Before tomorrow, ${day(d.tomorrow)}*`)];
-  let missing = 0;
-  for (const date of days) {
-    const ins = d.arrivals.filter(a => a.date === date);
-    const outs = d.departures.filter(o => o.date === date && !o.notNeeded);
-    const label = date === d.today ? 'Today' : 'Tomorrow';
-    const ok: string[] = [];
-    // §100: each thing that is missing is its own line, with what fixes it beside it.
-    const todo: Block[] = [];
-    for (const a of ins) {
-      const clean = outs.find(o => o.unit === a.unit && !o.assigned);
-      const miss = missingFor(a, !!clean);
-      missing += miss.length;
-      const line = `*${esc(a.unit)}* ${esc(a.time)} · ${esc(a.guest)}`;
-      if (!miss.length) { ok.push(`✓ ${line}`); continue; }
-      todo.push(section(`▲ ${line} — _${miss.join(', ')}_`, clean?.resId ? cleanButton(clean.resId, clean.unit, date)
-        : a.resId ? hostawayButton(a.resId) : undefined));
-    }
-    for (const o of outs.filter(o => !o.assigned)) {
-      if (ins.some(a => a.unit === o.unit)) continue; // already said on the arrival
-      missing++;
-      todo.push(section(`▲ *${esc(o.unit)}* checkout ${esc(o.time)} — _clean not assigned_`, o.resId ? cleanButton(o.resId, o.unit, date) : undefined));
-    }
-    const cleans = outs.length ? `${outs.length} clean${outs.length === 1 ? '' : 's'}${outs.some(o => o.sameDay) ? ` · ${outs.filter(o => o.sameDay).length} same-day` : ''}` : 'no cleans';
-    // §101: the day's cleans, seen and changed in a pop-up.
-    blocks.push(section(`*${label}* · ${ins.length} check-in${ins.length === 1 ? '' : 's'} · ${cleans}${ok.length ? '\n' + ok.join('\n') : ''}`,
-      outs.length || d.departures.some(o => o.date === date) ? { type: 'button', text: plain('🧹 Cleans'), action_id: 'cleans_open', value: date } : undefined));
-    blocks.push(...todo);
-  }
+  const days = daysOf(d, kind);
+  const word = (x: string) => x === d.today ? 'today' : 'tomorrow';
+  const ins = d.arrivals.filter(a => days.includes(a.date));
+  const outs = d.departures.filter(o => days.includes(o.date) && !o.notNeeded);
+  const unsigned = ins.filter(a => a.agreement === 'not_signed').length;
+  const noId = ins.filter(a => a.needsId && a.idInDrive === false).length;
+  const open = outs.filter(o => !o.assigned).length;
+  const missing = unsigned + noId + open;
+  const per = <T extends { date: string }>(xs: T[]) => days.map(x => { const n = xs.filter(y => y.date === x).length; return `${n || 'none'} ${word(x)}`; }).join(' · ');
+  const same = outs.filter(o => o.sameDay).length;
+
+  const blocks: Block[] = [
+    section(`${kind === 'morning' ? `*☀ Today, ${day(d.today)}*` : `*🕒 Before tomorrow, ${day(d.tomorrow)}*`}  ·  ${missing ? `▲ ${missing} thing${missing === 1 ? '' : 's'} need you` : '✓ Nothing missing'}`),
+    { type: 'divider' },
+    section(`*🛬 Check-ins* · ${per(ins)}\n${[unsigned ? `▲ ${unsigned} not signed` : '', noId ? `▲ ${noId} ID not in Drive` : ''].filter(Boolean).join(' · ') || (ins.length ? '✓ all signed' : '—')}`,
+      manage('sec_checkins', days, unsigned + noId > 0)),
+    section(`*🧹 Cleans* · ${per(outs)}${same ? ` · ⚡ ${same} same-day` : ''}\n${open ? `▲ ${open} not assigned` : outs.length ? '✓ all assigned' : '—'}`,
+      manage('sec_cleans', days, open > 0))
+  ];
   if (kind === 'morning') {
-    const late = d.tasks.filter(t => t.overdue), todayT = d.tasks.filter(t => t.dueToday);
-    if (late.length || todayT.length) {
-      blocks.push(section(`*Tasks* · ${late.length} overdue · ${todayT.length} due today\n` +
-        [...late.map(t => `▲ ${esc(t.title)}${t.unit ? ` · ${esc(t.unit)}` : ''}${t.owner ? ` · ${esc(t.owner)}` : ''}`),
-         ...todayT.map(t => `● ${esc(t.title)}${t.unit ? ` · ${esc(t.unit)}` : ''}${t.owner ? ` · ${esc(t.owner)}` : ''}`)].slice(0, 12).join('\n')));
-    }
-    if (d.claims.length) {
-      blocks.push(section(`*Open claims* · ${d.claims.length}\n` + d.claims.slice(0, 8).map(c => `${sevMark(c.severity)} ${esc(c.label)} · ${c.days}d`).join('\n')));
-    }
+    const late = d.tasks.filter(t => t.overdue).length, due = d.tasks.filter(t => t.dueToday).length;
+    blocks.push(section(`*☐ Tasks* · ${d.tasks.length} open\n${[late ? `▲ ${late} overdue` : '', due ? `● ${due} due today` : ''].filter(Boolean).join(' · ') || '✓ nothing overdue'}`,
+      manage('sec_tasks', days, late > 0)));
+    const serious = d.claims.filter(c => c.severity === 'High' || c.severity === 'Critical').length;
+    blocks.push(section(`*⚑ Claims* · ${d.claims.length} open\n${serious ? `🔴 ${serious} high or critical` : d.claims.length ? d.claims.slice(0, 2).map(c => esc(c.label)).join(' · ') : '✓ none open'}`,
+      manage('sec_claims', days, serious > 0)));
   }
-  blocks.push(context(missing ? `▲ ${missing} thing${missing === 1 ? '' : 's'} missing` : '✓ Nothing missing', appUrl ? link(appUrl, 'Open Kaizen') : '',
-                      helpUrl ? link(helpUrl, '❓ How to use this') : ''));
+  blocks.push(context(appUrl ? link(appUrl, 'Open Kaizen') : '', helpUrl ? link(helpUrl, '❓ How to use this') : ''));
   const head = kind === 'morning' ? `Today ${day(d.today)}` : `Before tomorrow ${day(d.tomorrow)}`;
   return { text: `${head}: ${missing ? `${missing} missing` : 'nothing missing'}`, blocks, missing };
+}
+
+/* ── the sections' pop-ups (§102) ───────────────────────────────────── */
+
+const dayLabel = (x: string, today: string) => x === today ? `Today · ${day(x)}` : `Tomorrow · ${day(x)}`;
+const noteBlocks = (note?: string) => note ? [context(note)] : [];
+
+/** Check-ins: each arrival with what is missing, and the way to fix it — assign the clean, or the reservation in Hostaway. */
+export function checkinsModal(d: Pick<DigestInput, 'today' | 'arrivals' | 'departures'>, days: string[], canEdit: boolean, note?: string): Block {
+  const blocks: Block[] = [...noteBlocks(note)];
+  for (const x of days) {
+    const ins = d.arrivals.filter(a => a.date === x);
+    blocks.push({ type: 'header', text: plain(`${dayLabel(x, d.today)} · ${ins.length} check-in${ins.length === 1 ? '' : 's'}`) });
+    if (!ins.length) blocks.push(section('_No arrivals._'));
+    for (const a of ins) {
+      const out = d.departures.find(o => o.date === x && o.unit === a.unit && !o.notNeeded);
+      const cleanOpen = !!out && !out.assigned;
+      const miss = missingFor(a, cleanOpen);
+      const facts = [a.agreement === 'signed' ? '✓ signed' : a.agreement === 'not_signed' ? '▲ not signed' : '',
+                     a.needsId ? (a.idInDrive ? '✓ ID in Drive' : a.idInDrive === false ? '▲ ID not in Drive' : 'ID: unknown') : '',
+                     out ? (out.assigned ? `cleaned by ${esc(out.cleaner ?? '')}` : '▲ clean not assigned') : 'no checkout before'].filter(Boolean).join(' · ');
+      blocks.push(section(`${miss.length ? '▲' : '✓'} *${esc(a.unit)}* ${esc(a.time)} · ${esc(a.guest)}\n${facts}`,
+        cleanOpen && canEdit && out?.resId ? { type: 'button', text: plain('Assign clean'), action_id: 'clean_change', style: 'primary',
+                                               value: JSON.stringify({ resId: out.resId, unit: out.unit, date: x, from: 'checkins', days }) }
+          : a.resId ? hostawayButton(a.resId) : undefined));
+    }
+  }
+  return { type: 'modal', callback_id: 'sec_checkins', private_metadata: JSON.stringify({ days }), title: plain('Check-ins'), close: plain('Close'),
+           blocks: [...blocks.slice(0, 98), context('↗ Hostaway opens the reservation, to send the guest portal link again.')] };
+}
+
+/** Tasks: every open one, each with its menu; new ones from here; a removal can be undone in place. */
+export function tasksModal(list: (TaskLite & { overdue?: boolean; dueToday?: boolean })[], note?: string, undo?: { id: string; title: string }): Block {
+  const late = list.filter(t => t.overdue).length;
+  const blocks: Block[] = [
+    section(`*${list.length} open*${late ? ` · ▲ ${late} overdue` : ''}`),
+    { type: 'actions', elements: [button('+ To-do', 'task_new', 'task'), button('+ Repair', 'task_new', 'work_order')] },
+    ...noteBlocks(note),
+    ...(undo ? [section(`Removed *${esc(undo.title)}*.`, button('Undo', 'task_restore', undo.id))] : []),
+    { type: 'divider' }
+  ];
+  for (const t of list.slice(0, 40)) {
+    blocks.push(section(`${t.overdue ? '▲ ' : t.dueToday ? '● ' : ''}${t.kind === 'work_order' ? '🔧' : '☐'} *${esc(t.title)}*\n${taskFacts(t)}`, {
+      type: 'overflow', action_id: 'task_menu', options: [
+        { text: plain('📋 Open'), value: `open:${t.id}` }, { text: plain('✓ Complete'), value: `complete:${t.id}` },
+        { text: plain('▶ Start'), value: `start:${t.id}` }, { text: plain('✎ Edit'), value: `edit:${t.id}` }, { text: plain('🗑 Remove'), value: `remove:${t.id}` }
+      ]
+    }));
+  }
+  if (!list.length) blocks.push(section('Nothing open. ✓'));
+  return { type: 'modal', callback_id: 'sec_tasks', private_metadata: JSON.stringify({}), title: plain('Tasks'), close: plain('Close'), blocks };
+}
+
+/** Claims: every open one, with status, edit and remove in its menu; new ones from here. */
+export function claimsModal(list: ClaimLite[], note?: string, undo?: { id: string; title: string }): Block {
+  const blocks: Block[] = [
+    section(`*${list.length} open*`),
+    { type: 'actions', elements: [button('+ Claim', 'claim_new', 'claim')] },
+    ...noteBlocks(note),
+    ...(undo ? [section(`Removed *${esc(undo.title)}*.`, button('Undo', 'claim_restore', undo.id))] : []),
+    { type: 'divider' }
+  ];
+  for (const c of list.slice(0, 40)) {
+    blocks.push(section(`${sevMark(c.severity)} *${esc(claimTitle(c))}*\n${[c.category, c.severity, c.status, c.days != null ? `${c.days}d open` : ''].filter(Boolean).map(esc).join(' · ')}${c.caseUrl ? ` · ${link(c.caseUrl, 'case')}` : ''}`, {
+      type: 'overflow', action_id: 'claim_menu', options: [
+        { text: plain('✎ Edit'), value: `edit:${c.id}` },
+        ...CLAIM_STATUSES.filter(x => x !== c.status).map(x => ({ text: plain(`→ ${x}`), value: `status:${x}:${c.id}` })),
+        { text: plain('🗑 Remove'), value: `remove:${c.id}` }
+      ]
+    }));
+  }
+  if (!list.length) blocks.push(section('No open claims. ✓'));
+  return { type: 'modal', callback_id: 'sec_claims', private_metadata: JSON.stringify({}), title: plain('Claims'), close: plain('Close'), blocks };
 }
 
 /** Which reminders are due at this New York hour, not yet sent today. */
@@ -260,11 +328,9 @@ export function dueDigests(hourNY: number, todayNY: string, cfg: SlackConfig, se
 /** A reservation in Hostaway — the same address the app links to (src/lib/operations.ts). */
 const HOSTAWAY_RES = (resId: string) => `https://dashboard.hostaway.com/reservations/${encodeURIComponent(resId)}`;
 const hostawayButton = (resId: string): Block => ({ type: 'button', text: plain('↗ Hostaway'), url: HOSTAWAY_RES(resId), action_id: `open_hostaway_${resId}` });
-const cleanButton = (resId: string, unit: string, date: string): Block =>
-  ({ type: 'button', text: plain('Assign cleaner'), action_id: 'clean_assign', value: JSON.stringify({ resId, unit, date }), style: 'primary' });
 
 /** "Assign cleaner" (§100): who cleans this checkout — or that none is needed. */
-export function cleanAssignModal(c: { resId: string; unit: string; date: string; from?: 'cleans' }, cleaners: string[]): Block {
+export function cleanAssignModal(c: { resId: string; unit: string; date: string; from?: 'cleans' | 'checkins'; days?: string[] }, cleaners: string[]): Block {
   return {
     type: 'modal', callback_id: 'clean_assign_save', private_metadata: JSON.stringify(c),
     title: plain('Assign cleaner'), submit: plain('Assign'), close: plain('Cancel'),
@@ -290,11 +356,14 @@ export const loadingModal = (title: string, callback = 'loading'): Block => ({
 });
 
 /** The day's cleans: who, when, what kind — each with "Change". */
-export function cleansModal(date: string, label: string, rows: CleanRow[], canEdit: boolean, note?: string): Block {
+export function cleansModal(date: string, label: string, rows: CleanRow[], canEdit: boolean, note?: string, switchTo?: { today: string; tomorrow: string }): Block {
   const open = rows.filter(r => r.state === 'open').length;
   return {
     type: 'modal', callback_id: 'cleans', private_metadata: JSON.stringify({ date }), title: plain(`Cleans · ${label}`), close: plain('Close'),
     blocks: [
+      // §102: today and tomorrow in the same pop-up.
+      ...(switchTo ? [{ type: 'actions', elements: [switchTo.today, switchTo.tomorrow].map(x =>
+        ({ type: 'button', text: plain(x === switchTo.today ? 'Today' : 'Tomorrow'), action_id: `cleans_day_${x}`, value: x, ...(x === date ? { style: 'primary' } : {}) })) }] : []),
       section(`*${day(date)}* · ${rows.filter(r => r.state !== 'not_needed').length} clean${rows.length === 1 ? '' : 's'}${open ? ` · ▲ ${open} not assigned` : ' · ✓ all assigned'}`),
       ...(note ? [context(note)] : []),
       { type: 'divider' },
@@ -334,7 +403,7 @@ export interface TaskCard extends TaskLite {
  * stands, its sub-tasks and latest updates, the buttons that move it, and
  * a box to add an update — refreshed in place after every action.
  */
-export function taskCard(t: TaskCard, note?: string): Block {
+export function taskCard(t: TaskCard, note?: string, root?: 'tasks'): Block {
   const closed = t.status === 'completed' || t.status === 'cancelled';
   const f = (label: string, v: string | null | undefined) => v ? mrk(`*${label}*\n${esc(v)}`) : null;
   const fields = [
@@ -345,7 +414,7 @@ export function taskCard(t: TaskCard, note?: string): Block {
     f('Cost', t.costActual != null ? `$${t.costActual.toFixed(2)}` : t.costEstimate != null ? `~$${t.costEstimate.toFixed(2)} estimated` : null)
   ].filter(Boolean).slice(0, 10);
   return {
-    type: 'modal', callback_id: 'task_card', private_metadata: JSON.stringify({ id: t.id }),
+    type: 'modal', callback_id: 'task_card', private_metadata: JSON.stringify({ id: t.id, ...(root ? { root } : {}) }),
     title: plain(t.kind === 'work_order' ? 'Repair' : 'To-do'), submit: plain('Add update'), close: plain('Close'),
     blocks: [
       { type: 'header', text: plain(t.title.slice(0, 150)) },

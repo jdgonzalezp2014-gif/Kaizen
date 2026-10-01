@@ -20,7 +20,7 @@ import * as todos from './todos.ts';
 import * as claims from './claims.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
-  parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal,
+  parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, checkinsModal, claimsModal, tasksModal,
   type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
 import * as turnover from './turnover.ts';
@@ -169,16 +169,49 @@ class Kaizen {
       resolutionNote: t.resolution_note, unit: t.unit, children: kids,
       updates: ups.reverse().map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
   }
-  private async openCard(trigger: string, id: string) {
+  private async openCard(trigger: string, id: string, push = false) {
     const c = await this.card(id);
     if (!c) return ephemeral('That task is gone.');
-    await this.open(trigger, taskCard(c));
+    if (push) await slackApi(this.s.token!, 'views.push', { trigger_id: trigger, view: taskCard(c, undefined, 'tasks') });
+    else await this.open(trigger, taskCard(c));
     return ack();
   }
   /** The card again, after an action — in place. */
-  private async refreshCard(viewId: string, id: string, note?: string) {
+  private async refreshCard(viewId: string, id: string, note?: string, root?: 'tasks') {
     const c = await this.card(id);
-    if (c) await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: taskCard(c, note) });
+    if (c) await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: taskCard(c, note, root) });
+  }
+
+  /* ── the reminder's sections, each in its pop-up (§102) ── */
+  private async tasksFlagged() {
+    const today = todayIn('America/New_York');
+    return (await this.openTasks()).map(t => ({ ...t, overdue: !!t.dueOn && t.dueOn < today, dueToday: t.dueOn === today }));
+  }
+  private async refreshTasks(viewId: string, note?: string, undo?: { id: string; title: string }) {
+    await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: tasksModal(await this.tasksFlagged(), note, undo) });
+  }
+  private async refreshClaims(viewId: string, note?: string, undo?: { id: string; title: string }) {
+    await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: claimsModal(await this.openClaims(), note, undo) });
+  }
+  private async openCheckins(trigger: string, days: string[]): Promise<Response> {
+    if (!this.may('/api/operations', 'GET')) return this.deny('operations');
+    const r = await slackApi<{ view?: { id: string } }>(this.s.token!, 'views.open', { trigger_id: trigger, view: loadingModal('Check-ins') });
+    if (!r.ok || !r.view) throw new Error(`Slack did not open the form (${r.error}).`);
+    this.ctx.waitUntil(this.fillCheckins(r.view.id, days));
+    return ack();
+  }
+  private async fillCheckins(viewId: string, days: string[], note?: string) {
+    try {
+      const facts = await digestFacts(this.sql, await getCredentials(this.sql, this.ctx.env.ENCRYPTION_KEY), this.ctx.env.ENCRYPTION_KEY);
+      await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: checkinsModal(facts, days, this.may('/api/turnover', 'POST'), note) });
+    } catch (e) {
+      await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: { ...(loadingModal('Check-ins') as object),
+        blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `⚠ Could not read the board: ${e instanceof Error ? e.message : String(e)}` } }] } });
+    }
+  }
+  /** A form opened from inside a section's pop-up goes on top of it, and remembers which list to refresh. */
+  private async pushForm(trigger: string, view: Record<string, unknown>, meta: Record<string, unknown>) {
+    await slackApi(this.s.token!, 'views.push', { trigger_id: trigger, view: { ...view, private_metadata: JSON.stringify(meta) } });
   }
 
   /* ── a day's cleans (§101) ── */
@@ -195,7 +228,8 @@ class Kaizen {
     const label = date === today ? 'Today' : date === addDays(today, 1) ? 'Tomorrow' : day(date);
     try {
       const rows = await cleansFor(this.sql, await getCredentials(this.sql, this.ctx.env.ENCRYPTION_KEY), date);
-      await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: cleansModal(date, label, rows, this.may('/api/turnover', 'POST'), note) });
+      await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: cleansModal(date, label, rows, this.may('/api/turnover', 'POST'), note,
+                                                                                          { today, tomorrow: addDays(today, 1) }) });
     } catch (e) {
       await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: { ...(loadingModal('Cleans') as object),
         blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `⚠ Could not read the board: ${e instanceof Error ? e.message : String(e)}` } }] } });
@@ -282,6 +316,75 @@ class Kaizen {
     const url: string = p.response_url ?? '';
     const inChannel = p.container?.type === 'message' && !p.container?.is_ephemeral;
     if (id === 'open_kaizen' || id.startsWith('open_hostaway_')) return ack();
+    const inView: string = p.container?.type === 'view' ? (p.view?.callback_id ?? '') : '';
+    const viewId: string = p.view?.id ?? '';
+
+    // §102: "Manage" on each section of the reminder.
+    if (id.startsWith('sec_')) {
+      const days = (JSON.parse(value || '{}') as { days?: string[] }).days ?? [todayIn('America/New_York')];
+      if (id === 'sec_checkins') return await this.openCheckins(p.trigger_id, days);
+      if (id === 'sec_cleans') return await this.openCleans(p.trigger_id, days[0]!);
+      if (id === 'sec_tasks') {
+        if (!this.may('/api/todos', 'GET')) return this.deny('the to-do list');
+        await this.open(p.trigger_id, tasksModal(await this.tasksFlagged()));
+        return ack();
+      }
+      if (id === 'sec_claims') {
+        if (!this.may('/api/claims', 'GET')) return this.deny('claims');
+        await this.open(p.trigger_id, claimsModal(await this.openClaims()));
+        return ack();
+      }
+    }
+    // Today / Tomorrow inside the Cleans pop-up.
+    if (id.startsWith('cleans_day_')) {
+      await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: loadingModal('Cleans') });
+      this.ctx.waitUntil(this.fillCleans(viewId, value));
+      return ack();
+    }
+
+    // Inside the Tasks pop-up: everything refreshes the list in place; open and edit go on top of it.
+    if (inView === 'sec_tasks' && id.startsWith('task_')) {
+      const [verb, tid = ''] = id === 'task_menu' ? value.split(':') : [id.replace('task_', ''), value];
+      if (verb === 'open') { if (!this.may('/api/todos', 'GET')) return this.deny('the to-do list'); return await this.openCard(p.trigger_id, tid, true); }
+      if (!this.may('/api/todos', 'POST')) return this.deny('the to-do list');
+      if (verb === 'new') { await this.pushForm(p.trigger_id, taskModal({ kind: value === 'work_order' ? 'work_order' : 'task' }, await this.units(), await this.people()) as Record<string, unknown>, { id: null, kind: value === 'work_order' ? 'work_order' : 'task', root: 'tasks' }); return ack(); }
+      if (verb === 'edit') {
+        const f = await this.taskForm(tid);
+        if (f) await this.pushForm(p.trigger_id, taskModal(f, await this.units(), await this.people()) as Record<string, unknown>, { id: f.id, kind: f.kind, root: 'tasks' });
+        return ack();
+      }
+      const t = await taskLite(this.sql, tid);
+      const body = verb === 'complete' ? { action: 'done', id: tid, done: true } : verb === 'start' ? { action: 'update', id: tid, status: 'in_progress' }
+        : verb === 'remove' ? { action: 'delete', id: tid } : verb === 'restore' ? { action: 'restore', id: tid } : null;
+      if (!body) return ack();
+      const r = await this.todo(body);
+      const word = verb === 'complete' ? 'Completed' : verb === 'start' ? 'Started' : verb === 'restore' ? 'Restored' : '';
+      await this.refreshTasks(viewId, r.ok ? (word ? `✓ ${word}: ${t?.title ?? ''}` : undefined) : `⚠ ${r.message ?? 'Not saved.'}`,
+                              r.ok && verb === 'remove' && t ? { id: tid, title: t.title } : undefined);
+      return ack();
+    }
+    // Inside the Claims pop-up: the same.
+    if (inView === 'sec_claims' && id.startsWith('claim_')) {
+      const [verb, a1 = '', a2 = ''] = id === 'claim_menu' ? value.split(':') : [id.replace('claim_', ''), value];
+      const cid = verb === 'status' ? a2 : a1;
+      if (!this.may('/api/claims', 'POST')) return this.deny('claims');
+      if (verb === 'new') { await this.pushForm(p.trigger_id, claimModal({ occurredOn: todayIn('America/New_York') }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES) as Record<string, unknown>, { id: null, root: 'claims' }); return ack(); }
+      if (verb === 'edit') {
+        const c = await this.claimRow(cid);
+        if (c) await this.pushForm(p.trigger_id, claimModal({ id: c.id, unitId: c.unit_id, occurredOn: c.occurred_on, category: c.category, severity: c.severity,
+          status: c.status, source: c.source, description: c.description, refund: Number(c.refund) || 0, caseUrl: c.case_url }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES) as Record<string, unknown>, { id: c.id, root: 'claims' });
+        return ack();
+      }
+      const before = await claimLite(this.sql, cid);
+      let r: Record<string, unknown> = { ok: false };
+      if (verb === 'status') r = await this.claimUpdate(cid, { status: a1 });
+      if (verb === 'remove') r = await this.api(claims.onRequestDelete, `/api/claims?id=${encodeURIComponent(cid)}`, 'DELETE');
+      if (verb === 'restore') r = await this.claimSave({ action: 'restore', id: cid });
+      const title = before ? `${before.unit ?? 'Portfolio'} · ${before.description ?? before.category ?? 'Claim'}` : '';
+      await this.refreshClaims(viewId, r.ok ? (verb === 'status' ? `✓ ${title} → ${a1}` : verb === 'restore' ? `✓ Restored: ${title}` : undefined) : `⚠ ${String(r.error ?? 'Not saved.')}`,
+                               r.ok && verb === 'remove' ? { id: cid, title } : undefined);
+      return ack();
+    }
 
     // §100: the task card — opened from a message or a list, worked inside the pop-up.
     if (id === 'task_open' || (id === 'task_menu' && value.startsWith('open:'))) {
@@ -290,7 +393,6 @@ class Kaizen {
     }
     if (id.startsWith('card_')) {
       if (!this.may('/api/todos', 'POST')) return this.deny('the to-do list');
-      const viewId: string = p.view?.id ?? '';
       if (id === 'card_edit') {
         const f = await this.taskForm(value);
         if (f) await slackApi(this.s.token!, 'views.push', { trigger_id: p.trigger_id, view: { ...(taskModal(f, await this.units(), await this.people()) as object),
@@ -308,7 +410,10 @@ class Kaizen {
       }
       if (!body) return ack();
       const r = await this.todo(body);
-      await this.refreshCard(viewId, value, r.ok ? note : `⚠ ${r.message ?? 'Not saved.'}`);
+      const root = (JSON.parse(p.view?.private_metadata || '{}') as { root?: 'tasks' }).root;
+      await this.refreshCard(viewId, value, r.ok ? note : `⚠ ${r.message ?? 'Not saved.'}`, root);
+      // Opened from the Tasks pop-up: the list beneath follows.
+      if (root === 'tasks' && p.view?.root_view_id && p.view.root_view_id !== viewId) await this.refreshTasks(p.view.root_view_id);
       return ack();
     }
 
@@ -316,9 +421,9 @@ class Kaizen {
     if (id === 'cleans_open') return await this.openCleans(p.trigger_id, value);
     if (id === 'clean_change') {
       if (!this.may('/api/turnover', 'POST')) return this.deny('operations');
-      const c = JSON.parse(value || '{}') as { resId: string; unit: string; date: string };
+      const c = JSON.parse(value || '{}') as { resId: string; unit: string; date: string; from?: 'checkins'; days?: string[] };
       const cleaners = (await opsConfig(this.sql)).roster.filter(x => x.active).map(x => x.name);
-      await slackApi(this.s.token!, 'views.push', { trigger_id: p.trigger_id, view: cleanAssignModal({ ...c, from: 'cleans' }, cleaners) });
+      await slackApi(this.s.token!, 'views.push', { trigger_id: p.trigger_id, view: cleanAssignModal({ ...c, from: c.from ?? 'cleans' }, cleaners) });
       return ack();
     }
     // §100: the reminder's "Assign cleaner".
@@ -409,23 +514,21 @@ class Kaizen {
     }
     if (view.callback_id === 'clean_assign_save') {
       if (!this.may('/api/turnover', 'POST')) return json({ response_action: 'errors', errors: { cleaner: 'Your role does not include operations.' } });
-      const m = JSON.parse(view.private_metadata || '{}') as { resId: string; unit: string; date: string; from?: string };
+      const m = JSON.parse(view.private_metadata || '{}') as { resId: string; unit: string; date: string; from?: string; days?: string[] };
       const pick = String(state.cleaner?.v?.selected_option?.value ?? '');
       // "Let the rule decide" hands both back to the rule (the turnover API's null).
       const set = pick === '__not_needed' ? { assignment: 'not_needed' } : pick === '__rule' ? { assignment: null, cleaner: null } : { assignment: 'assigned', cleaner: pick };
       const r = await this.api(turnover.onRequestPost, '/api/turnover', 'POST', { resId: m.resId, set });
       if (!r.ok) return json({ response_action: 'errors', errors: { cleaner: String(r.message ?? r.error ?? 'Not saved.') } });
       // Opened from the Cleans list: back to it, refreshed (after the reply — reading the board takes longer than Slack waits).
-      if (m.from === 'cleans' && view.root_view_id) {
-        const said = pick === '__not_needed' ? 'no clean needed' : pick === '__rule' ? 'back to the rule' : pick;
-        this.ctx.waitUntil(this.fillCleans(view.root_view_id, m.date, `✓ ${m.unit}: ${said}`));
-        return ack();
-      }
+      const said = pick === '__not_needed' ? 'no clean needed' : pick === '__rule' ? 'back to the rule' : pick;
+      if (m.from === 'cleans' && view.root_view_id) { this.ctx.waitUntil(this.fillCleans(view.root_view_id, m.date, `✓ ${m.unit}: ${said}`)); return ack(); }
+      if (m.from === 'checkins' && view.root_view_id) { this.ctx.waitUntil(this.fillCheckins(view.root_view_id, m.days ?? [m.date], `✓ ${m.unit}: ${said}`)); return ack(); }
       return json({ response_action: 'clear' });
     }
     if (view.callback_id === 'task_save') {
       if (!this.may('/api/todos', 'POST')) return json({ response_action: 'errors', errors: { title: 'Your role does not include the to-do list.' } });
-      const m = meta as { id: string | null; kind?: string; card?: boolean; from?: { channel: string; ts: string } };
+      const m = meta as { id: string | null; kind?: string; card?: boolean; root?: string; from?: { channel: string; ts: string } };
       const body = readTaskForm(state, { id: m.id, kind: m.kind ?? 'task' });
       if (Number.isNaN(body.costActual)) return json({ response_action: 'errors', errors: { cost: 'A number, like 85 or 85.50.' } });
       const r = await this.todo(body);
@@ -437,13 +540,18 @@ class Kaizen {
       }
       // Edited on top of the card: back to the card, refreshed.
       if (m.card && m.id && view.root_view_id) { await this.refreshCard(view.root_view_id, m.id, '✎ Saved'); return ack(); }
+      // Added or edited from the Tasks pop-up: back to the list, refreshed.
+      if (m.root === 'tasks' && view.root_view_id) { await this.refreshTasks(view.root_view_id, `✓ Saved: ${String(body.title)}`); return ack(); }
       return json({ response_action: 'clear' });
     }
     if (view.callback_id === 'claim_save') {
       if (!this.may('/api/claims', 'POST')) return json({ response_action: 'errors', errors: { description: 'Your role does not include claims.' } });
       const body = readClaimForm(state);
       const r = meta.id ? await this.claimUpdate(meta.id, body) : await this.claimSave({ ...body, repairCost: 0 });
-      return r.ok ? json({ response_action: 'clear' }) : json({ response_action: 'errors', errors: { description: String(r.error ?? 'Not saved.') } });
+      if (!r.ok) return json({ response_action: 'errors', errors: { description: String(r.error ?? 'Not saved.') } });
+      // From the Claims pop-up: back to the list, refreshed.
+      if ((meta as { root?: string }).root === 'claims' && view.root_view_id) { await this.refreshClaims(view.root_view_id, '✓ Saved'); return ack(); }
+      return json({ response_action: 'clear' });
     }
     return json({ response_action: 'clear' });
   }

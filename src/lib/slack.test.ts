@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -31,17 +31,6 @@ const D: DigestInput = {
   claims: [{ label: 'P2-4308 · Missing Fob', severity: 'Medium', days: 2 }]
 };
 
-test('the morning reminder: today and tomorrow, every missing thing named once', () => {
-  const m = digestMessage(D, 'morning', 'https://kaizen.example');
-  const all = JSON.stringify(m.blocks);
-  // P2-4308: unsigned, ID not in Drive, clean not assigned = 3; Concord unsigned = 1; Quest unassigned = 1.
-  assert.equal(m.missing, 5);
-  assert.match(all, /agreement not signed, ID not in Drive, clean not assigned/);
-  assert.match(all, /Quest\* checkout 10:00 AM — _clean not assigned_/);
-  assert.match(all, /1 overdue/);
-  assert.match(all, /Missing Fob/);
-  assert.equal(m.text, 'Today Oct 1: 5 missing');
-});
 
 test('the afternoon reminder: only tomorrow, no tasks or claims', () => {
   const m = digestMessage(D, 'afternoon');
@@ -92,17 +81,6 @@ test('forms read back as the API bodies', () => {
     { description: 'Fob', unitId: null, occurredOn: '2026-10-01', category: null, severity: 'High', status: 'Open', source: null, caseUrl: '', refund: 0 });
 });
 
-test('the reminder puts the fix beside each missing thing', () => {
-  const s = JSON.stringify(digestMessage(D, 'morning').blocks);
-  // P2-4308's clean is open: the button assigns it (its checkout reservation).
-  assert.match(s, /"action_id":"clean_assign","value":"\{\\"resId\\":\\"O1\\"/);
-  // Concord is only unsigned: the button opens the reservation in Hostaway.
-  assert.match(s, /dashboard\.hostaway\.com\/reservations\/C1/);
-  // Quest's unassigned checkout gets its own button.
-  assert.match(s, /\\"resId\\":\\"O2\\"/);
-  const m = cleanAssignModal({ resId: 'O2', unit: 'Quest', date: '2026-10-02' }, ['Michelle', 'Veronica']) as { blocks: unknown[] };
-  assert.match(JSON.stringify(m.blocks), /No clean needed/);
-});
 
 test('direct messages: off, test (all to the tester, saying for whom), on (only linked people)', () => {
   const people = { '1255725': 'UDEREK', '1074799': 'UJUAN' };
@@ -133,15 +111,6 @@ test('the task card: facts, buttons, sub-tasks, latest updates, a box to add one
   for (const k of ['card_complete', 'card_start', 'card_take', 'card_edit', 'Sub-tasks', '1/2', 'Vendor booked', '~$120.00 estimated', '✓ Started', '"block_id":"update"']) assert.ok(s.includes(k), k);
 });
 
-test('/kaizen cleans, and the reminder opens each day’s cleans', () => {
-  assert.deepEqual(parseCommand('cleans tomorrow'), { verb: 'cleans', arg: 'tomorrow' });
-  const s = JSON.stringify(digestMessage(D, 'morning', 'https://k.example', 'https://k.example/?sop=9').blocks);
-  assert.match(s, /"action_id":"cleans_open","value":"2026-10-01"/);
-  assert.match(s, /"action_id":"cleans_open","value":"2026-10-02"/);
-  assert.match(s, /k\.example\/\?sop=9\|❓ How to use this/);
-  assert.equal(helpUrlOf({ appUrl: 'https://k.example', helpSopId: '9' }), 'https://k.example/?sop=9');
-  assert.equal(helpUrlOf({ appUrl: 'https://k.example' }), undefined);
-});
 
 test('the cleans pop-up: each clean with its state, and Assign / Change when allowed', () => {
   const rows = [
@@ -168,4 +137,48 @@ test('help is the SOP, step by step, with the way to it', () => {
   assert.match(b, /\*Morning\*: today/);
   assert.match(b, /Open the SOP in Kaizen/);
   assert.match(JSON.stringify(helpBlocks(null)), /kaizen tasks/);
+});
+
+test('the reminder: one short message, a line per section, each with Manage', () => {
+  const m = digestMessage(D, 'morning', 'https://k.example', 'https://k.example/?sop=9');
+  const s = JSON.stringify(m.blocks);
+  // unsigned ×2 (P2-4308, Concord) + ID ×1 (P2-4308) + unassigned cleans ×2 (P2-4308 today, Quest tomorrow)
+  assert.equal(m.missing, 5);
+  assert.equal(m.text, 'Today Oct 1: 5 missing');
+  for (const k of ['sec_checkins', 'sec_cleans', 'sec_tasks', 'sec_claims']) assert.ok(s.includes(`"action_id":"${k}"`), k);
+  assert.match(s, /Check-ins\* · 2 today · 1 tomorrow\\n▲ 2 not signed · ▲ 1 ID not in Drive/);
+  assert.match(s, /Cleans\* · 1 today · 2 tomorrow · ⚡ 1 same-day\\n▲ 2 not assigned/);
+  assert.match(s, /Tasks\* · 1 open\\n▲ 1 overdue/);
+  assert.match(s, /k\.example\/\?sop=9\|❓ How to use this/);
+  // Each button knows the days it covers.
+  assert.match(s, /"value":"\{\\"days\\":\[\\"2026-10-01\\",\\"2026-10-02\\"\]\}"/);
+  // The afternoon: tomorrow only, and no tasks or claims.
+  const a = JSON.stringify(digestMessage(D, 'afternoon').blocks);
+  assert.doesNotMatch(a, /sec_tasks|sec_claims/);
+  assert.match(a, /"value":"\{\\"days\\":\[\\"2026-10-02\\"\]\}"/);
+  assert.deepEqual(parseCommand('cleans tomorrow'), { verb: 'cleans', arg: 'tomorrow' });
+});
+
+test('the check-ins pop-up: every arrival, what is missing, and the fix beside it', () => {
+  const v = checkinsModal(D, ['2026-10-01', '2026-10-02'], true) as { callback_id: string; blocks: unknown[] };
+  const s = JSON.stringify(v.blocks);
+  assert.equal(v.callback_id, 'sec_checkins');
+  // P2-4308 today: its clean is open — assign it here, and come back to this list.
+  assert.match(s, /"action_id":"clean_change","style":"primary","value":"\{\\"resId\\":\\"O1\\".*\\"from\\":\\"checkins\\"/);
+  // Concord: only unsigned — the reservation in Hostaway.
+  assert.match(s, /dashboard\.hostaway\.com\/reservations\/C1/);
+  assert.match(s, /✓ \*CL1250\* 4:00 PM · Medardo\\n✓ signed · no checkout before/);
+  assert.match(s, /▲ not signed · ▲ ID not in Drive · ▲ clean not assigned/);
+  // Without operations.edit, no Assign — Hostaway only.
+  assert.doesNotMatch(JSON.stringify((checkinsModal(D, ['2026-10-01'], false) as { blocks: unknown[] }).blocks), /clean_change/);
+});
+
+test('the tasks and claims pop-ups: a menu per item, new from the top, undo in place', () => {
+  const t = JSON.stringify((tasksModal([{ id: '7', title: 'Fix AC', kind: 'work_order', status: 'pending', priority: 'none', overdue: true }],
+                                       '✓ Started: x', { id: '5', title: 'Old' }) as { blocks: unknown[] }).blocks);
+  for (const k of ['1 open', '▲ 1 overdue', 'task_new', 'open:7', 'remove:7', '✓ Started: x', 'Removed *Old*', 'task_restore']) assert.ok(t.includes(k), k);
+  const c = JSON.stringify((claimsModal([{ id: '3', unit: 'P2-4308', severity: 'Medium', status: 'Open', description: 'Fob' }]) as { blocks: unknown[] }).blocks);
+  for (const k of ['claim_new', 'status:Resolved:3', 'edit:3', 'remove:3']) assert.ok(c.includes(k), k);
+  const cl = JSON.stringify((cleansModal('2026-10-01', 'Today', [], true, undefined, { today: '2026-10-01', tomorrow: '2026-10-02' }) as { blocks: unknown[] }).blocks);
+  assert.match(cl, /cleans_day_2026-10-02/);
 });

@@ -19,24 +19,24 @@ const SOPS = [
     // §101: published from the start — /kaizen help shows it, so it must be readable by everyone.
     section: 'systems', status: 'published', title: 'Kaizen in Slack',
     features: ['home', 'operations.board', 'operations.todos', 'claims', 'settings'],
-    purpose: 'Work Kaizen from Slack: see the day, fix what is missing, and manage tasks, cleans and claims without opening the app.',
+    purpose: 'Work Kaizen from Slack: see the day in one message, and manage check-ins, cleans, tasks and claims in pop-ups without opening the app.',
     trigger: 'Whenever a Kaizen message arrives in Slack, or you need to add or update work on the go.',
     owner: 'Operations',
     steps: [
-      { text: 'Read the reminder in the reservations channel.', who: 'Ops',
-        detail: '- **Morning (8 AM)**: today and tomorrow. **Afternoon (3 PM)**: only what is still missing for tomorrow.\n- ✓ means ready; ▲ means something is missing, with its fix beside it.' },
-      { text: 'Fix what is missing, from the button beside it.', who: 'Ops',
-        detail: '- **Assign cleaner**: pick the cleaner, *No clean needed*, or *Let the rule decide*.\n- **↗ Hostaway**: opens the reservation, to send the guest portal link again (agreement or ID).\n- These are real changes: in live mode Kaizen also updates the Host Note in Hostaway.' },
-      { text: 'See and change the day’s cleans: 🧹 Cleans, or /kaizen cleans.', who: 'Ops',
-        detail: '- Every checkout that day: time, unit, cleaner, same-day, deep clean.\n- **Assign** or **Change** on any row; the list refreshes after saving.\n- /kaizen cleans tomorrow for the next day.' },
-      { text: 'See the open work: /kaizen tasks.', who: 'Everyone',
-        detail: '- Each task has a ⋯ menu: **Open**, Complete, Start, Edit, Remove (with Undo).' },
+      { text: 'Read the reminder: one line per section.', who: 'Ops',
+        detail: '- **Morning (8 AM)**: today and tomorrow, plus tasks and claims. **Afternoon (3 PM)**: what is still missing for tomorrow.\n- Each line says how many, and what needs you (▲) — or ✓ when all is fine.\n- **Manage** opens that section in a pop-up. The channel stays one message; the work happens in the pop-ups.' },
+      { text: 'Check-ins → Manage: fix what is missing before each arrival.', who: 'Ops',
+        detail: '- Every arrival: the agreement, the ID copy (where the building keeps one), and who cleans before it.\n- **Assign clean** when the clean before it has nobody.\n- **↗ Hostaway** opens the reservation, to send the guest portal link again (agreement or ID).' },
+      { text: 'Cleans → Manage: see and change who cleans.', who: 'Ops',
+        detail: '- Every checkout: time, unit, cleaner, same-day, deep clean, set by hand.\n- **Today / Tomorrow** at the top.\n- **Assign** or **Change**: a cleaner, *No clean needed*, or *Let the rule decide*. The list refreshes after saving.\n- Also /kaizen cleans (or cleans tomorrow).\n- These are real changes: in live mode Kaizen also updates the Host Note in Hostaway.' },
+      { text: 'Tasks → Manage: work the open tasks.', who: 'Everyone',
+        detail: '- Each task’s ⋯ menu: **Open**, Complete, Start, Edit, Remove (with Undo).\n- **+ To-do** and **+ Repair** at the top.\n- Also /kaizen tasks.' },
       { text: 'Work a task in its card: 📋 Open.', who: 'Owner',
-        detail: '- Status, owner, dates, sub-tasks and the latest updates in one place.\n- **Complete**, **Start**, **🙋 Take it** (you become the owner), **Edit**.\n- Write in *Add an update* and press it: it is saved on the task’s timeline.' },
-      { text: 'Add work: /kaizen task …, /kaizen repair …, or the ⚡ shortcuts.', who: 'Everyone',
-        detail: '- ⚡ **New task**, **Report a repair**, **New claim** from anywhere in Slack.\n- On any message: ⋯ → **Create task from message** — the text and a link come with it, and the thread is told it is tracked.' },
-      { text: 'Manage claims: /kaizen claims and /kaizen claim ….', who: 'Ops',
-        detail: '- Change the status from the menu or the message; **Edit** opens the form; **Remove** has Undo.' },
+        detail: '- Status, owner, dates, sub-tasks and the latest updates in one place.\n- **Complete**, **Start**, **🙋 Take it** (you become the owner), **Edit**.\n- Write in *Add an update* and press it: it is saved on the task’s timeline. Closing the card brings you back to the list, up to date.' },
+      { text: 'Claims → Manage: follow the open claims.', who: 'Ops',
+        detail: '- ⋯ menu: **Edit**, change the status, **Remove** (with Undo); **+ Claim** at the top.\n- Also /kaizen claims and /kaizen claim ….' },
+      { text: 'Add work from anywhere: ⚡ shortcuts, or ⋯ on any message.', who: 'Everyone',
+        detail: '- ⚡ **New task**, **Report a repair**, **New claim** from anywhere in Slack.\n- On any message: ⋯ → **Create task from message** — the text and a link come with it, and the thread is told it is tracked.\n- Or type /kaizen task … and /kaizen repair ….' },
       { text: 'Answer what comes to you directly.', who: 'Owner',
         detail: '- A task assigned to you arrives in your Slack messages, with its buttons.\n- Each morning you get your overdue tasks.' }
     ],
@@ -44,6 +44,7 @@ const SOPS = [
     body: `## Good to know
 - You act as yourself: Kaizen matches your Slack email to your Kaizen account, with your role's permissions.
 - Everything done in Slack is the same as in Kaizen — the same timeline, the same Hostaway sync.
+- Every pop-up refreshes in place after an action; nothing new is posted to the channel.
 - /kaizen help shows this SOP in Slack; "❓ How to use this" on the reminder opens it in Kaizen.`
   },
   {

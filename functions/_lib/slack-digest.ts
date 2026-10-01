@@ -35,8 +35,8 @@ export async function digestFacts(sql: SqlFn, creds: HostawayCredentials, key: s
     sql`SELECT t.title, u.name AS unit, t.assignee, t.due_on::text AS due_on
           FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
          WHERE t.account_id = 1 AND t.deleted_at IS NULL AND t.parent_id IS NULL
-           AND t.status NOT IN ('completed', 'cancelled') AND t.due_on <= ${today}::date
-         ORDER BY t.due_on, t.title` as Promise<{ title: string; unit: string | null; assignee: string | null; due_on: string }[]>,
+           AND t.status NOT IN ('completed', 'cancelled')
+         ORDER BY t.due_on NULLS LAST, t.title` as Promise<{ title: string; unit: string | null; assignee: string | null; due_on: string | null }[]>,
     sql`SELECT COALESCE(u.name, 'Portfolio') || ' · ' || COALESCE(NULLIF(c.description, ''), c.category, 'Claim') AS label,
                c.severity, (CURRENT_DATE - c.occurred_on)::int AS days
           FROM claims c LEFT JOIN units u ON u.account_id = c.account_id AND u.id = c.unit_id
@@ -54,7 +54,7 @@ export async function digestFacts(sql: SqlFn, creds: HostawayCredentials, key: s
       resId: r.resId, date: r.date, time: r.time, unit: r.unit, cleaner: r.cleaner, assigned: r.assignment === 'assigned',
       notNeeded: r.assignment === 'not_needed', sameDay: r.urgency === 'turnover'
     })),
-    tasks: tasks.map(t => ({ title: t.title, unit: t.unit, owner: t.assignee, overdue: t.due_on < today, dueToday: t.due_on === today })),
+    tasks: tasks.map(t => ({ title: t.title, unit: t.unit, owner: t.assignee, overdue: !!t.due_on && t.due_on < today, dueToday: t.due_on === today })),
     claims: claims.map(c => ({ label: c.label.slice(0, 90), severity: c.severity, days: c.days }))
   };
 }

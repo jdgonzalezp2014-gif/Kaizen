@@ -3090,3 +3090,26 @@ shows it or leads to it; is there something better than /kaizen?
 - Better than typing /kaizen: buttons on what already arrives (done), and
   next, the bot's **Home tab** — a standing dashboard of the day, the
   cleans and one's own work (needs the Events API).
+
+## 102. The reminder: a line per section, each managed in its pop-up
+
+The owner (2026-10-01): one reminder message, and a pop-up per section to
+manage that section. (And the SOP updated.)
+
+- **The message** — a head line (☀ Today … · ▲ N things need you / ✓
+  Nothing missing) and one line per section, each with **Manage**
+  (primary when something there needs a person): 🛬 Check-ins (how many
+  per day; not signed, ID not in Drive), 🧹 Cleans (per day, same-day;
+  not assigned), ☐ Tasks (open; overdue, due today), ⚑ Claims (open;
+  high or critical). Afternoon: check-ins and cleans for tomorrow only.
+  Each button carries the days it covers. Reading and acting are apart:
+  one message in the channel, the work in the pop-ups.
+- **The pop-ups** — Check-ins: every arrival with agreement, ID copy and
+  the clean before it; "Assign clean" (on top, back to the list) or
+  "↗ Hostaway". Cleans: Today / Tomorrow, Assign / Change (§101). Tasks:
+  every open task with its ⋯ (Open → the card on top; Complete, Start,
+  Edit, Remove with Undo), + To-do / + Repair. Claims: ⋯ (Edit, status,
+  Remove with Undo), + Claim. Every action refreshes the pop-up in place
+  with a one-line note; forms and cards opened from a list go on top of it
+  and return to it refreshed. Nothing new is posted to the channel.
+- The SOP "Kaizen in Slack" is v2: the eight steps follow the sections.
