@@ -9,7 +9,11 @@
 
 export type SopKind = 'sop' | 'article';
 export type SopStatus = 'draft' | 'published' | 'archived';
-export interface SopStep { text: string; who?: string }
+/**
+ * One step: what to do (a line), who does it, and — expandable — how, in
+ * as much detail as it takes (the same markdown habits as the body).
+ */
+export interface SopStep { text: string; who?: string; detail?: string }
 
 export interface SopSection { key: string; label: string; description: string | null; sort: number }
 
@@ -101,7 +105,7 @@ export function forFeature<T extends Pick<Sop, 'status' | 'features' | 'kind' | 
 export function matchesSearch(s: Pick<Sop, 'title' | 'purpose' | 'trigger' | 'owner' | 'body' | 'steps' | 'doneWhen'>, q: string): boolean {
   const words = q.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
-  const hay = [s.title, s.purpose, s.trigger, s.owner, s.body, s.doneWhen, ...s.steps.map(x => `${x.text} ${x.who ?? ''}`)]
+  const hay = [s.title, s.purpose, s.trigger, s.owner, s.body, s.doneWhen, ...s.steps.map(x => `${x.text} ${x.who ?? ''} ${x.detail ?? ''}`)]
     .filter(Boolean).join(' ').toLowerCase();
   return words.every(w => hay.includes(w));
 }
@@ -110,17 +114,21 @@ export function matchesSearch(s: Pick<Sop, 'title' | 'purpose' | 'trigger' | 'ow
 export function contentChanged(a: SopContent, b: SopContent): boolean {
   const norm = (c: SopContent) => JSON.stringify(CONTENT_FIELDS.map(k => {
     const v = c[k];
-    if (k === 'steps') return (v as SopStep[]).map(x => [x.text.trim(), (x.who ?? '').trim()]);
+    if (k === 'steps') return (v as SopStep[]).map(x => [x.text.trim(), (x.who ?? '').trim(), (x.detail ?? '').trim()]);
     return typeof v === 'string' ? v.trim() : v ?? '';
   }));
   return norm(a) !== norm(b);
 }
 
-/** Steps as typed: blanks dropped, trimmed, "who" only when given. */
+/** Steps as typed: blanks dropped, trimmed, "who" and "detail" only when given. */
 export function cleanSteps(steps: unknown): SopStep[] {
   if (!Array.isArray(steps)) return [];
-  return steps.map(x => ({ text: String((x as SopStep)?.text ?? '').trim().slice(0, 600), who: String((x as SopStep)?.who ?? '').trim().slice(0, 80) }))
-    .filter(x => x.text).slice(0, 60).map(x => x.who ? x : { text: x.text });
+  return steps.map(x => ({
+    text: String((x as SopStep)?.text ?? '').trim().slice(0, 600),
+    who: String((x as SopStep)?.who ?? '').trim().slice(0, 80),
+    detail: String((x as SopStep)?.detail ?? '').trim().slice(0, 4000)
+  })).filter(x => x.text).slice(0, 60)
+    .map(x => ({ text: x.text, ...(x.who ? { who: x.who } : {}), ...(x.detail ? { detail: x.detail } : {}) }));
 }
 
 /* ── the body: a few markdown habits, rendered without HTML ─────────── */

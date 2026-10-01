@@ -97,11 +97,6 @@ export function App() {
                       onClick={() => setTab(t as Tab)}>{label}</button>
             ) : null;
           })}
-          {/* The procedures for the screen someone is on (§92). */}
-          {tab && tab !== 'sops' && allowed?.includes('sops') && featureOf(tab, opsNow) && (
-            <SopButton key={featureOf(tab, opsNow)!} feature={featureOf(tab, opsNow)!} canEdit={can(permissions, 'sops.edit')}
-                       onLibrary={id => { setSopFocus(id); setTab('sops'); }} />
-          )}
           <ThemeToggle />
         </nav>
       </header>
@@ -137,6 +132,12 @@ export function App() {
       {tab === 'costs'    && <Costs units={units} />}
       {tab === 'sops'     && <Sops focus={sopFocus} onFocused={() => setSopFocus(undefined)} />}
       {tab === 'settings' && <Settings />}
+
+      {/* The procedures for the screen someone is on (§92), floating bottom right (§96). */}
+      {tab && tab !== 'sops' && allowed?.includes('sops') && featureOf(tab, opsNow) && (
+        <SopButton key={featureOf(tab, opsNow)!} feature={featureOf(tab, opsNow)!} canEdit={can(permissions, 'sops.edit')}
+                   onLibrary={id => { setSopFocus(id); setTab('sops'); }} />
+      )}
     </main>
   );
 }

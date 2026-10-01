@@ -2911,3 +2911,25 @@ whether or not the repair is part of a claim.
 - Verified end to end through /api/todos: completed $85 → Costs; $90 →
   updated; charged → Hostaway expense −90 on P2-4212; uncharged → removed;
   reopened → gone from Costs.
+
+## 96. SOPs step by step; the screen's button at the bottom
+
+The owner (2026-09-30): there were two SOP buttons side by side (the
+library tab and the screen's own), and SOPs should be step by step and
+expandable.
+
+- **The screen's button floats bottom right** — "📘 SOPs for this
+  screen · n" (on phones just 📘 and the count), over the page wherever it
+  is scrolled; the top bar keeps only the SOPs library tab. `main` has
+  room at the bottom so it never covers the last row.
+- **A step has a detail** (`SopStep.detail`, the body's markdown habits):
+  what opens under the step — where to click, what to check, what to do
+  if it goes wrong. Part of the content: changing it is a new version.
+  In the editor, "+ how" opens it under the step.
+- **Reading**: the steps are an accordion — a step with detail opens on a
+  tap, "Expand all" opens them all; the number ticks a step off.
+- **Step by step**: one step at a time (Step 2 of 6, a progress bar, who,
+  the detail), "✓ Done — next" and "← Back", and at the end the "Done
+  when" check. Ticks are the reader's own for that run — nothing saved.
+- The check-in readiness draft got details on five of its steps (v2),
+  as the first example.

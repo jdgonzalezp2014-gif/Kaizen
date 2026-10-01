@@ -111,9 +111,7 @@ export function SopView({ sop, sections, canEdit, onEdit, onChanged, onRemoved }
       {shown.trigger && <Part title="When to use it"><p>{shown.trigger}</p></Part>}
       {shown.kind === 'sop' && shown.steps.length > 0 && (
         <Part title="Steps">
-          <ol className="sop-steps">
-            {shown.steps.map((st, i) => <li key={i}><span>{st.text}</span>{st.who && <span className="sop-who">{st.who}</span>}</li>)}
-          </ol>
+          <SopSteps key={`${sop.id}-${old?.version ?? 'now'}`} steps={shown.steps} doneWhen={shown.doneWhen} />
         </Part>
       )}
       {shown.doneWhen && <Part title="Done when"><p className="sop-done">✓ {shown.doneWhen}</p></Part>}
@@ -148,6 +146,86 @@ export function SopView({ sop, sections, canEdit, onEdit, onChanged, onRemoved }
         </ol>
       )}
     </article>
+  );
+}
+
+/**
+ * The steps, the way they are used (§96): a list to scan, each step opening
+ * to its detail — and "Step by step", one step at a time with a tick for
+ * each, for doing it with a phone in one hand. Ticks are the reader's own,
+ * for this run; nothing is saved.
+ */
+function SopSteps({ steps, doneWhen }: { steps: SopStep[]; doneWhen: string | null }) {
+  const [open, setOpen] = useState<Set<number>>(new Set());
+  const [ticked, setTicked] = useState<Set<number>>(new Set());
+  const [at, setAt] = useState<number | null>(null);
+  const withDetail = steps.map((s, i) => s.detail ? i : -1).filter(i => i >= 0);
+  const toggle = (i: number) => setOpen(o => { const n = new Set(o); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  const allOpen = withDetail.length > 0 && withDetail.every(i => open.has(i));
+
+  if (at !== null) {
+    const done = at >= steps.length;
+    const st = steps[Math.min(at, steps.length - 1)]!;
+    return (
+      <div className="sop-guide" role="region" aria-label="Step by step">
+        <div className="sop-guide-head">
+          <span className="sop-guide-count">{done ? `All ${steps.length} steps` : `Step ${at + 1} of ${steps.length}`}</span>
+          <button className="link" onClick={() => setAt(null)}>Back to the list</button>
+        </div>
+        <div className="sop-guide-bar" aria-hidden="true"><span style={{ width: `${(Math.min(at, steps.length) / steps.length) * 100}%` }} /></div>
+        {done ? (
+          <div className="sop-guide-step">
+            <p className="sop-guide-text">✓ Every step is done.</p>
+            {doneWhen && <p className="sop-done">Check: {doneWhen}</p>}
+            <div className="button-row">
+              <button className="secondary small" onClick={() => { setTicked(new Set()); setAt(0); }}>Start again</button>
+              <button className="small" onClick={() => setAt(null)}>Close</button>
+            </div>
+          </div>
+        ) : (
+          <div className="sop-guide-step">
+            <p className="sop-guide-text"><span className="sop-num">{at + 1}</span>{st.text}</p>
+            {st.who && <p className="sop-meta">Who: <b>{st.who}</b></p>}
+            {st.detail && <SopBody text={st.detail} />}
+            <div className="button-row">
+              <button className="secondary small" disabled={at === 0} onClick={() => setAt(at - 1)}>← Back</button>
+              <button className="small" onClick={() => { setTicked(t => new Set(t).add(at)); setAt(at + 1); }}>
+                ✓ Done{at < steps.length - 1 ? ' — next' : ''}</button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <div className="sop-steps-tools">
+        <button className="small" onClick={() => setAt(Math.max(0, steps.findIndex((_, i) => !ticked.has(i))))}>
+          ▶ {ticked.size ? 'Continue step by step' : 'Step by step'}</button>
+        {withDetail.length > 0 && (
+          <button className="link" onClick={() => setOpen(allOpen ? new Set() : new Set(withDetail))}>{allOpen ? 'Collapse all' : 'Expand all'}</button>
+        )}
+        {ticked.size > 0 && <span className="sub-n">{ticked.size} of {steps.length} done
+          <button className="link tiny" onClick={() => setTicked(new Set())}>clear</button></span>}
+      </div>
+      <ol className="sop-steps">
+        {steps.map((st, i) => (
+          <li key={i} className={`${ticked.has(i) ? 'is-ticked' : ''} ${open.has(i) ? 'is-open' : ''}`}>
+            <div className="sop-step-head">
+              <button className="sop-num" onClick={() => setTicked(t => { const n = new Set(t); if (n.has(i)) n.delete(i); else n.add(i); return n; })}
+                      aria-label={ticked.has(i) ? `Untick step ${i + 1}` : `Tick step ${i + 1}`}>{ticked.has(i) ? '✓' : i + 1}</button>
+              {st.detail
+                ? <button className="sop-step-line" aria-expanded={open.has(i)} onClick={() => toggle(i)}>
+                    <span>{st.text}</span><span className="sop-chev" aria-hidden="true">{open.has(i) ? '▴' : '▾'}</span></button>
+                : <span className="sop-step-line static"><span>{st.text}</span></span>}
+              {st.who && <span className="sop-who">{st.who}</span>}
+            </div>
+            {st.detail && open.has(i) && <div className="sop-step-detail"><SopBody text={st.detail} /></div>}
+          </li>
+        ))}
+      </ol>
+    </>
   );
 }
 
@@ -240,10 +318,23 @@ export function SopEditor({ initial, sections, onSaved, onCancel }: {
                 <input className="sop-step-who" value={st.who ?? ''} placeholder="who" aria-label={`Who does step ${i + 1}`}
                        onChange={e => step(i, { who: e.target.value })} />
                 <span className="sop-step-tools">
+                  {st.detail === undefined && (
+                    <button type="button" className="link sop-howbtn" onClick={() => step(i, { detail: '' })}
+                            title="Add how to do it — opens under the step for whoever follows it">+ how</button>
+                  )}
                   <button type="button" className="link" disabled={i === 0} onClick={() => move(i, -1)} aria-label="Move up">↑</button>
                   <button type="button" className="link" disabled={i === s.steps.length - 1} onClick={() => move(i, 1)} aria-label="Move down">↓</button>
                   <button type="button" className="link" onClick={() => set('steps', s.steps.filter((_, j) => j !== i))} aria-label="Remove step">✕</button>
                 </span>
+                {/* §96: the step's detail — what opens under it, and what Step by step shows. */}
+                {st.detail !== undefined && (
+                  <div className="sop-step-how">
+                    <textarea rows={Math.max(2, Math.min(8, st.detail.split('\n').length + 1))} value={st.detail} autoFocus={!st.detail}
+                              placeholder="How, exactly — where to click, what to check, what to do if it goes wrong (## heading, - bullet, **bold**, links)"
+                              aria-label={`How to do step ${i + 1}`} onChange={e => step(i, { detail: e.target.value })} />
+                    <button type="button" className="link tiny" onClick={() => step(i, { detail: undefined })}>remove detail</button>
+                  </div>
+                )}
               </div>
             ))}
             <button type="button" className="link" onClick={() => set('steps', [...s.steps, { text: '' }])}>+ Add step</button>
@@ -294,8 +385,8 @@ export function SopEditor({ initial, sections, onSaved, onCancel }: {
 /* ── each screen's button ────────────────────────────────────────────── */
 
 /**
- * "📘 SOPs · 2" in the top bar: the procedures for the screen someone is
- * on, one tap away, without leaving it. Opens a side panel; the library
+ * "📘 SOPs for this screen · 2", floating bottom right: the procedures for
+ * the screen someone is on, one tap away, without leaving it. Opens a side panel; the library
  * tab is one more tap.
  */
 export function SopButton({ feature, canEdit, onLibrary }: {
@@ -308,9 +399,12 @@ export function SopButton({ feature, canEdit, onLibrary }: {
   const count = forFeature(data?.sops ?? [], feature).length;
   return (
     <>
-      <button className={`tab sop-btn ${count ? '' : 'none'}`} onClick={() => { setOpen(true); void reload(); }}
+      {/* Bottom right, over the screen (§96): within reach wherever the page is scrolled, and
+          not a second "SOPs" beside the library tab. */}
+      <button className={`sop-fab ${count ? '' : 'none'}`} onClick={() => { setOpen(true); void reload(); }}
               title={`SOPs for ${featureLabel(feature)}`} aria-haspopup="dialog">
-        📘 SOPs{count ? <span className="sop-count">{count}</span> : null}
+        <span aria-hidden="true">📘</span><span className="sop-fab-word"> SOPs for this screen</span>
+        {count ? <span className="sop-count">{count}</span> : null}
       </button>
       {open && <SopDrawer feature={feature} canEdit={canEdit && !!data?.canEdit} data={data} reload={reload}
                           onClose={() => setOpen(false)} onLibrary={id => { setOpen(false); onLibrary(id); }} />}

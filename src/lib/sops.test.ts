@@ -43,7 +43,8 @@ test('a screen lists its published SOPs first, then articles; drafts only when a
 });
 
 test('search: every word, anywhere, including steps', () => {
-  const x = s({ purpose: 'Every guest signs', steps: [{ text: 'Upload the ID to Drive', who: 'Ops' }] });
+  const x = s({ purpose: 'Every guest signs', steps: [{ text: 'Upload the ID to Drive', who: 'Ops', detail: 'From the lockbox photo' }] });
+  assert.ok(matchesSearch(x, 'lockbox'));
   assert.ok(matchesSearch(x, 'drive guest'));
   assert.ok(matchesSearch(x, 'ops'));
   assert.ok(!matchesSearch(x, 'drive refund'));
@@ -55,11 +56,13 @@ test('a new version only when what it says changed', () => {
   assert.equal(contentChanged(a, { ...a, steps: [{ text: ' One ', who: '' }] }), false);
   assert.equal(contentChanged(a, { ...a, title: 'Other' }), true);
   assert.equal(contentChanged(a, { ...a, steps: [{ text: 'One', who: 'Ops' }] }), true);
+  // A step's detail is content too: a new version when it changes.
+  assert.equal(contentChanged(a, { ...a, steps: [{ text: 'One', detail: 'Use the blue key' }] }), true);
 });
 
 test('steps as typed: blanks dropped, who only when given', () => {
-  assert.deepEqual(cleanSteps([{ text: ' a ', who: ' ' }, { text: '' }, { text: 'b', who: 'Ops' }, null]),
-                   [{ text: 'a' }, { text: 'b', who: 'Ops' }]);
+  assert.deepEqual(cleanSteps([{ text: ' a ', who: ' ' }, { text: '' }, { text: 'b', who: 'Ops', detail: ' How:\n- x ' }, null]),
+                   [{ text: 'a' }, { text: 'b', who: 'Ops', detail: 'How:\n- x' }]);
   assert.deepEqual(cleanSteps('x'), []);
 });
 
