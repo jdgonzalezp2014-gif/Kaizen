@@ -2968,3 +2968,63 @@ about. Not now.)
 - The floating "SOPs for this screen" button hides while a panel is open.
 - `scripts/screenshot.mjs`: `VIEWPORT=1` captures the visible window —
   the only way to see fixed panels and buttons where a person sees them.
+
+## 99. Slack
+
+The owner (2026-10-01): Slack — open tasks, the reservations reminder
+(cleans, check-ins, what is missing), claims, CRUD from Slack; a channel
+per cleaner, prepared but not wired (cleans change often and are moved
+by hand). And: can Hostaway AI escalations be captured?
+
+**Set up** — Settings → Slack (`/api/slack-settings`, `settings` only):
+1. the Slack app from a manifest generated for this deployment's address
+   (`/kaizen` and interactivity → `/api/slack`; bot scopes chat:write,
+   chat:write.public, commands, channels:read, groups:read,
+   channels:manage, groups:write, users:read, users:read.email);
+2. bot token + signing secret, encrypted (migration 045), test;
+3. a channel per topic — tasks, reservations, claims, escalations;
+4. which events, and the reminder hours (New York; default 8 AM / 3 PM);
+5. Cloudflare Access: `/api/slack` and `/api/slack-cron` need a Bypass ·
+   Everyone application (like `/api/observations`); both are in the
+   middleware's SELF_AUTHENTICATING list and authenticate themselves.
+
+**Out** (functions/_lib/slack.ts, after the response, never failing the
+action): task created / assigned / completed / cancelled / reopened /
+changed in Hostaway (top-level work only), claim opened / status changed —
+each message with its buttons. **The reservations reminder**
+(slack-digest.ts + src/lib/slack.ts digestMessage): morning = today and
+tomorrow, every arrival with what is missing (agreement not signed, ID not
+in Drive for the units that keep one, clean not assigned), unassigned
+checkouts, same-day count, overdue and due-today work, open claims;
+afternoon = what is still missing for tomorrow. Built from the board's own
+rows. On a clock: `.github/workflows/slack-cron.yml` calls
+`/api/slack-cron` hourly with the ingest token (repo secrets KAIZEN_URL,
+KAIZEN_INGEST_TOKEN); each reminder goes once a day at or after its hour
+(`slack_sent`, claimed before sending). "Send the reminder now" in Settings.
+
+**In** (`/api/slack`): every request must carry Slack's signature for the
+app's signing secret, ≤5 minutes old, or nothing is read (tested). The
+Slack user is the Kaizen member with the same email — on the allow-list,
+with that member's permissions — and the action runs through the app's own
+handlers (`/api/todos`, `/api/claims`) as that member, so timeline, Hostaway
+sync and repair costs behave exactly as in the app. `/kaizen tasks |
+task … | repair … | claims | claim … | today`; message buttons (complete,
+start, reopen, edit) and list menus (complete, start, edit, remove with
+Undo; claim status, edit, remove with Undo); create/edit forms are Slack
+modals. `today` answers at once and sends the reminder when the board is
+read (Slack waits 3 seconds).
+
+**Cleaners' channels (prepared)**: per roster cleaner, create a private
+`#cleaning-name` and invite them by their Slack email; preview their next
+seven days of assigned cleans; "Send now" by hand only. Nothing is sent to
+them on a clock.
+
+**Hostaway AI escalations — not capturable by API (checked 2026-10-01).**
+Conversations and messages carry no escalation flag; there is no
+escalations endpoint; the unified webhooks offer reservation.created/
+updated, message.received, task.created/updated only. Hostaway's AI flags
+the conversation in its Inbox and can notify by mobile, desktop or EMAIL
+(rule-level "Send a notification"). So the way in is the email: point that
+notification at a mailbox Kaizen can read, and Kaizen turns each one into
+an alert in the escalations channel (and a task). Needs one sample email
+to build the parser; none was found in the owner's Gmail.

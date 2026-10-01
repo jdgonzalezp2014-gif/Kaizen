@@ -5,6 +5,7 @@ import {
   type RoleDef, type PermissionDef, saveRole, deleteRole, getDrive, driveAction, type DriveStatus
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
+import { SlackPanel } from '../components/SlackPanel.tsx';
 import { newIngestToken, pullFeed, runCron, type FeedResult, type CronResult } from '../api.ts';
 import { sanitize, segments } from '../lib/sms.ts';
 
@@ -166,6 +167,7 @@ export function Settings() {
       <DailyFilePanel account={account} onSaved={() => void load()} />
 
       <DrivePanel />
+      <SlackPanel />
       <RepositoryPanel account={account} onSaved={() => void load()} />
 
       <GeminiPanel account={account} onSaved={() => void load()} />

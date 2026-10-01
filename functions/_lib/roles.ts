@@ -67,7 +67,8 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/sync-units', methods: ['POST'] }, { path: '/api/import', methods: ['POST'] },
     { path: '/api/cleanings', methods: ['POST'] }, { path: '/api/feed', methods: ['POST'] },
     { path: '/api/cron', methods: ['POST'] }, { path: '/api/units', methods: ['POST'] },
-    { path: '/api/google-drive', methods: ['GET', 'POST'] }, { path: '/api/google-callback', methods: ['GET'] }] }
+    { path: '/api/google-drive', methods: ['GET', 'POST'] }, { path: '/api/google-callback', methods: ['GET'] },
+    { path: '/api/slack-settings', methods: ['GET', 'POST'] }] }
 ];
 
 /** The permission that means "everything", held by the admin role only. */

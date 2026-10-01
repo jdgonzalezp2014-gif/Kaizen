@@ -548,3 +548,12 @@ export const getSopVersions = (id: string) =>
   call<{ ok: boolean; versions?: SopVersion[]; error?: string }>(`/api/sops?versions=${encodeURIComponent(id)}`);
 export const sopAction = (body: Record<string, unknown>) =>
   call<{ ok: boolean; sop?: Sop; key?: string; newVersion?: boolean; error?: string }>('/api/sops', { method: 'POST', body: JSON.stringify(body) });
+
+/* ── Slack (§99) ─────────────────────────────────────────────────────── */
+import type { SlackConfig } from './lib/slack.ts';
+export interface SlackState { ok: boolean; hasToken?: boolean; hasSecret?: boolean; config?: SlackConfig; error?: string }
+export const getSlack = () => call<SlackState>('/api/slack-settings');
+export const slackAction = (body: Record<string, unknown>) =>
+  call<SlackState & { team?: string; bot?: string; channels?: { id: string; name: string; private: boolean; member: boolean }[];
+                      missing?: number; channel?: { channelId: string; channelName: string };
+                      message?: { text: string; blocks: { type: string; text?: { text: string } }[] } }>('/api/slack-settings', { method: 'POST', body: JSON.stringify(body) });

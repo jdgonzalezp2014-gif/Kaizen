@@ -34,7 +34,9 @@ import { accessOf, type SqlFn } from '../_lib/accounts.ts';
  * browser sign-in. Listed explicitly, never pattern-matched: a prefix
  * rule here is one typo away from exempting everything beneath it.
  */
-const SELF_AUTHENTICATING = new Set(['/api/observations']);
+// §99: Slack signs every request (/api/slack verifies it); the reminder
+// scheduler carries the ingest token (/api/slack-cron checks it).
+const SELF_AUTHENTICATING = new Set(['/api/observations', '/api/slack', '/api/slack-cron']);
 
 export const onRequest: PagesFunction<Env> = async (ctx) => {
   if (SELF_AUTHENTICATING.has(new URL(ctx.request.url).pathname)) return ctx.next();

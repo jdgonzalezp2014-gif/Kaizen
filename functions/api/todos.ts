@@ -36,6 +36,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { can } from '../_lib/roles.ts';
 import { mirrorOn, people, pullAll, pushWork } from '../_lib/hostaway-tasks.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
+import { notifyTask, type TaskEvent } from '../_lib/slack.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -163,7 +164,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   // §93: Hostaway's side of the work — changes there, and tasks written there.
   if (b.action === 'hostawaySync') {
     try {
-      const sync = await pullAll(sql, await getCredentials(sql, env.ENCRYPTION_KEY), b.force === true);
+      const sync = await pullAll(sql, await getCredentials(sql, env.ENCRYPTION_KEY), b.force === true, undefined, env.ENCRYPTION_KEY);
       return Response.json({ ok: true, sync, todos: await list(sql) });
     } catch (e) {
       return Response.json({ ok: false, message: `Hostaway tasks: ${e instanceof Error ? e.message : String(e)}` }, { status: 502 });
@@ -176,6 +177,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   })().catch(() => { /* kept on the row as hostaway_error by pushWork, or retried on the next pull */ }));
   // §95: the repair's expense in Costs (and the owner's charge in Hostaway) follows what just changed.
   const settle = (id: string) => settleRepair(sql, id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY));
+  // §99: the news, in Slack's tasks channel — after the response, never failing the action.
+  const tell = (id: string, ev: TaskEvent) => waitUntil(notifyTask(sql, env.ENCRYPTION_KEY, id, ev, who.email).catch(() => {}));
 
   // Each field: undefined = not being changed; null = cleared.
   const text = (v: unknown, max: number) => v === null ? null : typeof v === 'string' ? (v.trim().replace(/\s+/g, ' ').slice(0, max) || null) : undefined;
@@ -272,7 +275,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         `${targets.length > 1 ? ` (one of ${targets.length}, one per listing)` : ''}.`, who.email);
       if (f.parentId) await note(sql, 'task', f.parentId, 'change', `Sub-task added: ${f.title}`, who.email);
       if (f.claimId) await note(sql, 'claim', f.claimId, 'change', `${what} added: ${f.title}`, who.email);
-      if (!f.parentId) mirror(String(row.id));
+      if (!f.parentId) { mirror(String(row.id)); tell(String(row.id), 'created'); }
       await settle(String(row.id));
     }
     return Response.json({ ok: true, id: ids[0], ids, todos: await list(sql, b.claimScope ? f.claimId ?? undefined : undefined) });
@@ -432,6 +435,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   if (changed.length) await note(sql, 'task', id, 'change', changed.join(' · '), who.email);
   await settle(id);
   mirror(id);
+  if (status !== undefined && status !== before.status) {
+    if (CLOSED.includes(status)) tell(id, status === 'completed' ? 'completed' : 'cancelled');
+    else if (CLOSED.includes(before.status)) tell(id, 'reopened');
+  }
+  if (f.assigneeUserId !== undefined && (assigneeName ?? null) !== (before.assignee ?? null) && assigneeName) tell(id, 'assigned');
 
   return Response.json({ ok: true, todos: await list(sql, scope) });
 };

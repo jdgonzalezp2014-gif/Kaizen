@@ -21,6 +21,7 @@ import {
 } from '../../src/lib/hostaway-tasks.ts';
 import { stayLabel } from '../../src/lib/todos.ts';
 import { settleRepair } from './repair-costs.ts';
+import { notifyTask } from './slack.ts';
 
 const BASE = 'https://api.hostaway.com/v1';
 /** How often a page load may ask Hostaway for changes. */
@@ -145,7 +146,7 @@ export interface PullResult { skipped?: string; changed: number; imported: numbe
 /** Hostaway → Kaizen: changes to linked tasks, and hand-made tasks to bring in. */
 export async function pullAll(sql: SqlFn, creds: HostawayCredentials, force = false,
                               /** Scripts only: run with the switch off, touching only these tasks. */
-                              test?: { only: string[] }): Promise<PullResult> {
+                              test?: { only: string[] }, slackKey?: string): Promise<PullResult> {
   const none: PullResult = { changed: 0, imported: 0, unlinked: 0, retried: 0 };
   const [acc] = await sql`SELECT hostaway_tasks, hostaway_tasks_pulled_at FROM accounts WHERE id = 1` as
     { hostaway_tasks: string; hostaway_tasks_pulled_at: string | Date | null }[];
@@ -188,6 +189,8 @@ export async function pullAll(sql: SqlFn, creds: HostawayCredentials, force = fa
       await note(sql, r.id, patch.status ? 'status' : 'change', `In Hostaway: ${said.join(' · ')}`, 'Hostaway');
       // §95: completed with a cost there = the repair's expense here.
       await settleRepair(sql, r.id, 'Hostaway', async () => creds);
+      // §99: what the team did in Hostaway, said in Slack (needs the key, so only where the caller gave one).
+      if (slackKey) await notifyTask(sql, slackKey, r.id, 'hostaway', 'Hostaway', said.join(' · ')).catch(() => {});
       out.changed++;
     }
     await saveState(sql, r.id, now);

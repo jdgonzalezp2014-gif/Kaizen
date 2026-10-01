@@ -1,0 +1,22 @@
+# The Slack reservations reminder on a clock (§99).
+# Every hour; Kaizen sends each reminder once a day at its New York hour
+# (Settings → Slack), so most runs send nothing.
+# Needs repository secrets KAIZEN_URL (https://…, no trailing slash) and
+# KAIZEN_INGEST_TOKEN (Settings → ingest token), and /api/slack-cron
+# bypassed in Cloudflare Access.
+name: slack-cron
+on:
+  schedule:
+    - cron: '5 * * * *'
+  workflow_dispatch: {}
+jobs:
+  remind:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Call Kaizen
+        env:
+          KAIZEN_URL: ${{ secrets.KAIZEN_URL }}
+          KAIZEN_INGEST_TOKEN: ${{ secrets.KAIZEN_INGEST_TOKEN }}
+        run: |
+          if [ -z "$KAIZEN_URL" ] || [ -z "$KAIZEN_INGEST_TOKEN" ]; then echo "Secrets not set yet — skipping."; exit 0; fi
+          curl -sS --fail-with-body -X POST "$KAIZEN_URL/api/slack-cron" -H "X-Kaizen-Ingest: $KAIZEN_INGEST_TOKEN"

@@ -12,6 +12,8 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
+import { notifyClaim } from '../_lib/slack.ts';
+import type { SqlFn } from '../_lib/accounts.ts';
 
 const SEVERITY = ['Low', 'Medium', 'High', 'Critical'];
 const STATUS = ['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'];
@@ -64,7 +66,7 @@ interface Body {
   caseUrl?: string | null;
 }
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const who = identify(request, env);
   if (!who) return unauthorised();
   const sql = db(env);
@@ -134,6 +136,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         case_url = CASE WHEN ${b.caseUrl !== undefined} THEN ${caseUrl} ELSE case_url END
       WHERE account_id = 1 AND id = ${b.id}
       RETURNING id`;
+    // §99: a status change is news in the claims channel.
+    if (rows.length && before && before.status !== status) {
+      waitUntil(notifyClaim(sql as unknown as SqlFn, env.ENCRYPTION_KEY, String(b.id), 'changed', who.email, `→ ${status}`).catch(() => {}));
+    }
     return Response.json({ ok: rows.length > 0, id: rows[0]?.id });
   }
 
@@ -149,6 +155,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (rows[0]?.id != null) {
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
               VALUES (1, 'claim', ${String(rows[0].id)}, 'status', ${`Claim opened — ${status}`}, ${who.email})`;
+    waitUntil(notifyClaim(sql as unknown as SqlFn, env.ENCRYPTION_KEY, String(rows[0].id), 'opened', who.email).catch(() => {}));
   }
   return Response.json({ ok: true, id: rows[0]?.id });
 };
