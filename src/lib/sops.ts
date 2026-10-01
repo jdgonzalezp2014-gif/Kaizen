@@ -15,7 +15,26 @@ export type SopStatus = 'draft' | 'published' | 'archived';
  */
 export interface SopStep { text: string; who?: string; detail?: string }
 
-export interface SopSection { key: string; label: string; description: string | null; sort: number }
+/** A process area; `parentKey` makes it a subsection of one (one level, §97). */
+export interface SopSection { key: string; label: string; description: string | null; sort: number; parentKey?: string | null }
+
+/** Sections in order, each with its subsections in order. A subsection whose parent is gone stands on its own. */
+export function sectionTree(sections: SopSection[]): { section: SopSection; children: SopSection[] }[] {
+  const keys = new Set(sections.map(s => s.key));
+  const top = sections.filter(s => !s.parentKey || !keys.has(s.parentKey));
+  return top.map(section => ({ section, children: sections.filter(c => c.parentKey === section.key) }));
+}
+
+/** "Guest lifecycle › Check-in" — a subsection named with its section. */
+export function sectionPath(sections: SopSection[], key: string): string {
+  const s = sections.find(x => x.key === key);
+  if (!s) return key;
+  const p = s.parentKey ? sections.find(x => x.key === s.parentKey) : undefined;
+  return p ? `${p.label} › ${s.label}` : s.label;
+}
+
+/** A section and its subsections: what opening it shows, and what its count counts. */
+export const keysUnder = (sections: SopSection[], key: string) => [key, ...sections.filter(s => s.parentKey === key).map(s => s.key)];
 
 export interface Sop {
   id: string;

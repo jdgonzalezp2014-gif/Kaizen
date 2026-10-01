@@ -1592,3 +1592,10 @@ button.sop-num { cursor: pointer; }
 .sop-step-how { grid-column: 2 / -1; display: flex; flex-direction: column; gap: 2px; margin-bottom: 4px; }
 .sop-step-how textarea { margin: 0; width: 100%; font-family: inherit; font-size: 13px; line-height: 1.5; }
 .sop-step-how .link { align-self: flex-start; }
+/* §97: subsections — one level, indented under their section. */
+.sop-sections button.sub { padding-left: 22px; font-size: 12.5px; }
+.sop-sections button.sub .sop-sec-name > span { color: var(--muted); }
+.sop-sec-name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sop-up { font-size: 12px; margin-bottom: 2px; }
+.sop-subs { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.sop-subs .chip { display: inline-flex; gap: 6px; align-items: center; }

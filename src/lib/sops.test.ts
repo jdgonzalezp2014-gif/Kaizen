@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanSteps, contentChanged, coverage, FEATURES, featureOf, forFeature, inline, matchesSearch, parseBody,
+import { keysUnder, sectionPath, sectionTree, type SopSection, cleanSteps, contentChanged, coverage, FEATURES, featureOf, forFeature, inline, matchesSearch, parseBody,
          reviewDueOn, reviewOverdue, type Sop } from './sops.ts';
 
 const s = (over: Partial<Sop> = {}): Sop => ({
@@ -76,4 +76,18 @@ test('the body: headings, lists, paragraphs, bold and links — never HTML', () 
     { t: 'text', v: 'See ' }, { t: 'link', v: 'https://example.com/a', href: 'https://example.com/a' },
     { t: 'text', v: '. Then ' }, { t: 'bold', v: 'go' }]);
   assert.deepEqual(inline('http://not-https.com'), [{ t: 'text', v: 'http://not-https.com' }]);
+});
+
+test('subsections: one level, named with their section, counted with it', () => {
+  const secs: SopSection[] = [
+    { key: 'guest', label: 'Guest lifecycle', description: null, sort: 10 },
+    { key: 'claims', label: 'Claims', description: null, sort: 20 },
+    { key: 'checkin', label: 'Check-in', description: null, sort: 30, parentKey: 'guest' },
+    { key: 'orphan', label: 'Orphan', description: null, sort: 40, parentKey: 'gone' }
+  ];
+  assert.deepEqual(sectionTree(secs).map(t => [t.section.key, t.children.map(c => c.key)]),
+                   [['guest', ['checkin']], ['claims', []], ['orphan', []]]);
+  assert.equal(sectionPath(secs, 'checkin'), 'Guest lifecycle › Check-in');
+  assert.equal(sectionPath(secs, 'claims'), 'Claims');
+  assert.deepEqual(keysUnder(secs, 'guest'), ['guest', 'checkin']);
 });

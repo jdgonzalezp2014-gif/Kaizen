@@ -10,7 +10,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { sopAction } from '../api.ts';
 import { blankSop, SopEditor, SopRow, SopView, useSops } from '../components/Sops.tsx';
-import { coverage, matchesSearch, reviewOverdue, type Sop } from '../lib/sops.ts';
+import { coverage, keysUnder, matchesSearch, reviewOverdue, sectionPath, sectionTree, type Sop } from '../lib/sops.ts';
 import { todayIn } from '../lib/dates.ts';
 
 const ALL = '*';
@@ -23,7 +23,7 @@ export function Sops({ focus, onFocused }: { focus?: string; onFocused?: () => v
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Sop | null>(null);
   const [removed, setRemoved] = useState<Sop | null>(null);
-  const [secEdit, setSecEdit] = useState<{ key?: string; label: string; description: string } | null>(null);
+  const [secEdit, setSecEdit] = useState<{ key?: string; label: string; description: string; parentKey?: string } | null>(null);
   const [secErr, setSecErr] = useState('');
   const [onlyDue, setOnlyDue] = useState(false);
 
@@ -39,19 +39,21 @@ export function Sops({ focus, onFocused }: { focus?: string; onFocused?: () => v
     drafts: sops.filter(s => s.status === 'draft').length,
     overdue: sops.filter(s => reviewOverdue(s, today)).length
   }), [sops, today]);
-  const countIn = (key: string) => sops.filter(s => s.sectionKey === key && s.status !== 'archived').length;
-  const list = sops.filter(s => (section === ALL || s.sectionKey === section) && matchesSearch(s, q)
+  // A section counts — and shows — its subsections too (§97).
+  const countIn = (key: string) => { const ks = keysUnder(sections, key); return sops.filter(s => ks.includes(s.sectionKey) && s.status !== 'archived').length; };
+  const inSection = section === ALL ? null : keysUnder(sections, section);
+  const list = sops.filter(s => (!inSection || inSection.includes(s.sectionKey)) && matchesSearch(s, q)
     && (!onlyDue || reviewOverdue(s, today)))
     // Needs attention first: overdue, then drafts; archived last.
     .sort((a, b) => rank(a, today) - rank(b, today) || a.title.localeCompare(b.title));
   const open = sops.find(s => s.id === openId) ?? null;
-  const sectionLabel = (k: string) => sections.find(s => s.key === k)?.label ?? k;
+  const sectionLabel = (k: string) => sectionPath(sections, k);
   const current = sections.find(s => s.key === section);
 
   const saveSection = async () => {
     if (!secEdit) return;
     setSecErr('');
-    const r = await sopAction({ action: 'section', key: secEdit.key, label: secEdit.label, description: secEdit.description });
+    const r = await sopAction({ action: 'section', key: secEdit.key, label: secEdit.label, description: secEdit.description, parentKey: secEdit.parentKey });
     if (!r.ok) { setSecErr(r.error ?? 'Not saved.'); return; }
     setSecEdit(null); await reload(); if (r.key) setSection(r.key);
   };
@@ -99,19 +101,20 @@ export function Sops({ focus, onFocused }: { focus?: string; onFocused?: () => v
           <nav className="sop-sections" aria-label="Sections">
             <button className={section === ALL ? 'on' : ''} onClick={() => { setSection(ALL); setOpenId(null); setEditing(null); }}>
               All <span className="sop-count">{sops.filter(s => s.status !== 'archived').length}</span></button>
-            {sections.map(s => (
-              <button key={s.key} className={section === s.key ? 'on' : ''} title={s.description ?? ''}
+            {sectionTree(sections).map(({ section: x, children }) => [x, ...children].map(s => (
+              <button key={s.key} className={`${section === s.key ? 'on' : ''} ${s.parentKey ? 'sub' : ''}`} title={s.description ?? ''}
                       onClick={() => { setSection(s.key); setOpenId(null); setEditing(null); }}>
-                {s.label} <span className={`sop-count ${countIn(s.key) ? '' : 'zero'}`}>{countIn(s.key)}</span>
+                <span className="sop-sec-name">{s.parentKey && <span aria-hidden="true">↳ </span>}{s.label}</span>
+                <span className={`sop-count ${countIn(s.key) ? '' : 'zero'}`}>{countIn(s.key)}</span>
               </button>
-            ))}
+            )))}
             {canEdit && <button className="sop-add-section" onClick={() => setSecEdit({ label: '', description: '' })}>+ Add section</button>}
           </nav>
 
           <div className="sop-main">
             {secEdit && (
               <div className="card sop-secform">
-                <h3>{secEdit.key ? 'Rename section' : 'New section'}</h3>
+                <h3>{secEdit.key ? 'Rename' : secEdit.parentKey ? `New subsection in ${sectionLabel(secEdit.parentKey)}` : 'New section'}</h3>
                 <label>Name<input value={secEdit.label} autoFocus maxLength={80} onChange={e => setSecEdit({ ...secEdit, label: e.target.value })} /></label>
                 <label>What it covers<input value={secEdit.description} maxLength={300} onChange={e => setSecEdit({ ...secEdit, description: e.target.value })} /></label>
                 {secErr && <p className="banner error">{secErr}</p>}
@@ -138,12 +141,24 @@ export function Sops({ focus, onFocused }: { focus?: string; onFocused?: () => v
               <>
                 {current && (
                   <div className="sop-sechead">
-                    <div><h3>{current.label}</h3>{current.description && <p className="note">{current.description}</p>}</div>
+                    <div>
+                      {current.parentKey && <button className="link sop-up" onClick={() => setSection(current.parentKey!)}>← {sectionLabel(current.parentKey)}</button>}
+                      <h3>{current.label}</h3>{current.description && <p className="note">{current.description}</p>}
+                      {!current.parentKey && sections.some(x => x.parentKey === current.key) && (
+                        <div className="sop-subs">
+                          {sections.filter(x => x.parentKey === current.key).map(x => (
+                            <button key={x.key} className="chip" onClick={() => setSection(x.key)}>{x.label} <span className="sop-count">{countIn(x.key)}</span></button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                     {canEdit && (
                       <span className="sop-sectools">
                         <button className="link" onClick={() => setSecEdit({ key: current.key, label: current.label, description: current.description ?? '' })}>Rename</button>
-                        {!countIn(current.key) && !sops.some(s => s.sectionKey === current.key) &&
-                          <button className="link danger" onClick={() => void removeSection(current.key)}>Remove section</button>}
+                        {/* One level: only a section holds subsections. */}
+                        {!current.parentKey && <button className="link" onClick={() => setSecEdit({ label: '', description: '', parentKey: current.key })}>+ Subsection</button>}
+                        {!sops.some(s => keysUnder(sections, current.key).includes(s.sectionKey)) && !sections.some(x => x.parentKey === current.key) &&
+                          <button className="link danger" onClick={() => void removeSection(current.key)}>Remove</button>}
                         <button className="small" onClick={() => startNew()}>+ New in {current.label}</button>
                       </span>
                     )}
@@ -152,7 +167,7 @@ export function Sops({ focus, onFocused }: { focus?: string; onFocused?: () => v
                 {secErr && !secEdit && <p className="banner error">{secErr}</p>}
                 {list.length ? (
                   <ul className="sop-list card">
-                    {list.map(s => <SopRow key={s.id} sop={s} section={section === ALL ? sectionLabel(s.sectionKey) : undefined}
+                    {list.map(s => <SopRow key={s.id} sop={s} section={section === ALL ? sectionLabel(s.sectionKey) : s.sectionKey !== section ? sections.find(x => x.key === s.sectionKey)?.label : undefined}
                                            onOpen={() => setOpenId(s.id)} />)}
                   </ul>
                 ) : (

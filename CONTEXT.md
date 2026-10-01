@@ -2933,3 +2933,18 @@ expandable.
   when" check. Ticks are the reader's own for that run — nothing saved.
 - The check-in readiness draft got details on five of its steps (v2),
   as the first example.
+
+## 97. SOP subsections
+
+The owner (2026-10-01): subsections in the SOP library.
+
+- A section can hold **subsections** — one level only (a subsection cannot
+  hold its own), so the library stays a list you can scan
+  (`sop_sections.parent_key`, migration 044).
+- A section's count includes its subsections, and opening it shows every
+  SOP in it and in them (each row names its subsection); its subsections
+  are chips at the top. A subsection names itself "Section › Subsection"
+  wherever an SOP's place is shown, and links back up.
+- Editors: "+ Subsection" on a section; the editor's section picker lists
+  subsections under their section. A section is removed only when it has
+  no SOPs and no subsections (the API refuses otherwise).

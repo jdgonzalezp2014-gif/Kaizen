@@ -8,7 +8,7 @@
  */
 import { useEffect, useState, type ReactNode } from 'react';
 import { getSops, getSopVersions, sopAction, type SopsResult } from '../api.ts';
-import { FEATURES, featureLabel, forFeature, parseBody, reviewDueOn, reviewOverdue, type Inline, type Sop, type SopSection,
+import { FEATURES, featureLabel, forFeature, sectionPath, sectionTree, parseBody, reviewDueOn, reviewOverdue, type Inline, type Sop, type SopSection,
          type SopStep, type SopVersion } from '../lib/sops.ts';
 import { todayIn } from '../lib/dates.ts';
 
@@ -67,7 +67,7 @@ export function SopView({ sop, sections, canEdit, onEdit, onChanged, onRemoved }
   const [old, setOld] = useState<SopVersion | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
-  const section = sections.find(s => s.key === sop.sectionKey)?.label ?? sop.sectionKey;
+  const section = sectionPath(sections, sop.sectionKey);
   const due = reviewDueOn(sop);
   const shown = old ? { ...sop, ...old.snapshot } : sop;
 
@@ -284,7 +284,10 @@ export function SopEditor({ initial, sections, onSaved, onCancel }: {
       <div className="sop-grid">
         <label>Section
           <select value={s.sectionKey} onChange={e => set('sectionKey', e.target.value)}>
-            {sections.map(x => <option key={x.key} value={x.key}>{x.label}</option>)}
+            {sectionTree(sections).flatMap(({ section: x, children }) => [
+              <option key={x.key} value={x.key}>{x.label}</option>,
+              ...children.map(c => <option key={c.key} value={c.key}>{'\u00a0\u00a0\u00a0↳ '}{c.label}</option>)
+            ])}
           </select>
         </label>
         <label>Owner <span className="sub-n">— who keeps it right</span>

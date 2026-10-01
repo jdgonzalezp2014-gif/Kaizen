@@ -8,8 +8,8 @@
  *                                          only when what it SAYS changed
  *   POST { action: 'review', id }          "still right": restarts the review clock
  *   POST { action: 'delete' | 'restore', id }
- *   POST { action: 'section', key?, label, description }   add or rename a section
- *   POST { action: 'sectionRemove', key }  only an empty section
+ *   POST { action: 'section', key?, label, description, parentKey? }   add (a subsection under parentKey) or rename
+ *   POST { action: 'sectionRemove', key }  only an empty section — no SOPs, no subsections
  *
  * Reading is its own permission (`sops`), writing another (`sops.edit`);
  * the middleware enforces GET vs POST, and drafts are filtered here.
@@ -54,7 +54,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const [sections, sops] = await Promise.all([
-    sql`SELECT key, label, description, sort FROM sop_sections WHERE account_id = 1 AND deleted_at IS NULL ORDER BY sort, label`,
+    sql`SELECT key, label, description, sort, parent_key AS "parentKey" FROM sop_sections WHERE account_id = 1 AND deleted_at IS NULL ORDER BY sort, label`,
     sql`SELECT * FROM sops WHERE account_id = 1 AND deleted_at IS NULL AND (${canEdit} OR status <> 'draft')
          ORDER BY section_key, (status = 'archived'), title`
   ]);
@@ -66,7 +66,7 @@ interface Body {
   sectionKey?: string; kind?: string; title?: string; status?: string;
   purpose?: string | null; trigger?: string | null; owner?: string | null; doneWhen?: string | null;
   steps?: unknown; body?: string | null; features?: unknown; reviewDays?: number;
-  key?: string; label?: string; description?: string | null;
+  key?: string; label?: string; description?: string | null; parentKey?: string | null;
 }
 const bad = (error: string, status = 400) => Response.json({ ok: false, error }, { status });
 const text = (v: unknown, max: number) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
@@ -87,19 +87,28 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
                               WHERE account_id = 1 AND key = ${b.key} AND deleted_at IS NULL RETURNING key`;
       return rows.length ? Response.json({ ok: true, key: b.key }) : bad('No such section.', 404);
     }
+    // A subsection sits under a top-level section: one level, never deeper (§97).
+    const parentKey = b.parentKey ? String(b.parentKey) : null;
+    if (parentKey) {
+      const [p] = await sql`SELECT parent_key FROM sop_sections WHERE account_id = 1 AND key = ${parentKey} AND deleted_at IS NULL` as { parent_key: string | null }[];
+      if (!p) return bad('No such section to put it under.', 404);
+      if (p.parent_key) return bad('A subsection cannot hold subsections of its own.');
+    }
     const base = label.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 34) || 'section';
     const taken = new Set((await sql`SELECT key FROM sop_sections WHERE account_id = 1`).map((r: any) => r.key)); // eslint-disable-line @typescript-eslint/no-explicit-any
     let key = base.length < 2 ? `${base}-s` : base;
     for (let n = 2; taken.has(key); n++) key = `${base}-${n}`;
-    await sql`INSERT INTO sop_sections (account_id, key, label, description, sort, created_by)
+    await sql`INSERT INTO sop_sections (account_id, key, label, description, sort, created_by, parent_key)
               VALUES (1, ${key}, ${label}, ${description},
-                      (SELECT COALESCE(max(sort), 0) + 10 FROM sop_sections WHERE account_id = 1), ${who.email})`;
+                      (SELECT COALESCE(max(sort), 0) + 10 FROM sop_sections WHERE account_id = 1), ${who.email}, ${parentKey})`;
     return Response.json({ ok: true, key });
   }
 
   if (b.action === 'sectionRemove') {
     const n = (await sql`SELECT count(*)::int AS n FROM sops WHERE account_id = 1 AND section_key = ${String(b.key ?? '')} AND deleted_at IS NULL` as { n: number }[])[0]?.n ?? 0;
     if (n) return bad(`Move or remove its ${n} SOP${n === 1 ? '' : 's'} first.`, 409);
+    const kids = (await sql`SELECT count(*)::int AS n FROM sop_sections WHERE account_id = 1 AND parent_key = ${String(b.key ?? '')} AND deleted_at IS NULL` as { n: number }[])[0]?.n ?? 0;
+    if (kids) return bad(`Remove its ${kids} subsection${kids === 1 ? '' : 's'} first.`, 409);
     await sql`UPDATE sop_sections SET deleted_at = now() WHERE account_id = 1 AND key = ${String(b.key ?? '')}`;
     return Response.json({ ok: true });
   }
