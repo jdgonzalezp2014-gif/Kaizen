@@ -14,7 +14,7 @@ import { decrypt } from '../_lib/crypto.ts';
 import { can } from '../_lib/roles.ts';
 import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { digestFacts } from '../_lib/slack-digest.ts';
-import { DEFAULT_DIGEST, digestMessage, dmTarget, dueDigests, esc } from '../../src/lib/slack.ts';
+import { DEFAULT_DIGEST, digestMessage, dmTarget, dueDigests, esc, helpUrlOf } from '../../src/lib/slack.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 
 const TZ = 'America/New_York';
@@ -47,7 +47,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     // Claimed first: two runs at once never send it twice.
     const claimed = await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`digest:${kind}:${today}`}) ON CONFLICT DO NOTHING RETURNING key`;
     if (!claimed.length) continue;
-    const r = await postTo(s, 'reservations', digestMessage(facts, kind, s.config.appUrl));
+    const r = await postTo(s, 'reservations', digestMessage(facts, kind, s.config.appUrl, helpUrlOf(s.config)));
     if (!r?.ok) await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${`digest:${kind}:${today}`}`;
     else out.push(kind);
   }

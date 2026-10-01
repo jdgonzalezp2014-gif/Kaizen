@@ -3063,3 +3063,30 @@ timeline later). All English.
 The manifest gained the shortcuts, the Messages tab and `im:write`: an app
 created from the older manifest is updated in Slack → App Manifest → paste →
 Save → Reinstall (the token stays).
+
+## 101. Cleans from Slack, and help that is an SOP
+
+The owner (2026-10-01): the reminder says "4 cleans" but they cannot be
+seen or managed; an SOP for using Kaizen in Slack, with help in Slack that
+shows it or leads to it; is there something better than /kaizen?
+
+- **🧹 Cleans** beside each day of the reminder, and `/kaizen cleans`
+  (`… tomorrow`, or a date): a pop-up with every checkout that day — time,
+  unit, beds, cleaner or "not assigned" / "no clean needed", same-day,
+  deep, set by hand — each with **Assign / Change** (if the member has
+  `operations.edit`). Change opens on top: a cleaner, "No clean needed", or
+  "Let the rule decide" (the turnover API's null); saving returns to the
+  list, refreshed, with a note. The board takes ~3.5 s and Slack waits 3:
+  the pop-up opens at once ("Reading the board…") and is filled with
+  views.update when the board is read (`cleansFor`, slack-digest.ts).
+- **The SOP "Kaizen in Slack"** (seed-sops.mjs, published, section Systems
+  & access, on Home / board / to-do / claims / Settings): eight steps with
+  detail — the reminder, fixing what is missing, the cleans, tasks, the
+  card, adding work and shortcuts, claims, direct messages. Its id is
+  `slack_config.helpSopId`.
+- **Help**: `/kaizen help` shows that SOP in Slack, step by step, with
+  "📘 Open the SOP in Kaizen"; the reminder carries "❓ How to use this".
+  Kaizen opens `/?sop=<id>` at that SOP in the library.
+- Better than typing /kaizen: buttons on what already arrives (done), and
+  next, the bot's **Home tab** — a standing dashboard of the day, the
+  cleans and one's own work (needs the Events API).

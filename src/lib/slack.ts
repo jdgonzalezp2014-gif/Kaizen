@@ -29,9 +29,14 @@ export interface SlackConfig {
   team?: string;
   /** Hostaway user id → Slack user id (§100): who a task's owner is in Slack, and who "Take it" makes the owner. */
   people?: Record<string, string>;
+  /** The SOP "Kaizen in Slack" (§101): what /kaizen help shows, and where "How to use this" leads. */
+  helpSopId?: string;
   /** Direct messages to people (§100). 'test' sends every one to `testUser` instead, saying who it was for. */
   dm?: { mode: 'off' | 'test' | 'on'; testUser?: string | null };
 }
+
+/** Where "❓ How to use this" leads: the SOP in Kaizen (§101). */
+export const helpUrlOf = (c: SlackConfig) => c.appUrl && c.helpSopId ? `${c.appUrl}/?sop=${encodeURIComponent(c.helpSopId)}` : undefined;
 
 /** Where a direct message for this Hostaway user goes — and whether it is a test stand-in. */
 export function dmTarget(c: SlackConfig, hostawayUserId: number | string | null | undefined): { to: string; standIn: boolean } | null {
@@ -193,7 +198,7 @@ export function missingFor(a: DigestInput['arrivals'][number], cleanOpen: boolea
  * Morning: the whole day, and tomorrow's gaps. Afternoon: what is still
  * missing for tomorrow, so it gets fixed before the end of the day.
  */
-export function digestMessage(d: DigestInput, kind: 'morning' | 'afternoon', appUrl?: string): { text: string; blocks: Block[]; missing: number } {
+export function digestMessage(d: DigestInput, kind: 'morning' | 'afternoon', appUrl?: string, helpUrl?: string): { text: string; blocks: Block[]; missing: number } {
   const days = kind === 'morning' ? [d.today, d.tomorrow] : [d.tomorrow];
   const blocks: Block[] = [section(kind === 'morning' ? `*☀ Today, ${day(d.today)}*` : `*🕒 Before tomorrow, ${day(d.tomorrow)}*`)];
   let missing = 0;
@@ -219,7 +224,9 @@ export function digestMessage(d: DigestInput, kind: 'morning' | 'afternoon', app
       todo.push(section(`▲ *${esc(o.unit)}* checkout ${esc(o.time)} — _clean not assigned_`, o.resId ? cleanButton(o.resId, o.unit, date) : undefined));
     }
     const cleans = outs.length ? `${outs.length} clean${outs.length === 1 ? '' : 's'}${outs.some(o => o.sameDay) ? ` · ${outs.filter(o => o.sameDay).length} same-day` : ''}` : 'no cleans';
-    blocks.push(section(`*${label}* · ${ins.length} check-in${ins.length === 1 ? '' : 's'} · ${cleans}${ok.length ? '\n' + ok.join('\n') : ''}`));
+    // §101: the day's cleans, seen and changed in a pop-up.
+    blocks.push(section(`*${label}* · ${ins.length} check-in${ins.length === 1 ? '' : 's'} · ${cleans}${ok.length ? '\n' + ok.join('\n') : ''}`,
+      outs.length || d.departures.some(o => o.date === date) ? { type: 'button', text: plain('🧹 Cleans'), action_id: 'cleans_open', value: date } : undefined));
     blocks.push(...todo);
   }
   if (kind === 'morning') {
@@ -233,7 +240,8 @@ export function digestMessage(d: DigestInput, kind: 'morning' | 'afternoon', app
       blocks.push(section(`*Open claims* · ${d.claims.length}\n` + d.claims.slice(0, 8).map(c => `${sevMark(c.severity)} ${esc(c.label)} · ${c.days}d`).join('\n')));
     }
   }
-  blocks.push(context(missing ? `▲ ${missing} thing${missing === 1 ? '' : 's'} missing` : '✓ Nothing missing', appUrl ? link(appUrl, 'Open Kaizen') : ''));
+  blocks.push(context(missing ? `▲ ${missing} thing${missing === 1 ? '' : 's'} missing` : '✓ Nothing missing', appUrl ? link(appUrl, 'Open Kaizen') : '',
+                      helpUrl ? link(helpUrl, '❓ How to use this') : ''));
   const head = kind === 'morning' ? `Today ${day(d.today)}` : `Before tomorrow ${day(d.tomorrow)}`;
   return { text: `${head}: ${missing ? `${missing} missing` : 'nothing missing'}`, blocks, missing };
 }
@@ -256,15 +264,61 @@ const cleanButton = (resId: string, unit: string, date: string): Block =>
   ({ type: 'button', text: plain('Assign cleaner'), action_id: 'clean_assign', value: JSON.stringify({ resId, unit, date }), style: 'primary' });
 
 /** "Assign cleaner" (§100): who cleans this checkout — or that none is needed. */
-export function cleanAssignModal(c: { resId: string; unit: string; date: string }, cleaners: string[]): Block {
+export function cleanAssignModal(c: { resId: string; unit: string; date: string; from?: 'cleans' }, cleaners: string[]): Block {
   return {
     type: 'modal', callback_id: 'clean_assign_save', private_metadata: JSON.stringify(c),
     title: plain('Assign cleaner'), submit: plain('Assign'), close: plain('Cancel'),
     blocks: [
       section(`*${esc(c.unit)}* · checkout ${day(c.date)}`),
-      input('cleaner', 'Cleaner', select([...cleaners.map(n => ({ value: n, label: n })), { value: '__not_needed', label: 'No clean needed' }]), false)
+      input('cleaner', 'Cleaner', select([...cleaners.map(n => ({ value: n, label: n })), { value: '__not_needed', label: 'No clean needed' },
+                                          { value: '__rule', label: 'Let the rule decide (automatic)' }]), false)
     ]
   };
+}
+
+/* ── a day's cleans (§101) ──────────────────────────────────────────── */
+
+export interface CleanRow {
+  resId: string; time: string; unit: string; beds: number | null; cleaner: string | null;
+  state: 'assigned' | 'open' | 'not_needed'; sameDay: boolean; deep: boolean; byHand: boolean;
+}
+
+/** A pop-up that is there at once — Slack waits 3 seconds, the board takes longer — and is filled when ready. */
+export const loadingModal = (title: string, callback = 'loading'): Block => ({
+  type: 'modal', callback_id: callback, title: plain(title), close: plain('Close'),
+  blocks: [section('⏳ Reading the board…')]
+});
+
+/** The day's cleans: who, when, what kind — each with "Change". */
+export function cleansModal(date: string, label: string, rows: CleanRow[], canEdit: boolean, note?: string): Block {
+  const open = rows.filter(r => r.state === 'open').length;
+  return {
+    type: 'modal', callback_id: 'cleans', private_metadata: JSON.stringify({ date }), title: plain(`Cleans · ${label}`), close: plain('Close'),
+    blocks: [
+      section(`*${day(date)}* · ${rows.filter(r => r.state !== 'not_needed').length} clean${rows.length === 1 ? '' : 's'}${open ? ` · ▲ ${open} not assigned` : ' · ✓ all assigned'}`),
+      ...(note ? [context(note)] : []),
+      { type: 'divider' },
+      ...(rows.length ? rows.map(r => section(
+        `${r.state === 'open' ? '▲' : r.state === 'not_needed' ? '○' : '✓'} *${esc(r.time)} · ${esc(r.unit)}*${r.beds ? ` ${r.beds}BR` : ''}\n` +
+        [r.state === 'assigned' ? esc(r.cleaner ?? '') : r.state === 'open' ? '_not assigned_' : '_no clean needed_',
+         r.sameDay ? '⚡ same-day' : '', r.deep ? 'deep clean' : '', r.byHand ? 'set by hand' : ''].filter(Boolean).join(' · '),
+        canEdit ? { type: 'button', text: plain(r.state === 'open' ? 'Assign' : 'Change'), action_id: 'clean_change',
+                    value: JSON.stringify({ resId: r.resId, unit: r.unit, date }), ...(r.state === 'open' ? { style: 'primary' } : {}) } : undefined
+      )) : [section('_No checkouts that day._')]),
+      context('Changes here are the board’s: in live mode Kaizen also updates the Host Note in Hostaway.')
+    ]
+  };
+}
+
+/** /kaizen help: the SOP "Kaizen in Slack", its steps and what each one opens to, with the way to the full page. */
+export function helpBlocks(sop: { title: string; purpose: string | null; steps: { text: string; detail?: string }[] } | null, url?: string): Block[] {
+  if (!sop) return [section(HELP)];
+  const blocks: Block[] = [section(`*📘 ${esc(sop.title)}*${sop.purpose ? `\n${esc(sop.purpose)}` : ''}`)];
+  sop.steps.slice(0, 12).forEach((st, i) => {
+    blocks.push(section(`*${i + 1}. ${esc(st.text)}*${st.detail ? `\n${esc(st.detail).replace(/\*\*/g, '*').slice(0, 900)}` : ''}`));
+  });
+  if (url) blocks.push({ type: 'actions', elements: [{ type: 'button', text: plain('📘 Open the SOP in Kaizen'), url, action_id: 'open_kaizen' }] });
+  return blocks;
 }
 
 /* ── the task card (§100) ───────────────────────────────────────────── */
@@ -330,13 +384,13 @@ export function cleanerMessage(name: string, cleans: { date: string; time: strin
 
 /* ── /kaizen ────────────────────────────────────────────────────────── */
 
-export type Verb = 'help' | 'tasks' | 'task' | 'repair' | 'claims' | 'claim' | 'today';
+export type Verb = 'help' | 'tasks' | 'task' | 'repair' | 'claims' | 'claim' | 'today' | 'cleans';
 export function parseCommand(text: string): { verb: Verb; arg: string } {
   const t = (text ?? '').trim();
   const [first = '', ...rest] = t.split(/\s+/);
   const v = first.toLowerCase();
   const map: Record<string, Verb> = { '': 'help', help: 'help', tasks: 'tasks', todos: 'tasks', list: 'tasks', task: 'task', todo: 'task', new: 'task',
-    repair: 'repair', claims: 'claims', claim: 'claim', today: 'today', digest: 'today' };
+    repair: 'repair', claims: 'claims', claim: 'claim', today: 'today', digest: 'today', cleans: 'cleans', cleanings: 'cleans', cleaning: 'cleans' };
   return map[v] ? { verb: map[v]!, arg: rest.join(' ') } : { verb: 'task', arg: t };
 }
 export const HELP = [
@@ -344,6 +398,7 @@ export const HELP = [
   '*/kaizen task Fix the AC* — a new to-do (a form opens)', '*/kaizen repair Leak under sink* — a new repair',
   '*/kaizen claims* — open claims (status, edit, remove)', '*/kaizen claim Missing fob* — a new claim',
   '*/kaizen today* — check-ins, cleans and what is missing, now',
+  '*/kaizen cleans* (or *cleans tomorrow*) — the day’s cleans, and change who cleans',
   '⚡ *Shortcuts* — New task · Report a repair · New claim from anywhere; *Create task from message* in any message’s ⋯ menu'
 ].join('\n');
 

@@ -20,7 +20,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { encrypt } from '../_lib/crypto.ts';
 import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { cleanerSchedule, digestFacts } from '../_lib/slack-digest.ts';
-import { cleanerMessage, digestMessage, suggestPeople, TOPICS, type SlackConfig, type Topic } from '../../src/lib/slack.ts';
+import { cleanerMessage, digestMessage, helpUrlOf, suggestPeople, TOPICS, type SlackConfig, type Topic } from '../../src/lib/slack.ts';
 
 const bad = (error: string, status = 400) => Response.json({ ok: false, error }, { status });
 
@@ -116,7 +116,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (b.action === 'digestNow') {
     if (!s.config.channels?.reservations) return bad('Pick a channel for Reservations first.');
     const m = digestMessage(await digestFacts(sql, await getCredentials(sql, env.ENCRYPTION_KEY), env.ENCRYPTION_KEY),
-                            b.kind === 'afternoon' ? 'afternoon' : 'morning', s.config.appUrl);
+                            b.kind === 'afternoon' ? 'afternoon' : 'morning', s.config.appUrl, helpUrlOf(s.config));
     const r = await postTo(s, 'reservations', m);
     return r?.ok ? Response.json({ ok: true, missing: m.missing }) : bad(`Slack said: ${r?.error}`);
   }

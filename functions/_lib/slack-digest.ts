@@ -11,7 +11,7 @@ import type { HostawayCredentials } from './hostaway.ts';
 import { loadOps } from './ops.ts';
 import { driveToken } from './gdrive.ts';
 import { docsStatus } from './guest-docs.ts';
-import type { DigestInput } from '../../src/lib/slack.ts';
+import type { CleanRow, DigestInput } from '../../src/lib/slack.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
 
 const TZ = 'America/New_York';
@@ -65,4 +65,17 @@ export async function cleanerSchedule(sql: SqlFn, creds: HostawayCredentials, na
   const s = await loadOps(sql, creds, { days, cleaningsCsvUrl: account?.cleaningsCsvUrl ?? null, refreshSheet: false });
   return s.rows.filter(r => r.kind === 'out' && r.assignment === 'assigned' && (r.cleaner ?? '').toLowerCase() === name.toLowerCase())
     .map(r => ({ date: r.date, time: r.time, unit: r.unit, beds: r.beds, deep: r.deep, sameDay: r.urgency === 'turnover', note: r.note || null }));
+}
+
+/** A day's cleans from the board (§101): who, when, what kind — for the Cleans pop-up. */
+export async function cleansFor(sql: SqlFn, creds: HostawayCredentials, date: string): Promise<CleanRow[]> {
+  const account = await getAccount(sql);
+  const today = todayIn(TZ);
+  const days = Math.max(1, Math.round((Date.parse(date) - Date.parse(today)) / 864e5) + 1);
+  const s = await loadOps(sql, creds, { days: Math.min(days, 14), cleaningsCsvUrl: account?.cleaningsCsvUrl ?? null, refreshSheet: false });
+  return s.rows.filter(r => r.kind === 'out' && r.date === date).map(r => ({
+    resId: r.resId, time: r.time, unit: r.unit, beds: r.beds, cleaner: r.cleaner,
+    state: r.assignment === 'assigned' ? 'assigned' as const : r.assignment === 'not_needed' ? 'not_needed' as const : 'open' as const,
+    sameDay: r.urgency === 'turnover', deep: r.deep, byHand: !!r.manual?.cleaner
+  }));
 }

@@ -5,15 +5,47 @@
  *   node --env-file=.env.local scripts/seed-sops.mjs [--dry]
  *
  * Idempotent: an SOP whose title already exists is left alone. Everything
- * goes in as a DRAFT — readers see none of it until someone publishes it.
+ * goes in as a DRAFT — readers see none of it until someone publishes it —
+ * except what is marked published (the Slack help, which Slack shows).
  */
 import { neon } from '@neondatabase/serverless';
 
 const dry = process.argv.includes('--dry');
 const sql = neon(process.env.DATABASE_URL);
-const BY = 'kaizen-os (starter draft)';
+const BY = 'kaizen-os';
 
 const SOPS = [
+  {
+    // §101: published from the start — /kaizen help shows it, so it must be readable by everyone.
+    section: 'systems', status: 'published', title: 'Kaizen in Slack',
+    features: ['home', 'operations.board', 'operations.todos', 'claims', 'settings'],
+    purpose: 'Work Kaizen from Slack: see the day, fix what is missing, and manage tasks, cleans and claims without opening the app.',
+    trigger: 'Whenever a Kaizen message arrives in Slack, or you need to add or update work on the go.',
+    owner: 'Operations',
+    steps: [
+      { text: 'Read the reminder in the reservations channel.', who: 'Ops',
+        detail: '- **Morning (8 AM)**: today and tomorrow. **Afternoon (3 PM)**: only what is still missing for tomorrow.\n- ✓ means ready; ▲ means something is missing, with its fix beside it.' },
+      { text: 'Fix what is missing, from the button beside it.', who: 'Ops',
+        detail: '- **Assign cleaner**: pick the cleaner, *No clean needed*, or *Let the rule decide*.\n- **↗ Hostaway**: opens the reservation, to send the guest portal link again (agreement or ID).\n- These are real changes: in live mode Kaizen also updates the Host Note in Hostaway.' },
+      { text: 'See and change the day’s cleans: 🧹 Cleans, or /kaizen cleans.', who: 'Ops',
+        detail: '- Every checkout that day: time, unit, cleaner, same-day, deep clean.\n- **Assign** or **Change** on any row; the list refreshes after saving.\n- /kaizen cleans tomorrow for the next day.' },
+      { text: 'See the open work: /kaizen tasks.', who: 'Everyone',
+        detail: '- Each task has a ⋯ menu: **Open**, Complete, Start, Edit, Remove (with Undo).' },
+      { text: 'Work a task in its card: 📋 Open.', who: 'Owner',
+        detail: '- Status, owner, dates, sub-tasks and the latest updates in one place.\n- **Complete**, **Start**, **🙋 Take it** (you become the owner), **Edit**.\n- Write in *Add an update* and press it: it is saved on the task’s timeline.' },
+      { text: 'Add work: /kaizen task …, /kaizen repair …, or the ⚡ shortcuts.', who: 'Everyone',
+        detail: '- ⚡ **New task**, **Report a repair**, **New claim** from anywhere in Slack.\n- On any message: ⋯ → **Create task from message** — the text and a link come with it, and the thread is told it is tracked.' },
+      { text: 'Manage claims: /kaizen claims and /kaizen claim ….', who: 'Ops',
+        detail: '- Change the status from the menu or the message; **Edit** opens the form; **Remove** has Undo.' },
+      { text: 'Answer what comes to you directly.', who: 'Owner',
+        detail: '- A task assigned to you arrives in your Slack messages, with its buttons.\n- Each morning you get your overdue tasks.' }
+    ],
+    doneWhen: 'The reminder says ✓ Nothing missing, and your tasks show where they really stand.',
+    body: `## Good to know
+- You act as yourself: Kaizen matches your Slack email to your Kaizen account, with your role's permissions.
+- Everything done in Slack is the same as in Kaizen — the same timeline, the same Hostaway sync.
+- /kaizen help shows this SOP in Slack; "❓ How to use this" on the reminder opens it in Kaizen.`
+  },
   {
     section: 'compliance', title: 'Check-in readiness: signed agreement and guest ID',
     features: ['home', 'operations.board'],
@@ -150,12 +182,13 @@ for (const s of SOPS) {
   if (dry) continue;
   const [row] = await sql`
     INSERT INTO sops (account_id, section_key, kind, title, status, purpose, trigger, owner, done_when, steps, body, features,
-                      created_by, updated_by)
-    VALUES (1, ${s.section}, ${kind}, ${s.title}, 'draft', ${content.purpose}, ${content.trigger}, ${content.owner},
-            ${content.doneWhen}, ${JSON.stringify(content.steps)}::jsonb, ${content.body}, ${s.features}::text[], ${BY}, ${BY})
+                      created_by, updated_by, reviewed_at, reviewed_by)
+    VALUES (1, ${s.section}, ${kind}, ${s.title}, ${s.status ?? 'draft'}, ${content.purpose}, ${content.trigger}, ${content.owner},
+            ${content.doneWhen}, ${JSON.stringify(content.steps)}::jsonb, ${content.body}, ${s.features}::text[], ${BY}, ${BY},
+            ${s.status === 'published' ? new Date().toISOString() : null}, ${s.status === 'published' ? BY : null})
     RETURNING id`;
   await sql`INSERT INTO sop_versions (account_id, sop_id, version, snapshot, note, edited_by)
             VALUES (1, ${row.id}, 1, ${JSON.stringify(content)}::jsonb, 'Starter draft, from how Kaizen OS works', ${BY})`;
   added++;
 }
-console.log(dry ? 'Dry run — nothing written.' : `${added} draft(s) added.`);
+console.log(dry ? 'Dry run — nothing written.' : `${added} SOP(s) added.`);

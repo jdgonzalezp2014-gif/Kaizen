@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -131,4 +131,41 @@ test('the task card: facts, buttons, sub-tasks, latest updates, a box to add one
   assert.equal(v.title.text, 'Repair');
   assert.equal(v.callback_id, 'task_card');
   for (const k of ['card_complete', 'card_start', 'card_take', 'card_edit', 'Sub-tasks', '1/2', 'Vendor booked', '~$120.00 estimated', '✓ Started', '"block_id":"update"']) assert.ok(s.includes(k), k);
+});
+
+test('/kaizen cleans, and the reminder opens each day’s cleans', () => {
+  assert.deepEqual(parseCommand('cleans tomorrow'), { verb: 'cleans', arg: 'tomorrow' });
+  const s = JSON.stringify(digestMessage(D, 'morning', 'https://k.example', 'https://k.example/?sop=9').blocks);
+  assert.match(s, /"action_id":"cleans_open","value":"2026-10-01"/);
+  assert.match(s, /"action_id":"cleans_open","value":"2026-10-02"/);
+  assert.match(s, /k\.example\/\?sop=9\|❓ How to use this/);
+  assert.equal(helpUrlOf({ appUrl: 'https://k.example', helpSopId: '9' }), 'https://k.example/?sop=9');
+  assert.equal(helpUrlOf({ appUrl: 'https://k.example' }), undefined);
+});
+
+test('the cleans pop-up: each clean with its state, and Assign / Change when allowed', () => {
+  const rows = [
+    { resId: 'O1', time: '10:00 AM', unit: 'CL1250', beds: 1, cleaner: 'Michelle', state: 'assigned' as const, sameDay: true, deep: false, byHand: true },
+    { resId: 'O2', time: '10:00 AM', unit: 'Quest', beds: 3, cleaner: null, state: 'open' as const, sameDay: false, deep: true, byHand: false },
+    { resId: 'O3', time: '11:00 AM', unit: 'Napa', beds: 4, cleaner: null, state: 'not_needed' as const, sameDay: false, deep: false, byHand: false }
+  ];
+  const v = cleansModal('2026-10-01', 'Today', rows, true, '✓ Quest: Veronica') as { title: { text: string }; blocks: unknown[] };
+  const s = JSON.stringify(v.blocks);
+  assert.equal(v.title.text, 'Cleans · Today');
+  assert.match(s, /2 cleans · ▲ 1 not assigned/);
+  assert.match(s, /Michelle · ⚡ same-day · set by hand/);
+  assert.match(s, /_not assigned_ · deep clean/);
+  assert.match(s, /"text":"Assign"/);
+  assert.match(s, /✓ Quest: Veronica/);
+  assert.doesNotMatch(JSON.stringify((cleansModal('2026-10-01', 'Today', rows, false) as { blocks: unknown[] }).blocks), /clean_change/);
+  assert.match(JSON.stringify((cleanAssignModal({ resId: 'O2', unit: 'Quest', date: '2026-10-01' }, ['V']) as { blocks: unknown[] }).blocks), /Let the rule decide/);
+});
+
+test('help is the SOP, step by step, with the way to it', () => {
+  const b = JSON.stringify(helpBlocks({ title: 'Kaizen in Slack', purpose: 'Work from Slack', steps: [{ text: 'Read the reminder', detail: '**Morning**: today' }] }, 'https://k/?sop=9'));
+  assert.match(b, /📘 Kaizen in Slack/);
+  assert.match(b, /1\. Read the reminder/);
+  assert.match(b, /\*Morning\*: today/);
+  assert.match(b, /Open the SOP in Kaizen/);
+  assert.match(JSON.stringify(helpBlocks(null)), /kaizen tasks/);
 });

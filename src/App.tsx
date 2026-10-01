@@ -68,6 +68,13 @@ export function App() {
         // day at a glance, cut to what their role can see.
         // Back from Google's consent screen (§72): straight to Settings, where it reports.
         const back = new URLSearchParams(location.search).has('drive') && tabs.includes('settings') ? 'settings' : null;
+        // A link to one SOP (§101 — "How to use this" in Slack): straight to it in the library.
+        const sop = new URLSearchParams(location.search).get('sop');
+        if (sop && tabs.includes('sops')) {
+          setSopFocus(sop); setTab('sops');
+          history.replaceState(null, '', location.pathname);
+          return;
+        }
         setTab(prev => (prev && tabs.includes(prev)) ? prev : ((back ?? tabs[0]) as Tab));
       })
       .catch(e => {

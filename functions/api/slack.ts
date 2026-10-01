@@ -15,18 +15,19 @@ import { db, type Env } from '../_lib/db.ts';
 import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { mayAccess } from '../_lib/roles.ts';
 import { slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
-import { digestFacts } from '../_lib/slack-digest.ts';
+import { cleansFor, digestFacts } from '../_lib/slack-digest.ts';
 import * as todos from './todos.ts';
 import * as claims from './claims.ts';
 import {
-  claimList, claimMessage, claimModal, cleanAssignModal, digestMessage, HELP, hostawayUserOf, parseCommand, readClaimForm, readTaskForm,
-  taskCard, taskList, taskMessage, taskModal, type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
+  claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
+  parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal,
+  type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
 import * as turnover from './turnover.ts';
 import { opsConfig } from '../_lib/ops.ts';
 import { nyParts } from '../../src/lib/todos.ts';
 import { CLAIM_CATEGORIES, CLAIM_SOURCES } from '../../src/lib/claims.ts';
-import { todayIn } from '../../src/lib/dates.ts';
+import { addDays, todayIn } from '../../src/lib/dates.ts';
 
 type Ctx = Parameters<PagesFunction<Env>>[0];
 const json = (b: unknown) => Response.json(b);
@@ -180,6 +181,27 @@ class Kaizen {
     if (c) await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: taskCard(c, note) });
   }
 
+  /* ── a day's cleans (§101) ── */
+  /** Open at once ("Reading the board…"), fill when the board is read. */
+  private async openCleans(trigger: string, date: string): Promise<Response> {
+    if (!this.may('/api/operations', 'GET')) return this.deny('operations');
+    const r = await slackApi<{ view?: { id: string } }>(this.s.token!, 'views.open', { trigger_id: trigger, view: loadingModal('Cleans') });
+    if (!r.ok || !r.view) throw new Error(`Slack did not open the form (${r.error}).`);
+    this.ctx.waitUntil(this.fillCleans(r.view.id, date));
+    return ack();
+  }
+  private async fillCleans(viewId: string, date: string, note?: string) {
+    const today = todayIn('America/New_York');
+    const label = date === today ? 'Today' : date === addDays(today, 1) ? 'Tomorrow' : day(date);
+    try {
+      const rows = await cleansFor(this.sql, await getCredentials(this.sql, this.ctx.env.ENCRYPTION_KEY), date);
+      await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: cleansModal(date, label, rows, this.may('/api/turnover', 'POST'), note) });
+    } catch (e) {
+      await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: { ...(loadingModal('Cleans') as object),
+        blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `⚠ Could not read the board: ${e instanceof Error ? e.message : String(e)}` } }] } });
+    }
+  }
+
   /* ── shortcuts ⚡ and "Create task from message" (§100) ── */
   async shortcut(p: Record<string, any>): Promise<Response> { // eslint-disable-line @typescript-eslint/no-explicit-any
     const cb = String(p.callback_id ?? '');
@@ -209,7 +231,17 @@ class Kaizen {
   /* ── /kaizen ── */
   async command(text: string, trigger: string, responseUrl: string): Promise<Response> {
     const { verb, arg } = parseCommand(text);
-    if (verb === 'help') return ephemeral('Kaizen from Slack', [{ type: 'section', text: { type: 'mrkdwn', text: HELP } }]);
+    if (verb === 'help') {
+      // §101: the SOP "Kaizen in Slack", right here — and the way to it in Kaizen.
+      const [sop] = this.s.config.helpSopId ? await this.sql`SELECT title, purpose, steps FROM sops WHERE account_id = 1 AND id::text = ${this.s.config.helpSopId}
+                                                              AND deleted_at IS NULL AND status = 'published'` as { title: string; purpose: string | null; steps: { text: string; detail?: string }[] }[] : [];
+      return ephemeral('How to use Kaizen in Slack', [...helpBlocks(sop ?? null, helpUrlOf(this.s.config)),
+        { type: 'context', elements: [{ type: 'mrkdwn', text: HELP.split('\n').map(l => l.split(' — ')[0]).join(' · ') }] }]);
+    }
+    if (verb === 'cleans') {
+      const today = todayIn('America/New_York');
+      return await this.openCleans(trigger, /tomorrow|mañana/i.test(arg) ? addDays(today, 1) : /^\d{4}-\d{2}-\d{2}$/.test(arg.trim()) ? arg.trim() : today);
+    }
     if (verb === 'tasks') {
       if (!this.may('/api/todos', 'GET')) return this.deny('the to-do list');
       return ephemeral('Open work', taskList(await this.openTasks(), this.s.config.appUrl));
@@ -233,7 +265,7 @@ class Kaizen {
     this.ctx.waitUntil((async () => {
       try {
         const facts = await digestFacts(this.sql, await getCredentials(this.sql, this.ctx.env.ENCRYPTION_KEY), this.ctx.env.ENCRYPTION_KEY);
-        const m = digestMessage(facts, 'morning', this.s.config.appUrl);
+        const m = digestMessage(facts, 'morning', this.s.config.appUrl, helpUrlOf(this.s.config));
         await this.reply(responseUrl, { response_type: 'ephemeral', text: m.text, blocks: m.blocks });
       } catch (e) {
         await this.reply(responseUrl, { response_type: 'ephemeral', text: `Could not read the board: ${e instanceof Error ? e.message : String(e)}` });
@@ -280,6 +312,15 @@ class Kaizen {
       return ack();
     }
 
+    // §101: the reminder's "🧹 Cleans", and "Change" inside it (opened on top; saving returns to the refreshed list).
+    if (id === 'cleans_open') return await this.openCleans(p.trigger_id, value);
+    if (id === 'clean_change') {
+      if (!this.may('/api/turnover', 'POST')) return this.deny('operations');
+      const c = JSON.parse(value || '{}') as { resId: string; unit: string; date: string };
+      const cleaners = (await opsConfig(this.sql)).roster.filter(x => x.active).map(x => x.name);
+      await slackApi(this.s.token!, 'views.push', { trigger_id: p.trigger_id, view: cleanAssignModal({ ...c, from: 'cleans' }, cleaners) });
+      return ack();
+    }
     // §100: the reminder's "Assign cleaner".
     if (id === 'clean_assign') {
       if (!this.may('/api/turnover', 'POST')) return this.deny('operations');
@@ -368,11 +409,19 @@ class Kaizen {
     }
     if (view.callback_id === 'clean_assign_save') {
       if (!this.may('/api/turnover', 'POST')) return json({ response_action: 'errors', errors: { cleaner: 'Your role does not include operations.' } });
-      const m = JSON.parse(view.private_metadata || '{}') as { resId: string; unit: string; date: string };
+      const m = JSON.parse(view.private_metadata || '{}') as { resId: string; unit: string; date: string; from?: string };
       const pick = String(state.cleaner?.v?.selected_option?.value ?? '');
-      const set = pick === '__not_needed' ? { assignment: 'not_needed' } : { assignment: 'assigned', cleaner: pick };
+      // "Let the rule decide" hands both back to the rule (the turnover API's null).
+      const set = pick === '__not_needed' ? { assignment: 'not_needed' } : pick === '__rule' ? { assignment: null, cleaner: null } : { assignment: 'assigned', cleaner: pick };
       const r = await this.api(turnover.onRequestPost, '/api/turnover', 'POST', { resId: m.resId, set });
-      return r.ok ? json({ response_action: 'clear' }) : json({ response_action: 'errors', errors: { cleaner: String(r.message ?? r.error ?? 'Not saved.') } });
+      if (!r.ok) return json({ response_action: 'errors', errors: { cleaner: String(r.message ?? r.error ?? 'Not saved.') } });
+      // Opened from the Cleans list: back to it, refreshed (after the reply — reading the board takes longer than Slack waits).
+      if (m.from === 'cleans' && view.root_view_id) {
+        const said = pick === '__not_needed' ? 'no clean needed' : pick === '__rule' ? 'back to the rule' : pick;
+        this.ctx.waitUntil(this.fillCleans(view.root_view_id, m.date, `✓ ${m.unit}: ${said}`));
+        return ack();
+      }
+      return json({ response_action: 'clear' });
     }
     if (view.callback_id === 'task_save') {
       if (!this.may('/api/todos', 'POST')) return json({ response_action: 'errors', errors: { title: 'Your role does not include the to-do list.' } });
