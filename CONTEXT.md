@@ -2948,3 +2948,23 @@ The owner (2026-10-01): subsections in the SOP library.
 - Editors: "+ Subsection" on a section; the editor's section picker lists
   subsections under their section. A section is removed only when it has
   no SOPs and no subsections (the API refuses otherwise).
+
+## 98. The SOP panel beside the work
+
+The owner (2026-10-01): an open SOP blocked the screen — it should let you
+work. (Later, maybe: Step by step taking you to the screen a step is
+about. Not now.)
+
+- **No backdrop.** The panel is docked on the right on a wide screen and
+  the page makes room for it (`body.sop-docked` padding), so the steps and
+  the work sit side by side; at 980px and below it is a sheet over the
+  lower 58% with the page scrollable above. A click on the page never
+  closes it — only ✕, or Esc from inside it.
+- **It belongs to the app, not the screen** (`App` holds which screen's
+  SOPs are open): moving between tabs keeps it open, with its place —
+  "Open Home → Check-ins" can be done with the steps still there.
+- **Minimize** (▾ or the title): a bar bottom right; the content stays
+  mounted, so Step by step keeps its step.
+- The floating "SOPs for this screen" button hides while a panel is open.
+- `scripts/screenshot.mjs`: `VIEWPORT=1` captures the visible window —
+  the only way to see fixed panels and buttons where a person sees them.

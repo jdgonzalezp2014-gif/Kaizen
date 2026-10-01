@@ -385,66 +385,73 @@ export function SopEditor({ initial, sections, onSaved, onCancel }: {
   );
 }
 
-/* ── each screen's button ────────────────────────────────────────────── */
+/* ── each screen's button, and the panel it opens ──────────────────── */
 
 /**
  * "📘 SOPs for this screen · 2", floating bottom right: the procedures for
- * the screen someone is on, one tap away, without leaving it. Opens a side panel; the library
- * tab is one more tap.
+ * the screen someone is on, one tap away. It only opens the panel; the
+ * panel belongs to the app, so it stays open while they work (§98).
  */
-export function SopButton({ feature, canEdit, onLibrary }: {
-  feature: string; canEdit: boolean;
-  /** Open the library tab, optionally at one SOP. */
-  onLibrary: (sopId?: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const { data, reload } = useSops(true);
+export function SopButton({ feature, onOpen }: { feature: string; onOpen: () => void }) {
+  const { data } = useSops(true);
   const count = forFeature(data?.sops ?? [], feature).length;
   return (
-    <>
-      {/* Bottom right, over the screen (§96): within reach wherever the page is scrolled, and
-          not a second "SOPs" beside the library tab. */}
-      <button className={`sop-fab ${count ? '' : 'none'}`} onClick={() => { setOpen(true); void reload(); }}
-              title={`SOPs for ${featureLabel(feature)}`} aria-haspopup="dialog">
-        <span aria-hidden="true">📘</span><span className="sop-fab-word"> SOPs for this screen</span>
-        {count ? <span className="sop-count">{count}</span> : null}
-      </button>
-      {open && <SopDrawer feature={feature} canEdit={canEdit && !!data?.canEdit} data={data} reload={reload}
-                          onClose={() => setOpen(false)} onLibrary={id => { setOpen(false); onLibrary(id); }} />}
-    </>
+    <button className={`sop-fab ${count ? '' : 'none'}`} onClick={onOpen} title={`SOPs for ${featureLabel(feature)}`}>
+      <span aria-hidden="true">📘</span><span className="sop-fab-word"> SOPs for this screen</span>
+      {count ? <span className="sop-count">{count}</span> : null}
+    </button>
   );
 }
 
-function SopDrawer({ feature, canEdit, data, reload, onClose, onLibrary }: {
-  feature: string; canEdit: boolean; data: SopsResult | null; reload: () => Promise<void>;
-  onClose: () => void; onLibrary: (sopId?: string) => void;
+/**
+ * The SOPs for a screen, beside the work rather than over it (§98): docked
+ * on the right on a wide screen (the page makes room), a sheet over the
+ * lower part on a phone — never a backdrop, never closed by a click on the
+ * page. It stays open across screens ("Open Home → Check-ins" can be done
+ * with the steps still there), minimizes to a bar without losing the place
+ * in Step by step, and closes only with ✕ (or Esc from inside it).
+ */
+export function SopPanel({ feature, canEdit, onClose, onLibrary }: {
+  feature: string; canEdit: boolean; onClose: () => void; onLibrary: (sopId?: string) => void;
 }) {
+  const { data, reload } = useSops(true);
   const [openId, setOpenId] = useState<string | null>(null);
   const [editing, setEditing] = useState<Sop | null>(null);
+  const [min, setMin] = useState(false);
+  // The page makes room for the panel — and takes it back when it is minimized or closed.
   useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    addEventListener('keydown', esc);
-    return () => removeEventListener('keydown', esc);
-  }, []);
+    document.body.classList.toggle('sop-docked', !min);
+    document.body.classList.toggle('sop-docked-min', min);
+    return () => document.body.classList.remove('sop-docked', 'sop-docked-min');
+  }, [min]);
+  const canWrite = canEdit && !!data?.canEdit;
   const sections = data?.sections ?? [];
-  const list = forFeature(data?.sops ?? [], feature, canEdit);
+  const list = forFeature(data?.sops ?? [], feature, canWrite);
   const open = list.find(s => s.id === openId) ?? null;
   const defaultSection = FEATURES.find(f => f.key === feature)?.section ?? sections[0]?.key ?? 'guest';
 
   return (
-    <div className="sop-backdrop" onClick={onClose}>
-      <aside className="sop-drawer" role="dialog" aria-label={`SOPs for ${featureLabel(feature)}`} onClick={e => e.stopPropagation()}>
-        <div className="sop-drawer-head">
-          <div><span className="sop-kicker">📘 SOPs</span><h2>{featureLabel(feature)}</h2></div>
+    <aside className={`sop-drawer ${min ? 'is-min' : ''}`} aria-label={`SOPs for ${featureLabel(feature)}`}
+           onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
+      <div className="sop-drawer-head">
+        <button className="sop-drawer-title" onClick={() => setMin(!min)} aria-expanded={!min} title={min ? 'Open' : 'Minimize'}>
+          <span className="sop-kicker">📘 {open ? featureLabel(feature) : 'SOPs'}</span>
+          <span className="sop-drawer-name">{open ? open.title : featureLabel(feature)}</span>
+        </button>
+        <span className="sop-drawer-btns">
+          <button className="link sop-close" onClick={() => setMin(!min)} aria-label={min ? 'Open' : 'Minimize'}>{min ? '▴' : '▾'}</button>
           <button className="link sop-close" onClick={onClose} aria-label="Close">✕</button>
-        </div>
+        </span>
+      </div>
+      {/* Kept mounted while minimized, so Step by step keeps its place. */}
+      <div className="sop-drawer-body" hidden={min}>
         {editing ? (
           <SopEditor initial={editing} sections={sections} onCancel={() => setEditing(null)}
                      onSaved={s => { setEditing(null); setOpenId(s.id); void reload(); }} />
         ) : open ? (
           <>
             <button className="link sop-back" onClick={() => setOpenId(null)}>← All for this screen</button>
-            <SopView sop={open} sections={sections} canEdit={canEdit} onEdit={() => setEditing(open)}
+            <SopView sop={open} sections={sections} canEdit={canWrite} onEdit={() => setEditing(open)}
                      onChanged={() => void reload()} onRemoved={() => { setOpenId(null); void reload(); }} />
           </>
         ) : !data ? <p className="note loading-dot">Loading</p> : (
@@ -454,16 +461,16 @@ function SopDrawer({ feature, canEdit, data, reload, onClose, onLibrary }: {
                 {list.map(s => <SopRow key={s.id} sop={s} onOpen={() => setOpenId(s.id)} />)}
               </ul>
             ) : (
-              <p className="note">No procedure for this screen yet.{canEdit ? ' Write the first one — it will show here for everyone once published.' : ''}</p>
+              <p className="note">No procedure for this screen yet.{canWrite ? ' Write the first one — it will show here for everyone once published.' : ''}</p>
             )}
             <div className="sop-drawer-foot">
-              {canEdit && <button className="small" onClick={() => setEditing(blankSop(defaultSection, [feature]))}>+ New SOP for this screen</button>}
+              {canWrite && <button className="small" onClick={() => setEditing(blankSop(defaultSection, [feature]))}>+ New SOP for this screen</button>}
               <button className="link" onClick={() => onLibrary()}>Open the SOP library →</button>
             </div>
           </>
         )}
-      </aside>
-    </div>
+      </div>
+    </aside>
   );
 }
 

@@ -40,6 +40,7 @@ console.log(await ev(`[...document.querySelectorAll('body *')].filter(e => e.get
   .slice(0, 8).map(e => e.tagName + '.' + String(e.className || '').slice(0, 40)).join('\\n')`) || '(nothing wider than the viewport)');
 // PROBE='<js expression>' prints what it returns — for finding what forces a width.
 if (process.env.PROBE) console.log(await ev(process.env.PROBE));
-await metrics(Math.min(await ev('document.documentElement.scrollHeight'), 3000));
-const s = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: true });
+// VIEWPORT=1 captures what is on screen — the only way to see fixed panels and buttons where a person sees them.
+if (!process.env.VIEWPORT) await metrics(Math.min(await ev('document.documentElement.scrollHeight'), 3000));
+const s = await send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: !process.env.VIEWPORT });
 writeFileSync(out, Buffer.from(s.result.data, 'base64')); ws.close(); chrome.kill();

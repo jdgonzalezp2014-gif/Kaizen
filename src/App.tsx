@@ -8,7 +8,7 @@ import { Operations } from './screens/Operations.tsx';
 import { Repository } from './screens/Repository.tsx';
 import { Home } from './screens/Home.tsx';
 import { Sops } from './screens/Sops.tsx';
-import { SopButton } from './components/Sops.tsx';
+import { SopButton, SopPanel } from './components/Sops.tsx';
 import { featureOf } from './lib/sops.ts';
 import { getUnits, getSettings, can, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
@@ -44,6 +44,8 @@ export function App() {
   const [opsNow, setOpsNow] = useState<string | undefined>(undefined);
   /** An SOP to open when the library tab opens from a screen's SOPs panel. */
   const [sopFocus, setSopFocus] = useState<string | undefined>(undefined);
+  /** The screen whose SOPs are open beside the work (§98) — it stays open while they move around. */
+  const [sopPanel, setSopPanel] = useState<string | null>(null);
   // Fetched once at the top: three screens need the same unit list, and
   // three copies of it drift the moment one of them is stale.
   const [units, setUnits] = useState<UnitRow[]>([]);
@@ -133,10 +135,14 @@ export function App() {
       {tab === 'sops'     && <Sops focus={sopFocus} onFocused={() => setSopFocus(undefined)} />}
       {tab === 'settings' && <Settings />}
 
-      {/* The procedures for the screen someone is on (§92), floating bottom right (§96). */}
-      {tab && tab !== 'sops' && allowed?.includes('sops') && featureOf(tab, opsNow) && (
-        <SopButton key={featureOf(tab, opsNow)!} feature={featureOf(tab, opsNow)!} canEdit={can(permissions, 'sops.edit')}
-                   onLibrary={id => { setSopFocus(id); setTab('sops'); }} />
+      {/* The procedures for the screen someone is on (§92), floating bottom right (§96);
+          opened beside the work, not over it, and kept open across screens (§98). */}
+      {!sopPanel && tab && tab !== 'sops' && allowed?.includes('sops') && featureOf(tab, opsNow) && (
+        <SopButton key={featureOf(tab, opsNow)!} feature={featureOf(tab, opsNow)!} onOpen={() => setSopPanel(featureOf(tab, opsNow))} />
+      )}
+      {sopPanel && tab !== 'sops' && (
+        <SopPanel key={sopPanel} feature={sopPanel} canEdit={can(permissions, 'sops.edit')} onClose={() => setSopPanel(null)}
+                  onLibrary={id => { setSopPanel(null); setSopFocus(id); setTab('sops'); }} />
       )}
     </main>
   );
