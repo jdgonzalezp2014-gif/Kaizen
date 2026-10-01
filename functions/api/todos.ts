@@ -36,7 +36,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { can } from '../_lib/roles.ts';
 import { mirrorOn, people, pullAll, pushWork } from '../_lib/hostaway-tasks.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
-import { notifyTask, type TaskEvent } from '../_lib/slack.ts';
+import { notifyTask, tellOwner, type TaskEvent } from '../_lib/slack.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -179,6 +179,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const settle = (id: string) => settleRepair(sql, id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY));
   // §99: the news, in Slack's tasks channel — after the response, never failing the action.
   const tell = (id: string, ev: TaskEvent) => waitUntil(notifyTask(sql, env.ENCRYPTION_KEY, id, ev, who.email).catch(() => {}));
+  // §100: and its owner hears it directly.
+  const dm = (id: string) => waitUntil(tellOwner(sql, env.ENCRYPTION_KEY, id, who.email).catch(() => {}));
 
   // Each field: undefined = not being changed; null = cleared.
   const text = (v: unknown, max: number) => v === null ? null : typeof v === 'string' ? (v.trim().replace(/\s+/g, ' ').slice(0, max) || null) : undefined;
@@ -275,7 +277,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         `${targets.length > 1 ? ` (one of ${targets.length}, one per listing)` : ''}.`, who.email);
       if (f.parentId) await note(sql, 'task', f.parentId, 'change', `Sub-task added: ${f.title}`, who.email);
       if (f.claimId) await note(sql, 'claim', f.claimId, 'change', `${what} added: ${f.title}`, who.email);
-      if (!f.parentId) { mirror(String(row.id)); tell(String(row.id), 'created'); }
+      if (!f.parentId) { mirror(String(row.id)); tell(String(row.id), 'created'); if (f.assigneeUserId) dm(String(row.id)); }
       await settle(String(row.id));
     }
     return Response.json({ ok: true, id: ids[0], ids, todos: await list(sql, b.claimScope ? f.claimId ?? undefined : undefined) });
@@ -439,7 +441,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     if (CLOSED.includes(status)) tell(id, status === 'completed' ? 'completed' : 'cancelled');
     else if (CLOSED.includes(before.status)) tell(id, 'reopened');
   }
-  if (f.assigneeUserId !== undefined && (assigneeName ?? null) !== (before.assignee ?? null) && assigneeName) tell(id, 'assigned');
+  if (f.assigneeUserId !== undefined && (assigneeName ?? null) !== (before.assignee ?? null) && assigneeName) { tell(id, 'assigned'); dm(id); }
 
   return Response.json({ ok: true, todos: await list(sql, scope) });
 };

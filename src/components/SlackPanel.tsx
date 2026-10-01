@@ -20,11 +20,20 @@ function manifest(origin: string) {
     display_information: { name: 'Kaizen OS', description: 'Tasks, claims and the day’s reservations from Kaizen OS', background_color: '#1b2330' },
     features: {
       bot_user: { display_name: 'Kaizen', always_online: true },
+      // Direct messages to people (§100): the app's Messages tab.
+      app_home: { home_tab_enabled: false, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
       slash_commands: [{ command: '/kaizen', url: `${origin}/api/slack`, description: 'Tasks, claims and today’s check-ins',
-                         usage_hint: 'tasks · task Fix the AC · repair … · claims · claim … · today', should_escape: false }]
+                         usage_hint: 'tasks · task Fix the AC · repair … · claims · claim … · today', should_escape: false }],
+      // ⚡ from anywhere, and ⋯ on any message (§100).
+      shortcuts: [
+        { name: 'New task', type: 'global', callback_id: 'new_task', description: 'Add a to-do in Kaizen' },
+        { name: 'Report a repair', type: 'global', callback_id: 'new_repair', description: 'Add a repair in Kaizen' },
+        { name: 'New claim', type: 'global', callback_id: 'new_claim', description: 'Log a guest claim in Kaizen' },
+        { name: 'Create task from message', type: 'message', callback_id: 'task_from_message', description: 'Track this message as a Kaizen task' }
+      ]
     },
     oauth_config: { scopes: { bot: ['chat:write', 'chat:write.public', 'commands', 'channels:read', 'groups:read', 'channels:manage',
-                                    'groups:write', 'users:read', 'users:read.email'] } },
+                                    'groups:write', 'users:read', 'users:read.email', 'im:write'] } },
     settings: { interactivity: { is_enabled: true, request_url: `${origin}/api/slack` }, org_deploy_enabled: false,
                 socket_mode_enabled: false, token_rotation_enabled: false }
   }, null, 2);
@@ -75,6 +84,8 @@ export function SlackPanel() {
         <p className="note">At <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer">api.slack.com/apps</a> →
           <b> Create New App → From a manifest</b> → your workspace → paste this → Create → <b>Install to Workspace</b>.
           It already points /kaizen and the buttons at this Kaizen ({origin}).</p>
+        <p className="note"><b>Already have the app?</b> When this manifest changes (it did for shortcuts and direct messages): Slack → your app →
+          <b> App Manifest</b> → paste → Save → <b>Reinstall to Workspace</b>. The token stays the same.</p>
         <div className="button-row">
           <button className="secondary small" onClick={() => setShowManifest(!showManifest)}>{showManifest ? 'Hide' : 'Show'} the manifest</button>
           <button className="secondary small" onClick={() => void navigator.clipboard.writeText(manifest(origin)).then(() => setMsg({ ok: true, text: 'Manifest copied.' }))}>Copy the manifest</button>
@@ -146,6 +157,7 @@ export function SlackPanel() {
             and each reminder goes once a day at its hour. It needs two repository secrets on GitHub — <code>KAIZEN_URL</code> ({origin}) and
             <code>KAIZEN_INGEST_TOKEN</code> (the ingest token, above in Settings).</p>
 
+          <People busy={busy} run={run} onSaved={() => void load()} />
           <Cleaners cfg={cfg} busy={busy} run={run} onSaved={() => void load()} />
         </section>
       )}
@@ -165,7 +177,7 @@ function Cleaners({ cfg, busy, run, onSaved }: {
   useEffect(() => { void getOpsSettings().then(r => setNames(r.ok ? r.roster.filter(c => c.active).map(c => c.name) : [])).catch(() => setNames([])); }, []);
   return (
     <>
-      <h3>5 · Cleaners’ channels <span className="sub-n">— prepared: nothing is sent to them on a clock</span></h3>
+      <h3>6 · Cleaners’ channels <span className="sub-n">— prepared: nothing is sent to them on a clock</span></h3>
       <p className="note">Cleans change often and get moved by hand, so a cleaner’s channel only gets what someone sends with the button.
         Create the channel (private, <code>#cleaning-name</code>) and invite them with the email they use in Slack.</p>
       {names === null ? <p className="note loading-dot">Reading the roster</p> : (
@@ -190,6 +202,60 @@ function Cleaners({ cfg, busy, run, onSaved }: {
         </ul>
       )}
       {preview && <pre className="slack-preview">{preview.lines.join('\n\n')}</pre>}
+    </>
+  );
+}
+
+/**
+ * People (§100): each Hostaway user (owners and supervisors of tasks) is a
+ * person in Slack — the link decides who gets a task's direct message and
+ * who "Take it" makes the owner. Emails differ between the two, so the
+ * links are suggested (same email, else same name) and set here.
+ */
+function People({ busy, run, onSaved }: {
+  busy: boolean; onSaved: () => void;
+  run: (body: Record<string, unknown>, done: (r: Awaited<ReturnType<typeof slackAction>>) => string) => Promise<Awaited<ReturnType<typeof slackAction>>>;
+}) {
+  type P = { hostaway: { id: number; name: string; email: string | null }[]; slack: { id: string; name: string; email: string | null }[];
+             links: Record<string, string>; suggested: Record<string, string>; dm: { mode: 'off' | 'test' | 'on'; testUser?: string | null } };
+  const [p, setP] = useState<P | null>(null);
+  const [links, setLinks] = useState<Record<string, string>>({});
+  const [mode, setMode] = useState<'off' | 'test' | 'on'>('test');
+  const read = () => void run({ action: 'people' }, () => 'People read.').then(r => {
+    const x = r as unknown as P & { ok: boolean };
+    if (!x.ok) return;
+    setP(x); setMode(x.dm?.mode ?? 'test');
+    // Saved links win; suggestions fill the rest.
+    setLinks({ ...x.suggested, ...x.links });
+  });
+  const save = () => void run({ action: 'save', config: { people: links, dm: { mode } } }, () => 'People and direct messages saved.').then(onSaved);
+  return (
+    <>
+      <h3>5 · People and direct messages</h3>
+      <p className="note">A task’s owner hears it directly in Slack — when it is given to them, and each morning if it is overdue — and
+        <b> 🙋 Take it</b> makes whoever presses it the owner. For that, each Hostaway user is linked to their Slack account here.</p>
+      {!p ? <button className="secondary small" disabled={busy} onClick={read}>Read the people</button> : (
+        <>
+          <ul className="slack-cleaners">
+            {p.hostaway.map(h => (
+              <li key={h.id}>
+                <b>{h.name}</b><span className="sub-n">{h.email}</span>
+                <select value={links[String(h.id)] ?? ''} onChange={e => setLinks(l => { const n = { ...l }; if (e.target.value) n[String(h.id)] = e.target.value; else delete n[String(h.id)]; return n; })}>
+                  <option value="">Not in Slack</option>
+                  {p.slack.map(u => <option key={u.id} value={u.id}>{u.name}{u.email ? ` · ${u.email}` : ''}</option>)}
+                </select>
+                {!p.links[String(h.id)] && p.suggested[String(h.id)] && links[String(h.id)] === p.suggested[String(h.id)] && <span className="sub-n">suggested</span>}
+              </li>
+            ))}
+          </ul>
+          <div className="slack-dm" role="radiogroup" aria-label="Direct messages">
+            {([['test', 'Test — every direct message comes to me, saying whom it was for'], ['on', 'On — to the people linked above'], ['off', 'Off']] as const).map(([k, l]) => (
+              <label key={k} className="check"><input type="radio" name="dm" checked={mode === k} onChange={() => setMode(k)} /> {l}</label>
+            ))}
+          </div>
+          <div className="button-row"><button disabled={busy} onClick={save}>Save people</button></div>
+        </>
+      )}
     </>
   );
 }

@@ -19,9 +19,12 @@ import { digestFacts } from '../_lib/slack-digest.ts';
 import * as todos from './todos.ts';
 import * as claims from './claims.ts';
 import {
-  claimList, claimMessage, claimModal, digestMessage, HELP, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
-  type ClaimLite, type Opt, type TaskForm, type TaskLite
+  claimList, claimMessage, claimModal, cleanAssignModal, digestMessage, HELP, hostawayUserOf, parseCommand, readClaimForm, readTaskForm,
+  taskCard, taskList, taskMessage, taskModal, type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
+import * as turnover from './turnover.ts';
+import { opsConfig } from '../_lib/ops.ts';
+import { nyParts } from '../../src/lib/todos.ts';
 import { CLAIM_CATEGORIES, CLAIM_SOURCES } from '../../src/lib/claims.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 
@@ -48,10 +51,12 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       ? json({ response_action: 'errors', errors: { title: member.why } })
       : ephemeral(member.why);
   }
-  const k = new Kaizen(ctx, sql, s, member.email, member.permissions);
+  const k = new Kaizen(ctx, sql, s, member.email, member.permissions, slackUser);
   try {
     if (!payload) return await k.command(form.get('text') ?? '', form.get('trigger_id') ?? '', form.get('response_url') ?? '');
     if (payload.type === 'block_actions') return await k.action(payload);
+    if (payload.type === 'shortcut') return await k.shortcut(payload);
+    if (payload.type === 'message_action') return await k.fromMessage(payload);
     if (payload.type === 'view_submission') return await k.submit(payload);
     return ack();
   } catch (e) {
@@ -74,7 +79,7 @@ async function memberOf(sql: SqlFn, token: string, user: string):
 }
 
 class Kaizen {
-  constructor(private ctx: Ctx, private sql: SqlFn, private s: SlackSetup, private email: string, private perms: string[]) {}
+  constructor(private ctx: Ctx, private sql: SqlFn, private s: SlackSetup, private email: string, private perms: string[], private slackUser: string) {}
 
   private may(path: string, method: string) { return mayAccess(this.perms, path, method); }
   private deny(what: string) { return ephemeral(`Your Kaizen role does not include ${what}.`); }
@@ -144,6 +149,63 @@ class Kaizen {
       caseUrl: c.case_url ?? '', ...change });
   }
 
+  /* ── the task card (§100) ── */
+  private async card(id: string): Promise<TaskCard | null> {
+    const [t] = await this.sql`SELECT t.id::text, t.title, t.kind, t.status, t.priority, t.assignee, t.supervisor, t.due_on::text AS due_on,
+                                      t.scheduled_on::text AS scheduled_on, t.reservation_label, t.description, t.vendor, t.cost_actual,
+                                      t.cost_estimate, t.resolution_note, u.name AS unit
+                                 FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
+                                WHERE t.account_id = 1 AND t.id::text = ${id} AND t.deleted_at IS NULL` as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!t) return null;
+    const [kids, ups] = await Promise.all([
+      this.sql`SELECT title, status FROM todos WHERE account_id = 1 AND parent_id::text = ${id} AND deleted_at IS NULL ORDER BY created_at` as Promise<{ title: string; status: string }[]>,
+      this.sql`SELECT body, created_by, created_at FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id}
+                ORDER BY created_at DESC, id DESC LIMIT 3` as Promise<{ body: string; created_by: string | null; created_at: string }[]>
+    ]);
+    return { id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, supervisor: t.supervisor,
+      dueOn: t.due_on, scheduledOn: t.scheduled_on, reservationLabel: t.reservation_label, description: t.description, vendor: t.vendor,
+      costActual: t.cost_actual == null ? null : Number(t.cost_actual), costEstimate: t.cost_estimate == null ? null : Number(t.cost_estimate),
+      resolutionNote: t.resolution_note, unit: t.unit, children: kids,
+      updates: ups.reverse().map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
+  }
+  private async openCard(trigger: string, id: string) {
+    const c = await this.card(id);
+    if (!c) return ephemeral('That task is gone.');
+    await this.open(trigger, taskCard(c));
+    return ack();
+  }
+  /** The card again, after an action — in place. */
+  private async refreshCard(viewId: string, id: string, note?: string) {
+    const c = await this.card(id);
+    if (c) await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: taskCard(c, note) });
+  }
+
+  /* ── shortcuts ⚡ and "Create task from message" (§100) ── */
+  async shortcut(p: Record<string, any>): Promise<Response> { // eslint-disable-line @typescript-eslint/no-explicit-any
+    const cb = String(p.callback_id ?? '');
+    if (cb === 'new_claim') {
+      if (!this.may('/api/claims', 'POST')) return this.deny('claims');
+      await this.open(p.trigger_id, claimModal({ occurredOn: todayIn('America/New_York') }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES));
+      return ack();
+    }
+    if (!this.may('/api/todos', 'POST')) return this.deny('the to-do list');
+    await this.open(p.trigger_id, taskModal({ kind: cb === 'new_repair' ? 'work_order' : 'task' }, await this.units(), await this.people()));
+    return ack();
+  }
+  async fromMessage(p: Record<string, any>): Promise<Response> { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!this.may('/api/todos', 'POST')) return this.deny('the to-do list');
+    const text = String(p.message?.text ?? '').trim();
+    const channel = String(p.channel?.id ?? ''), ts = String(p.message?.ts ?? '');
+    const link = channel && ts ? await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel, message_ts: ts }) : null;
+    const first = text.split('\n')[0]!.replace(/<[^>]+>/g, '').trim();
+    await this.open(p.trigger_id, taskModal({
+      kind: 'task', title: first.slice(0, 120),
+      description: [text, link?.permalink ? `From Slack: ${link.permalink}` : ''].filter(Boolean).join('\n\n').slice(0, 3800),
+      ...(channel && ts ? { from: { channel, ts } } : {})
+    }, await this.units(), await this.people()));
+    return ack();
+  }
+
   /* ── /kaizen ── */
   async command(text: string, trigger: string, responseUrl: string): Promise<Response> {
     const { verb, arg } = parseCommand(text);
@@ -187,7 +249,45 @@ class Kaizen {
     const value: string = a.selected_option?.value ?? a.value ?? '';
     const url: string = p.response_url ?? '';
     const inChannel = p.container?.type === 'message' && !p.container?.is_ephemeral;
-    if (id === 'open_kaizen') return ack();
+    if (id === 'open_kaizen' || id.startsWith('open_hostaway_')) return ack();
+
+    // §100: the task card — opened from a message or a list, worked inside the pop-up.
+    if (id === 'task_open' || (id === 'task_menu' && value.startsWith('open:'))) {
+      if (!this.may('/api/todos', 'GET')) return this.deny('the to-do list');
+      return await this.openCard(p.trigger_id, id === 'task_open' ? value : value.slice(5));
+    }
+    if (id.startsWith('card_')) {
+      if (!this.may('/api/todos', 'POST')) return this.deny('the to-do list');
+      const viewId: string = p.view?.id ?? '';
+      if (id === 'card_edit') {
+        const f = await this.taskForm(value);
+        if (f) await slackApi(this.s.token!, 'views.push', { trigger_id: p.trigger_id, view: { ...(taskModal(f, await this.units(), await this.people()) as object),
+          private_metadata: JSON.stringify({ id: f.id, kind: f.kind, card: true }) } });
+        return ack();
+      }
+      let body: Record<string, unknown> | null = null, note = '';
+      if (id === 'card_complete') { body = { action: 'done', id: value, done: true }; note = '✓ Completed'; }
+      if (id === 'card_reopen') { body = { action: 'done', id: value, done: false }; note = '↺ Reopened'; }
+      if (id === 'card_start') { body = { action: 'update', id: value, status: 'in_progress' }; note = '▶ Started'; }
+      if (id === 'card_take') {
+        const mine = hostawayUserOf(this.s.config, this.slackUser);
+        if (!mine) { await this.refreshCard(viewId, value, '⚠ You are not linked to a Hostaway user yet (Settings → Slack → People), so Kaizen cannot make you the owner.'); return ack(); }
+        body = { action: 'update', id: value, assigneeUserId: Number(mine) }; note = '🙋 Yours now';
+      }
+      if (!body) return ack();
+      const r = await this.todo(body);
+      await this.refreshCard(viewId, value, r.ok ? note : `⚠ ${r.message ?? 'Not saved.'}`);
+      return ack();
+    }
+
+    // §100: the reminder's "Assign cleaner".
+    if (id === 'clean_assign') {
+      if (!this.may('/api/turnover', 'POST')) return this.deny('operations');
+      const c = JSON.parse(value || '{}') as { resId: string; unit: string; date: string };
+      const cleaners = (await opsConfig(this.sql)).roster.filter(x => x.active).map(x => x.name);
+      await this.open(p.trigger_id, cleanAssignModal(c, cleaners));
+      return ack();
+    }
 
     // Tasks
     const taskVerb = id === 'task_menu' ? value.split(':')[0] : id.replace('task_', '');
@@ -257,12 +357,38 @@ class Kaizen {
     const view = p.view ?? {};
     const meta = JSON.parse(view.private_metadata || '{}') as { id: string | null; kind?: string };
     const state = view.state?.values ?? {};
+    if (view.callback_id === 'task_card') {
+      // "Add update": the box at the bottom of the card; the card stays open with it in.
+      const body = String(state.update?.v?.value ?? '').trim();
+      if (!body) return json({ response_action: 'errors', errors: { update: 'Write something to add.' } });
+      const r = await this.todo({ action: 'note', id: meta.id, body });
+      if (!r.ok) return json({ response_action: 'errors', errors: { update: r.message ?? 'Not saved.' } });
+      const c = await this.card(String(meta.id));
+      return c ? json({ response_action: 'update', view: taskCard(c, '✓ Update added') }) : json({ response_action: 'clear' });
+    }
+    if (view.callback_id === 'clean_assign_save') {
+      if (!this.may('/api/turnover', 'POST')) return json({ response_action: 'errors', errors: { cleaner: 'Your role does not include operations.' } });
+      const m = JSON.parse(view.private_metadata || '{}') as { resId: string; unit: string; date: string };
+      const pick = String(state.cleaner?.v?.selected_option?.value ?? '');
+      const set = pick === '__not_needed' ? { assignment: 'not_needed' } : { assignment: 'assigned', cleaner: pick };
+      const r = await this.api(turnover.onRequestPost, '/api/turnover', 'POST', { resId: m.resId, set });
+      return r.ok ? json({ response_action: 'clear' }) : json({ response_action: 'errors', errors: { cleaner: String(r.message ?? r.error ?? 'Not saved.') } });
+    }
     if (view.callback_id === 'task_save') {
       if (!this.may('/api/todos', 'POST')) return json({ response_action: 'errors', errors: { title: 'Your role does not include the to-do list.' } });
-      const body = readTaskForm(state, { id: meta.id, kind: meta.kind ?? 'task' });
+      const m = meta as { id: string | null; kind?: string; card?: boolean; from?: { channel: string; ts: string } };
+      const body = readTaskForm(state, { id: m.id, kind: m.kind ?? 'task' });
       if (Number.isNaN(body.costActual)) return json({ response_action: 'errors', errors: { cost: 'A number, like 85 or 85.50.' } });
       const r = await this.todo(body);
-      return r.ok ? json({ response_action: 'clear' }) : json({ response_action: 'errors', errors: { title: r.message ?? 'Not saved.' } });
+      if (!r.ok) return json({ response_action: 'errors', errors: { title: r.message ?? 'Not saved.' } });
+      // Made from a message: the thread says it is tracked now.
+      if (m.from && r.id) {
+        this.ctx.waitUntil(slackApi(this.s.token!, 'chat.postMessage', { channel: m.from.channel, thread_ts: m.from.ts,
+          text: `📋 Tracked in Kaizen as a ${m.kind === 'work_order' ? 'repair' : 'task'}: *${String(body.title)}*` }).then(() => {}, () => {}));
+      }
+      // Edited on top of the card: back to the card, refreshed.
+      if (m.card && m.id && view.root_view_id) { await this.refreshCard(view.root_view_id, m.id, '✎ Saved'); return ack(); }
+      return json({ response_action: 'clear' });
     }
     if (view.callback_id === 'claim_save') {
       if (!this.may('/api/claims', 'POST')) return json({ response_action: 'errors', errors: { description: 'Your role does not include claims.' } });

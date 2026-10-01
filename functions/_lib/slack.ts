@@ -9,7 +9,7 @@
  */
 import type { SqlFn } from './accounts.ts';
 import { decrypt } from './crypto.ts';
-import { claimMessage, eventsOf, taskMessage, type ClaimLite, type SlackConfig, type TaskLite, type Topic } from '../../src/lib/slack.ts';
+import { claimMessage, dmTarget, eventsOf, taskMessage, type ClaimLite, type SlackConfig, type TaskLite, type Topic } from '../../src/lib/slack.ts';
 
 export interface SlackSetup { config: SlackConfig; token: string | null; secret: string | null }
 
@@ -93,6 +93,26 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
   if (p?.parent_id) return;
   const word = event === 'assigned' ? `assigned to ${t.assignee ?? 'nobody'}` : event === 'hostaway' ? `changed in Hostaway${extra ? ` (${extra})` : ''}` : event;
   await postTo(s, 'tasks', taskMessage(t, word, who(by), s.config.appUrl));
+}
+
+/**
+ * The owner hears it directly (§100): a task given to them — on creation
+ * or when assigned — comes to their Slack DMs, with the buttons. In test
+ * mode every one goes to the tester instead, saying whom it was for.
+ */
+export async function tellOwner(sql: SqlFn, key: string, id: string, by: string, lead = 'You were assigned'): Promise<void> {
+  const s = await slackSetup(sql, key);
+  if (!s.token) return;
+  const [r] = await sql`SELECT assignee_user_id, assignee, parent_id FROM todos WHERE account_id = 1 AND id::text = ${id}` as
+    { assignee_user_id: number | null; assignee: string | null; parent_id: string | null }[];
+  if (!r?.assignee_user_id || r.parent_id) return;
+  const target = dmTarget(s.config, r.assignee_user_id);
+  const t = await taskLite(sql, id);
+  if (!target || !t) return;
+  const m = taskMessage(t, 'for you', who(by), s.config.appUrl);
+  const head = target.standIn ? `🧪 Test — would go to *${r.assignee}*: ${lead.toLowerCase()}` : `👋 ${lead}`;
+  await slackApi(s.token, 'chat.postMessage', { channel: target.to, text: `${lead}: ${t.title}`,
+    blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: head }] }, ...m.blocks] });
 }
 
 export async function claimLite(sql: SqlFn, id: string): Promise<ClaimLite | null> {

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -18,13 +18,13 @@ test('what people typed is escaped for Slack', () => {
 const D: DigestInput = {
   today: '2026-10-01', tomorrow: '2026-10-02',
   arrivals: [
-    { date: '2026-10-01', time: '4:00 PM', unit: 'P2-4308', guest: 'Alicia', agreement: 'not_signed', needsId: true, idInDrive: false },
+    { resId: 'A1', date: '2026-10-01', time: '4:00 PM', unit: 'P2-4308', guest: 'Alicia', agreement: 'not_signed', needsId: true, idInDrive: false },
     { date: '2026-10-01', time: '4:00 PM', unit: 'CL1250', guest: 'Medardo', agreement: 'signed', needsId: false, idInDrive: null },
-    { date: '2026-10-02', time: '4:00 PM', unit: 'Concord', guest: 'Bryan', agreement: 'not_signed', needsId: false, idInDrive: null }
+    { resId: 'C1', date: '2026-10-02', time: '4:00 PM', unit: 'Concord', guest: 'Bryan', agreement: 'not_signed', needsId: false, idInDrive: null }
   ],
   departures: [
-    { date: '2026-10-01', time: '10:00 AM', unit: 'P2-4308', cleaner: null, assigned: false, notNeeded: false, sameDay: true },
-    { date: '2026-10-02', time: '10:00 AM', unit: 'Quest', cleaner: null, assigned: false, notNeeded: false, sameDay: false },
+    { resId: 'O1', date: '2026-10-01', time: '10:00 AM', unit: 'P2-4308', cleaner: null, assigned: false, notNeeded: false, sameDay: true },
+    { resId: 'O2', date: '2026-10-02', time: '10:00 AM', unit: 'Quest', cleaner: null, assigned: false, notNeeded: false, sameDay: false },
     { date: '2026-10-02', time: '10:00 AM', unit: 'Napa', cleaner: 'Veronica', assigned: true, notNeeded: false, sameDay: false }
   ],
   tasks: [{ title: 'Change the code', unit: 'P2-4304', overdue: true, dueToday: false, owner: null }],
@@ -90,4 +90,45 @@ test('forms read back as the API bodies', () => {
   assert.deepEqual(readClaimForm({ description: { v: { value: 'Fob' } }, severity: { v: { selected_option: { value: 'High' } } },
                                    occurred: { v: { selected_date: '2026-10-01' } } }),
     { description: 'Fob', unitId: null, occurredOn: '2026-10-01', category: null, severity: 'High', status: 'Open', source: null, caseUrl: '', refund: 0 });
+});
+
+test('the reminder puts the fix beside each missing thing', () => {
+  const s = JSON.stringify(digestMessage(D, 'morning').blocks);
+  // P2-4308's clean is open: the button assigns it (its checkout reservation).
+  assert.match(s, /"action_id":"clean_assign","value":"\{\\"resId\\":\\"O1\\"/);
+  // Concord is only unsigned: the button opens the reservation in Hostaway.
+  assert.match(s, /dashboard\.hostaway\.com\/reservations\/C1/);
+  // Quest's unassigned checkout gets its own button.
+  assert.match(s, /\\"resId\\":\\"O2\\"/);
+  const m = cleanAssignModal({ resId: 'O2', unit: 'Quest', date: '2026-10-02' }, ['Michelle', 'Veronica']) as { blocks: unknown[] };
+  assert.match(JSON.stringify(m.blocks), /No clean needed/);
+});
+
+test('direct messages: off, test (all to the tester, saying for whom), on (only linked people)', () => {
+  const people = { '1255725': 'UDEREK', '1074799': 'UJUAN' };
+  assert.equal(dmTarget({ people, dm: { mode: 'off' } }, 1255725), null);
+  assert.deepEqual(dmTarget({ people, dm: { mode: 'test', testUser: 'UJUAN' } }, 1255725), { to: 'UJUAN', standIn: true });
+  assert.deepEqual(dmTarget({ people, dm: { mode: 'test', testUser: 'UJUAN' } }, 1074799), { to: 'UJUAN', standIn: false });
+  assert.deepEqual(dmTarget({ people, dm: { mode: 'on' } }, 1255725), { to: 'UDEREK', standIn: false });
+  assert.equal(dmTarget({ people, dm: { mode: 'on' } }, 999), null);
+  // Default is test with no tester: nobody gets anything until it is set up.
+  assert.equal(dmTarget({ people }, 1255725), null);
+  assert.equal(hostawayUserOf({ people }, 'UJUAN'), '1074799');
+});
+
+test('people are suggested by email, else by full name', () => {
+  assert.deepEqual(suggestPeople(
+    [{ id: 1, name: 'Derek Cheung', email: 'derek@stayhikaru.com' }, { id: 2, name: 'Juan Gonzalez', email: 'j@x.com' }, { id: 3, name: 'Laura', email: 'l@x.com' }],
+    [{ id: 'UD', name: 'Derek Cheung', email: 'derek@kaizen.com' }, { id: 'UJ', name: 'Juan G', email: 'J@x.com' }]),
+    { 1: 'UD', 2: 'UJ' });
+});
+
+test('the task card: facts, buttons, sub-tasks, latest updates, a box to add one', () => {
+  const v = taskCard({ id: '7', title: 'Fix the AC', kind: 'work_order', status: 'pending', priority: 'high', unit: 'CL1125', assignee: 'Laura',
+    dueOn: '2026-10-03', costEstimate: 120, children: [{ title: 'Buy filter', status: 'completed' }, { title: 'Install', status: 'pending' }],
+    updates: [{ when: 'Oct 1, 9:00 AM', who: 'juan', body: 'Vendor booked' }] }, '✓ Started') as { title: { text: string }; callback_id: string; blocks: unknown[] };
+  const s = JSON.stringify(v.blocks);
+  assert.equal(v.title.text, 'Repair');
+  assert.equal(v.callback_id, 'task_card');
+  for (const k of ['card_complete', 'card_start', 'card_take', 'card_edit', 'Sub-tasks', '1/2', 'Vendor booked', '~$120.00 estimated', '✓ Started', '"block_id":"update"']) assert.ok(s.includes(k), k);
 });

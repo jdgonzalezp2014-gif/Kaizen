@@ -9,6 +9,7 @@
  *   POST { action: 'digestNow', kind }       the reservations reminder, now
  *   POST { action: 'cleanerChannel', name, email }   a private channel for a cleaner, with them in it
  *   POST { action: 'cleanerPreview' | 'cleanerSend', name }   their next cleans — shown, or sent by hand
+ *   POST { action: 'people' }               Hostaway users, Slack people, the links and suggestions (§100)
  *
  * The bot token and signing secret are written only when typed (a masked
  * value is never written back) and encrypted like every credential here.
@@ -19,7 +20,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { encrypt } from '../_lib/crypto.ts';
 import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { cleanerSchedule, digestFacts } from '../_lib/slack-digest.ts';
-import { cleanerMessage, digestMessage, TOPICS, type SlackConfig, type Topic } from '../../src/lib/slack.ts';
+import { cleanerMessage, digestMessage, suggestPeople, TOPICS, type SlackConfig, type Topic } from '../../src/lib/slack.ts';
 
 const bad = (error: string, status = 400) => Response.json({ ok: false, error }, { status });
 
@@ -58,7 +59,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await saveConfig({ ...s.config, channels,
         events: Object.fromEntries(Object.entries(c.events ?? {}).map(([k, v]) => [k, !!v])),
         digest: { morning: hour(c.digest?.morning ?? 8), afternoon: hour(c.digest?.afternoon ?? 15) },
-        appUrl: typeof c.appUrl === 'string' && /^https:\/\//.test(c.appUrl) ? c.appUrl.replace(/\/+$/, '') : s.config.appUrl });
+        appUrl: typeof c.appUrl === 'string' && /^https:\/\//.test(c.appUrl) ? c.appUrl.replace(/\/+$/, '') : s.config.appUrl,
+        // §100: who is who, and whether people get direct messages yet.
+        people: c.people && typeof c.people === 'object'
+          ? Object.fromEntries(Object.entries(c.people).filter(([h, u]) => /^\d+$/.test(h) && /^[UW][A-Z0-9]+$/.test(String(u))).map(([h, u]) => [h, String(u)]))
+          : s.config.people,
+        dm: c.dm && ['off', 'test', 'on'].includes(c.dm.mode)
+          ? { mode: c.dm.mode, testUser: c.dm.mode === 'test' ? (c.dm.testUser && /^[UW][A-Z0-9]+$/.test(c.dm.testUser) ? c.dm.testUser : await tester(s.token, who.email) ?? s.config.dm?.testUser ?? null) : null }
+          : s.config.dm });
     }
     const n = await slackSetup(sql, env.ENCRYPTION_KEY);
     return Response.json({ ok: true, hasToken: !!n.token, hasSecret: !!n.secret, config: n.config });
@@ -85,6 +93,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       if (!cursor) break;
     }
     return Response.json({ ok: true, channels: out.sort((x, y) => x.name.localeCompare(y.name)) });
+  }
+
+  if (b.action === 'people') {
+    const hostaway = await sql`SELECT id, name, email FROM hostaway_users WHERE account_id = 1 ORDER BY name` as { id: number; name: string; email: string | null }[];
+    const r = await slackApi<{ members?: { id: string; name: string; real_name?: string; deleted?: boolean; is_bot?: boolean; profile?: { email?: string; real_name?: string } }[] }>(
+      s.token, 'users.list', { limit: 500 });
+    if (!r.ok) return bad(`Slack said: ${r.error}`);
+    const slack = (r.members ?? []).filter(m => !m.deleted && !m.is_bot && m.id !== 'USLACKBOT')
+      .map(m => ({ id: m.id, name: m.profile?.real_name || m.real_name || m.name, email: m.profile?.email ?? null }));
+    return Response.json({ ok: true, hostaway, slack, links: s.config.people ?? {}, suggested: suggestPeople(hostaway, slack), dm: s.config.dm ?? { mode: 'test' } });
   }
 
   if (b.action === 'sendTest') {
@@ -136,3 +154,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
   return bad('Unknown action.');
 };
+
+/** Test mode's stand-in: the Slack account of whoever turns it on. */
+async function tester(token: string | null, email: string): Promise<string | null> {
+  if (!token || !email.includes('@')) return null;
+  const r = await slackApi<{ user?: { id: string } }>(token, 'users.lookupByEmail', { email });
+  return r.ok ? r.user?.id ?? null : null;
+}

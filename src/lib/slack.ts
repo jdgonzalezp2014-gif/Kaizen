@@ -27,6 +27,34 @@ export interface SlackConfig {
   /** One channel per cleaner (prepared, §99): no message goes there on a clock. */
   cleaners?: Record<string, { channelId: string; channelName: string; slackUserId?: string | null; email?: string | null }>;
   team?: string;
+  /** Hostaway user id → Slack user id (§100): who a task's owner is in Slack, and who "Take it" makes the owner. */
+  people?: Record<string, string>;
+  /** Direct messages to people (§100). 'test' sends every one to `testUser` instead, saying who it was for. */
+  dm?: { mode: 'off' | 'test' | 'on'; testUser?: string | null };
+}
+
+/** Where a direct message for this Hostaway user goes — and whether it is a test stand-in. */
+export function dmTarget(c: SlackConfig, hostawayUserId: number | string | null | undefined): { to: string; standIn: boolean } | null {
+  const mode = c.dm?.mode ?? 'test';
+  if (mode === 'off' || hostawayUserId == null) return null;
+  const real = c.people?.[String(hostawayUserId)];
+  if (mode === 'test') return c.dm?.testUser ? { to: c.dm.testUser, standIn: real !== c.dm.testUser } : null;
+  return real ? { to: real, standIn: false } : null;
+}
+/** The Hostaway user a Slack user is (for "Take it"). */
+export const hostawayUserOf = (c: SlackConfig, slackUserId: string) =>
+  Object.entries(c.people ?? {}).find(([, slack]) => slack === slackUserId)?.[0] ?? null;
+
+/** Suggested links, Hostaway user → Slack user: the same email, else the same full name. */
+export function suggestPeople(hostaway: { id: number; name: string; email: string | null }[],
+                              slack: { id: string; name: string; email: string | null }[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  const norm = (x: string | null) => (x ?? '').trim().toLowerCase();
+  for (const h of hostaway) {
+    const m = slack.find(u => norm(u.email) && norm(u.email) === norm(h.email)) ?? slack.find(u => norm(u.name) && norm(u.name) === norm(h.name));
+    if (m) out[String(h.id)] = m.id;
+  }
+  return out;
 }
 
 export const DEFAULT_EVENTS: Required<NonNullable<SlackConfig['events']>> = {
@@ -78,8 +106,8 @@ export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: str
           button('✓ Complete', 'task_complete', t.id, 'primary'),
           ...(t.status !== 'in_progress' ? [button('▶ Start', 'task_start', t.id)] : [])
         ]),
-        button('✎ Edit', 'task_edit', t.id),
-        ...(appUrl ? [{ type: 'button', text: plain('Open in Kaizen'), url: `${appUrl}/`, action_id: 'open_kaizen' }] : [])
+        button('📋 Open', 'task_open', t.id),
+        ...(appUrl ? [{ type: 'button', text: plain('Kaizen ↗'), url: `${appUrl}/`, action_id: 'open_kaizen' }] : [])
       ] }
     ]
   };
@@ -92,6 +120,7 @@ export function taskList(list: TaskLite[], appUrl?: string): Block[] {
   for (const t of list.slice(0, 40)) {
     blocks.push(section(`${t.kind === 'work_order' ? '🔧' : '☐'} *${esc(t.title)}*\n${taskFacts(t)}`, {
       type: 'overflow', action_id: 'task_menu', options: [
+        { text: plain('📋 Open'), value: `open:${t.id}` },
         { text: plain('✓ Complete'), value: `complete:${t.id}` }, { text: plain('▶ Start'), value: `start:${t.id}` },
         { text: plain('✎ Edit'), value: `edit:${t.id}` }, { text: plain('🗑 Remove'), value: `remove:${t.id}` }
       ]
@@ -145,8 +174,8 @@ export function claimList(list: ClaimLite[]): Block[] {
 
 export interface DigestInput {
   today: string; tomorrow: string;
-  arrivals: { date: string; time: string; unit: string; guest: string; agreement: 'signed' | 'not_signed' | null; needsId: boolean; idInDrive: boolean | null }[];
-  departures: { date: string; time: string; unit: string; cleaner: string | null; assigned: boolean; notNeeded: boolean; sameDay: boolean }[];
+  arrivals: { resId?: string; date: string; time: string; unit: string; guest: string; agreement: 'signed' | 'not_signed' | null; needsId: boolean; idInDrive: boolean | null }[];
+  departures: { resId?: string; date: string; time: string; unit: string; cleaner: string | null; assigned: boolean; notNeeded: boolean; sameDay: boolean }[];
   tasks: { title: string; unit?: string | null; overdue: boolean; dueToday: boolean; owner?: string | null }[];
   claims: { label: string; severity: string; days: number }[];
 }
@@ -172,20 +201,26 @@ export function digestMessage(d: DigestInput, kind: 'morning' | 'afternoon', app
     const ins = d.arrivals.filter(a => a.date === date);
     const outs = d.departures.filter(o => o.date === date && !o.notNeeded);
     const label = date === d.today ? 'Today' : 'Tomorrow';
-    const lines: string[] = [];
+    const ok: string[] = [];
+    // §100: each thing that is missing is its own line, with what fixes it beside it.
+    const todo: Block[] = [];
     for (const a of ins) {
-      const cleanOpen = outs.some(o => o.unit === a.unit && !o.assigned);
-      const miss = missingFor(a, cleanOpen);
+      const clean = outs.find(o => o.unit === a.unit && !o.assigned);
+      const miss = missingFor(a, !!clean);
       missing += miss.length;
-      lines.push(`${miss.length ? '▲' : '✓'} *${esc(a.unit)}* ${esc(a.time)} · ${esc(a.guest)}${miss.length ? ` — _${miss.join(', ')}_` : ''}`);
+      const line = `*${esc(a.unit)}* ${esc(a.time)} · ${esc(a.guest)}`;
+      if (!miss.length) { ok.push(`✓ ${line}`); continue; }
+      todo.push(section(`▲ ${line} — _${miss.join(', ')}_`, clean?.resId ? cleanButton(clean.resId, clean.unit, date)
+        : a.resId ? hostawayButton(a.resId) : undefined));
     }
     for (const o of outs.filter(o => !o.assigned)) {
       if (ins.some(a => a.unit === o.unit)) continue; // already said on the arrival
       missing++;
-      lines.push(`▲ *${esc(o.unit)}* checkout ${esc(o.time)} — _clean not assigned_`);
+      todo.push(section(`▲ *${esc(o.unit)}* checkout ${esc(o.time)} — _clean not assigned_`, o.resId ? cleanButton(o.resId, o.unit, date) : undefined));
     }
     const cleans = outs.length ? `${outs.length} clean${outs.length === 1 ? '' : 's'}${outs.some(o => o.sameDay) ? ` · ${outs.filter(o => o.sameDay).length} same-day` : ''}` : 'no cleans';
-    blocks.push(section(`*${label}* · ${ins.length} check-in${ins.length === 1 ? '' : 's'} · ${cleans}${lines.length ? '\n' + lines.join('\n') : ''}`));
+    blocks.push(section(`*${label}* · ${ins.length} check-in${ins.length === 1 ? '' : 's'} · ${cleans}${ok.length ? '\n' + ok.join('\n') : ''}`));
+    blocks.push(...todo);
   }
   if (kind === 'morning') {
     const late = d.tasks.filter(t => t.overdue), todayT = d.tasks.filter(t => t.dueToday);
@@ -214,6 +249,74 @@ export function dueDigests(hourNY: number, todayNY: string, cfg: SlackConfig, se
   return out;
 }
 
+/** A reservation in Hostaway — the same address the app links to (src/lib/operations.ts). */
+const HOSTAWAY_RES = (resId: string) => `https://dashboard.hostaway.com/reservations/${encodeURIComponent(resId)}`;
+const hostawayButton = (resId: string): Block => ({ type: 'button', text: plain('↗ Hostaway'), url: HOSTAWAY_RES(resId), action_id: `open_hostaway_${resId}` });
+const cleanButton = (resId: string, unit: string, date: string): Block =>
+  ({ type: 'button', text: plain('Assign cleaner'), action_id: 'clean_assign', value: JSON.stringify({ resId, unit, date }), style: 'primary' });
+
+/** "Assign cleaner" (§100): who cleans this checkout — or that none is needed. */
+export function cleanAssignModal(c: { resId: string; unit: string; date: string }, cleaners: string[]): Block {
+  return {
+    type: 'modal', callback_id: 'clean_assign_save', private_metadata: JSON.stringify(c),
+    title: plain('Assign cleaner'), submit: plain('Assign'), close: plain('Cancel'),
+    blocks: [
+      section(`*${esc(c.unit)}* · checkout ${day(c.date)}`),
+      input('cleaner', 'Cleaner', select([...cleaners.map(n => ({ value: n, label: n })), { value: '__not_needed', label: 'No clean needed' }]), false)
+    ]
+  };
+}
+
+/* ── the task card (§100) ───────────────────────────────────────────── */
+
+export interface TaskCard extends TaskLite {
+  supervisor?: string | null; scheduledOn?: string | null; vendor?: string | null; costActual?: number | null; costEstimate?: number | null;
+  resolutionNote?: string | null; children: { title: string; status: string }[];
+  updates: { when: string; who: string; body: string }[];
+}
+
+/**
+ * One task, in a pop-up that is the whole job: what it is, where it
+ * stands, its sub-tasks and latest updates, the buttons that move it, and
+ * a box to add an update — refreshed in place after every action.
+ */
+export function taskCard(t: TaskCard, note?: string): Block {
+  const closed = t.status === 'completed' || t.status === 'cancelled';
+  const f = (label: string, v: string | null | undefined) => v ? mrk(`*${label}*\n${esc(v)}`) : null;
+  const fields = [
+    f('Status', STATUS_WORD[t.status] ?? t.status), f('Owner', t.assignee ?? 'Nobody'),
+    f('Priority', t.priority !== 'none' ? t.priority[0]!.toUpperCase() + t.priority.slice(1) : null), f('Listing', t.unit),
+    f('Start from', t.scheduledOn ? day(t.scheduledOn) : null), f('Finish by', t.dueOn ? day(t.dueOn) : null),
+    f('Supervisor', t.supervisor), f('Stay', t.reservationLabel), f('Vendor', t.vendor),
+    f('Cost', t.costActual != null ? `$${t.costActual.toFixed(2)}` : t.costEstimate != null ? `~$${t.costEstimate.toFixed(2)} estimated` : null)
+  ].filter(Boolean).slice(0, 10);
+  return {
+    type: 'modal', callback_id: 'task_card', private_metadata: JSON.stringify({ id: t.id }),
+    title: plain(t.kind === 'work_order' ? 'Repair' : 'To-do'), submit: plain('Add update'), close: plain('Close'),
+    blocks: [
+      { type: 'header', text: plain(t.title.slice(0, 150)) },
+      ...(note ? [context(note)] : []),
+      { type: 'section', fields },
+      ...(t.description ? [section(esc(t.description).slice(0, 2900))] : []),
+      ...(closed && t.resolutionNote ? [context(`Resolution: ${esc(t.resolutionNote)}`)] : []),
+      { type: 'actions', elements: [
+        ...(closed ? [button('↺ Reopen', 'card_reopen', t.id)] : [
+          button('✓ Complete', 'card_complete', t.id, 'primary'),
+          ...(t.status !== 'in_progress' ? [button('▶ Start', 'card_start', t.id)] : [])
+        ]),
+        button('🙋 Take it', 'card_take', t.id),
+        button('✎ Edit', 'card_edit', t.id)
+      ] },
+      ...(t.children.length ? [{ type: 'divider' }, section(`*Sub-tasks* · ${t.children.filter(c => c.status === 'completed').length}/${t.children.length}\n` +
+        t.children.map(c => `${c.status === 'completed' ? '✓' : '☐'} ${esc(c.title)}`).join('\n'))] : []),
+      { type: 'divider' },
+      section(t.updates.length ? `*Latest updates*` : '_No updates yet._'),
+      ...t.updates.map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
+      input('update', 'Add an update', text(null, true))
+    ]
+  };
+}
+
 /* ── a cleaner's schedule (prepared: sent by hand only) ─────────────── */
 
 export function cleanerMessage(name: string, cleans: { date: string; time: string; unit: string; beds?: number | null; deep?: boolean; sameDay?: boolean; note?: string | null }[]): { text: string; blocks: Block[] } {
@@ -240,7 +343,8 @@ export const HELP = [
   '*/kaizen tasks* — open to-dos and repairs, each with a menu (complete, start, edit, remove)',
   '*/kaizen task Fix the AC* — a new to-do (a form opens)', '*/kaizen repair Leak under sink* — a new repair',
   '*/kaizen claims* — open claims (status, edit, remove)', '*/kaizen claim Missing fob* — a new claim',
-  '*/kaizen today* — check-ins, cleans and what is missing, now'
+  '*/kaizen today* — check-ins, cleans and what is missing, now',
+  '⚡ *Shortcuts* — New task · Report a repair · New claim from anywhere; *Create task from message* in any message’s ⋯ menu'
 ].join('\n');
 
 /* ── forms (modals) ─────────────────────────────────────────────────── */
@@ -261,6 +365,8 @@ const date = (initial?: string | null): Block => ({ type: 'datepicker', ...(init
 export interface TaskForm {
   id?: string; title?: string; description?: string | null; kind?: 'task' | 'work_order'; unitId?: string | null; status?: string;
   priority?: string; assigneeUserId?: number | null; dueOn?: string | null; scheduledOn?: string | null; costActual?: number | null;
+  /** Made from a Slack message (§100): where to say it is now tracked. */
+  from?: { channel: string; ts: string };
 }
 export const PRIORITY_OPTS: Opt[] = [{ value: 'none', label: 'No priority' }, { value: 'low', label: 'Low' }, { value: 'medium', label: 'Medium' },
   { value: 'high', label: 'High' }, { value: 'urgent', label: 'Urgent' }];
@@ -269,7 +375,7 @@ export const STATUS_OPTS: Opt[] = Object.entries(STATUS_WORD).map(([value, label
 export function taskModal(f: TaskForm, units: Opt[], people: Opt[]): Block {
   const repair = f.kind === 'work_order';
   return {
-    type: 'modal', callback_id: 'task_save', private_metadata: JSON.stringify({ id: f.id ?? null, kind: f.kind ?? 'task' }),
+    type: 'modal', callback_id: 'task_save', private_metadata: JSON.stringify({ id: f.id ?? null, kind: f.kind ?? 'task', ...(f.from ? { from: f.from } : {}) }),
     title: plain(f.id ? (repair ? 'Edit repair' : 'Edit to-do') : (repair ? 'New repair' : 'New to-do')),
     submit: plain('Save'), close: plain('Cancel'),
     blocks: [

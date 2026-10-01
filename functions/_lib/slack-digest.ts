@@ -47,11 +47,11 @@ export async function digestFacts(sql: SqlFn, creds: HostawayCredentials, key: s
   return {
     today, tomorrow,
     arrivals: rows.filter(r => r.kind === 'in').map(r => ({
-      date: r.date, time: r.time, unit: r.unit, guest: r.guest || 'guest', agreement: r.agreement,
+      resId: r.resId, date: r.date, time: r.time, unit: r.unit, guest: r.guest || 'guest', agreement: r.agreement,
       needsId: needs.has(r.unitId), idInDrive: needs.has(r.unitId) && docs[r.resId] ? docs[r.resId]!.id.length > 0 : null
     })),
     departures: rows.filter(r => r.kind === 'out').map(r => ({
-      date: r.date, time: r.time, unit: r.unit, cleaner: r.cleaner, assigned: r.assignment === 'assigned',
+      resId: r.resId, date: r.date, time: r.time, unit: r.unit, cleaner: r.cleaner, assigned: r.assignment === 'assigned',
       notNeeded: r.assignment === 'not_needed', sameDay: r.urgency === 'turnover'
     })),
     tasks: tasks.map(t => ({ title: t.title, unit: t.unit, owner: t.assignee, overdue: t.due_on < today, dueToday: t.due_on === today })),

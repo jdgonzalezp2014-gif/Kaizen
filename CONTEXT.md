@@ -3028,3 +3028,38 @@ the conversation in its Inbox and can notify by mobile, desktop or EMAIL
 notification at a mailbox Kaizen can read, and Kaizen turns each one into
 an alert in the escalations channel (and a task). Needs one sample email
 to build the parser; none was found in the owner's Gmail.
+
+## 100. A more interactive Slack
+
+The owner (2026-10-01), as UX and project management: manage things in
+Slack in pop-ups. Built 1–4 of the proposal (Home tab and threads ↔
+timeline later). All English.
+
+1. **The task card** — `📋 Open` on every task message, and first in every
+   list menu: one pop-up with the facts (status, owner, priority, listing,
+   start / finish by, supervisor, stay, vendor, cost), the description,
+   sub-tasks with progress, the latest three updates, buttons (Complete /
+   Reopen, Start, 🙋 Take it, Edit) and an "Add an update" box (the modal's
+   submit). Every action refreshes the card in place with a one-line note;
+   Edit opens the form on top and returns to the refreshed card.
+2. **Shortcuts** — ⚡ New task / Report a repair / New claim from anywhere;
+   ⋯ "Create task from message" on any message: the form comes prefilled
+   (first line as title, the text and its permalink as details) and the
+   thread is told "📋 Tracked in Kaizen…".
+3. **The reminder resolves, not only reports** — each missing thing is its
+   own line with the fix beside it: an unassigned clean → "Assign cleaner"
+   (a pop-up with the active roster, or "No clean needed", saved through
+   /api/turnover as the member — `operations.edit`); an unsigned agreement or
+   a missing ID → "↗ Hostaway" on the reservation.
+4. **The owner hears it directly** — a task given to someone (created with
+   an owner, or assigned) comes to their Slack DMs with its buttons; each
+   morning, owners get their overdue tasks (`slack_sent` key
+   `overdue:<day>`). Hostaway and Slack emails differ (only one matched), so
+   Settings → Slack → **People** links each Hostaway user to a Slack account
+   (suggested by email, else full name); the same link makes "Take it" work.
+   **Direct messages: Test** (default — every DM goes to whoever turned it
+   on, headed "🧪 Test — would go to …"), On, Off.
+
+The manifest gained the shortcuts, the Messages tab and `im:write`: an app
+created from the older manifest is updated in Slack → App Manifest → paste →
+Save → Reinstall (the token stays).

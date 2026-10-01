@@ -1642,3 +1642,6 @@ button.sop-num { cursor: pointer; }
 .slack-cleaners li { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 6px 0; border-bottom: 1px solid var(--line); }
 .slack-cleaners li input { flex: 1 1 200px; max-width: 280px; }
 .slack-cl-tools { margin-left: auto; display: inline-flex; gap: 10px; align-items: center; }
+.slack-dm { display: flex; flex-direction: column; gap: 0; margin-top: 6px; }
+.slack-dm label.check { margin-top: 6px; color: var(--ink); }
+.slack-cleaners li select { flex: 0 1 300px; }
