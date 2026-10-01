@@ -23,11 +23,23 @@ export async function slackSetup(sql: SqlFn, key: string): Promise<SlackSetup> {
   };
 }
 
-/** One Slack Web API call. Slack answers 200 with `ok: false` on errors; that is returned, not thrown. */
+/**
+ * One Slack Web API call. Slack answers 200 with `ok: false` on errors; that is returned, not thrown.
+ *
+ * Form-encoded, never JSON: every method takes a form, but the read
+ * methods (users.info, users.lookupByEmail, conversations.list) refuse a
+ * JSON body with `invalid_arguments`. Objects (blocks, view) go as JSON
+ * strings inside the form, which is how Slack reads them there.
+ */
 export async function slackApi<T = Record<string, unknown>>(token: string, method: string, body: Record<string, unknown> = {}): Promise<T & { ok: boolean; error?: string }> {
+  const form = new URLSearchParams();
+  for (const [k, v] of Object.entries(body)) {
+    if (v === undefined || v === null) continue;
+    form.set(k, typeof v === 'object' ? JSON.stringify(v) : String(v));
+  }
   const res = await fetch(`https://slack.com/api/${method}`, {
-    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json; charset=utf-8' },
-    body: JSON.stringify(body)
+    method: 'POST', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: form.toString()
   });
   return await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` })) as T & { ok: boolean; error?: string };
 }
