@@ -365,7 +365,8 @@ class Kaizen {
     }
     // Inside the Claims pop-up: the same.
     if (inView === 'sec_claims' && id.startsWith('claim_')) {
-      const [verb, a1 = '', a2 = ''] = id === 'claim_menu' ? value.split(':') : [id.replace('claim_', ''), value];
+      // The status select carries 'Resolved|3'; buttons carry the id.
+      const [verb, a1 = '', a2 = ''] = id === 'claim_menu' ? value.split(':') : id === 'claim_status' ? ['status', ...value.split('|')] : [id.replace('claim_', ''), value];
       const cid = verb === 'status' ? a2 : a1;
       if (!this.may('/api/claims', 'POST')) return this.deny('claims');
       if (verb === 'new') { await this.pushForm(p.trigger_id, claimModal({ occurredOn: todayIn('America/New_York') }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES) as Record<string, unknown>, { id: null, root: 'claims' }); return ack(); }

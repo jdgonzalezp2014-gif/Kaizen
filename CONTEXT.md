@@ -3108,8 +3108,10 @@ manage that section. (And the SOP updated.)
   the clean before it; "Assign clean" (on top, back to the list) or
   "↗ Hostaway". Cleans: Today / Tomorrow, Assign / Change (§101). Tasks:
   every open task with its ⋯ (Open → the card on top; Complete, Start,
-  Edit, Remove with Undo), + To-do / + Repair. Claims: ⋯ (Edit, status,
-  Remove with Undo), + Claim. Every action refreshes the pop-up in place
+  Edit, Remove with Undo), + To-do / + Repair. Claims: a status select, Edit and
+  Remove (with Undo) under each — not an overflow menu, which Slack caps at
+  five options (the first version had six and Slack refused the pop-up),
+  + Claim. Every action refreshes the pop-up in place
   with a one-line note; forms and cards opened from a list go on top of it
   and return to it refreshed. Nothing new is posted to the channel.
 - The SOP "Kaizen in Slack" is v2: the eight steps follow the sections.

@@ -178,7 +178,18 @@ test('the tasks and claims pop-ups: a menu per item, new from the top, undo in p
                                        '✓ Started: x', { id: '5', title: 'Old' }) as { blocks: unknown[] }).blocks);
   for (const k of ['1 open', '▲ 1 overdue', 'task_new', 'open:7', 'remove:7', '✓ Started: x', 'Removed *Old*', 'task_restore']) assert.ok(t.includes(k), k);
   const c = JSON.stringify((claimsModal([{ id: '3', unit: 'P2-4308', severity: 'Medium', status: 'Open', description: 'Fob' }]) as { blocks: unknown[] }).blocks);
-  for (const k of ['claim_new', 'status:Resolved:3', 'edit:3', 'remove:3']) assert.ok(c.includes(k), k);
+  for (const k of ['claim_new', '"action_id":"claim_status"', '"value":"Resolved|3"', '"action_id":"claim_edit","value":"3"', '"action_id":"claim_remove","value":"3"']) assert.ok(c.includes(k), k);
+  // Slack allows at most five options in an overflow menu — none here goes over.
+  for (const m of [...c.matchAll(/"type":"overflow"[^\]]*\]/g)]) assert.ok((m[0].match(/"value"/g) ?? []).length <= 5);
   const cl = JSON.stringify((cleansModal('2026-10-01', 'Today', [], true, undefined, { today: '2026-10-01', tomorrow: '2026-10-02' }) as { blocks: unknown[] }).blocks);
   assert.match(cl, /cleans_day_2026-10-02/);
+});
+
+test('no overflow menu goes over Slack’s five options', () => {
+  const lists = [JSON.stringify(taskList([{ id: '1', title: 't', kind: 'task', status: 'pending', priority: 'none' }])),
+                 JSON.stringify(tasksModal([{ id: '1', title: 't', kind: 'task', status: 'pending', priority: 'none' }])),
+                 JSON.stringify(claimsModal([{ id: '3', severity: 'Low', status: 'Open' }]))];
+  for (const s of lists) for (const m of s.matchAll(/"type":"overflow","action_id":"[a-z_]+","options":\[(.*?)\]\}/g)) {
+    assert.ok((m[1]!.match(/"value"/g) ?? []).length <= 5, m[0].slice(0, 80));
+  }
 });

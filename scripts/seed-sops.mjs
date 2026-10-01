@@ -34,7 +34,7 @@ const SOPS = [
       { text: 'Work a task in its card: 📋 Open.', who: 'Owner',
         detail: '- Status, owner, dates, sub-tasks and the latest updates in one place.\n- **Complete**, **Start**, **🙋 Take it** (you become the owner), **Edit**.\n- Write in *Add an update* and press it: it is saved on the task’s timeline. Closing the card brings you back to the list, up to date.' },
       { text: 'Claims → Manage: follow the open claims.', who: 'Ops',
-        detail: '- ⋯ menu: **Edit**, change the status, **Remove** (with Undo); **+ Claim** at the top.\n- Also /kaizen claims and /kaizen claim ….' },
+        detail: '- Each claim: a **Status** select, **✎ Edit** and **🗑 Remove** (with Undo); **+ Claim** at the top.\n- Also /kaizen claims and /kaizen claim ….' },
       { text: 'Add work from anywhere: ⚡ shortcuts, or ⋯ on any message.', who: 'Everyone',
         detail: '- ⚡ **New task**, **Report a repair**, **New claim** from anywhere in Slack.\n- On any message: ⋯ → **Create task from message** — the text and a link come with it, and the thread is told it is tracked.\n- Or type /kaizen task … and /kaizen repair ….' },
       { text: 'Answer what comes to you directly.', who: 'Owner',

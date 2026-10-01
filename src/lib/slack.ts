@@ -159,18 +159,23 @@ const claimStatusSelect = (c: ClaimLite): Block => ({
   initial_option: { text: plain(c.status), value: `${c.status}|${c.id}` }
 });
 
+
+/**
+ * One claim in a list: the facts, then its controls in a row — a status
+ * select, Edit and Remove. Not an overflow menu: Slack allows five
+ * options there, and a claim has five statuses plus edit and remove.
+ */
+function claimRows(c: ClaimLite): Block[] {
+  return [
+    section(`${sevMark(c.severity)} *${esc(claimTitle(c))}*\n${[c.category, c.severity, c.days != null ? `${c.days}d open` : ''].filter(Boolean).map(esc).join(' · ')}${c.caseUrl ? ` · ${link(c.caseUrl, 'case')}` : ''}`),
+    { type: 'actions', elements: [claimStatusSelect(c), button('✎ Edit', 'claim_edit', c.id), button('🗑 Remove', 'claim_remove', c.id, 'danger')] }
+  ];
+}
+
 export function claimList(list: ClaimLite[]): Block[] {
   if (!list.length) return [section('No open claims. ✓')];
   const blocks: Block[] = [section(`*Open claims — ${list.length}*`)];
-  for (const c of list.slice(0, 40)) {
-    blocks.push(section(`${sevMark(c.severity)} *${esc(claimTitle(c))}*\n${[c.category, c.severity, c.status, c.days != null ? `${c.days}d open` : ''].filter(Boolean).map(esc).join(' · ')}`, {
-      type: 'overflow', action_id: 'claim_menu', options: [
-        { text: plain('✎ Edit'), value: `edit:${c.id}` },
-        ...CLAIM_STATUSES.filter(s => s !== c.status).map(s => ({ text: plain(`→ ${s}`), value: `status:${s}:${c.id}` })),
-        { text: plain('🗑 Remove'), value: `remove:${c.id}` }
-      ]
-    }));
-  }
+  for (const c of list.slice(0, 30)) blocks.push(...claimRows(c));
   blocks.push({ type: 'actions', elements: [button('+ Claim', 'claim_new', 'claim')] });
   return blocks;
 }
@@ -301,15 +306,7 @@ export function claimsModal(list: ClaimLite[], note?: string, undo?: { id: strin
     ...(undo ? [section(`Removed *${esc(undo.title)}*.`, button('Undo', 'claim_restore', undo.id))] : []),
     { type: 'divider' }
   ];
-  for (const c of list.slice(0, 40)) {
-    blocks.push(section(`${sevMark(c.severity)} *${esc(claimTitle(c))}*\n${[c.category, c.severity, c.status, c.days != null ? `${c.days}d open` : ''].filter(Boolean).map(esc).join(' · ')}${c.caseUrl ? ` · ${link(c.caseUrl, 'case')}` : ''}`, {
-      type: 'overflow', action_id: 'claim_menu', options: [
-        { text: plain('✎ Edit'), value: `edit:${c.id}` },
-        ...CLAIM_STATUSES.filter(x => x !== c.status).map(x => ({ text: plain(`→ ${x}`), value: `status:${x}:${c.id}` })),
-        { text: plain('🗑 Remove'), value: `remove:${c.id}` }
-      ]
-    }));
-  }
+  for (const c of list.slice(0, 30)) blocks.push(...claimRows(c));
   if (!list.length) blocks.push(section('No open claims. ✓'));
   return { type: 'modal', callback_id: 'sec_claims', private_metadata: JSON.stringify({}), title: plain('Claims'), close: plain('Close'), blocks };
 }
