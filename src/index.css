@@ -1663,7 +1663,12 @@ button.sop-num { cursor: pointer; }
 .timeline.compact { margin-top: 8px; padding-top: 8px; }
 .tl-summary { display: flex; align-items: baseline; gap: 4px 10px; flex-wrap: wrap; font-size: 12.5px; }
 .tl-summary .timeline-title { margin: 0; }
-.tl-last { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ink); }
+.tl-notes { list-style: none; margin: 6px 0 0; padding: 0 0 0 10px; border-left: 2px solid var(--line); display: flex; flex-direction: column; gap: 6px; }
+.tl-notes li { display: flex; flex-direction: column; gap: 1px; font-size: 13px; }
+.tl-note-head { font-size: 11.5px; color: var(--muted); }
+.tl-note-head b { color: var(--ink); font-weight: 600; }
+.tl-note-body { white-space: pre-wrap; line-height: 1.45; }
+.tl-more { font-size: 12px; }
 .tl-filter { display: flex; gap: 6px; margin: 12px 0 8px; }
 .timeline-list.tl-modal { gap: 6px; }
 .timeline-list.tl-modal li { padding: 6px 0; border-bottom: 1px solid var(--line); }

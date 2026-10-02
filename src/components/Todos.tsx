@@ -662,11 +662,11 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
  * The activity of a task or a claim — every status and field change
  * (written by the server) and every update in words.
  *
- * In the page it is one line (§103): how much there is, and the last thing
- * a person wrote. The log itself is a pop-up — newest first, people's
- * updates or everything — with the box to add one. Most entries are the
- * system's ("Sent to Hostaway…", "Recorded in Costs…"); shown in the page
- * they buried the task they belong to.
+ * In the page (§103): what PEOPLE wrote — the last three updates, whole —
+ * and a line saying how much more there is. The full log, with the
+ * system's entries ("Sent to Hostaway…", "Recorded in Costs…", status
+ * changes) that buried the task when shown in the page, is a pop-up:
+ * newest first, people's updates or everything, with the box to add one.
  */
 export function Timeline({ load, post, version = 0, readOnly = false, title }: {
   load: () => Promise<{ ok: true; updates: WorkUpdate[] } | { ok: false; message?: string; error?: string }>;
@@ -694,8 +694,6 @@ export function Timeline({ load, post, version = 0, readOnly = false, title }: {
     if (ok) { setText(''); await read(); }
   };
   const notes = (list ?? []).filter(u => u.kind === 'note');
-  // The line in the page leads with what a person said; a change only when nobody has written.
-  const last = notes[notes.length - 1] ?? (list ?? [])[(list ?? []).length - 1];
   const shown = [...(list ?? [])].filter(u => only === 'all' || u.kind === 'note').reverse();
 
   return (
@@ -704,16 +702,26 @@ export function Timeline({ load, post, version = 0, readOnly = false, title }: {
         <span className="timeline-title">Activity</span>
         {list === null ? <span className="note loading-dot">Reading</span>
           : !list.length ? <span className="sub-n">nothing yet</span>
-          : <>
-              <span className="sub-n">{list.length} {list.length === 1 ? 'entry' : 'entries'}{notes.length ? ` · ${notes.length} update${notes.length === 1 ? '' : 's'}` : ''}</span>
-              {last && <span className="tl-last" title={last.body}>
-                <b>{last.createdBy?.split('@')[0] ?? '—'}</b> — {last.body.length > 90 ? `${last.body.slice(0, 88)}…` : last.body}
-                <span className="sub-n"> · {nyParts(last.createdAt).short}</span></span>}
-            </>}
+          : <span className="sub-n">{notes.length} update{notes.length === 1 ? '' : 's'}{list.length > notes.length ? ` · ${list.length - notes.length} change${list.length - notes.length === 1 ? '' : 's'}` : ''}</span>}
         <span className="rb-spacer" />
-        {!!list?.length && <button type="button" className="link" onClick={() => setOpen('read')}>View activity</button>}
+        {!!list?.length && <button type="button" className="link" onClick={() => { setOnly('all'); setOpen('read'); }}>View activity</button>}
         {!readOnly && <button type="button" className="small secondary" onClick={() => setOpen('write')}>+ Update</button>}
       </div>
+      {/* What people wrote stays in sight: the last three, whole. */}
+      {notes.length > 0 && (
+        <ol className="tl-notes">
+          {notes.length > 3 && (
+            <li className="tl-more"><button type="button" className="link tiny" onClick={() => { setOnly('notes'); setOpen('read'); }}>
+              {notes.length - 3} earlier update{notes.length - 3 === 1 ? '' : 's'}</button></li>
+          )}
+          {notes.slice(-3).map(u => (
+            <li key={u.id}>
+              <span className="tl-note-head"><b>{u.createdBy?.split('@')[0] ?? '—'}</b> · {nyParts(u.createdAt).short}</span>
+              <span className="tl-note-body">{u.body}</span>
+            </li>
+          ))}
+        </ol>
+      )}
       {open && (
         <Modal title={`Activity${title ? ` — ${title}` : ''}`} onClose={() => setOpen(false)}>
           {!readOnly && (

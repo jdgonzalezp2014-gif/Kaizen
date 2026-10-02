@@ -3121,10 +3121,10 @@ manage that section. (And the SOP updated.)
 The owner (2026-10-02): in tasks, the activity log is a lot of visual
 noise — make it a pop-up.
 
-- In a task, a claim and the done log, the log is **one line**:
-  "Activity · N entries · M updates", the last thing a *person* wrote (a
-  system change only when nobody has written), and **View activity** /
-  **+ Update**. Most entries are the system's ("Sent to Hostaway…",
+- In a task, a claim and the done log: "Activity · M updates · N changes",
+  **View activity** / **+ Update**, and what PEOPLE wrote stays in sight —
+  the last three updates, whole (an "earlier updates" link opens the rest).
+  Only the system's entries leave the page. Most entries are the system's ("Sent to Hostaway…",
   "Recorded in Costs…", status changes) and buried the task in the page.
 - The pop-up (`src/components/Modal.tsx`, the app's first generic one —
   Esc, ✕ or a click outside; a sheet from the bottom on phones): the box to
