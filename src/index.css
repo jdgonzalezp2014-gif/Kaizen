@@ -1702,3 +1702,7 @@ button.sop-num { cursor: pointer; }
   border: 1px solid color-mix(in srgb, var(--series-1) 40%, var(--line)); border-radius: 10px;
   background: color-mix(in srgb, var(--series-1) 7%, var(--card)); box-shadow: 0 6px 18px rgba(0,0,0,.10); font-size: 13px; font-weight: 600; }
 @media (max-width: 720px) { .task-fold-sum { white-space: normal; } }
+/* §104: the title is the row's; renaming lives in Details. */
+.task-title-in { margin: 0; }
+.task-title-in input { font-size: 14px; font-weight: 600; }
+.todo-edit > .button-row { margin-top: 2px; align-items: center; }

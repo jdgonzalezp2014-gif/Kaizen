@@ -3140,7 +3140,10 @@ description, then the comments with the box to add one; status, cost and
 the rest expandable.
 
 The order is the order of use, and only the content is open:
-1. **Title** (large) and **description** — what it is; plain until hovered.
+1. The task's own row (title and its marks — sub-tasks, status, listing,
+   claim, comments) is the heading — not repeated inside; renaming is rare,
+   so **Title** is the first field in Details. Then the **description**,
+   plain until hovered.
 2. **💬 Comments**, open, the last five and the box ("Comment") — the
    conversation is what is read and written most; "Activity log · N" (the
    system's lines, a pop-up) sits on the same line.
@@ -3149,7 +3152,9 @@ The order is the order of use, and only the content is open:
    task stands is recognised without opening anything; open: the kind,
    listing and finish by, then every field.
 4. **▸ Sub-tasks n/m done**, open while some are still to do.
-5. The footer: who added it, register as a claim, remove.
+5. The footer: who added it and register as a claim on the left; bottom
+   right, the two ways a task ends — "Remove…" (apart, asked) and
+   **✓ Mark as done** (↺ Reopen once closed), the main one, last.
 
 Nothing is saved field by field: an **"Unsaved changes · Discard · Save
 changes"** bar appears, sticky at the bottom of the task, only when

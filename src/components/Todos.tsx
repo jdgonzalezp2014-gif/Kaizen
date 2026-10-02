@@ -450,10 +450,12 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
               <button className="link tiny" disabled={busy} onClick={() => void toClaim()}
                       title="It is a guest case — open a claim for it, linked to this to-do">⚑ Register as a claim</button>}
             <span className="rb-spacer" />
-            {/* The destructive action sits apart, at the end, and says exactly what it removes. */}
+            {/* Bottom right (§104): the two ways a task ends — done, the main one, last; remove, apart and asked. */}
             {!confirmDel
-              ? <button className="link tiny danger" onClick={() => setConfirmDel(true)}>
-                  Remove this {t.parentId ? 'sub-task' : t.kind === 'work_order' ? 'work order' : 'to-do'}…</button>
+              ? <><button className="link tiny danger" onClick={() => setConfirmDel(true)}>
+                    Remove this {t.parentId ? 'sub-task' : t.kind === 'work_order' ? 'work order' : 'to-do'}…</button>
+                  <button className={closed ? 'small secondary' : 'small'} disabled={busy} onClick={() => void tick()}>
+                    {closed ? '↺ Reopen' : '✓ Mark as done'}</button></>
               : <><span className="note">
                     Remove “{t.title}”{mine.filter(k => !isClosed(k.status)).length
                       ? <b> and its {mine.filter(k => !isClosed(k.status)).length} sub-task{mine.filter(k => !isClosed(k.status)).length === 1 ? '' : 's'}</b> : ''}?
@@ -636,8 +638,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
       v.reservationLabel ? `🛏 ${v.reservationLabel}` : '', v.costActual != null ? money2(v.costActual) : '', wo ? '🔧 Work order' : ''].filter(Boolean);
     return (
       <div className="task-edit">
-        <input className="task-title" value={v.title} maxLength={120} aria-label="Title"
-               onChange={e => set('title', e.target.value)} onKeyDown={e => { if (e.key === 'Enter') void submit(); }} />
+        {/* The row above is the heading (title and its marks); renaming is rare, so the title is in Details (§104). */}
         <textarea className="task-desc" value={v.description ?? ''} maxLength={4000} aria-label="Description"
                   rows={Math.min(8, Math.max(2, (v.description ?? '').split('\n').length + 1))}
                   placeholder="Add a description — who, what exactly, anything to remember"
@@ -650,6 +651,9 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
           </button>
           {details && (
             <div className="task-fold-body">
+              <label className="task-title-in">Title
+                <input value={v.title} maxLength={120} onChange={e => set('title', e.target.value)}
+                       onKeyDown={e => { if (e.key === 'Enter') void submit(); }} /></label>
               <div className="task-fold-row">
                 <div className="todo-kind" role="group" aria-label="Kind">
                   {(['task', 'work_order'] as TaskKind[]).map(k => (
