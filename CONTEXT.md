@@ -3131,3 +3131,28 @@ noise; then — comments should be a fold, and the activity an activity log.
   bottom on phones).
 - Slack's task card shows the latest **comments** only, and its box is "Add
   a comment"; the SOP "Kaizen in Slack" is v4 with the same words.
+
+## 104. An open task: content first, the rest folded
+
+The owner (2026-10-02), as neuroscience / UX / project management: an open
+task was overwhelming — a dozen controls of equal weight. Title, then
+description, then the comments with the box to add one; status, cost and
+the rest expandable.
+
+The order is the order of use, and only the content is open:
+1. **Title** (large) and **description** — what it is; plain until hovered.
+2. **💬 Comments**, open, the last five and the box ("Comment") — the
+   conversation is what is read and written most; "Activity log · N" (the
+   system's lines, a pop-up) sits on the same line.
+3. **▸ Details**, folded, with its summary on the line — status, owner,
+   priority, listing, finish by, claim, stay, cost, kind — so where the
+   task stands is recognised without opening anything; open: the kind,
+   listing and finish by, then every field.
+4. **▸ Sub-tasks n/m done**, open while some are still to do.
+5. The footer: who added it, register as a claim, remove.
+
+Nothing is saved field by field: an **"Unsaved changes · Discard · Save
+changes"** bar appears, sticky at the bottom of the task, only when
+something differs from what was saved — the one button is never hunted for.
+In edit mode the task is a `<div>`, not a `<form>`: the comment box is its
+own form and forms cannot nest. Claims open their comments first too.
