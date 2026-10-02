@@ -3116,17 +3116,18 @@ manage that section. (And the SOP updated.)
   and return to it refreshed. Nothing new is posted to the channel.
 - The SOP "Kaizen in Slack" is v2: the eight steps follow the sections.
 
-## 103. The activity log, as a pop-up
+## 103. Comments in a fold, the activity log in a pop-up
 
-The owner (2026-10-02): in tasks, the activity log is a lot of visual
-noise — make it a pop-up.
+The owner (2026-10-02): in tasks, the activity log was a lot of visual
+noise; then — comments should be a fold, and the activity an activity log.
 
-- In a task, a claim and the done log: "Activity · M updates · N changes",
-  **View activity** / **+ Update**, and what PEOPLE wrote stays in sight —
-  the last three updates, whole (an "earlier updates" link opens the rest).
-  Only the system's entries leave the page. Most entries are the system's ("Sent to Hostaway…",
-  "Recorded in Costs…", status changes) and buried the task in the page.
-- The pop-up (`src/components/Modal.tsx`, the app's first generic one —
-  Esc, ✕ or a click outside; a sheet from the bottom on phones): the box to
-  add an update on top (focused when opened with + Update), "Everything /
-  Updates" (people's words only), the log newest first.
+- **💬 Comments** (what people wrote): a fold in the task, claim and done
+  log, closed by default and saying how many; open, every comment whole and
+  the box to add one ("Comment").
+- **Activity log** (what the system recorded — status and field changes,
+  "Sent to Hostaway…", "Recorded in Costs…", restores): a button with its
+  count that opens a pop-up, newest first. `src/components/Modal.tsx` is the
+  app's first generic pop-up (Esc, ✕ or a click outside; a sheet from the
+  bottom on phones).
+- Slack's task card shows the latest **comments** only, and its box is "Add
+  a comment"; the SOP "Kaizen in Slack" is v4 with the same words.

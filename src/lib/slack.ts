@@ -397,8 +397,8 @@ export interface TaskCard extends TaskLite {
 
 /**
  * One task, in a pop-up that is the whole job: what it is, where it
- * stands, its sub-tasks and latest updates, the buttons that move it, and
- * a box to add an update — refreshed in place after every action.
+ * stands, its sub-tasks and latest comments, the buttons that move it, and
+ * a box to add a comment — refreshed in place after every action.
  */
 export function taskCard(t: TaskCard, note?: string, root?: 'tasks'): Block {
   const closed = t.status === 'completed' || t.status === 'cancelled';
@@ -412,7 +412,7 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks'): Block {
   ].filter(Boolean).slice(0, 10);
   return {
     type: 'modal', callback_id: 'task_card', private_metadata: JSON.stringify({ id: t.id, ...(root ? { root } : {}) }),
-    title: plain(t.kind === 'work_order' ? 'Repair' : 'To-do'), submit: plain('Add update'), close: plain('Close'),
+    title: plain(t.kind === 'work_order' ? 'Repair' : 'To-do'), submit: plain('Add comment'), close: plain('Close'),
     blocks: [
       { type: 'header', text: plain(t.title.slice(0, 150)) },
       ...(note ? [context(note)] : []),
@@ -430,9 +430,9 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks'): Block {
       ...(t.children.length ? [{ type: 'divider' }, section(`*Sub-tasks* · ${t.children.filter(c => c.status === 'completed').length}/${t.children.length}\n` +
         t.children.map(c => `${c.status === 'completed' ? '✓' : '☐'} ${esc(c.title)}`).join('\n'))] : []),
       { type: 'divider' },
-      section(t.updates.length ? `*Latest updates*` : '_No updates yet._'),
+      section(t.updates.length ? `*Latest comments*` : '_No comments yet._'),
       ...t.updates.map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
-      input('update', 'Add an update', text(null, true))
+      input('update', 'Add a comment', text(null, true))
     ]
   };
 }

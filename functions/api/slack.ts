@@ -160,7 +160,8 @@ class Kaizen {
     if (!t) return null;
     const [kids, ups] = await Promise.all([
       this.sql`SELECT title, status FROM todos WHERE account_id = 1 AND parent_id::text = ${id} AND deleted_at IS NULL ORDER BY created_at` as Promise<{ title: string; status: string }[]>,
-      this.sql`SELECT body, created_by, created_at FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id}
+      // The card shows what people wrote; the system's lines are Kaizen's activity log (§103).
+      this.sql`SELECT body, created_by, created_at FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id} AND kind = 'note'
                 ORDER BY created_at DESC, id DESC LIMIT 3` as Promise<{ body: string; created_by: string | null; created_at: string }[]>
     ]);
     return { id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, supervisor: t.supervisor,
@@ -505,13 +506,13 @@ class Kaizen {
     const meta = JSON.parse(view.private_metadata || '{}') as { id: string | null; kind?: string };
     const state = view.state?.values ?? {};
     if (view.callback_id === 'task_card') {
-      // "Add update": the box at the bottom of the card; the card stays open with it in.
+      // "Add comment": the box at the bottom of the card; the card stays open with it in.
       const body = String(state.update?.v?.value ?? '').trim();
-      if (!body) return json({ response_action: 'errors', errors: { update: 'Write something to add.' } });
+      if (!body) return json({ response_action: 'errors', errors: { update: 'Write a comment first.' } });
       const r = await this.todo({ action: 'note', id: meta.id, body });
       if (!r.ok) return json({ response_action: 'errors', errors: { update: r.message ?? 'Not saved.' } });
       const c = await this.card(String(meta.id));
-      return c ? json({ response_action: 'update', view: taskCard(c, '✓ Update added') }) : json({ response_action: 'clear' });
+      return c ? json({ response_action: 'update', view: taskCard(c, '✓ Comment added') }) : json({ response_action: 'clear' });
     }
     if (view.callback_id === 'clean_assign_save') {
       if (!this.may('/api/turnover', 'POST')) return json({ response_action: 'errors', errors: { cleaner: 'Your role does not include operations.' } });

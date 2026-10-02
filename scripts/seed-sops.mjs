@@ -32,7 +32,7 @@ const SOPS = [
       { text: 'Tasks → Manage: work the open tasks.', who: 'Everyone',
         detail: '- Each task’s ⋯ menu: **Open**, Complete, Start, Edit, Remove (with Undo).\n- **+ To-do** and **+ Repair** at the top.\n- Also /kaizen tasks.' },
       { text: 'Work a task in its card: 📋 Open.', who: 'Owner',
-        detail: '- Status, owner, dates, sub-tasks and the latest updates in one place.\n- **Complete**, **Start**, **🙋 Take it** (you become the owner), **Edit**.\n- Write in *Add an update* and press it: it is saved on the task’s timeline. Closing the card brings you back to the list, up to date.' },
+        detail: '- Status, owner, dates, sub-tasks and the latest comments in one place.\n- **Complete**, **Start**, **🙋 Take it** (you become the owner), **Edit**.\n- Write in *Add a comment* and press **Add comment**: it is saved on the task. Closing the card brings you back to the list, up to date.\n- What the system recorded (status changes, Hostaway, costs) is in Kaizen, in the task’s **Activity log**.' },
       { text: 'Claims → Manage: follow the open claims.', who: 'Ops',
         detail: '- Each claim: a **Status** select, **✎ Edit** and **🗑 Remove** (with Undo); **+ Claim** at the top.\n- Also /kaizen claims and /kaizen claim ….' },
       { text: 'Add work from anywhere: ⚡ shortcuts, or ⋯ on any message.', who: 'Everyone',

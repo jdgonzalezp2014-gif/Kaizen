@@ -1669,8 +1669,11 @@ button.sop-num { cursor: pointer; }
 .tl-note-head b { color: var(--ink); font-weight: 600; }
 .tl-note-body { white-space: pre-wrap; line-height: 1.45; }
 .tl-more { font-size: 12px; }
-.tl-filter { display: flex; gap: 6px; margin: 12px 0 8px; }
+.tl-toggle { background: none; border: 0; padding: 2px 0; color: var(--ink); font: inherit; font-size: 12.5px; font-weight: 650; cursor: pointer; }
+.tl-toggle span { color: var(--muted); }
+.tl-comments { margin-top: 6px; }
+.tl-comments .timeline-add { margin-top: 8px; }
+.tl-comments .timeline-add textarea { font-family: inherit; font-size: 13px; }
 .timeline-list.tl-modal { gap: 6px; }
 .timeline-list.tl-modal li { padding: 6px 0; border-bottom: 1px solid var(--line); }
 .timeline-list.tl-modal li:last-child { border-bottom: 0; }
-.modal .timeline-add textarea { font-family: inherit; font-size: 13.5px; }

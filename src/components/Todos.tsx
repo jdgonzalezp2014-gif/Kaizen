@@ -659,14 +659,14 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
 }
 
 /**
- * The activity of a task or a claim — every status and field change
- * (written by the server) and every update in words.
- *
- * In the page (§103): what PEOPLE wrote — the last three updates, whole —
- * and a line saying how much more there is. The full log, with the
- * system's entries ("Sent to Hostaway…", "Recorded in Costs…", status
- * changes) that buried the task when shown in the page, is a pop-up:
- * newest first, people's updates or everything, with the box to add one.
+ * What happened to a task or a claim, as two things (§103):
+ *   · 💬 Comments — what people wrote: a fold in the page, closed by
+ *     default (it says how many), with every comment and the box to add one
+ *     when opened.
+ *   · Activity log — what the system recorded (status and field changes,
+ *     "Sent to Hostaway…", "Recorded in Costs…"): a pop-up, newest first.
+ * Shown together in the page, the system's lines buried the comments and
+ * the task they belong to.
  */
 export function Timeline({ load, post, version = 0, readOnly = false, title }: {
   load: () => Promise<{ ok: true; updates: WorkUpdate[] } | { ok: false; message?: string; error?: string }>;
@@ -681,8 +681,8 @@ export function Timeline({ load, post, version = 0, readOnly = false, title }: {
   const [list, setList] = useState<WorkUpdate[] | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  const [open, setOpen] = useState<false | 'read' | 'write'>(false);
-  const [only, setOnly] = useState<'all' | 'notes'>('all');
+  const [comments, setComments] = useState(false);
+  const [log, setLog] = useState(false);
   const read = () => load().then(r => setList(r.ok ? r.updates : [])).catch(() => setList([]));
   useEffect(() => { void read(); }, [version]);
 
@@ -694,57 +694,48 @@ export function Timeline({ load, post, version = 0, readOnly = false, title }: {
     if (ok) { setText(''); await read(); }
   };
   const notes = (list ?? []).filter(u => u.kind === 'note');
-  const shown = [...(list ?? [])].filter(u => only === 'all' || u.kind === 'note').reverse();
+  const changes = (list ?? []).filter(u => u.kind !== 'note');
 
   return (
     <div className="timeline compact">
       <div className="tl-summary">
-        <span className="timeline-title">Activity</span>
-        {list === null ? <span className="note loading-dot">Reading</span>
-          : !list.length ? <span className="sub-n">nothing yet</span>
-          : <span className="sub-n">{notes.length} update{notes.length === 1 ? '' : 's'}{list.length > notes.length ? ` · ${list.length - notes.length} change${list.length - notes.length === 1 ? '' : 's'}` : ''}</span>}
+        <button type="button" className="tl-toggle" aria-expanded={comments} onClick={() => setComments(!comments)}>
+          💬 Comments{list === null ? '' : ` · ${notes.length}`} <span aria-hidden="true">{comments ? '▾' : '▸'}</span>
+        </button>
         <span className="rb-spacer" />
-        {!!list?.length && <button type="button" className="link" onClick={() => { setOnly('all'); setOpen('read'); }}>View activity</button>}
-        {!readOnly && <button type="button" className="small secondary" onClick={() => setOpen('write')}>+ Update</button>}
+        {changes.length > 0 && <button type="button" className="link" onClick={() => setLog(true)}>Activity log · {changes.length}</button>}
       </div>
-      {/* What people wrote stays in sight: the last three, whole. */}
-      {notes.length > 0 && (
-        <ol className="tl-notes">
-          {notes.length > 3 && (
-            <li className="tl-more"><button type="button" className="link tiny" onClick={() => { setOnly('notes'); setOpen('read'); }}>
-              {notes.length - 3} earlier update{notes.length - 3 === 1 ? '' : 's'}</button></li>
+      {comments && (
+        <div className="tl-comments">
+          {list === null ? <p className="note loading-dot">Reading</p> : !notes.length ? <p className="note">No comments yet.</p> : (
+            <ol className="tl-notes">
+              {notes.map(u => (
+                <li key={u.id}>
+                  <span className="tl-note-head"><b>{u.createdBy?.split('@')[0] ?? '—'}</b> · {nyParts(u.createdAt).short}</span>
+                  <span className="tl-note-body">{u.body}</span>
+                </li>
+              ))}
+            </ol>
           )}
-          {notes.slice(-3).map(u => (
-            <li key={u.id}>
-              <span className="tl-note-head"><b>{u.createdBy?.split('@')[0] ?? '—'}</b> · {nyParts(u.createdAt).short}</span>
-              <span className="tl-note-body">{u.body}</span>
-            </li>
-          ))}
-        </ol>
-      )}
-      {open && (
-        <Modal title={`Activity${title ? ` — ${title}` : ''}`} onClose={() => setOpen(false)}>
           {!readOnly && (
             <form className="timeline-add" onSubmit={e => { e.preventDefault(); void send(); }}>
-              <textarea rows={2} value={text} autoFocus={open === 'write'} placeholder="Add an update — what happened, what's next, who you're waiting on"
+              <textarea rows={2} value={text} placeholder="Add a comment — what happened, what's next, who you're waiting on"
                         onChange={e => setText(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void send(); }} />
-              <button className="small" disabled={!text.trim() || busy}>{busy ? '…' : 'Post update'}</button>
+              <button className="small" disabled={!text.trim() || busy}>{busy ? '…' : 'Comment'}</button>
             </form>
           )}
-          {!!list?.length && (
-            <div className="tl-filter" role="group" aria-label="Show">
-              <button type="button" className={`chip ${only === 'all' ? 'active' : ''}`} onClick={() => setOnly('all')}>Everything · {list.length}</button>
-              <button type="button" className={`chip ${only === 'notes' ? 'active' : ''}`} onClick={() => setOnly('notes')}>Updates · {notes.length}</button>
-            </div>
-          )}
-          {list === null ? <p className="note loading-dot">Reading</p> : !shown.length ? <p className="note">{only === 'notes' ? 'Nobody has written an update yet.' : 'No activity yet.'}</p> : (
+        </div>
+      )}
+      {log && (
+        <Modal title={`Activity log${title ? ` — ${title}` : ''}`} onClose={() => setLog(false)}>
+          {!changes.length ? <p className="note">Nothing recorded yet.</p> : (
             <ol className="timeline-list tl-modal">
-              {shown.map(u => (
+              {[...changes].reverse().map(u => (
                 <li key={u.id} className={`tl-${u.kind}`}>
                   <span className="tl-when" title="New York time">{nyParts(u.createdAt).short}</span>
                   <span className="tl-who">{u.createdBy?.split('@')[0] ?? '—'}</span>
-                  <span className="tl-body">{u.kind === 'note' ? u.body : <i>{u.body}</i>}</span>
+                  <span className="tl-body">{u.body}</span>
                 </li>
               ))}
             </ol>
