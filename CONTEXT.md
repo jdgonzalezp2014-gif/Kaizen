@@ -3115,3 +3115,18 @@ manage that section. (And the SOP updated.)
   with a one-line note; forms and cards opened from a list go on top of it
   and return to it refreshed. Nothing new is posted to the channel.
 - The SOP "Kaizen in Slack" is v2: the eight steps follow the sections.
+
+## 103. The activity log, as a pop-up
+
+The owner (2026-10-02): in tasks, the activity log is a lot of visual
+noise — make it a pop-up.
+
+- In a task, a claim and the done log, the log is **one line**:
+  "Activity · N entries · M updates", the last thing a *person* wrote (a
+  system change only when nobody has written), and **View activity** /
+  **+ Update**. Most entries are the system's ("Sent to Hostaway…",
+  "Recorded in Costs…", status changes) and buried the task in the page.
+- The pop-up (`src/components/Modal.tsx`, the app's first generic one —
+  Esc, ✕ or a click outside; a sheet from the bottom on phones): the box to
+  add an update on top (focused when opened with + Update), "Everything /
+  Updates" (people's words only), the log newest first.

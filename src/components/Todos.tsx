@@ -13,6 +13,7 @@
  * Add in one line; open a row to change it, in place (§22: no modals).
  * Everything is read from the server as it is now.
  */
+import { Modal } from './Modal.tsx';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
@@ -430,7 +431,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
               )}
             </div>
           )}
-          <Timeline load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} />
+          <Timeline title={t.title} load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} />
           {msg && <p className="banner ok">{msg}</p>}
           <div className="button-row">
             <span className="sub-n">added by {t.createdBy?.split('@')[0] ?? '—'} · {t.createdAt.slice(0, 10)}</span>
@@ -658,24 +659,30 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
 }
 
 /**
- * A timeline — every status and field change (written by the server) and
- * every update in words, oldest first, with a box to add one. Shared by a
- * task and a claim.
+ * The activity of a task or a claim — every status and field change
+ * (written by the server) and every update in words.
+ *
+ * In the page it is one line (§103): how much there is, and the last thing
+ * a person wrote. The log itself is a pop-up — newest first, people's
+ * updates or everything — with the box to add one. Most entries are the
+ * system's ("Sent to Hostaway…", "Recorded in Costs…"); shown in the page
+ * they buried the task they belong to.
  */
-export function Timeline({ load, post, version = 0, readOnly = false }: {
+export function Timeline({ load, post, version = 0, readOnly = false, title }: {
   load: () => Promise<{ ok: true; updates: WorkUpdate[] } | { ok: false; message?: string; error?: string }>;
   post: (body: string) => Promise<boolean>;
   /** The done log reads a timeline; it does not add to it. */
   readOnly?: boolean;
   /** Re-read when this changes (the parent saw a new update count). */
   version?: number;
+  /** What it is the activity of, for the pop-up's title. */
+  title?: string;
 }) {
   const [list, setList] = useState<WorkUpdate[] | null>(null);
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
-  // The last three, newest at the bottom beside the box; the earlier ones
-  // one tap away, in place — what happened lately is what is read.
-  const [earlier, setEarlier] = useState(false);
+  const [open, setOpen] = useState<false | 'read' | 'write'>(false);
+  const [only, setOnly] = useState<'all' | 'notes'>('all');
   const read = () => load().then(r => setList(r.ok ? r.updates : [])).catch(() => setList([]));
   useEffect(() => { void read(); }, [version]);
 
@@ -686,33 +693,56 @@ export function Timeline({ load, post, version = 0, readOnly = false }: {
     setBusy(false);
     if (ok) { setText(''); await read(); }
   };
+  const notes = (list ?? []).filter(u => u.kind === 'note');
+  // The line in the page leads with what a person said; a change only when nobody has written.
+  const last = notes[notes.length - 1] ?? (list ?? [])[(list ?? []).length - 1];
+  const shown = [...(list ?? [])].filter(u => only === 'all' || u.kind === 'note').reverse();
 
   return (
-    <div className="timeline">
-      <div className="timeline-title">Updates</div>
-      {list === null ? <p className="note loading-dot">Reading</p> : !list.length ? <p className="note">No updates yet.</p> : (
-        <ol className="timeline-list">
-          {list.length > 3 && (
-            <li className="tl-earlier">
-              <button type="button" className="link tiny home-more" onClick={() => setEarlier(!earlier)}>
-                {earlier ? 'Hide earlier ▾' : `Show ${list.length - 3} earlier ▴`}</button>
-            </li>
+    <div className="timeline compact">
+      <div className="tl-summary">
+        <span className="timeline-title">Activity</span>
+        {list === null ? <span className="note loading-dot">Reading</span>
+          : !list.length ? <span className="sub-n">nothing yet</span>
+          : <>
+              <span className="sub-n">{list.length} {list.length === 1 ? 'entry' : 'entries'}{notes.length ? ` · ${notes.length} update${notes.length === 1 ? '' : 's'}` : ''}</span>
+              {last && <span className="tl-last" title={last.body}>
+                <b>{last.createdBy?.split('@')[0] ?? '—'}</b> — {last.body.length > 90 ? `${last.body.slice(0, 88)}…` : last.body}
+                <span className="sub-n"> · {nyParts(last.createdAt).short}</span></span>}
+            </>}
+        <span className="rb-spacer" />
+        {!!list?.length && <button type="button" className="link" onClick={() => setOpen('read')}>View activity</button>}
+        {!readOnly && <button type="button" className="small secondary" onClick={() => setOpen('write')}>+ Update</button>}
+      </div>
+      {open && (
+        <Modal title={`Activity${title ? ` — ${title}` : ''}`} onClose={() => setOpen(false)}>
+          {!readOnly && (
+            <form className="timeline-add" onSubmit={e => { e.preventDefault(); void send(); }}>
+              <textarea rows={2} value={text} autoFocus={open === 'write'} placeholder="Add an update — what happened, what's next, who you're waiting on"
+                        onChange={e => setText(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void send(); }} />
+              <button className="small" disabled={!text.trim() || busy}>{busy ? '…' : 'Post update'}</button>
+            </form>
           )}
-          {(earlier ? list : list.slice(-3)).map(u => (
-            <li key={u.id} className={`tl-${u.kind}`}>
-              <span className="tl-when" title="New York time">{nyParts(u.createdAt).short}</span>
-              <span className="tl-who">{u.createdBy?.split('@')[0] ?? '—'}</span>
-              <span className="tl-body">{u.kind === 'note' ? u.body : <i>{u.body}</i>}</span>
-            </li>
-          ))}
-        </ol>
+          {!!list?.length && (
+            <div className="tl-filter" role="group" aria-label="Show">
+              <button type="button" className={`chip ${only === 'all' ? 'active' : ''}`} onClick={() => setOnly('all')}>Everything · {list.length}</button>
+              <button type="button" className={`chip ${only === 'notes' ? 'active' : ''}`} onClick={() => setOnly('notes')}>Updates · {notes.length}</button>
+            </div>
+          )}
+          {list === null ? <p className="note loading-dot">Reading</p> : !shown.length ? <p className="note">{only === 'notes' ? 'Nobody has written an update yet.' : 'No activity yet.'}</p> : (
+            <ol className="timeline-list tl-modal">
+              {shown.map(u => (
+                <li key={u.id} className={`tl-${u.kind}`}>
+                  <span className="tl-when" title="New York time">{nyParts(u.createdAt).short}</span>
+                  <span className="tl-who">{u.createdBy?.split('@')[0] ?? '—'}</span>
+                  <span className="tl-body">{u.kind === 'note' ? u.body : <i>{u.body}</i>}</span>
+                </li>
+              ))}
+            </ol>
+          )}
+        </Modal>
       )}
-      {!readOnly && <form className="timeline-add" onSubmit={e => { e.preventDefault(); void send(); }}>
-        <textarea rows={2} value={text} placeholder="Add an update — what happened, what's next, who you're waiting on"
-                  onChange={e => setText(e.target.value)}
-                  onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void send(); }} />
-        <button className="small" disabled={!text.trim() || busy}>{busy ? '…' : 'Post update'}</button>
-      </form>}
     </div>
   );
 }
@@ -971,7 +1001,7 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
                                          reservationLabel: claim.reservation_label }} onChange={setWork} />
         </div>
       )}
-      <Timeline load={() => getClaimUpdates(String(claim.id))}
+      <Timeline title={`${claim.unit_name ?? 'Portfolio'} · ${claim.description || claim.category || 'claim'}`} load={() => getClaimUpdates(String(claim.id))}
                 post={async body => (await postClaimNote(String(claim.id), body).catch(() => ({ ok: false }))).ok}
                 version={work.length} />
     </div>
@@ -1102,7 +1132,7 @@ function DoneLog({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
                         <p className="note">Written by {t.createdBy?.split('@')[0] ?? '—'} on {nyParts(t.createdAt).short}
                           {t.assignee ? ` · owner ${t.assignee}` : ''}{t.vendor ? ` · vendor ${t.vendor}` : ''}</p>
                         {t.description && <p className="todo-desc-full">{t.description}</p>}
-                        <Timeline readOnly load={() => getTaskUpdates(t.id)} post={async () => false} />
+                        <Timeline readOnly title={t.title} load={() => getTaskUpdates(t.id)} post={async () => false} />
                       </div>
                     )}
                   </li>
