@@ -1702,7 +1702,16 @@ button.sop-num { cursor: pointer; }
   border: 1px solid color-mix(in srgb, var(--series-1) 40%, var(--line)); border-radius: 10px;
   background: color-mix(in srgb, var(--series-1) 7%, var(--card)); box-shadow: 0 6px 18px rgba(0,0,0,.10); font-size: 13px; font-weight: 600; }
 @media (max-width: 720px) { .task-fold-sum { white-space: normal; } }
-/* §104: the title is the row's; renaming lives in Details. */
-.task-title-in { margin: 0; }
-.task-title-in input { font-size: 14px; font-weight: 600; }
+/* §105: the row's own actions, and renaming in place. Faint until the row is pointed at; always shown on touch. */
+.todo-quick { margin-left: auto; display: inline-flex; gap: 4px; opacity: .4; transition: opacity .12s; }
+.todo-line:hover > .todo-quick, .todo-quick:focus-within { opacity: 1; }
+.todo-quick button { font-size: 11.5px; font-weight: 600; padding: 2px 9px; border-radius: 999px; background: none;
+  border: 1px solid var(--line); color: var(--muted); cursor: pointer; }
+.todo-quick .q-done:hover { color: var(--good); border-color: color-mix(in srgb, var(--good) 50%, transparent); }
+.todo-quick .q-cancel:hover { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 40%, transparent); }
+.todo-quick + .todo-x { margin-left: 0; }
+.todo-pencil { background: none; border: 0; padding: 0 2px; color: var(--muted); font-size: 12.5px; cursor: pointer; opacity: 0; font-weight: 400; }
+.todo-line:hover > .todo-pencil, .todo-pencil:focus { opacity: .8; }
+.todo-rename { font-size: 14px; font-weight: 500; padding: 2px 6px; flex: 1 1 340px; max-width: 560px; }
+@media (hover: none) { .todo-quick { opacity: 1; } .todo-pencil { opacity: .6; } }
 .todo-edit > .button-row { margin-top: 2px; align-items: center; }

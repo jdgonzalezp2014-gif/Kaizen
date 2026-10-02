@@ -3161,3 +3161,16 @@ changes"** bar appears, sticky at the bottom of the task, only when
 something differs from what was saved — the one button is never hunted for.
 In edit mode the task is a `<div>`, not a `<form>`: the comment box is its
 own form and forms cannot nest. Claims open their comments first too.
+
+## 105. A task's actions on its own row; renaming in place
+
+The owner (2026-10-02): the buttons to cancel or mark as done at the right
+of every task; the title changed with a pencil beside it, not in Details.
+
+- Every row ends with **Cancel** and **✓ Done** (closed rows: **↺ Reopen**),
+  faint until the row is pointed at, always shown on touch screens. Cancel
+  closes it as *cancelled* — kept, reopenable; Remove (deleting, asked)
+  stays in the open task's footer.
+- **✎** beside the title renames it in place: Enter or leaving the field
+  saves, Esc puts it back. Title is no longer a field in Details, and the
+  open task's footer no longer repeats "Mark as done".

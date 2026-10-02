@@ -344,6 +344,17 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
   const prog = progress(mine);
   const parent = t.parentId ? byId.get(t.parentId) : undefined;
   const tick = async () => { setBusy(true); await act({ action: 'done', id: t.id, done: !closed }); setBusy(false); };
+  // §105: the row's own actions — done, cancel, reopen — and renaming in place.
+  const cancel = async () => { setBusy(true); await act({ action: 'update', id: t.id, status: 'cancelled' }); setBusy(false); };
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(t.title);
+  const rename = async () => {
+    const n = name.trim();
+    setRenaming(false);
+    if (!n || n === t.title) { setName(t.title); return; }
+    setBusy(true); const ok = await act({ action: 'update', id: t.id, title: n }); setBusy(false);
+    if (!ok) setName(t.title);
+  };
   const toClaim = async () => {
     setBusy(true);
     const ok = await act({ action: 'toClaim', id: t.id });
@@ -358,7 +369,14 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
                aria-label={closed ? `Reopen: ${t.title}` : `Done: ${t.title}`} />
         {t.kind === 'work_order' && <span title="Work order">🔧</span>}
         {flat && parent && <span className="sub-n" title="Sub-task of">↳ {parent.title} ·</span>}
-        <button className="todo-title" onClick={onOpen} title="Open it">{t.title}</button>
+        {renaming ? (
+          <input className="todo-rename" value={name} autoFocus maxLength={120} aria-label="Title"
+                 onChange={e => setName(e.target.value)} onBlur={() => void rename()}
+                 onKeyDown={e => { if (e.key === 'Enter') void rename(); if (e.key === 'Escape') { setName(t.title); setRenaming(false); } }} />
+        ) : <>
+          <button className="todo-title" onClick={onOpen} title="Open it">{t.title}</button>
+          <button type="button" className="todo-pencil" title="Rename" aria-label={`Rename ${t.title}`} onClick={() => { setName(t.title); setRenaming(true); }}>✎</button>
+        </>}
         {prog.total > 0 && <span className={`todo-prog ${prog.done === prog.total ? 'all' : ''}`} title="Sub-tasks done">
           ☑ {prog.done}/{prog.total}</span>}
         {t.priority !== 'none' && !closed && <span className={`todo-prio ${t.priority}`}>{PRIORITY_LABEL[t.priority]}</span>}
@@ -384,11 +402,22 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
           : t.hostawayTaskId && <span className="todo-ha" title={`Hostaway task #${t.hostawayTaskId}${t.source === 'hostaway' ? ' — written in Hostaway' : ''}`}>⇄ Hostaway</span>}
         {/* A sub-task is removed from its own line, naming itself — never
             through the parent's Remove, which takes the whole task (§82). */}
+        {closed && t.doneAt && <span className="sub-n">{t.status === 'cancelled' ? '✕' : '✓'} {t.doneBy?.split('@')[0]} · {t.doneAt.slice(5, 10)}</span>}
+        {/* §105: how a task ends, on its own row, at the right — faint until the row is pointed at. */}
+        <span className="todo-quick">
+          {closed
+            ? <button type="button" className="q-reopen" disabled={busy} onClick={() => void tick()} title="Reopen">↺ Reopen</button>
+            : <>
+                <button type="button" className="q-cancel" disabled={busy} onClick={() => void cancel()} title="Cancel it — kept, closed as cancelled">Cancel</button>
+                <button type="button" className="q-done" disabled={busy} onClick={() => void tick()} title="Mark as done">✓ Done</button>
+              </>}
+        </span>
+        {/* A sub-task is removed from its own line, naming itself — never
+            through the parent's Remove, which takes the whole task (§82). */}
         {t.parentId && !open && (
           <button className="todo-x" title={`Remove the sub-task “${t.title}”`} aria-label={`Remove the sub-task ${t.title}`}
                   onClick={() => setLineDel(true)}>✕</button>
         )}
-        {closed && t.doneAt && <span className="sub-n">{t.status === 'cancelled' ? '✕' : '✓'} {t.doneBy?.split('@')[0]} · {t.doneAt.slice(5, 10)}</span>}
       </div>
       {lineDel && (
         <div className="todo-confirm">
@@ -450,12 +479,10 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
               <button className="link tiny" disabled={busy} onClick={() => void toClaim()}
                       title="It is a guest case — open a claim for it, linked to this to-do">⚑ Register as a claim</button>}
             <span className="rb-spacer" />
-            {/* Bottom right (§104): the two ways a task ends — done, the main one, last; remove, apart and asked. */}
+            {/* Done / Cancel / Reopen are on the task's own row (§105); removing sits apart, here, and is asked. */}
             {!confirmDel
-              ? <><button className="link tiny danger" onClick={() => setConfirmDel(true)}>
-                    Remove this {t.parentId ? 'sub-task' : t.kind === 'work_order' ? 'work order' : 'to-do'}…</button>
-                  <button className={closed ? 'small secondary' : 'small'} disabled={busy} onClick={() => void tick()}>
-                    {closed ? '↺ Reopen' : '✓ Mark as done'}</button></>
+              ? <button className="link tiny danger" onClick={() => setConfirmDel(true)}>
+                  Remove this {t.parentId ? 'sub-task' : t.kind === 'work_order' ? 'work order' : 'to-do'}…</button>
               : <><span className="note">
                     Remove “{t.title}”{mine.filter(k => !isClosed(k.status)).length
                       ? <b> and its {mine.filter(k => !isClosed(k.status)).length} sub-task{mine.filter(k => !isClosed(k.status)).length === 1 ? '' : 's'}</b> : ''}?
@@ -638,7 +665,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
       v.reservationLabel ? `🛏 ${v.reservationLabel}` : '', v.costActual != null ? money2(v.costActual) : '', wo ? '🔧 Work order' : ''].filter(Boolean);
     return (
       <div className="task-edit">
-        {/* The row above is the heading (title and its marks); renaming is rare, so the title is in Details (§104). */}
+        {/* The row above is the heading (title and its marks); ✎ beside the title renames it (§105). */}
         <textarea className="task-desc" value={v.description ?? ''} maxLength={4000} aria-label="Description"
                   rows={Math.min(8, Math.max(2, (v.description ?? '').split('\n').length + 1))}
                   placeholder="Add a description — who, what exactly, anything to remember"
@@ -651,9 +678,6 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
           </button>
           {details && (
             <div className="task-fold-body">
-              <label className="task-title-in">Title
-                <input value={v.title} maxLength={120} onChange={e => set('title', e.target.value)}
-                       onKeyDown={e => { if (e.key === 'Enter') void submit(); }} /></label>
               <div className="task-fold-row">
                 <div className="todo-kind" role="group" aria-label="Kind">
                   {(['task', 'work_order'] as TaskKind[]).map(k => (
