@@ -24,7 +24,7 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   can, getClaims, getForward, getGuestDocs, getOperations, getVariable, uploadGuestDoc,
-  type Claim, type OperationsResponse, type VariableExpense
+  type Claim, type OperationsResponse, type StayDocs, type VariableExpense
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
 import { todayIn, addDays } from '../lib/dates.ts';
@@ -105,56 +105,75 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   // Every guest signs the rental agreement (§89): Hostaway's guest portal
   // says whether they have; the ID is what is filed in Drive.
   const canDocs = can(permissions, 'guests.documents');
-  const [ids, setIds] = useState<Record<string, boolean>>({});
+  // §106: what Drive holds for every arrival — the ID and the agreement — and where.
+  const [docs, setDocs] = useState<Record<string, { id: boolean; agreement: boolean; folderUrl: string | null }>>({});
   const arrivals = [...todays.ins, ...todays.ins2];
   const arrivalsKey = arrivals.map(r => r.resId).join();
+  const docsOf = (d: StayDocs) => ({ id: d.id.length > 0, agreement: d.agreement.length > 0, folderUrl: d.folderUrl });
   useEffect(() => {
     if (!canDocs || !arrivals.length) return;
-    const need = new Set(ops.data?.guestDocUnits ?? []);
-    const stays = arrivals.filter(r => need.has(r.unitId)).map(r => ({ resId: r.resId, arrival: r.date, name: r.docName }));
-    if (!stays.length) return;
-    void getGuestDocs(stays).then(x => { if (x.ok) setIds(Object.fromEntries(Object.entries(x.docs).map(([k, d]) => [k, d.id.length > 0]))); });
+    const stays = arrivals.map(r => ({ resId: r.resId, arrival: r.date, name: r.docName }));
+    void getGuestDocs(stays).then(x => { if (x.ok) setDocs(Object.fromEntries(Object.entries(x.docs).map(([k, d]) => [k, docsOf(d)]))); });
   }, [canDocs, arrivalsKey]);
+  // A file dropped anywhere but a drop zone is not opened by the browser instead of the page.
+  useEffect(() => {
+    const stop = (e: DragEvent) => { if (e.dataTransfer?.types.includes('Files')) e.preventDefault(); };
+    addEventListener('dragover', stop); addEventListener('drop', stop);
+    return () => { removeEventListener('dragover', stop); removeEventListener('drop', stop); };
+  }, []);
   const signed = (r: BoardRow) => r.agreement === 'signed';
   const unsigned = arrivals.filter(r => r.agreement === 'not_signed').length;
   const unsignedToday = todays.ins.filter(r => r.agreement === 'not_signed').length;
   const needsCopy = new Set(ops.data?.guestDocUnits ?? []);
   const [uploading, setUploading] = useState<string | null>(null);
   const [upErr, setUpErr] = useState('');
-  // The building's copy of the ID (§90): one tap from Home to the reservation's Drive folder.
-  const uploadId = async (r: BoardRow, file: File | undefined) => {
+  // The guest's ID or agreement, into the reservation's Drive folder (§90, §106): picked, or dropped on the row.
+  const upload = async (r: BoardRow, kind: 'id' | 'agreement', file: File | undefined) => {
     if (!file) return;
-    setUploading(r.resId); setUpErr('');
-    const x = await uploadGuestDoc(r.resId, 'id', file).catch(e => ({ ok: false as const, message: String(e) }));
+    if (!/^image\/|^application\/pdf$/.test(file.type)) { setUpErr(`${r.unit}: a photo or a PDF, please.`); return; }
+    setUploading(`${r.resId}:${kind}`); setUpErr('');
+    const x = await uploadGuestDoc(r.resId, kind, file).catch(e => ({ ok: false as const, message: String(e) }));
     setUploading(null);
-    if (x.ok) setIds(m => ({ ...m, [r.resId]: x.docs.id.length > 0 })); else setUpErr(`${r.unit}: ${x.message ?? 'not uploaded'}`);
+    if (x.ok) setDocs(m => ({ ...m, [r.resId]: docsOf(x.docs) })); else setUpErr(`${r.unit}: ${x.message ?? 'not uploaded'}`);
+  };
+  /** One document chip: ✓ (opens the Drive folder) when it is there, ⇪ to pick a file when not — amber where the building needs it. */
+  const docChip = (r: BoardRow, kind: 'id' | 'agreement') => {
+    const have = docs[r.resId];
+    if (!have) return null;
+    const word = kind === 'id' ? 'ID' : 'Agreement';
+    if (have[kind]) {
+      return have.folderUrl
+        ? <a className="doc-ok" href={have.folderUrl} target="_blank" rel="noreferrer" title={`The ${word.toLowerCase()} is in the reservation's Drive folder`}>✓ {word}</a>
+        : <span className="doc-ok">✓ {word}</span>;
+    }
+    const needed = kind === 'id' && needsCopy.has(r.unitId);
+    return (
+      <label className={`home-upload ${needed ? '' : 'optional'}`} title={`Upload the ${word.toLowerCase()} to the reservation's Drive folder — or drop the file on this line`}>
+        {uploading === `${r.resId}:${kind}` ? 'Uploading…' : `⇪ ${word}`}
+        <input type="file" accept="image/*,.pdf" hidden disabled={!!uploading}
+               onChange={e => { void upload(r, kind, e.target.files?.[0]); e.target.value = ''; }} />
+      </label>
+    );
   };
   const arrivalRow = (r: BoardRow, isToday: boolean) => {
     const clean = isToday ? todays.outs.find(o => o.unitId === r.unitId) : undefined;
     const ready = !isToday ? null : !clean ? 'no departure today' : clean.assignment === 'assigned' ? `cleaned by ${clean.cleaner}` : '▲ clean not assigned';
     return (
-      <li key={r.resId}>
+      <DropRow key={r.resId} enabled={canDocs} label={`${r.unit} · ${r.guest || 'guest'}`} onDrop={(kind, file) => void upload(r, kind, file)}>
         <span className="home-time">{r.time}</span>
         <span className="home-main"><b>{r.unit}</b> <span className="sub-n">· {r.guest || 'guest'} · {r.nights} night{r.nights === 1 ? '' : 's'}{r.guests ? ` · ${r.guests} guests` : ''}</span>
           {ready && <span className={`home-ready ${ready.startsWith('▲') ? 'breach' : 'sub-n'}`}> · {ready}</span>}</span>
         <span className="home-side home-docs">
           {r.agreement && <span className={signed(r) ? 'doc-ok' : 'breach'}>{signed(r) ? '✓ Signed' : '▲ Not signed'}</span>}
-          {/* Hostaway's own check, only when it says so: an ID the guest
-              uploaded in the portal is not "verified" there, and "○ ID" read
-              as missing when it was not (§90). */}
+          {/* Hostaway's own check, only when it says so (§90). */}
           {r.idVerified && <span className="doc-ok" title="ID verified in Hostaway">✓ ID verified</span>}
-          {/* The building's copy, where one is needed — and the way to add it. */}
-          {canDocs && needsCopy.has(r.unitId) && r.resId in ids && (ids[r.resId]
-            ? <span className="doc-ok" title="A copy of the ID is in the reservation's Drive folder">✓ ID in Drive</span>
-            : <label className="home-upload" title="Upload the guest's ID to the reservation's Drive folder">
-                {uploading === r.resId ? 'Uploading…' : '⇪ ID to Drive'}
-                <input type="file" accept="image/*,.pdf" hidden disabled={!!uploading}
-                       onChange={e => { void uploadId(r, e.target.files?.[0]); e.target.value = ''; }} />
-              </label>)}
+          {/* What Drive holds, and the way to add it (§106). */}
+          {canDocs && docChip(r, 'id')}
+          {canDocs && docChip(r, 'agreement')}
           <a className="home-hostaway" href={hostawayReservationUrl(r.resId)} target="_blank" rel="noreferrer"
              title="Open the reservation in Hostaway — the ID and the agreement are there">↗ Hostaway</a>
         </span>
-      </li>
+      </DropRow>
     );
   };
   // Not signed first — the three shown are the three to chase.
@@ -430,5 +449,32 @@ function EventGroup({ title, items, onMore, more }: {
       )} />
       {more && onMore && <button className="link tiny home-more" onClick={onMore}>{more} →</button>}
     </div>
+  );
+}
+
+/**
+ * An arrival that takes a file (§106): drag one over the line and it offers
+ * two places to drop it — as the ID or as the agreement.
+ */
+function DropRow({ enabled, label, onDrop, children }: { enabled: boolean; label: string; onDrop: (kind: 'id' | 'agreement', file: File) => void; children: ReactNode }) {
+  const [over, setOver] = useState(false);
+  const isFile = (e: React.DragEvent) => e.dataTransfer.types.includes('Files');
+  if (!enabled) return <li>{children}</li>;
+  // The zones cover the line — each says whose stay it files to.
+  const zone = (kind: 'id' | 'agreement', text: string) => (
+    <div className="drop-zone" onDragOver={e => { if (isFile(e)) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }}
+         onDrop={e => { e.preventDefault(); setOver(false); const f = e.dataTransfer.files[0]; if (f) onDrop(kind, f); }}>
+      <b>{text}</b><span className="sub-n">{label}</span>
+    </div>
+  );
+  return (
+    <li className={`drop-row ${over ? 'is-over' : ''}`}
+        onDragEnter={e => { if (isFile(e)) setOver(true); }}
+        onDragOver={e => { if (isFile(e)) e.preventDefault(); }}
+        onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver(false); }}
+        onDrop={e => { e.preventDefault(); setOver(false); }}>
+      {children}
+      {over && <div className="drop-zones">{zone('id', '⇪ Drop as ID')}{zone('agreement', '⇪ Drop as Agreement')}</div>}
+    </li>
   );
 }

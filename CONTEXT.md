@@ -3174,3 +3174,19 @@ of every task; the title changed with a pencil beside it, not in Details.
 - **✎** beside the title renames it in place: Enter or leaving the field
   saves, Esc puts it back. Title is no longer a field in Details, and the
   open task's footer no longer repeats "Mark as done".
+
+## 106. Guest documents from Home: picked or dropped
+
+The owner (2026-10-03): on Home's reservations, drag the documents and
+upload the ID and the agreement.
+
+- Every arrival (today and tomorrow, for `guests.documents`) shows what the
+  reservation's Drive folder holds — **✓ ID / ✓ Agreement** (opening the
+  folder) — or **⇪ ID / ⇪ Agreement** to pick a file. Amber where the
+  building keeps a copy and it is missing (the ID, §73); grey where it is
+  optional. Drive is read for all arrivals now, not only those units.
+- **Drag a file over an arrival**: the line offers two zones, "Drop as ID"
+  and "Drop as Agreement", each naming the unit and guest it files to. Into
+  the same folders as the board (Reservations → … → ID / Rental Agreement).
+  A photo or a PDF; a file dropped outside a zone does not open in the
+  browser in place of the page.

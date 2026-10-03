@@ -1715,3 +1715,14 @@ button.sop-num { cursor: pointer; }
 .todo-rename { font-size: 14px; font-weight: 500; padding: 2px 6px; flex: 1 1 340px; max-width: 560px; }
 @media (hover: none) { .todo-quick { opacity: 1; } .todo-pencil { opacity: .6; } }
 .todo-edit > .button-row { margin-top: 2px; align-items: center; }
+
+/* §106: an arrival takes its documents — picked, or dropped on the line. */
+.home-upload.optional { color: var(--muted); font-weight: 500; }
+.drop-row { position: relative; }
+.drop-row.is-over { outline: 2px dashed var(--series-1); outline-offset: -2px; border-radius: 8px; }
+.drop-zones { position: absolute; inset: 2px; z-index: 3; display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.drop-zone { display: grid; place-items: center; border-radius: 8px; font-size: 13px; font-weight: 650;
+  color: var(--series-1); background: color-mix(in srgb, var(--series-1) 10%, var(--card)); border: 1px solid color-mix(in srgb, var(--series-1) 35%, transparent); }
+.drop-zone:hover, .drop-zone:focus { background: color-mix(in srgb, var(--series-1) 20%, var(--card)); }
+.drop-zone { align-content: center; gap: 2px; text-align: center; }
+.drop-zone .sub-n { font-weight: 500; }
