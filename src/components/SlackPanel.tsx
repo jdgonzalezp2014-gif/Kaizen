@@ -5,7 +5,7 @@
  */
 import { useEffect, useState } from 'react';
 import { getOpsSettings, getSlack, slackAction, type SlackState } from '../api.ts';
-import { DEFAULT_DIGEST, DEFAULT_EVENTS, TOPICS, type SlackConfig, type Topic } from '../lib/slack.ts';
+import { DEFAULT_DIGEST, DEFAULT_EVENTS, DEFAULT_TASK_CHECK, TOPICS, type SlackConfig, type Topic } from '../lib/slack.ts';
 
 const EVENT_LABEL: Record<keyof typeof DEFAULT_EVENTS, string> = {
   taskCreated: 'A task is created', taskAssigned: 'A task is assigned', taskClosed: 'A task is completed, cancelled or reopened',
@@ -33,8 +33,11 @@ function manifest(origin: string) {
       ]
     },
     oauth_config: { scopes: { bot: ['chat:write', 'chat:write.public', 'commands', 'channels:read', 'groups:read', 'channels:manage',
-                                    'groups:write', 'users:read', 'users:read.email', 'im:write'] } },
-    settings: { interactivity: { is_enabled: true, request_url: `${origin}/api/slack` }, org_deploy_enabled: false,
+                                    'groups:write', 'users:read', 'users:read.email', 'im:write',
+                                    // §107: "@Kaizen …" in a thread — only the messages that name it — and the ✅ on them.
+                                    'app_mentions:read', 'reactions:write'] } },
+    settings: { interactivity: { is_enabled: true, request_url: `${origin}/api/slack` },
+                event_subscriptions: { request_url: `${origin}/api/slack`, bot_events: ['app_mention'] }, org_deploy_enabled: false,
                 socket_mode_enabled: false, token_rotation_enabled: false }
   }, null, 2);
 }
@@ -69,6 +72,7 @@ export function SlackPanel() {
   };
   const ev = { ...DEFAULT_EVENTS, ...(cfg.events ?? {}) };
   const dg = { ...DEFAULT_DIGEST, ...(cfg.digest ?? {}) };
+  const tc = { ...DEFAULT_TASK_CHECK, ...(cfg.taskCheck ?? {}) };
 
   return (
     <div className="card slack-panel">
@@ -84,7 +88,7 @@ export function SlackPanel() {
         <p className="note">At <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer">api.slack.com/apps</a> →
           <b> Create New App → From a manifest</b> → your workspace → paste this → Create → <b>Install to Workspace</b>.
           It already points /kaizen and the buttons at this Kaizen ({origin}).</p>
-        <p className="note"><b>Already have the app?</b> When this manifest changes (it did for shortcuts and direct messages): Slack → your app →
+        <p className="note"><b>Already have the app?</b> When this manifest changes (it did for shortcuts, direct messages and thread comments): Slack → your app →
           <b> App Manifest</b> → paste → Save → <b>Reinstall to Workspace</b>. The token stays the same.</p>
         <div className="button-row">
           <button className="secondary small" onClick={() => setShowManifest(!showManifest)}>{showManifest ? 'Hide' : 'Show'} the manifest</button>
@@ -148,8 +152,23 @@ export function SlackPanel() {
                 <option value="">Off</option>{HOURS.map(h => <option key={h} value={h}>{hourWord(h)} New York</option>)}
               </select></label>
           </div>
+          <div className="row slack-taskcheck">
+            <label>Tasks check-in <span className="sub-n">— everything open</span>
+              <input type="time" value={tc.checkin ?? ''} onChange={e => setCfg(p => ({ ...p, taskCheck: { ...tc, checkin: e.target.value || null } }))} /></label>
+            <label>Tasks check-out <span className="sub-n">— closed, opened, still open</span>
+              <input type="time" value={tc.checkout ?? ''} onChange={e => setCfg(p => ({ ...p, taskCheck: { ...tc, checkout: e.target.value || null } }))} /></label>
+            <label>Their time zone
+              <select value={tc.tz} onChange={e => setCfg(p => ({ ...p, taskCheck: { ...tc, tz: e.target.value } }))}>
+                <option value="America/Chicago">Central</option><option value="America/New_York">Eastern</option>
+                <option value="America/Denver">Mountain</option><option value="America/Los_Angeles">Pacific</option>
+              </select></label>
+          </div>
           <div className="button-row">
             <button disabled={busy} onClick={() => void save()}>Save channels and reminders</button>
+            {cfg.channels?.tasks && <>
+              <button className="secondary" disabled={busy} onClick={() => void save().then(() => run({ action: 'taskCheckNow', kind: 'checkin' }, () => 'Check-in sent.'))}>Send check-in now</button>
+              <button className="secondary" disabled={busy} onClick={() => void save().then(() => run({ action: 'taskCheckNow', kind: 'checkout' }, () => 'Check-out sent.'))}>Send check-out now</button>
+            </>}
             {cfg.channels?.reservations && <button className="secondary" disabled={busy}
               onClick={() => void run({ action: 'digestNow', kind: 'morning' }, r => `Reminder sent — ${r.missing ? `${r.missing} missing` : 'nothing missing'}.`)}>Send the reminder now</button>}
           </div>

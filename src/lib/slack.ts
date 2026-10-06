@@ -29,6 +29,8 @@ export interface SlackConfig {
   team?: string;
   /** Hostaway user id → Slack user id (§100): who a task's owner is in Slack, and who "Take it" makes the owner. */
   people?: Record<string, string>;
+  /** The tasks' check-in and check-out (§107): local times in `tz` ("HH:MM"); null = off. */
+  taskCheck?: { tz?: string; checkin?: string | null; checkout?: string | null };
   /** The SOP "Kaizen in Slack" (§101): what /kaizen help shows, and where "How to use this" leads. */
   helpSopId?: string;
   /** Direct messages to people (§100). 'test' sends every one to `testUser` instead, saying who it was for. */
@@ -564,4 +566,102 @@ export function readClaimForm(state: State): Record<string, unknown> {
     source: val(state, 'source')?.selected_option?.value ?? null, caseUrl: val(state, 'case')?.value ?? '',
     refund: refund ? Number(refund) || 0 : 0
   };
+}
+
+/* ── comments from a thread (§107) ─────────────────────────────────── */
+
+/**
+ * "@Kaizen the plumber comes at 10" in a task's thread → the comment "the
+ * plumber comes at 10". The mention (and a leading "update:") is dropped;
+ * what is left is what the person wrote.
+ */
+export function commentFromMention(text: string): string {
+  return (text ?? '').replace(/<@[A-Z0-9]+(\|[^>]*)?>/g, ' ').replace(/^\s*(update|comment|note)\s*[:\-–]\s*/i, '').replace(/\s+\n/g, '\n').trim();
+}
+
+/* ── the tasks' check-in and check-out (§107) ──────────────────────── */
+
+export const DEFAULT_TASK_CHECK = { tz: 'America/Chicago', checkin: '08:00', checkout: '23:55' };
+
+/** "2026-10-05 08:05" — a moment as a wall clock in a zone. */
+export function localNow(tz: string, at = new Date()): { day: string; hm: string } {
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(at).map(x => [x.type, x.value]));
+  return { day: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour}:${p.minute}` };
+}
+
+/** A local day as UTC instants [start, end) — for "closed today", "opened today". */
+export function dayRange(day: string, tz: string): [string, string] {
+  const offset = (t: number) => {
+    const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).formatToParts(new Date(t)).map(x => [x.type, x.value]));
+    return Date.UTC(+p.year!, +p.month! - 1, +p.day!, +p.hour!, +p.minute!, +p.second!) - t;
+  };
+  const at = (d: string) => { const g = Date.parse(`${d}T00:00:00Z`); return new Date(g - offset(g - offset(g))).toISOString(); };
+  const next = new Date(Date.parse(`${day}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+  return [at(day), at(next)];
+}
+
+/**
+ * Which check is due now, and for which day. The check-in from its time
+ * until noon; the check-out from its time until 3 AM — the scheduler can
+ * run late, past midnight, and the check-out must still close the day it
+ * is about.
+ */
+export function dueTaskChecks(now: { day: string; hm: string }, cfg: SlackConfig, sent: Set<string>): { kind: 'checkin' | 'checkout'; day: string }[] {
+  const c = { ...DEFAULT_TASK_CHECK, ...(cfg.taskCheck ?? {}) };
+  const out: { kind: 'checkin' | 'checkout'; day: string }[] = [];
+  if (c.checkin && now.hm >= c.checkin && now.hm < '12:00' && !sent.has(`taskcheck:checkin:${now.day}`)) out.push({ kind: 'checkin', day: now.day });
+  if (c.checkout) {
+    const yesterday = new Date(Date.parse(`${now.day}T12:00:00Z`) - 864e5).toISOString().slice(0, 10);
+    const day = now.hm >= c.checkout ? now.day : now.hm < '03:00' ? yesterday : null;
+    if (day && !sent.has(`taskcheck:checkout:${day}`)) out.push({ kind: 'checkout', day });
+  }
+  return out;
+}
+
+export interface TaskCheckInput {
+  day: string;
+  open: { title: string; owner?: string | null; unit?: string | null; overdue: boolean; dueToday: boolean; inProgress: boolean; kind: string }[];
+  closed: { title: string; by?: string | null; cancelled: boolean }[];
+  opened: { title: string; by?: string | null }[];
+}
+
+const taskLine = (t: { title: string; owner?: string | null; unit?: string | null; kind?: string }, mark: string) =>
+  `${mark} ${t.kind === 'work_order' ? '🔧 ' : ''}${esc(t.title)}${t.unit ? ` · ${esc(t.unit)}` : ''}${t.owner ? ` · ${esc(t.owner)}` : ' · _no owner_'}`;
+const listOf = (lines: string[], max = 12) => lines.length > max ? [...lines.slice(0, max), `_…and ${lines.length - max} more_`] : lines;
+
+/**
+ * The tasks' check-in (morning): everything open, what is late or due,
+ * what is moving. The check-out (night): the day's numbers — closed, opened,
+ * still open — and the lists behind them.
+ */
+export function taskCheckMessage(kind: 'checkin' | 'checkout', d: TaskCheckInput, helpUrl?: string): { text: string; blocks: Block[] } {
+  const late = d.open.filter(t => t.overdue), today = d.open.filter(t => t.dueToday), moving = d.open.filter(t => t.inProgress && !t.overdue && !t.dueToday);
+  const rest = d.open.filter(t => !t.overdue && !t.dueToday && !(t.inProgress));
+  const manage: Block = { type: 'button', text: plain('Manage'), action_id: 'sec_tasks', value: JSON.stringify({ days: [d.day] }), ...(late.length ? { style: 'primary' } : {}) };
+  const foot = context(helpUrl ? link(helpUrl, '❓ How to use this') : '', 'Reply in a task’s thread with *@Kaizen …* to add a comment.');
+  if (kind === 'checkin') {
+    const blocks: Block[] = [
+      section(`*☀ Tasks check-in · ${day(d.day)}*\n*${d.open.length}* open · ${late.length ? `▲ *${late.length}* overdue` : '✓ none overdue'} · ● *${today.length}* due today · ◐ *${d.open.filter(t => t.inProgress).length}* in progress`, manage),
+      { type: 'divider' }
+    ];
+    if (late.length) blocks.push(section(`*▲ Overdue*\n${listOf(late.map(t => taskLine(t, '▲'))).join('\n')}`));
+    if (today.length) blocks.push(section(`*● Due today*\n${listOf(today.map(t => taskLine(t, '●'))).join('\n')}`));
+    if (moving.length) blocks.push(section(`*◐ In progress*\n${listOf(moving.map(t => taskLine(t, '◐'))).join('\n')}`));
+    if (rest.length) blocks.push(section(`*○ Also open*\n${listOf(rest.map(t => taskLine(t, '○')), 8).join('\n')}`));
+    if (!d.open.length) blocks.push(section('Nothing open. ✓'));
+    blocks.push(foot);
+    return { text: `Tasks check-in ${day(d.day)}: ${d.open.length} open, ${late.length} overdue, ${today.length} due today`, blocks };
+  }
+  const done = d.closed.filter(c => !c.cancelled), cancelled = d.closed.filter(c => c.cancelled);
+  const blocks: Block[] = [
+    section(`*🌙 Tasks check-out · ${day(d.day)}*\n✓ *${d.closed.length}* closed${cancelled.length ? ` (${done.length} done, ${cancelled.length} cancelled)` : ''} · ＋ *${d.opened.length}* opened · ○ *${d.open.length}* still open${late.length ? ` · ▲ ${late.length} overdue` : ''}`, manage),
+    { type: 'divider' }
+  ];
+  if (d.closed.length) blocks.push(section(`*✓ Closed today*\n${listOf(d.closed.map(c => `${c.cancelled ? '✕' : '✓'} ${esc(c.title)}${c.by ? ` · ${esc(c.by)}` : ''}`)).join('\n')}`));
+  if (d.opened.length) blocks.push(section(`*＋ Opened today*\n${listOf(d.opened.map(o => `＋ ${esc(o.title)}${o.by ? ` · ${esc(o.by)}` : ''}`)).join('\n')}`));
+  if (d.open.length) blocks.push(section(`*○ Still open*\n${listOf([...late.map(t => taskLine(t, '▲')), ...d.open.filter(t => !t.overdue).map(t => taskLine(t, t.inProgress ? '◐' : '○'))]).join('\n')}`));
+  blocks.push(foot);
+  return { text: `Tasks check-out ${day(d.day)}: ${d.closed.length} closed, ${d.opened.length} opened, ${d.open.length} still open`, blocks };
 }

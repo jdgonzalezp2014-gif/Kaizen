@@ -8,6 +8,9 @@ name: slack-cron
 on:
   schedule:
     - cron: '5 * * * *'
+    # The tasks' check-out at 11:55 PM Central (§107): 04:55 UTC in daylight time, 05:55 UTC in standard time.
+    # Kaizen sends it once, for the right day, whichever of the two lands at 23:55 local.
+    - cron: '55 4,5 * * *'
   workflow_dispatch: {}
 jobs:
   remind:

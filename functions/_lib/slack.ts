@@ -61,7 +61,14 @@ export async function verifySlack(secret: string, timestamp: string | null, rawB
 export async function postTo(s: SlackSetup, topic: Topic, msg: { text: string; blocks: unknown[] }) {
   const ch = s.config.channels?.[topic]?.id;
   if (!s.token || !ch) return null;
-  return slackApi(s.token, 'chat.postMessage', { channel: ch, text: msg.text, blocks: msg.blocks, unfurl_links: false });
+  return slackApi<{ ts?: string; channel?: string }>(s.token, 'chat.postMessage', { channel: ch, text: msg.text, blocks: msg.blocks, unfurl_links: false });
+}
+
+/** Which task or claim a posted message is about (§107) — so "@Kaizen …" in its thread lands on it. */
+export async function rememberThread(sql: SqlFn, posted: { ok: boolean; ts?: string; channel?: string } | null, subject: 'task' | 'claim', id: string) {
+  if (!posted?.ok || !posted.ts || !posted.channel) return;
+  await sql`INSERT INTO slack_threads (account_id, channel, ts, subject, subject_id) VALUES (1, ${posted.channel}, ${posted.ts}, ${subject}, ${id})
+            ON CONFLICT DO NOTHING`;
 }
 
 const who = (email: string) => email.includes('@') ? email.split('@')[0]! : email;
@@ -92,7 +99,7 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
   const [p] = await sql`SELECT parent_id FROM todos WHERE id::text = ${id}` as { parent_id: string | null }[];
   if (p?.parent_id) return;
   const word = event === 'assigned' ? `assigned to ${t.assignee ?? 'nobody'}` : event === 'hostaway' ? `changed in Hostaway${extra ? ` (${extra})` : ''}` : event;
-  await postTo(s, 'tasks', taskMessage(t, word, who(by), s.config.appUrl));
+  await rememberThread(sql, await postTo(s, 'tasks', taskMessage(t, word, who(by), s.config.appUrl)), 'task', id);
 }
 
 /**
@@ -130,5 +137,5 @@ export async function notifyClaim(sql: SqlFn, key: string, id: string, event: 'o
   const ev = eventsOf(s.config);
   if (event === 'opened' ? !ev.claimOpened : !ev.claimChanged) return;
   const c = await claimLite(sql, id);
-  if (c) await postTo(s, 'claims', claimMessage(c, word ?? event, who(by)));
+  if (c) await rememberThread(sql, await postTo(s, 'claims', claimMessage(c, word ?? event, who(by))), 'claim', id);
 }

@@ -10,6 +10,7 @@
  *   POST { action: 'cleanerChannel', name, email }   a private channel for a cleaner, with them in it
  *   POST { action: 'cleanerPreview' | 'cleanerSend', name }   their next cleans — shown, or sent by hand
  *   POST { action: 'people' }               Hostaway users, Slack people, the links and suggestions (§100)
+ *   POST { action: 'taskCheckNow', kind }   the tasks' check-in or check-out, now (§107)
  *
  * The bot token and signing secret are written only when typed (a masked
  * value is never written back) and encrypted like every credential here.
@@ -20,7 +21,8 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { encrypt } from '../_lib/crypto.ts';
 import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { cleanerSchedule, digestFacts } from '../_lib/slack-digest.ts';
-import { cleanerMessage, digestMessage, helpUrlOf, suggestPeople, TOPICS, type SlackConfig, type Topic } from '../../src/lib/slack.ts';
+import { cleanerMessage, DEFAULT_TASK_CHECK, digestMessage, helpUrlOf, localNow, suggestPeople, taskCheckMessage, TOPICS, type SlackConfig, type Topic } from '../../src/lib/slack.ts';
+import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 
 const bad = (error: string, status = 400) => Response.json({ ok: false, error }, { status });
 
@@ -64,6 +66,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         people: c.people && typeof c.people === 'object'
           ? Object.fromEntries(Object.entries(c.people).filter(([h, u]) => /^\d+$/.test(h) && /^[UW][A-Z0-9]+$/.test(String(u))).map(([h, u]) => [h, String(u)]))
           : s.config.people,
+        // §107: the tasks' check-in / check-out — local times, a known US zone.
+        taskCheck: c.taskCheck && typeof c.taskCheck === 'object' ? {
+          tz: ['America/Chicago', 'America/New_York', 'America/Denver', 'America/Los_Angeles'].includes(String(c.taskCheck.tz)) ? String(c.taskCheck.tz) : DEFAULT_TASK_CHECK.tz,
+          checkin: c.taskCheck.checkin === null ? null : /^([01]\d|2[0-3]):[0-5]\d$/.test(String(c.taskCheck.checkin)) ? String(c.taskCheck.checkin) : DEFAULT_TASK_CHECK.checkin,
+          checkout: c.taskCheck.checkout === null ? null : /^([01]\d|2[0-3]):[0-5]\d$/.test(String(c.taskCheck.checkout)) ? String(c.taskCheck.checkout) : DEFAULT_TASK_CHECK.checkout
+        } : s.config.taskCheck,
         dm: c.dm && ['off', 'test', 'on'].includes(c.dm.mode)
           ? { mode: c.dm.mode, testUser: c.dm.mode === 'test' ? (c.dm.testUser && /^[UW][A-Z0-9]+$/.test(c.dm.testUser) ? c.dm.testUser : await tester(s.token, who.email) ?? s.config.dm?.testUser ?? null) : null }
           : s.config.dm });
@@ -103,6 +111,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const slack = (r.members ?? []).filter(m => !m.deleted && !m.is_bot && m.id !== 'USLACKBOT')
       .map(m => ({ id: m.id, name: m.profile?.real_name || m.real_name || m.name, email: m.profile?.email ?? null }));
     return Response.json({ ok: true, hostaway, slack, links: s.config.people ?? {}, suggested: suggestPeople(hostaway, slack), dm: s.config.dm ?? { mode: 'test' } });
+  }
+
+  if (b.action === 'taskCheckNow') {
+    if (!s.config.channels?.tasks) return bad('Pick a channel for Tasks first.');
+    const tz = s.config.taskCheck?.tz ?? DEFAULT_TASK_CHECK.tz;
+    const kind = b.kind === 'checkout' ? 'checkout' : 'checkin';
+    const r = await postTo(s, 'tasks', taskCheckMessage(kind, await taskCheckFacts(sql, localNow(tz).day, tz), helpUrlOf(s.config)));
+    return r?.ok ? Response.json({ ok: true }) : bad(`Slack said: ${r?.error}`);
   }
 
   if (b.action === 'sendTest') {

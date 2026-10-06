@@ -3190,3 +3190,34 @@ upload the ID and the agreement.
   the same folders as the board (Reservations → … → ID / Rental Agreement).
   A photo or a PDF; a file dropped outside a zone does not open in the
   browser in place of the page.
+
+## 107. Comments from Slack threads; the tasks' check-in and check-out
+
+The owner (2026-10-05): bring the thread's comments back — not everything,
+only what is marked ("/update"); and a tasks check-in at 8:00 AM and
+check-out at 11:55 PM Central, with every task and the day's numbers.
+
+- **"/update" cannot work**: Slack takes any message starting with "/" as a
+  command, and a command typed in a thread does not tell the app which
+  thread. So the mark is a **mention**: "@Kaizen …" in the thread of a task
+  or claim message Kaizen posted becomes a comment on it, as the member who
+  wrote it (commentFromMention drops the mention and a leading "update:"),
+  and the message gets ✅ (or a quiet note if reactions are not allowed).
+  The app subscribes only to `app_mention` — it receives the messages that
+  name it, nothing else of the conversation. Every task / claim message
+  Kaizen posts is remembered (`slack_threads`, migration 046) so its thread
+  is known; messages posted before this cannot be (reading them back would
+  need the channel's history).
+- **Check-in** (08:00) — everything open: ▲ overdue, ● due today, ◐ in
+  progress, ○ the rest, owners and listings, with Manage. **Check-out**
+  (23:55) — ✓ closed today (done / cancelled), ＋ opened today, ○ still
+  open, and the lists. Top-level work; the day is the team's local day
+  (`taskCheck.tz`, Central by default; dayRange handles daylight saving —
+  tested on the 25-hour day). The check-in goes from its time until noon,
+  the check-out from its time until 3 AM, so a late scheduler still closes
+  the right day; `slack_sent` keys taskcheck:<kind>:<day>. The scheduler
+  gained a run at 04:55 / 05:55 UTC — 11:55 PM Central in daylight and
+  standard time. Settings → Slack: the times, the zone, "Send now".
+- The manifest gained the `app_mention` event (same /api/slack URL, which
+  answers Slack's url_verification) and the scopes app_mentions:read and
+  reactions:write: update the app in Slack (App Manifest → Save → Reinstall).

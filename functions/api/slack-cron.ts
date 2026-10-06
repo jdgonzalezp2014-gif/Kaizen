@@ -1,5 +1,6 @@
 /**
- * POST /api/slack-cron — the reservations reminder on a clock (§99).
+ * POST /api/slack-cron — the reservations reminder (§99) and the tasks'
+ * check-in / check-out (§107) on a clock.
  *
  * Called hourly by the scheduler (.github/workflows/slack-cron.yml) with
  * the ingest token, or by a signed-in admin. Sends each reminder (morning,
@@ -14,7 +15,8 @@ import { decrypt } from '../_lib/crypto.ts';
 import { can } from '../_lib/roles.ts';
 import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { digestFacts } from '../_lib/slack-digest.ts';
-import { DEFAULT_DIGEST, digestMessage, dmTarget, dueDigests, esc, helpUrlOf } from '../../src/lib/slack.ts';
+import { DEFAULT_DIGEST, DEFAULT_TASK_CHECK, digestMessage, dmTarget, dueDigests, dueTaskChecks, esc, helpUrlOf, localNow, taskCheckMessage } from '../../src/lib/slack.ts';
+import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 
 const TZ = 'America/New_York';
@@ -32,17 +34,34 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
   const s = await slackSetup(sql, env.ENCRYPTION_KEY);
-  if (!s.token || !s.config.channels?.reservations) return Response.json({ ok: true, sent: [], skipped: 'slack not set up' });
+  if (!s.token) return Response.json({ ok: true, sent: [], skipped: 'slack not set up' });
+  const out: string[] = [];
 
+  // §107: the tasks' check-in and check-out, in the team's own time zone, to the tasks channel.
+  if (s.config.channels?.tasks) {
+    const tz = s.config.taskCheck?.tz ?? DEFAULT_TASK_CHECK.tz;
+    const now = localNow(tz);
+    const sentChecks = new Set((await sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE 'taskcheck:%' AND sent_at > now() - interval '3 days'` as { key: string }[]).map(r => r.key));
+    for (const c of dueTaskChecks(now, s.config, sentChecks)) {
+      const key = `taskcheck:${c.kind}:${c.day}`;
+      const claimed = await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${key}) ON CONFLICT DO NOTHING RETURNING key`;
+      if (!claimed.length) continue;
+      const r = await postTo(s, 'tasks', taskCheckMessage(c.kind, await taskCheckFacts(sql, c.day, tz), helpUrlOf(s.config)));
+      if (!r?.ok) await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;
+      else out.push(`${c.kind} ${c.day}`);
+    }
+  }
+
+  // The reservations reminder (§99, §102), New York hours.
   const today = todayIn(TZ);
   const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+  const nudged = await nudgeOverdue(sql, s, hour, today);
+  if (!s.config.channels?.reservations) return Response.json({ ok: true, sent: out, nudged, hour });
   const sent = new Set((await sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE ${`digest:%:${today}`}` as { key: string }[]).map(r => r.key));
   const due = dueDigests(hour, today, s.config, sent);
-  const nudged = await nudgeOverdue(sql, s, hour, today);
-  if (!due.length) return Response.json({ ok: true, sent: [], nudged, hour });
+  if (!due.length) return Response.json({ ok: true, sent: out, nudged, hour });
 
   const facts = await digestFacts(sql, await getCredentials(sql, env.ENCRYPTION_KEY), env.ENCRYPTION_KEY);
-  const out: string[] = [];
   for (const kind of due) {
     // Claimed first: two runs at once never send it twice.
     const claimed = await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`digest:${kind}:${today}`}) ON CONFLICT DO NOTHING RETURNING key`;

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -192,4 +192,47 @@ test('no overflow menu goes over Slack’s five options', () => {
   for (const s of lists) for (const m of s.matchAll(/"type":"overflow","action_id":"[a-z_]+","options":\[(.*?)\]\}/g)) {
     assert.ok((m[1]!.match(/"value"/g) ?? []).length <= 5, m[0].slice(0, 80));
   }
+});
+
+test('a mention in a thread becomes the comment, without the mention or an "update:"', () => {
+  assert.equal(commentFromMention('<@U0C5NJS538B> the plumber comes at 10'), 'the plumber comes at 10');
+  assert.equal(commentFromMention('<@U0C5NJS538B|kaizen> update: keys left with Michelle'), 'keys left with Michelle');
+  assert.equal(commentFromMention('<@U1> '), '');
+});
+
+test('Central time: the wall clock, and a local day as UTC instants (daylight saving included)', () => {
+  assert.deepEqual(localNow('America/Chicago', new Date('2026-10-06T13:05:00Z')), { day: '2026-10-06', hm: '08:05' });   // CDT, UTC-5
+  assert.deepEqual(localNow('America/Chicago', new Date('2026-10-07T04:55:00Z')), { day: '2026-10-06', hm: '23:55' });
+  assert.deepEqual(dayRange('2026-10-06', 'America/Chicago'), ['2026-10-06T05:00:00.000Z', '2026-10-07T05:00:00.000Z']);
+  assert.deepEqual(dayRange('2026-12-01', 'America/Chicago'), ['2026-12-01T06:00:00.000Z', '2026-12-02T06:00:00.000Z']);  // CST, UTC-6
+  // The day daylight saving ends is 25 hours long.
+  assert.deepEqual(dayRange('2026-11-01', 'America/Chicago'), ['2026-11-01T05:00:00.000Z', '2026-11-02T06:00:00.000Z']);
+});
+
+test('check-in from 8:00 until noon; check-out from 23:55, late runs after midnight still close yesterday', () => {
+  const none = new Set<string>();
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '07:59' }, {}, none), []);
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '08:05' }, {}, none), [{ kind: 'checkin', day: '2026-10-06' }]);
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '13:00' }, {}, none), []);
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '23:55' }, {}, none), [{ kind: 'checkout', day: '2026-10-06' }]);
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-07', hm: '00:40' }, {}, none), [{ kind: 'checkout', day: '2026-10-06' }]);
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-07', hm: '00:40' }, {}, new Set(['taskcheck:checkout:2026-10-06'])), []);
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '08:05' }, { taskCheck: { checkin: null } }, none), []);
+});
+
+test('check-in lists everything open; check-out counts the day', () => {
+  const d = { day: '2026-10-06',
+    open: [{ title: 'Fix AC', owner: 'Laura', unit: 'CL1125', overdue: true, dueToday: false, inProgress: false, kind: 'work_order' },
+           { title: 'Call HOA', owner: null, unit: null, overdue: false, dueToday: true, inProgress: false, kind: 'task' },
+           { title: 'Giggster', owner: null, unit: null, overdue: false, dueToday: false, inProgress: true, kind: 'task' }],
+    closed: [{ title: 'Fob', by: 'laura', cancelled: false }, { title: 'Old', by: 'juan', cancelled: true }],
+    opened: [{ title: 'Call HOA', by: 'juan' }] };
+  const i = taskCheckMessage('checkin', d);
+  assert.equal(i.text, 'Tasks check-in Oct 6: 3 open, 1 overdue, 1 due today');
+  const si = JSON.stringify(i.blocks);
+  for (const k of ['▲ Overdue', '● Due today', '◐ In progress', '🔧 Fix AC · CL1125 · Laura', 'Call HOA · _no owner_', '"action_id":"sec_tasks"']) assert.ok(si.includes(k), k);
+  const o = taskCheckMessage('checkout', d);
+  assert.equal(o.text, 'Tasks check-out Oct 6: 2 closed, 1 opened, 3 still open');
+  const so = JSON.stringify(o.blocks);
+  for (const k of ['(1 done, 1 cancelled)', '✓ Fob · laura', '✕ Old · juan', '＋ Call HOA · juan', 'Still open']) assert.ok(so.includes(k), k);
 });

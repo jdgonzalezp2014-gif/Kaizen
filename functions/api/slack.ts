@@ -20,7 +20,7 @@ import * as todos from './todos.ts';
 import * as claims from './claims.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
-  parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, checkinsModal, claimsModal, tasksModal,
+  parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
   type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
 import * as turnover from './turnover.ts';
@@ -43,6 +43,17 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   if (!(await verifySlack(s.secret, request.headers.get('X-Slack-Request-Timestamp'), raw, request.headers.get('X-Slack-Signature')))) {
     return new Response('Bad signature.', { status: 401 });
   }
+  // §107: the Events API — a JSON body. Only app_mention is subscribed: Kaizen sees the messages that name it, nothing else.
+  if (raw.trimStart().startsWith('{')) {
+    const body = JSON.parse(raw) as { type?: string; challenge?: string; event?: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (body.type === 'url_verification') return json({ challenge: body.challenge });
+    // Slack retries what was not answered in 3 seconds; the first delivery is already being handled.
+    if (body.type === 'event_callback' && !request.headers.get('X-Slack-Retry-Num')) {
+      const ev = body.event ?? {};
+      if (ev.type === 'app_mention' && !ev.bot_id) ctx.waitUntil(threadComment(ctx, sql, s, ev).catch(() => {}));
+    }
+    return ack();
+  }
   const form = new URLSearchParams(raw);
   const payload = form.get('payload') ? JSON.parse(form.get('payload')!) as Record<string, any> : null; // eslint-disable-line @typescript-eslint/no-explicit-any
   const slackUser = String(payload?.user?.id ?? form.get('user_id') ?? '');
@@ -64,6 +75,27 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     return ephemeral(`Something went wrong: ${e instanceof Error ? e.message : String(e)}`);
   }
 };
+
+/**
+ * "@Kaizen …" in the thread of a task or claim message Kaizen posted (§107):
+ * the text after the mention becomes a comment on it, as the member who
+ * wrote it; the message gets a ✅. Anywhere else, a quiet note to the writer.
+ */
+async function threadComment(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const say = (text: string) => slackApi(s.token!, 'chat.postEphemeral', { channel: ev.channel, user: ev.user, text, ...(ev.thread_ts ? { thread_ts: ev.thread_ts } : {}) });
+  if (!ev.thread_ts || ev.thread_ts === ev.ts) { await say('To add a comment, mention @Kaizen inside the thread of a task or claim message.'); return; }
+  const [t] = await sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}` as
+    { subject: 'task' | 'claim'; subject_id: string }[];
+  if (!t) { await say('This thread is not a Kaizen task or claim, so there is nowhere to save it.'); return; }
+  const body = commentFromMention(String(ev.text ?? ''));
+  if (!body) { await say('Write the comment after @Kaizen — e.g. “@Kaizen the plumber comes at 10”.'); return; }
+  const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
+  if (!member.ok) { await say(member.why); return; }
+  const r = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user)).comment(t.subject, t.subject_id, body);
+  if (!r.ok) { await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`); return; }
+  const re = await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
+  if (!re.ok) await say('✓ Saved as a comment in Kaizen.');
+}
 
 /** The Slack user, as the Kaizen member with the same email — or why not. */
 async function memberOf(sql: SqlFn, token: string, user: string):
@@ -148,6 +180,12 @@ class Kaizen {
     return this.claimSave({ id, unitId: c.unit_id, occurredOn: c.occurred_on, category: c.category, severity: c.severity, status: c.status,
       source: c.source, description: c.description, refund: Number(c.refund) || 0, repairCost: Number(c.repair_cost) || 0,
       caseUrl: c.case_url ?? '', ...change });
+  }
+
+  /** A comment on a task or a claim, as this member (§107). */
+  async comment(subject: 'task' | 'claim', id: string, body: string): Promise<Record<string, unknown>> {
+    if (subject === 'task') return this.may('/api/todos', 'POST') ? this.todo({ action: 'note', id, body }) : { ok: false, message: 'your role does not include the to-do list' };
+    return this.may('/api/claims', 'POST') ? this.claimSave({ action: 'note', id, body }) : { ok: false, message: 'your role does not include claims' };
   }
 
   /* ── the task card (§100) ── */
