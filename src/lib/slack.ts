@@ -319,7 +319,9 @@ export function dueDigests(hourNY: number, todayNY: string, cfg: SlackConfig, se
   const out: ('morning' | 'afternoon')[] = [];
   for (const k of ['morning', 'afternoon'] as const) {
     const h = d[k];
-    if (h != null && hourNY >= h && !sent.has(`digest:${k}:${todayNY}`)) out.push(k);
+    // A morning not sent by the afternoon's hour is stale — the afternoon one says what still matters.
+    const stale = k === 'morning' && d.afternoon != null && d.afternoon > (h ?? 0) && hourNY >= d.afternoon;
+    if (h != null && hourNY >= h && !stale && !sent.has(`digest:${k}:${todayNY}`)) out.push(k);
   }
   return out;
 }

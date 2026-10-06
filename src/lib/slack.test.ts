@@ -44,6 +44,9 @@ test('reminders go once a day, at or after their hour', () => {
   assert.deepEqual(dueDigests(9, '2026-10-01', {}, new Set()), ['morning']);
   assert.deepEqual(dueDigests(16, '2026-10-01', {}, sent), ['afternoon']);
   assert.deepEqual(dueDigests(16, '2026-10-01', { digest: { afternoon: null } }, sent), []);
+  // Nothing sent yet by the afternoon: only the afternoon one, never a late morning.
+  assert.deepEqual(dueDigests(16, '2026-10-01', {}, new Set()), ['afternoon']);
+  assert.deepEqual(dueDigests(16, '2026-10-01', { digest: { afternoon: null } }, new Set()), ['morning']);
 });
 
 test('a task message carries the buttons that act on it', () => {
