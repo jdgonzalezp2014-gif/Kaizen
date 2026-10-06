@@ -134,6 +134,9 @@ step-by-step, versions and review cadence (§92, §96–§98). SOP id 8 = "Kaize
 - Cleanings Log header row blank in the daily file (read by column order) — ask first.
 - Offered, not built: Slack Home tab, Autohost checks, crew Spanish tabs / Sheets mirror.
 - Cloudflare Functions placement → Smart (no code).
+- GitHub's scheduled runs are late/sparse (every 5–6 h on 2026-10-06), so the 8 AM / 3 PM
+  messages can arrive hours late. Fix offered and declined for now: a Cloudflare Worker cron
+  (`kaizen-clock`, every 5 min → /api/slack-cron; needs `npx wrangler login`).
 
 ## Index of decisions (`docs/history.md`)
 
