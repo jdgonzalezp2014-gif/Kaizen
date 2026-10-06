@@ -1,6 +1,7 @@
 # The Slack reservations reminder on a clock (§99).
-# Every hour; Kaizen sends each reminder once a day at its New York hour
-# (Settings → Slack), so most runs send nothing.
+# Every hour; Kaizen sends each message once a day at its hour in the team's
+# zone (Central by default; Settings → Slack): 8 AM, 3 PM — and the 11:55 PM
+# check-out from the run below — so most runs send nothing.
 # Needs repository secrets KAIZEN_URL (https://…, no trailing slash) and
 # KAIZEN_INGEST_TOKEN (Settings → ingest token), and /api/slack-cron
 # bypassed in Cloudflare Access.

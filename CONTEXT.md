@@ -3251,3 +3251,18 @@ there is one (the "no owner" mark is gone).
   task_new; a test checks the uniqueness.
 - No manifest change beyond §107's (app_mention, app_mentions:read,
   reactions:write, im:write).
+
+## §109 — Three Slack messages a day, Central
+
+8 AM, 3 PM, 11:55 PM, all in the team's zone (`teamTz` = `taskCheck.tz`,
+Central by default; the reminders used New York hours before).
+- **8 AM** — the morning reminder carries the tasks' check-in: its ☐ Tasks
+  line is followed by the overdue and due-today tasks by name (up to 6;
+  Manage has them all). The separate check-in is off by default
+  (`DEFAULT_TASK_CHECK.checkin = null`; it still works if set in config).
+- **3 PM** — the afternoon reminder (what is missing for tomorrow).
+- **11:55 PM** — the tasks' check-out (§107).
+- A morning reminder not sent by the afternoon's hour is skipped (stale);
+  the afternoon one says what still matters.
+- Settings → Slack: the check-in time field and its "Send now" are gone;
+  the zone applies to all three. SOP "Kaizen in Slack" v7.

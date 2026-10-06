@@ -15,11 +15,10 @@ import { decrypt } from '../_lib/crypto.ts';
 import { can } from '../_lib/roles.ts';
 import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { digestFacts } from '../_lib/slack-digest.ts';
-import { DEFAULT_DIGEST, DEFAULT_TASK_CHECK, digestMessage, dmTarget, dueDigests, dueTaskChecks, esc, helpUrlOf, localNow, taskCheckMessage } from '../../src/lib/slack.ts';
+import { DEFAULT_DIGEST, DEFAULT_TASK_CHECK, teamTz, digestMessage, dmTarget, dueDigests, dueTaskChecks, esc, helpUrlOf, localNow, taskCheckMessage } from '../../src/lib/slack.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 
-const TZ = 'America/New_York';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
@@ -53,6 +52,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   // The reservations reminder (§99, §102), New York hours.
+  // §109: in the team's zone (Central by default), like the check-out.
+  const TZ = teamTz(s.config);
   const today = todayIn(TZ);
   const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
   const nudged = await nudgeOverdue(sql, s, hour, today);

@@ -237,8 +237,11 @@ export function digestMessage(d: DigestInput, kind: 'morning' | 'afternoon', app
   ];
   if (kind === 'morning') {
     const late = d.tasks.filter(t => t.overdue).length, due = d.tasks.filter(t => t.dueToday).length;
+    // §109: the morning carries the tasks' check-in — the overdue and due-today ones by name; Manage has them all.
+    const named = [...d.tasks.filter(t => t.overdue).map(t => taskLine(t, '▲')), ...d.tasks.filter(t => t.dueToday && !t.overdue).map(t => taskLine(t, '●'))];
     blocks.push(section(`*☐ Tasks* · ${d.tasks.length} open\n${[late ? `▲ ${late} overdue` : '', due ? `● ${due} due today` : ''].filter(Boolean).join(' · ') || '✓ nothing overdue'}`,
       manage('sec_tasks', days, late > 0)));
+    if (named.length) blocks.push(context(listOf(named, 6).join('\n')));
     const serious = d.claims.filter(c => c.severity === 'High' || c.severity === 'Critical').length;
     blocks.push(section(`*⚑ Claims* · ${d.claims.length} open\n${serious ? `🔴 ${serious} high or critical` : d.claims.length ? d.claims.slice(0, 2).map(c => esc(c.label)).join(' · ') : '✓ none open'}`,
       manage('sec_claims', days, serious > 0)));
@@ -314,14 +317,14 @@ export function claimsModal(list: ClaimLite[], note?: string, undo?: { id: strin
 }
 
 /** Which reminders are due at this New York hour, not yet sent today. */
-export function dueDigests(hourNY: number, todayNY: string, cfg: SlackConfig, sent: Set<string>): ('morning' | 'afternoon')[] {
+export function dueDigests(hour: number, today: string, cfg: SlackConfig, sent: Set<string>): ('morning' | 'afternoon')[] {
   const d = { ...DEFAULT_DIGEST, ...(cfg.digest ?? {}) };
   const out: ('morning' | 'afternoon')[] = [];
   for (const k of ['morning', 'afternoon'] as const) {
     const h = d[k];
     // A morning not sent by the afternoon's hour is stale — the afternoon one says what still matters.
-    const stale = k === 'morning' && d.afternoon != null && d.afternoon > (h ?? 0) && hourNY >= d.afternoon;
-    if (h != null && hourNY >= h && !stale && !sent.has(`digest:${k}:${todayNY}`)) out.push(k);
+    const stale = k === 'morning' && d.afternoon != null && d.afternoon > (h ?? 0) && hour >= d.afternoon;
+    if (h != null && hour >= h && !stale && !sent.has(`digest:${k}:${today}`)) out.push(k);
   }
   return out;
 }
@@ -585,7 +588,11 @@ export function commentFromMention(text: string): string {
 
 /* ── the tasks' check-in and check-out (§107) ──────────────────────── */
 
-export const DEFAULT_TASK_CHECK = { tz: 'America/Chicago', checkin: '08:00', checkout: '23:55' };
+// Three messages a day (§109), all in the team's zone: 8 AM (the day and the open tasks, one message), 3 PM (what is missing for
+// tomorrow), 11:55 PM (the tasks' check-out). The separate check-in is off: the morning reminder carries the tasks.
+export const DEFAULT_TASK_CHECK: { tz: string; checkin: string | null; checkout: string | null } = { tz: 'America/Chicago', checkin: null, checkout: '23:55' };
+/** The team's time zone — the reminders' hours and the check-out are read in it. */
+export const teamTz = (cfg: SlackConfig) => cfg.taskCheck?.tz ?? DEFAULT_TASK_CHECK.tz;
 
 /** "2026-10-05 08:05" — a moment as a wall clock in a zone. */
 export function localNow(tz: string, at = new Date()): { day: string; hm: string } {

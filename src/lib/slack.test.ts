@@ -152,6 +152,8 @@ test('the reminder: one short message, a line per section, each with Manage', ()
   assert.match(s, /Check-ins\* · 2 today · 1 tomorrow\\n▲ 2 not signed · ▲ 1 ID not in Drive/);
   assert.match(s, /Cleans\* · 1 today · 2 tomorrow · ⚡ 1 same-day\\n▲ 2 not assigned/);
   assert.match(s, /Tasks\* · 1 open\\n▲ 1 overdue/);
+  // §109: the morning names the overdue and due-today tasks (it is the tasks' check-in too).
+  assert.match(s, /▲ Change the code · P2-4304/);
   assert.match(s, /k\.example\/\?sop=9\|❓ How to use this/);
   // Each button knows the days it covers.
   assert.match(s, /"value":"\{\\"days\\":\[\\"2026-10-01\\",\\"2026-10-02\\"\]\}"/);
@@ -212,11 +214,14 @@ test('Central time: the wall clock, and a local day as UTC instants (daylight sa
   assert.deepEqual(dayRange('2026-11-01', 'America/Chicago'), ['2026-11-01T05:00:00.000Z', '2026-11-02T06:00:00.000Z']);
 });
 
-test('check-in from 8:00 until noon; check-out from 23:55, late runs after midnight still close yesterday', () => {
+test('check-in (when set) from its time until noon; check-out from 23:55, late runs after midnight still close yesterday', () => {
   const none = new Set<string>();
-  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '07:59' }, {}, none), []);
-  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '08:05' }, {}, none), [{ kind: 'checkin', day: '2026-10-06' }]);
-  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '13:00' }, {}, none), []);
+  // §109: off by default — the morning reminder carries the tasks.
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '08:05' }, {}, none), []);
+  const on = { taskCheck: { checkin: '08:00' } };
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '07:59' }, on, none), []);
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '08:05' }, on, none), [{ kind: 'checkin', day: '2026-10-06' }]);
+  assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '13:00' }, on, none), []);
   assert.deepEqual(dueTaskChecks({ day: '2026-10-06', hm: '23:55' }, {}, none), [{ kind: 'checkout', day: '2026-10-06' }]);
   assert.deepEqual(dueTaskChecks({ day: '2026-10-07', hm: '00:40' }, {}, none), [{ kind: 'checkout', day: '2026-10-06' }]);
   assert.deepEqual(dueTaskChecks({ day: '2026-10-07', hm: '00:40' }, {}, new Set(['taskcheck:checkout:2026-10-06'])), []);

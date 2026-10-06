@@ -143,21 +143,19 @@ export function SlackPanel() {
             ))}
           </div>
           <div className="row">
-            <label>Morning reminder <span className="sub-n">today and tomorrow, and what is missing</span>
+            <label>Morning reminder <span className="sub-n">today, tomorrow, the open tasks, and what is missing</span>
               <select value={dg.morning ?? ''} onChange={e => setCfg(p => ({ ...p, digest: { ...dg, morning: e.target.value === '' ? null : Number(e.target.value) } }))}>
-                <option value="">Off</option>{HOURS.map(h => <option key={h} value={h}>{hourWord(h)} New York</option>)}
+                <option value="">Off</option>{HOURS.map(h => <option key={h} value={h}>{hourWord(h)}</option>)}
               </select></label>
             <label>Afternoon reminder <span className="sub-n">what is still missing for tomorrow</span>
               <select value={dg.afternoon ?? ''} onChange={e => setCfg(p => ({ ...p, digest: { ...dg, afternoon: e.target.value === '' ? null : Number(e.target.value) } }))}>
-                <option value="">Off</option>{HOURS.map(h => <option key={h} value={h}>{hourWord(h)} New York</option>)}
+                <option value="">Off</option>{HOURS.map(h => <option key={h} value={h}>{hourWord(h)}</option>)}
               </select></label>
           </div>
           <div className="row slack-taskcheck">
-            <label>Tasks check-in <span className="sub-n">— everything open</span>
-              <input type="time" value={tc.checkin ?? ''} onChange={e => setCfg(p => ({ ...p, taskCheck: { ...tc, checkin: e.target.value || null } }))} /></label>
             <label>Tasks check-out <span className="sub-n">— closed, opened, still open</span>
               <input type="time" value={tc.checkout ?? ''} onChange={e => setCfg(p => ({ ...p, taskCheck: { ...tc, checkout: e.target.value || null } }))} /></label>
-            <label>Their time zone
+            <label>Time zone <span className="sub-n">— for all three</span>
               <select value={tc.tz} onChange={e => setCfg(p => ({ ...p, taskCheck: { ...tc, tz: e.target.value } }))}>
                 <option value="America/Chicago">Central</option><option value="America/New_York">Eastern</option>
                 <option value="America/Denver">Mountain</option><option value="America/Los_Angeles">Pacific</option>
@@ -166,14 +164,13 @@ export function SlackPanel() {
           <div className="button-row">
             <button disabled={busy} onClick={() => void save()}>Save channels and reminders</button>
             {cfg.channels?.tasks && <>
-              <button className="secondary" disabled={busy} onClick={() => void save().then(() => run({ action: 'taskCheckNow', kind: 'checkin' }, () => 'Check-in sent.'))}>Send check-in now</button>
               <button className="secondary" disabled={busy} onClick={() => void save().then(() => run({ action: 'taskCheckNow', kind: 'checkout' }, () => 'Check-out sent.'))}>Send check-out now</button>
             </>}
             {cfg.channels?.reservations && <button className="secondary" disabled={busy}
               onClick={() => void run({ action: 'digestNow', kind: 'morning' }, r => `Reminder sent — ${r.missing ? `${r.missing} missing` : 'nothing missing'}.`)}>Send the reminder now</button>}
           </div>
           <p className="note">The reminders go on a clock: a GitHub Action (<code>.github/workflows/slack-cron.yml</code>) calls Kaizen every hour,
-            and each reminder goes once a day at its hour. It needs two repository secrets on GitHub — <code>KAIZEN_URL</code> ({origin}) and
+            and each message goes once a day at its hour, in the time zone above. It needs two repository secrets on GitHub — <code>KAIZEN_URL</code> ({origin}) and
             <code>KAIZEN_INGEST_TOKEN</code> (the ingest token, above in Settings).</p>
 
           <People busy={busy} run={run} onSaved={() => void load()} />
