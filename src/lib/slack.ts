@@ -491,6 +491,7 @@ export const HELP = [
   '*/kaizen tasks* — open to-dos and repairs, each with a menu (complete, start, edit, remove)',
   '*/kaizen task Fix the AC* — a new to-do (a form opens)', '*/kaizen repair Leak under sink* — a new repair',
   '*/kaizen claims* — open claims (status, edit, remove)', '*/kaizen claim Missing fob* — a new claim',
+  '*/kaizen help* or *@Kaizen* — buttons to every pop-up: Tasks · Claims · Check-ins · Cleans',
   '*/kaizen today* — check-ins, cleans and what is missing, now',
   '*/kaizen cleans* (or *cleans tomorrow*) — the day’s cleans, and change who cleans',
   '⚡ *Shortcuts* — New task · Report a repair · New claim from anywhere; *Create task from message* in any message’s ⋯ menu',
@@ -701,14 +702,14 @@ export function taskCheckMessage(kind: 'checkin' | 'checkout', d: TaskCheckInput
 
 /* ── @Kaizen: what a mention asks for (§108) ────────────────────────── */
 
-export type MentionVerb = 'help' | 'new' | 'repair' | 'claim' | 'tasks' | 'today' | 'comments' | 'text';
+export type MentionVerb = 'help' | 'new' | 'repair' | 'claim' | 'claims' | 'tasks' | 'today' | 'comments' | 'text';
 
 /** "@Kaizen new Fix the AC" → { verb: 'new', arg: 'Fix the AC' }; anything else is plain text. */
 export function parseMention(text: string): { verb: MentionVerb; arg: string } {
   const t = commentFromMention(text);
   const [first = '', ...rest] = t.split(/\s+/);
   const map: Record<string, MentionVerb> = { '': 'help', help: 'help', '?': 'help', commands: 'help',
-    new: 'new', task: 'new', todo: 'new', 'to-do': 'new', add: 'new', repair: 'repair', claim: 'claim',
+    new: 'new', task: 'new', todo: 'new', 'to-do': 'new', add: 'new', repair: 'repair', claim: 'claim', claims: 'claims', cases: 'claims',
     tasks: 'tasks', list: 'tasks', today: 'today', comments: 'comments', history: 'comments' };
   const v = map[first.toLowerCase()];
   return v ? { verb: v, arg: rest.join(' ') } : { verb: 'text', arg: t };
@@ -725,14 +726,20 @@ export function newButtons(title = '', only?: 'task' | 'work_order' | 'claim', f
 export const MENTION_HELP = [
   '*@Kaizen new* _Fix the AC in P2-4308_ — made at once (the listing found in the text); *✎ Add details* in the reply if you want',
   '*@Kaizen repair* … — the same, as a repair · *@Kaizen claim* … — the claim form',
-  '*@Kaizen tasks* — the open tasks, each with its menu',
+  '*@Kaizen tasks* — the open tasks, each with its menu · *@Kaizen claims* — the open claims (status, edit, remove)',
   '*@Kaizen today* — check-ins, cleans and what is missing',
   'In a task’s thread: *@Kaizen* _your comment_ — saved as a comment · *@Kaizen comments* — the comments so far',
   'Also: */kaizen* (type */kaizen help*) and the ⚡ shortcuts'
 ].join('\n');
 
+/** Every section's pop-up, one tap away (§112) — the same pop-ups as the 8 AM message's Manage. */
+export function sectionButtons(): Block {
+  return { type: 'actions', elements: [button('☐ Tasks', 'sec_tasks', '{}'), button('⚑ Claims', 'sec_claims', '{}'),
+                                       button('🛬 Check-ins', 'sec_checkins', '{}'), button('🧹 Cleans', 'sec_cleans', '{}')] };
+}
+
 export function mentionHelpBlocks(): Block[] {
-  return [section('*👋 What I do*'), section(MENTION_HELP), newButtons()];
+  return [section('*👋 What I do*'), section(MENTION_HELP), context('*Open:*'), sectionButtons(), context('*New:*'), newButtons()];
 }
 
 /** The comments on a task or claim, for its thread (§108). */

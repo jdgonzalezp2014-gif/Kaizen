@@ -21,7 +21,7 @@ import * as claims from './claims.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
   parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
-  parseMention, newButtons, mentionHelpBlocks, commentsBlocks, guessUnit, quickTitle, trackedReply,
+  parseMention, newButtons, mentionHelpBlocks, sectionButtons, commentsBlocks, guessUnit, quickTitle, trackedReply,
   type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
 import * as turnover from './turnover.ts';
@@ -113,7 +113,7 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
   if (!member.ok) { await say(member.why); return; }
   const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
-  if (verb === 'tasks' || verb === 'today') { const m = await k.forMention(verb); await say(m.text, m.blocks); return; }
+  if (verb === 'tasks' || verb === 'today' || verb === 'claims') { const m = await k.forMention(verb); await say(m.text, m.blocks); return; }
 
   const [t] = inThread ? await sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}` as
     { subject: 'task' | 'claim'; subject_id: string }[] : [];
@@ -266,7 +266,11 @@ class Kaizen {
   }
 
   /** "@Kaizen tasks" / "@Kaizen today" (§108): the same answers as /kaizen, for a message seen only by the writer. */
-  async forMention(verb: 'tasks' | 'today'): Promise<{ text: string; blocks: unknown[] }> {
+  async forMention(verb: 'tasks' | 'today' | 'claims'): Promise<{ text: string; blocks: unknown[] }> {
+    if (verb === 'claims') {
+      if (!this.may('/api/claims', 'GET')) return { text: 'Your Kaizen role does not include claims.', blocks: [] };
+      return { text: 'Open claims', blocks: claimList(await this.openClaims()) };
+    }
     if (verb === 'tasks') {
       if (!this.may('/api/todos', 'GET')) return { text: 'Your Kaizen role does not include the to-do list.', blocks: [] };
       return { text: 'Open work', blocks: taskList(await this.openTasks(), this.s.config.appUrl) };
@@ -398,7 +402,7 @@ class Kaizen {
       // §101: the SOP "Kaizen in Slack", right here — and the way to it in Kaizen.
       const [sop] = this.s.config.helpSopId ? await this.sql`SELECT title, purpose, steps FROM sops WHERE account_id = 1 AND id::text = ${this.s.config.helpSopId}
                                                               AND deleted_at IS NULL AND status = 'published'` as { title: string; purpose: string | null; steps: { text: string; detail?: string }[] }[] : [];
-      return ephemeral('How to use Kaizen in Slack', [...helpBlocks(sop ?? null, helpUrlOf(this.s.config)),
+      return ephemeral('How to use Kaizen in Slack', [sectionButtons(), ...helpBlocks(sop ?? null, helpUrlOf(this.s.config)),
         { type: 'context', elements: [{ type: 'mrkdwn', text: HELP.split('\n').map(l => l.split(' — ')[0]).join(' · ') }] }]);
     }
     if (verb === 'cleans') {
@@ -451,7 +455,9 @@ class Kaizen {
 
     // §102: "Manage" on each section of the reminder.
     if (id.startsWith('sec_')) {
-      const days = (JSON.parse(value || '{}') as { days?: string[] }).days ?? [todayIn('America/New_York')];
+      // From a message's Manage: its days. From the help's buttons (§112): today and tomorrow.
+      const today = todayIn('America/New_York');
+      const days = (JSON.parse(value || '{}') as { days?: string[] }).days ?? [today, addDays(today, 1)];
       if (id === 'sec_checkins') return await this.openCheckins(p.trigger_id, days);
       if (id === 'sec_cleans') return await this.openCleans(p.trigger_id, days[0]!);
       if (id === 'sec_tasks') {

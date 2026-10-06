@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -301,4 +301,11 @@ test('💬 Comment on a task: a menu of the listed tasks, late first; the card o
     reservationLabel: null, description: null, vendor: null, costActual: null, costEstimate: null, resolutionNote: null, unit: null, children: [], updates: [] };
   assert.match(JSON.stringify(taskCard(card, undefined, undefined, true)), /"focus_on_load":true/);
   assert.doesNotMatch(JSON.stringify(taskCard(card)), /focus_on_load/);
+});
+
+test('the help opens every section; @Kaizen claims lists them', () => {
+  assert.deepEqual(parseMention('<@U1> claims'), { verb: 'claims', arg: '' });
+  const ids = JSON.stringify(sectionButtons());
+  for (const k of ['sec_tasks', 'sec_claims', 'sec_checkins', 'sec_cleans']) assert.ok(ids.includes(k), k);
+  assert.match(JSON.stringify(mentionHelpBlocks()), /sec_claims[\s\S]*mention_new_task/);
 });

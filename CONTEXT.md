@@ -3294,3 +3294,12 @@ with the cursor in *Add a comment* (`taskCard(…, focus)` →
 `focus_on_load`). One-task messages say **💬 Comment** (was 📋 Open); the ⋯
 menus say **💬 Open & comment**. The digest and check facts now carry
 task ids.
+
+## §112 — Every pop-up from the help; @Kaizen claims
+
+Claims could only be reached from the 8 AM message's Manage or /kaizen
+claims. Now **@Kaizen claims** lists them (the claimList with status,
+edit, remove), and both helps (*@Kaizen* / *@Kaizen help* and */kaizen
+help*) start with buttons to every section's pop-up (`sectionButtons`):
+☐ Tasks · ⚑ Claims · 🛬 Check-ins · 🧹 Cleans — the same sec_* pop-ups as
+Manage; without days they cover today and tomorrow.
