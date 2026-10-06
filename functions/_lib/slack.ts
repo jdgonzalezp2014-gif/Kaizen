@@ -139,3 +139,19 @@ export async function notifyClaim(sql: SqlFn, key: string, id: string, event: 'o
   const c = await claimLite(sql, id);
   if (c) await rememberThread(sql, await postTo(s, 'claims', claimMessage(c, word ?? event, who(by))), 'claim', id);
 }
+
+/**
+ * A comment written in Kaizen, in the subject's Slack thread too (§108) —
+ * so the thread holds the whole conversation. The latest message Kaizen
+ * posted about it is the thread; none posted, nothing to do. A comment
+ * that came from that thread (@Kaizen) is not sent back.
+ */
+export async function commentToThread(sql: SqlFn, key: string, subject: 'task' | 'claim', id: string, body: string, by: string): Promise<void> {
+  const [t] = await sql`SELECT channel, ts FROM slack_threads WHERE account_id = 1 AND subject = ${subject} AND subject_id = ${id}
+                         ORDER BY created_at DESC LIMIT 1` as { channel: string; ts: string }[];
+  if (!t) return;
+  const s = await slackSetup(sql, key);
+  if (!s.token) return;
+  await slackApi(s.token, 'chat.postMessage', { channel: t.channel, thread_ts: t.ts, text: `💬 ${who(by)}: ${body}`.slice(0, 3000),
+    blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `💬 *${who(by)}* · in Kaizen\n${body.slice(0, 2900)}` } }], unfurl_links: false });
+}

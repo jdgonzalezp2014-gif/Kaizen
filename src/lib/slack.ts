@@ -134,7 +134,7 @@ export function taskList(list: TaskLite[], appUrl?: string): Block[] {
     }));
   }
   if (list.length > 40) blocks.push(context(`…and ${list.length - 40} more${appUrl ? ` — ${link(appUrl, 'open Kaizen')}` : ''}`));
-  blocks.push({ type: 'actions', elements: [button('+ To-do', 'task_new', 'task'), button('+ Repair', 'task_new', 'work_order')] });
+  blocks.push({ type: 'actions', elements: [button('+ To-do', 'task_new', 'task'), button('+ Repair', 'task_new_repair', 'work_order')] });
   return blocks;
 }
 
@@ -282,7 +282,7 @@ export function tasksModal(list: (TaskLite & { overdue?: boolean; dueToday?: boo
   const late = list.filter(t => t.overdue).length;
   const blocks: Block[] = [
     section(`*${list.length} open*${late ? ` · ▲ ${late} overdue` : ''}`),
-    { type: 'actions', elements: [button('+ To-do', 'task_new', 'task'), button('+ Repair', 'task_new', 'work_order')] },
+    { type: 'actions', elements: [button('+ To-do', 'task_new', 'task'), button('+ Repair', 'task_new_repair', 'work_order')] },
     ...noteBlocks(note),
     ...(undo ? [section(`Removed *${esc(undo.title)}*.`, button('Undo', 'task_restore', undo.id))] : []),
     { type: 'divider' }
@@ -467,7 +467,9 @@ export const HELP = [
   '*/kaizen claims* — open claims (status, edit, remove)', '*/kaizen claim Missing fob* — a new claim',
   '*/kaizen today* — check-ins, cleans and what is missing, now',
   '*/kaizen cleans* (or *cleans tomorrow*) — the day’s cleans, and change who cleans',
-  '⚡ *Shortcuts* — New task · Report a repair · New claim from anywhere; *Create task from message* in any message’s ⋯ menu'
+  '⚡ *Shortcuts* — New task · Report a repair · New claim from anywhere; *Create task from message* in any message’s ⋯ menu',
+  '*@Kaizen new Fix the AC* — in any channel: a button to the new to-do form (also *repair*, *claim*, *tasks*, *today*, *help*)',
+  '*@Kaizen* _comment_ in a task’s thread — saved on the task; *@Kaizen comments* — what was said so far'
 ].join('\n');
 
 /* ── forms (modals) ─────────────────────────────────────────────────── */
@@ -628,7 +630,8 @@ export interface TaskCheckInput {
 }
 
 const taskLine = (t: { title: string; owner?: string | null; unit?: string | null; kind?: string }, mark: string) =>
-  `${mark} ${t.kind === 'work_order' ? '🔧 ' : ''}${esc(t.title)}${t.unit ? ` · ${esc(t.unit)}` : ''}${t.owner ? ` · ${esc(t.owner)}` : ' · _no owner_'}`;
+  // The owner only when there is one (§108): owners are for specific work — days off and shifts make them no rule.
+  `${mark} ${t.kind === 'work_order' ? '🔧 ' : ''}${esc(t.title)}${t.unit ? ` · ${esc(t.unit)}` : ''}${t.owner ? ` · ${esc(t.owner)}` : ''}`;
 const listOf = (lines: string[], max = 12) => lines.length > max ? [...lines.slice(0, max), `_…and ${lines.length - max} more_`] : lines;
 
 /**
@@ -664,4 +667,50 @@ export function taskCheckMessage(kind: 'checkin' | 'checkout', d: TaskCheckInput
   if (d.open.length) blocks.push(section(`*○ Still open*\n${listOf([...late.map(t => taskLine(t, '▲')), ...d.open.filter(t => !t.overdue).map(t => taskLine(t, t.inProgress ? '◐' : '○'))]).join('\n')}`));
   blocks.push(foot);
   return { text: `Tasks check-out ${day(d.day)}: ${d.closed.length} closed, ${d.opened.length} opened, ${d.open.length} still open`, blocks };
+}
+
+/* ── @Kaizen: what a mention asks for (§108) ────────────────────────── */
+
+export type MentionVerb = 'help' | 'new' | 'repair' | 'claim' | 'tasks' | 'today' | 'comments' | 'text';
+
+/** "@Kaizen new Fix the AC" → { verb: 'new', arg: 'Fix the AC' }; anything else is plain text. */
+export function parseMention(text: string): { verb: MentionVerb; arg: string } {
+  const t = commentFromMention(text);
+  const [first = '', ...rest] = t.split(/\s+/);
+  const map: Record<string, MentionVerb> = { '': 'help', help: 'help', '?': 'help', commands: 'help',
+    new: 'new', task: 'new', todo: 'new', 'to-do': 'new', add: 'new', repair: 'repair', claim: 'claim',
+    tasks: 'tasks', list: 'tasks', today: 'today', comments: 'comments', history: 'comments' };
+  const v = map[first.toLowerCase()];
+  return v ? { verb: v, arg: rest.join(' ') } : { verb: 'text', arg: t };
+}
+
+/** Buttons that open the forms — what a mention can offer, since a mention cannot open a pop-up itself. */
+export function newButtons(title = '', only?: 'task' | 'work_order' | 'claim', from?: { channel: string; ts: string }): Block {
+  const b = (label: string, kind: string, primary: boolean) =>
+    ({ type: 'button', text: plain(label), action_id: `mention_new_${kind}`, value: JSON.stringify({ kind, title: title.slice(0, 120), ...(from ? { from } : {}) }), ...(primary ? { style: 'primary' } : {}) });
+  const all = [b('+ New to-do', 'task', !only || only === 'task'), b('+ Repair', 'work_order', only === 'work_order'), b('+ Claim', 'claim', only === 'claim')];
+  return { type: 'actions', elements: only ? all.filter(x => (x.action_id as string).endsWith(only)) : all };
+}
+
+export const MENTION_HELP = [
+  '*@Kaizen new* _Fix the AC in P2-4308_ — a button that opens the new to-do form (title filled in)',
+  '*@Kaizen repair* … · *@Kaizen claim* … — the same, for a repair or a claim',
+  '*@Kaizen tasks* — the open tasks, each with its menu',
+  '*@Kaizen today* — check-ins, cleans and what is missing',
+  'In a task’s thread: *@Kaizen* _your comment_ — saved as a comment · *@Kaizen comments* — the comments so far',
+  'Also: */kaizen* (type */kaizen help*) and the ⚡ shortcuts'
+].join('\n');
+
+export function mentionHelpBlocks(): Block[] {
+  return [section('*👋 What I do*'), section(MENTION_HELP), newButtons()];
+}
+
+/** The comments on a task or claim, for its thread (§108). */
+export function commentsBlocks(list: { who: string; when: string; body: string }[], title: string): { text: string; blocks: Block[] } {
+  if (!list.length) return { text: 'No comments yet', blocks: [section(`💬 No comments yet on *${esc(title)}*.`)] };
+  return {
+    text: `${list.length} comment${list.length === 1 ? '' : 's'} on ${title}`,
+    blocks: [section(`💬 *Comments on ${esc(title)}* · ${list.length}`),
+             ...list.slice(-10).map(c => context(`*${esc(c.who)}* · ${esc(c.when)}`, esc(c.body).slice(0, 1500)))]
+  };
 }

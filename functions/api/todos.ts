@@ -36,7 +36,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { can } from '../_lib/roles.ts';
 import { mirrorOn, people, pullAll, pushWork } from '../_lib/hostaway-tasks.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
-import { notifyTask, tellOwner, type TaskEvent } from '../_lib/slack.ts';
+import { commentToThread, notifyTask, tellOwner, type TaskEvent } from '../_lib/slack.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -312,6 +312,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     const body = typeof b.body === 'string' ? b.body.trim().slice(0, 4000) : '';
     if (!body) return bad('An update needs words.');
     await note(sql, 'task', id, 'note', body, who.email);
+    if (b.via !== 'slack-thread') waitUntil(commentToThread(sql, env.ENCRYPTION_KEY, 'task', id, body, who.email).catch(() => {}));
     return Response.json({ ok: true, todos: await list(sql, scope) });
   }
 

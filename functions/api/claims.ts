@@ -12,7 +12,7 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { notifyClaim } from '../_lib/slack.ts';
+import { commentToThread, notifyClaim } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 
 const SEVERITY = ['Low', 'Medium', 'High', 'Critical'];
@@ -70,7 +70,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const who = identify(request, env);
   if (!who) return unauthorised();
   const sql = db(env);
-  const b = await request.json().catch(() => ({})) as Body & { action?: string; body?: string };
+  const b = await request.json().catch(() => ({})) as Body & { action?: string; body?: string; via?: string };
 
   // Undo a removal (§86): the claim comes back with its figures, its
   // timeline and its linked work, which never lost the link.
@@ -91,6 +91,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     if (!found.length) return Response.json({ ok: false, error: 'That claim is gone.' }, { status: 404 });
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
               VALUES (1, 'claim', ${String(b.id)}, 'note', ${text}, ${who.email})`;
+    if (b.via !== 'slack-thread') waitUntil(commentToThread(sql, env.ENCRYPTION_KEY, 'claim', String(b.id), text, who.email).catch(() => {}));
     return Response.json({ ok: true });
   }
 

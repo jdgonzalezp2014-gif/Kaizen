@@ -3221,3 +3221,33 @@ check-out at 11:55 PM Central, with every task and the day's numbers.
 - The manifest gained the `app_mention` event (same /api/slack URL, which
   answers Slack's url_verification) and the scopes app_mentions:read and
   reactions:write: update the app in Slack (App Manifest → Save → Reinstall).
+
+## §108 — @Kaizen as a way in; the thread holds the conversation
+
+Owners stay optional: days off and shift changes make them no rule, so
+they are for specific work. The check-in / lists show an owner only when
+there is one (the "no owner" mark is gone).
+
+- **@Kaizen** in any channel (`parseMention`): *new / repair / claim
+  <title>*, *tasks*, *today*, *help* (or the mention alone). A mention
+  carries no `trigger_id`, so it cannot open a pop-up; Kaizen answers —
+  ephemerally, only to the writer — with buttons (`mention_new_<kind>`)
+  that open the existing forms with the title filled in. This works the
+  same in the Slack phone app. Other text outside a known thread is offered
+  as a new to-do. The offer is deleted once a button is used.
+- A to-do saved from a mention (or from "Create task from message")
+  replies "📋 Tracked in Kaizen…" in that message's thread, and that thread
+  is remembered as the task's (`slack_threads`), so @Kaizen there comments
+  on it. A threaded reply uses its thread root.
+- In a task's / claim's thread: *@Kaizen comments* → the comments so far
+  (latest 10, with 📋 Open for tasks); other text → a comment (§107).
+- **Comments written in Kaizen go to the thread** (`commentToThread`): the
+  latest remembered thread of that task / claim gets "💬 who · in Kaizen".
+  A comment that came from the thread is marked `via: 'slack-thread'` and
+  is not echoed back.
+- Fixed: "+ To-do" and "+ Repair" shared the action_id `task_new`; Slack
+  refuses two elements with one action_id in a message (the /kaizen tasks
+  list and the Tasks pop-up). "+ Repair" is `task_new_repair`, read as
+  task_new; a test checks the uniqueness.
+- No manifest change beyond §107's (app_mention, app_mentions:read,
+  reactions:write, im:write).

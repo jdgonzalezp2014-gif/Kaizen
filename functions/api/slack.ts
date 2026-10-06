@@ -14,13 +14,14 @@
 import { db, type Env } from '../_lib/db.ts';
 import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { mayAccess } from '../_lib/roles.ts';
-import { slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
+import { rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
 import { cleansFor, digestFacts } from '../_lib/slack-digest.ts';
 import * as todos from './todos.ts';
 import * as claims from './claims.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
   parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
+  parseMention, newButtons, mentionHelpBlocks, commentsBlocks,
   type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
 import * as turnover from './turnover.ts';
@@ -50,7 +51,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     // Slack retries what was not answered in 3 seconds; the first delivery is already being handled.
     if (body.type === 'event_callback' && !request.headers.get('X-Slack-Retry-Num')) {
       const ev = body.event ?? {};
-      if (ev.type === 'app_mention' && !ev.bot_id) ctx.waitUntil(threadComment(ctx, sql, s, ev).catch(() => {}));
+      if (ev.type === 'app_mention' && !ev.bot_id) ctx.waitUntil(mention(ctx, sql, s, ev).catch(() => {}));
     }
     return ack();
   }
@@ -77,21 +78,51 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
 };
 
 /**
- * "@Kaizen …" in the thread of a task or claim message Kaizen posted (§107):
- * the text after the mention becomes a comment on it, as the member who
- * wrote it; the message gets a ✅. Anywhere else, a quiet note to the writer.
+ * "@Kaizen …" (§107, §108). A mention cannot open a pop-up — Slack gives no
+ * trigger for one — so Kaizen answers with buttons that do, seen only by
+ * whoever wrote it; this works the same in the Slack phone app.
+ *   @Kaizen new|repair|claim <title> → the button to that form, title filled in
+ *   @Kaizen tasks / today / help     → the list, the day, what it does
+ *   in a task's or claim's thread: @Kaizen comments → the comments so far;
+ *   @Kaizen <anything else>          → saved as a comment (✅ on the message)
+ *   anywhere else, other text        → offered as a new to-do
  */
-async function threadComment(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
-  const say = (text: string) => slackApi(s.token!, 'chat.postEphemeral', { channel: ev.channel, user: ev.user, text, ...(ev.thread_ts ? { thread_ts: ev.thread_ts } : {}) });
-  if (!ev.thread_ts || ev.thread_ts === ev.ts) { await say('To add a comment, mention @Kaizen inside the thread of a task or claim message.'); return; }
-  const [t] = await sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}` as
-    { subject: 'task' | 'claim'; subject_id: string }[];
-  if (!t) { await say('This thread is not a Kaizen task or claim, so there is nowhere to save it.'); return; }
-  const body = commentFromMention(String(ev.text ?? ''));
-  if (!body) { await say('Write the comment after @Kaizen — e.g. “@Kaizen the plumber comes at 10”.'); return; }
+async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const inThread = !!ev.thread_ts && ev.thread_ts !== ev.ts;
+  const say = (text: string, blocks?: unknown[]) => slackApi(s.token!, 'chat.postEphemeral',
+    { channel: ev.channel, user: ev.user, text, ...(blocks ? { blocks } : {}), ...(inThread ? { thread_ts: ev.thread_ts } : {}) });
+  const { verb, arg } = parseMention(String(ev.text ?? ''));
+  const from = { channel: String(ev.channel), ts: String(inThread ? ev.thread_ts : ev.ts) };
+  if (verb === 'help') { await say('What Kaizen does in Slack', mentionHelpBlocks()); return; }
+  if (verb === 'new' || verb === 'repair' || verb === 'claim') {
+    const only = verb === 'new' ? 'task' : verb === 'repair' ? 'work_order' : 'claim';
+    await say(arg ? `New: ${arg}` : 'Open the form', [
+      { type: 'section', text: { type: 'mrkdwn', text: arg ? `Ready to save *${arg.replace(/[<>&]/g, '')}* — tap to open the form.` : 'Tap to open the form.' } },
+      newButtons(arg, only, from)]);
+    return;
+  }
   const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
   if (!member.ok) { await say(member.why); return; }
-  const r = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user)).comment(t.subject, t.subject_id, body);
+  const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
+  if (verb === 'tasks' || verb === 'today') { const m = await k.forMention(verb); await say(m.text, m.blocks); return; }
+
+  const [t] = inThread ? await sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}` as
+    { subject: 'task' | 'claim'; subject_id: string }[] : [];
+  if (verb === 'comments') {
+    if (!t) { await say('Ask for comments inside the thread of a Kaizen task or claim message.'); return; }
+    const m = await k.comments(t.subject, t.subject_id);
+    await say(m.text, m.blocks);
+    return;
+  }
+  // Plain text: a comment where there is a subject; elsewhere, an offer to track it.
+  if (!t) {
+    await say(`Make it a to-do? ${arg}`, [
+      { type: 'section', text: { type: 'mrkdwn', text: `Kaizen can track *${arg.replace(/[<>&]/g, '').slice(0, 200)}* — pick what it is:` } },
+      newButtons(arg, undefined, from),
+      { type: 'context', elements: [{ type: 'mrkdwn', text: 'Type *@Kaizen help* for everything Kaizen does here.' }] }]);
+    return;
+  }
+  const r = await k.comment(t.subject, t.subject_id, arg);
   if (!r.ok) { await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`); return; }
   const re = await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
   if (!re.ok) await say('✓ Saved as a comment in Kaizen.');
@@ -184,8 +215,35 @@ class Kaizen {
 
   /** A comment on a task or a claim, as this member (§107). */
   async comment(subject: 'task' | 'claim', id: string, body: string): Promise<Record<string, unknown>> {
-    if (subject === 'task') return this.may('/api/todos', 'POST') ? this.todo({ action: 'note', id, body }) : { ok: false, message: 'your role does not include the to-do list' };
-    return this.may('/api/claims', 'POST') ? this.claimSave({ action: 'note', id, body }) : { ok: false, message: 'your role does not include claims' };
+    // via: it came from the thread, so it is not posted back there.
+    if (subject === 'task') return this.may('/api/todos', 'POST') ? this.todo({ action: 'note', id, body, via: 'slack-thread' }) : { ok: false, message: 'your role does not include the to-do list' };
+    return this.may('/api/claims', 'POST') ? this.claimSave({ action: 'note', id, body, via: 'slack-thread' }) : { ok: false, message: 'your role does not include claims' };
+  }
+
+  /** "@Kaizen comments" in a thread (§108): what people wrote on it so far. */
+  async comments(subject: 'task' | 'claim', id: string) {
+    if (!this.may(subject === 'task' ? '/api/todos' : '/api/claims', 'GET')) return { text: 'Your Kaizen role does not include that.', blocks: [] };
+    const [rows, head] = await Promise.all([
+      this.sql`SELECT body, created_by, created_at FROM work_updates WHERE account_id = 1 AND subject = ${subject} AND subject_id = ${id} AND kind = 'note'
+                ORDER BY created_at, id` as Promise<{ body: string; created_by: string | null; created_at: string }[]>,
+      subject === 'task' ? taskLite(this.sql, id).then(t => t?.title ?? 'this task')
+        : claimLite(this.sql, id).then(c => c ? `${c.unit ?? 'Portfolio'} · ${c.description ?? c.category ?? 'claim'}` : 'this claim')
+    ]);
+    const m = commentsBlocks(rows.map(r => ({ who: (r.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(r.created_at).toISOString()).short, body: r.body })), head);
+    const more = rows.length > 10 ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: `Showing the latest 10 of ${rows.length}.` }] }] : [];
+    const open = subject === 'task' ? [{ type: 'actions', elements: [{ type: 'button', text: { type: 'plain_text', text: '📋 Open' }, action_id: 'task_open', value: id }] }] : [];
+    return { text: m.text, blocks: [...m.blocks, ...more, ...open] };
+  }
+
+  /** "@Kaizen tasks" / "@Kaizen today" (§108): the same answers as /kaizen, for a message seen only by the writer. */
+  async forMention(verb: 'tasks' | 'today'): Promise<{ text: string; blocks: unknown[] }> {
+    if (verb === 'tasks') {
+      if (!this.may('/api/todos', 'GET')) return { text: 'Your Kaizen role does not include the to-do list.', blocks: [] };
+      return { text: 'Open work', blocks: taskList(await this.openTasks(), this.s.config.appUrl) };
+    }
+    if (!this.may('/api/operations', 'GET')) return { text: 'Your Kaizen role does not include operations.', blocks: [] };
+    const facts = await digestFacts(this.sql, await getCredentials(this.sql, this.ctx.env.ENCRYPTION_KEY), this.ctx.env.ENCRYPTION_KEY);
+    return digestMessage(facts, 'morning', this.s.config.appUrl, helpUrlOf(this.s.config));
   }
 
   /* ── the task card (§100) ── */
@@ -291,12 +349,13 @@ class Kaizen {
     if (!this.may('/api/todos', 'POST')) return this.deny('the to-do list');
     const text = String(p.message?.text ?? '').trim();
     const channel = String(p.channel?.id ?? ''), ts = String(p.message?.ts ?? '');
+    const root = String(p.message?.thread_ts ?? ts);
     const link = channel && ts ? await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel, message_ts: ts }) : null;
     const first = text.split('\n')[0]!.replace(/<[^>]+>/g, '').trim();
     await this.open(p.trigger_id, taskModal({
       kind: 'task', title: first.slice(0, 120),
       description: [text, link?.permalink ? `From Slack: ${link.permalink}` : ''].filter(Boolean).join('\n\n').slice(0, 3800),
-      ...(channel && ts ? { from: { channel, ts } } : {})
+      ...(channel && ts ? { from: { channel, ts: root } } : {})
     }, await this.units(), await this.people()));
     return ack();
   }
@@ -350,7 +409,8 @@ class Kaizen {
   /* ── buttons and menus ── */
   async action(p: Record<string, any>): Promise<Response> { // eslint-disable-line @typescript-eslint/no-explicit-any
     const a = p.actions?.[0] ?? {};
-    const id: string = a.action_id;
+    // Slack refuses two buttons with one action_id in a message, so "+ Repair" has its own — it is task_new for a repair.
+    const id: string = a.action_id === 'task_new_repair' ? 'task_new' : a.action_id;
     const value: string = a.selected_option?.value ?? a.value ?? '';
     const url: string = p.response_url ?? '';
     const inChannel = p.container?.type === 'message' && !p.container?.is_ephemeral;
@@ -475,6 +535,22 @@ class Kaizen {
       return ack();
     }
 
+    // §108: the buttons an @Kaizen mention answers with — the forms, title filled in; saving says so in the mention's thread.
+    if (id.startsWith('mention_new_')) {
+      const v = JSON.parse(value || '{}') as { kind?: string; title?: string; from?: { channel: string; ts: string } };
+      if (v.kind === 'claim') {
+        if (!this.may('/api/claims', 'POST')) return this.deny('claims');
+        await this.open(p.trigger_id, claimModal({ description: v.title ?? '', occurredOn: todayIn('America/New_York') }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES));
+      } else {
+        if (!this.may('/api/todos', 'POST')) return this.deny('the to-do list');
+        await this.open(p.trigger_id, taskModal({ kind: v.kind === 'work_order' ? 'work_order' : 'task', title: v.title ?? '', ...(v.from ? { from: v.from } : {}) },
+          await this.units(), await this.people()));
+      }
+      // The offer has done its job.
+      await this.reply(url, { delete_original: true });
+      return ack();
+    }
+
     // Tasks
     const taskVerb = id === 'task_menu' ? value.split(':')[0] : id.replace('task_', '');
     const taskId = id === 'task_menu' ? value.split(':')[1] ?? '' : value;
@@ -575,8 +651,11 @@ class Kaizen {
       if (!r.ok) return json({ response_action: 'errors', errors: { title: r.message ?? 'Not saved.' } });
       // Made from a message: the thread says it is tracked now.
       if (m.from && r.id) {
-        this.ctx.waitUntil(slackApi(this.s.token!, 'chat.postMessage', { channel: m.from.channel, thread_ts: m.from.ts,
-          text: `📋 Tracked in Kaizen as a ${m.kind === 'work_order' ? 'repair' : 'task'}: *${String(body.title)}*` }).then(() => {}, () => {}));
+        // …and becomes the task's thread (§108): "@Kaizen …" there comments on it.
+        const from = m.from;
+        this.ctx.waitUntil(slackApi(this.s.token!, 'chat.postMessage', { channel: from.channel, thread_ts: from.ts,
+          text: `📋 Tracked in Kaizen as a ${m.kind === 'work_order' ? 'repair' : 'task'}: *${String(body.title)}* — reply here with @Kaizen to comment` })
+          .then(() => rememberThread(this.sql, { ok: true, ...from }, 'task', String(r.id))).catch(() => {}));
       }
       // Edited on top of the card: back to the card, refreshed.
       if (m.card && m.id && view.root_view_id) { await this.refreshCard(view.root_view_id, m.id, '✎ Saved'); return ack(); }

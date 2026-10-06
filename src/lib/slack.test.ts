@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -230,9 +230,35 @@ test('check-in lists everything open; check-out counts the day', () => {
   const i = taskCheckMessage('checkin', d);
   assert.equal(i.text, 'Tasks check-in Oct 6: 3 open, 1 overdue, 1 due today');
   const si = JSON.stringify(i.blocks);
-  for (const k of ['▲ Overdue', '● Due today', '◐ In progress', '🔧 Fix AC · CL1125 · Laura', 'Call HOA · _no owner_', '"action_id":"sec_tasks"']) assert.ok(si.includes(k), k);
+  for (const k of ['▲ Overdue', '● Due today', '◐ In progress', '🔧 Fix AC · CL1125 · Laura', '● Call HOA"', '"action_id":"sec_tasks"']) assert.ok(si.includes(k) || si.includes(k.replace('"', '\\n')), k);
+  assert.doesNotMatch(si, /no owner/);
   const o = taskCheckMessage('checkout', d);
   assert.equal(o.text, 'Tasks check-out Oct 6: 2 closed, 1 opened, 3 still open');
   const so = JSON.stringify(o.blocks);
   for (const k of ['(1 done, 1 cancelled)', '✓ Fob · laura', '✕ Old · juan', '＋ Call HOA · juan', 'Still open']) assert.ok(so.includes(k), k);
+});
+
+test('@Kaizen: what a mention asks for', () => {
+  assert.deepEqual(parseMention('<@U1>'), { verb: 'help', arg: '' });
+  assert.deepEqual(parseMention('<@U1> new Fix the AC in P2-4308'), { verb: 'new', arg: 'Fix the AC in P2-4308' });
+  assert.deepEqual(parseMention('<@U1> repair leak'), { verb: 'repair', arg: 'leak' });
+  assert.deepEqual(parseMention('<@U1> comments'), { verb: 'comments', arg: '' });
+  assert.deepEqual(parseMention('<@U1> the plumber comes at 10'), { verb: 'text', arg: 'the plumber comes at 10' });
+  const b = JSON.stringify(newButtons('Fix the AC'));
+  assert.match(b, /mention_new_task/);
+  assert.match(b, /\\"title\\":\\"Fix the AC\\"/);
+  assert.equal((newButtons('x', 'claim') as { elements: unknown[] }).elements.length, 1);
+  assert.match(JSON.stringify(commentsBlocks([{ who: 'juan', when: 'Oct 6', body: 'hi' }], 'Leak').blocks), /Comments on Leak/);
+});
+
+test('no message or pop-up has two elements with one action_id — Slack refuses it', () => {
+  const t = { id: '1', title: 'A', kind: 'task' as const, status: 'pending', priority: 'none', assignee: null, dueOn: null };
+  const each = (blocks: unknown) => {
+    const ids: string[] = [];
+    JSON.stringify(blocks, (k, v) => { if (k === 'action_id') ids.push(v); return v; });
+    assert.equal(new Set(ids).size, ids.length, ids.join(','));
+  };
+  each(taskList([t]));
+  each(tasksModal([{ ...t, overdue: false, dueToday: false }]));
+  each(newButtons('x'));
 });
