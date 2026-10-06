@@ -3303,3 +3303,12 @@ edit, remove), and both helps (*@Kaizen* / *@Kaizen help* and */kaizen
 help*) start with buttons to every section's pop-up (`sectionButtons`):
 ☐ Tasks · ⚑ Claims · 🛬 Check-ins · 🧹 Cleans — the same sec_* pop-ups as
 Manage; without days they cover today and tomorrow.
+
+## §113 — Claims have a card, with their comments
+
+Like a task's card: **💬 Comment** on every claim row (/kaizen claims,
+@Kaizen claims, the Claims pop-up — where it goes on top) and on claim
+messages opens `claimCard` (callback `claim_card`): the case's facts,
+description and platform link, every comment (latest 10), and *Add a
+comment* with the cursor ready. "Add comment" saves through /api/claims
+`note` and the card stays open with it in. Status and edit stay on the row.

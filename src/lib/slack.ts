@@ -169,7 +169,7 @@ export function claimMessage(c: ClaimLite, event: string, by: string): { text: s
     blocks: [
       section(`${sevMark(c.severity)} ⚑ Claim ${event}: *${esc(claimTitle(c))}*`),
       context([c.category, c.severity, c.status].filter(Boolean).map(esc).join(' · '), c.caseUrl ? link(c.caseUrl, 'platform case') : '', by ? `by ${esc(by)}` : ''),
-      { type: 'actions', elements: [claimStatusSelect(c), button('✎ Edit', 'claim_edit', c.id)] }
+      { type: 'actions', elements: [claimStatusSelect(c), button('💬 Comment', 'claim_open', c.id), button('✎ Edit', 'claim_edit', c.id)] }
     ]
   };
 }
@@ -188,8 +188,41 @@ const claimStatusSelect = (c: ClaimLite): Block => ({
 function claimRows(c: ClaimLite): Block[] {
   return [
     section(`${sevMark(c.severity)} *${esc(claimTitle(c))}*\n${[c.category, c.severity, c.days != null ? `${c.days}d open` : ''].filter(Boolean).map(esc).join(' · ')}${c.caseUrl ? ` · ${link(c.caseUrl, 'case')}` : ''}`),
-    { type: 'actions', elements: [claimStatusSelect(c), button('✎ Edit', 'claim_edit', c.id), button('🗑 Remove', 'claim_remove', c.id, 'danger')] }
+    { type: 'actions', elements: [claimStatusSelect(c), button('💬 Comment', 'claim_open', c.id), button('✎ Edit', 'claim_edit', c.id), button('🗑 Remove', 'claim_remove', c.id, 'danger')] }
   ];
+}
+
+export interface ClaimCard extends ClaimLite {
+  source?: string | null; refund?: number; repairCost?: number;
+  updates: { who: string; when: string; body: string }[];
+}
+
+/**
+ * A claim's card (§113): the case, what people wrote on it, and the box
+ * to add to it — as a task's card. "Add comment" saves it and the card
+ * stays open with it in. Status and edit stay on the list's row.
+ */
+export function claimCard(c: ClaimCard, note?: string, root?: 'claims', focus = false): Block {
+  const f = (label: string, v: string | null | undefined) => v ? mrk(`*${label}*\n${esc(v)}`) : null;
+  const money = (n?: number) => n ? `$${n.toFixed(2)}` : null;
+  const fields = [f('Status', c.status), f('Severity', c.severity), f('Category', c.category), f('Listing', c.unit ?? 'Portfolio'),
+    f('Source', c.source), f('Open for', c.days != null ? `${c.days} day${c.days === 1 ? '' : 's'}` : null),
+    f('Refund', money(c.refund)), f('Repair cost', money(c.repairCost))].filter(Boolean).slice(0, 10);
+  return {
+    type: 'modal', callback_id: 'claim_card', private_metadata: JSON.stringify({ id: c.id, ...(root ? { root } : {}) }),
+    title: plain('Claim'), submit: plain('Add comment'), close: plain('Close'),
+    blocks: [
+      { type: 'header', text: plain(claimTitle(c).slice(0, 150)) },
+      ...(note ? [context(note)] : []),
+      { type: 'section', fields },
+      ...(c.description ? [section(esc(c.description).slice(0, 2900))] : []),
+      ...(c.caseUrl ? [context(link(c.caseUrl, '↗ Platform case'))] : []),
+      { type: 'divider' },
+      section(c.updates.length ? `*Comments* · ${c.updates.length}` : '_No comments yet._'),
+      ...c.updates.slice(-10).map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
+      input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) })
+    ]
+  };
 }
 
 export function claimList(list: ClaimLite[]): Block[] {

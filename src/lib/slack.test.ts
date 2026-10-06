@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { claimCard, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -308,4 +308,16 @@ test('the help opens every section; @Kaizen claims lists them', () => {
   const ids = JSON.stringify(sectionButtons());
   for (const k of ['sec_tasks', 'sec_claims', 'sec_checkins', 'sec_cleans']) assert.ok(ids.includes(k), k);
   assert.match(JSON.stringify(mentionHelpBlocks()), /sec_claims[\s\S]*mention_new_task/);
+});
+
+test('a claim has its card: the case, its comments and the box; every row and message has 💬 Comment', () => {
+  const c = { id: '5', unit: 'P2-4308', category: 'Damage', severity: 'High', status: 'Open', description: 'Broken TV', days: 3, refund: 50,
+              updates: [{ who: 'juan', when: 'Oct 6', body: 'Asked the guest' }] };
+  const v = claimCard(c, undefined, 'claims', true) as { callback_id: string; private_metadata: string };
+  const s = JSON.stringify(v);
+  assert.equal(v.callback_id, 'claim_card');
+  assert.deepEqual(JSON.parse(v.private_metadata), { id: '5', root: 'claims' });
+  for (const k of ['P2-4308 · Broken TV', 'Comments* · 1', 'Asked the guest', '$50.00', '"focus_on_load":true']) assert.ok(s.includes(k), k);
+  assert.match(JSON.stringify(claimList([c])), /"action_id":"claim_open","value":"5"/);
+  assert.match(JSON.stringify(claimMessage(c, 'opened', 'juan').blocks), /claim_open/);
 });

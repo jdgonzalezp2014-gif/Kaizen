@@ -21,7 +21,7 @@ import * as claims from './claims.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
   parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
-  parseMention, newButtons, mentionHelpBlocks, sectionButtons, commentsBlocks, guessUnit, quickTitle, trackedReply,
+  parseMention, newButtons, mentionHelpBlocks, sectionButtons, claimCard, commentsBlocks, guessUnit, quickTitle, trackedReply,
   type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
 import * as turnover from './turnover.ts';
@@ -300,6 +300,25 @@ class Kaizen {
       resolutionNote: t.resolution_note, unit: t.unit, children: kids,
       updates: ups.reverse().map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
   }
+  /* ── the claim card (§113) ── */
+  private async claimCardOf(id: string) {
+    const [c, row, ups] = await Promise.all([
+      claimLite(this.sql, id), this.claimRow(id),
+      this.sql`SELECT body, created_by, created_at FROM work_updates WHERE account_id = 1 AND subject = 'claim' AND subject_id = ${id} AND kind = 'note'
+                ORDER BY created_at, id` as Promise<{ body: string; created_by: string | null; created_at: string }[]>
+    ]);
+    if (!c || !row) return null;
+    return { ...c, source: row.source, refund: Number(row.refund) || 0, repairCost: Number(row.repair_cost) || 0,
+      updates: ups.map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
+  }
+  private async openClaimCard(trigger: string, id: string, push = false) {
+    const c = await this.claimCardOf(id);
+    if (!c) return ephemeral('That claim is gone.');
+    if (push) await slackApi(this.s.token!, 'views.push', { trigger_id: trigger, view: claimCard(c, undefined, 'claims', true) });
+    else await this.open(trigger, claimCard(c, undefined, undefined, true));
+    return ack();
+  }
+
   /** The card, opened to comment (§111): the cursor in the comment box. */
   private async openCard(trigger: string, id: string, push = false) {
     const c = await this.card(id);
@@ -482,6 +501,12 @@ class Kaizen {
     if (id === 'task_pick') {
       if (!this.may('/api/todos', 'GET')) return this.deny('the to-do list');
       return await this.openCard(p.trigger_id, value, inView === 'sec_tasks');
+    }
+
+    // §113: a claim's 💬 Comment — its card; inside the Claims pop-up, on top of it.
+    if (id === 'claim_open') {
+      if (!this.may('/api/claims', 'GET')) return this.deny('claims');
+      return await this.openClaimCard(p.trigger_id, value, inView === 'sec_claims');
     }
 
     // Inside the Tasks pop-up: everything refreshes the list in place; open and edit go on top of it.
@@ -676,6 +701,17 @@ class Kaizen {
       if (!r.ok) return json({ response_action: 'errors', errors: { update: r.message ?? 'Not saved.' } });
       const c = await this.card(String(meta.id));
       return c ? json({ response_action: 'update', view: taskCard(c, '✓ Comment added') }) : json({ response_action: 'clear' });
+    }
+    if (view.callback_id === 'claim_card') {
+      // §113: "Add comment" on a claim; the card stays open with it in, and the Claims list beneath follows.
+      const body = String(state.update?.v?.value ?? '').trim();
+      if (!body) return json({ response_action: 'errors', errors: { update: 'Write a comment first.' } });
+      if (!this.may('/api/claims', 'POST')) return json({ response_action: 'errors', errors: { update: 'Your role does not include claims.' } });
+      const r = await this.claimSave({ action: 'note', id: meta.id, body });
+      if (!r.ok) return json({ response_action: 'errors', errors: { update: String(r.error ?? 'Not saved.') } });
+      const root = (meta as { root?: 'claims' }).root;
+      const c = await this.claimCardOf(String(meta.id));
+      return c ? json({ response_action: 'update', view: claimCard(c, '✓ Comment added', root) }) : json({ response_action: 'clear' });
     }
     if (view.callback_id === 'clean_assign_save') {
       if (!this.may('/api/turnover', 'POST')) return json({ response_action: 'errors', errors: { cleaner: 'Your role does not include operations.' } });
