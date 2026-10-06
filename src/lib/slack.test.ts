@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -285,4 +285,20 @@ test('@Kaizen new: the listing from the text, a short title, the reply with Add 
   const r = JSON.stringify(trackedReply({ id: '9', title: 'Fix AC', kind: 'work_order', unit: 'P2-4308' }).blocks);
   assert.match(r, /as a repair: \*Fix AC\* · P2-4308/);
   assert.match(r, /"action_id":"task_edit","value":"9"/);
+});
+
+test('💬 Comment on a task: a menu of the listed tasks, late first; the card opens with the box ready', () => {
+  const p = pickTask([{ id: '1', title: 'Paint', overdue: false, dueToday: false }, { id: '2', title: 'Fix AC', unit: 'P2-4308', overdue: true, dueToday: false },
+                      { id: '3', title: 'x'.repeat(90), dueToday: true }, { title: 'no id' }]);
+  const opts = (p[0] as { elements: { action_id: string; options: { text: { text: string }; value: string }[] }[] }).elements[0]!;
+  assert.equal(opts.action_id, 'task_pick');
+  assert.deepEqual(opts.options.map(o => o.value), ['2', '3', '1']);
+  assert.equal(opts.options[0]!.text.text, '▲ Fix AC · P2-4308');
+  assert.ok(opts.options[1]!.text.text.length <= 75);
+  assert.deepEqual(pickTask([{ title: 'no id' }]), []);
+  assert.match(JSON.stringify(digestMessage({ ...D, tasks: [{ id: '7', title: 'Call HOA', overdue: true, dueToday: false }] }, 'morning').blocks), /"action_id":"task_pick"/);
+  const card = { id: '1', title: 'A', kind: 'task' as const, status: 'pending', priority: 'none', assignee: null, supervisor: null, dueOn: null, scheduledOn: null,
+    reservationLabel: null, description: null, vendor: null, costActual: null, costEstimate: null, resolutionNote: null, unit: null, children: [], updates: [] };
+  assert.match(JSON.stringify(taskCard(card, undefined, undefined, true)), /"focus_on_load":true/);
+  assert.doesNotMatch(JSON.stringify(taskCard(card)), /focus_on_load/);
 });

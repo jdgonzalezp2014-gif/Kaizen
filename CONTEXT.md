@@ -3282,3 +3282,15 @@ Hostaway mirror and the owner DM follow as for any new task.
 - *@Kaizen new* with no words → the form button (§108). *@Kaizen claim …*
   stays a form (a claim needs a listing, a date, a category).
 - The plain-text offer's "+ New to-do / + Repair" now make it at once too.
+
+## §111 — 💬 Comment on a task, from any list
+
+A text line in Slack cannot open a pop-up (a link only opens a web page),
+so every message that lists tasks carries a menu, **💬 Comment on a
+task…** (`pickTask`, action `task_pick`; late first, then due today, up
+to 100): the 8 AM message, the check-in / check-out, /kaizen tasks and the
+Tasks pop-up (where the card goes on top). Choosing one opens its card
+with the cursor in *Add a comment* (`taskCard(…, focus)` →
+`focus_on_load`). One-task messages say **💬 Comment** (was 📋 Open); the ⋯
+menus say **💬 Open & comment**. The digest and check facts now carry
+task ids.

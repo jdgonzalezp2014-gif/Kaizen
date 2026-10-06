@@ -100,6 +100,23 @@ export function taskFacts(t: TaskLite): string {
 const what = (t: TaskLite) => t.kind === 'work_order' ? '🔧 Repair' : '☐ To-do';
 
 /** "Task created / assigned / completed / changed in Hostaway" — with the buttons to act on it. */
+/**
+ * "💬 Comment on a task…" (§111): a menu of the tasks a message lists —
+ * a text line cannot open a pop-up in Slack, a menu can. Choosing one
+ * opens its card with the comment box ready. Late first, then due today.
+ */
+export function pickTask(list: { id?: string; title: string; unit?: string | null; overdue?: boolean; dueToday?: boolean }[]): Block[] {
+  const withId = list.filter((t): t is typeof t & { id: string } => !!t.id);
+  if (!withId.length) return [];
+  const ordered = [...withId.filter(t => t.overdue), ...withId.filter(t => !t.overdue && t.dueToday), ...withId.filter(t => !t.overdue && !t.dueToday)];
+  const label = (t: typeof ordered[number]) => {
+    const s = `${t.overdue ? '▲ ' : t.dueToday ? '● ' : ''}${t.title}${t.unit ? ` · ${t.unit}` : ''}`;
+    return s.length <= 75 ? s : `${s.slice(0, 74)}…`;
+  };
+  return [{ type: 'actions', elements: [{ type: 'static_select', action_id: 'task_pick', placeholder: plain('💬 Comment on a task…'),
+    options: ordered.slice(0, 100).map(t => ({ text: plain(label(t)), value: t.id })) }] }];
+}
+
 export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: string): { text: string; blocks: Block[] } {
   const closed = t.status === 'completed' || t.status === 'cancelled';
   const title = `${what(t)} ${event}: *${esc(t.title)}*`;
@@ -113,7 +130,7 @@ export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: str
           button('✓ Complete', 'task_complete', t.id, 'primary'),
           ...(t.status !== 'in_progress' ? [button('▶ Start', 'task_start', t.id)] : [])
         ]),
-        button('📋 Open', 'task_open', t.id),
+        button('💬 Comment', 'task_open', t.id),
         ...(appUrl ? [{ type: 'button', text: plain('Kaizen ↗'), url: `${appUrl}/`, action_id: 'open_kaizen' }] : [])
       ] }
     ]
@@ -127,13 +144,14 @@ export function taskList(list: TaskLite[], appUrl?: string): Block[] {
   for (const t of list.slice(0, 40)) {
     blocks.push(section(`${t.kind === 'work_order' ? '🔧' : '☐'} *${esc(t.title)}*\n${taskFacts(t)}`, {
       type: 'overflow', action_id: 'task_menu', options: [
-        { text: plain('📋 Open'), value: `open:${t.id}` },
+        { text: plain('💬 Open & comment'), value: `open:${t.id}` },
         { text: plain('✓ Complete'), value: `complete:${t.id}` }, { text: plain('▶ Start'), value: `start:${t.id}` },
         { text: plain('✎ Edit'), value: `edit:${t.id}` }, { text: plain('🗑 Remove'), value: `remove:${t.id}` }
       ]
     }));
   }
   if (list.length > 40) blocks.push(context(`…and ${list.length - 40} more${appUrl ? ` — ${link(appUrl, 'open Kaizen')}` : ''}`));
+  blocks.push(...pickTask(list));
   blocks.push({ type: 'actions', elements: [button('+ To-do', 'task_new', 'task'), button('+ Repair', 'task_new_repair', 'work_order')] });
   return blocks;
 }
@@ -189,7 +207,7 @@ export interface DigestInput {
   arrivals: { resId?: string; date: string; time: string; unit: string; guest: string; agreement: 'signed' | 'not_signed' | null; needsId: boolean; idInDrive: boolean | null }[];
   departures: { resId?: string; date: string; time: string; unit: string; cleaner: string | null; assigned: boolean; notNeeded: boolean; sameDay: boolean }[];
   /** Every open top-level task, flagged when late or due today. */
-  tasks: { title: string; unit?: string | null; overdue: boolean; dueToday: boolean; owner?: string | null }[];
+  tasks: { id?: string; title: string; unit?: string | null; overdue: boolean; dueToday: boolean; owner?: string | null }[];
   claims: { label: string; severity: string; days: number }[];
 }
 
@@ -242,6 +260,7 @@ export function digestMessage(d: DigestInput, kind: 'morning' | 'afternoon', app
     blocks.push(section(`*☐ Tasks* · ${d.tasks.length} open\n${[late ? `▲ ${late} overdue` : '', due ? `● ${due} due today` : ''].filter(Boolean).join(' · ') || '✓ nothing overdue'}`,
       manage('sec_tasks', days, late > 0)));
     if (named.length) blocks.push(context(listOf(named, 6).join('\n')));
+    blocks.push(...pickTask(d.tasks));
     const serious = d.claims.filter(c => c.severity === 'High' || c.severity === 'Critical').length;
     blocks.push(section(`*⚑ Claims* · ${d.claims.length} open\n${serious ? `🔴 ${serious} high or critical` : d.claims.length ? d.claims.slice(0, 2).map(c => esc(c.label)).join(' · ') : '✓ none open'}`,
       manage('sec_claims', days, serious > 0)));
@@ -286,6 +305,7 @@ export function tasksModal(list: (TaskLite & { overdue?: boolean; dueToday?: boo
   const blocks: Block[] = [
     section(`*${list.length} open*${late ? ` · ▲ ${late} overdue` : ''}`),
     { type: 'actions', elements: [button('+ To-do', 'task_new', 'task'), button('+ Repair', 'task_new_repair', 'work_order')] },
+    ...pickTask(list),
     ...noteBlocks(note),
     ...(undo ? [section(`Removed *${esc(undo.title)}*.`, button('Undo', 'task_restore', undo.id))] : []),
     { type: 'divider' }
@@ -293,7 +313,7 @@ export function tasksModal(list: (TaskLite & { overdue?: boolean; dueToday?: boo
   for (const t of list.slice(0, 40)) {
     blocks.push(section(`${t.overdue ? '▲ ' : t.dueToday ? '● ' : ''}${t.kind === 'work_order' ? '🔧' : '☐'} *${esc(t.title)}*\n${taskFacts(t)}`, {
       type: 'overflow', action_id: 'task_menu', options: [
-        { text: plain('📋 Open'), value: `open:${t.id}` }, { text: plain('✓ Complete'), value: `complete:${t.id}` },
+        { text: plain('💬 Open & comment'), value: `open:${t.id}` }, { text: plain('✓ Complete'), value: `complete:${t.id}` },
         { text: plain('▶ Start'), value: `start:${t.id}` }, { text: plain('✎ Edit'), value: `edit:${t.id}` }, { text: plain('🗑 Remove'), value: `remove:${t.id}` }
       ]
     }));
@@ -407,7 +427,7 @@ export interface TaskCard extends TaskLite {
  * stands, its sub-tasks and latest comments, the buttons that move it, and
  * a box to add a comment — refreshed in place after every action.
  */
-export function taskCard(t: TaskCard, note?: string, root?: 'tasks'): Block {
+export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = false): Block {
   const closed = t.status === 'completed' || t.status === 'cancelled';
   const f = (label: string, v: string | null | undefined) => v ? mrk(`*${label}*\n${esc(v)}`) : null;
   const fields = [
@@ -439,7 +459,8 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks'): Block {
       { type: 'divider' },
       section(t.updates.length ? `*Latest comments*` : '_No comments yet._'),
       ...t.updates.map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
-      input('update', 'Add a comment', text(null, true))
+      // Opened to comment (§111): the cursor waits in the box.
+      input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) })
     ]
   };
 }
@@ -633,7 +654,7 @@ export function dueTaskChecks(now: { day: string; hm: string }, cfg: SlackConfig
 
 export interface TaskCheckInput {
   day: string;
-  open: { title: string; owner?: string | null; unit?: string | null; overdue: boolean; dueToday: boolean; inProgress: boolean; kind: string }[];
+  open: { id?: string; title: string; owner?: string | null; unit?: string | null; overdue: boolean; dueToday: boolean; inProgress: boolean; kind: string }[];
   closed: { title: string; by?: string | null; cancelled: boolean }[];
   opened: { title: string; by?: string | null }[];
 }
@@ -652,7 +673,7 @@ export function taskCheckMessage(kind: 'checkin' | 'checkout', d: TaskCheckInput
   const late = d.open.filter(t => t.overdue), today = d.open.filter(t => t.dueToday), moving = d.open.filter(t => t.inProgress && !t.overdue && !t.dueToday);
   const rest = d.open.filter(t => !t.overdue && !t.dueToday && !(t.inProgress));
   const manage: Block = { type: 'button', text: plain('Manage'), action_id: 'sec_tasks', value: JSON.stringify({ days: [d.day] }), ...(late.length ? { style: 'primary' } : {}) };
-  const foot = context(helpUrl ? link(helpUrl, '❓ How to use this') : '', 'Reply in a task’s thread with *@Kaizen …* to add a comment.');
+  const foot = context(helpUrl ? link(helpUrl, '❓ How to use this') : '', '💬 Pick a task above to comment — or reply in its thread with *@Kaizen …*');
   if (kind === 'checkin') {
     const blocks: Block[] = [
       section(`*☀ Tasks check-in · ${day(d.day)}*\n*${d.open.length}* open · ${late.length ? `▲ *${late.length}* overdue` : '✓ none overdue'} · ● *${today.length}* due today · ◐ *${d.open.filter(t => t.inProgress).length}* in progress`, manage),
@@ -663,7 +684,7 @@ export function taskCheckMessage(kind: 'checkin' | 'checkout', d: TaskCheckInput
     if (moving.length) blocks.push(section(`*◐ In progress*\n${listOf(moving.map(t => taskLine(t, '◐'))).join('\n')}`));
     if (rest.length) blocks.push(section(`*○ Also open*\n${listOf(rest.map(t => taskLine(t, '○')), 8).join('\n')}`));
     if (!d.open.length) blocks.push(section('Nothing open. ✓'));
-    blocks.push(foot);
+    blocks.push(...pickTask(d.open), foot);
     return { text: `Tasks check-in ${day(d.day)}: ${d.open.length} open, ${late.length} overdue, ${today.length} due today`, blocks };
   }
   const done = d.closed.filter(c => !c.cancelled), cancelled = d.closed.filter(c => c.cancelled);
@@ -674,7 +695,7 @@ export function taskCheckMessage(kind: 'checkin' | 'checkout', d: TaskCheckInput
   if (d.closed.length) blocks.push(section(`*✓ Closed today*\n${listOf(d.closed.map(c => `${c.cancelled ? '✕' : '✓'} ${esc(c.title)}${c.by ? ` · ${esc(c.by)}` : ''}`)).join('\n')}`));
   if (d.opened.length) blocks.push(section(`*＋ Opened today*\n${listOf(d.opened.map(o => `＋ ${esc(o.title)}${o.by ? ` · ${esc(o.by)}` : ''}`)).join('\n')}`));
   if (d.open.length) blocks.push(section(`*○ Still open*\n${listOf([...late.map(t => taskLine(t, '▲')), ...d.open.filter(t => !t.overdue).map(t => taskLine(t, t.inProgress ? '◐' : '○'))]).join('\n')}`));
-  blocks.push(foot);
+  blocks.push(...pickTask(d.open), foot);
   return { text: `Tasks check-out ${day(d.day)}: ${d.closed.length} closed, ${d.opened.length} opened, ${d.open.length} still open`, blocks };
 }
 
@@ -753,7 +774,7 @@ export function trackedReply(t: { id: string; title: string; kind: string; unit?
       section(`📋 *Tracked in Kaizen* as a ${what}: *${esc(t.title)}*${t.unit ? ` · ${esc(t.unit)}` : ''}`),
       { type: 'actions', elements: [
         { type: 'button', text: plain('✎ Add details'), action_id: 'task_edit', value: t.id, style: 'primary' },
-        { type: 'button', text: plain('📋 Open'), action_id: 'task_open', value: t.id }] },
+        { type: 'button', text: plain('💬 Comment'), action_id: 'task_open', value: t.id }] },
       context('Reply here with *@Kaizen* _your comment_ to add to it.')
     ]
   };

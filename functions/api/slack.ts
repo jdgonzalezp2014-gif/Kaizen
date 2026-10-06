@@ -296,11 +296,12 @@ class Kaizen {
       resolutionNote: t.resolution_note, unit: t.unit, children: kids,
       updates: ups.reverse().map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
   }
+  /** The card, opened to comment (§111): the cursor in the comment box. */
   private async openCard(trigger: string, id: string, push = false) {
     const c = await this.card(id);
     if (!c) return ephemeral('That task is gone.');
-    if (push) await slackApi(this.s.token!, 'views.push', { trigger_id: trigger, view: taskCard(c, undefined, 'tasks') });
-    else await this.open(trigger, taskCard(c));
+    if (push) await slackApi(this.s.token!, 'views.push', { trigger_id: trigger, view: taskCard(c, undefined, 'tasks', true) });
+    else await this.open(trigger, taskCard(c, undefined, undefined, true));
     return ack();
   }
   /** The card again, after an action — in place. */
@@ -469,6 +470,12 @@ class Kaizen {
       await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: loadingModal('Cleans') });
       this.ctx.waitUntil(this.fillCleans(viewId, value));
       return ack();
+    }
+
+    // §111: "💬 Comment on a task…" — in a message, the card; inside the Tasks pop-up, on top of it.
+    if (id === 'task_pick') {
+      if (!this.may('/api/todos', 'GET')) return this.deny('the to-do list');
+      return await this.openCard(p.trigger_id, value, inView === 'sec_tasks');
     }
 
     // Inside the Tasks pop-up: everything refreshes the list in place; open and edit go on top of it.
