@@ -1,6 +1,6 @@
 # Kaizen OS — decision log (full history)
 
-The long form behind CONTEXT.md. **Do not read it whole**: code comments cite sections as `§N` — open only the section cited (`grep -n "^## .*N\." docs/history.md`, or `## §N` from 108 on). Kept verbatim; new decisions go in CONTEXT.md (one line in its index) and, when they need the long form, a section here.
+The long form behind CLAUDE.md and docs/modules/. **Do not read it whole**: code comments cite sections as `§N` — open only the section cited (`grep -n "^## .*N\." docs/history.md`, or `## §N` from 108 on). Kept verbatim; new decisions go in the module doc and, when they need the long form, a section here.
 
 ---
 

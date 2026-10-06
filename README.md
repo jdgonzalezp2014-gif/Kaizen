@@ -48,7 +48,8 @@ date range locally, so dragging a range redraws instantly rather than waiting on
 ## Layout
 
 ```
-CONTEXT.md          Architecture, rules and state — read this first (short)
+CLAUDE.md           Rules, workflow and the module map — loaded every session
+docs/modules/       One short doc per module (finance, operations, work, guests, slack, repository, platform)
 docs/history.md     The full decision log — open only the § cited
 src/lib/            Pure analytics: proration, ranges, chart series, Hostaway client
 db/migrations/      Plain SQL, applied in order
