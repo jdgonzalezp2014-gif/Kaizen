@@ -2,7 +2,7 @@
  * Proration — the arithmetic every number on every screen rests on.
  *
  * This is a deliberate second implementation of what `apps-script/
- * Finance.js` does, and CONTEXT.md §2c explains why: the browser cannot
+ * Finance.js` does, and docs/history.md §2c explains why: the browser cannot
  * ask a 1–3 second Web App for each of ninety chart buckets. The price of
  * that is two implementations of "what did this unit earn", which is
  * exactly the duplication this project refuses everywhere else.

@@ -3,7 +3,7 @@
  *
  * One call, everything a session needs: live Hostaway reservations and
  * listings, plus the costs and claims the team has entered. The browser
- * then computes every date range itself (CONTEXT.md §7), so this is hit
+ * then computes every date range itself (docs/history.md §7), so this is hit
  * once on load rather than once per interaction — which is what makes a
  * 1–3 second Hostaway sweep acceptable here.
  */

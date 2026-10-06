@@ -31,5 +31,5 @@ node apps/web/src/lib/finance.test.ts
 ```
 
 Node runs TypeScript directly (24.x), so there is no build step to run a test. The tests exist
-to pin this against `apps-script/Finance.js` — see `CONTEXT.md` §2c for why the arithmetic
+to pin this against `apps-script/Finance.js` — see `docs/history.md` §2c for why the arithmetic
 deliberately exists twice and what keeps the two honest.

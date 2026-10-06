@@ -15,7 +15,7 @@ the team record costs and claims, and alerts by SMS when something needs a decis
 | SMS | QUO (formerly OpenPhone) |
 | Domain / DNS | Cloudflare |
 
-All free tiers. See `CONTEXT.md` §2a for the one licensing caveat worth knowing.
+All free tiers. See `docs/history.md` §2a for the one licensing caveat worth knowing.
 
 ## How it fits together
 
@@ -48,7 +48,8 @@ date range locally, so dragging a range redraws instantly rather than waiting on
 ## Layout
 
 ```
-CONTEXT.md          Architecture, decisions, and state — read this first
+CONTEXT.md          Architecture, rules and state — read this first (short)
+docs/history.md     The full decision log — open only the § cited
 src/lib/            Pure analytics: proration, ranges, chart series, Hostaway client
 db/migrations/      Plain SQL, applied in order
 docs/               Client spec, source notes, reference material
@@ -64,18 +65,18 @@ Node runs TypeScript directly, so there is no build step to run a test.
 
 ## Status
 
-Early — `CONTEXT.md` §11 has the build order. The analytics core and the Hostaway client are
+Early — `docs/history.md` §11 has the build order. The analytics core and the Hostaway client are
 written and tested; the Next.js app is not scaffolded yet.
 
 ## Operations and Repository
 
 The operations sheet ("daily file") and the Data Repository are read from
 inside the app, read-only, as the **Operations** and **Repository** tabs.
-`CONTEXT.md` §63 has the design and the setup steps.
+`docs/history.md` §63 has the design and the setup steps.
 
 ## Provenance
 
 Built on a working Apps Script panel already running against the live Hostaway account. The
 proration rules, the Airbnb scraping ladder, the SMS character handling and the pricing decision
-log all originate there — see `CONTEXT.md` §9 for what carried over and the behaviours that were
+log all originate there — see `docs/history.md` §9 for what carried over and the behaviours that were
 expensive to learn.
