@@ -3323,3 +3323,14 @@ cleans for today and tomorrow, tasks, claims — plus "Today so far: ✓
 closed · ＋ opened · ○ open" (team's day), posted in the thread of the
 asking message: everyone sees it, the channel stays one line. *@Kaizen
 today* stays the private version.
+
+## §115 — Private answers inside the thread
+
+@Kaizen's private answers (tasks, claims, today, help, the "make it a
+to-do?" offer, errors) go in the thread of the asking message, so the
+channel loses nothing. Slack shows a private (ephemeral) reply only in a
+thread that already exists — tested: on a message with no replies it is
+unreachable — so Kaizen first posts one public line in the thread, "🔒
+Answered @who privately here", then the private reply there. A mention
+already inside a thread answers in that thread with no extra line.
+Task facts no longer say "no owner" (§108) in /kaizen tasks either.

@@ -90,8 +90,17 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
  */
 async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
   const inThread = !!ev.thread_ts && ev.thread_ts !== ev.ts;
-  const say = (text: string, blocks?: unknown[]) => slackApi(s.token!, 'chat.postEphemeral',
-    { channel: ev.channel, user: ev.user, text, ...(blocks ? { blocks } : {}), ...(inThread ? { thread_ts: ev.thread_ts } : {}) });
+  // §115: private answers go in the thread of the asking message, so the channel loses nothing. Slack shows a private reply
+  // only in a thread that exists — one line, "🔒 Answered privately", opens it first (once per mention).
+  let threadTs: string | null = inThread ? String(ev.thread_ts) : null;
+  const say = async (text: string, blocks?: unknown[]) => {
+    if (!threadTs) {
+      const stub = await slackApi<{ ts?: string }>(s.token!, 'chat.postMessage', { channel: ev.channel, thread_ts: ev.ts, text: `🔒 Answered <@${ev.user}> privately`,
+        blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: `🔒 Answered <@${ev.user}> privately here` }] }] });
+      threadTs = stub.ok ? String(ev.ts) : '';
+    }
+    return slackApi(s.token!, 'chat.postEphemeral', { channel: ev.channel, user: ev.user, text, ...(blocks ? { blocks } : {}), ...(threadTs ? { thread_ts: threadTs } : {}) });
+  };
   const { verb, arg } = parseMention(String(ev.text ?? ''));
   const from = { channel: String(ev.channel), ts: String(inThread ? ev.thread_ts : ev.ts) };
   if (verb === 'help') { await say('What Kaizen does in Slack', mentionHelpBlocks()); return; }

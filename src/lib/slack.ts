@@ -94,7 +94,7 @@ export const day = (d: string) => `${MON[Number(d.slice(5, 7)) - 1]} ${Number(d.
 
 export function taskFacts(t: TaskLite): string {
   return [t.unit, t.reservationLabel ? `🛏 ${t.reservationLabel}` : '', t.dueOn ? `finish by ${day(t.dueOn)}` : '',
-          t.assignee ? `owner ${t.assignee}` : 'no owner', ['high', 'urgent'].includes(t.priority) ? `▲ ${t.priority}` : '',
+          t.assignee ? `owner ${t.assignee}` : '' /* §108: only when there is one */, ['high', 'urgent'].includes(t.priority) ? `▲ ${t.priority}` : '',
           STATUS_WORD[t.status] ?? t.status].filter(Boolean).map(esc).join(' · ');
 }
 const what = (t: TaskLite) => t.kind === 'work_order' ? '🔧 Repair' : '☐ To-do';
