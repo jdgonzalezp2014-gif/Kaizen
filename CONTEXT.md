@@ -3266,3 +3266,19 @@ Central by default; the reminders used New York hours before).
   the afternoon one says what still matters.
 - Settings → Slack: the check-in time field and its "Send now" are gone;
   the zone applies to all three. SOP "Kaizen in Slack" v7.
+
+## §110 — @Kaizen new makes the request at once
+
+For whoever wants one line per request: **@Kaizen new <words>** (or
+*repair*) creates the to-do right away, as the member who wrote it
+(`Kaizen.quickCreate`) — title from the first line (`quickTitle`, cut at a
+word under 120), the listing named in the words (`guessUnit`: spaces and
+hyphens optional, longest name first — "p2 4308" → P2-4308), the whole
+text and the message's permalink as the description. The reply in the
+message's thread (`trackedReply`, visible to the channel) has **✎ Add
+details** (the edit form, `task_edit`) and **📋 Open** (the card), and the
+thread becomes the task's (`slack_threads`). The usual "created" news, the
+Hostaway mirror and the owner DM follow as for any new task.
+- *@Kaizen new* with no words → the form button (§108). *@Kaizen claim …*
+  stays a form (a claim needs a listing, a date, a category).
+- The plain-text offer's "+ New to-do / + Repair" now make it at once too.

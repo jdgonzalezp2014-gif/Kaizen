@@ -21,7 +21,7 @@ import * as claims from './claims.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
   parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
-  parseMention, newButtons, mentionHelpBlocks, commentsBlocks,
+  parseMention, newButtons, mentionHelpBlocks, commentsBlocks, guessUnit, quickTitle, trackedReply,
   type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
 import * as turnover from './turnover.ts';
@@ -94,6 +94,15 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   const { verb, arg } = parseMention(String(ev.text ?? ''));
   const from = { channel: String(ev.channel), ts: String(inThread ? ev.thread_ts : ev.ts) };
   if (verb === 'help') { await say('What Kaizen does in Slack', mentionHelpBlocks()); return; }
+  // §110: "@Kaizen new <what>" is made at once — the reply in its thread has ✎ Add details. No words: the form.
+  if ((verb === 'new' || verb === 'repair') && arg) {
+    const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
+    if (!member.ok) { await say(member.why); return; }
+    const r = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user))
+      .quickCreate(verb === 'repair' ? 'work_order' : 'task', arg, from, String(ev.ts));
+    if (!r.ok) await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`);
+    return;
+  }
   if (verb === 'new' || verb === 'repair' || verb === 'claim') {
     const only = verb === 'new' ? 'task' : verb === 'repair' ? 'work_order' : 'claim';
     await say(arg ? `New: ${arg}` : 'Open the form', [
@@ -218,6 +227,27 @@ class Kaizen {
     // via: it came from the thread, so it is not posted back there.
     if (subject === 'task') return this.may('/api/todos', 'POST') ? this.todo({ action: 'note', id, body, via: 'slack-thread' }) : { ok: false, message: 'your role does not include the to-do list' };
     return this.may('/api/claims', 'POST') ? this.claimSave({ action: 'note', id, body, via: 'slack-thread' }) : { ok: false, message: 'your role does not include claims' };
+  }
+
+  /**
+   * A request made at once (§110): the title from the words, the listing
+   * named in them, the whole text and a link back as the description. The
+   * reply in the request's thread says it is tracked, with ✎ Add details,
+   * and that thread becomes the task's.
+   */
+  async quickCreate(kind: 'task' | 'work_order', words: string, thread: { channel: string; ts: string }, messageTs: string): Promise<Record<string, unknown>> {
+    if (!this.may('/api/todos', 'POST')) return { ok: false, message: 'your role does not include the to-do list' };
+    const units = await this.units();
+    const unit = guessUnit(words, units);
+    const { title, description } = quickTitle(words);
+    const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: thread.channel, message_ts: messageTs });
+    const r = await this.todo({ action: 'create', kind, title, unitIds: unit ? [unit] : [], priority: 'none',
+      description: [description, link.permalink ? `From Slack: ${link.permalink}` : ''].filter(Boolean).join('\n\n') || null });
+    if (!r.ok || !r.id) return r;
+    const m = trackedReply({ id: String(r.id), title, kind, unit: units.find(u => u.value === unit)?.label ?? null });
+    const posted = await slackApi<{ ts?: string }>(this.s.token!, 'chat.postMessage', { channel: thread.channel, thread_ts: thread.ts, ...m, unfurl_links: false });
+    if (posted.ok) await rememberThread(this.sql, { ok: true, ...thread }, 'task', String(r.id));
+    return r;
   }
 
   /** "@Kaizen comments" in a thread (§108): what people wrote on it so far. */
@@ -538,6 +568,12 @@ class Kaizen {
     // §108: the buttons an @Kaizen mention answers with — the forms, title filled in; saving says so in the mention's thread.
     if (id.startsWith('mention_new_')) {
       const v = JSON.parse(value || '{}') as { kind?: string; title?: string; from?: { channel: string; ts: string } };
+      // A to-do or repair with words: made at once, like "@Kaizen new" (§110); the offer goes.
+      if (v.kind !== 'claim' && v.title && v.from) {
+        const r = await this.quickCreate(v.kind === 'work_order' ? 'work_order' : 'task', v.title, v.from, v.from.ts);
+        await this.reply(url, r.ok ? { delete_original: true } : { replace_original: true, response_type: 'ephemeral', text: `Not saved: ${String(r.message ?? 'Kaizen said no.')}` });
+        return ack();
+      }
       if (v.kind === 'claim') {
         if (!this.may('/api/claims', 'POST')) return this.deny('claims');
         await this.open(p.trigger_id, claimModal({ description: v.title ?? '', occurredOn: todayIn('America/New_York') }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES));

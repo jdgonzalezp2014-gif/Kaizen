@@ -473,7 +473,7 @@ export const HELP = [
   '*/kaizen today* — check-ins, cleans and what is missing, now',
   '*/kaizen cleans* (or *cleans tomorrow*) — the day’s cleans, and change who cleans',
   '⚡ *Shortcuts* — New task · Report a repair · New claim from anywhere; *Create task from message* in any message’s ⋯ menu',
-  '*@Kaizen new Fix the AC* — in any channel: a button to the new to-do form (also *repair*, *claim*, *tasks*, *today*, *help*)',
+  '*@Kaizen new Fix the AC in P2-4308* — in any channel: the to-do is made at once, with *✎ Add details* (also *repair*, *claim*, *tasks*, *today*, *help*)',
   '*@Kaizen* _comment_ in a task’s thread — saved on the task; *@Kaizen comments* — what was said so far'
 ].join('\n');
 
@@ -702,8 +702,8 @@ export function newButtons(title = '', only?: 'task' | 'work_order' | 'claim', f
 }
 
 export const MENTION_HELP = [
-  '*@Kaizen new* _Fix the AC in P2-4308_ — a button that opens the new to-do form (title filled in)',
-  '*@Kaizen repair* … · *@Kaizen claim* … — the same, for a repair or a claim',
+  '*@Kaizen new* _Fix the AC in P2-4308_ — made at once (the listing found in the text); *✎ Add details* in the reply if you want',
+  '*@Kaizen repair* … — the same, as a repair · *@Kaizen claim* … — the claim form',
   '*@Kaizen tasks* — the open tasks, each with its menu',
   '*@Kaizen today* — check-ins, cleans and what is missing',
   'In a task’s thread: *@Kaizen* _your comment_ — saved as a comment · *@Kaizen comments* — the comments so far',
@@ -721,5 +721,40 @@ export function commentsBlocks(list: { who: string; when: string; body: string }
     text: `${list.length} comment${list.length === 1 ? '' : 's'} on ${title}`,
     blocks: [section(`💬 *Comments on ${esc(title)}* · ${list.length}`),
              ...list.slice(-10).map(c => context(`*${esc(c.who)}* · ${esc(c.when)}`, esc(c.body).slice(0, 1500)))]
+  };
+}
+
+/* ── @Kaizen new: made at once, details after (§110) ─────────────────── */
+
+/** The listing a request names — "AC broken in p2 4308" finds P2-4308; spaces and hyphens are optional, the longest name wins. */
+export function guessUnit(text: string, units: Opt[]): string | null {
+  const byLength = [...units].sort((a, b) => b.label.length - a.label.length);
+  for (const u of byLength) {
+    const parts = u.label.toLowerCase().split(/[\s-]+/).filter(Boolean).map(x => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
+    if (parts.length && new RegExp(`(^|[^a-z0-9])${parts.join('[\\s-]?')}($|[^a-z0-9])`, 'i').test(text)) return u.value;
+  }
+  return null;
+}
+
+/** A request's title (its first line, cut at a word under 120) — and the whole text as the description when there is more. */
+export function quickTitle(text: string): { title: string; description: string | null } {
+  const t = text.trim();
+  const first = t.split('\n')[0]!.trim();
+  const title = first.length <= 120 ? first : `${first.slice(0, 117).replace(/\s+\S*$/, '')}…`;
+  return { title, description: title === t ? null : t };
+}
+
+/** The reply in the request's thread: it is tracked, and the way to add details. */
+export function trackedReply(t: { id: string; title: string; kind: string; unit?: string | null }): { text: string; blocks: Block[] } {
+  const what = t.kind === 'work_order' ? 'repair' : 'to-do';
+  return {
+    text: `📋 Tracked in Kaizen as a ${what}: ${t.title}`,
+    blocks: [
+      section(`📋 *Tracked in Kaizen* as a ${what}: *${esc(t.title)}*${t.unit ? ` · ${esc(t.unit)}` : ''}`),
+      { type: 'actions', elements: [
+        { type: 'button', text: plain('✎ Add details'), action_id: 'task_edit', value: t.id, style: 'primary' },
+        { type: 'button', text: plain('📋 Open'), action_id: 'task_open', value: t.id }] },
+      context('Reply here with *@Kaizen* _your comment_ to add to it.')
+    ]
   };
 }

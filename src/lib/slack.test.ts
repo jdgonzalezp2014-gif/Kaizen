@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -269,4 +269,20 @@ test('no message or pop-up has two elements with one action_id — Slack refuses
   each(taskList([t]));
   each(tasksModal([{ ...t, overdue: false, dueToday: false }]));
   each(newButtons('x'));
+});
+
+test('@Kaizen new: the listing from the text, a short title, the reply with Add details', () => {
+  const units = [{ value: '1', label: 'P2-4308' }, { value: '2', label: 'CL 1125' }, { value: '3', label: 'Napa Valley' }, { value: '4', label: 'P2-430' }];
+  assert.equal(guessUnit('AC broken in p2 4308', units), '1');
+  assert.equal(guessUnit('leak at CL1125 kitchen', units), '2');
+  assert.equal(guessUnit('napa-valley needs towels', units), '3');
+  assert.equal(guessUnit('P2-43085 is not a unit', units), null);
+  assert.equal(guessUnit('buy paper', units), null);
+  assert.deepEqual(quickTitle('Fix the AC'), { title: 'Fix the AC', description: null });
+  const long = quickTitle(`${'word '.repeat(40)}\nmore`);
+  assert.ok(long.title.length <= 120 && long.title.endsWith('…'));
+  assert.match(String(long.description), /more$/);
+  const r = JSON.stringify(trackedReply({ id: '9', title: 'Fix AC', kind: 'work_order', unit: 'P2-4308' }).blocks);
+  assert.match(r, /as a repair: \*Fix AC\* · P2-4308/);
+  assert.match(r, /"action_id":"task_edit","value":"9"/);
 });
