@@ -735,7 +735,7 @@ export function taskCheckMessage(kind: 'checkin' | 'checkout', d: TaskCheckInput
 
 /* ── @Kaizen: what a mention asks for (§108) ────────────────────────── */
 
-export type MentionVerb = 'help' | 'new' | 'repair' | 'claim' | 'claims' | 'tasks' | 'today' | 'comments' | 'text';
+export type MentionVerb = 'help' | 'new' | 'repair' | 'claim' | 'claims' | 'tasks' | 'today' | 'all' | 'comments' | 'text';
 
 /** "@Kaizen new Fix the AC" → { verb: 'new', arg: 'Fix the AC' }; anything else is plain text. */
 export function parseMention(text: string): { verb: MentionVerb; arg: string } {
@@ -743,7 +743,7 @@ export function parseMention(text: string): { verb: MentionVerb; arg: string } {
   const [first = '', ...rest] = t.split(/\s+/);
   const map: Record<string, MentionVerb> = { '': 'help', help: 'help', '?': 'help', commands: 'help',
     new: 'new', task: 'new', todo: 'new', 'to-do': 'new', add: 'new', repair: 'repair', claim: 'claim', claims: 'claims', cases: 'claims',
-    tasks: 'tasks', list: 'tasks', today: 'today', comments: 'comments', history: 'comments' };
+    tasks: 'tasks', list: 'tasks', today: 'today', all: 'all', status: 'all', reminder: 'all', summary: 'all', comments: 'comments', history: 'comments' };
   const v = map[first.toLowerCase()];
   return v ? { verb: v, arg: rest.join(' ') } : { verb: 'text', arg: t };
 }
@@ -760,7 +760,8 @@ export const MENTION_HELP = [
   '*@Kaizen new* _Fix the AC in P2-4308_ — made at once (the listing found in the text); *✎ Add details* in the reply if you want',
   '*@Kaizen repair* … — the same, as a repair · *@Kaizen claim* … — the claim form',
   '*@Kaizen tasks* — the open tasks, each with its menu · *@Kaizen claims* — the open claims (status, edit, remove)',
-  '*@Kaizen today* — check-ins, cleans and what is missing',
+  '*@Kaizen all* — the whole reminder now, in a thread for everyone: check-ins, cleans, tasks, claims, and how the day is going',
+  '*@Kaizen today* — the same, only for you',
   'In a task’s thread: *@Kaizen* _your comment_ — saved as a comment · *@Kaizen comments* — the comments so far',
   'Also: */kaizen* (type */kaizen help*) and the ⚡ shortcuts'
 ].join('\n');

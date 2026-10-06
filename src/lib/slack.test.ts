@@ -321,3 +321,8 @@ test('a claim has its card: the case, its comments and the box; every row and me
   assert.match(JSON.stringify(claimList([c])), /"action_id":"claim_open","value":"5"/);
   assert.match(JSON.stringify(claimMessage(c, 'opened', 'juan').blocks), /claim_open/);
 });
+
+test('@Kaizen all asks for the whole reminder', () => {
+  assert.deepEqual(parseMention('<@U1> all'), { verb: 'all', arg: '' });
+  assert.deepEqual(parseMention('<@U1> status'), { verb: 'all', arg: '' });
+});

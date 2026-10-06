@@ -3312,3 +3312,14 @@ messages opens `claimCard` (callback `claim_card`): the case's facts,
 description and platform link, every comment (latest 10), and *Add a
 comment* with the cursor ready. "Add comment" saves through /api/claims
 `note` and the card stays open with it in. Status and edit stay on the row.
+
+## §114 — #kaizen-ops; @Kaizen all
+
+#kaizen-ops (C0C72JDKZ53, public, the team) receives every topic — tasks,
+claims, escalations, reservations. #kaizen-task (private) is the test
+channel: previews and trials go there. **@Kaizen all** (also *status*,
+*reminder*, *summary*): the morning reminder right now — check-ins and
+cleans for today and tomorrow, tasks, claims — plus "Today so far: ✓
+closed · ＋ opened · ○ open" (team's day), posted in the thread of the
+asking message: everyone sees it, the channel stays one line. *@Kaizen
+today* stays the private version.

@@ -16,12 +16,13 @@ import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { mayAccess } from '../_lib/roles.ts';
 import { rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
 import { cleansFor, digestFacts } from '../_lib/slack-digest.ts';
+import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import * as todos from './todos.ts';
 import * as claims from './claims.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
   parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
-  parseMention, newButtons, mentionHelpBlocks, sectionButtons, claimCard, commentsBlocks, guessUnit, quickTitle, trackedReply,
+  teamTz, localNow, parseMention, newButtons, mentionHelpBlocks, sectionButtons, claimCard, commentsBlocks, guessUnit, quickTitle, trackedReply,
   type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
 import * as turnover from './turnover.ts';
@@ -114,6 +115,13 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   if (!member.ok) { await say(member.why); return; }
   const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
   if (verb === 'tasks' || verb === 'today' || verb === 'claims') { const m = await k.forMention(verb); await say(m.text, m.blocks); return; }
+  // §114: "@Kaizen all" — the reminder now, for everyone, in the thread of the asking message (the channel stays short).
+  if (verb === 'all') {
+    const m = await k.forMention('all');
+    const r = await slackApi(s.token!, 'chat.postMessage', { channel: ev.channel, thread_ts: inThread ? ev.thread_ts : ev.ts, text: m.text, blocks: m.blocks, unfurl_links: false });
+    if (!r.ok) await say(m.text, m.blocks);
+    return;
+  }
 
   const [t] = inThread ? await sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}` as
     { subject: 'task' | 'claim'; subject_id: string }[] : [];
@@ -266,7 +274,7 @@ class Kaizen {
   }
 
   /** "@Kaizen tasks" / "@Kaizen today" (§108): the same answers as /kaizen, for a message seen only by the writer. */
-  async forMention(verb: 'tasks' | 'today' | 'claims'): Promise<{ text: string; blocks: unknown[] }> {
+  async forMention(verb: 'tasks' | 'today' | 'claims' | 'all'): Promise<{ text: string; blocks: unknown[] }> {
     if (verb === 'claims') {
       if (!this.may('/api/claims', 'GET')) return { text: 'Your Kaizen role does not include claims.', blocks: [] };
       return { text: 'Open claims', blocks: claimList(await this.openClaims()) };
@@ -277,7 +285,13 @@ class Kaizen {
     }
     if (!this.may('/api/operations', 'GET')) return { text: 'Your Kaizen role does not include operations.', blocks: [] };
     const facts = await digestFacts(this.sql, await getCredentials(this.sql, this.ctx.env.ENCRYPTION_KEY), this.ctx.env.ENCRYPTION_KEY);
-    return digestMessage(facts, 'morning', this.s.config.appUrl, helpUrlOf(this.s.config));
+    const m = digestMessage(facts, 'morning', this.s.config.appUrl, helpUrlOf(this.s.config));
+    if (verb !== 'all') return m;
+    // "all" adds how the day is going: what closed and what opened since midnight, the team's time.
+    const tz = teamTz(this.s.config);
+    const day = await taskCheckFacts(this.sql, localNow(tz).day, tz);
+    const line = { type: 'context', elements: [{ type: 'mrkdwn', text: `*Today so far* · ✓ ${day.closed.length} closed · ＋ ${day.opened.length} opened · ○ ${day.open.length} open` }] };
+    return { text: m.text, blocks: [...m.blocks.slice(0, 1), line, ...m.blocks.slice(1)] };
   }
 
   /* ── the task card (§100) ── */
