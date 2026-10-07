@@ -1,0 +1,13 @@
+# The Slack messages' clock. Deploy: npx wrangler deploy -c clock/wrangler.toml
+# Secret: KAIZEN_INGEST_TOKEN (Settings → ingest token; the same value the price-monitor script uses).
+name = "kaizen-clock"
+main = "index.ts"
+# No public URL: it only runs on its schedule.
+workers_dev = false
+compatibility_date = "2026-10-01"
+
+[vars]
+KAIZEN_URL = "https://kaizen-01v.pages.dev"
+
+[triggers]
+crons = ["*/5 * * * *"]

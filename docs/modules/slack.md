@@ -13,7 +13,10 @@ both ways. Settings → Slack (`SlackPanel.tsx`). SOP id 8 "Kaizen in Slack" is 
 - API: `functions/api/slack.ts` (events, commands, actions, shortcuts, submits; class `Kaizen`
   runs the app's own handlers as the member), `slack-cron.ts` (the clock), `slack-settings.ts`.
 - `src/components/SlackPanel.tsx` (manifest, channels, events, hours, people, cleaner channels).
-- `.github/workflows/slack-cron.yml`.
+- The clock: **`clock/`** — Cloudflare Worker `kaizen-clock` (cron `*/5 * * * *` → POST
+  `/api/slack-cron` with secret `KAIZEN_INGEST_TOKEN`); deploy `cd clock && npx wrangler deploy`,
+  logs `cd clock && npx wrangler tail kaizen-clock --format json`. `.github/workflows/slack-cron.yml`
+  stays as a backup (GitHub's schedule ran every 5–6 h).
 
 ## Tables / config
 
@@ -53,9 +56,9 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
 
 ## Open items
 
-- **The clock is late**: GitHub scheduled runs come every 5–6 h. Offered fix (declined for
-  now): Cloudflare Worker cron `kaizen-clock` every 5 min (needs `npx wrangler login`).
-  Secrets KAIZEN_URL / KAIZEN_INGEST_TOKEN are set and working.
+- Clock moved to Cloudflare (2026-10-07) after GitHub sent the 8 AM at 12:19 PM and missed a
+  check-out. Verified: runs every 5 min, 200, sends only what is due. Wrangler is logged in as
+  jdgonzalezp2014@gmail.com (account d217bb2fee2ba40210af9e0dee4d45c2, Pages project `kaizen`).
 - Hostaway AI escalations: no API; plan = notification email → Kaizen → task. Waiting for a
   sample email / rule screenshots. Nothing built.
 - Offered: Slack Home tab.
