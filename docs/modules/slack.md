@@ -53,6 +53,11 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   An ephemeral reply shows in a thread only if the thread exists. Signature: HMAC
   `v0:ts:body`, 5-minute window. Retries (`X-Slack-Retry-Num`) are ignored.
 - `/api/slack` and `/api/slack-cron` are SELF_AUTHENTICATING and behind the Access bypass app.
+- A task button on a message **in the tasks channel** updates that message in place and sends
+  `via: 'slack-message'`, so /api/todos does not post a second completed/started/reopened
+  notice (it showed twice, 2026-10-07). From the app, pop-ups or DMs the notice still posts.
+- `@Kaizen new` remembers two threads per task (the channel notice and the mention's thread) —
+  that is expected, not a duplicate.
 
 ## Open items
 

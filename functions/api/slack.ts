@@ -547,7 +547,10 @@ class Kaizen {
       const body = verb === 'complete' ? { action: 'done', id: tid, done: true } : verb === 'start' ? { action: 'update', id: tid, status: 'in_progress' }
         : verb === 'remove' ? { action: 'delete', id: tid } : verb === 'restore' ? { action: 'restore', id: tid } : null;
       if (!body) return ack();
-      const r = await this.todo(body);
+      // A button on a message already in the tasks channel: that message is updated in place below, so the
+      // channel must not also get a separate "completed / started / reopened" post — it showed twice (2026-10-07).
+      const onTasksMessage = inChannel && p.container?.channel_id === this.s.config.channels?.tasks?.id;
+      const r = await this.todo(onTasksMessage && body.action !== 'delete' && body.action !== 'restore' ? { ...body, via: 'slack-message' } : body);
       const word = verb === 'complete' ? 'Completed' : verb === 'start' ? 'Started' : verb === 'restore' ? 'Restored' : '';
       await this.refreshTasks(viewId, r.ok ? (word ? `✓ ${word}: ${t?.title ?? ''}` : undefined) : `⚠ ${r.message ?? 'Not saved.'}`,
                               r.ok && verb === 'remove' && t ? { id: tid, title: t.title } : undefined);

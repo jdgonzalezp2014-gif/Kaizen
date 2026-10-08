@@ -438,7 +438,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   if (changed.length) await note(sql, 'task', id, 'change', changed.join(' · '), who.email);
   await settle(id);
   mirror(id);
-  if (status !== undefined && status !== before.status) {
+  // via 'slack-message': done from a button on the channel's own message, which Slack updates in place.
+  if (status !== undefined && status !== before.status && b.via !== 'slack-message') {
     if (CLOSED.includes(status)) tell(id, status === 'completed' ? 'completed' : 'cancelled');
     else if (CLOSED.includes(before.status)) tell(id, 'reopened');
   }
