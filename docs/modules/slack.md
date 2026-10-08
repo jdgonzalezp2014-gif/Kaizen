@@ -42,6 +42,9 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   `claim` → form; `tasks`, `claims`, `today` (private, in the asker's thread behind a
   "🔒 Answered privately" stub); `all` (public, in thread); `help` (buttons to every pop-up);
   in a task/claim thread: text = comment (✅), `comments` = the list.
+- Costs (§117): `@Kaizen cost …` (button), `/kaizen cost …` and the help's **+ Cost** open
+  `costModal` — what, amount, category, listing or shared, date, all required, prefilled from
+  the words — and save to Costs → One-offs via /api/expenses as the member. Never at once.
 - Cleans pop-up: each clean also says ↗ the stay leaving (guest, nights, guests, channel,
   total) and ↘ the next arrival (same day + time, or date + days empty; guest, nights, guests,
   total) — totals only for roles with `money` (§116). The board is read a week past the day.
@@ -74,4 +77,4 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
 
 ## History
 
-§99–§102, §107–§116.
+§99–§102, §107–§117.

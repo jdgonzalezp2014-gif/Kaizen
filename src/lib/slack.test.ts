@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanContext, claimCard, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { costModal, costFromWords, readCostForm, cleanContext, claimCard, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -335,4 +335,21 @@ test('a clean says what leaves and what arrives next', () => {
   assert.match(cleanContext({ ...base, next: { date: '2026-10-11', gapDays: 3 } }, '2026-10-08')[0]!, /Next in: .* \(3 days empty\)/);
   assert.deepEqual(cleanContext({ ...base, next: null }, '2026-10-08'), ['↘ Next in: _nothing booked yet_']);
   assert.deepEqual(cleanContext(base, '2026-10-08'), []);
+});
+
+test('a cost: the form asks every field, filled from the words, and refuses a bad amount', () => {
+  const units = [{ value: '10', label: 'P2-4308' }, { value: '11', label: 'Quest' }];
+  assert.deepEqual(parseMention('<@U1> cost 45 towels P2-4308'), { verb: 'cost', arg: '45 towels P2-4308' });
+  assert.equal(parseCommand('cost 45 towels').verb, 'cost');
+  const f = costFromWords('45 towels P2-4308', units, '2026-10-07');
+  assert.deepEqual(f, { what: '45 towels P2-4308', amount: 45, category: 'Restock', unitId: '10', date: '2026-10-07' });
+  const v = JSON.stringify(costModal(f, units));
+  for (const k of ['"callback_id":"cost_save"', '"initial_value":"45"', '"initial_date":"2026-10-07"', 'Shared — split across live units']) assert.ok(v.includes(k), k);
+  assert.doesNotMatch(v, /"optional":true/);   // every field required
+  const st = (amount: string, unit: string) => ({ what: { v: { value: 'towels' } }, amount: { v: { value: amount } }, category: { v: { selected_option: { value: 'Restock' } } },
+    unit: { v: { selected_option: { value: unit } } }, date: { v: { selected_date: '2026-10-07' } } });
+  assert.deepEqual(readCostForm(st('$1,045.5', '10')), { body: { action: 'variable', amount: 1045.5, category: 'Restock', unitId: '10', shared: false, date: '2026-10-07', notes: 'towels' } });
+  assert.equal((readCostForm(st('45', '__shared')) as { body: Record<string, unknown> }).body.shared, true);
+  assert.deepEqual(readCostForm(st('abc', '10')), { error: { block: 'amount', message: 'A number above zero, like 45 or 45.50.' } });
+  assert.equal((newButtons('x', 'cost') as { elements: { action_id: string }[] }).elements[0]!.action_id, 'mention_new_cost');
 });

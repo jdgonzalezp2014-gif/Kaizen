@@ -19,10 +19,11 @@ import { cleansFor, digestFacts } from '../_lib/slack-digest.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import * as todos from './todos.ts';
 import * as claims from './claims.ts';
+import * as expenses from './expenses.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
   parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
-  teamTz, localNow, parseMention, newButtons, mentionHelpBlocks, sectionButtons, claimCard, commentsBlocks, guessUnit, quickTitle, trackedReply,
+  costModal, costFromWords, readCostForm, teamTz, localNow, parseMention, newButtons, mentionHelpBlocks, sectionButtons, claimCard, commentsBlocks, guessUnit, quickTitle, trackedReply,
   type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
 import * as turnover from './turnover.ts';
@@ -113,8 +114,9 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     if (!r.ok) await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`);
     return;
   }
-  if (verb === 'new' || verb === 'repair' || verb === 'claim') {
-    const only = verb === 'new' ? 'task' : verb === 'repair' ? 'work_order' : 'claim';
+  if (verb === 'new' || verb === 'repair' || verb === 'claim' || verb === 'cost') {
+    // §117: a cost is never made at once — the button opens the form, every field to confirm.
+    const only = verb === 'new' ? 'task' : verb === 'repair' ? 'work_order' : verb === 'cost' ? 'cost' : 'claim';
     await say(arg ? `New: ${arg}` : 'Open the form', [
       { type: 'section', text: { type: 'mrkdwn', text: arg ? `Ready to save *${arg.replace(/[<>&]/g, '')}* — tap to open the form.` : 'Tap to open the form.' } },
       newButtons(arg, only, from)]);
@@ -463,6 +465,12 @@ class Kaizen {
       await this.open(trigger, taskModal({ kind: verb === 'repair' ? 'work_order' : 'task', title: arg }, await this.units(), await this.people()));
       return ack();
     }
+    if (verb === 'cost') {
+      if (!this.may('/api/expenses', 'POST')) return this.deny('costs');
+      const units = await this.units();
+      await this.open(trigger, costModal(costFromWords(arg, units, todayIn('America/New_York')), units));
+      return ack();
+    }
     if (verb === 'claims') {
       if (!this.may('/api/claims', 'GET')) return this.deny('claims');
       return ephemeral('Open claims', claimList(await this.openClaims()));
@@ -636,12 +644,16 @@ class Kaizen {
     if (id.startsWith('mention_new_')) {
       const v = JSON.parse(value || '{}') as { kind?: string; title?: string; from?: { channel: string; ts: string } };
       // A to-do or repair with words: made at once, like "@Kaizen new" (§110); the offer goes.
-      if (v.kind !== 'claim' && v.title && v.from) {
+      if ((v.kind === 'task' || v.kind === 'work_order') && v.title && v.from) {
         const r = await this.quickCreate(v.kind === 'work_order' ? 'work_order' : 'task', v.title, v.from, v.from.ts);
         await this.reply(url, r.ok ? { delete_original: true } : { replace_original: true, response_type: 'ephemeral', text: `Not saved: ${String(r.message ?? 'Kaizen said no.')}` });
         return ack();
       }
-      if (v.kind === 'claim') {
+      if (v.kind === 'cost') {
+        if (!this.may('/api/expenses', 'POST')) return this.deny('costs');
+        const units = await this.units();
+        await this.open(p.trigger_id, costModal(costFromWords(v.title ?? '', units, todayIn('America/New_York')), units));
+      } else if (v.kind === 'claim') {
         if (!this.may('/api/claims', 'POST')) return this.deny('claims');
         await this.open(p.trigger_id, claimModal({ description: v.title ?? '', occurredOn: todayIn('America/New_York') }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES));
       } else {
@@ -730,6 +742,18 @@ class Kaizen {
       if (!r.ok) return json({ response_action: 'errors', errors: { update: r.message ?? 'Not saved.' } });
       const c = await this.card(String(meta.id));
       return c ? json({ response_action: 'update', view: taskCard(c, '✓ Comment added') }) : json({ response_action: 'clear' });
+    }
+    if (view.callback_id === 'cost_save') {
+      // §117: Costs → One-offs, as this member; the form stays open on an error, says what was saved on success.
+      if (!this.may('/api/expenses', 'POST')) return json({ response_action: 'errors', errors: { what: 'Your role does not include costs.' } });
+      const f = readCostForm(state);
+      if ('error' in f) return json({ response_action: 'errors', errors: { [f.error.block]: f.error.message } });
+      const r = await this.api(expenses.onRequestPost, '/api/expenses', 'POST', f.body);
+      if (!r.ok) return json({ response_action: 'errors', errors: { amount: String(r.error ?? 'Not saved.') } });
+      const unit = f.body.unitId ? (await this.units()).find(u => u.value === f.body.unitId)?.label : 'Shared';
+      return json({ response_action: 'update', view: { type: 'modal', title: { type: 'plain_text', text: 'Cost logged' }, close: { type: 'plain_text', text: 'Close' },
+        blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `✓ *$${Number(f.body.amount).toFixed(2)}* · ${f.body.category} · ${unit} · ${f.body.date}\n${String(f.body.notes)}` } },
+                 { type: 'context', elements: [{ type: 'mrkdwn', text: 'In Costs → One-offs. To change or remove it, open Costs in Kaizen.' }] }] } });
     }
     if (view.callback_id === 'claim_card') {
       // §113: "Add comment" on a claim; the card stays open with it in, and the Claims list beneath follows.

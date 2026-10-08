@@ -3342,3 +3342,14 @@ check-in, to get an idea of each job. Every clean gets two lines (`cleanContext`
 its time, or the date and how many days the unit stays empty, then guest, nights, guests and
 total. Totals only for members whose role holds `money` (the board's rule, §63/§65). `cleansFor`
 reads the board a week past the day so the next guest is on it; past that, only the date shows.
+
+## §117 — Logging a cost from Slack, always through the form
+
+The owner (2026-10-07): register costs that are not repairs from Slack — not automatic, it
+must ask for every field. `@Kaizen cost 45 towels P2-4308` answers (privately, in the thread)
+with **+ Log a cost**; `/kaizen cost …` opens it directly; the help's **+ Cost** too. The form
+(`costModal`) asks what, amount, category, listing (or "Shared — split across live units") and
+date, all required; it is prefilled from the words (`amountIn`, `guessCategory`, `guessUnit`)
+and nothing is saved until Save. It writes Costs → One-offs through /api/expenses as the member
+(`costs` permission). The categories moved to `src/lib/costs.ts` so Costs and Slack share them.
+No ⚡ shortcut yet (it would need a manifest update).

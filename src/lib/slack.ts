@@ -8,6 +8,7 @@
  * whose email the Slack user has, with that member's permissions.
  */
 import { channelLabel } from './breakdown.ts';
+import { COST_CATEGORIES, amountIn, guessCategory } from './costs.ts';
 
 export type Topic = 'tasks' | 'reservations' | 'claims' | 'escalations';
 export const TOPICS: { key: Topic; label: string; what: string }[] = [
@@ -532,19 +533,20 @@ export function cleanerMessage(name: string, cleans: { date: string; time: strin
 
 /* ── /kaizen ────────────────────────────────────────────────────────── */
 
-export type Verb = 'help' | 'tasks' | 'task' | 'repair' | 'claims' | 'claim' | 'today' | 'cleans';
+export type Verb = 'help' | 'tasks' | 'task' | 'repair' | 'claims' | 'claim' | 'cost' | 'today' | 'cleans';
 export function parseCommand(text: string): { verb: Verb; arg: string } {
   const t = (text ?? '').trim();
   const [first = '', ...rest] = t.split(/\s+/);
   const v = first.toLowerCase();
   const map: Record<string, Verb> = { '': 'help', help: 'help', tasks: 'tasks', todos: 'tasks', list: 'tasks', task: 'task', todo: 'task', new: 'task',
-    repair: 'repair', claims: 'claims', claim: 'claim', today: 'today', digest: 'today', cleans: 'cleans', cleanings: 'cleans', cleaning: 'cleans' };
+    repair: 'repair', claims: 'claims', claim: 'claim', cost: 'cost', expense: 'cost', today: 'today', digest: 'today', cleans: 'cleans', cleanings: 'cleans', cleaning: 'cleans' };
   return map[v] ? { verb: map[v]!, arg: rest.join(' ') } : { verb: 'task', arg: t };
 }
 export const HELP = [
   '*/kaizen tasks* — open to-dos and repairs, each with a menu (complete, start, edit, remove)',
   '*/kaizen task Fix the AC* — a new to-do (a form opens)', '*/kaizen repair Leak under sink* — a new repair',
   '*/kaizen claims* — open claims (status, edit, remove)', '*/kaizen claim Missing fob* — a new claim',
+  '*/kaizen cost 45 towels P2-4308* — log a cost (a form asks every field)',
   '*/kaizen help* or *@Kaizen* — buttons to every pop-up: Tasks · Claims · Check-ins · Cleans',
   '*/kaizen today* — check-ins, cleans and what is missing, now',
   '*/kaizen cleans* (or *cleans tomorrow*) — the day’s cleans, and change who cleans',
@@ -567,6 +569,43 @@ const select = (options: Opt[], initial?: string | null): Block => {
 const text = (initial?: string | null, multiline = false): Block =>
   ({ type: 'plain_text_input', multiline, ...(initial ? { initial_value: initial } : {}) });
 const date = (initial?: string | null): Block => ({ type: 'datepicker', ...(initial ? { initial_date: initial } : {}) });
+
+/* ── a cost (§117) ── */
+
+export interface CostForm { what?: string | null; amount?: number | null; category?: string | null; unitId?: string | null; date?: string | null }
+
+/** What a few words already say about a cost — every field is still shown and confirmed. */
+export function costFromWords(words: string, units: Opt[], today: string): CostForm {
+  const unitId = guessUnit(words, units);
+  return { what: words.trim() || null, amount: amountIn(words), category: guessCategory(words, null), unitId, date: today };
+}
+
+export const SHARED_UNIT = '__shared';
+/** A one-off cost, as Costs → One-offs records it: every field required, nothing saved until Save. */
+export function costModal(f: CostForm, units: Opt[]): Block {
+  return {
+    type: 'modal', callback_id: 'cost_save', private_metadata: '{}', title: plain('Log a cost'), submit: plain('Save'), close: plain('Cancel'),
+    blocks: [
+      input('what', 'What for', { ...text(f.what), placeholder: plain('e.g. towels and soap from Costco') }, false),
+      input('amount', 'Amount ($)', { ...text(f.amount != null ? String(f.amount) : null), placeholder: plain('45.50') }, false),
+      input('category', 'Category', { ...select(COST_CATEGORIES.map(c => ({ value: c, label: c })), f.category), placeholder: plain('Choose') }, false),
+      input('unit', 'Listing', { ...select([{ value: SHARED_UNIT, label: 'Shared — split across live units' }, ...units], f.unitId), placeholder: plain('Choose') }, false),
+      input('date', 'Date', date(f.date), false),
+      context('Saved in Costs → One-offs, as you. A cost on a repair is recorded by the repair itself.')
+    ]
+  };
+}
+
+/** A submitted cost form, as /api/expenses takes it — or the field that is wrong. */
+export function readCostForm(state: State): { body: Record<string, unknown> } | { error: { block: string; message: string } } {
+  const raw = String(val(state, 'amount')?.value ?? '').replace(/[$,\s]/g, '');
+  const amount = Number(raw);
+  if (!raw || !Number.isFinite(amount) || amount <= 0) return { error: { block: 'amount', message: 'A number above zero, like 45 or 45.50.' } };
+  const unit = val(state, 'unit')?.selected_option?.value ?? '';
+  return { body: { action: 'variable', amount: Math.round(amount * 100) / 100, category: val(state, 'category')?.selected_option?.value,
+    unitId: unit === SHARED_UNIT ? null : unit, shared: unit === SHARED_UNIT, date: val(state, 'date')?.selected_date,
+    notes: String(val(state, 'what')?.value ?? '').trim() } };
+}
 
 export interface TaskForm {
   id?: string; title?: string; description?: string | null; kind?: 'task' | 'work_order'; unitId?: string | null; status?: string;
@@ -756,30 +795,32 @@ export function taskCheckMessage(kind: 'checkin' | 'checkout', d: TaskCheckInput
 
 /* ── @Kaizen: what a mention asks for (§108) ────────────────────────── */
 
-export type MentionVerb = 'help' | 'new' | 'repair' | 'claim' | 'claims' | 'tasks' | 'today' | 'all' | 'comments' | 'text';
+export type MentionVerb = 'help' | 'new' | 'repair' | 'claim' | 'cost' | 'claims' | 'tasks' | 'today' | 'all' | 'comments' | 'text';
 
 /** "@Kaizen new Fix the AC" → { verb: 'new', arg: 'Fix the AC' }; anything else is plain text. */
 export function parseMention(text: string): { verb: MentionVerb; arg: string } {
   const t = commentFromMention(text);
   const [first = '', ...rest] = t.split(/\s+/);
   const map: Record<string, MentionVerb> = { '': 'help', help: 'help', '?': 'help', commands: 'help',
-    new: 'new', task: 'new', todo: 'new', 'to-do': 'new', add: 'new', repair: 'repair', claim: 'claim', claims: 'claims', cases: 'claims',
+    new: 'new', task: 'new', todo: 'new', 'to-do': 'new', add: 'new', repair: 'repair', claim: 'claim', claims: 'claims', cases: 'claims', cost: 'cost', expense: 'cost', gasto: 'cost', costo: 'cost',
     tasks: 'tasks', list: 'tasks', today: 'today', all: 'all', status: 'all', reminder: 'all', summary: 'all', comments: 'comments', history: 'comments' };
   const v = map[first.toLowerCase()];
   return v ? { verb: v, arg: rest.join(' ') } : { verb: 'text', arg: t };
 }
 
 /** Buttons that open the forms — what a mention can offer, since a mention cannot open a pop-up itself. */
-export function newButtons(title = '', only?: 'task' | 'work_order' | 'claim', from?: { channel: string; ts: string }): Block {
+export function newButtons(title = '', only?: 'task' | 'work_order' | 'claim' | 'cost', from?: { channel: string; ts: string }): Block {
   const b = (label: string, kind: string, primary: boolean) =>
     ({ type: 'button', text: plain(label), action_id: `mention_new_${kind}`, value: JSON.stringify({ kind, title: title.slice(0, 120), ...(from ? { from } : {}) }), ...(primary ? { style: 'primary' } : {}) });
-  const all = [b('+ New to-do', 'task', !only || only === 'task'), b('+ Repair', 'work_order', only === 'work_order'), b('+ Claim', 'claim', only === 'claim')];
+  const all = [b('+ New to-do', 'task', !only || only === 'task'), b('+ Repair', 'work_order', only === 'work_order'), b('+ Claim', 'claim', only === 'claim'),
+               b('+ Cost', 'cost', only === 'cost')];
   return { type: 'actions', elements: only ? all.filter(x => (x.action_id as string).endsWith(only)) : all };
 }
 
 export const MENTION_HELP = [
   '*@Kaizen new* _Fix the AC in P2-4308_ — made at once (the listing found in the text); *✎ Add details* in the reply if you want',
   '*@Kaizen repair* … — the same, as a repair · *@Kaizen claim* … — the claim form',
+  '*@Kaizen cost* _45 towels P2-4308_ — the cost form, with what it could read filled in; you confirm every field',
   '*@Kaizen tasks* — the open tasks, each with its menu · *@Kaizen claims* — the open claims (status, edit, remove)',
   '*@Kaizen all* — the whole reminder now, in a thread for everyone: check-ins, cleans, tasks, claims, and how the day is going',
   '*@Kaizen today* — the same, only for you',
@@ -841,3 +882,4 @@ export function trackedReply(t: { id: string; title: string; kind: string; unit?
     ]
   };
 }
+

@@ -15,6 +15,7 @@ import {
 } from '../api.ts';
 import { money2 as money } from '../lib/format.ts';
 import { Cleanings } from './Cleanings.tsx';
+import { COST_CATEGORIES, guessCategory as guessCat } from '../lib/costs.ts';
 
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -23,8 +24,7 @@ const shiftMonth = (m: string, by: number) => {
   const d = new Date(Date.UTC(y!, mo! - 1 + by, 1));
   return d.toISOString().slice(0, 7);
 };
-const CATEGORIES = ['Lease', 'Electricity', 'Gas', 'Water', 'Internet', 'Cleaning',
-                    'Restock', 'Handyman', 'Repairs', 'Software', 'Insurance', 'General'];
+const CATEGORIES = COST_CATEGORIES;
 
 export function Costs({ units }: { units: UnitRow[] }) {
   // Cleanings belong here rather than in a tab of their own: they are a
@@ -230,16 +230,7 @@ function Fixed({ units }: { units: UnitRow[] }) {
 }
 
 /** Category is bookkeeping, not something worth typing per cell. */
-function guessCategory(label: string): string {
-  const l = label.toLowerCase();
-  const hit = CATEGORIES.find(c => l.includes(c.toLowerCase()));
-  if (hit) return hit;
-  if (/rent|mortgage|hoa/.test(l)) return 'Lease';
-  if (/wifi|cable|phone/.test(l)) return 'Internet';
-  if (/pool|lawn|yard|pest|garden/.test(l)) return 'Handyman';
-  if (/power|electric/.test(l)) return 'Electricity';
-  return 'General';
-}
+const guessCategory = (label: string): string => guessCat(label) ?? 'General';
 
 /**
  * One amount. Saves on blur rather than per keystroke — a cell that

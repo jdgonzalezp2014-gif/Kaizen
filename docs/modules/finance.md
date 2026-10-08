@@ -42,6 +42,8 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
   divide by nights once, in one place (§32–§41, §48).
 - Alerts fire on change, never on state; red needs ≥ $2,000 at stake; QUO is staged
   (`quo_live` false) (§44, §45).
+- Cost categories live in `src/lib/costs.ts` (one list for Costs and Slack); one-offs can
+  also be logged from Slack (§117).
 - Money formatting pinned to `en-US` (§20). Dates: an optional filter is `null`, never `''` (§54).
 
 ## Open items
