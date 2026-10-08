@@ -401,7 +401,10 @@ class Kaizen {
     const today = todayIn('America/New_York');
     const label = date === today ? 'Today' : date === addDays(today, 1) ? 'Tomorrow' : day(date);
     try {
-      const rows = await cleansFor(this.sql, await getCredentials(this.sql, this.ctx.env.ENCRYPTION_KEY), date);
+      // Booking values only for roles that see them on the board (the `money` permission).
+      const showMoney = this.perms.includes('*') || this.perms.includes('money');
+      const rows = (await cleansFor(this.sql, await getCredentials(this.sql, this.ctx.env.ENCRYPTION_KEY), date))
+        .map(r => showMoney ? r : { ...r, out: r.out && { ...r.out, total: null }, next: r.next && { ...r.next, total: null } });
       await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: cleansModal(date, label, rows, this.may('/api/turnover', 'POST'), note,
                                                                                           { today, tomorrow: addDays(today, 1) }) });
     } catch (e) {

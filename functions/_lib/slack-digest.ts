@@ -72,10 +72,17 @@ export async function cleansFor(sql: SqlFn, creds: HostawayCredentials, date: st
   const account = await getAccount(sql);
   const today = todayIn(TZ);
   const days = Math.max(1, Math.round((Date.parse(date) - Date.parse(today)) / 864e5) + 1);
-  const s = await loadOps(sql, creds, { days: Math.min(days, 14), cleaningsCsvUrl: account?.cleaningsCsvUrl ?? null, refreshSheet: false });
-  return s.rows.filter(r => r.kind === 'out' && r.date === date).map(r => ({
-    resId: r.resId, time: r.time, unit: r.unit, beds: r.beds, cleaner: r.cleaner,
-    state: r.assignment === 'assigned' ? 'assigned' as const : r.assignment === 'not_needed' ? 'not_needed' as const : 'open' as const,
-    sameDay: r.urgency === 'turnover', deep: r.deep, byHand: !!r.manual?.cleaner
-  }));
+  // A week past the day, so the next arrival's guest is on the board too (§116).
+  const s = await loadOps(sql, creds, { days: Math.min(days + 7, 21), cleaningsCsvUrl: account?.cleaningsCsvUrl ?? null, refreshSheet: false });
+  return s.rows.filter(r => r.kind === 'out' && r.date === date).map(r => {
+    const nextIn = r.next ? s.rows.find(x => x.kind === 'in' && x.unitId === r.unitId && x.date === r.next!.arrival) : undefined;
+    return {
+      resId: r.resId, time: r.time, unit: r.unit, beds: r.beds, cleaner: r.cleaner,
+      state: r.assignment === 'assigned' ? 'assigned' as const : r.assignment === 'not_needed' ? 'not_needed' as const : 'open' as const,
+      sameDay: r.urgency === 'turnover', deep: r.deep, byHand: !!r.manual?.cleaner,
+      out: { guest: r.guest, nights: r.nights, guests: r.guests, channel: r.channel, total: r.total || null },
+      next: r.next ? { date: r.next.arrival, time: nextIn?.time ?? null, guest: nextIn?.guest ?? null, nights: nextIn?.nights ?? null,
+                       guests: nextIn?.guests ?? null, gapDays: r.next.gapDays, total: r.next.total } : null
+    };
+  });
 }

@@ -7,6 +7,7 @@
  * the buttons that act on it — acting from Slack runs as the Kaizen member
  * whose email the Slack user has, with that member's permissions.
  */
+import { channelLabel } from './breakdown.ts';
 
 export type Topic = 'tasks' | 'reservations' | 'claims' | 'escalations';
 export const TOPICS: { key: Topic; label: string; what: string }[] = [
@@ -404,6 +405,25 @@ export function cleanAssignModal(c: { resId: string; unit: string; date: string;
 export interface CleanRow {
   resId: string; time: string; unit: string; beds: number | null; cleaner: string | null;
   state: 'assigned' | 'open' | 'not_needed'; sameDay: boolean; deep: boolean; byHand: boolean;
+  /** The stay leaving (§116) — the size of the job. `total` only for roles that see booking values. */
+  out?: { guest: string; nights: number; guests: number | null; channel: string; total?: number | null };
+  /** The next arrival in that unit — how much time the clean has. Guest details only when it is on the board. */
+  next?: { date: string; time?: string | null; guest?: string | null; nights?: number | null; guests?: number | null; gapDays: number; total?: number | null } | null;
+}
+
+const $ = (n?: number | null) => n ? `$${Math.round(n).toLocaleString('en-US')}` : '';
+const plural = (n: number, w: string) => `${n} ${w}${n === 1 ? '' : 's'}`;
+/** The stay leaving and the next one arriving, one line each (§116). */
+export function cleanContext(r: CleanRow, date: string): string[] {
+  const lines: string[] = [];
+  if (r.out) lines.push(`↗ Out: ${[esc(r.out.guest), plural(r.out.nights, 'night'), r.out.guests ? plural(r.out.guests, 'guest') : '', esc(channelLabel(r.out.channel)), $(r.out.total)].filter(Boolean).join(' · ')}`);
+  if (r.next === null) lines.push('↘ Next in: _nothing booked yet_');
+  else if (r.next) {
+    const when = r.next.date === date ? `*same day*${r.next.time ? ` ${esc(r.next.time)}` : ''}` : `${day(r.next.date)} (${plural(r.next.gapDays, 'day')} empty)`;
+    lines.push(`↘ Next in: ${[when, r.next.guest ? esc(r.next.guest) : '', r.next.nights ? plural(r.next.nights, 'night') : '',
+      r.next.guests ? plural(r.next.guests, 'guest') : '', $(r.next.total)].filter(Boolean).join(' · ')}`);
+  }
+  return lines;
 }
 
 /** A pop-up that is there at once — Slack waits 3 seconds, the board takes longer — and is filled when ready. */
@@ -426,8 +446,9 @@ export function cleansModal(date: string, label: string, rows: CleanRow[], canEd
       { type: 'divider' },
       ...(rows.length ? rows.map(r => section(
         `${r.state === 'open' ? '▲' : r.state === 'not_needed' ? '○' : '✓'} *${esc(r.time)} · ${esc(r.unit)}*${r.beds ? ` ${r.beds}BR` : ''}\n` +
-        [r.state === 'assigned' ? esc(r.cleaner ?? '') : r.state === 'open' ? '_not assigned_' : '_no clean needed_',
-         r.sameDay ? '⚡ same-day' : '', r.deep ? 'deep clean' : '', r.byHand ? 'set by hand' : ''].filter(Boolean).join(' · '),
+        [[r.state === 'assigned' ? esc(r.cleaner ?? '') : r.state === 'open' ? '_not assigned_' : '_no clean needed_',
+          r.sameDay ? '⚡ same-day' : '', r.deep ? 'deep clean' : '', r.byHand ? 'set by hand' : ''].filter(Boolean).join(' · '),
+         ...cleanContext(r, date)].join('\n'),
         canEdit ? { type: 'button', text: plain(r.state === 'open' ? 'Assign' : 'Change'), action_id: 'clean_change',
                     value: JSON.stringify({ resId: r.resId, unit: r.unit, date }), ...(r.state === 'open' ? { style: 'primary' } : {}) } : undefined
       )) : [section('_No checkouts that day._')]),

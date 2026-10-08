@@ -42,6 +42,9 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   `claim` → form; `tasks`, `claims`, `today` (private, in the asker's thread behind a
   "🔒 Answered privately" stub); `all` (public, in thread); `help` (buttons to every pop-up);
   in a task/claim thread: text = comment (✅), `comments` = the list.
+- Cleans pop-up: each clean also says ↗ the stay leaving (guest, nights, guests, channel,
+  total) and ↘ the next arrival (same day + time, or date + days empty; guest, nights, guests,
+  total) — totals only for roles with `money` (§116). The board is read a week past the day.
 - Task card and claim card (comments, Add comment with focus). Kaizen comments → thread.
 - DMs to owners via People mapping; cleaner channels prepared, manual send only.
 
@@ -71,4 +74,4 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
 
 ## History
 
-§99–§102, §107–§115.
+§99–§102, §107–§116.

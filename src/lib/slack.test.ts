@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { claimCard, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { cleanContext, claimCard, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -325,4 +325,14 @@ test('a claim has its card: the case, its comments and the box; every row and me
 test('@Kaizen all asks for the whole reminder', () => {
   assert.deepEqual(parseMention('<@U1> all'), { verb: 'all', arg: '' });
   assert.deepEqual(parseMention('<@U1> status'), { verb: 'all', arg: '' });
+});
+
+test('a clean says what leaves and what arrives next', () => {
+  const base = { resId: '1', time: '10:00 AM', unit: 'P2-4308', beds: 2, cleaner: 'Michelle', state: 'assigned' as const, sameDay: false, deep: false, byHand: false };
+  const a = cleanContext({ ...base, out: { guest: 'Ann Lee', nights: 3, guests: 2, channel: 'Airbnb', total: 540 },
+    next: { date: '2026-10-08', time: '4:00 PM', guest: 'Bo Ray', nights: 5, guests: 4, gapDays: 0, total: null } }, '2026-10-08');
+  assert.deepEqual(a, ['↗ Out: Ann Lee · 3 nights · 2 guests · Airbnb · $540', '↘ Next in: *same day* 4:00 PM · Bo Ray · 5 nights · 4 guests']);
+  assert.match(cleanContext({ ...base, next: { date: '2026-10-11', gapDays: 3 } }, '2026-10-08')[0]!, /Next in: .* \(3 days empty\)/);
+  assert.deepEqual(cleanContext({ ...base, next: null }, '2026-10-08'), ['↘ Next in: _nothing booked yet_']);
+  assert.deepEqual(cleanContext(base, '2026-10-08'), []);
 });

@@ -3333,3 +3333,12 @@ unreachable — so Kaizen first posts one public line in the thread, "🔒
 Answered @who privately here", then the private reply there. A mention
 already inside a thread answers in that thread with no extra line.
 Task facts no longer say "no owner" (§108) in /kaizen tasks either.
+
+## §116 — The Cleans pop-up says what leaves and what arrives
+
+The owner (2026-10-07): in Slack's Cleans → Manage, show the departing reservation and the next
+check-in, to get an idea of each job. Every clean gets two lines (`cleanContext`):
+↗ Out — guest, nights, guests, channel (Revenue's labels), total; ↘ Next in — "same day" with
+its time, or the date and how many days the unit stays empty, then guest, nights, guests and
+total. Totals only for members whose role holds `money` (the board's rule, §63/§65). `cleansFor`
+reads the board a week past the day so the next guest is on it; past that, only the date shows.
