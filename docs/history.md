@@ -3353,3 +3353,15 @@ date, all required; it is prefilled from the words (`amountIn`, `guessCategory`,
 and nothing is saved until Save. It writes Costs → One-offs through /api/expenses as the member
 (`costs` permission). The categories moved to `src/lib/costs.ts` so Costs and Slack share them.
 No ⚡ shortcut yet (it would need a manifest update).
+
+## §118 — The repository's Archive, and searching everywhere on purpose
+
+The owner (2026-10-09): an archive option, so retired tables are not visible unless you go into
+that section — then archive the old Login tables; and searching all tables by pressing Enter is
+not intuitive. Archived tables now come apart in `loadMeta` and are listed under **Archive** at
+the foot of the list; one opens read-only (only the list read accepts `archived=1`; every edit
+and structure route keeps asking for a live table), out of search, with ↺ Restore
+(`tables.restore`). Typing filters the open table; a bar under the box says how many match here
+and offers "🔎 Search all tables for …" — highlighted when nothing here matches. Tools and STR
+Listings were archived after their records moved to the three Accounts & logins tables (no
+record erased). SOP 9 explains search, reveal, updates, where a new account goes, and archiving.

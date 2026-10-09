@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import {
-  getRepoMeta, getRepoRows, getRepoDocs, getRepoDocsBatch, searchRepo, revealRepoSecret, repoEdit, repoStructure, uploadRepoFile,
+  getRepoMeta, type RepoArchived, getRepoRows, getRepoDocs, getRepoDocsBatch, searchRepo, revealRepoSecret, repoEdit, repoStructure, uploadRepoFile,
   importReadFile, importReadLink, importCommit,
   type RepoColumn, type RepoFile, type RepoHit, type RepoRow, type RepoSection, type RepoTable
 } from '../api.ts';
@@ -155,8 +155,10 @@ type Pop =
 export function Repository({ canReveal, canEdit, canStructure }: {
   canReveal: boolean; canEdit: boolean; canStructure: boolean;
 }) {
-  const can: Can = { reveal: canReveal, edit: canEdit, structure: canStructure };
   const [sections, setSections] = useState<RepoSection[] | null>(null);
+  // §118: archived tables live apart — out of the list and of search, opened read-only from the Archive.
+  const [archived, setArchived] = useState<RepoArchived[]>([]);
+  const [showArchive, setShowArchive] = useState(false);
   const [err, setErr] = useState('');
   const [tableKey, setTableKey] = useState<string | null>(null);
   const [rowsBy, setRowsBy] = useState<Record<string, RepoRow[]>>({});
@@ -172,19 +174,30 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const searchRef = useRef<HTMLInputElement>(null);
 
   const tables = useMemo(() => (sections ?? []).flatMap(s => s.tables), [sections]);
-  const table = tables.find(t => t.key === tableKey) ?? null;
+  const archivedTable = archived.find(t => t.key === tableKey) ?? null;
+  const table = tables.find(t => t.key === tableKey) ?? archivedTable;
   const rows = tableKey ? rowsBy[tableKey] : undefined;
+  // An archived table is read, never changed: no edits, no structure; a secret can still be revealed.
+  const can: Can = { reveal: canReveal, edit: canEdit && !archivedTable, structure: canStructure && !archivedTable };
+  // How many rows of this table the filter keeps — the Grid's own rule — so the bar can say it.
+  const here = useMemo(() => {
+    const n = filter.trim().toLowerCase();
+    return !n ? null : (rows ?? []).filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(n))).length;
+  }, [rows, filter]);
 
   const loadMeta = useCallback(async () => {
     const r = await safe(getRepoMeta());
     if (!r.ok) { setErr(r.message ?? 'Could not read the repository.'); return; }
     setSections(r.meta.sections);
-    setTableKey(k => k && r.meta.sections.some(s => s.tables.some(t => t.key === k)) ? k
+    setArchived(r.meta.archived ?? []);
+    setTableKey(k => k && (r.meta.sections.some(s => s.tables.some(t => t.key === k)) || (r.meta.archived ?? []).some(t => t.key === k)) ? k
       : r.meta.sections.flatMap(s => s.tables)[0]?.key ?? null);
   }, []);
+  const archivedRef = useRef(new Set<string>());
+  archivedRef.current = new Set(archived.map(t => t.key));
   const loadRows = useCallback(async (key: string, quiet = false) => {
     if (!quiet) setLoading(true);
-    const r = await safe(getRepoRows(key));
+    const r = await safe(getRepoRows(key, archivedRef.current.has(key)));
     if (!quiet) setLoading(false);
     if (r.ok) setRowsBy(m => ({ ...m, [key]: r.rows }));
     else if (!quiet) say(r.message ?? 'Could not read the table.', true);
@@ -285,7 +298,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
           <div key={s.key} className="rb-nav-section">
             <div className="rb-nav-head">
               <span>{s.title}</span>
-              {can.structure && <button className="rb-icon" title={`New table in ${s.title}`}
+              {canStructure && <button className="rb-icon" title={`New table in ${s.title}`}
                 onClick={e => setPop({ kind: 'newtable', rect: e.currentTarget.getBoundingClientRect(), section: s })}>+</button>}
             </div>
             {s.tables.map(t => (
@@ -294,14 +307,29 @@ export function Repository({ canReveal, canEdit, canStructure }: {
                   {t.title}
                   {rowsBy[t.key] && <span className="rb-nav-count">{rowsBy[t.key]!.length}</span>}
                 </button>
-                {can.structure && <button className="rb-icon rb-hover" title="Table options"
+                {canStructure && <button className="rb-icon rb-hover" title="Table options"
                   onClick={e => setPop({ kind: 'table', rect: e.currentTarget.getBoundingClientRect(), table: t })}>⋯</button>}
               </div>
             ))}
           </div>
         ))}
-        {can.structure && <button className="rb-add-link" onClick={e => setPop({ kind: 'newsection', rect: e.currentTarget.getBoundingClientRect() })}>+ New section</button>}
-        {can.structure && <button className="rb-add-link" onClick={() => { setHits(null); setImporting(sections[0]?.key ?? ''); }}>⇪ Import from Monday</button>}
+        {archived.length > 0 && (
+          <div className="rb-nav-section rb-archive">
+            <button className="rb-nav-head rb-archive-head" onClick={() => setShowArchive(v => !v)} aria-expanded={showArchive}>
+              <span>{showArchive ? '▾' : '▸'} Archive · {archived.length}</span>
+            </button>
+            {showArchive && archived.map(t => (
+              <div key={t.key} className={`rb-nav-item ${!hits && tableKey === t.key ? 'active' : ''}`}>
+                <button className="rb-nav-link" title={`${t.sectionTitle} · archived ${t.archivedAt.slice(0, 10)}`}
+                        onClick={() => { setHits(null); setImporting(null); setFilter(''); setTableKey(t.key); }}>
+                  {t.title}<span className="rb-nav-count">{t.sectionTitle}</span>
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+        {canStructure && <button className="rb-add-link" onClick={e => setPop({ kind: 'newsection', rect: e.currentTarget.getBoundingClientRect() })}>+ New section</button>}
+        {canStructure && <button className="rb-add-link" onClick={() => { setHits(null); setImporting(sections[0]?.key ?? ''); }}>⇪ Import from Monday</button>}
       </aside>
 
       <div className="rb-main">
@@ -312,12 +340,25 @@ export function Repository({ canReveal, canEdit, canStructure }: {
           <span className="rb-spacer" />
           <form className="rb-search" onSubmit={e => { e.preventDefault(); void runSearch(); }}>
             <input ref={searchRef} type="search" value={filter} onChange={e => { setFilter(e.target.value); if (!e.target.value) setHits(null); }}
-                   placeholder={table ? `Filter ${table.title} · Enter = all tables` : 'Search'} />
+                   placeholder={table ? `Filter ${table.title}…` : 'Search'} />
           </form>
           {hits && <button className="secondary small" onClick={() => { setHits(null); setFilter(''); }}>Back to {table?.title}</button>}
           {!hits && tableKey && <button className="secondary small" title="Reload" onClick={() => void loadRows(tableKey)}>↻</button>}
         </header>
 
+        {/* §118: typing filters this table; searching everywhere is a visible choice, not a hidden Enter. */}
+        {!hits && importing === null && filter.trim().length >= 2 && here !== null && (
+          <div className={`rb-searchall ${here === 0 ? 'none' : ''}`}>
+            <span>{here === 0 ? `Nothing in ${table?.title ?? 'this table'} matches “${filter.trim()}”.` : `${here} in ${table?.title ?? 'this table'}.`}</span>
+            <button className={here === 0 ? '' : 'secondary small'} onClick={() => void runSearch()}>🔎 Search all tables for “{filter.trim()}”</button>
+          </div>
+        )}
+        {archivedTable && !hits && importing === null && (
+          <div className="banner rb-archived">
+            <b>Archived:</b>&nbsp;{archivedTable.title} ({archivedTable.sectionTitle}, {archivedTable.archivedAt.slice(0, 10)}) — read-only, and left out of search.
+            {canStructure && <button className="secondary small" onClick={() => void structure({ op: 'tables.restore', table: archivedTable.key }, `${archivedTable.title} restored`)}>↺ Restore</button>}
+          </div>
+        )}
         {importing !== null ? (
           <MondayImport sections={sections} initial={importing} say={say} onCancel={() => setImporting(null)}
             onDone={async key => { setImporting(null); await loadMeta(); setTableKey(key); }} />
@@ -479,7 +520,7 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
               </tr>
             );
           })}
-          {filter && !shown.length && <tr><td className="rb-empty" colSpan={cols.length + 2}>Nothing in {table.title} matches “{filter}”. Press Enter to search every table.</td></tr>}
+          {filter && !shown.length && <tr><td className="rb-empty" colSpan={cols.length + 2}>Nothing in {table.title} matches “{filter}” — use “Search all tables” above.</td></tr>}
           {can.edit && !filter && <GhostRow cols={cols} primary={primary} setPop={setPop} onCreate={onCreate} />}
         </tbody>
       </table>

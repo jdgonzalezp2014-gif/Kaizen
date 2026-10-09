@@ -1726,3 +1726,15 @@ button.sop-num { cursor: pointer; }
 .drop-zone:hover, .drop-zone:focus { background: color-mix(in srgb, var(--series-1) 20%, var(--card)); }
 .drop-zone { align-content: center; gap: 2px; text-align: center; }
 .drop-zone .sub-n { font-weight: 500; }
+
+/* §118: the Archive at the foot of the list, and the search-everywhere bar. */
+.rb-archive { margin-top: 14px; border-top: 1px dashed var(--line, #d6dbe1); padding-top: 8px; }
+.rb-archive-head { width: 100%; background: none; border: 0; cursor: pointer; text-align: left; color: var(--muted); padding: 4px 6px;
+  font-size: 11px; font-weight: 650; letter-spacing: .06em; text-transform: uppercase; }
+.rb-archive-head:hover { color: var(--text); }
+.rb-archive .rb-nav-link { opacity: .8; }
+.rb-archived { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 10px; }
+.rb-searchall { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 8px 12px; margin: 0 0 10px;
+  border-radius: 8px; background: var(--surface-2, rgba(127,127,127,.08)); color: var(--muted); font-size: 13px; }
+.rb-searchall.none { color: var(--text); }
+.rb-searchall button { margin-left: auto; }

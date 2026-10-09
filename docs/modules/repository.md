@@ -36,6 +36,14 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   proposed as secret (§74).
 - Permissions: `repository`, `repository.edit`, `repository.structure`, reveal.
 - Phone: a list; a tap opens the record full screen (§80).
+- **Archive** (§118): archived tables leave the sections and search (`loadMeta().archived`), and
+  are listed under **Archive** at the foot of the list; opening one reads it read-only
+  (`?op=list&archived=1`; every edit route still asks for a live table) with **↺ Restore**
+  (`tables.restore`, brings its section back too). Archived 2026-10-09: Tools, STR Listings
+  (STR Log ins was already archived).
+- **Search** (§118): typing filters the open table; a bar offers **Search all tables for “…”**
+  (highlighted when nothing here matches). Enter still works but is no longer the way in.
+- SOP id 9 "Find, update and archive in the Data Repository" (screen `repository`).
 
 ## Open items
 
@@ -43,8 +51,8 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   columns — Name · (Unit, select, Unit services only) · Login URL · Username · Password 🔒 ·
   PIN / security code 🔒 · Account details · Notes:
   `booking_channels` (CHN, 17), `unit_services` (SVC, 15; AT&T rows tied to RG-1112/1214/1324/921),
-  `company_tools` (TOOL, 32). Copied from **Tools** and **STR Listings**, which the owner asked to
-  KEEP (not archived), including Monday's two leftover rows (ROW-0036 has a password). Passwords
+  `company_tools` (TOOL, 32). Copied from **Tools** and **STR Listings** (now in the Archive),
+  including Monday's two leftover rows (ROW-0036 has a password). Passwords
   were copied as ciphertext (never decrypted), audited as `secret.copy`; the plain-text PINs
   became secrets. Each record's Notes says where it came from. NEC, ineed and Gallery new portal
   login are marked "To review" in Company tools.
@@ -56,4 +64,4 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
 
 ## History
 
-§63 (read-only era), §66 (superseded), §71, §72, §74, §80.
+§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118.

@@ -1,6 +1,6 @@
 /**
  * GET /api/repository?op=meta
- * GET /api/repository?op=list&table=units
+ * GET /api/repository?op=list&table=units            (&archived=1 reads an archived table — the Archive, read-only)
  * GET /api/repository?op=get&table=units&id=UNI-0001
  * GET /api/repository?op=docs&table=units&id=UNI-0001&column=lease
  * GET /api/repository?op=docsbatch&table=units&column=lease&ids=UNI-0001,UNI-0002
@@ -35,7 +35,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
     if (op === 'list' || op === 'get') {
       if (!KEY.test(table)) return bad('Which table?');
-      const t = await tableCols(sql, table);
+      // Only reads reach an archived table; every edit route asks for a live one.
+      const t = await tableCols(sql, table, url.searchParams.get('archived') === '1');
       if (!t) return notFound('That table does not exist, or was archived.');
       if (op === 'get') {
         const row = id ? await getRow(sql, table, id, t.cols) : null;

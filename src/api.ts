@@ -406,12 +406,13 @@ export interface RepoFile {
 }
 type RepoFail = { ok: false; error?: string; message?: string };
 
+export type RepoArchived = RepoTable & { sectionTitle: string; archivedAt: string };
 export const getRepoMeta = () =>
-  call<{ ok: true; meta: { sections: RepoSection[] }; appUrl: string | null } | RepoFail>(
+  call<{ ok: true; meta: { sections: RepoSection[]; archived?: RepoArchived[] }; appUrl: string | null } | RepoFail>(
     '/api/repository?op=meta');
-export const getRepoRows = (table: string) =>
+export const getRepoRows = (table: string, archived = false) =>
   call<{ ok: true; total: number; rows: RepoRow[]; tookMs: number } | RepoFail>(
-    `/api/repository?op=list&table=${encodeURIComponent(table)}`);
+    `/api/repository?op=list&table=${encodeURIComponent(table)}${archived ? '&archived=1' : ''}`);
 export const getRepoDocs = (table: string, id: string, column: string) =>
   call<{ ok: true; folderUrl: string; files: RepoFile[] } | RepoFail>(
     `/api/repository?op=docs&table=${encodeURIComponent(table)}&id=${encodeURIComponent(id)}` +

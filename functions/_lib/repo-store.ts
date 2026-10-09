@@ -57,31 +57,34 @@ const colOut = (c: ColRow): ColumnOut => ({
   editable: c.type !== 'doc', system: false
 });
 
-/** The whole structure: three queries, one round trip each, in parallel. */
-export async function loadMeta(sql: SqlFn): Promise<{ sections: SectionOut[] }> {
-  const [sections, tables, cols] = await Promise.all([
-    sql`SELECT key, title FROM repo_sections WHERE account_id = 1 AND archived_at IS NULL ORDER BY position, title`,
-    sql`SELECT key, section_key, title, id_prefix, name_fields FROM repo_tables
-         WHERE account_id = 1 AND archived_at IS NULL ORDER BY position, title`,
+/**
+ * The whole structure: three queries, one round trip each, in parallel.
+ * Archived tables come apart (§118): out of the sections and of search,
+ * listed only in the Archive, read-only there.
+ */
+export async function loadMeta(sql: SqlFn): Promise<{ sections: SectionOut[]; archived: (SectionOut['tables'][number] & { sectionTitle: string; archivedAt: string })[] }> {
+  const [sections, allTables, cols] = await Promise.all([
+    sql`SELECT key, title, archived_at FROM repo_sections WHERE account_id = 1 ORDER BY position, title`,
+    sql`SELECT key, section_key, title, id_prefix, name_fields, archived_at FROM repo_tables
+         WHERE account_id = 1 ORDER BY position, title`,
     sql`SELECT table_key, key, title, type, grp, required, uniq, options, ref_table, ref_column
           FROM repo_columns WHERE account_id = 1 ORDER BY table_key, position`
-  ]) as [{ key: string; title: string }[], TableRow[], ColRow[]];
+  ]) as [{ key: string; title: string; archived_at: string | null }[], (TableRow & { archived_at: string | null })[], ColRow[]];
+  const out = (t: TableRow) => ({ key: t.key, title: t.title, section: t.section_key, idPrefix: t.id_prefix, nameFields: t.name_fields,
+    columns: [...BEFORE, ...cols.filter(c => c.table_key === t.key).map(colOut), ...AFTER] });
+  const tables = allTables.filter(t => !t.archived_at);
   return {
-    sections: sections.map(s => ({
-      key: s.key, title: s.title,
-      tables: tables.filter(t => t.section_key === s.key).map(t => ({
-        key: t.key, title: t.title, section: s.key, idPrefix: t.id_prefix, nameFields: t.name_fields,
-        columns: [...BEFORE, ...cols.filter(c => c.table_key === t.key).map(colOut), ...AFTER]
-      }))
-    }))
+    sections: sections.filter(s => !s.archived_at).map(s => ({ key: s.key, title: s.title, tables: tables.filter(t => t.section_key === s.key).map(out) })),
+    archived: allTables.filter(t => t.archived_at).map(t => ({ ...out(t), sectionTitle: sections.find(s => s.key === t.section_key)?.title ?? '',
+      archivedAt: new Date(t.archived_at!).toISOString() }))
   };
 }
 
-/** One live table and its columns, or null. */
-export async function tableCols(sql: SqlFn, table: string): Promise<{ table: TableRow; cols: RepoCol[] } | null> {
+/** One live table and its columns, or null. `archived` also finds an archived one — for reading only (§118). */
+export async function tableCols(sql: SqlFn, table: string, archived = false): Promise<{ table: TableRow; cols: RepoCol[] } | null> {
   const [t, cols] = await Promise.all([
     sql`SELECT key, section_key, title, id_prefix, name_fields FROM repo_tables
-         WHERE account_id = 1 AND key = ${table} AND archived_at IS NULL`,
+         WHERE account_id = 1 AND key = ${table} AND (${archived} OR archived_at IS NULL)`,
     sql`SELECT table_key, key, title, type, grp, required, uniq, options, ref_table, ref_column
           FROM repo_columns WHERE account_id = 1 AND table_key = ${table} ORDER BY position`
   ]) as [TableRow[], ColRow[]];

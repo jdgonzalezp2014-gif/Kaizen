@@ -6,6 +6,7 @@
  *   { op: 'tables.create', section, title, idPrefix? }
  *   { op: 'tables.rename', table, title }
  *   { op: 'tables.delete', table, confirm }               archived: hidden, nothing erased
+ *   { op: 'tables.restore', table }                         back from the Archive (§118)
  *   { op: 'columns.add', table, column: { title, type, group?, options?, required? } }
  *   { op: 'columns.update', table, columnKey, changes: { title?, type?, options?, group?, required? } }
  *   { op: 'columns.move', table, columnKey, direction: 'left' | 'right' }
@@ -25,7 +26,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { KEY, SYSTEM_KEYS, audit, tableCols } from '../_lib/repo-store.ts';
 import { CONVERTIBLE, coerce, slug, type ColumnType } from '../../src/lib/repo.ts';
 
-const OPS = new Set(['sections.create', 'sections.rename', 'tables.create', 'tables.rename', 'tables.delete',
+const OPS = new Set(['sections.create', 'sections.rename', 'tables.create', 'tables.rename', 'tables.delete', 'tables.restore',
                      'columns.add', 'columns.update', 'columns.move', 'columns.reorder', 'columns.delete']);
 /** What a person may create. `ref` comes only from the import, where the target is known. */
 const NEW_TYPES = new Set<string>([...CONVERTIBLE, 'secret', 'doc']);
@@ -81,6 +82,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
                 VALUES (1, ${key}, 'name', 'Name', 'text', TRUE, 1)`;
       await log(`${b.section} / ${title}`, key);
       return ok({ key });
+    }
+
+    if (op === 'tables.restore') {
+      const table = String(b.table ?? '');
+      if (!KEY.test(table)) return fail(400, 'Which table?');
+      const back = await sql`UPDATE repo_tables SET archived_at = NULL WHERE account_id = 1 AND key = ${table} AND archived_at IS NOT NULL RETURNING title, section_key`;
+      if (!back.length) return fail(404, 'That table is not in the Archive.');
+      // Its section comes back with it, or the table would have nowhere to show.
+      await sql`UPDATE repo_sections SET archived_at = NULL WHERE account_id = 1 AND key = ${back[0].section_key}`;
+      await audit(sql, who.email, op, table, null, `restored “${back[0].title}” from the Archive`);
+      return ok({ key: table });
     }
 
     const table = String(b.table ?? '');
