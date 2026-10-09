@@ -39,6 +39,17 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
 
 ## Open items
 
+- **Accounts & logins** (section `login`, reorganized 2026-10-09): three tables with the same
+  columns — Name · (Unit, select, Unit services only) · Login URL · Username · Password 🔒 ·
+  PIN / security code 🔒 · Account details · Notes:
+  `booking_channels` (CHN, 17), `unit_services` (SVC, 15; AT&T rows tied to RG-1112/1214/1324/921),
+  `company_tools` (TOOL, 32). Copied from **Tools** and **STR Listings**, which the owner asked to
+  KEEP (not archived), including Monday's two leftover rows (ROW-0036 has a password). Passwords
+  were copied as ciphertext (never decrypted), audited as `secret.copy`; the plain-text PINs
+  became secrets. Each record's Notes says where it came from. NEC, ineed and Gallery new portal
+  login are marked "To review" in Company tools.
+- The Units section also has a **STR Log ins** table — not part of this reorganization.
+
 - Units tables hold door codes / Wi-Fi as plain columns; only Login → Tools → password is a
   secret. Fix = new secret column + copy + remove old (owner's call) (§66).
 - The old Apps Script link/key in Settings can be cleared now the import is confirmed.
