@@ -38,7 +38,32 @@ async function call<T>(creds: HostawayCredentials, method: string, path: string,
   return { status: res.status, result: j?.result ?? null, message: j?.message ?? `HTTP ${res.status}` };
 }
 
-export const listTasks = async (creds: HostawayCredentials) => (await call<HostawayTask[]>(creds, 'GET', '/tasks')).result ?? [];
+/**
+ * Every task Hostaway will list (§120). The whole list stopped answering
+ * (403 "Internal error" — the account holds hundreds of automatic cleaning
+ * tasks), and an unanswered list read as an empty one made every linked task
+ * look deleted. So a failure is a failure (`ok: false`), and the fallback asks
+ * listing by listing, which Hostaway still answers; tasks with no listing are
+ * then only reachable one by one (`getTask`).
+ */
+export async function listTasks(creds: HostawayCredentials, listingIds: string[] = []): Promise<{ ok: boolean; tasks: HostawayTask[] }> {
+  const all = await call<HostawayTask[]>(creds, 'GET', '/tasks');
+  if (all.status === 200 && Array.isArray(all.result)) return { ok: true, tasks: all.result };
+  const tasks: HostawayTask[] = [];
+  let ok = listingIds.length > 0;
+  for (let i = 0; i < listingIds.length; i += 4) {
+    const pages = await Promise.all(listingIds.slice(i, i + 4).map(id => call<HostawayTask[]>(creds, 'GET', `/tasks?listingMapId=${encodeURIComponent(id)}`)));
+    for (const p of pages) { if (p.status === 200 && Array.isArray(p.result)) tasks.push(...p.result); else ok = false; }
+  }
+  return { ok, tasks };
+}
+
+/** One task: the task, `null` when Hostaway says it does not exist (404), or `undefined` when it could not say. */
+export async function getTask(creds: HostawayCredentials, id: string): Promise<HostawayTask | null | undefined> {
+  const r = await call<HostawayTask>(creds, 'GET', `/tasks/${encodeURIComponent(id)}`);
+  if (r.status === 200 && r.result) return r.result;
+  return r.status === 404 ? null : undefined;
+}
 
 /* ── Hostaway's users ────────────────────────────────────────────────── */
 
@@ -157,10 +182,11 @@ export async function pullAll(sql: SqlFn, creds: HostawayCredentials, force = fa
   // Claimed before the work, so two page loads at once do not both pull.
   await sql`UPDATE accounts SET hostaway_tasks_pulled_at = now() WHERE id = 1`;
 
-  const [tasks, users] = await Promise.all([listTasks(creds), refreshUsers(sql, creds)]);
+  const units = new Set((await sql`SELECT id FROM units WHERE account_id = 1` as { id: string }[]).map(u => String(u.id)));
+  const [listed, users] = await Promise.all([listTasks(creds, [...units]), refreshUsers(sql, creds)]);
+  const tasks = listed.tasks;
   const byId = new Map(tasks.map(t => [String(t.id), t]));
   const out: PullResult = { ...none };
-  const units = new Set((await sql`SELECT id FROM units WHERE account_id = 1` as { id: string }[]).map(u => String(u.id)));
   const labelFor = async (reservationId: string | null | undefined) => {
     if (!reservationId) return null;
     const d = await fetchReservationDetail(creds, reservationId).catch(() => null);
@@ -171,8 +197,12 @@ export async function pullAll(sql: SqlFn, creds: HostawayCredentials, force = fa
   for (const r of linked) {
     // An edit that could not be sent is sent first: Kaizen's change was made first.
     if (r.hostaway_error) { await pushWork(sql, creds, r.id); out.retried++; continue; }
-    const t = byId.get(r.hostaway_task_id!);
-    if (!t) {
+    // Not in the list is not "deleted": the list may be partial (§120). Only Hostaway saying 404 for
+    // this very task unlinks it; when Hostaway cannot answer, the link stays and the next pull tries again.
+    let t = byId.get(r.hostaway_task_id!) as HostawayTask | null | undefined;
+    if (!t) t = await getTask(creds, r.hostaway_task_id!);
+    if (t === undefined) continue;
+    if (t === null) {
       await sql`UPDATE todos SET hostaway_task_id = NULL, hostaway_state = NULL WHERE account_id = 1 AND id = ${r.id}`;
       await note(sql, r.id, 'change', 'Its Hostaway task was deleted there — no longer linked.', 'Hostaway');
       out.unlinked++; continue;
