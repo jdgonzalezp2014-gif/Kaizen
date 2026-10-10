@@ -3365,3 +3365,11 @@ and structure route keeps asking for a live table), out of search, with ↺ Rest
 and offers "🔎 Search all tables for …" — highlighted when nothing here matches. Tools and STR
 Listings were archived after their records moved to the three Accounts & logins tables (no
 record erased). SOP 9 explains search, reveal, updates, where a new account goes, and archiving.
+
+## §119 — No "created" notice for tasks made in Slack
+
+The owner (2026-10-10): a task created in Slack does not need the channel alert — only work from
+other sources does. `Kaizen.todo()` marks every create from Slack `via: 'slack'`; /api/todos then
+skips the "To-do created" notice (the Hostaway mirror and an owner's DM still happen). @Kaizen new
+keeps its "Tracked in Kaizen" reply in the asker's thread. Closing, starting or reopening keeps
+the §115-era rule (in place when done from the channel's own message).

@@ -185,7 +185,11 @@ class Kaizen {
     const res = await handler({ ...this.ctx, request } as Ctx);
     return await res.json().catch(() => ({ ok: res.ok })) as Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
   }
-  private todo(body: Record<string, unknown>) { return this.api(todos.onRequestPost, '/api/todos', 'POST', body); }
+  // A task made in Slack is already in front of the person who made it (and @Kaizen new answers in its thread):
+  // no "To-do created" notice in the channel for it (§119). Other changes keep their own `via`.
+  private todo(body: Record<string, unknown>) {
+    return this.api(todos.onRequestPost, '/api/todos', 'POST', body.action === 'create' && !body.via ? { ...body, via: 'slack' } : body);
+  }
   private claimSave(body: Record<string, unknown>) { return this.api(claims.onRequestPost, '/api/claims', 'POST', body); }
 
   private async reply(url: string, msg: Record<string, unknown>) {

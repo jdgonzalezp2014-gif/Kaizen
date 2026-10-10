@@ -62,8 +62,10 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
 - A task button on a message **in the tasks channel** updates that message in place and sends
   `via: 'slack-message'`, so /api/todos does not post a second completed/started/reopened
   notice (it showed twice, 2026-10-07). From the app, pop-ups or DMs the notice still posts.
-- `@Kaizen new` remembers two threads per task (the channel notice and the mention's thread) —
-  that is expected, not a duplicate.
+- Tasks **created in Slack** (@Kaizen new, /kaizen task, shortcuts, message action, forms) post
+  no "To-do created" notice: `Kaizen.todo()` sends `via: 'slack'` on create (§119). Work created
+  in the app or pulled from Hostaway is still announced. Assignment DMs are unchanged.
+- `@Kaizen new`'s task thread is the mention's thread (no channel notice since §119).
 
 ## Open items
 
@@ -77,4 +79,4 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
 
 ## History
 
-§99–§102, §107–§117.
+§99–§102, §107–§117, §119.

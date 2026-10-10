@@ -277,7 +277,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         `${targets.length > 1 ? ` (one of ${targets.length}, one per listing)` : ''}.`, who.email);
       if (f.parentId) await note(sql, 'task', f.parentId, 'change', `Sub-task added: ${f.title}`, who.email);
       if (f.claimId) await note(sql, 'claim', f.claimId, 'change', `${what} added: ${f.title}`, who.email);
-      if (!f.parentId) { mirror(String(row.id)); tell(String(row.id), 'created'); if (f.assigneeUserId) dm(String(row.id)); }
+      // Made in Slack: no channel notice — only work arriving from elsewhere (the app, Hostaway) is announced (§119).
+      if (!f.parentId) { mirror(String(row.id)); if (b.via !== 'slack') tell(String(row.id), 'created'); if (f.assigneeUserId) dm(String(row.id)); }
       await settle(String(row.id));
     }
     return Response.json({ ok: true, id: ids[0], ids, todos: await list(sql, b.claimScope ? f.claimId ?? undefined : undefined) });
