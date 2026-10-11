@@ -43,6 +43,19 @@ rate cards), `accounts.ops_rules` / `ops_mode`, `stay_notes`, `inspections`,
 
 ## Open items
 
+- **Designed, not built — star-based assignment (§121).** Replaces the high/mid/low tier rule.
+  Each clean *requires* ★1–★5 = base from the **next guest's nightly price** (editable bands,
+  default <$100 ★1 · $100–149 ★2 · $150–199 ★3 · $200–299 ★4 · $300+ ★5) + **outgoing stay length**
+  (1–6 nights +0 · 7–19 +1 · 20+ +2, still deep at 20+) + **1 if same-day turnover**; capped at
+  ★5; nothing booked next → the unit's typical nightly price, else ★2. Each cleaner has **stars
+  (set by hand)**, rates per size (as today), **zones/buildings covered**, **max cleans per day**.
+  Pick: active, covers the unit, stars ≥ required, under the day's max → **cheapest** for the
+  unit size; tie → fewer cleans that day. None qualifies → highest stars available, flagged
+  "▲ below required stars". Overrides still win. Board shows "★4 · Veronica ★5 ✓". One Setup
+  screen with a **preview before saving** (how many change cleaner, how many fall below, cost
+  vs now). Rollout: tiers mapped to stars (high ★5, mid ★3, low ★2), a week shown side by side,
+  then switch. Host Notes change only where the cleaner changes.
+
 - Cleanings Log header row is blank in the daily file (read by column order) — **ask before
   touching that sheet**.
 - Not built: Sheets mirror with the crew's Spanish tabs; crew cleaning sessions.

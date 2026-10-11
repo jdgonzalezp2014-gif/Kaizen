@@ -3373,3 +3373,14 @@ other sources does. `Kaizen.todo()` marks every create from Slack `via: 'slack'`
 skips the "To-do created" notice (the Hostaway mirror and an owner's DM still happen). @Kaizen new
 keeps its "Tracked in Kaizen" reply in the asker's thread. Closing, starting or reopening keeps
 the §115-era rule (in place when done from the channel's own message).
+
+## §121 — Cleaning assignment by stars (design, 2026-10-11, not built)
+
+The owner: the cleaning rule must be easier to adjust — reservations rated by nightly price and
+the previous stay; cleaners with a price and a rating; the stars must be met for each stay.
+Decisions: the previous stay counts by its **nights**; when several cleaners qualify, the
+**cheapest** wins; cleaner stars are **set by hand**; **+1 star for a same-day turnover**, and a
+**max cleans per day** per cleaner. The full design is in docs/modules/operations.md (Open
+items). Why it replaces the tier rule: it judged by the next booking's TOTAL (ten cheap nights
+outranked two expensive ones), had three fixed tiers with one primary each, hid its thresholds,
+and the team was overriding it by building (P2 → Veronica, CL → Michelle) — zones now carry that.
