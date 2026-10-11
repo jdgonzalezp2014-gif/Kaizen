@@ -22,7 +22,7 @@ import type { SqlFn } from './accounts.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
 import {
   blockForReservation, buildBoard, inspectionPanel, mergeHostNote, summarize, withDefaults,
-  type BoardRow, type Cleaner, type OpsCleaning, type OpsInspection, type OpsRules, type Override
+  type AssignRule, type BoardRow, type Cleaner, type OpsCleaning, type OpsInspection, type OpsRules, type Override
 } from '../../src/lib/operations.ts';
 
 /** The daily file's own zone (its manifest), so "today" is the same day in both. */
@@ -43,21 +43,27 @@ export async function opsConfig(sql: SqlFn): Promise<{
   mode: OpsMode; rules: OpsRules; extraInspectors: string[]; roster: Cleaner[];
   /** Units whose guests must have an ID and agreement on file (§73), by listing ID. */
   guestDocUnits: string[];
+  /** Which rule decides who cleans (§121). */
+  assignRule: AssignRule;
 }> {
   const [acc, roster] = await Promise.all([
-    sql`SELECT ops_mode, ops_rules, extra_inspectors, guest_docs_units FROM accounts WHERE id = 1`,
-    sql`SELECT name, tier, position, rates, deep_rates, active FROM cleaners
+    sql`SELECT ops_mode, ops_rules, extra_inspectors, guest_docs_units, assign_rule FROM accounts WHERE id = 1`,
+    sql`SELECT name, tier, position, rates, deep_rates, active, stars, zones, max_per_day FROM cleaners
          WHERE account_id = 1 ORDER BY tier, position, name`
-  ]) as [{ ops_mode: OpsMode; ops_rules: Record<string, unknown>; extra_inspectors: string[]; guest_docs_units: string[] }[],
+  ]) as [{ ops_mode: OpsMode; ops_rules: Record<string, unknown>; extra_inspectors: string[]; guest_docs_units: string[];
+           assign_rule: string }[],
          { name: string; tier: Cleaner['tier']; position: number; rates: Record<string, number | null>;
-           deep_rates: Record<string, number | null>; active: boolean }[]];
+           deep_rates: Record<string, number | null>; active: boolean; stars: number; zones: string[];
+           max_per_day: number | null }[]];
   return {
     mode: acc[0]?.ops_mode === 'live' ? 'live' : 'shadow',
     rules: withDefaults(acc[0]?.ops_rules),
     extraInspectors: acc[0]?.extra_inspectors ?? [],
     guestDocUnits: acc[0]?.guest_docs_units ?? [],
+    assignRule: acc[0]?.assign_rule === 'stars' ? 'stars' : 'tiers',
     roster: roster.map(c => ({ name: c.name, tier: c.tier, position: c.position,
-      rates: c.rates ?? {}, deepRates: c.deep_rates ?? {}, active: c.active }))
+      rates: c.rates ?? {}, deepRates: c.deep_rates ?? {}, active: c.active,
+      stars: Number(c.stars) || 1, zones: c.zones ?? [], maxPerDay: c.max_per_day == null ? null : Number(c.max_per_day) }))
   };
 }
 
@@ -85,7 +91,10 @@ export interface OpsState {
   today: string; end: string; days: number;
   rules: OpsRules; roster: Cleaner[]; extraInspectors: string[];
   guestDocUnits: string[];
+  assignRule: AssignRule;
   rows: BoardRow[];
+  /** What the board was built from — so Setup can rebuild it under a proposed roster and rules. */
+  boardInput: Parameters<typeof buildBoard>[0];
   summary: ReturnType<typeof summarize>;
   panel: ReturnType<typeof inspectionPanel>;
   inspections: Awaited<ReturnType<typeof inspectionLog>>;
@@ -169,17 +178,18 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
 
   const opsListings = listings.map(l => ({ id: l.listingId, name: l.name, bedrooms: l.bedrooms, active: l.active }));
   const panel = inspectionPanel(opsListings, reservations, inspections.done, inspections.scheduled, today, cfg.rules);
-  const rows = buildBoard({
+  const boardInput: Parameters<typeof buildBoard>[0] = {
     today, windowDays: days, listings: opsListings, reservations, roster: cfg.roster, rules: cfg.rules,
-    overrides, notes, inspections: panel, sheet: sheetMap,
+    overrides, notes, inspections: panel, sheet: sheetMap, assignRule: cfg.assignRule,
     // With no inspection ever recorded here, "never inspected" would be a
     // claim about every unit made from no evidence (§63).
     inspectionLogRead: inspections.done.length + inspections.scheduled.length > 0
-  });
+  };
+  const rows = buildBoard(boardInput);
   timings.total = Date.now() - started;
 
-  return { mode: cfg.mode, today, end, days, rules: cfg.rules, roster: cfg.roster,
-           extraInspectors: cfg.extraInspectors, guestDocUnits: cfg.guestDocUnits, rows, summary: summarize(rows), panel,
+  return { mode: cfg.mode, today, end, days, rules: cfg.rules, roster: cfg.roster, assignRule: cfg.assignRule, boardInput,
+           extraInspectors: cfg.extraInspectors, guestDocUnits: cfg.guestDocUnits, rows, summary: summarize(rows, cfg.roster), panel,
            inspections, reservations, sheet, timings, lookaheadTo: addDays(end, NEXT_STAY_LOOKAHEAD), overrideBy };
 }
 
@@ -205,7 +215,7 @@ const URGENCY_LABEL: Record<string, string> = { turnover: '⚡', same_guest: '�
 export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> {
   const outs = s.rows.filter(r => r.kind === 'out');
   const decidedBy = (r: BoardRow) => r.manual.cleaner ? `override:${s.overrideBy.get(r.resId) ?? 'someone'}`
-    : r.sameDayOf ? `rule: one clean per unit per day (${r.sameDayOf})` : 'rule';
+    : r.sameDayOf ? `rule: one clean per unit per day (${r.sameDayOf})` : s.assignRule === 'stars' ? 'rule:stars' : 'rule';
   if (outs.length) {
     await sql`
       INSERT INTO cleanings (account_id, key, unit_id, unit_name, checkout_on, cleaner, assignment,
@@ -398,7 +408,8 @@ export async function pushHostNotes(
 export function trimForOps(s: OpsState): void {
   for (const r of s.rows) {
     r.total = 0;
-    if (r.next) r.next.total = null;
+    if (r.next) { r.next.total = null; r.next.nightly = null; }
+    if (r.stars) { r.stars.why = r.stars.why.replace(/\$\d[\d,]*/g, '$…'); r.stars.reason = r.stars.reason.replace(/\$\d[\d,]*/g, '$…'); }
     if (r.inspection.key === 'req') {
       r.inspection.reason = 'The next booking is a high-value stay. Inspect at this turnover, before that guest arrives.';
     }

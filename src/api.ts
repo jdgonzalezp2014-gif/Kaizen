@@ -289,7 +289,7 @@ export const getCleanings = (
 
 /* ── operations ───────────────────────────────────────────────────── */
 
-import type { BoardRow, BoardSummary, Cleaner, OpsRules, UnitInspection } from './lib/operations.ts';
+import type { AssignRule, BoardRow, BoardSummary, Cleaner, OpsRules, UnitInspection } from './lib/operations.ts';
 
 export interface InspectionEntry {
   id: string; date: string; unit: string; by: string; result: string; notes: string;
@@ -310,6 +310,8 @@ export interface OperationsResponse {
   inspectionLog: { done: InspectionEntry[]; scheduled: InspectionEntry[] };
   noteLog: NoteEntry[]; pushes: HostNotePush[];
   rules: OpsRules; extraInspectors: string[]; roster: Cleaner[];
+  /** Which rule decides who cleans (§121). */
+  assignRule: AssignRule;
   /** Units whose guests must have an ID and agreement on file (§73), by listing ID. */
   guestDocUnits: string[];
   /** Cleans no checkout scheduled (§79), in the window. */
@@ -365,6 +367,9 @@ export const cancelInspection = (id: string) =>
 export interface OpsSettings {
   ok: true; mode: 'shadow' | 'live'; rules: OpsRules; defaults: OpsRules;
   extraInspectors: string[]; roster: Cleaner[]; guestDocUnits: string[];
+  assignRule: AssignRule;
+  /** Zone → its active units' names (§121). */
+  zones: Record<string, string[]>;
   counts: { inspections: number; notes: number; overrides: number };
   hostawayTasks: HostawayTasksState;
 }
@@ -380,6 +385,18 @@ export interface CutoverPreview {
   inspectors: string[]; inspections: { done: number; scheduled: number }; notes: number;
   problems: string[];
 }
+/** The board under a proposed roster and rules, by stars, against the board as it is (§121). */
+export interface AssignPreview {
+  from: string; to: string; rule: AssignRule; cleans: number; changed: number;
+  changes: { date: string; unit: string; resId: string; required: number | null; now: string | null; then: string | null;
+             priceNow: number | null; priceThen: number | null; below: boolean; manual: boolean }[];
+  below: { now: number; then: number }; unassigned: { now: number; then: number };
+  cost: { now: number; then: number }; unpriced: { now: number; then: number };
+}
+export const previewAssign = (roster: Cleaner[], rules: Record<string, unknown>) =>
+  call<{ ok: true; preview: AssignPreview } | Fail>('/api/ops-settings', {
+    method: 'POST', body: JSON.stringify({ action: 'previewAssign', roster, rules })
+  });
 export const cutoverImport = (commit: boolean) =>
   call<{ ok: true; dryRun: boolean; preview: CutoverPreview } | Fail>('/api/ops-settings', {
     method: 'POST', body: JSON.stringify({ action: 'import', commit })

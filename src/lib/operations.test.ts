@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assign, blockForReservation, buildBoard, eligibleInspectors, inspectionPanel, inspectionTier,
+  assign, blockForReservation, pickByStars, requiredStars, typicalNightly, zoneOf, buildBoard, eligibleInspectors, inspectionPanel, inspectionTier,
   mergeHostNote, proposeInspections, rateFor, sameGuest, summarize, withDefaults,
   type Cleaner, type OpsCleaning, type OpsListing, type OpsReservation, type OpsRules, type Override
 } from './operations.ts';
@@ -13,9 +13,11 @@ const RULES: OpsRules = withDefaults({
 });
 const ROSTER: Cleaner[] = [
   { name: 'Karina and Marvin', tier: 'high', position: 0, active: true,
-    rates: { 1: 70, 2: 90, 3: 150 }, deepRates: { 1: 120, 3: 230 } },
-  { name: 'Veronica', tier: 'mid', position: 0, active: true, rates: { 1: 50, 2: 90 }, deepRates: {} },
-  { name: 'Michelle', tier: 'low', position: 0, active: true, rates: { 1: 35, 2: 55 }, deepRates: {} }
+    rates: { 1: 70, 2: 90, 3: 150 }, deepRates: { 1: 120, 3: 230 }, stars: 5, zones: [], maxPerDay: null },
+  { name: 'Veronica', tier: 'mid', position: 0, active: true, rates: { 1: 50, 2: 90 }, deepRates: {},
+    stars: 3, zones: [], maxPerDay: null },
+  { name: 'Michelle', tier: 'low', position: 0, active: true, rates: { 1: 35, 2: 55 }, deepRates: {},
+    stars: 2, zones: [], maxPerDay: null }
 ];
 const TODAY = '2026-09-24';
 const L: OpsListing[] = [
@@ -256,4 +258,145 @@ test('a person who assigned the second departure keeps that choice', () => {
   const rows = board([res('small', '1', '2026-09-23', '2026-09-26', 300, 3), res('big', '1', '2026-09-20', '2026-09-26', 900, 6)], { overrides: ov });
   assert.equal(out(rows, 'small').cleaner, 'Michelle');
   assert.equal(out(rows, 'small').sameDayOf, 'big');
+});
+
+/* ── stars (§121) ── */
+
+const boardBy = (reservations: OpsReservation[], opts: {
+  roster?: Cleaner[]; overrides?: Map<string, Override>; assignRule?: 'tiers' | 'stars';
+} = {}) => buildBoard({
+  today: TODAY, windowDays: 10, listings: L, reservations, roster: opts.roster ?? ROSTER, rules: RULES,
+  overrides: opts.overrides ?? new Map(), notes: new Map(), inspections: [], assignRule: opts.assignRule ?? 'stars'
+});
+const withRoster = (patch: Record<string, Partial<Cleaner>>) => ROSTER.map(c => ({ ...c, ...(patch[c.name] ?? {}) }));
+
+test('a unit\'s zone is its building, or Houses', () => {
+  assert.equal(zoneOf('CL1250'), 'CL');
+  assert.equal(zoneOf('CL 1125'), 'CL');
+  assert.equal(zoneOf('P2-1201'), 'P2');
+  assert.equal(zoneOf('P2 - 1406'), 'P2');
+  assert.equal(zoneOf('Amber Valley'), 'Houses');
+  assert.equal(zoneOf('Kingsford Duplicate'), 'Houses');
+});
+
+test('required stars: nightly band, plus the stay, plus a same-day turnover, capped at five', () => {
+  assert.equal(requiredStars(99, null, 3, false, RULES).stars, 1);
+  assert.equal(requiredStars(100, null, 3, false, RULES).stars, 2);
+  assert.equal(requiredStars(180, null, 3, false, RULES).stars, 3);
+  assert.equal(requiredStars(180, null, 8, false, RULES).stars, 4);
+  assert.equal(requiredStars(180, null, 8, true, RULES).stars, 5);
+  assert.equal(requiredStars(120, null, 20, false, RULES).stars, 4);
+  const capped = requiredStars(300, null, 25, true, RULES);
+  assert.equal(capped.stars, 5);
+  assert.match(capped.why, /capped/);
+  assert.match(requiredStars(null, 133, 3, false, RULES).why, /usual \$133\/night ★2/);
+  assert.equal(requiredStars(null, null, 3, false, RULES).stars, RULES.starDefault);
+});
+
+test('stars go by the price per night, not the total — ten cheap nights do not outrank two dear ones', () => {
+  const r = boardBy([res('a', '1', '2026-09-20', '2026-09-26'), res('b', '1', '2026-09-27', '2026-10-07', 900, 10),
+                     res('c', '2', '2026-09-20', '2026-09-26'), res('d', '2', '2026-09-27', '2026-09-29', 600, 2)]);
+  assert.equal(out(r, 'a').stars?.required, 1);
+  assert.equal(out(r, 'c').stars?.required, 5);
+});
+
+test('the cheapest cleaner with enough stars is picked', () => {
+  const two = boardBy([res('a', '1', '2026-09-20', '2026-09-26'), res('b', '1', '2026-09-27', '2026-09-30', 300)]);
+  assert.equal(out(two, 'a').stars?.required, 2);
+  assert.equal(out(two, 'a').cleaner, 'Michelle');
+  assert.equal(out(two, 'a').price, 55);
+  assert.match(out(two, 'a').auto.reason, /★2 needed.*Michelle ★2 is the cheapest of 3/);
+  const four = boardBy([res('a', '1', '2026-09-20', '2026-09-26'), res('b', '1', '2026-09-27', '2026-09-30', 600)]);
+  assert.equal(out(four, 'a').cleaner, 'Karina and Marvin');
+});
+
+test('a same-day turnover needs one star more', () => {
+  const r = boardBy([res('a', '2', '2026-09-20', '2026-09-26'), res('b', '2', '2026-09-26', '2026-09-29', 300)]);
+  assert.equal(out(r, 'a').stars?.required, 3);
+  assert.equal(out(r, 'a').cleaner, 'Veronica');
+});
+
+test('nobody with enough stars: the most stars available, flagged below', () => {
+  const p = pickByStars(4, 'CL', 2, false, ROSTER.filter(c => c.name === 'Michelle'), new Map());
+  assert.equal(p.cleaner, 'Michelle');
+  assert.equal(p.below, true);
+  assert.match(p.reason, /nobody free in CL has ★4/);
+});
+
+test('a cleaner only cleans the zones she covers; nobody covering leaves it unassigned', () => {
+  const roster = withRoster({ Michelle: { zones: ['P2'] } });
+  assert.equal(pickByStars(2, 'CL', 1, false, roster, new Map()).cleaner, 'Veronica');
+  assert.equal(pickByStars(2, 'P2', 1, false, roster, new Map()).cleaner, 'Michelle');
+  const none = pickByStars(2, 'Houses', 2, false, ROSTER.map(c => ({ ...c, zones: ['CL'] })), new Map());
+  assert.equal(none.cleaner, null);
+  assert.match(none.reason, /nobody covers Houses/);
+});
+
+test('equal cost goes to whoever has fewer cleans that day, then to more stars', () => {
+  assert.equal(pickByStars(3, 'CL', 2, false, ROSTER, new Map()).cleaner, 'Karina and Marvin');   // both $90
+  const roster = withRoster({ Veronica: { stars: 5 } });     // Veronica and K&M both pay $90 for a 2BR
+  assert.equal(pickByStars(4, 'CL', 2, false, roster, new Map([['Karina and Marvin', 1]])).cleaner, 'Veronica');
+  assert.equal(pickByStars(4, 'CL', 2, false, roster, new Map([['Veronica', 1]])).cleaner, 'Karina and Marvin');
+});
+
+test('the daily max: a full cleaner is passed over, and the most demanding clean is served first', () => {
+  const full = boardBy([res('a', '1', '2026-09-20', '2026-09-26'), res('b', '1', '2026-09-27', '2026-09-30', 300),
+                        res('c', '2', '2026-09-20', '2026-09-26'), res('d', '2', '2026-09-27', '2026-09-30', 300)],
+                       { roster: withRoster({ Michelle: { maxPerDay: 1 } }) });
+  assert.deepEqual([out(full, 'a').cleaner, out(full, 'c').cleaner], ['Michelle', 'Veronica']);
+
+  // K&M can do one. The ★5 clean in P2 gets her, though CL1250 comes first on the board.
+  const roster = withRoster({ 'Karina and Marvin': { maxPerDay: 1 }, Michelle: { active: false } });
+  const r = boardBy([res('a', '1', '2026-09-20', '2026-09-26'), res('b', '1', '2026-09-27', '2026-09-30', 300),
+                     res('c', '2', '2026-09-20', '2026-09-26'), res('d', '2', '2026-09-27', '2026-09-30', 900)], { roster });
+  assert.equal(out(r, 'c').stars?.required, 5);
+  assert.equal(out(r, 'c').cleaner, 'Karina and Marvin');
+  assert.equal(out(r, 'a').cleaner, 'Veronica');
+});
+
+test('a person\'s choice wins and takes its slot that day', () => {
+  const ov = new Map<string, Override>([['a', { assignment: 'assigned', cleaner: 'Michelle', deep: null, checkoutTime: null, checkinTime: null }]]);
+  const r = boardBy([res('a', '1', '2026-09-20', '2026-09-26'),
+                     res('c', '2', '2026-09-20', '2026-09-26'), res('d', '2', '2026-09-27', '2026-09-30', 300)],
+                    { roster: withRoster({ Michelle: { maxPerDay: 1 } }), overrides: ov });
+  assert.equal(out(r, 'a').cleaner, 'Michelle');
+  assert.equal(out(r, 'c').stars?.cleaner, 'Veronica');
+  assert.equal(out(r, 'c').cleaner, 'Veronica');
+});
+
+test('nothing booked inside the horizon: the unit\'s usual nightly price sets the stars', () => {
+  const r = boardBy([res('a', '2', '2026-09-23', '2026-09-26', 500, 3), res('c', '2', '2026-11-20', '2026-11-25', 500, 5)]);
+  assert.equal(out(r, 'a').next?.nightly, null);
+  assert.match(out(r, 'a').stars!.why, /usual \$133\/night/);
+  assert.equal(out(r, 'a').stars?.required, 2);
+});
+
+test('an iCal block next is not a guest price; it is left out of the usual price too', () => {
+  const stays = [res('a', '1', '2026-09-20', '2026-09-26', 600, 6), res('b', '1', '2026-09-27', '2026-09-30', 0, 3, { channel: 'ical' })];
+  assert.equal(typicalNightly(stays).get('1'), 100);
+  const r = boardBy(stays);
+  assert.equal(out(r, 'a').next?.nightly, null);
+  assert.equal(out(r, 'a').stars?.required, 2);
+});
+
+test('under the tiers the star answer rides along, deciding nothing', () => {
+  const r = boardBy([res('a', '1', '2026-09-20', '2026-09-26'), res('b', '1', '2026-09-27', '2026-09-30', 300)],
+                    { assignRule: 'tiers' });
+  assert.equal(out(r, 'a').cleaner, 'Karina and Marvin');   // $300 next ≥ the $250 high line
+  assert.equal(out(r, 'a').stars?.cleaner, 'Michelle');     // $100/night is ★2
+  assert.equal(summarize(r, ROSTER).belowStars, 0);
+});
+
+test('below stars is counted, by hand or not', () => {
+  const ov = new Map<string, Override>([['a', { assignment: 'assigned', cleaner: 'Michelle', deep: null, checkoutTime: null, checkinTime: null }]]);
+  const r = boardBy([res('a', '1', '2026-09-20', '2026-09-26'), res('b', '1', '2026-09-27', '2026-09-30', 900)], { overrides: ov });
+  assert.equal(out(r, 'a').stars?.required, 5);
+  assert.equal(summarize(r, ROSTER).belowStars, 1);
+});
+
+test('the second departure the same day carries no clean and no stars', () => {
+  const rows = boardBy([res('small', '1', '2026-09-23', '2026-09-26', 300, 3), res('big', '1', '2026-09-20', '2026-09-26', 900, 6)]);
+  assert.equal(out(rows, 'small').stars, null);
+  assert.equal(out(rows, 'small').assignment, 'not_needed');
+  assert.ok(out(rows, 'big').stars);
 });

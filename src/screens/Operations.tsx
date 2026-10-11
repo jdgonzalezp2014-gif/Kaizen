@@ -24,11 +24,12 @@ import {
   getOpsSettings, saveOpsSettings, cutoverImport, can, getGuestDocs, syncAgreement, uploadGuestDoc, getUnits, getTodos,
   type Todo, type HostawayTasksState,
   type StayDocs, type OperationsResponse, type ManualClean, type ManualCleanKind, type StayOnDay,
-  getStaysOnDay, manualClean, todoAction, saveClaim, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry
+  getStaysOnDay, manualClean, todoAction, saveClaim, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry,
+  previewAssign, type AssignPreview
 } from '../api.ts';
 import {
   BEDROOM_SIZES, DEFAULT_CHECKIN_TIME, DEFAULT_CHECKOUT_TIME, INSPECTION_RESULTS,
-  eligibleInspectors, rateFor, summarize,
+  HOUSES_ZONE, belowStars, eligibleInspectors, rateFor, starsOf, summarize, withDefaults,
   type BoardRow, type Cleaner, type InspectionTier, type OpsRules
 } from '../lib/operations.ts';
 import { money, money2 } from '../lib/format.ts';
@@ -125,7 +126,7 @@ export function Operations({ permissions, initialView, onView }: {
     setData(d => {
       if (!d) return d;
       const rows = d.rows.map(r => r.resId === resId && r.kind === kind ? f(r) : r);
-      return { ...d, rows, summary: summarize(rows) };
+      return { ...d, rows, summary: summarize(rows, d.roster) };
     });
 
   const views: [View, string][] = [
@@ -211,11 +212,15 @@ function ModeBanner({ data, onSetup }: { data: OperationsResponse; onSetup: () =
 type Filter = 'all' | 'out' | 'in' | 'attention' | 'differs';
 
 /** Everything on a departure that someone has to act on. */
-function needsAttention(r: BoardRow): boolean {
+function needsAttention(r: BoardRow, stars: Map<string, number>): boolean {
   if (r.kind !== 'out') return false;
-  return r.assignment === 'tbd' || (r.assignment === 'assigned' && r.price == null) ||
+  return r.assignment === 'tbd' || (r.assignment === 'assigned' && r.price == null) || belowStars(r, stars) ||
     r.inspection.key === 'req' || r.inspection.key === 'due' || r.urgency === 'turnover';
 }
+
+/** A cleaner's stars by name, from the roster. */
+const starMap = (roster: Cleaner[]) => new Map(roster.map(c => [c.name, starsOf(c)]));
+const starText = (n: number) => `★${n}`;
 
 function Board({ data, patch, reload }: {
   data: OperationsResponse; patch: (id: string, k: 'in' | 'out', f: (r: BoardRow) => BoardRow) => void; reload: () => void;
@@ -232,6 +237,7 @@ function Board({ data, patch, reload }: {
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const s = data.summary;
+  const stars = useMemo(() => starMap(data.roster), [data.roster]);
 
   // Guest documents (§73): what each arrival has filed, read from Drive
   // when the board loads. Only for roles that may see IDs.
@@ -265,10 +271,10 @@ function Board({ data, patch, reload }: {
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return data.rows.filter(r =>
-      (filter === 'all' || (filter === 'attention' ? needsAttention(r)
+      (filter === 'all' || (filter === 'attention' ? needsAttention(r, stars)
         : filter === 'differs' ? r.differs.length > 0 : r.kind === filter)) &&
       (!needle || `${r.unit} ${r.guest} ${r.cleaner ?? ''}`.toLowerCase().includes(needle)));
-  }, [data, filter, q]);
+  }, [data, filter, q, stars]);
 
   const days = useMemo(() => {
     const out: string[] = [];
@@ -282,7 +288,7 @@ function Board({ data, patch, reload }: {
 
   const filters: [Filter, string][] = [
     ['all', 'Everything'], ['out', 'Departures'], ['in', 'Arrivals'],
-    ['attention', `Needs attention ${data.rows.filter(needsAttention).length}`],
+    ['attention', `Needs attention ${data.rows.filter(r => needsAttention(r, stars)).length}`],
     ...(data.mode === 'shadow' ? [['differs', `Differs from the sheet ${s.differing}`] as [Filter, string]] : [])
   ];
 
@@ -294,6 +300,7 @@ function Board({ data, patch, reload }: {
         <div><dt>Cleans</dt><dd>{s.cleanings}<small>{s.departures - s.cleanings} not needed</small></dd></div>
         <div><dt>Same-day turnovers</dt><dd>{s.turnovers}</dd></div>
         <div><dt>Inspections due</dt><dd>{s.inspections}</dd></div>
+        {s.belowStars > 0 && <div><dt>Below stars</dt><dd className="breach">▲ {s.belowStars}<small>cleaner has fewer ★ than needed</small></dd></div>}
         <div><dt>Cleaner pay</dt><dd>{money(s.cleaningCost)}
           {s.unpriced > 0 && <small>+{s.unpriced} not priced</small>}</dd></div>
         {data.showMoney && <div><dt>Arriving</dt><dd>{money(s.arriving)}</dd></div>}
@@ -346,6 +353,7 @@ function Board({ data, patch, reload }: {
                   return (
                     <Fragment key={key}>
                       <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'} through={short(data.lookaheadTo)}
+                                 stars={stars} byStars={data.assignRule === 'stars'}
                                  docs={canDocs && r.kind === 'in' && docUnits.has(r.unitId) ? docs[r.resId] ?? null : undefined}
                                  todos={todosBy.get(r.unitId)}
                                  open={open === key} onToggle={() => {
@@ -376,8 +384,10 @@ function Board({ data, patch, reload }: {
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, stars, byStars }: {
   r: BoardRow; showMoney: boolean; shadow: boolean; open: boolean; onToggle: () => void;
+  /** Each cleaner's stars, and whether stars decide (§121) or ride along beside the tiers. */
+  stars: Map<string, number>; byStars: boolean;
   /** An arrival's filed documents: undefined = not shown to this role, null = still reading. */
   docs?: StayDocs | null;
   /** Open to-dos about this unit. */
@@ -418,6 +428,18 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos 
               {r.assignment === 'tbd' ? '▲ ' : ''}{r.assignment === 'assigned' ? r.cleaner : r.assignment === 'not_needed' ? 'no clean needed' : 'unassigned'}
             </span>
             {r.manual.cleaner && <span className="sub-n"> · set by hand</span>}
+            {/* "★4 · Veronica ★5 ✓": what the clean needs against what the cleaner has. */}
+            {r.stars && r.assignment !== 'not_needed' && (() => {
+              const has = r.assignment === 'assigned' && r.cleaner ? stars.get(r.cleaner) : undefined;
+              const below = belowStars(r, stars);
+              return <div className={below ? 'breach' : 'sub-n'} title={r.stars.why}>
+                needs {starText(r.stars.required)}
+                {has !== undefined && <> · has {starText(has)} {below ? '▲ below required stars' : '✓'}</>}
+              </div>;
+            })()}
+            {!byStars && r.stars && r.assignment !== 'not_needed' && r.stars.cleaner !== r.cleaner && (
+              <div className="ops-diff" title={r.stars.reason}>by stars: {r.stars.cleaner ?? 'unassigned'}</div>
+            )}
             {r.sameDayOf && !r.manual.cleaner && <div className="sub-n">another stay leaves today — one clean</div>}
             {shadow && r.differs.includes('cleaner') && r.sheet && <div className="ops-diff">sheet: {sheetText(r.sheet)}</div>}
             {shadow && !r.inDailyFile && <div className="sub-n">not in the daily file yet</div>}
@@ -504,6 +526,10 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean }: {
         <div className="ops-editor-why">
           <b>The rule says {r.auto.cleaner ?? 'nobody'}</b> — {r.auto.reason}.
           {r.sheet && <> The daily file has <b>{sheetText(r.sheet)}</b>{r.sheet.price != null ? ` at ${money2(r.sheet.price)}` : ''}.</>}
+          {data.assignRule !== 'stars' && r.stars && (
+            <div>By stars (not deciding yet): <b>{r.stars.cleaner ?? 'nobody'}</b> — {starText(r.stars.required)} needed
+              ({r.stars.why}) — {r.stars.reason}.</div>
+          )}
         </div>
       )}
       <div className="row">
@@ -516,7 +542,8 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean }: {
                 : { assignment: v as 'tbd' | 'not_needed' });
             }}>
               <option value="__rule">By the rule{r.auto.cleaner ? ` (${r.auto.cleaner})` : ''}</option>
-              {active.map(c => <option key={c.name} value={`c:${c.name}`}>{c.name} — {c.tier}</option>)}
+              {active.map(c => <option key={c.name} value={`c:${c.name}`}>{c.name} — {starText(starsOf(c))}
+                {r.stars && starsOf(c) < r.stars.required ? ' (below)' : ''}</option>)}
               <option value="tbd">Unassigned (TBD)</option>
               <option value="not_needed">No clean needed</option>
             </select>
@@ -728,7 +755,7 @@ function ManualCleanForm({ data, initial, onDone, onCancel }: {
         <label>Cleaner
           <select value={cleaner} onChange={e => setCleaner(e.target.value)}>
             <option value="">Not assigned yet</option>
-            {active.map(c => <option key={c.name} value={c.name}>{c.name} — {c.tier}</option>)}
+            {active.map(c => <option key={c.name} value={c.name}>{c.name} — {starText(starsOf(c))}</option>)}
           </select></label>
         <label className="check"><input type="checkbox" checked={deep} onChange={e => setDeep(e.target.checked)} /> Deep clean</label>
       </div>
@@ -1075,13 +1102,15 @@ function RateTable({ roster }: { roster: Cleaner[] }) {
   const cell = (v: number | null | undefined) => v == null ? <span className="note">—</span> : money(v);
   return (
     <table className="units compact">
-      <thead><tr><th>Cleaner</th><th>Tier</th>
+      <thead><tr><th>Cleaner</th><th>Stars</th><th>Zones</th><th className="n">Max a day</th>
         {BEDROOM_SIZES.map(b => <th key={b} className="n">{b}BR</th>)}
         {BEDROOM_SIZES.map(b => <th key={`d${b}`} className="n">Deep {b}BR</th>)}</tr></thead>
       <tbody>
         {roster.map(c => (
           <tr key={c.name} className={c.active ? undefined : 'muted-row'}>
-            <td><b>{c.name}</b>{!c.active && <span className="sub-n"> inactive</span>}</td><td>{c.tier}</td>
+            <td><b>{c.name}</b>{!c.active && <span className="sub-n"> inactive</span>}</td>
+            <td>{starText(starsOf(c))}</td><td>{c.zones.length ? c.zones.join(', ') : 'all'}</td>
+            <td className="n">{c.maxPerDay ?? <span className="note">no limit</span>}</td>
             {BEDROOM_SIZES.map(b => <td key={b} className="n">{cell(c.rates[b])}</td>)}
             {/* A blank deep rate falls back to the ordinary one — shown as such. */}
             {BEDROOM_SIZES.map(b => <td key={`d${b}`} className="n">{c.deepRates[b] != null ? money(c.deepRates[b]!)
@@ -1099,7 +1128,11 @@ function Rates({ data }: { data: OperationsResponse }) {
     <>
       {data.roster.length ? <RateTable roster={data.roster} /> : <p className="note">No roster yet.</p>}
       <div className="group">
-        <h3>How a cleaner is chosen</h3>
+        <h3>How a cleaner is chosen {data.assignRule === 'stars' ? '— by stars' : '— by tier (stars shown beside, not deciding yet)'}</h3>
+        <StarRules rules={st} />
+      </div>
+      <div className="group">
+        <h3>The tier rule {data.assignRule === 'stars' ? '(no longer deciding)' : '(deciding now)'}</h3>
         <ul className="note">
           <li>Outgoing stay of <b>{st.longStayPromoteNights}+ nights</b> → high tier, whatever comes next.</li>
           <li>Next booking within <b>{st.nextResValueHorizonDays} days</b> worth <b>{money(st.cleanerHighThreshold)}+</b> → high tier;
@@ -1109,6 +1142,23 @@ function Rates({ data }: { data: OperationsResponse }) {
         </ul>
       </div>
     </>
+  );
+}
+
+/** The star rule in words, from the saved (or proposed) numbers. */
+function StarRules({ rules: r }: { rules: OpsRules }) {
+  return (
+    <ul className="note">
+      <li>Each clean needs stars from the <b>next guest's price per night</b>: under {money(r.starBand2From)} ★1 ·
+        {' '}{money(r.starBand2From)}+ ★2 · {money(r.starBand3From)}+ ★3 · {money(r.starBand4From)}+ ★4 · {money(r.starBand5From)}+ ★5.
+        Nothing booked within {r.nextResValueHorizonDays} days → the unit's usual price per night; no price at all → ★{r.starDefault}.</li>
+      <li>The stay leaving adds <b>+1</b> from {r.starStayPlus1Nights} nights and <b>+2</b> from {r.starStayPlus2Nights}; a
+        <b> same-day turnover</b> adds +1. Never more than ★5.</li>
+      <li>Picked: active, covers the unit's zone, under their max that day, with enough stars → the <b>cheapest</b> for the
+        unit's size; a tie goes to whoever has fewer cleans that day. Nobody with enough stars → the one with the most,
+        marked ▲ below required stars. A choice made by hand always wins and uses up one of that cleaner's slots.</li>
+      <li>Zones: an apartment's building (CL, P2), or Houses. A cleaner with no zone ticked covers all of them.</li>
+    </ul>
   );
 }
 
@@ -1259,12 +1309,15 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
           </table>
         </div>
         <div className="button-row">
-          <button className="secondary" onClick={() => setRoster(rs => [...rs, { name: '', tier: 'mid', position: rs.length, rates: {}, deepRates: {}, active: true }])}>Add cleaner</button>
+          <button className="secondary" onClick={() => setRoster(rs => [...rs, { name: '', tier: 'mid', position: rs.length, rates: {}, deepRates: {}, active: true,
+                                                                                 stars: 3, zones: [], maxPerDay: null }])}>Add cleaner</button>
           <button onClick={() => void save({ roster }, 'Roster saved.')}>Save roster</button>
         </div>
         <p className="note">Renaming someone is removing them and adding a new person — stays set to the old name by hand
           would read as off the roster. Mark them inactive instead and add the new name.</p>
       </div>
+
+      <StarSetup cfg={cfg} roster={roster} setRoster={setRoster} rules={rules} setRules={setRules} save={save} />
 
       <div className="card">
         <h2>Rules</h2>
@@ -1285,6 +1338,134 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
       <GuestDocUnits initial={cfg.guestDocUnits ?? []} onSave={ids => save({ guestDocUnits: ids }, 'Guest documents saved.')} />
       {cfg.hostawayTasks && <HostawayTasks state={cfg.hostawayTasks} onChanged={() => void fetchCfg()} />}
     </>
+  );
+}
+
+const STAR_RULES: [keyof OpsRules, string][] = [
+  ['starBand2From', '★2 from ($/night)'], ['starBand3From', '★3 from ($/night)'],
+  ['starBand4From', '★4 from ($/night)'], ['starBand5From', '★5 from ($/night)'],
+  ['starStayPlus1Nights', '+1 star from (nights)'], ['starStayPlus2Nights', '+2 stars from (nights)'],
+  ['starDefault', 'No price to go by (★)']
+];
+
+/**
+ * Assignment by stars (§121): each cleaner's stars, zones and daily max,
+ * the price bands, and the switch — all behind a preview. Nothing here
+ * saves until the board under the proposal has been seen against the
+ * board as it is: how many cleans change hands, fall below their stars,
+ * and what it costs.
+ */
+function StarSetup({ cfg, roster, setRoster, rules, setRules, save }: {
+  cfg: OpsSettings; roster: Cleaner[]; setRoster: (f: (rs: Cleaner[]) => Cleaner[]) => void;
+  rules: Record<string, string>; setRules: (f: (r: Record<string, string>) => Record<string, string>) => void;
+  save: (body: Record<string, unknown>, done: string) => Promise<void>;
+}) {
+  const [preview, setPreview] = useState<AssignPreview | null>(null);
+  const [previewed, setPreviewed] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const proposal = JSON.stringify({ roster, rules });
+  const fresh = !!preview && previewed === proposal;
+  const zones = [...new Set([...Object.keys(cfg.zones ?? {}), ...roster.flatMap(c => c.zones)])]
+    .sort((a, b) => Number(a === HOUSES_ZONE) - Number(b === HOUSES_ZONE) || a.localeCompare(b));
+  const set = (i: number, patch: Partial<Cleaner>) => setRoster(rs => rs.map((c, j) => j === i ? { ...c, ...patch } : c));
+  const stars = cfg.assignRule === 'stars';
+
+  const run = async () => {
+    setBusy(true); setErr('');
+    const r = await previewAssign(roster, rules).catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
+    if (!r.ok) { setErr(r.message ?? 'Could not preview.'); return; }
+    setPreview(r.preview); setPreviewed(proposal);
+  };
+  const delta = (now: number, then: number, fmt: (n: number) => string = String) =>
+    now === then ? <>{fmt(now)} <span className="note">(same)</span></> : <>{fmt(now)} → <b>{fmt(then)}</b></>;
+
+  return (
+    <div className="card">
+      <h2>Who cleans: by stars <span className={stars ? 'ok-tag' : 'chan-tag'}>{stars ? 'deciding' : 'shown beside the tiers'}</span></h2>
+      <p className="note">
+        {stars ? 'Stars decide who cleans each turnover.'
+          : 'The tiers still decide. The board shows what the stars would pick beside each clean ("by stars: …"); switch once they have been watched for a week.'}
+        {' '}Host Notes change only where the cleaner changes.
+      </p>
+      <StarRules rules={withDefaults(rules)} />
+
+      <div className="grid-scroll">
+        <table className="units compact roster-edit">
+          <thead><tr><th>Cleaner</th><th>Stars</th><th>Zones covered</th><th>Max cleans a day</th></tr></thead>
+          <tbody>
+            {roster.map((c, i) => (
+              <tr key={i} className={c.active ? undefined : 'muted-row'}>
+                <td><b>{c.name || '—'}</b>{!c.active && <span className="sub-n"> inactive</span>}</td>
+                <td><select value={starsOf(c)} onChange={e => set(i, { stars: Number(e.target.value) })}>
+                  {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{starText(n)}</option>)}</select></td>
+                <td>
+                  {zones.map(z => (
+                    <label key={z} className="check inline" title={(cfg.zones?.[z] ?? []).join(', ')}>
+                      <input type="checkbox" checked={c.zones.includes(z)}
+                             onChange={e => set(i, { zones: e.target.checked ? [...c.zones, z] : c.zones.filter(x => x !== z) })} /> {z}
+                    </label>
+                  ))}
+                  {!c.zones.length && <span className="sub-n"> · all zones</span>}
+                </td>
+                <td><input className="amt" value={c.maxPerDay ?? ''} placeholder="no limit"
+                           onChange={e => set(i, { maxPerDay: e.target.value === '' ? null : Number(e.target.value) })} /></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="row">
+        {STAR_RULES.map(([k, label]) => (
+          <label key={k}>{label}
+            <input value={rules[k] ?? ''} placeholder={String(cfg.defaults[k])}
+                   onChange={e => setRules(r => ({ ...r, [k]: e.target.value }))} /></label>
+        ))}
+      </div>
+
+      {err && <p className="banner error">{err}</p>}
+      <div className="button-row">
+        <button className="secondary" disabled={busy} onClick={() => void run()}>{busy ? 'Building the board…' : 'Preview'}</button>
+        <button disabled={!fresh || busy} onClick={() => void save({ roster, rules }, 'Stars, zones and bands saved.')}>Save</button>
+        {!stars && <button disabled={!fresh || busy} onClick={() => void save({ roster, rules, assignRule: 'stars' }, 'Stars now decide who cleans.')}>Save and switch to stars</button>}
+        {stars && <button className="secondary" disabled={busy} onClick={() => void save({ assignRule: 'tiers' }, 'The tiers decide again.')}>Back to tiers</button>}
+        {!fresh && <span className="note">{preview ? 'Changed since the preview — preview again to save.' : 'Preview first: saving needs the board seen under the change.'}</span>}
+      </div>
+
+      {preview && (
+        <div className={fresh ? undefined : 'is-stale'}>
+          <p className="note">
+            {short(preview.from)} → {short(preview.to)}, {preview.cleans} cleans, stars against what decides now ({preview.rule}):
+          </p>
+          <dl className="strip">
+            <div><dt>Change cleaner</dt><dd>{preview.changed}</dd></div>
+            <div><dt>Below stars</dt><dd>{delta(preview.below.now, preview.below.then)}</dd></div>
+            <div><dt>Unassigned</dt><dd>{delta(preview.unassigned.now, preview.unassigned.then)}</dd></div>
+            <div><dt>Cleaner pay</dt><dd>{delta(preview.cost.now, preview.cost.then, money)}
+              {(preview.unpriced.now || preview.unpriced.then) ? <small>not priced: {preview.unpriced.now} → {preview.unpriced.then}</small> : null}</dd></div>
+          </dl>
+          {preview.changes.length > 0 && (
+            <table className="units compact">
+              <thead><tr><th>Day</th><th>Unit</th><th>Needs</th><th>Now</th><th>By stars</th><th className="n">Pays</th></tr></thead>
+              <tbody>
+                {preview.changes.map(c => (
+                  <tr key={c.resId}>
+                    <td>{short(c.date)}</td><td>{c.unit}</td>
+                    <td>{c.required ? starText(c.required) : '—'}</td>
+                    <td>{c.now ?? '—'}</td>
+                    <td className={c.below ? 'breach' : undefined}>{c.then ?? '—'}{c.below ? ' ▲ below required stars' : ''}</td>
+                    <td className="n">{c.priceNow == null ? '—' : money2(c.priceNow)} → {c.priceThen == null ? '—' : money2(c.priceThen)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <p className="note">Stays set by hand keep their cleaner either way. Only the board's window is compared.</p>
+        </div>
+      )}
+    </div>
   );
 }
 

@@ -65,6 +65,7 @@ input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: 2px solid var(--series-1); outline-offset: 1px; border-color: transparent;
 }
 label.check input { width: auto; margin: 0; }
+label.check.inline { display: inline-flex; margin: 0 12px 0 0; }
 textarea { font-family: ui-monospace, monospace; font-size: 12px; margin-top: 14px; }
 .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: flex-end; margin-top: 14px; }
 .row > label { flex: 1; min-width: 150px; margin-top: 0; }

@@ -90,7 +90,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
     rows: s.rows, summary: s.summary, panel: s.panel,
     inspectionLog: { done: s.inspections.done.slice(0, 200), scheduled: s.inspections.scheduled },
     noteLog, pushes,
-    rules: s.rules, extraInspectors: s.extraInspectors, guestDocUnits: s.guestDocUnits, manualCleans,
+    rules: s.rules, assignRule: s.assignRule, extraInspectors: s.extraInspectors, guestDocUnits: s.guestDocUnits, manualCleans,
     // Pay per size is cost data ops already record; names and tiers are
     // what the edit menus need.
     roster: s.roster,

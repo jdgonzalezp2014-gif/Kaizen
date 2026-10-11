@@ -4,6 +4,10 @@
  *   GET                                        everything below, as it is
  *   POST { roster: [...] }                     replace the roster
  *   POST { rules: {...} }                      thresholds (merged over defaults)
+ *   POST { assignRule: 'tiers' | 'stars' }     which rule decides who cleans (§121)
+ *   POST { action: 'previewAssign', roster, rules }
+ *                                              the board under these, by stars, against
+ *                                              the board as it is — nothing saved
  *   POST { extraInspectors: [...] }
  *   POST { guestDocUnits: [listingId, …] }     units that ask guests for ID + agreement (§73)
  *   POST { action: 'import', commit }          one-time cutover from the daily file
@@ -27,10 +31,99 @@ import { loadOps, opsConfig } from '../_lib/ops.ts';
 import {
   fetchPublishedCsv, isoDay, parseDailySettings, parseInspectionLog, parseNotesLog
 } from '../_lib/daily.ts';
-import { BEDROOM_SIZES, DEFAULT_RULES } from '../../src/lib/operations.ts';
+import {
+  BEDROOM_SIZES, DEFAULT_RULES, buildBoard, summarize, withDefaults, zoneOf,
+  type Cleaner, type OpsRules
+} from '../../src/lib/operations.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 
 const TIERS = new Set(['high', 'mid', 'low']);
+/** A tier's stars, for a cleaner who arrives with only a tier (§121). */
+const TIER_STARS: Record<string, number> = { high: 5, mid: 3, low: 2 };
+
+/** The roster as sent from Setup, checked. Throws a message a person can act on. */
+function parseRoster(raw: Record<string, any>[]): Cleaner[] {
+  const seen = new Set<string>();
+  const rows: Cleaner[] = [];
+  for (const [i, c] of raw.entries()) {
+    const name = String(c.name ?? '').trim();
+    if (!name) continue;
+    if (seen.has(name.toLowerCase())) throw new Error(`"${name}" is on the roster twice.`);
+    seen.add(name.toLowerCase());
+    if (!TIERS.has(c.tier)) throw new Error(`${name}: tier is high, mid or low.`);
+    const card = (raw: unknown) => {
+      const out: Record<string, number> = {};
+      for (const b of BEDROOM_SIZES) {
+        const v = (raw as Record<string, unknown> | null)?.[b];
+        if (v === '' || v === null || v === undefined) continue;   // blank is "no rate"
+        const n = Number(v);
+        if (!Number.isFinite(n) || n < 0) throw new Error(`${name}: the ${b}-bedroom rate is not a number.`);
+        out[b] = n;
+      }
+      return out;
+    };
+    const stars = c.stars == null || c.stars === '' ? TIER_STARS[c.tier]! : Number(c.stars);
+    if (!Number.isInteger(stars) || stars < 1 || stars > 5) throw new Error(`${name}: stars are 1 to 5.`);
+    const max = c.maxPerDay == null || c.maxPerDay === '' ? null : Number(c.maxPerDay);
+    if (max !== null && (!Number.isInteger(max) || max < 1)) throw new Error(`${name}: max cleans a day is a whole number, or blank for no limit.`);
+    const zones = Array.isArray(c.zones) ? [...new Set((c.zones as unknown[]).map(z => String(z).trim()).filter(Boolean))] : [];
+    rows.push({ name, tier: c.tier, position: Number(c.position ?? i) || 0, rates: card(c.rates),
+                deepRates: card(c.deepRates), active: c.active !== false, stars, zones, maxPerDay: max });
+  }
+  return rows;
+}
+
+/** Rules as sent from Setup: numbers only, blanks dropped (the default applies), checked for order. */
+function parseRules(raw: Record<string, unknown>): Record<string, number> {
+  const clean: Record<string, number> = {};
+  for (const k of Object.keys(DEFAULT_RULES)) {
+    const n = Number(raw[k]);
+    if (raw[k] !== '' && raw[k] != null && Number.isFinite(n) && n >= 0) clean[k] = n;
+  }
+  if ((clean.inspectionSoonDays ?? 0) >= (clean.inspectionIntervalDays ?? Infinity)) {
+    throw new Error('"Due soon" has to come before the inspection interval, or nothing is ever amber.');
+  }
+  const r = withDefaults(clean);
+  if (!(r.starBand2From < r.starBand3From && r.starBand3From < r.starBand4From && r.starBand4From < r.starBand5From)) {
+    throw new Error('The star price bands have to go up: ★2 < ★3 < ★4 < ★5.');
+  }
+  if (r.starStayPlus1Nights >= r.starStayPlus2Nights) throw new Error('The +1 stay length has to be shorter than the +2 one.');
+  if (!Number.isInteger(r.starDefault) || r.starDefault < 1 || r.starDefault > 5) throw new Error('Stars with no price to go by are 1 to 5.');
+  return clean;
+}
+
+/**
+ * The board under a proposed roster and rules, decided by stars, against
+ * the board as it is now — how many cleans change cleaner, how many fall
+ * below their stars, and what it costs (§121). Built from the same load,
+ * so the only difference is the proposal. Nothing is saved.
+ */
+async function previewAssign(sql: SqlFn, env: Env, body: Record<string, any>): Promise<Response> {
+  const roster = Array.isArray(body.roster) ? parseRoster(body.roster) : null;
+  const rules: OpsRules | null = body.rules && typeof body.rules === 'object' ? withDefaults(parseRules(body.rules)) : null;
+  const account = await getAccount(sql);
+  const s = await loadOps(sql, await getCredentials(sql, env.ENCRYPTION_KEY), { cleaningsCsvUrl: account?.cleaningsCsvUrl });
+  const proposed = { roster: roster ?? s.roster, rules: rules ?? s.rules };
+  const after = buildBoard({ ...s.boardInput, ...proposed, assignRule: 'stars' });
+  const before = new Map(s.rows.filter(r => r.kind === 'out').map(r => [r.resId, r]));
+  const label = (r: { assignment: string; cleaner: string | null }) =>
+    r.assignment === 'assigned' ? r.cleaner : r.assignment === 'not_needed' ? 'no clean needed' : 'unassigned';
+  const changes = after.filter(r => r.kind === 'out').flatMap(r => {
+    const b = before.get(r.resId);
+    if (!b || (b.assignment === r.assignment && b.cleaner === r.cleaner)) return [];
+    return [{ date: r.date, unit: r.unit, resId: r.resId, required: r.stars?.required ?? null,
+              now: label(b), then: label(r), priceNow: b.price, priceThen: r.price,
+              below: !!r.stars?.below, manual: r.manual.cleaner }];
+  });
+  const a = summarize(after, proposed.roster), b = summarize(s.rows, s.roster);
+  return Response.json({ ok: true, preview: {
+    from: s.today, to: s.end, rule: s.assignRule, cleans: a.cleanings, changed: changes.length, changes,
+    below: { now: b.belowStars, then: a.belowStars },
+    unassigned: { now: b.unassigned, then: a.unassigned },
+    cost: { now: b.cleaningCost, then: a.cleaningCost },
+    unpriced: { now: b.unpriced, then: a.unpriced }
+  } });
+}
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -42,7 +135,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
            (SELECT COUNT(*)::int FROM stay_notes WHERE account_id = 1) AS notes,
            (SELECT COUNT(*)::int FROM turnover_overrides WHERE account_id = 1) AS overrides` as
     { inspections: number; notes: number; overrides: number }[];
-  return Response.json({ ok: true, ...cfg, defaults: DEFAULT_RULES, counts, hostawayTasks: await hostawayTasksState(sql) });
+  // The zones a cleaner can cover, from the units Kaizen knows (§121).
+  const units = await sql`SELECT name FROM units WHERE account_id = 1 AND active ORDER BY name` as { name: string }[];
+  const zones: Record<string, string[]> = {};
+  for (const u of units) (zones[zoneOf(u.name)] ??= []).push(u.name);
+  return Response.json({ ok: true, ...cfg, defaults: DEFAULT_RULES, counts, zones, hostawayTasks: await hostawayTasksState(sql) });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -52,47 +149,28 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const body = await request.json().catch(() => ({})) as Record<string, any>;
 
   try {
+    if (body.action === 'previewAssign') return await previewAssign(sql, env, body);
+
     if (Array.isArray(body.roster)) {
-      const seen = new Set<string>();
-      const rows = [];
-      for (const [i, c] of (body.roster as Record<string, any>[]).entries()) {
-        const name = String(c.name ?? '').trim();
-        if (!name) continue;
-        if (seen.has(name.toLowerCase())) return bad(`"${name}" is on the roster twice.`);
-        seen.add(name.toLowerCase());
-        if (!TIERS.has(c.tier)) return bad(`${name}: tier is high, mid or low.`);
-        const card = (raw: unknown) => {
-          const out: Record<string, number> = {};
-          for (const b of BEDROOM_SIZES) {
-            const v = (raw as Record<string, unknown> | null)?.[b];
-            if (v === '' || v === null || v === undefined) continue;   // blank is "no rate"
-            const n = Number(v);
-            if (!Number.isFinite(n) || n < 0) throw new Error(`${name}: the ${b}-bedroom rate is not a number.`);
-            out[b] = n;
-          }
-          return out;
-        };
-        rows.push({ name, tier: c.tier, position: Number(c.position ?? i) || 0,
-                    rates: card(c.rates), deep: card(c.deepRates), active: c.active !== false });
-      }
+      const rows = parseRoster(body.roster);
       await sql`DELETE FROM cleaners WHERE account_id = 1`;
       for (const r of rows) {
-        await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates, active)
+        await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates, active, stars, zones, max_per_day)
                   VALUES (1, ${r.name}, ${r.tier}, ${r.position}, ${JSON.stringify(r.rates)}::jsonb,
-                          ${JSON.stringify(r.deep)}::jsonb, ${r.active})`;
+                          ${JSON.stringify(r.deepRates)}::jsonb, ${r.active}, ${r.stars}, ${r.zones}, ${r.maxPerDay})`;
       }
     }
 
     if (body.rules && typeof body.rules === 'object') {
-      const clean: Record<string, number> = {};
-      for (const k of Object.keys(DEFAULT_RULES)) {
-        const n = Number(body.rules[k]);
-        if (body.rules[k] !== '' && body.rules[k] != null && Number.isFinite(n) && n >= 0) clean[k] = n;
-      }
-      if ((clean.inspectionSoonDays ?? 0) >= (clean.inspectionIntervalDays ?? Infinity)) {
-        return bad('"Due soon" has to come before the inspection interval, or nothing is ever amber.');
-      }
+      const clean = parseRules(body.rules);
       await sql`UPDATE accounts SET ops_rules = ${JSON.stringify(clean)}::jsonb WHERE id = 1`;
+    }
+
+    if (body.assignRule === 'tiers' || body.assignRule === 'stars') {
+      if (body.assignRule === 'stars' && !(await opsConfig(sql)).roster.some(c => c.active)) {
+        return bad('The roster is empty — nobody could be assigned.');
+      }
+      await sql`UPDATE accounts SET assign_rule = ${body.assignRule} WHERE id = 1`;
     }
 
     // Which units ask for guest documents (§73) — only units Kaizen knows.
@@ -188,9 +266,9 @@ async function cutoverImport(sql: SqlFn, commit: boolean): Promise<Response> {
       const tier = TIERS.has(c.tier) ? c.tier : 'mid';
       const strip = (card: Record<string, number | null>) =>
         Object.fromEntries(Object.entries(card).filter(([, v]) => v !== null));
-      await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates)
+      await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates, stars)
                 VALUES (1, ${c.name}, ${tier}, ${i}, ${JSON.stringify(strip(c.rates))}::jsonb,
-                        ${JSON.stringify(strip(c.deepRates))}::jsonb)`;
+                        ${JSON.stringify(strip(c.deepRates))}::jsonb, ${TIER_STARS[tier] ?? 3})`;
     }
     await sql`UPDATE accounts SET ops_rules = ${JSON.stringify(preview.rules)}::jsonb,
                      extra_inspectors = ${settings.inspectors} WHERE id = 1`;

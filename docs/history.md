@@ -3374,7 +3374,7 @@ skips the "To-do created" notice (the Hostaway mirror and an owner's DM still ha
 keeps its "Tracked in Kaizen" reply in the asker's thread. Closing, starting or reopening keeps
 the §115-era rule (in place when done from the channel's own message).
 
-## §121 — Cleaning assignment by stars (design, 2026-10-11, not built)
+## §121 — Cleaning assignment by stars (designed and built 2026-10-11; tiers still deciding)
 
 The owner: the cleaning rule must be easier to adjust — reservations rated by nightly price and
 the previous stay; cleaners with a price and a rating; the stars must be met for each stay.
@@ -3384,3 +3384,15 @@ Decisions: the previous stay counts by its **nights**; when several cleaners qua
 items). Why it replaces the tier rule: it judged by the next booking's TOTAL (ten cheap nights
 outranked two expensive ones), had three fixed tiers with one primary each, hid its thresholds,
 and the team was overriding it by building (P2 → Veronica, CL → Michelle) — zones now carry that.
+
+Built the same day (migration 047). Choices made while building: **zones** are derived from the
+unit name (building prefix "CL"/"P2", everything else "Houses"; a cleaner with none ticked covers
+all, which is what every cleaner did before). The **next guest's nightly price** counts only
+inside the next-booking horizon and never for an iCal block; otherwise the unit's median nightly
+over the loaded stays. A day is decided **most demanding clean first**, so the ★5 turnover gets
+the scarce ★5 cleaner before a ★2 clean fills her max; overrides take their slot before the
+rule. Equal cost → fewer cleans that day → more stars. The star answer is computed on every
+board even under the tiers (`row.stars`), which is the side-by-side week; `accounts.assign_rule`
+flips it. Setup refuses to save until the exact proposal has been previewed. First preview on real
+data (Oct 11–21, 27 cleans, default bands, stars seeded from tiers): 11 change cleaner, below-stars
+12 → 6 (the 6 are hand-set), pay $3,270 → $3,195.

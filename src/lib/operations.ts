@@ -10,8 +10,10 @@
  * Three layers, applied in order, and a row always says which one
  * decided it:
  *
- *   1. the RULE      — tier by the value of the next booking, promoted
- *                      for long stays; deep by stay length
+ *   1. the RULE      — by stars (§121): the stars each clean requires
+ *                      against the stars each cleaner has; or, until the
+ *                      switch, the old tier by the value of the next
+ *                      booking. Deep by stay length either way
  *   2. an OVERRIDE   — what a person chose for this stay
  *   3. the SHEET     — shadow mode only: what the daily file decided,
  *                      shown beside ours so the two can be compared
@@ -61,12 +63,22 @@ export interface Override {
 
 export interface Cleaner {
   name: string;
+  /** The old rule's tier; read only while `assignRule` is 'tiers'. */
   tier: 'high' | 'mid' | 'low';
   position: number;
   rates: Record<string, number | null>;
   deepRates: Record<string, number | null>;
   active: boolean;
+  /** ★1–★5, set by hand (§121). */
+  stars: number;
+  /** Zones covered (see zoneOf). Empty is every zone. */
+  zones: string[];
+  /** Cleans a day at most; null is no limit. */
+  maxPerDay: number | null;
 }
+
+/** Which rule decides who cleans (§121). Tiers until the owner switches. */
+export type AssignRule = 'tiers' | 'stars';
 
 export interface OpsInspection { date: DateStr; unit: string; by: string; result: string; notes: string }
 
@@ -80,6 +92,16 @@ export interface OpsRules {
   inspectionIntervalDays: number;
   inspectionSoonDays: number;
   inspectionValueTrigger: number;
+  /** Stars (§121): the next guest's nightly price from which a clean needs ★2…★5. */
+  starBand2From: number;
+  starBand3From: number;
+  starBand4From: number;
+  starBand5From: number;
+  /** The outgoing stay's nights from which it adds +1 / +2 stars. */
+  starStayPlus1Nights: number;
+  starStayPlus2Nights: number;
+  /** Required when there is no price to go by at all. */
+  starDefault: number;
 }
 
 /** The sheet's compiled-in defaults (`00 Config`), for a key nobody has set. */
@@ -92,7 +114,14 @@ export const DEFAULT_RULES: OpsRules = {
   nextResValueHorizonDays: 30,
   inspectionIntervalDays: 30,
   inspectionSoonDays: 24,
-  inspectionValueTrigger: 2000
+  inspectionValueTrigger: 2000,
+  starBand2From: 100,
+  starBand3From: 150,
+  starBand4From: 200,
+  starBand5From: 300,
+  starStayPlus1Nights: 7,
+  starStayPlus2Nights: 20,
+  starDefault: 2
 };
 
 /** Stored rules over the defaults. A missing or non-numeric key never reads as zero. */
@@ -128,7 +157,20 @@ export interface NextStay {
   gapDays: number;
   /** Null past the value horizon: a booking a month out is not today's business. */
   total: number | null;
+  /** The next guest's price per night — null past the horizon, or for an iCal block. */
+  nightly: number | null;
   longVacancy: boolean;
+}
+
+/** What the star rule says about one clean — shown even while tiers decide, to compare. */
+export interface StarDecision {
+  required: number;
+  /** How the required stars were reached, e.g. "next guest $180/night ★3 · 8-night stay +1". */
+  why: string;
+  cleaner: string | null;
+  /** The picked cleaner's stars fall short — nobody available had enough. */
+  below: boolean;
+  reason: string;
 }
 
 export interface BoardRow {
@@ -153,8 +195,10 @@ export interface BoardRow {
   note: string;
   /* departures */
   next: NextStay | null;
-  /** What the rule says, before any person. */
+  /** What the rule in charge says, before any person. */
   auto: { cleaner: string | null; tier: Tier; reason: string };
+  /** The star rule's answer (§121), whichever rule is in charge; null when no clean is needed. */
+  stars: StarDecision | null;
   cleaner: string | null;
   assignment: Assignment | 'unknown';
   price: number | null;
@@ -269,6 +313,110 @@ export function assign(
   return pick('mid', reason);
 }
 
+/* ── the star rule (§121) ─────────────────────────────────────────── */
+
+/**
+ * A unit's zone: the building for an apartment named "<building><number>"
+ * ("CL1250", "CL 1125", "P2-1406" → CL, P2), "Houses" for everything
+ * else. A cleaner covers zones, which is how "P2 goes to Veronica" stops
+ * being an override typed every day.
+ */
+export const HOUSES_ZONE = 'Houses';
+export function zoneOf(unitName: string): string {
+  // The digits glued to the letters belong to the building only when a
+  // separator follows them: "P2-1406" is P2, but "CL1250" is CL.
+  const m = /^([a-z]+(?:\d+(?=[\s-]))?)[\s-]*\d{3,}$/i.exec(String(unitName ?? '').trim());
+  return m ? m[1]!.toUpperCase() : HOUSES_ZONE;
+}
+
+export const covers = (c: Cleaner, zone: string) => !c.zones?.length || c.zones.includes(zone);
+
+/** Stars a cleaner has, kept in 1–5 whatever was stored. */
+export const starsOf = (c: Cleaner | undefined) => Math.min(5, Math.max(1, Math.round(Number(c?.stars) || 1)));
+
+const isBlockStay = (x: OpsReservation) => /ical|block/i.test(x.channel) || x.totalPaid <= 0;
+
+/**
+ * Each unit's usual price per night: the median over its guest stays in
+ * what was loaded (today through the look-ahead). Used when nothing is
+ * booked next — the unit, not an empty calendar, sets the standard.
+ */
+export function typicalNightly(reservations: OpsReservation[]): Map<string, number> {
+  const by = new Map<string, number[]>();
+  for (const x of reservations) {
+    if (isBlockStay(x) || !(x.nights > 0)) continue;
+    by.set(x.listingId, [...(by.get(x.listingId) ?? []), x.totalPaid / x.nights]);
+  }
+  const out = new Map<string, number>();
+  for (const [id, v] of by) {
+    const s = [...v].sort((a, b) => a - b);
+    const m = s.length >> 1;
+    out.set(id, s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2);
+  }
+  return out;
+}
+
+/**
+ * The stars one clean requires: a base from the next guest's nightly
+ * price (the unit's usual price when nothing is booked inside the
+ * horizon, ★default when no price is known at all), plus the outgoing
+ * stay's length (a long stay leaves more behind), plus one for a
+ * same-day turnover (no slack to fix a miss). Capped at ★5.
+ */
+export function requiredStars(
+  nightly: number | null, typical: number | null, stayNights: number, sameDay: boolean, r: OpsRules
+): { stars: number; why: string } {
+  const bands = [r.starBand5From, r.starBand4From, r.starBand3From, r.starBand2From];
+  const band = (p: number) => { const i = bands.findIndex(b => p >= b); return i < 0 ? 1 : 5 - i; };
+  const parts: string[] = [];
+  let base: number;
+  if (nightly != null) { base = band(nightly); parts.push(`next guest $${Math.round(nightly)}/night ★${base}`); }
+  else if (typical != null) { base = band(typical); parts.push(`nothing booked next — the unit's usual $${Math.round(typical)}/night ★${base}`); }
+  else { base = Math.min(5, Math.max(1, Math.round(r.starDefault))); parts.push(`no price to go by ★${base}`); }
+  const stay = stayNights >= r.starStayPlus2Nights ? 2 : stayNights >= r.starStayPlus1Nights ? 1 : 0;
+  if (stay) parts.push(`${stayNights}-night stay +${stay}`);
+  if (sameDay) parts.push('same-day turnover +1');
+  const raw = base + stay + (sameDay ? 1 : 0);
+  if (raw > 5) parts.push('capped at ★5');
+  return { stars: Math.min(5, raw), why: parts.join(' · ') };
+}
+
+/**
+ * Who cleans, by stars. Among cleaners who are active, cover the unit's
+ * zone and are under their max that day: those with enough stars, the
+ * cheapest for this clean (an unpriced one last), a tie going to whoever
+ * has fewer cleans that day. When nobody available has enough stars, the
+ * one with the most — flagged, never silently.
+ */
+export function pickByStars(
+  required: number, zone: string, beds: number | null, deep: boolean,
+  roster: Cleaner[], load: Map<string, number>
+): { cleaner: string | null; below: boolean; reason: string } {
+  const cost = (c: Cleaner) => rateFor(roster, c.name, beds, deep) ?? Infinity;
+  const count = (c: Cleaner) => load.get(c.name) ?? 0;
+  const active = roster.filter(c => c.active);
+  const inZone = active.filter(c => covers(c, zone));
+  const free = inZone.filter(c => c.maxPerDay == null || count(c) < c.maxPerDay);
+  const byCost = (a: Cleaner, b: Cleaner) => cost(a) - cost(b) || count(a) - count(b) ||
+    starsOf(b) - starsOf(a) || a.position - b.position || a.name.localeCompare(b.name);
+  const price = (c: Cleaner) => Number.isFinite(cost(c)) ? `$${cost(c)}` : 'not priced';
+
+  const ok = free.filter(c => starsOf(c) >= required).sort(byCost);
+  if (ok.length) {
+    const c = ok[0]!;
+    return { cleaner: c.name, below: false, reason: ok.length === 1
+      ? `${c.name} ★${starsOf(c)} is the only one with ★${required}+ free in ${zone} (${price(c)})`
+      : `${c.name} ★${starsOf(c)} is the cheapest of ${ok.length} with ★${required}+ free in ${zone} (${price(c)})` };
+  }
+  const best = [...free].sort((a, b) => starsOf(b) - starsOf(a) || byCost(a, b))[0];
+  if (best) {
+    return { cleaner: best.name, below: true,
+      reason: `nobody free in ${zone} has ★${required} — ${best.name} ★${starsOf(best)} has the most (${price(best)})` };
+  }
+  return { cleaner: null, below: false, reason: !active.length ? 'nobody is on the roster'
+    : !inZone.length ? `nobody covers ${zone}` : `everyone who covers ${zone} is at their max that day` };
+}
+
 /* ── inspections ──────────────────────────────────────────────────── */
 
 export function inspectionPanel(
@@ -359,12 +507,16 @@ export function buildBoard(input: {
   sheet?: Map<string, OpsCleaning> | null;
   /** False when no inspection history is known — see below. */
   inspectionLogRead?: boolean;
+  /** Which rule decides (§121). The star rule's answer rides along either way. */
+  assignRule?: AssignRule;
 }): BoardRow[] {
   const { today, windowDays, listings, reservations, roster, rules, overrides, notes, inspections } = input;
   const end = addDays(today, windowDays);
   const listing = new Map(listings.map(l => [l.id, l]));
   const insp = new Map(inspections.map(i => [i.unitId, i]));
   const logRead = input.inspectionLogRead ?? true;
+  const byStars = input.assignRule === 'stars';
+  const typical = typicalNightly(reservations);
 
   const byUnit = new Map<string, OpsReservation[]>();
   for (const x of [...reservations].sort((a, b) => a.arrival.localeCompare(b.arrival) ||
@@ -383,7 +535,7 @@ export function buildBoard(input: {
       date: x.arrival, kind: 'in', resId: x.reservationId, unitId: l.id, unit: l.name,
       beds: l.bedrooms, guest: x.guestName ?? '', docName: x.docName || x.guestName || 'Guest', agreement: x.agreement ?? null, idVerified: !!x.idVerified, guests: x.guests ?? null, nights: x.nights,
       channel: x.channel, total: x.totalPaid, time: '', note: '',
-      next: null, auto: { cleaner: null, tier: 'none', reason: '' },
+      next: null, auto: { cleaner: null, tier: 'none', reason: '' }, stars: null,
       cleaner: null, assignment: 'unknown', price: null, deep: false, urgency: null,
       manual: { cleaner: false, deep: false, time: false },
       inspection: { key: 'none', reason: '' }, sheet: null, inDailyFile: false, differs: [],
@@ -399,9 +551,11 @@ export function buildBoard(input: {
 
     const nx = nextOf(x);
     const gapDays = nx ? daysBetween(x.departure, nx.arrival) : 0;
+    const inHorizon = !!nx && gapDays <= rules.nextResValueHorizonDays;
     const next: NextStay | null = nx ? {
       arrival: nx.arrival, gapDays,
-      total: gapDays <= rules.nextResValueHorizonDays ? nx.totalPaid : null,
+      total: inHorizon ? nx.totalPaid : null,
+      nightly: inHorizon && !isBlockStay(nx) && nx.nights > 0 ? nx.totalPaid / nx.nights : null,
       longVacancy: gapDays >= rules.longVacancyDays
     } : null;
 
@@ -418,12 +572,6 @@ export function buildBoard(input: {
       : sameDayIn ? 'turnover' : !nx ? 'no_next' : null;
 
     const sheet = input.sheet?.get(x.reservationId) ?? null;
-    const differs: BoardRow['differs'] = [];
-    if (sheet) {
-      if ((sheet.assignment !== assignment) || (assignment === 'assigned' && sheet.cleaner !== cleaner)) differs.push('cleaner');
-      if (assignment === 'assigned' && sheet.assignment === 'assigned' && (sheet.price ?? null) !== price) differs.push('price');
-      if (sheet.deep !== deep) differs.push('deep');
-    }
 
     rows.push({
       ...base, date: x.departure, kind: 'out',
@@ -431,7 +579,7 @@ export function buildBoard(input: {
       note: notes.get(`${x.reservationId}|checkout`) ?? '',
       next, auto, cleaner, assignment, deep, price, urgency,
       manual: { cleaner: manualCleaner, deep: ov?.deep != null, time: !!ov?.checkoutTime },
-      sheet, inDailyFile: !!sheet, differs
+      sheet, inDailyFile: !!sheet, differs: []
     });
   }
 
@@ -440,6 +588,8 @@ export function buildBoard(input: {
   rows.sort((a, b) => a.date.localeCompare(b.date) ||
     (a.kind === b.kind ? 0 : a.kind === 'out' ? -1 : 1) || a.unit.localeCompare(b.unit));
   oneCleanPerUnitDay(rows, overrides);
+  assignByStars(rows, roster, rules, typical, byStars);
+  for (const r of rows) if (r.sheet) r.differs = sheetDiffers(r);
 
   // Inspections, the sheet's way: in date order, so the monthly flag
   // lands on a unit's FIRST turnover in the window and not every one.
@@ -473,6 +623,58 @@ export function buildBoard(input: {
     row.preppedBy = prep?.cleaner ?? null;
   }
   return rows;
+}
+
+/** Shadow mode: the fields where the daily file decided differently. */
+export function sheetDiffers(r: BoardRow): BoardRow['differs'] {
+  const s = r.sheet, out: BoardRow['differs'] = [];
+  if (!s || r.kind !== 'out') return out;
+  if (s.assignment !== r.assignment || (r.assignment === 'assigned' && s.cleaner !== r.cleaner)) out.push('cleaner');
+  if (r.assignment === 'assigned' && s.assignment === 'assigned' && (s.price ?? null) !== r.price) out.push('price');
+  if (s.deep !== r.deep) out.push('deep');
+  return out;
+}
+
+/**
+ * The star rule over the board's departures, one day at a time (§121).
+ *
+ * A day's cleans are decided together because of the daily max: a
+ * person's choice takes its slot first, then the rule fills the rest,
+ * most demanding clean first — the ★5 turnover gets the scarce ★5
+ * cleaner before a ★2 clean uses up her day.
+ *
+ * Every clean gets the star answer, so the board can show it beside the
+ * tiers until the switch. Only with `apply` does it decide. A second
+ * departure the same day carries no clean and gets none.
+ */
+export function assignByStars(rows: BoardRow[], roster: Cleaner[], rules: OpsRules,
+                              typical: Map<string, number>, apply: boolean): void {
+  const days = new Map<string, BoardRow[]>();
+  for (const r of rows) {
+    if (r.kind !== 'out' || (r.sameDayOf && !r.manual.cleaner)) continue;
+    days.set(r.date, [...(days.get(r.date) ?? []), r]);
+  }
+  for (const day of days.values()) {
+    const load = new Map<string, number>();
+    for (const r of day) {
+      if (r.manual.cleaner && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
+    }
+    const need = day.map(r => ({ r, req: requiredStars(r.next?.nightly ?? null, typical.get(r.unitId) ?? null,
+                                                       r.nights, r.urgency === 'turnover', rules) }));
+    need.sort((a, b) => b.req.stars - a.req.stars);
+    for (const { r, req } of need) {
+      const pick = pickByStars(req.stars, zoneOf(r.unit), r.beds, r.deep, roster, load);
+      r.stars = { required: req.stars, why: req.why, ...pick };
+      if (apply) r.auto = { cleaner: pick.cleaner, tier: 'none', reason: `★${req.stars} needed (${req.why}) — ${pick.reason}` };
+      // A row a person decided is shown what the rule would say, and takes no slot for it.
+      if (r.manual.cleaner) continue;
+      if (pick.cleaner) load.set(pick.cleaner, (load.get(pick.cleaner) ?? 0) + 1);
+      if (!apply) continue;
+      r.assignment = pick.cleaner ? 'assigned' : 'tbd';
+      r.cleaner = pick.cleaner;
+      r.price = pick.cleaner ? rateFor(roster, pick.cleaner, r.beds, r.deep) : null;
+    }
+  }
 }
 
 /** An iCal import: a block mirrored from elsewhere, not a guest stay of its own. */
@@ -519,6 +721,8 @@ export interface BoardSummary {
   inspections: number;
   unassigned: number;
   unpriced: number;
+  /** Cleans whose cleaner has fewer stars than the clean requires (§121), by hand or not. */
+  belowStars: number;
   /** Shadow mode: checkouts the daily file has not seen, and ones it decided differently. */
   notInDailyFile: number;
   differing: number;
@@ -527,7 +731,9 @@ export interface BoardSummary {
   pipeline: number;
 }
 
-export function summarize(rows: BoardRow[]): BoardSummary {
+/** The roster is what tells a cleaner's stars; without it nothing is counted below. */
+export function summarize(rows: BoardRow[], roster: Cleaner[] = []): BoardSummary {
+  const stars = new Map(roster.map(c => [c.name, starsOf(c)]));
   const outs = rows.filter(r => r.kind === 'out');
   const cleans = outs.filter(r => r.assignment !== 'not_needed');
   return {
@@ -538,12 +744,20 @@ export function summarize(rows: BoardRow[]): BoardSummary {
     inspections: outs.filter(r => r.inspection.key === 'req' || r.inspection.key === 'due').length,
     unassigned: cleans.filter(r => r.assignment === 'tbd').length,
     unpriced: cleans.filter(r => r.assignment === 'assigned' && r.price == null).length,
+    belowStars: cleans.filter(r => belowStars(r, stars)).length,
     notInDailyFile: outs.filter(r => !r.inDailyFile).length,
     differing: outs.filter(r => r.differs.length > 0).length,
     cleaningCost: cleans.reduce((a, r) => a + (r.price ?? 0), 0),
     arriving: rows.filter(r => r.kind === 'in').reduce((a, r) => a + r.total, 0),
     pipeline: outs.reduce((a, r) => a + (r.next?.total ?? 0), 0)
   };
+}
+
+/** The assigned cleaner has fewer stars than this clean requires. */
+export function belowStars(r: BoardRow, stars: Map<string, number>): boolean {
+  if (r.kind !== 'out' || r.assignment !== 'assigned' || !r.cleaner || !r.stars) return false;
+  const has = stars.get(r.cleaner);
+  return has !== undefined && has < r.stars.required;
 }
 
 /* ── the Host Note in Hostaway ────────────────────────────────────── */
