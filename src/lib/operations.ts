@@ -75,6 +75,10 @@ export interface Cleaner {
   zones: string[];
   /** Cleans a day at most; null is no limit. */
   maxPerDay: number | null;
+  /** The crew page (§122): the address they sign in with, how their invoice runs, whether a secret link exists. */
+  email?: string | null;
+  invoicePeriod?: 'weekly' | 'monthly';
+  hasLink?: boolean;
 }
 
 /** Which rule decides who cleans (§121). Tiers until the owner switches. */
@@ -199,6 +203,8 @@ export interface BoardRow {
   auto: { cleaner: string | null; tier: Tier; reason: string };
   /** The star rule's answer (§121), whichever rule is in charge; null when no clean is needed. */
   stars: StarDecision | null;
+  /** Cleaners who turned this clean down on their page (§122), latest last. */
+  declined: { cleaner: string; reason: string | null }[];
   cleaner: string | null;
   assignment: Assignment | 'unknown';
   price: number | null;
@@ -390,11 +396,13 @@ export function requiredStars(
  */
 export function pickByStars(
   required: number, zone: string, beds: number | null, deep: boolean,
-  roster: Cleaner[], load: Map<string, number>
+  roster: Cleaner[], load: Map<string, number>,
+  /** Cleaners who turned this clean down (§122) — never handed it back. */
+  declined: Set<string> = new Set()
 ): { cleaner: string | null; below: boolean; reason: string } {
   const cost = (c: Cleaner) => rateFor(roster, c.name, beds, deep) ?? Infinity;
   const count = (c: Cleaner) => load.get(c.name) ?? 0;
-  const active = roster.filter(c => c.active);
+  const active = roster.filter(c => c.active && !declined.has(c.name));
   const inZone = active.filter(c => covers(c, zone));
   const free = inZone.filter(c => c.maxPerDay == null || count(c) < c.maxPerDay);
   const byCost = (a: Cleaner, b: Cleaner) => cost(a) - cost(b) || count(a) - count(b) ||
@@ -509,6 +517,8 @@ export function buildBoard(input: {
   inspectionLogRead?: boolean;
   /** Which rule decides (§121). The star rule's answer rides along either way. */
   assignRule?: AssignRule;
+  /** Cleans turned down by a cleaner (§122), by reservation. */
+  declines?: Map<string, { cleaner: string; reason: string | null }[]>;
 }): BoardRow[] {
   const { today, windowDays, listings, reservations, roster, rules, overrides, notes, inspections } = input;
   const end = addDays(today, windowDays);
@@ -536,6 +546,7 @@ export function buildBoard(input: {
       beds: l.bedrooms, guest: x.guestName ?? '', docName: x.docName || x.guestName || 'Guest', agreement: x.agreement ?? null, idVerified: !!x.idVerified, guests: x.guests ?? null, nights: x.nights,
       channel: x.channel, total: x.totalPaid, time: '', note: '',
       next: null, auto: { cleaner: null, tier: 'none', reason: '' }, stars: null,
+      declined: input.declines?.get(x.reservationId) ?? [],
       cleaner: null, assignment: 'unknown', price: null, deep: false, urgency: null,
       manual: { cleaner: false, deep: false, time: false },
       inspection: { key: 'none', reason: '' }, sheet: null, inDailyFile: false, differs: [],
@@ -663,7 +674,8 @@ export function assignByStars(rows: BoardRow[], roster: Cleaner[], rules: OpsRul
                                                        r.nights, r.urgency === 'turnover', rules) }));
     need.sort((a, b) => b.req.stars - a.req.stars);
     for (const { r, req } of need) {
-      const pick = pickByStars(req.stars, zoneOf(r.unit), r.beds, r.deep, roster, load);
+      const pick = pickByStars(req.stars, zoneOf(r.unit), r.beds, r.deep, roster, load,
+                               new Set(r.declined.map(d => d.cleaner)));
       r.stars = { required: req.stars, why: req.why, ...pick };
       if (apply) r.auto = { cleaner: pick.cleaner, tier: 'none', reason: `★${req.stars} needed (${req.why}) — ${pick.reason}` };
       // A row a person decided is shown what the rule would say, and takes no slot for it.

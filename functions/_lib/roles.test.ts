@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ALL, PERMISSIONS, SEED_ROLES, can, mayAccess, tabsFor } from './roles.ts';
+import { ALL, CREW, PERMISSIONS, PERMISSION_KEYS, SEED_ROLES, can, mayAccess, tabsFor } from './roles.ts';
 
 const perms = (key: string) => SEED_ROLES.find(r => r.key === key)!.permissions;
 const OPS = perms('ops');
@@ -74,4 +74,21 @@ test('the tabs come from the same permissions as the routes', () => {
   for (const p of PERMISSIONS.filter(p => p.tab)) {
     assert.ok(p.routes.length > 0, `${p.key} draws a tab but opens no route`);
   }
+});
+
+test('a cleaner reaches their own page and nothing else, not even what every member reaches', () => {
+  assert.equal(mayAccess([CREW], '/api/crew', 'GET'), true);
+  assert.equal(mayAccess([CREW], '/api/crew', 'POST'), true);
+  assert.equal(mayAccess([CREW], '/api/settings', 'GET'), true);
+  assert.equal(mayAccess([CREW], '/api/units', 'GET'), false);
+  assert.equal(mayAccess([CREW], '/api/crew-admin', 'GET'), false);
+  assert.equal(mayAccess([CREW], '/api/operations', 'GET'), false);
+  assert.deepEqual(tabsFor([CREW]), ['crew']);
+  assert.equal(PERMISSION_KEYS.has(CREW), false);   // no role can be given it
+});
+
+test('the team sees crew pages with operations, and decides extras with operations.edit', () => {
+  assert.equal(mayAccess(['operations'], '/api/crew-admin', 'GET'), true);
+  assert.equal(mayAccess(['operations'], '/api/crew-admin', 'POST'), false);
+  assert.equal(mayAccess(['operations.edit'], '/api/crew-admin', 'POST'), true);
 });

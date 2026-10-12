@@ -7,20 +7,49 @@ import { Settings } from './screens/Settings.tsx';
 import { Operations } from './screens/Operations.tsx';
 import { Repository } from './screens/Repository.tsx';
 import { Home } from './screens/Home.tsx';
+import { CrewHome } from './screens/Crew.tsx';
 import { Sops } from './screens/Sops.tsx';
 import { SopButton, SopPanel } from './components/Sops.tsx';
 import { featureOf } from './lib/sops.ts';
 import { getUnits, getSettings, can, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
-type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings';
+type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew';
+
+/**
+ * A cleaner's secret link (§122): /crew#t=<token>. Read once, then taken
+ * out of the address bar so it is not left on screen or in a screenshot.
+ */
+const CREW_TOKEN = (() => {
+  if (location.pathname !== '/crew') return null;
+  const t = new URLSearchParams(location.hash.slice(1)).get('t');
+  if (t) history.replaceState(null, '', '/crew');
+  if (t) return t;
+  try { return sessionStorage.getItem('crewToken'); } catch { return null; }
+})();
+if (CREW_TOKEN) { try { sessionStorage.setItem('crewToken', CREW_TOKEN); } catch { /* private mode */ } }
+
+export function App() {
+  // The link door has no sign-in: the page and nothing else.
+  if (location.pathname === '/crew') return <CrewShell token={CREW_TOKEN} />;
+  return <TeamApp />;
+}
+
+function CrewShell({ token }: { token: string | null }) {
+  return (
+    <main>
+      <header><h1>Kaizen OS</h1><nav><ThemeToggle /></nav></header>
+      {token ? <CrewHome token={token} /> : <p className="banner error">This link is incomplete — ask the team to send it again.</p>}
+    </main>
+  );
+}
 
 const TABS: [Tab, string][] = [
   ['home', 'Home'], ['units', 'Units'], ['revenue', 'Revenue'], ['operations', 'Operations'],
   ['repository', 'Repository'], ['costs', 'Costs'], ['claims', 'Claims'], ['sops', 'SOPs'], ['settings', 'Settings']
 ];
 
-export function App() {
+function TeamApp() {
   // Null, not 'units'. Rendering a default tab before the role is known
   // mounts that screen for everyone — an ops account briefly saw Units
   // and fired /api/forward, which answers 403 for them. The flash was
@@ -57,13 +86,21 @@ export function App() {
   // the role does not permit regardless; this just avoids offering it.
   const [permissions, setPermissions] = useState<string[]>([]);
 
-  useEffect(() => { getUnits().then(r => setUnits(r.units ?? [])).catch(() => {}); }, []);
   useEffect(() => {
     getSettings()
       .then(r => {
         const tabs = r.tabs ?? TABS.map(t => t[0]);
         setAllowed(tabs);
         setPermissions(r.permissions ?? []);
+        // A cleaner signed in (§122): their own page, and nothing else is asked for.
+        if (tabs.length === 1 && tabs[0] === 'crew') { setTab('crew'); return; }
+        // After the role is known: a cleaner's role cannot read the unit list.
+        getUnits().then(u => setUnits(u.units ?? [])).catch(() => {});
+        // A link to one cleaner's page, as they see it: #crew/<name> (§122).
+        if (location.hash.startsWith('#crew/') && tabs.includes('operations')) {
+          setOpsView('crew'); setTab('operations');
+          return;
+        }
         // Land on the first tab they can open — Home, for everyone: the
         // day at a glance, cut to what their role can see.
         // Back from Google's consent screen (§72): straight to Settings, where it reports.
@@ -127,6 +164,7 @@ export function App() {
         </p>
       )}
       {tab === null && !loadError && <p className="note">Loading…</p>}
+      {tab === 'crew'     && <CrewHome />}
       {tab === 'units'    && <Units />}
       {tab === 'revenue'  && <Revenue />}
       {tab === 'home' && <Home permissions={permissions} onGo={to => {

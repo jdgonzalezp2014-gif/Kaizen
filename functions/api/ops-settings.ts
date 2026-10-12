@@ -5,6 +5,8 @@
  *   POST { roster: [...] }                     replace the roster
  *   POST { rules: {...} }                      thresholds (merged over defaults)
  *   POST { assignRule: 'tiers' | 'stars' }     which rule decides who cleans (§121)
+ *   POST { crewCalendar: bool, crewCalendarDays }  cleaners see what is coming (§122)
+ *   POST { action: 'crewLink', name, revoke? }  a cleaner's secret link: made (shown once) or revoked
  *   POST { action: 'previewAssign', roster, rules }
  *                                              the board under these, by stars, against
  *                                              the board as it is — nothing saved
@@ -28,6 +30,7 @@ import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { pushWork } from '../_lib/hostaway-tasks.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadOps, opsConfig } from '../_lib/ops.ts';
+import { newToken, sha256 } from '../_lib/crew.ts';
 import {
   fetchPublishedCsv, isoDay, parseDailySettings, parseInspectionLog, parseNotesLog
 } from '../_lib/daily.ts';
@@ -67,8 +70,12 @@ function parseRoster(raw: Record<string, any>[]): Cleaner[] {
     const max = c.maxPerDay == null || c.maxPerDay === '' ? null : Number(c.maxPerDay);
     if (max !== null && (!Number.isInteger(max) || max < 1)) throw new Error(`${name}: max cleans a day is a whole number, or blank for no limit.`);
     const zones = Array.isArray(c.zones) ? [...new Set((c.zones as unknown[]).map(z => String(z).trim()).filter(Boolean))] : [];
+    const email = String(c.email ?? '').trim().toLowerCase() || null;
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error(`${name}: "${email}" is not an email address.`);
+    if (email && rows.some(r => r.email === email)) throw new Error(`${email} is on the roster twice.`);
+    const invoicePeriod = c.invoicePeriod === 'weekly' ? 'weekly' : 'monthly';
     rows.push({ name, tier: c.tier, position: Number(c.position ?? i) || 0, rates: card(c.rates),
-                deepRates: card(c.deepRates), active: c.active !== false, stars, zones, maxPerDay: max });
+                deepRates: card(c.deepRates), active: c.active !== false, stars, zones, maxPerDay: max, email, invoicePeriod });
   }
   return rows;
 }
@@ -153,17 +160,47 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
 
     if (Array.isArray(body.roster)) {
       const rows = parseRoster(body.roster);
+      // An address belongs to one person: a member keeps theirs, and a
+      // cleaner given a member's address would be a member (accessOf).
+      const emails = rows.map(r => r.email).filter((e): e is string => !!e);
+      if (emails.length) {
+        const taken = await sql`SELECT email FROM members WHERE account_id = 1 AND lower(email) = ANY(${emails})` as { email: string }[];
+        if (taken.length) return bad(`${taken.map(t => t.email).join(', ')} is a member's address — a cleaner needs their own.`);
+      }
+      // The roster is replaced whole; a secret link (§122) is not something
+      // the screen sends back, so it is carried over by name.
+      const links = new Map((await sql`SELECT name, link_token_hash FROM cleaners WHERE account_id = 1 AND link_token_hash IS NOT NULL` as
+        { name: string; link_token_hash: string }[]).map(r => [r.name, r.link_token_hash]));
       await sql`DELETE FROM cleaners WHERE account_id = 1`;
       for (const r of rows) {
-        await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates, active, stars, zones, max_per_day)
+        await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates, active, stars, zones, max_per_day,
+                                        email, invoice_period, link_token_hash)
                   VALUES (1, ${r.name}, ${r.tier}, ${r.position}, ${JSON.stringify(r.rates)}::jsonb,
-                          ${JSON.stringify(r.deepRates)}::jsonb, ${r.active}, ${r.stars}, ${r.zones}, ${r.maxPerDay})`;
+                          ${JSON.stringify(r.deepRates)}::jsonb, ${r.active}, ${r.stars}, ${r.zones}, ${r.maxPerDay},
+                          ${r.email ?? null}, ${r.invoicePeriod ?? 'monthly'}, ${links.get(r.name) ?? null})`;
       }
     }
 
     if (body.rules && typeof body.rules === 'object') {
       const clean = parseRules(body.rules);
       await sql`UPDATE accounts SET ops_rules = ${JSON.stringify(clean)}::jsonb WHERE id = 1`;
+    }
+
+    // §122: the schedule on the crew pages — off until the team has checked it makes sense.
+    if (typeof body.crewCalendar === 'boolean') {
+      const days = Math.round(Number(body.crewCalendarDays ?? 14));
+      if (!(days >= 1 && days <= 30)) return bad('Show 1 to 30 days ahead.');
+      await sql`UPDATE accounts SET crew_calendar = ${body.crewCalendar}, crew_calendar_days = ${days} WHERE id = 1`;
+    }
+
+    // §122: the fallback link. Only its hash is kept, so it is shown once, here.
+    if (body.action === 'crewLink') {
+      const name = String(body.name ?? '');
+      const token = body.revoke === true ? null : newToken();
+      const done = await sql`UPDATE cleaners SET link_token_hash = ${token ? await sha256(token) : null}
+                              WHERE account_id = 1 AND name = ${name} RETURNING name`;
+      if (!done.length) return bad(`${name} is not on the roster.`);
+      return Response.json({ ok: true, link: token ? `${new URL(request.url).origin}/crew#t=${token}` : null });
     }
 
     if (body.assignRule === 'tiers' || body.assignRule === 'stars') {

@@ -16,6 +16,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { WorkView } from '../components/Todos.tsx';
+import { CrewAdmin } from './Crew.tsx';
 import { addDays, todayIn } from '../lib/dates.ts';
 import { stayLabel } from '../lib/todos.ts';
 import {
@@ -25,7 +26,7 @@ import {
   type Todo, type HostawayTasksState,
   type StayDocs, type OperationsResponse, type ManualClean, type ManualCleanKind, type StayOnDay,
   getStaysOnDay, manualClean, todoAction, saveClaim, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry,
-  previewAssign, type AssignPreview
+  previewAssign, type AssignPreview, crewLink
 } from '../api.ts';
 import {
   BEDROOM_SIZES, DEFAULT_CHECKIN_TIME, DEFAULT_CHECKOUT_TIME, INSPECTION_RESULTS,
@@ -38,8 +39,8 @@ import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
 
-type View = 'board' | 'todos' | 'calendar' | 'cleaners' | 'inspections' | 'notes' | 'rates' | 'setup';
-const VIEWS: View[] = ['board', 'todos', 'calendar', 'cleaners', 'inspections', 'notes', 'rates', 'setup'];
+type View = 'board' | 'todos' | 'calendar' | 'cleaners' | 'crew' | 'inspections' | 'notes' | 'rates' | 'setup';
+const VIEWS: View[] = ['board', 'todos', 'calendar', 'cleaners', 'crew', 'inspections', 'notes', 'rates', 'setup'];
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -130,7 +131,7 @@ export function Operations({ permissions, initialView, onView }: {
     });
 
   const views: [View, string][] = [
-    ['board', 'Next 10 days'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['cleaners', 'By cleaner'], ['inspections', 'Inspections'],
+    ['board', 'Next 10 days'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['cleaners', 'By cleaner'], ['crew', 'Crew'], ['inspections', 'Inspections'],
     ['notes', 'Notes log'], ['rates', 'Rates & rules'],
     ...(can(data?.permissions, 'operations.setup') ? [['setup', 'Setup'] as [View, string]] : [])
   ];
@@ -166,6 +167,7 @@ export function Operations({ permissions, initialView, onView }: {
         {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} />}
         {view === 'calendar' && <CleaningsMonth />}
         {data && view === 'cleaners' && <ByCleaner data={data} />}
+        {data && view === 'crew' && <CrewAdmin roster={data.roster} canEdit={can(data.permissions, 'operations.edit')} />}
         {data && view === 'inspections' && <Inspections data={data} reload={() => load()} />}
         {data && view === 'notes' && <Notes data={data} />}
         {data && view === 'rates' && <Rates data={data} />}
@@ -441,6 +443,11 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
               <div className="ops-diff" title={r.stars.reason}>by stars: {r.stars.cleaner ?? 'unassigned'}</div>
             )}
             {r.sameDayOf && !r.manual.cleaner && <div className="sub-n">another stay leaves today — one clean</div>}
+            {r.declined.length > 0 && (
+              <div className={r.assignment === 'tbd' ? 'breach' : 'sub-n'}>
+                {r.declined.map(d => `▲ declined by ${d.cleaner}${d.reason ? ` — “${d.reason}”` : ''}`).join(' · ')}
+              </div>
+            )}
             {shadow && r.differs.includes('cleaner') && r.sheet && <div className="ops-diff">sheet: {sheetText(r.sheet)}</div>}
             {shadow && !r.inDailyFile && <div className="sub-n">not in the daily file yet</div>}
           </>
@@ -1318,6 +1325,7 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
       </div>
 
       <StarSetup cfg={cfg} roster={roster} setRoster={setRoster} rules={rules} setRules={setRules} save={save} />
+      <CrewSetup cfg={cfg} roster={roster} setRoster={setRoster} save={save} />
 
       <div className="card">
         <h2>Rules</h2>
@@ -1338,6 +1346,93 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
       <GuestDocUnits initial={cfg.guestDocUnits ?? []} onSave={ids => save({ guestDocUnits: ids }, 'Guest documents saved.')} />
       {cfg.hostawayTasks && <HostawayTasks state={cfg.hostawayTasks} onChanged={() => void fetchCfg()} />}
     </>
+  );
+}
+
+/**
+ * The crew pages (§122): who signs in with which address, how each
+ * invoice runs, the fallback links, and whether cleaners see what is
+ * coming — off until the schedule has been checked.
+ */
+function CrewSetup({ cfg, roster, setRoster, save }: {
+  cfg: OpsSettings; roster: Cleaner[]; setRoster: (f: (rs: Cleaner[]) => Cleaner[]) => void;
+  save: (body: Record<string, unknown>, done: string) => Promise<void>;
+}) {
+  const [calendar, setCalendar] = useState(cfg.crewCalendar);
+  const [days, setDays] = useState(String(cfg.crewCalendarDays));
+  const [link, setLink] = useState<{ name: string; url: string | null } | null>(null);
+  const [err, setErr] = useState('');
+  const set = (i: number, patch: Partial<Cleaner>) => setRoster(rs => rs.map((c, j) => j === i ? { ...c, ...patch } : c));
+  const makeLink = async (name: string, revoke: boolean) => {
+    setErr('');
+    const r = await crewLink(name, revoke).catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setErr(r.message ?? 'Failed.'); return; }
+    setLink({ name, url: r.link });
+    await save({}, revoke ? `${name}'s link no longer opens anything.` : `New link for ${name} — copy it now, it is not shown again.`);
+  };
+  const app = location.origin;
+
+  return (
+    <div className="card">
+      <h2>Crew pages</h2>
+      <p className="note">
+        Each cleaner sees their cleans, what each paid, what was flagged or not paid, their invoice, and can ask for extras
+        (with a receipt or photo) that the team approves or denies in Operations → Crew. To see a page as the cleaner sees it:
+        {' '}<code>{app}/#crew/&lt;name&gt;</code>.
+      </p>
+      <ol className="note">
+        <li><b>Sign-in (main way):</b> in Cloudflare Zero Trust → Access → the Kaizen application, add the cleaner's email to the
+          policy, with the <b>One-time PIN</b> login method on. They open <code>{app}</code>, type their email and the code they get.
+          Kaizen knows them by the address below; it opens their page and nothing else.</li>
+        <li><b>Secret link (fallback, for someone the code does not work for):</b> works only after a Cloudflare Access <b>Bypass</b>
+          application covers <code>/crew</code>, <code>/assets/*</code> and <code>/api/crew-link</code>. Anyone holding the link sees
+          that cleaner's page — revoke it if it leaks.</li>
+      </ol>
+
+      <div className="grid-scroll">
+        <table className="units compact roster-edit">
+          <thead><tr><th>Cleaner</th><th>Sign-in email</th><th>Invoice</th><th>Secret link</th></tr></thead>
+          <tbody>
+            {roster.map((c, i) => (
+              <tr key={i} className={c.active ? undefined : 'muted-row'}>
+                <td><b>{c.name || '—'}</b></td>
+                <td><input type="email" value={c.email ?? ''} placeholder="name@example.com"
+                           onChange={e => set(i, { email: e.target.value || null })} /></td>
+                <td><select value={c.invoicePeriod ?? 'monthly'} onChange={e => set(i, { invoicePeriod: e.target.value as 'weekly' | 'monthly' })}>
+                  <option value="weekly">weekly (Mon–Sun)</option><option value="monthly">monthly</option></select></td>
+                <td>
+                  {c.hasLink ? <span className="sub-n">● link active </span> : <span className="sub-n">○ none </span>}
+                  {c.name && <button className="link tiny" onClick={() => void makeLink(c.name, false)}>{c.hasLink ? 'new link' : 'make link'}</button>}
+                  {c.hasLink && <button className="link tiny danger" onClick={() => void makeLink(c.name, true)}>revoke</button>}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      {link?.url && (
+        <label>{link.name}'s link — copy it now; Kaizen keeps only a fingerprint of it
+          <input readOnly value={link.url} onFocus={e => e.target.select()} /></label>
+      )}
+      {err && <p className="banner error">{err}</p>}
+      <div className="button-row">
+        <button onClick={() => void save({ roster }, 'Crew addresses and invoice periods saved.')}>Save addresses and invoices</button>
+        <span className="note">Saves the whole roster, as Roster and pay does.</span>
+      </div>
+
+      <h3>What is coming</h3>
+      <p className="note">Off until the schedule has been checked: cleaners book their days off what they see here. When on, each
+        cleaner sees what the board gives them now (live — it can still change), and can decline a clean, which goes back
+        to the team as unassigned.</p>
+      <label className="check"><input type="checkbox" checked={calendar} onChange={e => setCalendar(e.target.checked)} />
+        Show cleaners their upcoming cleans</label>
+      <label>Days ahead (1–30)<input className="amt" value={days} onChange={e => setDays(e.target.value)} /></label>
+      <div className="button-row">
+        <button disabled={calendar === cfg.crewCalendar && Number(days) === cfg.crewCalendarDays}
+                onClick={() => void save({ crewCalendar: calendar, crewCalendarDays: Number(days) },
+                                         calendar ? 'Cleaners now see what is coming.' : 'The schedule is hidden from cleaners.')}>Save</button>
+      </div>
+    </div>
   );
 }
 

@@ -6,6 +6,7 @@
  * are stored encrypted; see crypto.ts for why the master key stays in
  * the environment.
  */
+import { CREW } from './roles.ts';
 import { decrypt, encrypt } from './crypto.ts';
 import type { HostawayCredentials } from './hostaway.ts';
 
@@ -127,7 +128,11 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
   };
 }
 
-export interface Access { role: string; permissions: string[] }
+export interface Access {
+  role: string; permissions: string[];
+  /** Set for a cleaner signing in to their own page (§122): whose page it is. */
+  cleaner?: string;
+}
 
 /**
  * The caller's role and what it permits. Shared by the middleware (may
@@ -147,8 +152,15 @@ export async function accessOf(sql: SqlFn, who: { email: string; local: boolean 
       LEFT JOIN roles r ON r.account_id = m.account_id AND r.key = m.role
      WHERE m.account_id = 1 AND m.email = ${who.email.trim().toLowerCase()}
   ` as { role: string; permissions: string[] | null }[];
-  if (!rows.length) return { role: 'admin', permissions: ['*'] };
-  return { role: rows[0]!.role, permissions: rows[0]!.permissions ?? [] };
+  if (rows.length) return { role: rows[0]!.role, permissions: rows[0]!.permissions ?? [] };
+  // A cleaner on the roster (§122) reaches their own page and nothing
+  // else. Asked BEFORE the no-member-row default below, which is admin:
+  // a cleaner whose address got past Access must never land there.
+  const crew = await sql`
+    SELECT name FROM cleaners WHERE account_id = 1 AND lower(email) = ${who.email.trim().toLowerCase()} LIMIT 1
+  ` as { name: string }[];
+  if (crew.length) return { role: 'cleaner', permissions: [CREW], cleaner: crew[0]!.name };
+  return { role: 'admin', permissions: ['*'] };
 }
 
 /** The Data Repository API, decrypted. Server-side only. */

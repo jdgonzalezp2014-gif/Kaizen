@@ -400,3 +400,13 @@ test('the second departure the same day carries no clean and no stars', () => {
   assert.equal(out(rows, 'small').assignment, 'not_needed');
   assert.ok(out(rows, 'big').stars);
 });
+
+test('a cleaner who declined a clean is not handed it back by the rule (§122)', () => {
+  const stays = [res('a', '2', '2026-09-20', '2026-09-26'), res('b', '2', '2026-09-27', '2026-09-30', 300)];
+  assert.equal(out(boardBy(stays), 'a').cleaner, 'Michelle');
+  const r = buildBoard({ today: TODAY, windowDays: 10, listings: L, reservations: stays, roster: ROSTER, rules: RULES,
+    overrides: new Map(), notes: new Map(), inspections: [], assignRule: 'stars',
+    declines: new Map([['a', [{ cleaner: 'Michelle', reason: 'sick' }]]]) });
+  assert.equal(out(r, 'a').cleaner, 'Veronica');
+  assert.deepEqual(out(r, 'a').declined, [{ cleaner: 'Michelle', reason: 'sick' }]);
+});

@@ -36,7 +36,9 @@ import { accessOf, type SqlFn } from '../_lib/accounts.ts';
  */
 // §99: Slack signs every request (/api/slack verifies it); the reminder
 // scheduler carries the ingest token (/api/slack-cron checks it).
-const SELF_AUTHENTICATING = new Set(['/api/observations', '/api/slack', '/api/slack-cron']);
+// §122: a cleaner's secret link carries its own token (/api/crew-link checks it,
+// and reads no identity header — that path sits behind an Access bypass).
+const SELF_AUTHENTICATING = new Set(['/api/observations', '/api/slack', '/api/slack-cron', '/api/crew-link']);
 
 export const onRequest: PagesFunction<Env> = async (ctx) => {
   if (SELF_AUTHENTICATING.has(new URL(ctx.request.url).pathname)) return ctx.next();
@@ -52,6 +54,7 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
   const email = who.email.trim().toLowerCase();
   let allowed: string[] = [];
   let permissions: string[] = [];
+  let cleaner = false;
   try {
     const sql = db(ctx.env) as unknown as SqlFn;
     const [acc, access] = await Promise.all([
@@ -61,6 +64,7 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     ]) as [{ allowed_emails: string[] | null }[], { permissions: string[] }];
     allowed = acc[0]?.allowed_emails ?? [];
     permissions = access.permissions;
+    cleaner = !!(access as { cleaner?: string }).cleaner;
   } catch {
     // A database that is down must not become an open door. It also must
     // not become a lock-out with no explanation, so this says which it is.
@@ -70,7 +74,9 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     }, { status: 503 });
   }
 
-  if (allowed.length > 0 && !allowed.some(a => a.trim().toLowerCase() === email)) {
+  // A cleaner's address on the roster is the deliberate act that lets them
+  // in (§122) — and their role opens only their own page (mayAccess).
+  if (!cleaner && allowed.length > 0 && !allowed.some(a => a.trim().toLowerCase() === email)) {
     return Response.json({
       ok: false, error: 'not_on_allowlist',
       message: `${who.email} signed in successfully but is not on this account's allow-list.`

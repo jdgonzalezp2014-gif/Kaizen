@@ -27,6 +27,9 @@ Hostaway client, sync, crypto, migrations.
 ## Rules that bite
 
 - Two gates: Access decides who reaches the app; `allowed_emails` decides who is ours.
+  Exception (§122): an address on the cleaners roster gets role `cleaner` (only its own crew page),
+  checked in accessOf BEFORE "no member row = admin", and skips the allow-list.
+  SELF_AUTHENTICATING also lists `/api/crew-link` (secret-link door; never trusts identity headers).
   Empty list = any authenticated caller; DB failure = 503, never a pass (§29).
 - Roles are named sets of permissions (Settings grid, each tick saves at once); allow-list
   of routes — a new route is closed until listed; no member row = admin; unreadable role =

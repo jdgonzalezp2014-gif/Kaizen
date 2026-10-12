@@ -3396,3 +3396,27 @@ board even under the tiers (`row.stars`), which is the side-by-side week; `accou
 flips it. Setup refuses to save until the exact proposal has been previewed. First preview on real
 data (Oct 11–21, 27 cleans, default bands, stars seeded from tiers): 11 change cleaner, below-stars
 12 → 6 (the 6 are hand-set), pay $3,270 → $3,195.
+
+## §122 — The crew page: each cleaner's cleans, invoice, extras and schedule (2026-10-11)
+
+The owner asked for a link per cleaner ("/#Karina") to see their cleans, what was billed, what was
+flagged, their weekly or monthly invoice, and their calendar — the calendar only once the schedule
+is verified ("no quiero que agenden equipos just because"). Then, while it was being built: extras
+on the price approved or denied by the team with a note; a declined clean goes back as TBD;
+receipts/invoices/photos as evidence for extras; the last date the team confirmed and the
+movements since (extensions…); and **never show cleaners their ratings**.
+
+Decisions. **Sign-in, not a name in the URL**: the app is behind Access, and a name-in-URL page
+would let anyone read anyone's pay. The owner chose Access one-time code by email, with the
+secret link kept as a fallback "por si la tecnología no los deja". The link route is separate
+(/api/crew-link) because it must sit behind an Access *bypass*, where identity headers can be
+forged — it reads none. Found while building: `accessOf` treats an address with no member row as
+**admin**, so a cleaner reaching the app would have had everything; cleaners are resolved before
+that default. "Flagged" = excluded/not paid (with the reason) + flagged by hand (new). Invoice =
+built by Kaizen. Calendar: per-day publishing was rejected ("ellos necesitan agendar") → a global
+switch, off until the star schedule is checked, then live, plus a **confirm** snapshot the
+movements are measured from. Files go to Drive like guest documents. Verified on a Neon branch
+in shadow mode (no Hostaway writes): extra → approve → invoice $455 + $25; decline → board TBD,
+rule picks K&M not Irene; a simulated extension and cancellation show as movements; a cleaner's
+Access address gets 403 on every other route.
+

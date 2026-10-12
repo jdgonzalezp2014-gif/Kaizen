@@ -34,11 +34,15 @@ export const PERMISSIONS: Permission[] = [
   { key: 'money', label: 'See booking values on the operations board', routes: [] },
   { key: 'operations', label: 'Operations — see the board, the cleanings calendar, inspections and notes', tab: 'operations', routes: [
     { path: '/api/operations', methods: ['GET'] },
+    // The crew pages as each cleaner sees them, and what is waiting on the team (§122).
+    { path: '/api/crew-admin', methods: ['GET'] },
     // The cleanings calendar lives in Operations; it reads the record.
     { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'operations.edit', label: 'Operations — assign cleaners, times, notes, log inspections', routes: [
     { path: '/api/turnover', methods: ['POST'] }, { path: '/api/inspections', methods: ['POST', 'DELETE'] },
-    { path: '/api/manual-clean', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] }] },
+    { path: '/api/manual-clean', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] },
+    // Approve or deny a cleaner's extra, flag a clean (§122).
+    { path: '/api/crew-admin', methods: ['POST'] }] },
   { key: 'operations.setup', label: 'Operations — roster, pay, rules and the live switch', routes: [
     { path: '/api/ops-settings', methods: ['GET', 'POST'] }] },
   { key: 'todos', label: 'To-do list — see, add and tick off the team\'s to-dos', routes: [
@@ -73,6 +77,13 @@ export const PERMISSIONS: Permission[] = [
 
 /** The permission that means "everything", held by the admin role only. */
 export const ALL = '*';
+/**
+ * A cleaner's own page (§122). Not in PERMISSIONS, so no role can be given
+ * it: only a roster email earns it (accessOf), and it opens nothing else —
+ * not even the routes every member reaches.
+ */
+export const CREW = 'crew';
+const CREW_ROUTES = [{ path: '/api/crew', methods: ['GET', 'POST'] }, { path: '/api/settings', methods: ['GET'] }];
 
 /**
  * Routes every signed-in member reaches: who they are and which tabs to
@@ -90,6 +101,7 @@ export function mayAccess(permissions: string[], pathname: string, method: strin
   if (permissions.includes(ALL)) return true;
   const m = method.toUpperCase();
   const hit = (r: { path: string; methods: string[] }) => r.path === pathname && r.methods.includes(m);
+  if (permissions.includes(CREW)) return CREW_ROUTES.some(hit);
   if (ALWAYS.some(hit)) return true;
   return PERMISSIONS.some(p => permissions.includes(p.key) && p.routes.some(hit));
 }
@@ -101,6 +113,7 @@ export function mayAccess(permissions: string[], pathname: string, method: strin
  */
 export function tabsFor(permissions: string[]): string[] {
   const all = permissions.includes(ALL);
+  if (!all && permissions.includes(CREW)) return ['crew'];
   return ['home', ...PERMISSIONS.filter(p => p.tab && (all || permissions.includes(p.key))).map(p => p.tab!)];
 }
 

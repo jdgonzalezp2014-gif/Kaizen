@@ -368,6 +368,8 @@ export interface OpsSettings {
   ok: true; mode: 'shadow' | 'live'; rules: OpsRules; defaults: OpsRules;
   extraInspectors: string[]; roster: Cleaner[]; guestDocUnits: string[];
   assignRule: AssignRule;
+  /** The schedule on the crew pages (§122). */
+  crewCalendar: boolean; crewCalendarDays: number;
   /** Zone → its active units' names (§121). */
   zones: Record<string, string[]>;
   counts: { inspections: number; notes: number; overrides: number };
@@ -400,6 +402,62 @@ export const previewAssign = (roster: Cleaner[], rules: Record<string, unknown>)
 export const cutoverImport = (commit: boolean) =>
   call<{ ok: true; dryRun: boolean; preview: CutoverPreview } | Fail>('/api/ops-settings', {
     method: 'POST', body: JSON.stringify({ action: 'import', commit })
+  });
+
+/* ── the crew pages (§122) ────────────────────────────────────────── */
+
+import type { CrewClean, CrewExtra, Invoice, InvoicePeriod, Movement, Period } from './lib/crew.ts';
+
+export interface CrewUpcoming {
+  key: string; date: string; unit: string; beds: number | null; time: string; deep: boolean;
+  sameDay: boolean; checkIn: string | null; price: number | null; manual: string | null;
+}
+export interface CrewPage {
+  /** `stars` only reaches the team's view (§122): cleaners are not shown their rating. */
+  cleaner: { name: string; stars?: number; invoicePeriod: InvoicePeriod; active: boolean };
+  today: string; periods: Period[]; period: Period;
+  cleans: CrewClean[]; extras: CrewExtra[]; invoice: Invoice; extraFrom: string;
+  upcoming: {
+    enabled: boolean; days: number; through: string | null; rows: CrewUpcoming[]; problem: string | null;
+    confirmed: { at: string; through: string } | null; movements: Movement[];
+  };
+}
+export interface CrewSchedule {
+  enabled: boolean; confirmed: { at: string; by: string; through: string } | null;
+  movements: (Movement & { cleaner: string })[]; problem: string | null;
+}
+/**
+ * Whose page it is is decided by the server — by the sign-in, or by the
+ * secret link (`token`), which goes to its own route and nowhere else.
+ */
+const crewPath = (token?: string | null) => token ? '/api/crew-link' : '/api/crew';
+const crewHeaders = (token?: string | null): Record<string, string> => token ? { 'X-Crew-Token': token } : {};
+export const getCrew = (period?: string | null, token?: string | null) =>
+  call<({ ok: true } & CrewPage) | Fail>(`${crewPath(token)}${period ? `?period=${period}` : ''}`, { headers: crewHeaders(token) });
+export const crewAction = (body: Record<string, unknown>, token?: string | null) =>
+  call<{ ok: true } | Fail>(crewPath(token), { method: 'POST', headers: crewHeaders(token), body: JSON.stringify(body) });
+/** An extra with evidence, or more evidence on one: multipart, so the browser sets the boundary. */
+export async function crewUpload(fields: Record<string, string>, files: File[], token?: string | null) {
+  const form = new FormData();
+  for (const [k, v] of Object.entries(fields)) form.append(k, v);
+  for (const f of files) form.append('file', f);
+  const res = await fetch(crewPath(token), { method: 'POST', headers: crewHeaders(token), body: form });
+  return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as { ok: true } | Fail;
+}
+
+export interface PendingExtra {
+  id: string; cleaner: string; key: string; amount: number; description: string; createdAt: string;
+  unit: string; date: string; price: number | null;
+  files?: { id: string; name: string; url: string }[];
+}
+export const getCrewAdmin = (cleaner?: string | null, period?: string | null) =>
+  call<{ ok: true; pending: PendingExtra[]; page: CrewPage | null; schedule: CrewSchedule } | Fail>(
+    `/api/crew-admin?${new URLSearchParams({ ...(cleaner ? { cleaner } : {}), ...(period ? { period } : {}) })}`);
+export const crewAdminAction = (body: Record<string, unknown>) =>
+  call<{ ok: true } | Fail>('/api/crew-admin', { method: 'POST', body: JSON.stringify(body) });
+export const crewLink = (name: string, revoke = false) =>
+  call<{ ok: true; link: string | null } | Fail>('/api/ops-settings', {
+    method: 'POST', body: JSON.stringify({ action: 'crewLink', name, revoke })
   });
 
 /* ── the Data Repository ──────────────────────────────────────────── */

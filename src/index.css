@@ -1739,3 +1739,31 @@ button.sop-num { cursor: pointer; }
   border-radius: 8px; background: var(--surface-2, rgba(127,127,127,.08)); color: var(--muted); font-size: 13px; }
 .rb-searchall.none { color: var(--text); }
 .rb-searchall button { margin-left: auto; }
+
+/* ── the crew page (§122) — phone first: rows wrap, nothing scrolls sideways ── */
+.crew-list { display: flex; flex-direction: column; }
+.crew-row { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) auto; gap: 4px 14px;
+            padding: 10px 0; border-bottom: 1px solid var(--line); align-items: start; }
+.crew-row:last-child { border-bottom: 0; }
+.crew-row .n { text-align: right; }
+.crew-row > .crew-decide, .crew-row > .breach { grid-column: 1 / -1; }
+.crew-decide { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 6px; }
+.crew-decide input:not([type=file]) { flex: 1 1 200px; margin: 0; }
+.crew-decide input.amt { flex: 0 0 90px; }
+.crew-files a { margin-right: 10px; white-space: nowrap; }
+.crew-attach { cursor: pointer; }
+.crew-actions { text-align: right; }
+.crew-invoice-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 640px) {
+  .crew-row { grid-template-columns: 1fr; }
+  .crew-row .n, .crew-actions { text-align: left; }
+}
+/* Printing (or saving as PDF) the invoice: the invoice alone. */
+@media print {
+  body * { visibility: hidden; }
+  .crew-invoice, .crew-invoice * { visibility: visible; }
+  .crew-invoice { position: absolute; left: 0; top: 0; width: 100%; border: 0; box-shadow: none; }
+  .no-print { display: none !important; }
+}
+.crew-row .ops-flag { margin-left: 6px; }
+.crew-moves { margin: 6px 0 10px; padding-left: 18px; }
