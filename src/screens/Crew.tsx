@@ -393,22 +393,23 @@ function activeCleans(page: CrewPage): ActiveClean[] {
  * One of the cleaner's own cleans, worked like a helper works it (the owner:
  * the same for everyone but the extra) — "My clean" (the 4 steps), "Report or
  * ask", and "Extra", the cleaner's alone; the helper's link one tap below.
- * Today's open; the last days' closed until opened.
+ * Every option is a tab on top — the owner: the cleaner sees them all and
+ * switches with a tap; "Can't do it" sits with the clean's time.
  */
-function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', share = false, onClose, head = true }: {
+function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onClose, head = true }: {
   a: ActiveClean; page: CrewPage; lang: Lang; ctx: FieldCtx; act?: Act; reload: () => void;
-  initialTab?: 'clean' | 'report' | 'extra'; share?: boolean; onClose?: () => void;
+  initialTab?: 'clean' | 'report' | 'extra' | 'share'; onClose?: () => void;
   /** False inside a row that already says which clean it is. */ head?: boolean;
 }) {
   const tx = TX[lang];
-  const [tab, setTab] = useState<'clean' | 'report' | 'extra'>(initialTab);
-  const [sharing, setSharing] = useState(share);
+  const [tab, setTab] = useState<'clean' | 'report' | 'extra' | 'share'>(initialTab);
   const [fs, setFs] = useState<CleanFieldState | undefined>(page.field?.[a.key]);
   const unitId = ctx.supplies.units.find(u => u.name === a.unit)?.id ?? '';
   // An extra only on a clean done (today or before) and recent enough — the server checks the same.
   const extraOk = a.date <= ctx.today && a.date >= ctx.extraFrom;
   const extras = page.extras.filter(e => e.key === a.key && e.status !== 'cancelled');
-  const tabs: ['clean' | 'report' | 'extra', string][] = [['clean', tx.tabClean], ['report', tx.tabReport], ...(extraOk ? [['extra', tx.tabExtra] as ['extra', string]] : [])];
+  const tabs: ['clean' | 'report' | 'extra' | 'share', string][] = [['clean', tx.tabClean], ['report', tx.tabReport],
+    ...(extraOk ? [['extra', tx.tabExtra] as ['extra', string]] : []), ['share', tx.tabShare]];
   return (
     <div className={head ? 'clean-card' : 'clean-card bare'}>
       {head && <>
@@ -418,12 +419,13 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', shar
         <p className="note">{a.manual ? tx.manualClean(kindWord(lang, a.manual)) : a.time ? tx.checkout(a.time) : ''}
           {a.sameDay && <span className="ops-flag urgent">{a.checkIn ? tx.nextGuestAt(a.checkIn) : tx.nextGuestSameDay}</span>}
           {a.deep && <span className="ops-flag deep">{tx.deep}</span>}</p>
+        {a.ahead && act && <Decline cleanKey={a.key} act={act} reload={reload} lang={lang} />}
         {!!a.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{a.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
         <FieldLine fs={fs} lang={lang} />
         {extras.map(e => <p key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>💵 +{money2(e.amount)} — {e.description} · {tx.extraWord[e.status]}</p>)}
       </>}
       <>
-        <div className={`report-tabs${tabs.length === 3 ? ' three' : ''}`} role="tablist">
+        <div className={`report-tabs ${['', '', 'two', 'three', 'four'][tabs.length]}`} role="tablist">
           {tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
         </div>
         {tab === 'clean' && <CleanSteps tx={tx} items={ctx.supplies.items} state={fs} onState={setFs}
@@ -435,12 +437,8 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', shar
           send={(f, files) => ctx.report({ ...f, cleaningKey: a.key, unitId }, files)} />}
         {tab === 'extra' && <ExtraPanel tx={tx} send={(f, files) => ctx.report({ action: 'addExtra', key: a.key, ...f }, files)}
           onClose={sent => { setTab('clean'); if (sent) reload(); }} />}
-        <div className="clean-card-foot">
-          {!sharing ? <button className="fr-btn secondary" onClick={() => setSharing(true)}>{tx.optShare}</button>
-            : <SharePanel cleanKey={a.key} lang={lang} get={ctx.shareLink} onClose={() => setSharing(false)} />}
-          {a.ahead && act && <Decline cleanKey={a.key} act={act} reload={reload} lang={lang} />}
-          {onClose && <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>}
-        </div>
+        {tab === 'share' && <SharePanel cleanKey={a.key} lang={lang} get={ctx.shareLink} onClose={() => setTab('clean')} />}
+        {onClose && <div className="clean-card-foot"><button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button></div>}
       </>
     </div>
   );

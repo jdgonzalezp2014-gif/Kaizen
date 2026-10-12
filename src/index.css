@@ -1934,6 +1934,8 @@ a.fr-btn { text-decoration: none; font-weight: 700; }
 .clean-card-unit { font-size: 21px; font-weight: 800; }
 .clean-card-foot { display: flex; flex-direction: column; gap: 10px; margin-top: 4px; }
 .report-tabs.three { grid-template-columns: 1fr 1fr 1fr; }
+.report-tabs.four { grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.report-tabs.four button { font-size: 13px; padding: 6px 2px; line-height: 1.2; }
 .report-tabs.three button { font-size: 14px; padding: 6px 4px; }
 .crew-secs { display: grid; grid-template-columns: repeat(auto-fit, minmax(96px, 1fr)); gap: 6px; margin: 16px 0 8px; }
 .crew-secs button { min-height: 56px; font-size: 13.5px; padding: 6px 4px; font-weight: 700; border-radius: 12px; background: var(--card); color: var(--ink); border: 2px solid var(--line); }
@@ -1966,3 +1968,4 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .photo-big { position: fixed; inset: 0; z-index: 50; background: rgba(0,0,0,.9); border: 0; border-radius: 0; padding: 12px;
   display: flex; align-items: center; justify-content: center; }
 .photo-big img { max-width: 100%; max-height: 100%; object-fit: contain; }
+.clean-card > .link { align-self: flex-start; padding-left: 0; }
