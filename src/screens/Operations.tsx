@@ -75,7 +75,8 @@ function applyEdit(r: BoardRow, set: TurnoverSet, roster: Cleaner[], rules: OpsR
     }
   }
   if (set.deep !== undefined) {
-    n.deep = set.deep ?? r.nights >= rules.deepCleanNights;
+    // Regular unless a person says deep (§126).
+    n.deep = set.deep ?? false;
     n.manual.deep = set.deep !== null;
   }
   const t = r.kind === 'out' ? set.checkoutTime : set.checkinTime;
@@ -598,7 +599,9 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
       </td>
       <td>
         {r.cancelled && <span className="ops-flag urgent" title={r.auto.reason}>▲ cancelled {r.cancelled} — {r.manual.cleaner ? 'confirmed' : 'confirm who cleaned'}</span>}
-        {r.deep && <span className="ops-flag deep">🧽 deep{r.manual.deep ? ' · by hand' : ''}</span>}
+        {r.deep && <span className="ops-flag deep">🧽 deep · confirmed</span>}
+        {r.kind === 'out' && !r.deep && r.deepSuggested && !r.manual.deep &&
+          <span className="sub-n" title="A long stay — confirm it in the row if it will be cleaned as deep">○ deep suggested ({r.nights} nights)</span>}
         {shadow && r.differs.includes('deep') && <span className="ops-diff">sheet: {r.sheet?.deep ? 'deep' : 'not deep'}</span>}
         {r.urgency && URGENCY[r.urgency] && <span className="ops-flag urgent">{URGENCY[r.urgency]}</span>}
         {r.inspection.key === 'req' && <span className="ops-flag req" title={r.inspection.reason}>🔍 required</span>}
@@ -775,12 +778,12 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag }:
         )}
         {out && (
           <label>Deep clean
-            <select disabled={busy} value={!r.manual.deep ? 'rule' : r.deep ? 'yes' : 'no'}
-                    onChange={e => void send({ deep: e.target.value === 'rule' ? null : e.target.value === 'yes' })}>
-              <option value="rule">By the rule ({r.nights} nights → {r.nights >= data.rules.deepCleanNights ? 'deep' : 'normal'})</option>
-              <option value="yes">Yes — deep</option>
-              <option value="no">No — normal</option>
+            <select disabled={busy} value={r.deep ? 'yes' : 'rule'}
+                    onChange={e => void send({ deep: e.target.value === 'yes' ? true : null })}>
+              <option value="rule">Regular (default){r.deepSuggested ? ` — deep suggested: ${r.nights}-night stay` : ''}</option>
+              <option value="yes">Deep — confirmed</option>
             </select>
+            <span className="sub-n">A deep clean is paid only once someone confirms it here.</span>
           </label>
         )}
         <label>{out ? 'Checkout time' : 'Check-in time'}
@@ -1368,7 +1371,8 @@ function Rates({ data }: { data: OperationsResponse }) {
           <li>Outgoing stay of <b>{st.longStayPromoteNights}+ nights</b> → high tier, whatever comes next.</li>
           <li>Next booking within <b>{st.nextResValueHorizonDays} days</b> worth <b>{money(st.cleanerHighThreshold)}+</b> → high tier;
             <b> {money(st.cleanerLowThreshold)} or less</b> → low tier; in between, or nothing booked → mid tier.</li>
-          <li>The first cleaner in a tier is the one picked. A stay of <b>{st.deepCleanNights}+ nights</b> is a deep clean.</li>
+          <li>The first cleaner in a tier is the one picked.</li>
+          <li>Every clean is <b>regular</b> unless someone confirms it as deep; a stay of {st.deepCleanNights}+ nights only suggests it.</li>
           <li>A gap of <b>{st.longVacancyDays}+ days</b> before the next guest is flagged as a long vacancy.</li>
         </ul>
       </div>
@@ -1399,7 +1403,7 @@ const RULE_LABELS: [keyof OpsRules, string][] = [
   ['cleanerHighThreshold', 'High tier from ($, next booking)'],
   ['cleanerLowThreshold', 'Low tier up to ($, next booking)'],
   ['longStayPromoteNights', 'Long-stay promotion (nights)'],
-  ['deepCleanNights', 'Deep clean from (nights)'],
+  ['deepCleanNights', 'Suggest a deep clean from (nights)'],
   ['nextResValueHorizonDays', 'Next-booking horizon (days)'],
   ['longVacancyDays', 'Long vacancy (days)'],
   ['inspectionIntervalDays', 'Inspection interval (days)'],

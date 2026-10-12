@@ -39,6 +39,8 @@ export interface OpsReservation {
   phone?: string;
   /** A cancelled booking (§123): when, in New York time ("YYYY-MM-DD HH:MM"). */
   cancelledAt?: string | null;
+  /** The guest's id on the channel (Airbnb's "-guest-<id>-"), to recognise a rebooking. */
+  guestKey?: string | null;
 }
 
 export type Assignment = 'assigned' | 'tbd' | 'not_needed';
@@ -230,6 +232,11 @@ export interface BoardRow {
   note: string;
   /* departures */
   next: NextStay | null;
+  /**
+   * A deep clean is a person's call (§126): `deep` is true only when someone
+   * set it. A long stay only suggests one.
+   */
+  deepSuggested: boolean;
   /** What the rule in charge says, before any person. */
   auto: { cleaner: string | null; tier: Tier; reason: string };
   /** The star rule's answer (§121), whichever rule is in charge; null when no clean is needed. */
@@ -389,6 +396,32 @@ export function cancelledClean(arrival: DateStr, departure: DateStr, cancelledLo
   if (day < arrival) return null;
   const date = hour < CANCEL_SAME_DAY_BEFORE_HOUR ? day : addDays(day, 1);
   return date > departure ? departure : date;
+}
+
+const guestName = (n: string | undefined) => String(n ?? '').trim().toLowerCase().replace(/[^a-z ]/g, '').replace(/\s+/g, ' ');
+
+/**
+ * A cancelled booking that is really a change: the same guest has a live
+ * booking in the same unit whose nights overlap — an Airbnb change is a
+ * cancel plus a new reservation minutes later (P2-4308, 10 Oct: "Jennifer
+ * Dawn" cancelled at 18:06, "Jennifer Dawn Alvarez" booked at 18:12, same
+ * dates). The same guest is the channel's guest id, else the phone, else
+ * one name starting with the other. A different guest overlapping is NOT
+ * a rebooking — the unit may well need a clean between them. Returns the
+ * live reservation's id, or null.
+ */
+export function rebookedAs(c: OpsReservation, active: OpsReservation[]): string | null {
+  const phone = digits(c.phone);
+  const name = guestName(c.guestName);
+  const hit = active.find(a => {
+    if (a.listingId !== c.listingId || a.reservationId === c.reservationId) return false;
+    if (!(a.arrival < c.departure && a.departure > c.arrival)) return false;
+    if (c.guestKey && a.guestKey) return c.guestKey === a.guestKey;
+    if (phone && phone === digits(a.phone)) return true;
+    const other = guestName(a.guestName);
+    return !!name && !!other && (other.startsWith(name) || name.startsWith(other));
+  });
+  return hit?.reservationId ?? null;
 }
 
 /* ── the star rule (§121) ─────────────────────────────────────────── */
@@ -616,6 +649,8 @@ export function buildBoard(input: {
   // A booking cancelled on or after its arrival day leaves on the proposed
   // day instead of its original checkout (§123).
   const cancelledStays = (input.cancelled ?? []).flatMap(x => {
+    // Cancelled and booked again by the same guest is a change, not a cancellation (§126).
+    if (rebookedAs(x, reservations)) return [];
     const d = cancelledClean(x.arrival, x.departure, x.cancelledAt ?? null);
     return d ? [{ ...x, departure: d }] : [];
   });
@@ -630,7 +665,7 @@ export function buildBoard(input: {
       channel: x.channel, total: x.totalPaid, time: '', note: '',
       next: null, auto: { cleaner: null, tier: 'none', reason: '' }, stars: null, levels: null,
       declined: input.declines?.get(x.reservationId) ?? [], cancelled: cx,
-      cleaner: null, assignment: 'unknown', price: null, deep: false, urgency: null,
+      cleaner: null, assignment: 'unknown', price: null, deep: false, deepSuggested: false, urgency: null,
       manual: { cleaner: false, deep: false, time: false },
       inspection: { key: 'none', reason: '' }, sheet: null, inDailyFile: false, differs: [],
       sameDayOf: null, listed: l.active, preppedBy: null
@@ -661,7 +696,9 @@ export function buildBoard(input: {
     const manualCleaner = !!ov?.assignment;
     const assignment: Assignment = ov?.assignment ?? (auto.cleaner ? 'assigned' : 'tbd');
     const cleaner = assignment === 'assigned' ? (manualCleaner ? ov!.cleaner : auto.cleaner) : null;
-    const deep = ov?.deep ?? (stayed >= rules.deepCleanNights);
+    // Regular unless a person says deep (§126); a long stay only suggests it.
+    const deep = ov?.deep ?? false;
+    const deepSuggested = stayed >= rules.deepCleanNights;
     const price = assignment === 'assigned' ? rateFor(roster, cleaner, l.bedrooms, deep) : null;
 
     const sameDayIn = reservations.some(y => y.listingId === x.listingId && y.arrival === x.departure &&
@@ -675,7 +712,7 @@ export function buildBoard(input: {
       ...base, date: x.departure, kind: 'out',
       time: ov?.checkoutTime || DEFAULT_CHECKOUT_TIME,
       note: notes.get(`${x.reservationId}|checkout`) ?? '',
-      nights: stayed, next, auto, cleaner, assignment, deep, price, urgency,
+      nights: stayed, next, auto, cleaner, assignment, deep, deepSuggested, price, urgency,
       manual: { cleaner: manualCleaner, deep: ov?.deep != null, time: !!ov?.checkoutTime },
       sheet, inDailyFile: !!sheet, differs: []
     });

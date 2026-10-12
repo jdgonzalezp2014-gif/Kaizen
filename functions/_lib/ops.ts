@@ -21,7 +21,7 @@ import { importCleanings } from './cleanings-import.ts';
 import type { SqlFn } from './accounts.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
 import {
-  blockForReservation, buildBoard, cancelledClean, inspectionPanel, mergeHostNote, summarize, utcToLocal, withDefaults,
+  blockForReservation, buildBoard, cancelledClean, inspectionPanel, mergeHostNote, rebookedAs, summarize, utcToLocal, withDefaults,
   type AssignRule, type BoardRow, type Cleaner, type OpsCleaning, type OpsInspection, type OpsRules, type Override
 } from '../../src/lib/operations.ts';
 
@@ -279,10 +279,13 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
   const cancelled = new Map((s.boardInput.cancelled ?? []).map(r => [r.reservationId, r]));
   for (const { key } of stale) {
     const moved = known.get(key);
-    // Cancelled mid-stay, its clean proposed before today: held for a person, not voided (§123).
-    const held = !moved ? cancelledFate(cancelled.get(key) as never) : null;
-    if (held) {
-      await holdForConfirm(sql, key, held.date, held.at);
+    // Cancelled mid-stay, its clean proposed before today: held for a person, not voided (§123) —
+    // unless the guest booked again, which is a change (§126).
+    const fate = !moved ? cancelledFate(cancelled.get(key) as never, s.reservations) : null;
+    if (fate && 'rebooked' in fate) {
+      await releaseRebooked(sql, key, fate.rebooked);
+    } else if (fate) {
+      await holdForConfirm(sql, key, fate.date, fate.at);
     } else if (moved) {
       // Extended or shortened: the clean moves with the checkout.
       await sql`UPDATE cleanings SET checkout_on = ${moved.departure}, imported_at = now()
@@ -314,12 +317,32 @@ async function holdForConfirm(sql: SqlFn, key: string, date: string, cancelledLo
   return done.length > 0;
 }
 
-/** A cancelled booking's clean to confirm, if it may have had one: its day and when it was cancelled. */
-function cancelledFate(c: { arrival: string; departure: string; cancellationDate?: string | null } | undefined) {
+/**
+ * What a cancelled booking means for its clean: booked again by the same
+ * guest (a change, §126) — the live booking owns the clean; cancelled on
+ * or after arrival — held for a person, with its day; otherwise nothing.
+ */
+type CancelledStay = Awaited<ReturnType<typeof fetchCancelledTouching>>[number];
+function cancelledFate(c: CancelledStay | undefined, active: Awaited<ReturnType<typeof fetchReservationsTouching>>):
+  { rebooked: string } | { date: string; at: string } | null {
   if (!c) return null;
+  const as = rebookedAs(c, active);
+  if (as) return { rebooked: as };
   const at = utcToLocal(c.cancellationDate, OPS_TZ);
   const date = cancelledClean(c.arrival, c.departure, at);
   return date && at ? { date, at } : null;
+}
+
+/** A clean held (or recorded) for a booking that was in fact changed, not cancelled: released, never paid twice. */
+async function releaseRebooked(sql: SqlFn, key: string, as: string): Promise<boolean> {
+  const done = await sql`
+    UPDATE cleanings SET needs_confirm = NULL, assignment = 'not_needed', cleaner = NULL, price = NULL,
+           void_reason = ${`booking changed — the guest booked again as reservation ${as}, which carries the clean`},
+           decided_by = 'rebooked, not cancelled', imported_at = now()
+     WHERE account_id = 1 AND key = ${key} AND confirmed_by IS NULL
+       AND (void_reason IS DISTINCT FROM ${`booking changed — the guest booked again as reservation ${as}, which carries the clean`})
+    RETURNING key`;
+  return done.length > 0;
 }
 
 /**
@@ -341,17 +364,23 @@ export async function reconcileRecent(sql: SqlFn, creds: HostawayCredentials, to
   ]);
   const byId = new Map(stays.map(r => [r.reservationId, r]));
   const cancelledById = new Map(cancelledStays.map(r => [r.reservationId, r]));
-  const out = { cancelled: 0, moved: 0, restored: 0, sameDay: 0, toConfirm: 0 };
+  const out = { cancelled: 0, moved: 0, restored: 0, sameDay: 0, toConfirm: 0, rebooked: 0 };
 
   for (const r of rows) {
     const stay = byId.get(r.key);
     if (!stay) {
       // A person already settled it (§123): their word stands.
-      if (r.confirmed_by || r.needs_confirm) continue;
+      if (r.confirmed_by) continue;
+      const fate = cancelledFate(cancelledById.get(r.key), stays);
+      // The guest booked again (§126): a change, not a cancellation — released even if it was held.
+      if (fate && 'rebooked' in fate) {
+        if (await releaseRebooked(sql, r.key, fate.rebooked)) out.rebooked++;
+        continue;
+      }
+      if (r.needs_confirm) continue;
       // Cancelled on or after arrival: maybe used — held for a person, not voided.
-      const held = cancelledFate(cancelledById.get(r.key));
-      if (held) {
-        if (await holdForConfirm(sql, r.key, held.date, held.at)) out.toConfirm++;
+      if (fate) {
+        if (await holdForConfirm(sql, r.key, fate.date, fate.at)) out.toConfirm++;
         continue;
       }
       if (!r.void_reason) {

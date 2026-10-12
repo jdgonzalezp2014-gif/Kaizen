@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assign, blockForReservation, cancelledClean, pickByStars, requiredLevel, utcToLocal, requiredStars, typicalNightly, zoneOf, buildBoard, eligibleInspectors, inspectionPanel, inspectionTier,
+  assign, blockForReservation, cancelledClean, pickByStars, rebookedAs, requiredLevel, utcToLocal, requiredStars, typicalNightly, zoneOf, buildBoard, eligibleInspectors, inspectionPanel, inspectionTier,
   mergeHostNote, proposeInspections, rateFor, sameGuest, summarize, withDefaults,
   type Cleaner, type OpsCleaning, type OpsListing, type OpsReservation, type OpsRules, type Override
 } from './operations.ts';
@@ -92,11 +92,17 @@ test('no rate is null, never zero', () => {
   assert.equal(rateFor(ROSTER, 'Michelle', null, false), null);
 });
 
-test('a stay of the deep-clean length is flagged deep and priced off the deep card', () => {
+test('a long stay only suggests a deep clean; it is deep, and priced deep, when a person says so (§126)', () => {
   const r = board([res('a', '1', '2026-09-01', '2026-09-26', 3000, 25)]);
-  assert.equal(out(r, 'a').deep, true);
+  assert.equal(out(r, 'a').deep, false);
+  assert.equal(out(r, 'a').deepSuggested, true);
   assert.equal(out(r, 'a').cleaner, 'Karina and Marvin');   // long-stay promotion
-  assert.equal(out(r, 'a').price, 90);                      // no 2BR deep rate → ordinary
+  assert.equal(out(r, 'a').price, 90);
+  const ov = new Map<string, Override>([['a', { assignment: null, cleaner: null, deep: true, checkoutTime: null, checkinTime: null }]]);
+  const d = buildBoard({ today: TODAY, windowDays: 10, listings: L, reservations: [res('a', '3', '2026-09-01', '2026-09-26', 3000, 25)],
+    roster: ROSTER, rules: RULES, overrides: ov, notes: new Map(), inspections: [] });
+  assert.equal(out(d, 'a').deep, true);
+  assert.equal(out(d, 'a').price, 230);                     // K&M's 3BR deep rate
 });
 
 /* ── overrides ── */
@@ -501,4 +507,21 @@ test('levels: a mid-stay clean in the stay\'s last 5 days lightens a long stay',
   assert.equal(out(lv(stays), 'a').levels?.required, 'high');
   assert.equal(out(lv(stays, { midStays: new Map([['2', ['2026-09-22']]]) }), 'a').levels?.required, 'standard');
   assert.equal(out(lv(stays, { midStays: new Map([['2', ['2026-09-18']]]) }), 'a').levels?.required, 'high');
+});
+
+test('a cancel-and-rebook by the same guest is a change, not a cancellation; another guest overlapping is not (§126)', () => {
+  // P2-4308, Oct 10: Jennifer's booking cancelled at 18:06 UTC and booked again at 18:12, same dates.
+  const jennifer = res('67446752', '2', '2026-09-24', '2026-09-26', 415, 2, { guestName: 'Jennifer Dawn Alvarez', guestKey: '278003205' });
+  const cancelled = res('67429519', '2', '2026-09-24', '2026-09-26', 0, 2, { guestName: 'Jennifer Dawn', guestKey: '278003205', cancelledAt: '2026-09-24 14:06' });
+  assert.equal(rebookedAs(cancelled, [jennifer]), '67446752');
+  // Without the channel id: the phone, else the name.
+  assert.equal(rebookedAs({ ...cancelled, guestKey: null }, [{ ...jennifer, guestKey: null }]), '67446752');
+  // Cynthia cancelled the night before Jennifer arrived: a different guest — still held for a person.
+  const cynthia = res('67232727', '2', '2026-09-23', '2026-09-25', 0, 2, { guestName: 'Cynthia DallOglio', guestKey: '169553804', cancelledAt: '2026-09-24 00:18' });
+  assert.equal(rebookedAs(cynthia, [jennifer]), null);
+  const r = buildBoard({ today: TODAY, windowDays: 10, listings: L, reservations: [jennifer], roster: ROSTER, rules: RULES,
+    overrides: new Map(), notes: new Map(), inspections: [], cancelled: [cancelled, cynthia] });
+  assert.equal(r.some(x => x.resId === '67429519'), false);
+  assert.equal(out(r, '67232727').cancelled, '2026-09-24 00:18');
+  assert.equal(out(r, '67232727').date, '2026-09-24');       // cleaned before Jennifer arrives
 });

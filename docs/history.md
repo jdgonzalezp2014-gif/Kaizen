@@ -3472,3 +3472,17 @@ savings. Irene's deep card is blank, so her deep cleans price at her ordinary ra
 and the rule picks her for deep high cleans. Not built yet: his "the cleaner who already had it takes
 the new reservation's checkout" — asked to confirm with an example.
 
+## §126 — Deep only when confirmed; a rebooking is not a cancellation (2026-10-11)
+
+**Deep.** The owner: a deep clean must be confirmed — off by default, with a grey suggestion; all cleans
+are regular. A long stay (deepCleanNights) now only suggests it; the clean is deep, and paid deep, only
+when a person sets it on the row.
+
+**Rebooking.** The board asked "who cleaned this cancellation?" for P2-4308 on Oct 10–12, and there had
+been no cancellation: Jennifer's booking 67429519 was cancelled at 18:06 UTC and 67446752 created at
+18:12 — same Airbnb guest id (278003205), same unit, same dates; an Airbnb change shows in Hostaway as a
+cancel plus a new reservation. Now a cancelled booking with a live booking by the same guest overlapping
+it in the same unit is a change: no clean to confirm, and a clean already held is released. A different
+guest overlapping is not — Cynthia's booking on the same unit, cancelled at 00:18 on the 10th, the day
+Jennifer arrived, is still held: the unit may have needed a clean before her.
+

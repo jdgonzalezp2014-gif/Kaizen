@@ -102,6 +102,13 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   Only rows already in the record are held (older never-recorded cancellations are not back-filled).
 - Operations → Crew: pick a cleaner → **Team view** (stars, flag/correct/decide) or **👁 View as cleaner**
   (the same page exactly as they get it — no stars, no team controls; their buttons send nothing).
+- **Deep is a person's call (§126):** every clean is regular unless someone sets "Deep — confirmed" on the
+  row (an override); a stay of `deepCleanNights`+ only shows "○ deep suggested" (`row.deepSuggested`).
+- **Rebooked ≠ cancelled (§126):** a cancelled booking whose guest has a live booking in the same unit
+  with overlapping nights (same channel guest id `guestKey` from `-guest-<id>-`, else phone, else one
+  name starting with the other) is a change: no clean to confirm; a held row is released
+  (`releaseRebooked`, void "booking changed — booked again as …"). A different guest overlapping is
+  still held (the unit may need a clean between them).
 - **Corrections (§123):** Operations → Crew → a cleaner → "✎ Correct" on a PAST clean: deep/normal and
   price (blank = the card's rate at the unit's size; no rate → must type one), note required and shown
   to the cleaner (`edited_by/at`, `edit_note`). Today and ahead are changed on the board.

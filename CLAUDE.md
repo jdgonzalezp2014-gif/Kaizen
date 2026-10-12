@@ -40,7 +40,7 @@ finishing. A new decision worth the long form gets a `## §N` section in history
 ## Workflow
 
 ```
-npm test                 # node --test (~236)
+npm test                 # node --test (~237)
 npx tsc --noEmit
 npm run build
 npm run migrate          # db/migrations/NNN_*.sql, recorded in _migrations — BEFORE pushing

@@ -159,6 +159,8 @@ export interface HostawayReservation {
   phone?: string;
   /** When it was cancelled, as Hostaway writes it ("YYYY-MM-DD HH:MM:SS", UTC) — cancelled ones only (§123). */
   cancellationDate?: string | null;
+  /** The guest's id on the channel — Airbnb's "<listing>-guest-<id>-confirmation-…" — to recognise a rebooking (§126). */
+  guestKey?: string | null;
 }
 
 export interface CalendarDay {
@@ -494,7 +496,8 @@ async function pagedReservationsWith(token: string, query: string,
         idVerified: Number(r.isGuestIdentityVerified) === 1 || Number(r.isGuestVerifiedByGovernmentId) === 1,
         guests: Number(r.numberOfGuests ?? r.adults) || null,
         phone: String(r.phone ?? ''),
-        cancellationDate: r.cancellationDate ? String(r.cancellationDate) : null
+        cancellationDate: r.cancellationDate ? String(r.cancellationDate) : null,
+        guestKey: /-guest-(\d+)-/.exec(String(r.channelReservationId ?? ''))?.[1] ?? null
       };
     })
     .filter(r => r.arrival && r.departure && r.listingId);
