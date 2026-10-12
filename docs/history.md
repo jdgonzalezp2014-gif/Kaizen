@@ -3602,4 +3602,14 @@ helper's name kept on the phone, English/Spanish, no access to anything of the c
 branch: the first order plan had 273 lines — every never-counted unit was treated as empty and so needed
 everything; now only counted items are ordered and never-counted units with cleans coming are listed to
 count first. Open: the Access bypass for `/report`, transfers from Storage, purchases into Costs.
+The owner's correction the same morning: the share button goes on each clean, not on the team, and the
+cleaner's actions belong in one "Options" list per clean — a card per feature was overwhelming; it is
+for older people, so practical and mistake-proof. Rebuilt so: the helper link is per clean (058; the
+team-wide token of 057 dropped before anyone used it) and fixes the unit and day itself; the report
+form is one question per screen with + / − instead of a keyboard, the Send button saying what is
+missing, and all lines sent at once or none. Then: several people can work one clean — photos BEFORE
+and AFTER to Drive (a folder per unit and clean) and "done" / "reopen" (059), as numbered steps; done
+needs an after photo, reopening asks "Yes, reopen". The helper page's header became one line (language
+beside day/night) so the clean fills the screen. Testing uploaded two test photos to the real Drive
+(the branch shares the Google connection); trashed after.
 

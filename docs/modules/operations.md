@@ -20,8 +20,10 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   `src/lib/operations.ts` (star rule: zoneOf, requiredStars, pickByStars,
   assignByStars, typicalNightly; old tier rule `assign`; rateFor, sameGuest,
   oneCleanPerUnitDay, mergeHostNote, proposeInspections, hostawayReservationUrl), `dates.ts`.
-- Inventory (§134): `src/screens/Inventory.tsx` (Operations → Inventory), `src/components/FieldReport.tsx`
-  (the report form, on the crew page and on `/report`), `src/screens/Report.tsx` (the helpers' page);
+- Inventory and the field (§134): `src/screens/Inventory.tsx` (Operations → Inventory),
+  `src/components/FieldReport.tsx` (supplies/problems, one question per screen) and `CleanSteps.tsx`
+  (photos before/after, done/reopen) — both on each clean's "Options…" (crew page) and on `/report`
+  (`src/screens/Report.tsx`, the helpers' page); server `functions/_lib/clean-record.ts`;
   API `inventory.ts` (GET `operations`, POST `operations.edit`), `inventory-items.ts` (`operations.setup`),
   `report-link.ts` (SELF_AUTHENTICATING, `X-Report-Token`); server lib `functions/_lib/inventory.ts`;
   pure `src/lib/inventory.ts` (stockLevels, reconcile, perClean, toOrder, toBuy, orderList).
@@ -36,7 +38,8 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 `cleanings.flag_note/flagged_by/at`, `cleaning_extras` (+ `cleaning_extra_files`), `crew_declines`,
 `crew_schedule_confirms` (snapshot jsonb), `accounts.ops_rules` / `ops_mode`, `stay_notes`, `inspections`,
 `extra_inspectors`, `host_note_pushes`, `inventory_items`, `inventory_moves` (§134), `cleaners.report_token_enc/hash`,
-`accounts.field_reports_folder`.
+`accounts.field_reports_folder`, `clean_links` (058), `clean_records` / `clean_photos` / `clean_marks`,
+`accounts.clean_photos_folder` (059). (057's `cleaners.report_token_*` were dropped in 058.)
 
 ## Rules that bite
 
@@ -183,19 +186,28 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   that unit reported uses in 60 days. **To order only for counted items** (`toOrder(null) = 0`): treating
   never-counted as empty made 273 lines on the first test; never-counted units with cleans ahead are
   listed "Count first". An order = one to-do with a sub-task per line, mirrored like any work.
-- **Report link (§134):** a cleaner's page → "People who clean with you" → a link `/report#t=…` (token
-  encrypted in `report_token_enc` so it can be shared again, matched by `report_token_hash`; "Make a
-  new link" rotates it). The helper writes their name (kept in localStorage); reports are
-  `by_name = "<cleaner>'s team: <name>"`, `source = link`. It reads nothing private.
+- **Per clean, not per team (§134, owner):** each clean of the cleaner's (Coming up; Cleans of the last
+  3 days) has one native "Options…" list: 📷 Photos & mark as done · what I took · bought · missing ·
+  wrong · need · 📤 send the link to my helper. The helper link (`clean_links`, token encrypted to be
+  shared again, `/report#t=…`) is for THAT clean: unit and key come from the link, never the page; it
+  closes 2 days after the clean, when the clean is voided or given to another cleaner, or the cleaner is
+  inactive. Several helpers can use one link; each gives a name once (localStorage), reports are
+  `"<cleaner>'s team: <name>"`. A cleaner's clean is checked against their page once (`myClean`, reads
+  the schedule) and then by `clean_records.cleaner`.
+- **Photos and done (§134):** photos go one per request, shrunk on the phone (2000 px JPEG), to Drive
+  `Kaizen — clean photos / <unit> / <date> <unit>` (made on first photo). **Done needs ≥1 AFTER photo**;
+  a second "done" is a no-op; reopen asks "Yes, reopen" in place. Every mark is kept (`clean_marks`);
+  the latest is the state. The crew rows show "📷 n before · n after · ✅ done (who)" (team view too).
 
 ## Open items
 
-- **Inventory built, not in use (§134).** Migration 057 applied. To start: count Storage and the busiest
-  units (Operations → Inventory → ▣ Count), adjust the starter list (13 items, estimates are guesses).
-  The `/report` page needs the Cloudflare Access **Bypass** for `/report`, `/assets/*`, `/api/report-link`
-  (same as the crew link). SOP drafts: "Keep the supplies counted and ordered", and the cleaners'
-  "Supplies, problems and your team's link" / "Insumos, problemas y el enlace de tu equipo" (publish
-  them to show on the crew page). Not built: transfers Storage → unit (a use in a unit does not take
+- **Inventory and the field steps built, not in use (§134).** Migrations 057–059 applied. To start:
+  count Storage and the busiest units (Operations → Inventory → ▣ Count), adjust the starter list (13
+  items, estimates are guesses). The `/report` page needs the Cloudflare Access **Bypass** for `/report`,
+  `/assets/*`, `/api/report-link` (same app as the crew link). SOP drafts: "Keep the supplies counted and
+  ordered", and the cleaners' "Your clean step by step: photos, done, supplies" / "Tu limpieza paso a
+  paso: fotos, completada, insumos" (publish them to show on the crew page). Not built: photos and done
+  on the Operations board; done does not feed the record or pay. Not built: transfers Storage → unit (a use in a unit does not take
   from Storage), costs of purchases into Costs, supplier/price per item, a Slack notice for ⚠.
 
 - **Stars built, tiers still deciding (§121).** `accounts.assign_rule = 'tiers'`; the board shows
