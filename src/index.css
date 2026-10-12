@@ -1830,3 +1830,9 @@ input[type=file][hidden] { display: none !important; }
 :root[data-theme="dark"] .insp-seg button.on.ok { background: rgba(78,201,138,.18); border-color: var(--green); color: var(--green); }
 :root[data-theme="dark"] .insp-seg button.on.attention { background: rgba(233,162,59,.18); border-color: var(--amber); color: var(--amber); }
 :root[data-theme="dark"] .chip.need { border-color: var(--amber); color: var(--amber); }
+.insp-steps { display: flex; gap: 6px; padding: 8px 16px 0; }
+.insp-steps span { flex: 1; text-align: center; padding: 4px 0; border-bottom: 3px solid var(--line); opacity: .6; }
+.insp-steps span.on { border-color: var(--ink); opacity: 1; }
+.insp-steps span.done { border-color: var(--green, #34a853); opacity: .9; }
+.insp-finding textarea { margin: 0; }
+.insp-finding textarea, .insp-sheet textarea { font-family: inherit; font-size: 15px; }

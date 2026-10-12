@@ -20,7 +20,7 @@ import { opsConfig } from './ops.ts';
 import { todayIn, addDays } from '../../src/lib/dates.ts';
 import { eligibleInspectors } from '../../src/lib/operations.ts';
 import {
-  AREA_KEYS, ASSIGN_SUBTASK, areaTitle, checklistFor, cleanTaskText, overallResult, readyToFinish, roomsOf, suggestedOutcome, workFor,
+  AREA_KEYS, ASSIGN_SUBTASK, areaTitle, checklistFor, cleanTaskText, overallResult, purchaseList, readyToFinish, roomsOf, suggestedOutcome, workFor,
   type Area, type Check, type CheckResult, type InspectionItem, type Outcome
 } from '../../src/lib/inspection.ts';
 
@@ -263,6 +263,12 @@ async function nextManualKey(sql: SqlFn) {
 export async function finishRun(sql: SqlFn, who: string, b: Record<string, unknown>) {
   const id = String(b.inspectionId ?? '');
   const ins = await openRun(sql, id);
+  // The review's cleaning step decides for the whole group: the next clean, or one new clean.
+  if (b.cleanMode === 'next' || b.cleanMode === 'new') {
+    await sql`UPDATE inspection_checks SET outcome = ${b.cleanMode === 'next' ? 'clean_next' : 'clean_new'}
+               WHERE account_id = 1 AND inspection_id = ${Number(id)} AND result = 'attention'
+                 AND outcome IN ('clean_next', 'clean_new') AND clean_task_id IS NULL`;
+  }
   const checks = await checksOf(sql, id);
   const ready = readyToFinish(checks);
   if (!ready.ok) {
@@ -284,7 +290,8 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
   const toPush: string[] = [];
 
   // A finding that already made its work (a finish retried) makes nothing again.
-  for (const c of checks.filter(x => x.result === 'attention' && !x.todoId)) {
+  // Repairs: one work order each. Purchases: one shopping list for all of them, below.
+  for (const c of checks.filter(x => x.result === 'attention' && x.outcome === 'repair' && !x.todoId)) {
     const work = workFor(c, { unit: ins.unit_name, date: ins.date, inspector, sectionTitle: title(c) });
     if (!work) continue;
     const [t] = await sql`
@@ -303,6 +310,25 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
     await sql`UPDATE inspection_checks SET todo_id = ${Number(t!.id)} WHERE account_id = 1 AND id = ${Number(c.id)}`;
     toPush.push(t!.id);
     made.push({ kind: work.kind === 'work_order' ? 'repair' : 'purchase', title: work.title, id: t!.id });
+  }
+
+  // Purchases: ONE to-do for all of them, an item per sub-task to tick off as it is bought.
+  const buys = checks.filter(x => x.result === 'attention' && x.outcome === 'purchase' && !x.todoId);
+  const list = purchaseList(buys, { unit: ins.unit_name, date: ins.date, inspector }, title);
+  if (list) {
+    const [t] = await sql`
+      INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, inspection_id)
+      VALUES (1, ${list.title}, ${list.description}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(id)})
+      RETURNING id::text` as { id: string }[];
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'task', ${t!.id}, 'status', ${`To-do created from the inspection of ${ins.unit_name} on ${ins.date} — ${list.items.length} item${list.items.length === 1 ? '' : 's'} to buy.`}, ${who})`;
+    for (const item of list.items) {
+      await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id, inspection_id)
+                VALUES (1, ${item}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
+    }
+    await sql`UPDATE inspection_checks SET todo_id = ${Number(t!.id)} WHERE account_id = 1 AND id = ANY(${buys.map(c => Number(c.id))}::bigint[])`;
+    toPush.push(t!.id);
+    made.push({ kind: 'purchase', title: list.title, id: t!.id });
   }
 
   // For a clean: the unit's next clean, or one new clean for all of them.

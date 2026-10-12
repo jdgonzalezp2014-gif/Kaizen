@@ -14,7 +14,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getRun, runAction, runPhotos, type InspectionRunData, type RunCheck } from '../api.ts';
-import { checkKey, overallResult, progress, readyToFinish, type Area, type Outcome, type Section } from '../lib/inspection.ts';
+import { checkKey, overallResult, progress, readyToFinish, reviewSteps, type Area, type Outcome, type Section } from '../lib/inspection.ts';
 
 const OUTCOME_LABEL: Record<Outcome, string> = {
   repair: '🔧 Repair (work order)', purchase: '🛒 Purchase (to-do)', clean_next: '🧽 Task for the next clean',
@@ -268,7 +268,13 @@ function QuickAdd({ data, kind, onCancel, onDone }: {
   );
 }
 
-/** Before finishing: every finding, what it becomes, and the overall result. */
+/**
+ * Review & finish, step by step (the owner's flow): Repairs → Purchases →
+ * Cleaning → Finish. Each step shows its findings with their notes (editable),
+ * lets one move to another kind, and goes on with "Confirm & continue".
+ * Repairs become one work order each; purchases ONE to-do, a shopping list;
+ * cleaning findings go to the next clean or one new clean — one choice for all.
+ */
 function Review({ data, onBack, onSave, onPhotos, onFinished }: {
   data: InspectionRunData; onBack: () => void;
   onSave: (c: RunCheck, patch: Partial<RunCheck>) => Promise<void>;
@@ -277,70 +283,113 @@ function Review({ data, onBack, onSave, onPhotos, onFinished }: {
 }) {
   const ins = data.inspection;
   const findings = data.checks.filter(c => c.result === 'attention');
-  const ready = readyToFinish(findings);
+  const steps = reviewSteps(findings);
+  const [idx, setIdx] = useState(0);
+  const step = steps[Math.min(idx, steps.length - 1)]!;
   const suggested = overallResult(findings);
-  const [result, setResult] = useState(suggested);
+  const [result, setResult] = useState<string>(suggested);
   useEffect(() => setResult(suggested), [suggested]);
   const [notes, setNotes] = useState('');
+  const [cleanMode, setCleanMode] = useState<'next' | 'new'>(data.nextClean ? 'next' : 'new');
   const [cleanDate, setCleanDate] = useState(() => { const t = new Date(`${data.today}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + 1); return t.toISOString().slice(0, 10); });
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const sectionTitle = (c: RunCheck) => data.sections.find(s => s.area === c.area && s.n === c.n)?.title ?? c.area;
   const prog = progress(data.sections, data.checks);
+  const isClean = (c: RunCheck) => c.outcome === 'clean_next' || c.outcome === 'clean_new';
+  const group = findings.filter(c => step === 'repair' ? c.outcome === 'repair' : step === 'purchase' ? c.outcome === 'purchase' : step === 'clean' ? isClean(c) : false);
+  const needPhoto = group.filter(c => !c.photos.length);
+  const go = (d: number) => { setMsg(''); setIdx(i => Math.max(0, Math.min(steps.length - 1, i + d))); };
   const finish = async () => {
     setBusy(true); setMsg('');
-    const r = await runAction<{ made: { kind: string; title: string }[] }>({ action: 'finish', inspectionId: ins.id, result, notes, cleanDate })
+    const r = await runAction<{ made: { kind: string; title: string }[] }>({ action: 'finish', inspectionId: ins.id, result, notes, cleanMode, cleanDate })
       .catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (!r.ok) { setMsg(r.message ?? 'Not finished.'); return; }
     onFinished(r.made);
   };
+  const count = (f: (c: RunCheck) => boolean) => findings.filter(f).length;
+  const HEAD: Record<string, [string, string]> = {
+    repair: ['🔧 Repairs', 'Each becomes a work order — nobody on it yet — with the sub-task “Assign and schedule”.'],
+    purchase: ['🛒 Purchases', 'All of them become ONE to-do: a shopping list, an item per sub-task to tick off.'],
+    clean: ['🧽 Cleaning', 'One choice for all of them: tasks for the unit’s next clean, or one new clean.']
+  };
+
   return (
-    <Sheet title={`Review · ${ins.unit}`} sub={`${ins.date}${ins.inspector ? ` · ${ins.inspector}` : ''}`} onClose={onBack} closeLabel="← Back">
+    <Sheet title={`Review · ${ins.unit}`} sub={`Step ${Math.min(idx, steps.length - 1) + 1} of ${steps.length}`} onClose={onBack} closeLabel="← Rooms">
+      <div className="insp-steps">{steps.map((s2, i) => <span key={s2} className={i === Math.min(idx, steps.length - 1) ? 'on' : i < idx ? 'done' : ''}>
+        {s2 === 'repair' ? '🔧' : s2 === 'purchase' ? '🛒' : s2 === 'clean' ? '🧽' : '✓'}</span>)}</div>
       <div className="insp-body">
-        {prog.total - prog.done > 0 && <p className="banner warn">▲ {prog.total - prog.done} item{prog.total - prog.done === 1 ? ' is' : 's are'} not checked.
-          Finishing leaves {prog.total - prog.done === 1 ? 'it' : 'them'} out of the report. <button className="link" onClick={onBack}>Go back</button></p>}
-        {!findings.length ? <p className="banner ok">✓ Nothing needs attention.</p> : (
-          <>
-            <h3>Findings <span className="count">{findings.length}</span></h3>
-            {findings.map(c => (
-              <div key={c.id} className="insp-finding">
-                <div><b>{sectionTitle(c)}</b> · {c.label}{c.note ? <span className="note"> — {c.note}</span> : null}</div>
-                <div className="insp-photos">
-                  {c.photos.map((p, i) => <a key={i} href={p.url} target="_blank" rel="noreferrer">📷 {p.name}</a>)}
-                  {!c.photos.length && <label className="chip need">📷 Photo (required)
-                    <input type="file" accept="image/*" capture="environment" multiple hidden onChange={e => void onPhotos(c.id, e.target.files)} /></label>}
-                </div>
-                <select value={c.outcome ?? ''} onChange={e => void onSave(c, { outcome: e.target.value as Outcome })}>
-                  <option value="" disabled>What does it become?</option>
-                  {(Object.keys(OUTCOME_LABEL) as Outcome[]).map(o => (
-                    <option key={o} value={o} disabled={o === 'clean_next' && !data.nextClean}>
-                      {OUTCOME_LABEL[o]}{o === 'clean_next' ? (data.nextClean ? ` — ${data.nextClean.date}${data.nextClean.cleaner ? ` · ${data.nextClean.cleaner}` : ''}` : ' — none scheduled') : ''}</option>
-                  ))}
-                </select>
-              </div>
-            ))}
-            {findings.some(c => c.outcome === 'clean_new') && (
-              <label>Day of the new clean (unassigned — the team gives it to a cleaner)
-                <input type="date" value={cleanDate} onChange={e => setCleanDate(e.target.value)} /></label>
-            )}
-          </>
-        )}
-        <label>Overall result
-          <select value={result} onChange={e => setResult(e.target.value as typeof suggested)}>
-            {RESULTS.map(r => <option key={r} value={r}>{r}{r === suggested ? ' (suggested)' : ''}</option>)}
-          </select></label>
-        <label>Notes for the report (optional)
-          <textarea rows={2} value={notes} maxLength={1500} onChange={e => setNotes(e.target.value)} /></label>
-        {!ready.ok && <p className="breach">▲ {ready.missingPhoto.length ? `${ready.missingPhoto.length} finding${ready.missingPhoto.length === 1 ? ' needs' : 's need'} a photo. ` : ''}
-          {ready.undecided.length ? `${ready.undecided.length} finding${ready.undecided.length === 1 ? ' needs' : 's need'} a decision.` : ''}</p>}
+        {step !== 'finish' && <>
+          <h3>{HEAD[step]![0]} <span className="count">{group.length}</span></h3>
+          <p className="note">{HEAD[step]![1]}</p>
+          {group.map(c => <FindingCard key={c.id} c={c} title={sectionTitle(c)} onSave={onSave} onPhotos={onPhotos} />)}
+          {step === 'clean' && (
+            <div className="insp-finding">
+              <label className="check"><input type="radio" checked={cleanMode === 'next'} disabled={!data.nextClean} onChange={() => setCleanMode('next')} />
+                Notes for the next clean{data.nextClean ? ` — ${data.nextClean.date}${data.nextClean.cleaner ? ` · ${data.nextClean.cleaner}` : ''}` : ' (none scheduled)'}</label>
+              <label className="check"><input type="radio" checked={cleanMode === 'new'} onChange={() => setCleanMode('new')} /> A new clean, unassigned — the team gives it to a cleaner</label>
+              {cleanMode === 'new' && <label>Day<input type="date" value={cleanDate} min={data.today} onChange={e => setCleanDate(e.target.value)} /></label>}
+            </div>
+          )}
+          {needPhoto.length > 0 && <p className="breach">▲ {needPhoto.length} need{needPhoto.length === 1 ? 's' : ''} a photo before you continue.</p>}
+        </>}
+        {step === 'finish' && <>
+          {prog.total - prog.done > 0 && <p className="banner warn">▲ {prog.total - prog.done} item{prog.total - prog.done === 1 ? ' is' : 's are'} not checked —
+            {' '}they stay out of the report. <button className="link" onClick={onBack}>Back to the rooms</button></p>}
+          {!findings.length ? <p className="banner ok">✓ Nothing needs attention.</p> : (
+            <ul className="insp-made">
+              {count(c => c.outcome === 'repair') > 0 && <li>🔧 {count(c => c.outcome === 'repair')} work order{count(c => c.outcome === 'repair') === 1 ? '' : 's'}, each with “Assign and schedule”</li>}
+              {count(c => c.outcome === 'purchase') > 0 && <li>🛒 1 to-do: buy {count(c => c.outcome === 'purchase')} item{count(c => c.outcome === 'purchase') === 1 ? '' : 's'}</li>}
+              {count(isClean) > 0 && <li>🧽 {cleanMode === 'next' && data.nextClean
+                ? `${count(isClean)} task${count(isClean) === 1 ? '' : 's'} for the next clean (${data.nextClean.date})`
+                : `1 new clean on ${cleanDate} with ${count(isClean)} task${count(isClean) === 1 ? '' : 's'}`}</li>}
+              {count(c => c.outcome === 'none') > 0 && <li>— {count(c => c.outcome === 'none')} in the report only</li>}
+            </ul>
+          )}
+          <label>Overall result
+            <select value={result} onChange={e => setResult(e.target.value)}>
+              {RESULTS.map(r => <option key={r} value={r}>{r}{r === suggested ? ' (suggested)' : ''}</option>)}
+            </select></label>
+          <label>Notes for the report (optional)
+            <textarea rows={2} value={notes} maxLength={1500} onChange={e => setNotes(e.target.value)} /></label>
+        </>}
         {msg && <p className="banner error">{msg}</p>}
       </div>
       <div className="insp-foot">
-        <button className="secondary" onClick={onBack}>← Back to the rooms</button>
-        <button disabled={busy || !ready.ok} onClick={() => void finish()}>{busy ? 'Finishing…' : 'Finish inspection'}</button>
+        <button className="secondary" onClick={() => (idx === 0 ? onBack() : go(-1))}>{idx === 0 ? '← Rooms' : '← Back'}</button>
+        {step !== 'finish'
+          ? <button disabled={needPhoto.length > 0} onClick={() => go(1)}>Confirm & continue →</button>
+          : <button disabled={busy || !readyToFinish(findings).ok} onClick={() => void finish()}>{busy ? 'Finishing…' : 'Finish inspection'}</button>}
       </div>
     </Sheet>
+  );
+}
+
+/** One finding in the review: where, its photos, its notes (editable), and a move to another kind. */
+function FindingCard({ c, title, onSave, onPhotos }: {
+  c: RunCheck; title: string; onSave: (c: RunCheck, patch: Partial<RunCheck>) => Promise<void>;
+  onPhotos: (checkId: string, files: FileList | null) => Promise<void>;
+}) {
+  const [note, setNote] = useState(c.note ?? '');
+  useEffect(() => setNote(c.note ?? ''), [c.note]);
+  const kind = c.outcome === 'clean_next' || c.outcome === 'clean_new' ? 'clean' : c.outcome ?? 'repair';
+  return (
+    <div className="insp-finding">
+      <div><b>{title}</b> · {c.label}</div>
+      <div className="insp-photos">
+        {c.photos.map((p, i) => <a key={i} href={p.url} target="_blank" rel="noreferrer">📷 {p.name}</a>)}
+        <label className={`chip ${c.photos.length ? '' : 'need'}`}>📷 {c.photos.length ? 'Add photo' : 'Photo (required)'}
+          <input type="file" accept="image/*" capture="environment" multiple hidden onChange={e => void onPhotos(c.id, e.target.files)} /></label>
+      </div>
+      <textarea rows={2} value={note} maxLength={1000} placeholder="Notes — what exactly, where, what to bring…"
+                onChange={e => setNote(e.target.value)} onBlur={() => { if (note !== (c.note ?? '')) void onSave(c, { note }); }} />
+      <label className="sub-n">Kind
+        <select value={kind} onChange={e => void onSave(c, { outcome: (e.target.value === 'clean' ? 'clean_next' : e.target.value) as Outcome })}>
+          <option value="repair">🔧 Repair</option><option value="purchase">🛒 Purchase</option>
+          <option value="clean">🧽 Cleaning</option><option value="none">No action — report only</option>
+        </select></label>
+    </div>
   );
 }
 

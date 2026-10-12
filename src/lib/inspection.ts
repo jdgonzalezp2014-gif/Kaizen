@@ -122,3 +122,33 @@ export const ASSIGN_SUBTASK = 'Assign and schedule';
 /** What a clean is asked to do, from a finding. */
 export const cleanTaskText = (c: Check, sectionTitle: string) =>
   `${sectionTitle}: ${c.note?.trim() ? `${c.label} — ${c.note.trim()}` : c.label}`.slice(0, 500);
+
+/**
+ * Every purchase of an inspection as ONE to-do — a shopping list — with one
+ * sub-task per item to tick off as it is bought (§133, the owner's flow).
+ */
+export function purchaseList(cs: Check[], ctx: { unit: string; date: string; inspector: string },
+                             titleOf: (c: Check) => string): { title: string; description: string; items: string[] } | null {
+  const buys = cs.filter(c => c.result === 'attention' && c.outcome === 'purchase');
+  if (!buys.length) return null;
+  const item = (c: Check) => `${c.label}${c.note?.trim() ? ` — ${c.note.trim()}` : ''} (${titleOf(c)})`;
+  const title = buys.length === 1 ? `Buy for ${ctx.unit}: ${buys[0]!.label}` : `Buy for ${ctx.unit}: ${buys.length} items`;
+  const lines = [
+    `From the inspection of ${ctx.unit} on ${ctx.date}${ctx.inspector ? ` by ${ctx.inspector}` : ''}.`,
+    ...buys.flatMap(c => [`• ${item(c)}`, ...c.photos.map(p => `  Photo: ${p.url}`)])
+  ];
+  return { title: title.slice(0, 300), description: lines.join('\n'), items: buys.map(c => `Buy: ${item(c)}`.slice(0, 300)) };
+}
+
+/** The steps of the review, in order — only the ones with something in them. */
+export type ReviewStep = 'repair' | 'purchase' | 'clean' | 'finish';
+export function reviewSteps(cs: Check[]): ReviewStep[] {
+  const att = cs.filter(c => c.result === 'attention');
+  const has = (f: (c: Check) => boolean) => att.some(f);
+  return [
+    ...(has(c => c.outcome === 'repair') ? ['repair' as const] : []),
+    ...(has(c => c.outcome === 'purchase') ? ['purchase' as const] : []),
+    ...(has(c => c.outcome === 'clean_next' || c.outcome === 'clean_new') ? ['clean' as const] : []),
+    'finish'
+  ];
+}

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checklistFor, overallResult, progress, readyToFinish, roomsOf, suggestedOutcome, workFor,
+import { checklistFor, overallResult, progress, purchaseList, readyToFinish, reviewSteps, roomsOf, suggestedOutcome, workFor,
          type Check, type InspectionItem } from './inspection.ts';
 
 const item = (id: string, area: InspectionItem['area'], label: string, extra: Partial<InspectionItem> = {}): InspectionItem =>
@@ -53,4 +53,23 @@ test('a finding becomes a repair or a purchase, with where, who and the photos',
   assert.match(rep.description, /inspection of CL1250 on 2026-10-12 by Sharon — Bathroom 2[\s\S]*Photo: https:\/\/x\/p/);
   assert.equal(workFor(check('1', 1, 'attention', { label: 'Coffee', outcome: 'purchase' }), ctx)!.title, 'Buy: Coffee');
   assert.equal(workFor(check('1', 1, 'attention', { outcome: 'clean_next' }), ctx), null);
+});
+
+
+
+test('all purchases become one shopping list, an item per sub-task', () => {
+  const cs = [check('1', 1, 'attention', { label: 'Coffee', note: 'none left', outcome: 'purchase', photos: [{ name: 'p', url: 'https://x/p' }] }),
+              check('2', 1, 'attention', { label: 'Towels', outcome: 'purchase', area: 'bathroom' }),
+              check('3', 1, 'attention', { label: 'Grout', outcome: 'repair' })];
+  const l = purchaseList(cs, { unit: 'CL1250', date: '2026-10-12', inspector: 'Sharon' }, c => c.area === 'bathroom' ? 'Bathroom' : 'Kitchen')!;
+  assert.equal(l.title, 'Buy for CL1250: 2 items');
+  assert.deepEqual(l.items, ['Buy: Coffee — none left (Kitchen)', 'Buy: Towels (Bathroom)']);
+  assert.match(l.description, /• Coffee — none left \(Kitchen\)\n  Photo: https:\/\/x\/p\n• Towels/);
+  assert.equal(purchaseList([cs[2]!], { unit: 'X', date: 'd', inspector: '' }, () => ''), null);
+});
+
+test('the review walks repairs, then purchases, then cleaning — only the steps with findings', () => {
+  assert.deepEqual(reviewSteps([check('1', 1, 'attention', { outcome: 'clean_new' }), check('2', 1, 'attention', { outcome: 'repair' })]),
+                   ['repair', 'clean', 'finish']);
+  assert.deepEqual(reviewSteps([check('1', 1, 'ok')]), ['finish']);
 });
