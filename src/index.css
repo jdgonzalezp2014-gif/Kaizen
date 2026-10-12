@@ -1768,3 +1768,20 @@ button.sop-num { cursor: pointer; }
 .crew-row .ops-flag { margin-left: 6px; }
 .crew-moves { margin: 6px 0 10px; padding-left: 18px; }
 .crew-decide input[type=date] { flex: 0 0 auto; width: auto; }
+/* The crew calendar: seven columns that still fit a phone. */
+.crew-cal-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.crew-cal-head h2 { margin: 0; }
+.crew-cal { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 3px; margin-top: 10px; }
+.crew-cal-dow { text-align: center; font-size: 11px; color: var(--muted); }
+.crew-cal-day { min-height: 54px; border: 1px solid var(--line); border-radius: 6px; padding: 2px 3px; overflow: hidden; }
+.crew-cal-day.today { border-color: var(--ink); }
+.crew-cal-n { font-size: 11px; color: var(--muted); }
+.crew-cal-item { font-size: 11px; line-height: 1.25; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crew-cal-item.off { color: var(--muted); text-decoration: line-through; }
+.crew-cal-item.flag { color: var(--warn, #b45309); }
+.crew-cal-item.ahead { font-weight: 600; }
+button.crew-cal-day { background: var(--card); color: inherit; font: inherit; text-align: left; cursor: pointer; display: flex; flex-direction: column; justify-content: flex-start; width: 100%; }
+.crew-cal-day.sel { box-shadow: inset 0 0 0 2px var(--ink); }
+.crew-cal-detail { margin-top: 10px; }
+.crew-cal-detail ul { margin: 4px 0 0; padding-left: 18px; }
+.crew-cal-detail .crew-cal-item { white-space: normal; font-size: 13px; }

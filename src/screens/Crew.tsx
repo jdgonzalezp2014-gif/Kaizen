@@ -239,6 +239,7 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload }
       </div>
 
       <Upcoming page={page} act={mode === 'cleaner' ? act : undefined} reload={reload} />
+      <CrewCalendar page={page} />
 
       <div className="card no-print">
         <h2>Cleans — {period.label}</h2>
@@ -261,6 +262,113 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload }
       <InvoiceView page={page} />
     </div>
   );
+}
+
+/* ── the calendar ─────────────────────────────────────────────────── */
+
+const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+type CalItem = { date: string; unit: string; mark: string; title: string; tone: 'done' | 'off' | 'flag' | 'ahead' };
+/** A unit's name short enough for a phone's calendar cell: "P2-4304" → "4304", "Bobcat House" → "Bobcat". */
+const shortUnit = (u: string) => /\d{3,}$/.exec(u.trim())?.[0] ?? u.trim().split(/\s+/)[0]!;
+
+/**
+ * A month at a glance: what was done (from the record) and what is coming
+ * (only what the page already shows under "Coming up"). The page holds the
+ * last two months and the days ahead it shows, so the months it can draw
+ * are those.
+ */
+function CrewCalendar({ page }: { page: CrewPage }) {
+  // Today's cleans are still ahead of the cleaner: shown as coming up, not as done.
+  const ahead = new Set(page.upcoming.rows.map(r => r.key));
+  const items: CalItem[] = [
+    ...page.cleans.filter(c => c.date < page.today || (c.date === page.today && !ahead.has(c.key))).map(c => ({
+      date: c.date, unit: c.unit,
+      ...(c.voidReason ? { mark: '○', tone: 'off' as const, title: `not paid — ${c.voidReason}` }
+        : c.flagNote ? { mark: '⚑', tone: 'flag' as const, title: `flagged — ${c.flagNote}` }
+        : c.assignment === 'assigned' ? { mark: '✓', tone: 'done' as const, title: `${pay(c.price)}${c.deep ? ' · deep' : ''}` }
+        : { mark: '○', tone: 'off' as const, title: 'not assigned to you any more' })
+    })),
+    ...page.upcoming.rows.filter(r => r.date >= page.today)
+      .map(r => ({ date: r.date, unit: r.unit, mark: r.sameDay ? '⚡' : '•', tone: 'ahead' as const,
+                   title: `${r.manual ? 'manual clean' : `checkout ${r.time}`}${r.sameDay ? ` · next guest in${r.checkIn ? ` at ${r.checkIn}` : ''}` : ''} · ${pay(r.price)}` }))
+  ];
+  const months = [...new Set([...items.map(i => i.date.slice(0, 7)), page.today.slice(0, 7)])].sort();
+  const [month, setMonth] = useState(page.today.slice(0, 7));
+  const [sel, setSel] = useState(page.today);
+  const at = months.indexOf(month);
+  const [y, m] = month.split('-').map(Number) as [number, number];
+  const first = new Date(Date.UTC(y, m - 1, 1)), days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const cells: (string | null)[] = [...Array(first.getUTCDay()).fill(null),
+    ...Array.from({ length: days }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)];
+  const byDay = new Map<string, CalItem[]>();
+  for (const i of items) byDay.set(i.date, [...(byDay.get(i.date) ?? []), i]);
+
+  return (
+    <div className="card no-print">
+      <div className="crew-cal-head">
+        <button className="chip" disabled={at <= 0} onClick={() => setMonth(months[at - 1]!)}>‹</button>
+        <h2>{MONTH_NAME[m - 1]} {y}</h2>
+        <button className="chip" disabled={at >= months.length - 1} onClick={() => setMonth(months[at + 1]!)}>›</button>
+      </div>
+      <div className="crew-cal">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="crew-cal-dow">{d}</div>)}
+        {cells.map((d, i) => d === null ? <div key={i} /> : (
+          <button key={d} className={`crew-cal-day${d === page.today ? ' today' : ''}${d === sel ? ' sel' : ''}`} onClick={() => setSel(d)}>
+            <div className="crew-cal-n">{Number(d.slice(8))}</div>
+            {(byDay.get(d) ?? []).map((it, j) => (
+              <div key={j} className={`crew-cal-item ${it.tone}`}>{it.mark} {shortUnit(it.unit)}</div>
+            ))}
+          </button>
+        ))}
+      </div>
+      {/* The day tapped, in full — a cell only has room for a short name. */}
+      <div className="crew-cal-detail">
+        <b>{day(sel)}</b>
+        {(byDay.get(sel) ?? []).length === 0 ? <span className="note"> — nothing</span> : (
+          <ul>{(byDay.get(sel) ?? []).map((it, j) => <li key={j} className={`crew-cal-item ${it.tone}`}>{it.mark} {it.unit} — {it.title}</li>)}</ul>
+        )}
+      </div>
+      <p className="note">Tap a day for its cleans. ✓ done and paid · ⚑ flagged · ○ not paid · • coming up · ⚡ next guest the same day.
+        {!page.upcoming.enabled && ' Coming up shows only what the team assigned to you directly until the full schedule is published.'}</p>
+      {page.upcoming.rows.length > 0 && (
+        <div className="button-row">
+          <button className="secondary" onClick={() => downloadIcs(page)}>📅 Add my coming cleans to my phone calendar</button>
+          <span className="note">A copy of them as they are now — if one changes, check this page and add them again.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The coming cleans as an .ics file the phone's calendar opens. Each at its
+ * checkout time, an hour and a half long, in the board's time (New York) —
+ * written as local time, which is what a cleaner in Texas reads them as.
+ */
+function downloadIcs(page: CrewPage) {
+  const esc = (t: string) => t.replace(/[\\,;]/g, m => `\\${m}`).replace(/\n/g, '\\n');
+  const at = (date: string, time: string) => {
+    const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(time.trim());
+    let h = m ? Number(m[1]) % 12 + (/pm/i.test(m[3]!) ? 12 : 0) : 10;
+    const min = m ? Number(m[2]) : 0;
+    return { start: `${date.replace(/-/g, '')}T${String(h).padStart(2, '0')}${String(min).padStart(2, '0')}00`,
+             end: (() => { const e = h * 60 + min + 90; h = Math.floor(e / 60); return `${date.replace(/-/g, '')}T${String(h).padStart(2, '0')}${String(e % 60).padStart(2, '0')}00`; })() };
+  };
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
+  const events = page.upcoming.rows.map(r => {
+    const t = at(r.date, r.time);
+    const what = r.manual ? `manual clean (${r.manual.replace('_', ' ')})` : 'checkout clean';
+    return ['BEGIN:VEVENT', `UID:kaizen-${r.key}@kaizen-os`, `DTSTAMP:${stamp}`, `DTSTART:${t.start}`, `DTEND:${t.end}`,
+            `SUMMARY:${esc(`Clean ${r.unit}${r.beds ? ` (${r.beds}BR)` : ''}`)}`,
+            `DESCRIPTION:${esc(`${what}${r.sameDay ? ` — next guest in${r.checkIn ? ` at ${r.checkIn}` : ' the same day'}` : ''}. Pays ${pay(r.price)}.`)}`,
+            'END:VEVENT'].join('\r\n');
+  });
+  const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kaizen OS//Crew//EN', 'CALSCALE:GREGORIAN', ...events, 'END:VCALENDAR'].join('\r\n');
+  const url = URL.createObjectURL(new Blob([ics], { type: 'text/calendar' }));
+  const a = document.createElement('a');
+  a.href = url; a.download = `kaizen-cleans-${page.today}.ics`;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function Upcoming({ page, act, reload }: { page: CrewPage; act?: Act; reload: () => void }) {
