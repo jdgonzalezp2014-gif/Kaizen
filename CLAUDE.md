@@ -12,7 +12,7 @@ items belong to it, and which `§N` of `docs/history.md` explain it.
 | Module | Covers | Read |
 |---|---|---|
 | finance | Units, Revenue, Costs, pricing, Gemini, ratings feed, alerts | `docs/modules/finance.md` |
-| operations | the board, cleanings, inspections, manual cleans, Host Notes, rates & rules | `docs/modules/operations.md` |
+| operations | the board, cleanings, inspections, inventory, manual cleans, Host Notes, rates & rules | `docs/modules/operations.md` |
 | work | tasks, repairs, claims, Hostaway tasks mirror, repair costs, done log | `docs/modules/work.md` |
 | guests | agreement / ID status, Drive copies, Home check-ins | `docs/modules/guests.md` |
 | slack | the bot, @Kaizen, daily messages, the clock | `docs/modules/slack.md` |
@@ -40,14 +40,14 @@ finishing. A new decision worth the long form gets a `## §N` section in history
 ## Workflow
 
 ```
-npm test                 # node --test (~252)
+npm test                 # node --test (~260)
 npx tsc --noEmit
 npm run build
 npm run migrate          # db/migrations/NNN_*.sql, recorded in _migrations — BEFORE pushing
                          # (reads DATABASE_URL_UNPOOLED first: to migrate a Neon branch, override BOTH)
 git push origin master   # deploys
 ```
-- Migrations applied: 001–056. New ones are the next number.
+- Migrations applied: 001–057. New ones are the next number.
 - Local server (`$S` = scratch dir):
   `U=$(grep -h '^DATABASE_URL=' .env.local|head -1|cut -d= -f2-|tr -d '"'"'"); EK=$(grep -h '^ENCRYPTION_KEY=' .env.local .dev.vars|head -1|cut -d= -f2-|tr -d '"'"'"); nohup npx wrangler pages dev dist --port 8799 --binding "DATABASE_URL=$U" --binding "ENCRYPTION_KEY=$EK" --binding "ALLOW_UNAUTHENTICATED=true" > $S/wrangler.log 2>&1 &`
   Stop it with `ps -eo pid,args | grep "[w]rangler pages dev"` + kill (`pkill -f` kills its own shell).

@@ -3584,3 +3584,22 @@ The owner then described the review he wanted: repairs, then purchases, then cle
 new one. Rebuilt so: a step wizard, one shopping-list to-do with a sub-task per item, and a group choice
 for cleaning findings.
 
+## §134 — Inventory: counted by the team, reported from the field (2026-10-12)
+
+The owner: lay the foundations of inventory — cleaners report what they took for cleans (to foresee
+orders), what they bought, and when something the system says exists is not there; the manager registers
+and reconciles with counts. And the cleaners' own hires must be able to report, ask, inform and confirm
+what they took, with no account, from a link shared by WhatsApp, light on a phone, making the task.
+Built so: nothing stores "the stock" — every event is a move (count, used, purchase, adjust, missing) and
+the level is the last count plus what came and went since, which is what makes reconciling possible (a
+count shows the gap). A "not there" report does not zero the record on one person's word: it flags the
+item and makes a "Check stock" to-do; only the team counts or corrects. Use per clean starts as an
+estimate and is learned after 3 reported cleans. What to order = the next 14 days' cleans × use + the
+minimum − the record, as one shopping to-do with a sub-task per line (the inspection's shape, §133).
+The cleaner's page got "Supplies & problems" (right under Coming up) and "People who clean with you": a
+per-cleaner link, encrypted so it can be shared again and rotatable, opening `/report` — one card, the
+helper's name kept on the phone, English/Spanish, no access to anything of the cleaner's. Testing on the
+branch: the first order plan had 273 lines — every never-counted unit was treated as empty and so needed
+everything; now only counted items are ordered and never-counted units with cleans coming are listed to
+count first. Open: the Access bypass for `/report`, transfers from Storage, purchases into Costs.
+

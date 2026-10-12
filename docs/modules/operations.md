@@ -2,7 +2,7 @@
 
 Kaizen runs the day's operations (the daily file sheet is an archive). Tab **Operations**:
 Movements (the board, §124) · To-do (→ work module) · Calendar · By cleaner · Crew · Inspections ·
-Notes log · Rates & rules · Setup. Plus the **crew page** each cleaner sees (§122).
+Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page** each cleaner sees (§122).
 
 ## Files
 
@@ -20,6 +20,11 @@ Notes log · Rates & rules · Setup. Plus the **crew page** each cleaner sees (�
   `src/lib/operations.ts` (star rule: zoneOf, requiredStars, pickByStars,
   assignByStars, typicalNightly; old tier rule `assign`; rateFor, sameGuest,
   oneCleanPerUnitDay, mergeHostNote, proposeInspections, hostawayReservationUrl), `dates.ts`.
+- Inventory (§134): `src/screens/Inventory.tsx` (Operations → Inventory), `src/components/FieldReport.tsx`
+  (the report form, on the crew page and on `/report`), `src/screens/Report.tsx` (the helpers' page);
+  API `inventory.ts` (GET `operations`, POST `operations.edit`), `inventory-items.ts` (`operations.setup`),
+  `report-link.ts` (SELF_AUTHENTICATING, `X-Report-Token`); server lib `functions/_lib/inventory.ts`;
+  pure `src/lib/inventory.ts` (stockLevels, reconcile, perClean, toOrder, toBuy, orderList).
 - Script: `scripts/whatsapp-cleanings.mjs` (crew chat history, one-off).
 
 ## Tables
@@ -30,7 +35,8 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 `link_token_hash`), `accounts.assign_rule`, `accounts.crew_calendar(_days)`, `crew_extras_folder`,
 `cleanings.flag_note/flagged_by/at`, `cleaning_extras` (+ `cleaning_extra_files`), `crew_declines`,
 `crew_schedule_confirms` (snapshot jsonb), `accounts.ops_rules` / `ops_mode`, `stay_notes`, `inspections`,
-`extra_inspectors`, `host_note_pushes`.
+`extra_inspectors`, `host_note_pushes`, `inventory_items`, `inventory_moves` (§134), `cleaners.report_token_enc/hash`,
+`accounts.field_reports_folder`.
 
 ## Rules that bite
 
@@ -170,7 +176,27 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   price (blank = the card's rate at the unit's size; no rate → must type one), note required and shown
   to the cleaner (`edited_by/at`, `edit_note`). Today and ahead are changed on the board.
 
+- **Inventory (§134): the stock is never stored.** It is the last `count` + `purchase` − `used` ± `adjust`
+  per item and place (`unit_id` NULL = Storage), floored at 0. `missing` changes nothing: it marks the
+  item ⚠ and makes a "Check stock" to-do; a count clears it. Only the team counts or corrects
+  (`recordMove` refuses it from a cleaner or a link). Per clean = the item's estimate until 3 cleans in
+  that unit reported uses in 60 days. **To order only for counted items** (`toOrder(null) = 0`): treating
+  never-counted as empty made 273 lines on the first test; never-counted units with cleans ahead are
+  listed "Count first". An order = one to-do with a sub-task per line, mirrored like any work.
+- **Report link (§134):** a cleaner's page → "People who clean with you" → a link `/report#t=…` (token
+  encrypted in `report_token_enc` so it can be shared again, matched by `report_token_hash`; "Make a
+  new link" rotates it). The helper writes their name (kept in localStorage); reports are
+  `by_name = "<cleaner>'s team: <name>"`, `source = link`. It reads nothing private.
+
 ## Open items
+
+- **Inventory built, not in use (§134).** Migration 057 applied. To start: count Storage and the busiest
+  units (Operations → Inventory → ▣ Count), adjust the starter list (13 items, estimates are guesses).
+  The `/report` page needs the Cloudflare Access **Bypass** for `/report`, `/assets/*`, `/api/report-link`
+  (same as the crew link). SOP drafts: "Keep the supplies counted and ordered", and the cleaners'
+  "Supplies, problems and your team's link" / "Insumos, problemas y el enlace de tu equipo" (publish
+  them to show on the crew page). Not built: transfers Storage → unit (a use in a unit does not take
+  from Storage), costs of purchases into Costs, supplier/price per item, a Slack notice for ⚠.
 
 - **Stars built, tiers still deciding (§121).** `accounts.assign_rule = 'tiers'`; the board shows
   "needs ★N · has ★M ✓/▲" and "by stars: X" beside each clean. Next: the owner sets each
@@ -198,4 +224,4 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 
 ## History
 
-§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124.
+§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134.
