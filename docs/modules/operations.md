@@ -1,7 +1,7 @@
 # Module: operations
 
 Kaizen runs the day's operations (the daily file sheet is an archive). Tab **Operations**:
-Movements (the board, §124) · To-do (→ work module) · Calendar · Cleaners (view key `crew`) · Inspections ·
+Movements (the board, §124) · To-do (→ work module) · Cleaners (view key `crew`; inside it 👥 Pages & approvals and 📅 Calendar, view key `calendar`) · Inspections ·
 Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page** each cleaner sees (§122).
 
 ## Files

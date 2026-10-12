@@ -167,7 +167,8 @@ export function Operations({ permissions, initialView, onView }: {
     });
 
   const views: [View, string][] = [
-    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['crew', 'Cleaners'], ['inspections', 'Inspections'], ['inventory', 'Inventory'],
+    // The cleans' calendar lives inside Cleaners (the owner: it is the cleaners'); `calendar` stays a view for links and SOPs.
+    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['crew', 'Cleaners'], ['inspections', 'Inspections'], ['inventory', 'Inventory'],
     ['notes', 'Notes log'], ['rates', 'Rates & rules'],
     ...(can(data?.permissions, 'operations.setup') ? [['setup', 'Setup'] as [View, string]] : [])
   ];
@@ -176,7 +177,7 @@ export function Operations({ permissions, initialView, onView }: {
     <section>
       <nav className="subtabs">
         {views.map(([k, label]) => (
-          <button key={k} className={view === k ? 'tab active' : 'tab'} onClick={() => setView(k)}>{label}</button>
+          <button key={k} className={view === k || (k === 'crew' && view === 'calendar') ? 'tab active' : 'tab'} onClick={() => setView(k)}>{label}</button>
         ))}
       </nav>
 
@@ -206,6 +207,12 @@ export function Operations({ permissions, initialView, onView }: {
       <div className={busy && data ? 'is-stale' : undefined}>
         {data && view === 'board' && <Board data={data} range={range} patch={patch} reload={() => load()} />}
         {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} />}
+        {(view === 'crew' || view === 'calendar') && (
+          <nav className="setup-secs" aria-label="Cleaners sections">
+            <button className={view === 'crew' ? 'chip active' : 'chip'} onClick={() => setView('crew')}>👥 Pages & approvals</button>
+            <button className={view === 'calendar' ? 'chip active' : 'chip'} onClick={() => setView('calendar')}>📅 Calendar</button>
+          </nav>
+        )}
         {view === 'calendar' && <CleaningsMonth />}
         {data && view === 'crew' && <CrewAdmin roster={data.roster} canEdit={can(data.permissions, 'operations.edit')} />}
         {data && view === 'inspections' && <Inspections data={data} reload={() => load()} />}
