@@ -73,6 +73,8 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
   const [page, setPage] = useState<CrewPage | null>(null);
   const [schedule, setSchedule] = useState<CrewSchedule | null>(null);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
+  // The page exactly as the cleaner gets it — to check it makes sense before they do.
+  const [asCleaner, setAsCleaner] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [err, setErr] = useState('');
   const load = () => getCrewAdmin(name || null, period)
@@ -85,6 +87,27 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
   return (
     <>
       {err && <p className="banner error">{err}</p>}
+      <div className="row-controls">
+        <label>See a cleaner's page as they see it
+          <select value={name} onChange={e => { setName(e.target.value); setPeriod(null); }}>
+            <option value="">Choose…</option>
+            {roster.map(c => <option key={c.name} value={c.name}>{c.name}{c.active ? '' : ' (inactive)'}{c.email ? '' : ' — no sign-in address'}</option>)}
+          </select></label>
+        {page && (
+          <div className="todo-kind" role="group" aria-label="View">
+            <button className={!asCleaner ? 'chip active' : 'chip'} onClick={() => setAsCleaner(false)}>Team view</button>
+            <button className={asCleaner ? 'chip active' : 'chip'} onClick={() => setAsCleaner(true)}>👁 View as cleaner</button>
+          </div>
+        )}
+      </div>
+      {page && asCleaner && (
+        <>
+          <p className="banner warn no-print">👁 This is {page.cleaner.name}'s page exactly as they see it — no ratings, no team controls.
+            Their buttons are here but do nothing from this view.</p>
+          <CrewView page={page} mode="cleaner" onPeriod={setPeriod} reload={load} act={inert} upload={inert} />
+        </>
+      )}
+      {page && !asCleaner && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={setPeriod} reload={load} act={crewAdminAction} />}
       {toConfirm.length > 0 && (
         <div className="card">
           <h2>Cancelled after arrival — confirm <span className="chan-tag">{toConfirm.length}</span></h2>
@@ -138,17 +161,12 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
         )}
       </div>
 
-      <div className="row-controls">
-        <label>See a cleaner's page as they see it
-          <select value={name} onChange={e => { setName(e.target.value); setPeriod(null); }}>
-            <option value="">Choose…</option>
-            {roster.map(c => <option key={c.name} value={c.name}>{c.name}{c.active ? '' : ' (inactive)'}{c.email ? '' : ' — no sign-in address'}</option>)}
-          </select></label>
-      </div>
-      {page && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={setPeriod} reload={load} act={crewAdminAction} />}
     </>
   );
 }
+
+/** The cleaner's buttons, shown to the team but sending nothing. */
+const inert = async () => ({ ok: false, message: 'Preview — only the cleaner can do this, from their own page. Nothing was sent.' });
 
 /** One held clean: who cleaned it and when — or no clean. */
 function ConfirmRow({ t, roster, canEdit, onDone }: { t: ToConfirm; roster: Cleaner[]; canEdit: boolean; onDone: () => void }) {

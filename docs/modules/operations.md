@@ -91,6 +91,8 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   Crew → "Cancelled after arrival — confirm" (who cleaned + date + deep, or no clean needed) →
   `confirmed_by`; reconcile and record never undo a settled row. `fetchCancelledTouching` skips iCal.
   Only rows already in the record are held (older never-recorded cancellations are not back-filled).
+- Operations → Crew: pick a cleaner → **Team view** (stars, flag/correct/decide) or **👁 View as cleaner**
+  (the same page exactly as they get it — no stars, no team controls; their buttons send nothing).
 - **Corrections (§123):** Operations → Crew → a cleaner → "✎ Correct" on a PAST clean: deep/normal and
   price (blank = the card's rate at the unit's size; no rate → must type one), note required and shown
   to the cleaner (`edited_by/at`, `edit_note`). Today and ahead are changed on the board.
@@ -103,6 +105,11 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   K&M ★5 — 12 of 27 cleans read "below" on 2026-10-11, mostly Veronica's hand-set P2 cleans),
   watches a week, then Setup → Preview → **Save and switch to stars**. After the switch: drop
   the tier rule (`assign`, `primaryFor`, `cleaners.tier/position`, tier rules) once nothing reads it.
+- **Star rule under review (2026-10-11).** The owner is not convinced by ★1–5 and proposed (not
+  built — he said "no hagas nada"): a long stay without a mid-stay in the last 5 days → ★4 fixed;
+  otherwise by the next booking's value; nothing booked → TBD, assigned only once a booking lands
+  within 4 days, flagged when it does; K&M = Irene (cheapest wins), Veronica one level below,
+  Michelle manual only; drop the "below stars" flag. Open questions in the session reply.
 - **Crew page built, not switched on (§122).** To start: set each cleaner's email (Setup → Crew
   pages); in Cloudflare Zero Trust add those emails to the Kaizen Access policy with One-time PIN
   on. Calendar stays off until the star schedule is checked; then turn it on and Confirm in
