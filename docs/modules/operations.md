@@ -103,6 +103,14 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 - Operations → Crew: pick a cleaner → their page for the team (level, flag/correct/decide), or
   **👁 View as cleaner ↗** — a separate tab (`/#as-cleaner/<name>`, PreviewShell in App.tsx) with only the
   cleaner's page, loaded through `crewGet` (the cleaner's own server code: level stripped), buttons inert.
+- **Flag + pay (§128):** ⚑ Flag (board row, Movements past, manual cleans, Crew page) takes an optional
+  corrected pay for a clean due today or before ("Flag and correct pay") → `edited_by/at`, `edit_note` = the
+  flag note. `recordCleanings` and `loadOps` keep a corrected price/deep while the same cleaner holds the clean.
+- **SOPs (§128):** drafts #10 "Cleaners' pages: what they see, and the team's part" (operations.crew,
+  operations.board), #11 "Give a cleaner access to their page" (operations.setup, operations.crew), #12 "Your
+  Kaizen page (for cleaners)" (feature `crew.page` — once PUBLISHED it shows on the cleaner's page as "❓",
+  via `crewGet` `help`); #2 mid-stay updated to v2. Written in English (UI rule) — a Spanish version for the
+  crew is the owner's call. The "Schedule shared" card with a Confirm button is gone (daily snapshot does it).
 - **What cleaners see ahead (§127)** — `visibleAhead` (src/lib/crew.ts), one rule for the crew page,
   declines and the board: the whole schedule if published (`crew_calendar`); else what a person
   assigned (override / MAN-) plus the rule's picks within `crew_auto_days` (default **4**). The team

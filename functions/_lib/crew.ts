@@ -46,6 +46,8 @@ export interface CrewPage {
   invoice: ReturnType<typeof buildInvoice>;
   /** Cleans an extra can be added to: done, theirs, not excluded, recent. */
   extraFrom: DateStr;
+  /** Published SOPs for the cleaner's page (feature `crew.page`), shown as "How this page works". */
+  help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null }[];
   upcoming: {
     enabled: boolean; days: number; through: DateStr | null; rows: CrewUpcoming[]; problem: string | null;
     /** Unpublished, the rule's picks show this many days ahead (§127). */
@@ -259,6 +261,9 @@ export async function crewGet(request: Request, env: Env, sql: SqlFn, me: CrewCa
   if (!page) return refuse(404, 'not_on_roster', 'You are not on the roster any more.');
   // Their rating is the team's business — not sent, not just not drawn.
   delete page.cleaner.level;
+  // How the page works, as the team wrote it — published SOPs only.
+  page.help = await sql`SELECT title, purpose, steps, body FROM sops
+                         WHERE account_id = 1 AND status = 'published' AND 'crew.page' = ANY(features) ORDER BY title` as CrewPage['help'];
   return Response.json({ ok: true, ...page });
 }
 

@@ -6,7 +6,8 @@
  *   GET  ?view=cleaner&cleaner=<name>[&period]  that cleaner's page through the SAME code that
  *                                               answers the cleaner (crewGet) — nothing of the team's
  *   POST { action: 'decideExtra', id, status: 'approved' | 'denied', note }
- *   POST { action: 'flag', key, note }          flag a clean; the cleaner sees the note
+ *   POST { action: 'flag', key, note, price? }  flag a clean; the cleaner sees the note — and, for a clean
+ *                                               today or before, optionally correct what it pays (§128)
  *   POST { action: 'unflag', key }
  *   POST { action: 'confirmClean', key, cleaner | null, date?, deep? }
  *                                               settle a clean held after a cancellation (§123):
@@ -14,8 +15,6 @@
  *   POST { action: 'editClean', key, deep, price?, note }
  *                                               correct a clean already done — a "deep" that was
  *                                               not done as one, a wrong price (§123)
- *   POST { action: 'confirmSchedule' }          the schedule as it stands is what cleaners'
- *                                               "changes since" are measured from
  *
  * GET needs `operations`, POST `operations.edit` (roles.ts). A denial must
  * say why — the cleaner reads it.
@@ -23,7 +22,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { attachFiles, confirmSchedule, crewGet, crewVisibility, loadCrewPage, refuse, scheduleState } from '../_lib/crew.ts';
+import { attachFiles, crewGet, crewVisibility, loadCrewPage, refuse, scheduleState } from '../_lib/crew.ts';
 import { scheduleMovements, type Movement } from '../../src/lib/crew.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { rateFor } from '../../src/lib/operations.ts';
@@ -147,13 +146,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ ok: true, price });
   }
 
-  if (body.action === 'confirmSchedule') {
-    return Response.json({ ok: true, ...(await confirmSchedule(sql, env.ENCRYPTION_KEY, who.email)) });
-  }
-
   if (body.action === 'flag' || body.action === 'unflag') {
     const key = String(body.key ?? '');
     if (body.action === 'flag' && !note) return refuse(400, 'bad_request', 'A flag needs a note — it is what the cleaner reads.');
+    // §128: the flag can correct the pay at the same time — only for a clean already due, and
+    // kept as a correction (edited_*), which the board's record never overwrites.
+    const fix = body.action === 'flag' && body.price !== undefined && body.price !== null && body.price !== '';
+    if (fix) {
+      const price = Number(body.price);
+      if (!(price >= 0)) return refuse(400, 'bad_request', 'The pay is a number (0 or more).');
+      const [row] = await sql`SELECT checkout_on::text AS date, assignment FROM cleanings WHERE account_id = 1 AND key = ${key}` as
+        { date: string; assignment: string }[];
+      if (!row) return refuse(404, 'not_found', 'That clean is not in the record.');
+      if (row.date > todayIn(TZ)) return refuse(400, 'bad_request', 'The pay is corrected once the clean is due — today or after.');
+      if (row.assignment !== 'assigned') return refuse(400, 'bad_request', 'Only a clean someone was assigned to has a pay to correct.');
+      await sql`UPDATE cleanings SET price = ${price}, edited_by = ${who.email}, edited_at = now(), edit_note = ${note}
+                 WHERE account_id = 1 AND key = ${key}`;
+    }
     const done = body.action === 'flag'
       ? await sql`UPDATE cleanings SET flag_note = ${note}, flagged_by = ${who.email}, flagged_at = now()
                    WHERE account_id = 1 AND key = ${key} RETURNING key`

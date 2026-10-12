@@ -78,7 +78,6 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
   const [page, setPage] = useState<CrewPage | null>(null);
   const [schedule, setSchedule] = useState<CrewSchedule | null>(null);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
-  const [confirming, setConfirming] = useState(false);
   const [err, setErr] = useState('');
   const load = () => getCrewAdmin(name || null, period)
     .then(r => { if (r.ok) { setPending(r.pending); setPage(r.page); setSchedule(r.schedule); setToConfirm(r.toConfirm ?? []); setErr(''); }
@@ -112,29 +111,18 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
       )}
       {schedule && (
         <div className="card">
-          <h2>Schedule shared with cleaners <span className={schedule.enabled ? 'ok-tag' : 'chan-tag'}>{schedule.enabled ? 'on' : 'off'}</span></h2>
+          <h2>What cleaners see ahead</h2>
           <p className="note">
-            {!schedule.enabled && 'Cleaners do not see what is coming yet (Setup → Crew pages). '}
-            {schedule.confirmed
-              ? <>Last snapshot {stamp(schedule.confirmed.at)} — {schedule.confirmed.by === 'daily update' ? 'the automatic daily update' : `by ${schedule.confirmed.by}`}, through {day(schedule.confirmed.through)}.
-                  Cleaners see that date, and every change since.</>
-              : 'No snapshot yet — the daily pass takes one each day.'}
+            {schedule.enabled ? 'The whole schedule is published: cleaners see everything ahead.'
+              : `What a person assigned, and the rule's picks ${schedule.autoDays} days ahead — marked 👁 on the board. Nothing to confirm.`}
+            {' '}{schedule.confirmed
+              ? <>Last daily update {stamp(schedule.confirmed.at)}{schedule.confirmed.by === 'daily update' ? '' : ` (by ${schedule.confirmed.by})`}.</>
+              : 'The first daily update comes with the next daily pass.'}
+            {' '}Change it in Setup → Crew pages.
           </p>
           {schedule.problem && <p className="banner warn">▲ {schedule.problem}</p>}
-          {schedule.confirmed && (schedule.movements.length
-            ? <><b>Changes since then ({schedule.movements.length})</b><Moves list={schedule.movements} who /></>
-            : <p className="note">✓ Nothing has moved since.</p>)}
-          {canEdit && (
-            <div className="button-row">
-              <button disabled={confirming} onClick={async () => {
-                setConfirming(true);
-                const r = await crewAdminAction({ action: 'confirmSchedule' }).catch(e => ({ ok: false as const, message: String(e) }));
-                setConfirming(false);
-                if (!r.ok) { setErr(r.message ?? 'Not confirmed.'); return; }
-                void load();
-              }}>{confirming ? 'Confirming…' : 'Confirm the schedule as it is now'}</button>
-              <span className="note">Check the board first: cleaners plan their days off this.</span>
-            </div>
+          {schedule.confirmed && schedule.movements.length > 0 && (
+            <><b>Changes since that update — what cleaners are told ({schedule.movements.length})</b><Moves list={schedule.movements} who /></>
           )}
         </div>
       )}
@@ -238,6 +226,18 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload }
           </select></label>
       </div>
 
+      {mode === 'cleaner' && !!page.help?.length && (
+        <div className="card no-print">
+          {page.help.map(h => (
+            <details key={h.title}>
+              <summary><b>❓ {h.title}</b></summary>
+              {h.purpose && <p className="note">{h.purpose}</p>}
+              <ol>{h.steps.map((st, i) => <li key={i}>{st.text}{st.detail && <div className="note crew-help">{st.detail}</div>}</li>)}</ol>
+              {h.body && <div className="note crew-help">{h.body}</div>}
+            </details>
+          ))}
+        </div>
+      )}
       <Upcoming page={page} act={mode === 'cleaner' ? act : undefined} reload={reload} />
       <CrewCalendar page={page} />
 
@@ -514,7 +514,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
           <button className="link tiny" onClick={() => { setCorrecting(true); setDeep(c.deep); setAmount(c.price == null ? '' : String(c.price)); }}>✎ Correct</button>}
         {mode === 'team' && canEdit && !flagging && (c.flagNote
           ? <button className="link tiny" onClick={() => void send({ action: 'unflag', key: c.key })}>Remove flag</button>
-          : <button className="link tiny" onClick={() => setFlagging(true)}>⚑ Flag</button>)}
+          : <button className="link tiny" onClick={() => { setFlagging(true); setAmount(''); }}>⚑ Flag</button>)}
       </div>
       {adding && (
         <div className="crew-decide">
@@ -542,7 +542,12 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
       {flagging && (
         <div className="crew-decide">
           <input value={text} maxLength={500} placeholder="What the cleaner should know (they read this)" onChange={e => setText(e.target.value)} />
-          <button className="small" disabled={!text.trim()} onClick={() => void send({ action: 'flag', key: c.key, note: text })}>Flag</button>
+          {/* §128: a clean already due can have its pay corrected in the same step; blank keeps it. */}
+          {billed && <input className="amt" inputMode="decimal" value={amount} placeholder={c.price != null ? `pays ${c.price}` : 'pay'}
+                            title="Leave blank to keep the pay as it is" onChange={e => setAmount(e.target.value)} />}
+          <button className="small" disabled={!text.trim() || busy || (amount !== '' && !(Number(amount) >= 0))}
+                  onClick={() => void send({ action: 'flag', key: c.key, note: text, ...(billed && amount !== '' ? { price: Number(amount) } : {}) })}>
+            {billed && amount !== '' ? 'Flag and correct pay' : 'Flag'}</button>
           <button className="small secondary" onClick={() => setFlagging(false)}>Cancel</button>
         </div>
       )}

@@ -469,8 +469,10 @@ function Board({ data, range, patch, reload }: {
                           <tr className="ops-edit-row"><td colSpan={9}>
                             <div className="ops-editor" onClick={e => e.stopPropagation()}>
                               <FlagControl cleanKey={c.key} flag={c.flag_note ?? null} onChanged={note =>
-                                setPast(p => p && { ...p, rows: p.rows.map(x => x.key === c.key ? { ...x, flag_note: note } : x) })} />
-                              <div className="note">A clean already done is corrected (deep, price) in Operations → Crew.</div>
+                                setPast(p => p && { ...p, rows: p.rows.map(x => x.key === c.key ? { ...x, flag_note: note } : x) })}
+                                date={c.checkout_on.slice(0, 10)} today={data.today} price={c.price == null ? null : Number(c.price)}
+                                onPrice={v => setPast(p => p && { ...p, rows: p.rows.map(x => x.key === c.key ? { ...x, price: String(v) } : x) })} />
+                              <div className="note">To switch deep / regular on a clean already done: Operations → Crew → the cleaner → ✎ Correct.</div>
                             </div>
                           </td></tr>
                         )}
@@ -659,22 +661,29 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
 
 /**
  * Flag a clean by hand (§122; from Movements, §124): a note the cleaner
- * reads on their crew page. It does not change the pay.
+ * reads on their crew page — and, for a clean already due, the pay
+ * corrected in the same step (§128), with the note as the reason.
  */
-function FlagControl({ cleanKey, flag, onChanged }: {
+function FlagControl({ cleanKey, flag, onChanged, date, today, price, onPrice }: {
   cleanKey: string; flag: string | null; onChanged: (note: string | null) => void;
+  /** When given and due (today or before), the flag can also correct the pay. */
+  date?: string; today?: string; price?: number | null; onPrice?: (price: number) => void;
 }) {
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
+  const [pay, setPay] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const canPay = !!date && !!today && date <= today;
   const send = async (note: string | null) => {
     setBusy(true); setMsg('');
-    const r = await crewAdminAction(note === null ? { action: 'unflag', key: cleanKey } : { action: 'flag', key: cleanKey, note })
+    const r = await crewAdminAction(note === null ? { action: 'unflag', key: cleanKey }
+      : { action: 'flag', key: cleanKey, note, ...(canPay && pay !== '' ? { price: Number(pay) } : {}) })
       .catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
-    setEditing(false); setText(''); onChanged(note);
+    if (note !== null && canPay && pay !== '') onPrice?.(Number(pay));
+    setEditing(false); setText(''); setPay(''); onChanged(note);
   };
   return (
     <div className="button-row ops-manual-actions" onClick={e => e.stopPropagation()}>
@@ -682,12 +691,15 @@ function FlagControl({ cleanKey, flag, onChanged }: {
         ? <><span className="breach">⚑ Flagged: {flag}</span>
             <button className="link tiny" disabled={busy} onClick={() => void send(null)}>Remove flag</button></>
         : !editing && <><button className="link tiny" onClick={() => setEditing(true)}>⚑ Flag this clean…</button>
-            <span className="note">the cleaner reads it on their crew page; it does not change the pay</span></>}
+            <span className="note">the cleaner reads it on their crew page{canPay ? '; you can correct the pay with it' : ''}</span></>}
       {editing && (
         <form className="stay-work" onSubmit={e => { e.preventDefault(); if (text.trim()) void send(text.trim()); }}>
           <input autoFocus value={text} maxLength={500} placeholder="What the cleaner should know (they read this)"
                  onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setEditing(false); }} />
-          <button className="small" disabled={!text.trim() || busy}>{busy ? '…' : 'Flag'}</button>
+          {canPay && <input className="amt" inputMode="decimal" value={pay} onChange={e => setPay(e.target.value)}
+                            placeholder={price != null ? `pays ${price}` : 'pay'} title="Leave blank to keep the pay as it is" />}
+          <button className="small" disabled={!text.trim() || busy || (pay !== '' && !(Number(pay) >= 0))}>
+            {busy ? '…' : pay !== '' ? 'Flag and correct pay' : 'Flag'}</button>
           <button type="button" className="link tiny" onClick={() => setEditing(false)}>Cancel</button>
         </form>
       )}
@@ -821,7 +833,8 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag }:
         <button className="small" disabled={busy || note === r.note} onClick={() => void send(null, note)}>Save note</button>
         {msg && <span className="note">{msg}</span>}
       </div>
-      {out && r.assignment !== 'not_needed' && <FlagControl cleanKey={r.resId} flag={flag} onChanged={onFlag} />}
+      {out && r.assignment !== 'not_needed' && <FlagControl cleanKey={r.resId} flag={flag} onChanged={onFlag}
+                                                             date={r.date} today={data.today} price={r.price} />}
       {(can(data.permissions, 'todos') || can(data.permissions, 'claims')) && <StayWork r={r} data={data} />}
       {out && (
         <div className="button-row ops-manual-actions">

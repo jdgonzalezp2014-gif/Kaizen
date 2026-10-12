@@ -429,13 +429,15 @@ export interface CrewPage {
   cleaner: { name: string; level?: 'high' | 'standard' | 'manual'; invoicePeriod: InvoicePeriod; active: boolean };
   today: string; periods: Period[]; period: Period;
   cleans: CrewClean[]; extras: CrewExtra[]; invoice: Invoice; extraFrom: string;
+  /** Published SOPs for the cleaner's page (§128). */
+  help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null }[];
   upcoming: {
     enabled: boolean; days: number; through: string | null; rows: CrewUpcoming[]; problem: string | null;
     autoDays: number; confirmed: { at: string; through: string } | null; movements: Movement[];
   };
 }
 export interface CrewSchedule {
-  enabled: boolean; confirmed: { at: string; by: string; through: string } | null;
+  enabled: boolean; autoDays: number; confirmed: { at: string; by: string; through: string } | null;
   movements: (Movement & { cleaner: string })[]; problem: string | null;
 }
 /**

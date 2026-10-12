@@ -212,6 +212,15 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     inspectionLogRead: inspections.done.length + inspections.scheduled.length > 0
   };
   const rows = buildBoard(boardInput);
+  // A pay corrected by a person on a clean already due (§128) is what it pays — on the board too,
+  // while the same cleaner holds it (recordCleanings keeps it on the same terms).
+  const fixes = await sql`SELECT key, cleaner, price::float AS price, deep FROM cleanings
+                           WHERE account_id = 1 AND edited_by IS NOT NULL AND checkout_on >= ${today}::date AND checkout_on <= ${end}::date` as
+    { key: string; cleaner: string | null; price: number | null; deep: boolean }[];
+  for (const f of fixes) {
+    const r = rows.find(x => x.kind === 'out' && x.resId === f.key);
+    if (r && r.assignment === 'assigned' && r.cleaner === f.cleaner) { r.price = f.price; r.deep = f.deep; }
+  }
   timings.total = Date.now() - started;
 
   return { mode: cfg.mode, today, end, days, rules: cfg.rules, roster: cfg.roster, assignRule: cfg.assignRule, boardInput,
@@ -263,7 +272,12 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
       ON CONFLICT (account_id, key) DO UPDATE SET
         unit_id = EXCLUDED.unit_id, unit_name = EXCLUDED.unit_name, checkout_on = EXCLUDED.checkout_on,
         cleaner = EXCLUDED.cleaner, assignment = EXCLUDED.assignment, guest = EXCLUDED.guest,
-        price = EXCLUDED.price, deep = EXCLUDED.deep, urgency = EXCLUDED.urgency,
+        -- A pay corrected by a person (§128) stands while the same cleaner holds the clean.
+        price = CASE WHEN cleanings.edited_by IS NOT NULL AND cleanings.cleaner IS NOT DISTINCT FROM EXCLUDED.cleaner
+                     THEN cleanings.price ELSE EXCLUDED.price END,
+        deep = CASE WHEN cleanings.edited_by IS NOT NULL AND cleanings.cleaner IS NOT DISTINCT FROM EXCLUDED.cleaner
+                    THEN cleanings.deep ELSE EXCLUDED.deep END,
+        urgency = EXCLUDED.urgency,
         checkout_time = EXCLUDED.checkout_time, beds = EXCLUDED.beds, source = 'kaizen',
         decided_by = EXCLUDED.decided_by, void_reason = NULL, imported_at = now(),
         needs_confirm = EXCLUDED.needs_confirm,

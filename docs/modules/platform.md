@@ -41,6 +41,8 @@ Hostaway client, sync, crypto, migrations.
   docked panel that persists across tabs and minimizes; step-by-step mode; every content
   change = a new `sop_versions` row with a note; review cadence (§92, §96–§98).
   SOPs edited outside the API must also insert `sop_versions`.
+  Feature `crew.page` (§128) is the cleaner's own page: cleaners have no SOP access, so its published SOPs
+  reach them through /api/crew (`help`), not the library.
 - Design: day theme by default via `data-theme` (never prefers-color-scheme); status shapes
   ● ▲ ■ ○; colour means one thing (red failure, amber attention, green confirmed, blue
   action); no modals over the thing being compared; Home folds, three items per card;

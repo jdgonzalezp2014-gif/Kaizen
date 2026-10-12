@@ -169,6 +169,80 @@ Tick the screens where the work happens. The SOP then shows on that screen's �
 - Each change asks what changed and why; the history keeps every version.
 - When the review is due, read it through: if it is still right, "Mark reviewed"; if not, edit it.
 - The library shows the screens with no SOP yet — that list is the backlog.`
+  },
+  // §128 — the cleaners' pages: the team's daily part, setting a cleaner up, and the cleaners' own guide.
+  {
+    section: 'turnover', title: "Cleaners' pages: what they see, and the team's part",
+    features: ['operations.crew', 'operations.board'],
+    purpose: 'Each cleaner has a page in Kaizen with their cleans, pay, invoice, extras and what is coming. Nobody confirms the schedule; the team keeps an eye on what cleaners already see (👁) and handles what needs a person.',
+    trigger: 'Every day, while working the board (Operations → Movements).',
+    owner: 'Operations',
+    steps: [
+      { text: 'On the board, 👁 means the cleaner already sees that clean on their page.', who: 'Ops',
+        detail: '- They see what a person assigned to them, always, and the rule\'s picks 4 days ahead. Beyond that, nothing.\n- Change a 👁 clean only with a reason, and tell the cleaner: their page shows it at once and lists it under "Changes since" until the next daily update.\n- Cleans without 👁 can be moved freely — the cleaner has not seen them.' },
+      { text: 'Deep cleans: every clean is regular until someone confirms it.', who: 'Ops',
+        detail: '- Long stays show "○ deep suggested (N nights)".\n- If it will really be cleaned as deep: open the row → Deep clean → "Deep — confirmed". Only then is it paid as deep.' },
+      { text: '"▲ declined by …": a cleaner turned the clean down. Give it to someone else.', who: 'Ops',
+        detail: '- It is already unassigned (TBD) and in Needs attention, with their reason.\n- The rule never hands it back to the cleaner who declined.' },
+      { text: '"▲ cancelled … — confirm who cleaned": settle it in Operations → Crew.', who: 'Ops',
+        detail: '- Card "Cancelled after arrival — confirm": choose who cleaned it and the day (tick deep if it was), then ✓ Cleaned — or No clean needed.\n- Only bookings cancelled on or after the arrival day ask: the guest may have used the unit. Cancelled before arrival, or a guest who changed dates (cancel and rebook), never asks.\n- Until settled it is unpaid; the cleaner does not see it.' },
+      { text: 'Extras: Operations → Crew → "Extras waiting on the team".', who: 'Ops',
+        detail: '- Open the receipt or photo (📎), then ✓ Approve, or ■ Deny with a note — the note is required to deny; the cleaner reads it.\n- Approved extras go on that cleaner\'s invoice with the clean.' },
+      { text: 'Something wrong with a clean: open its row → ⚑ Flag this clean….', who: 'Ops',
+        detail: '- Write what the cleaner should know — they read it on their page.\n- For a clean due today or before, type the corrected pay in the same step ("Flag and correct pay"). Blank keeps the pay.\n- To switch deep / regular on a clean already done: Operations → Crew → the cleaner → ✎ Correct.' },
+      { text: 'To check what a cleaner sees: Operations → Crew → pick them → 👁 View as cleaner ↗.', who: 'Anyone',
+        detail: 'A separate tab with exactly their page — no ratings, no team controls. Their buttons do nothing there.' }
+    ],
+    doneWhen: 'Nothing waits in "Cancelled after arrival — confirm" or "Extras waiting on the team", and every 👁 clean is right.',
+    body: `## Good to know
+- Invoices: weekly (Saturday to Friday, paid Saturday) or monthly (paid in the first days of the next month), per cleaner. Done cleans plus approved extras; "○ not paid" ones say why.
+- A flag does not change the pay unless you correct it in the same step.
+- Cleaners never see their level or any rating.
+- Michelle is assigned by hand only (emergencies and mid-stays).`
+  },
+  {
+    section: 'systems', title: 'Give a cleaner access to their page',
+    features: ['operations.setup', 'operations.crew'],
+    purpose: 'A cleaner signs in with their own email and a code, and sees only their own page.',
+    trigger: 'A new cleaner, or a cleaner who cannot get in.',
+    owner: 'Admin',
+    steps: [
+      { text: 'Setup → Crew pages: type the cleaner\'s own email and choose their invoice (weekly or monthly). Save addresses and invoices.', who: 'Admin',
+        detail: 'An address that belongs to a team member is refused: a cleaner needs their own.' },
+      { text: 'Cloudflare Zero Trust → Access → the Kaizen application → its policy: add the same email, with the One-time PIN login on.', who: 'Owner' },
+      { text: 'Send the cleaner the app address. They type their email and the code that arrives by email; they land on their page and nothing else.', who: 'Admin' },
+      { text: 'Check it: Operations → Crew → pick them → 👁 View as cleaner ↗.', who: 'Admin' },
+      { text: 'If the code does not work for them: Setup → Crew pages → make link, and send that link.', who: 'Admin',
+        detail: '- It opens only once Cloudflare Access lets /crew, /assets/* and /api/crew-link through without a sign-in (a Bypass application).\n- Anyone holding the link sees that cleaner\'s page: revoke it if it leaks. It is shown once.' }
+    ],
+    doneWhen: 'The cleaner signs in and sees their own cleans.',
+    body: `## What cleaners see ahead
+Setup → Crew pages → "The rule's picks show this many days ahead" (4). What a person assigns shows at once. "Publish the whole schedule" shows everything ahead — leave it off unless the schedule has been checked.`
+  },
+  {
+    section: 'turnover', title: 'Your Kaizen page (for cleaners)',
+    features: ['crew.page'],
+    purpose: 'See your cleans and what each one pays, plan your coming days, ask for extras, and get your invoice.',
+    trigger: 'Before you plan your days, after a clean that needed something extra, and when you invoice.',
+    owner: 'Each cleaner',
+    steps: [
+      { text: 'Sign in: open the Kaizen address, type your email, and enter the code we send to your email.',
+        detail: 'Save the address on your phone\'s home screen to come back quickly.' },
+      { text: 'Coming up: your cleans ahead.',
+        detail: '- You see the cleans the team gave you, and the rest 4 days before.\n- "Last update" and "Changes since then" tell you what moved: a stay extended or shortened, a booking cancelled, a new clean.\n- ⚡ means the next guest arrives the same day — the check-in time is shown.\n- Look here before you plan your day.' },
+      { text: 'Cannot do one? Tap "Can\'t do it" and say why, as early as you can.',
+        detail: 'It goes back to the team, who give it to someone else.' },
+      { text: 'Calendar: your month at a glance. Tap a day to see its cleans.',
+        detail: '"Add my coming cleans to my phone calendar" puts them in your phone. If something changes, add them again.' },
+      { text: 'Cleans: each clean with what it pays.',
+        detail: '- ✓ paid · ○ not paid, with the reason · ⚑ a note from the team about that clean — please read it.\n- "✎ Corrected by the team" means the pay or the type of clean was changed, and why.' },
+      { text: 'Extras: on a clean you did, "+ Add an extra": the amount, what it was for, and a photo of the receipt or invoice.',
+        detail: 'The team approves or denies it with a note. Only approved extras are paid, with that clean.' },
+      { text: 'Invoice: choose the period and check it. "Print / save as PDF" keeps a copy.',
+        detail: 'Weekly: Saturday to Friday, paid on Saturday. Monthly: the whole month, paid in the first days of the next.' }
+    ],
+    doneWhen: 'You know your cleans for the coming days, and your invoice matches the work you did.',
+    body: `Questions about a clean or a payment: message the team.`
   }
 ];
 

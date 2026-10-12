@@ -3498,3 +3498,15 @@ a daily snapshot replaces "confirm the schedule" for "changes since", and compar
 view, so cleans merely entering the window are not reported as new. Checked on production: Karina &
 Marvin see Oct 11, 12 and 15; the board's 👁 stops at Oct 15.
 
+## §128 — Correct the pay when flagging; SOPs for the team and the cleaners (2026-10-11)
+
+The owner asked that flagging a clean can also correct its pay, and for SOPs for his team and the cleaners.
+A flag on a clean due today or before now takes an optional corrected pay, recorded as a correction (who,
+when, the flag note as the reason) that the board's record keeps while the same cleaner holds the clean —
+before this, a correction on today's clean would have been overwritten on the next board load. The
+"Schedule shared with cleaners" card still said cleaners saw nothing ahead and offered "Confirm the
+schedule" — both untrue since §127; it became "What cleaners see ahead", information only. Three SOPs were
+written as drafts (agents draft, humans publish): the team's daily part with the cleaners' pages, giving a
+cleaner access, and the cleaners' own guide — which, published, appears on their page, since cleaners have
+no access to the SOP library. The mid-stay SOP gained why recording mid-stays matters under the levels rule.
+
