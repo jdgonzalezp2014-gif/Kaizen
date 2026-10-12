@@ -3713,3 +3713,17 @@ is an activity line on the work order and a reply in its Slack thread, so the te
 the Neon branch end to end: link → accept → photo → $120 labor → note → done → deny without a note
 refused → approve → cost_actual 120 → expense Repairs #73; "can't" → sub-task #75, link refused; another
 vendor's order refused through /api/vendor.
+
+## §138 — Inspection areas and where each item applies (2026-10-12)
+
+The owner: the inspection setup needs areas the team can add, and items that apply to every unit, to houses
+or to apartments ("según el repositorio, si falta, pon una columna"), or to some units only — "las cosas de
+piscina solo aplican a bobcat y amber". The Repository had no such column (its "Type" is bedrooms; the split
+was only implicit in the Houses table), so 067 adds **Property type** (House / Apartment) to the three Units
+tables, filled from the table each record lives in and audited as `columns.add`. Kaizen reads it through the
+same name matching the cleaners' access uses; a unit without it is shown in the setup, not guessed.
+Areas moved from a fixed list to `inspection_areas` (the built-ins seeded in the same walking order, so old
+inspections read the same); an item's `unit_id` became `applies_to` + `unit_ids`. The seeded "Pool / hot tub
+(if any)" item moved to a new "Pool & hot tub" area for Bobcat House and Amber Valley. Tested on the branch:
+Amber Valley (house) got the house-only and pool areas, P2-1304 (apartment) neither; duplicate area names,
+removing an area with items and a "some units" item with none picked are refused.

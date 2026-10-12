@@ -20,7 +20,7 @@ import { CrewAdmin } from './Crew.tsx';
 import { InventorySetup, InventoryView } from './Inventory.tsx';
 import { InspectionRun } from '../components/InspectionRun.tsx';
 import { visibleAhead } from '../lib/crew.ts';
-import { AREAS, type Area, type InspectionItem } from '../lib/inspection.ts';
+import { APPLIES, type AppliesTo, type AreaDef, type InspectionItem } from '../lib/inspection.ts';
 import { addDays, daysBetween, isDateStr, todayIn } from '../lib/dates.ts';
 import { stayLabel } from '../lib/todos.ts';
 import {
@@ -31,7 +31,7 @@ import {
   type StayDocs, type OperationsResponse, type ManualClean, type ManualCleanKind, type StayOnDay,
   getStaysOnDay, manualClean, todoAction, saveClaim, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry,
   previewAssign, type AssignPreview, crewLink, crewAdminAction, runAction, inspectionLinkFor, type InspectionLink,
-  getInspectionItems, saveInspectionItem, getVendors, saveVendor, type Vendor
+  getInspectionItems, saveInspectionItem, getVendors, saveVendor, type Vendor, type ChecklistSetupData
 } from '../api.ts';
 import {
   BEDROOM_SIZES, DEFAULT_CHECKIN_TIME, DEFAULT_CHECKOUT_TIME, INSPECTION_RESULTS,
@@ -1332,7 +1332,7 @@ function InspectStart({ data, onStart, onScheduled }: {
         <button className="secondary" disabled={!unitId || !by} onClick={() => void schedule()}>Schedule for {date === data.today ? 'today' : date}</button>
         {msg && <span className="note">{msg}</span>}
       </div>
-      <p className="note">The checklist follows the unit's bedrooms and bathrooms. Edit it in Setup → Inspection checklist.</p>
+      <p className="note">The checklist follows the unit: its bedrooms and bathrooms, house or apartment, and the items set for it. Edit it in Setup → Inspections.</p>
     </div>
   );
 }
@@ -1859,54 +1859,78 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
 }
 
 /**
- * §133: the inspection checklist — what is checked, room by room. Items for
- * every unit, or for one; reordered, switched off, or removed (an item
- * already answered is switched off instead, so old reports keep their words).
+ * §133/§138: the inspection checklist — what is checked, area by area. The
+ * areas are the team's (add a pool, a garage; reorder, rename, switch off);
+ * each item applies to every unit, the houses, the apartments (the
+ * Repository's "Property type"), or the units picked. An item already
+ * answered is switched off instead of removed, so old reports keep their words.
  */
 function ChecklistSetup() {
-  const [items, setItems] = useState<InspectionItem[] | null>(null);
-  const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
+  const [data, setData] = useState<ChecklistSetupData | null>(null);
   const [msg, setMsg] = useState('');
-  const [draft, setDraft] = useState<{ area: Area; label: string; defaultOutcome: string; unitId: string }>({ area: 'kitchen', label: '', defaultOutcome: 'repair', unitId: '' });
+  const blankItem = { area: 'kitchen', label: '', defaultOutcome: 'repair', appliesTo: 'all' as AppliesTo, unitIds: [] as string[] };
+  const [draft, setDraft] = useState(blankItem);
   const [editing, setEditing] = useState<string | null>(null);
-  const [edit, setEdit] = useState<{ label: string; defaultOutcome: string; unitId: string }>({ label: '', defaultOutcome: 'repair', unitId: '' });
-  useEffect(() => {
-    void getInspectionItems().then(r => { if (r.ok) setItems(r.items); });
-    void getUnits().then(r => setUnits((r.units ?? []).filter(u => u.active).map(u => ({ id: u.id, name: u.name })).sort((a, b) => a.name.localeCompare(b.name))));
-  }, []);
+  const [edit, setEdit] = useState(blankItem);
+  const [newArea, setNewArea] = useState('');
+  const [renaming, setRenaming] = useState<{ key: string; label: string } | null>(null);
+  useEffect(() => { void getInspectionItems().then(r => { if (r.ok) setData(r); else setMsg(r.message ?? 'Could not load.'); }); }, []);
   const send = async (body: Record<string, unknown>, done?: string) => {
     const r = await saveInspectionItem(body).catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return false; }
-    setItems(r.items);
-    setMsg('switchedOff' in r && r.switchedOff ? 'It was used in an inspection, so it is switched off (old reports keep it) rather than deleted.' : done ?? '');
+    setData(r);
+    setMsg(r.switchedOff ? 'It was used in an inspection, so it is switched off (old reports keep it) rather than deleted.' : done ?? '');
     return true;
   };
   const OUT: Record<string, string> = { repair: '🔧 repair', purchase: '🛒 purchase', clean: '🧽 clean' };
-  const unitName = (id: string | null) => id ? units.find(u => u.id === id)?.name ?? id : 'all units';
-  if (!items) return <div className="card"><h2>Inspection checklist</h2><p className="note loading-dot">Loading…</p></div>;
+  if (!data) return <div className="card"><h2>Inspection checklist</h2><p className={msg ? 'banner error' : 'note loading-dot'}>{msg || 'Loading…'}</p></div>;
+  const { items, areas, units } = data;
+  const name = (id: string) => units.find(u => u.id === id)?.name ?? id;
+  const where = (i: InspectionItem) => i.appliesTo === 'house' ? '🏠 houses' : i.appliesTo === 'apartment' ? '🏢 apartments'
+    : i.appliesTo === 'units' ? `📍 ${i.unitIds.map(name).join(', ')}` : 'all units';
+  const houses = units.filter(u => u.type === 'house'), flats = units.filter(u => u.type === 'apartment'), untyped = units.filter(u => !u.type);
+  const itemBody = (v: typeof blankItem) => ({ area: v.area, label: v.label, defaultOutcome: v.defaultOutcome, appliesTo: v.appliesTo, unitIds: v.unitIds });
+  const ready = (v: typeof blankItem) => !!v.label.trim() && (v.appliesTo !== 'units' || v.unitIds.length > 0);
   return (
     <div className="card">
       <h2>Inspection checklist</h2>
-      <p className="note">What the inspector checks, room by room. Bedrooms and bathrooms repeat once per room in the unit.
-        Each item says what a failure usually becomes — the inspector can change it at the end.</p>
-      {AREAS.map(a => {
+      <p className="note">What the inspector checks, area by area, in walking order. Bedrooms and bathrooms repeat once per room in the unit.
+        Each item says what a failure usually becomes — the inspector can change it at the end — and where it applies.</p>
+      <p className="sub-n">House or apartment comes from <b>Repository → Units → Property type</b>:
+        {' '}🏠 {houses.length} houses · 🏢 {flats.length} apartments
+        {untyped.length > 0 && <span className="breach"> · ▲ no type: {untyped.map(u => u.name).join(', ')} — they get only the items for all units and their own</span>}</p>
+      {areas.map((a, ai) => {
         const list = items.filter(i => i.area === a.key);
+        const on = a.active !== false;
         return (
-          <div key={a.key} className="group">
-            <h3>{a.label}{a.perRoom ? ' (each one)' : ''} <span className="count">{list.filter(i => i.active).length}</span></h3>
-            <table className="units compact"><tbody>
+          <div key={a.key} className={on ? 'group' : 'group muted-row'}>
+            {renaming?.key === a.key ? (
+              <div className="row">
+                <label>Area name<input value={renaming.label} maxLength={60} onChange={e => setRenaming({ key: a.key, label: e.target.value })} /></label>
+                <div className="button-row">
+                  <button className="small" disabled={!renaming.label.trim()} onClick={async () => { if (await send({ action: 'areaSave', key: a.key, label: renaming.label }, 'Renamed.')) setRenaming(null); }}>Save</button>
+                  <button className="small secondary" onClick={() => setRenaming(null)}>Cancel</button>
+                </div>
+              </div>
+            ) : (
+              <h3 className="area-head">{a.label}{a.perRoom ? ' (each one)' : ''} <span className="count">{list.filter(i => i.active).length}</span>
+                {!on && <span className="sub-n"> · ■ off — not in new inspections</span>}
+                <span className="area-tools">
+                  <button className="link tiny" title="Earlier in the walk" disabled={ai === 0} onClick={() => void send({ action: 'areaMove', key: a.key, dir: -1 })}>↑</button>
+                  <button className="link tiny" title="Later in the walk" disabled={ai === areas.length - 1} onClick={() => void send({ action: 'areaMove', key: a.key, dir: 1 })}>↓</button>{' '}
+                  <button className="link tiny" onClick={() => setRenaming({ key: a.key, label: a.label })}>rename</button>{' '}
+                  <button className="link tiny" onClick={() => void send({ action: 'areaActive', key: a.key, active: !on }, on ? 'Area switched off.' : 'Area back on.')}>{on ? 'switch off' : 'turn on'}</button>
+                  {!list.length && <>{' '}<button className="link tiny danger" onClick={() => void send({ action: 'areaDelete', key: a.key }, 'Area removed.')}>remove</button></>}
+                </span>
+              </h3>
+            )}
+            <table className="units compact checklist-tbl"><tbody>
               {list.map(i => editing === i.id ? (
                 <tr key={i.id}><td colSpan={4}>
-                  <div className="row">
-                    <label>Check<input value={edit.label} maxLength={200} onChange={e => setEdit(v => ({ ...v, label: e.target.value }))} /></label>
-                    <label>If it fails<select value={edit.defaultOutcome} onChange={e => setEdit(v => ({ ...v, defaultOutcome: e.target.value }))}>
-                      {Object.entries(OUT).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-                    <label>Units<select value={edit.unitId} onChange={e => setEdit(v => ({ ...v, unitId: e.target.value }))}>
-                      <option value="">All units</option>{units.map(u => <option key={u.id} value={u.id}>{u.name} only</option>)}</select></label>
-                  </div>
+                  <ItemFields v={edit} set={setEdit} areas={areas} units={units} OUT={OUT} />
                   <div className="button-row">
-                    <button className="small" disabled={!edit.label.trim()} onClick={async () => {
-                      if (await send({ action: 'save', id: i.id, area: i.area, label: edit.label, defaultOutcome: edit.defaultOutcome, unitId: edit.unitId || null, active: i.active }, 'Saved.')) setEditing(null);
+                    <button className="small" disabled={!ready(edit)} onClick={async () => {
+                      if (await send({ action: 'save', id: i.id, ...itemBody(edit), active: i.active }, 'Saved.')) setEditing(null);
                     }}>Save</button>
                     <button className="small secondary" onClick={() => setEditing(null)}>Cancel</button>
                   </div>
@@ -1915,40 +1939,64 @@ function ChecklistSetup() {
                 <tr key={i.id} className={i.active ? undefined : 'muted-row'}>
                   <td>{i.label}{!i.active && <span className="sub-n"> · off</span>}</td>
                   <td className="sub-n">{OUT[i.defaultOutcome]}</td>
-                  <td className="sub-n">{unitName(i.unitId)}</td>
+                  <td className="sub-n">{where(i)}</td>
                   <td className="n">
                     <button className="link tiny" title="Up" onClick={() => void send({ action: 'move', id: i.id, dir: -1 })}>↑</button>
                     <button className="link tiny" title="Down" onClick={() => void send({ action: 'move', id: i.id, dir: 1 })}>↓</button>{' '}
-                    <button className="link tiny" onClick={() => { setEditing(i.id); setEdit({ label: i.label, defaultOutcome: i.defaultOutcome, unitId: i.unitId ?? '' }); }}>edit</button>{' '}
+                    <button className="link tiny" onClick={() => { setEditing(i.id); setEdit({ area: i.area, label: i.label, defaultOutcome: i.defaultOutcome, appliesTo: i.appliesTo, unitIds: i.unitIds }); }}>edit</button>{' '}
                     {i.active
                       ? <button className="link tiny danger" onClick={() => void send({ action: 'delete', id: i.id }, 'Removed.')}>remove</button>
-                      : <button className="link tiny" onClick={() => void send({ action: 'save', id: i.id, area: i.area, label: i.label, defaultOutcome: i.defaultOutcome, unitId: i.unitId, active: true }, 'Back on.')}>turn on</button>}
+                      : <button className="link tiny" onClick={() => void send({ action: 'save', id: i.id, area: i.area, label: i.label, defaultOutcome: i.defaultOutcome, appliesTo: i.appliesTo, unitIds: i.unitIds, active: true }, 'Back on.')}>turn on</button>}
                   </td>
                 </tr>
               ))}
-              {!list.length && <tr><td className="note">Nothing checked here.</td></tr>}
+              {!list.length && <tr><td className="note">Nothing checked here yet.</td></tr>}
             </tbody></table>
           </div>
         );
       })}
-      <h3>Add an item</h3>
+      <h3>Add an area</h3>
       <div className="row">
-        <label>Room<select value={draft.area} onChange={e => setDraft(d => ({ ...d, area: e.target.value as Area }))}>
-          {AREAS.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}</select></label>
-        <label>Check<input value={draft.label} maxLength={200} placeholder="e.g. Hair dryer works" onChange={e => setDraft(d => ({ ...d, label: e.target.value }))} /></label>
-        <label>If it fails<select value={draft.defaultOutcome} onChange={e => setDraft(d => ({ ...d, defaultOutcome: e.target.value }))}>
-          {Object.entries(OUT).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-        <label>Units<select value={draft.unitId} onChange={e => setDraft(d => ({ ...d, unitId: e.target.value }))}>
-          <option value="">All units</option>{units.map(u => <option key={u.id} value={u.id}>{u.name} only</option>)}</select></label>
+        <label>Area name<input value={newArea} maxLength={60} placeholder="e.g. Garage, Balcony, Game room" onChange={e => setNewArea(e.target.value)} /></label>
+        <div className="button-row"><button disabled={!newArea.trim()} onClick={async () => { if (await send({ action: 'areaSave', label: newArea }, 'Area added — at the end of the walk; move it with ↑.')) setNewArea(''); }}>Add area</button></div>
       </div>
+      <h3>Add an item</h3>
+      <ItemFields v={draft} set={setDraft} areas={areas} units={units} OUT={OUT} />
       <div className="button-row">
-        <button disabled={!draft.label.trim()} onClick={async () => {
-          if (await send({ action: 'save', area: draft.area, label: draft.label, defaultOutcome: draft.defaultOutcome, unitId: draft.unitId || null }, 'Added.')) setDraft(d => ({ ...d, label: '' }));
+        <button disabled={!ready(draft)} onClick={async () => {
+          if (await send({ action: 'save', ...itemBody(draft) }, 'Added.')) setDraft(d => ({ ...d, label: '' }));
         }}>Add</button>
-        {msg && <span className="note">{msg}</span>}
+        {draft.appliesTo === 'units' && !draft.unitIds.length && <span className="fr-missing">Pick at least one unit.</span>}
       </div>
+      {msg && <p className="note" role="status">{msg}</p>}
     </div>
   );
+}
+
+/** One item's fields: area, what to check, what a failure becomes, and where it applies. */
+function ItemFields({ v, set, areas, units, OUT }: {
+  v: { area: string; label: string; defaultOutcome: string; appliesTo: AppliesTo; unitIds: string[] };
+  set: (f: (p: typeof v) => typeof v) => void; areas: AreaDef[]; units: ChecklistSetupData['units']; OUT: Record<string, string>;
+}) {
+  const WHERE: Record<AppliesTo, string> = { all: 'All units', house: '🏠 Houses only', apartment: '🏢 Apartments only', units: '📍 Some units…' };
+  const toggle = (id: string) => set(p => ({ ...p, unitIds: p.unitIds.includes(id) ? p.unitIds.filter(x => x !== id) : [...p.unitIds, id] }));
+  return <>
+    <div className="row">
+      <label>Area<select value={v.area} onChange={e => set(p => ({ ...p, area: e.target.value }))}>
+        {areas.map(a => <option key={a.key} value={a.key}>{a.label}{a.active === false ? ' (off)' : ''}</option>)}</select></label>
+      <label>Check<input value={v.label} maxLength={200} placeholder="e.g. Hair dryer works" onChange={e => set(p => ({ ...p, label: e.target.value }))} /></label>
+      <label>If it fails<select value={v.defaultOutcome} onChange={e => set(p => ({ ...p, defaultOutcome: e.target.value }))}>
+        {Object.entries(OUT).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+      <label>Applies to<select value={v.appliesTo} onChange={e => set(p => ({ ...p, appliesTo: e.target.value as AppliesTo }))}>
+        {APPLIES.map(k => <option key={k} value={k}>{WHERE[k]}</option>)}</select></label>
+    </div>
+    {v.appliesTo === 'units' && (
+      <div className="unit-picks" role="group" aria-label="Units">
+        {units.map(u => <button key={u.id} type="button" className={v.unitIds.includes(u.id) ? 'chip active' : 'chip'} aria-pressed={v.unitIds.includes(u.id)}
+          onClick={() => toggle(u.id)}>{v.unitIds.includes(u.id) ? '✓ ' : ''}{u.name}</button>)}
+      </div>
+    )}
+  </>;
 }
 
 /** §133: handymen and suppliers — a directory the repairs pick from. */

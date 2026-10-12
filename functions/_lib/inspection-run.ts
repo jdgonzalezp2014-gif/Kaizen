@@ -19,9 +19,10 @@ import { mirrorOn, pushWork } from './hostaway-tasks.ts';
 import { opsConfig } from './ops.ts';
 import { todayIn, addDays } from '../../src/lib/dates.ts';
 import { eligibleInspectors } from '../../src/lib/operations.ts';
+import { unitTypes } from './unit-access.ts';
 import {
-  AREA_KEYS, ASSIGN_SUBTASK, areaTitle, checklistFor, cleanTaskText, overallResult, purchaseList, readyToFinish, roomsOf, suggestedOutcome, workFor,
-  type Area, type Check, type CheckResult, type InspectionItem, type Outcome
+  ASSIGN_SUBTASK, areaTitle, checklistFor, cleanTaskText, overallResult, purchaseList, readyToFinish, roomsOf, suggestedOutcome, workFor,
+  type Area, type AreaDef, type Check, type CheckResult, type InspectionItem, type Outcome, type UnitShape
 } from '../../src/lib/inspection.ts';
 
 const TZ = 'America/New_York';
@@ -29,11 +30,25 @@ const RESULTS = new Set(['ok', 'attention', 'na']);
 const OUTCOMES = new Set(['repair', 'purchase', 'clean_next', 'clean_new', 'none']);
 
 export async function templateItems(sql: SqlFn): Promise<InspectionItem[]> {
-  const rows = await sql`SELECT id::text, area, label, default_outcome, unit_id, position, active FROM inspection_items
+  const rows = await sql`SELECT id::text, area, label, default_outcome, applies_to, unit_ids, position, active FROM inspection_items
                           WHERE account_id = 1 ORDER BY area, position, id` as
-    { id: string; area: Area; label: string; default_outcome: InspectionItem['defaultOutcome']; unit_id: string | null; position: number; active: boolean }[];
-  return rows.map(r => ({ id: r.id, area: r.area, label: r.label, defaultOutcome: r.default_outcome, unitId: r.unit_id,
-                          position: r.position, active: r.active }));
+    { id: string; area: Area; label: string; default_outcome: InspectionItem['defaultOutcome']; applies_to: InspectionItem['appliesTo'];
+      unit_ids: string[] | null; position: number; active: boolean }[];
+  return rows.map(r => ({ id: r.id, area: r.area, label: r.label, defaultOutcome: r.default_outcome, appliesTo: r.applies_to,
+                          unitIds: r.unit_ids ?? [], position: r.position, active: r.active }));
+}
+
+/** The areas, in walking order — the team's own included (§138); switched-off ones too (the setup shows them). */
+export async function inspectionAreas(sql: SqlFn): Promise<AreaDef[]> {
+  const rows = await sql`SELECT key, label, per_room, position, active FROM inspection_areas WHERE account_id = 1 ORDER BY position, key` as
+    { key: string; label: string; per_room: boolean; position: number; active: boolean }[];
+  return rows.map(r => ({ key: r.key, label: r.label, perRoom: r.per_room, position: r.position, active: r.active }));
+}
+
+/** The unit as the checklist needs it: its rooms, and house or apartment from the Repository. */
+async function unitShape(sql: SqlFn, ins: { unit_id: string | null; bedrooms: number | null; bathrooms: number | null }): Promise<UnitShape> {
+  const type = ins.unit_id ? (await unitTypes(sql)).get(ins.unit_id)?.type ?? null : null;
+  return { id: ins.unit_id ?? '', type, bedrooms: ins.bedrooms, bathrooms: ins.bathrooms };
 }
 
 type CheckRow = Check & { id: string; todoId: string | null; cleanTaskId: string | null };
@@ -71,14 +86,13 @@ async function nextClean(sql: SqlFn, unitId: string | null, from: string) {
 export async function loadRun(sql: SqlFn, id: string) {
   const ins = await inspectionRow(sql, id);
   if (!ins) return null;
-  const items = await templateItems(sql);
-  const unit = { id: ins.unit_id ?? '', bedrooms: ins.bedrooms, bathrooms: ins.bathrooms };
+  const [items, areas, unit] = await Promise.all([templateItems(sql), inspectionAreas(sql), unitShape(sql, ins)]);
   const today = todayIn(TZ);
   const cfg = await opsConfig(sql);
   return {
     inspection: { id: ins.id, unitId: ins.unit_id, unit: ins.unit_name, date: ins.date, inspector: ins.inspector,
                   result: ins.result, notes: ins.notes, finished: !!ins.result },
-    sections: checklistFor(items, unit),
+    sections: checklistFor(items, unit, areas),
     rooms: { bedrooms: roomsOf(unit, 'bedroom'), bathrooms: roomsOf(unit, 'bathroom') },
     checks: await checksOf(sql, id),
     nextClean: await nextClean(sql, ins.unit_id, today),
@@ -181,8 +195,9 @@ export async function allOk(sql: SqlFn, who: string, b: Record<string, unknown>)
   const id = String(b.inspectionId ?? '');
   const ins = await openRun(sql, id);
   const area = String(b.area ?? ''), n = Number(b.n) || 1;
-  if (!AREA_KEYS.has(area)) throw new Error('Which room?');
-  const sec = checklistFor(await templateItems(sql), { id: ins.unit_id ?? '', bedrooms: ins.bedrooms, bathrooms: ins.bathrooms })
+  const areas = await inspectionAreas(sql);
+  if (!areas.some(a => a.key === area)) throw new Error('Which room?');
+  const sec = checklistFor(await templateItems(sql), await unitShape(sql, ins), areas)
     .find(s => s.area === area && s.n === n);
   if (!sec) return 0;
   const ids = sec.items.map(i => Number(i.id));
@@ -202,7 +217,7 @@ export async function addFinding(sql: SqlFn, who: string, b: Record<string, unkn
   const outcome: Outcome = kind === 'purchase' ? 'purchase' : kind === 'clean' ? 'clean_next' : 'repair';
   const label = String(b.label ?? '').trim().slice(0, 200);
   if (!label) throw new Error('Say what it is.');
-  const area = AREA_KEYS.has(String(b.area)) ? String(b.area) : 'general';
+  const area = (await inspectionAreas(sql)).some(a => a.key === String(b.area)) ? String(b.area) : 'general';
   const n = Math.max(1, Number(b.n) || 1);
   const [c] = await sql`
     INSERT INTO inspection_checks (account_id, inspection_id, item_id, area, area_n, label, result, note, outcome, updated_by)
@@ -281,8 +296,9 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
   const nc = cleanNextAll.length ? await nextClean(sql, ins.unit_id, today) : null;
   if (cleanNextAll.length && !nc) throw new Error(`${ins.unit_name} has no clean coming up in the record — choose "a new clean" for those findings.`);
   const unit = { id: ins.unit_id ?? '', bedrooms: ins.bedrooms, bathrooms: ins.bathrooms };
+  const areas = await inspectionAreas(sql);
   const count = (area: Area) => roomsOf(unit, area);
-  const title = (c: Check) => areaTitle(c.area, c.n, count(c.area));
+  const title = (c: Check) => areaTitle(c.area, c.n, count(c.area), areas);
   const inspector = ins.inspector ?? '';
   const made: { kind: string; title: string; id?: string }[] = [];
   const toPush: string[] = [];

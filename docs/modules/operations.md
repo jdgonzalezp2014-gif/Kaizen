@@ -124,9 +124,18 @@ key had no SOPs.
 - Operations → Crew: pick a cleaner → their page for the team (level, flag/correct/decide), or
   **👁 View as cleaner ↗** — a separate tab (`/#as-cleaner/<name>`, PreviewShell in App.tsx) with only the
   cleaner's page, loaded through `crewGet` (the cleaner's own server code: level stripped), buttons inert.
-- **Inspections as a checklist (§133).** Template `inspection_items` (area general/living/kitchen/bedroom/
-  bathroom/exterior, label, default_outcome repair|purchase|clean, unit_id = one unit or NULL, position, active)
-  — Setup → Inspection checklist (CRUD, reorder; an item already answered is switched off, not deleted).
+- **Inspections as a checklist (§133).** Template `inspection_items` (area, label, default_outcome
+  repair|purchase|clean, position, active) — Setup → 🔍 Inspections → Inspection checklist (CRUD, reorder; an item
+  already answered is switched off, not deleted).
+  **§138: areas are data** — `inspection_areas` (key, label, per_room, position, active; items FK to it): the six
+  built-ins + "Pool & hot tub", and any the team adds (key from the name, `areaKey`), renamed, reordered (the walk),
+  switched off (its items leave new inspections), removed only when empty and never used in a finding. Only
+  bedroom/bathroom repeat per room. **Each item applies to** `applies_to` all | house | apartment | units
+  (`unit_ids`) — `appliesHere` in `src/lib/inspection.ts`. House/apartment = the Repository's **Property type**
+  column of the Units tables (Houses = House, Cortland_Legacy / The Links = Apartment, 067), read by
+  `unitTypes` (`functions/_lib/unit-access.ts`, same `repoMatch` as the access); a unit without it gets only the
+  items for all units and its own, and the setup flags it (▲ no type). The pool item applies to Bobcat House and
+  Amber Valley only.
   A run (`/api/inspection-run`, lib `functions/_lib/inspection-run.ts`, pure `src/lib/inspection.ts`, UI
   `src/components/InspectionRun.tsx`): sections from the unit's bedrooms and bathrooms (half bath = one),
   each item ✓/▲/N/A saved on every tap (`inspection_checks`), "Everything else here is OK", fixed
@@ -329,4 +338,4 @@ key had no SOPs.
 
 ## History
 
-§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134.
+§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138.

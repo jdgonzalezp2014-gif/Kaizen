@@ -568,7 +568,7 @@ export const crewLink = (name: string, revoke = false) =>
 
 /* ── inspections as a checklist (§133) ───────────────────────────── */
 
-import type { Area, CheckResult, InspectionItem, Outcome, Section } from './lib/inspection.ts';
+import type { Area, AreaDef, CheckResult, InspectionItem, Outcome, Section, UnitType } from './lib/inspection.ts';
 
 export interface RunCheck {
   id: string; itemId: string | null; area: Area; n: number; label: string; result: CheckResult | null;
@@ -614,9 +614,11 @@ export async function inspectPhotos(token: string, reporter: string, checkId: st
 }
 export interface InspectionLink { link: string; unit: string; date: string; expires: string }
 export const inspectionLinkFor = (inspectionId: string) => runAction<InspectionLink>({ action: 'link', inspectionId });
-export const getInspectionItems = () => call<{ ok: true; items: InspectionItem[] } | Fail>('/api/inspection-items');
+/** The checklist setup (§138): items, areas, and the active units with house/apartment from the Repository. */
+export interface ChecklistSetupData { ok: true; items: InspectionItem[]; areas: AreaDef[]; units: { id: string; name: string; type: UnitType }[]; switchedOff?: boolean }
+export const getInspectionItems = () => call<ChecklistSetupData | Fail>('/api/inspection-items');
 export const saveInspectionItem = (body: Record<string, unknown>) =>
-  call<{ ok: true; items: InspectionItem[]; switchedOff?: boolean } | Fail>('/api/inspection-items', { method: 'POST', body: JSON.stringify(body) });
+  call<ChecklistSetupData | Fail>('/api/inspection-items', { method: 'POST', body: JSON.stringify(body) });
 
 export interface Vendor { id: string; name: string; trade: string | null; phone: string | null; email: string | null; notes: string | null; active: boolean }
 export const getVendors = () => call<{ ok: true; vendors: Vendor[] } | Fail>('/api/vendors');

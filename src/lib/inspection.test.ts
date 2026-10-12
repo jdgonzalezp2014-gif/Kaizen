@@ -1,12 +1,12 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checklistFor, overallResult, progress, purchaseList, readyToFinish, reviewSteps, roomsOf, suggestedOutcome, workFor,
+import { appliesHere, areaKey, checklistFor, overallResult, unitTypeOf, progress, purchaseList, readyToFinish, reviewSteps, roomsOf, suggestedOutcome, workFor,
          type Check, type InspectionItem } from './inspection.ts';
 
 const item = (id: string, area: InspectionItem['area'], label: string, extra: Partial<InspectionItem> = {}): InspectionItem =>
-  ({ id, area, label, defaultOutcome: 'repair', unitId: null, position: Number(id), active: true, ...extra });
+  ({ id, area, label, defaultOutcome: 'repair', appliesTo: 'all', unitIds: [], position: Number(id), active: true, ...extra });
 const ITEMS = [item('1', 'kitchen', 'Stock'), item('2', 'bedroom', 'Sheets'), item('3', 'bathroom', 'Towels'),
-               item('4', 'general', 'Lock'), item('5', 'exterior', 'Pool', { unitId: 'u2' }), item('6', 'living', 'Old', { active: false })];
+               item('4', 'general', 'Lock'), item('5', 'exterior', 'Pool', { appliesTo: 'units', unitIds: ['u2'] }), item('6', 'living', 'Old', { active: false })];
 
 test('the unit decides the rooms: one section per bedroom and per bathroom (a half bath counts)', () => {
   assert.equal(roomsOf({ bedrooms: 3, bathrooms: 2.5 }, 'bathroom'), 3);
@@ -18,6 +18,35 @@ test('the unit decides the rooms: one section per bedroom and per bathroom (a ha
 test('an item for one unit only shows there; an inactive one nowhere', () => {
   assert.ok(checklistFor(ITEMS, { id: 'u2', bedrooms: 1, bathrooms: 1 }).some(x => x.area === 'exterior'));
   assert.ok(!checklistFor(ITEMS, { id: 'u1', bedrooms: 1, bathrooms: 1 }).some(x => x.area === 'exterior' || x.area === 'living'));
+});
+
+test('an item applies to every unit, houses, apartments, or the units listed (§138)', () => {
+  const house = { id: 'h1', type: 'house' as const }, flat = { id: 'a1', type: 'apartment' as const }, unknown = { id: 'x1', type: null };
+  assert.ok(appliesHere({ appliesTo: 'house', unitIds: [] }, house));
+  assert.ok(!appliesHere({ appliesTo: 'house', unitIds: [] }, flat));
+  assert.ok(appliesHere({ appliesTo: 'apartment', unitIds: [] }, flat));
+  assert.ok(!appliesHere({ appliesTo: 'apartment', unitIds: [] }, unknown), 'a unit of unknown type gets neither');
+  assert.ok(appliesHere({ appliesTo: 'all', unitIds: [] }, unknown));
+  assert.ok(appliesHere({ appliesTo: 'units', unitIds: ['h1', 'a1'] }, flat));
+  assert.ok(!appliesHere({ appliesTo: 'units', unitIds: ['h1'] }, flat));
+  assert.equal(unitTypeOf('House'), 'house');
+  assert.equal(unitTypeOf(' apartment '), 'apartment');
+  assert.equal(unitTypeOf(''), null);
+});
+
+test('the team’s own areas: in their place in the walk, single, and gone when switched off', () => {
+  const areas = [{ key: 'general', label: 'General & entry', perRoom: false, position: 1 },
+                 { key: 'bedroom', label: 'Bedroom', perRoom: true, position: 2 },
+                 { key: 'pool', label: 'Pool & hot tub', perRoom: false, position: 3 },
+                 { key: 'garage', label: 'Garage', perRoom: false, position: 4, active: false }];
+  const its = [item('1', 'general', 'Lock'), item('2', 'bedroom', 'Sheets'), item('3', 'pool', 'Pool clean', { appliesTo: 'units', unitIds: ['bob'] }),
+               item('4', 'garage', 'Door')];
+  const bob = checklistFor(its, { id: 'bob', type: 'house', bedrooms: 2, bathrooms: 1 }, areas);
+  assert.deepEqual(bob.map(x => x.title), ['General & entry', 'Bedroom 1', 'Bedroom 2', 'Pool & hot tub']);
+  const other = checklistFor(its, { id: 'cl', type: 'apartment', bedrooms: 1, bathrooms: 1 }, areas);
+  assert.deepEqual(other.map(x => x.title), ['General & entry', 'Bedroom']);
+  assert.equal(areaKey('Pool & hot tub'), 'pool_hot_tub');
+  assert.equal(areaKey('Balcón'), 'balcon');
 });
 
 const check = (itemId: string | null, n: number, result: Check['result'], extra: Partial<Check> = {}): Check =>

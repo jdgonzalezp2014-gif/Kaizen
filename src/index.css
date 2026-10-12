@@ -1997,3 +1997,19 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .work-step-body { padding: 4px 2px 8px; }
 .work-note summary { cursor: pointer; padding: 6px 0; }
 .vendor-link { border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
+/* §138 the checklist setup: an area's tools on its heading; units picked as chips. */
+.area-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; }
+.area-tools { margin-left: auto; font-weight: 400; white-space: nowrap; }
+.unit-picks { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+.unit-picks .chip { font-size: 12.5px; padding: 4px 10px; min-height: 32px; }
+.checklist-tbl { table-layout: fixed; width: 100%; }
+.checklist-tbl td:nth-child(2) { width: 120px; }
+.checklist-tbl td:nth-child(3) { width: 230px; }
+.checklist-tbl td:nth-child(4) { width: 150px; }
+.checklist-tbl td[colspan] { width: auto; }
+@media (max-width: 720px) {
+  .checklist-tbl, .checklist-tbl tbody, .checklist-tbl tr { display: block; }
+  .checklist-tbl tr { display: grid; grid-template-columns: auto 1fr auto; gap: 0 8px; align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .checklist-tbl td { display: block; width: auto !important; border: 0 !important; padding: 2px 4px; }
+  .checklist-tbl td:first-child, .checklist-tbl td[colspan] { grid-column: 1 / -1; }
+}

@@ -45,6 +45,10 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   (highlighted when nothing here matches). Enter still works but is no longer the way in.
 - SOP id 9 "Find, update and archive in the Data Repository" (screen `repository`).
 
+- **Property type** (§138): select House / Apartment in the three Units tables (Houses, Cortland_Legacy,
+  The Links), after Type (bedrooms). The inspection checklist reads it to decide house-only and apartment-only
+  items — fill it for a new unit.
+
 ## Open items
 
 - **Accounts & logins** (section `login`, reorganized 2026-10-09): three tables with the same
@@ -64,4 +68,4 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
 
 ## History
 
-§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118.
+§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138.

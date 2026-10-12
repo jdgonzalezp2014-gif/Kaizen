@@ -5,17 +5,22 @@
  *
  * The rooms come from the unit: one section per bedroom and per bathroom
  * (a half bath counts as one), plus the single areas. The items come from
- * the template edited in Setup — for every unit, or for one unit only.
+ * the template edited in Setup — for every unit, every house, every
+ * apartment, or a list of units (§138). The areas are data too: the team adds
+ * its own (a pool, a garage); only bedrooms and bathrooms repeat per room.
  */
 
-export type Area = 'general' | 'living' | 'kitchen' | 'bedroom' | 'bathroom' | 'exterior';
+/** An area's key: the built-in six, or one the team added (`pool`). */
+export type Area = string;
 export type CheckResult = 'ok' | 'attention' | 'na';
 /** What a finding becomes. `clean_next`: a task for the unit's next clean; `clean_new`: a new clean. */
 export type Outcome = 'repair' | 'purchase' | 'clean_next' | 'clean_new' | 'none';
 export type DefaultOutcome = 'repair' | 'purchase' | 'clean';
 
-/** In walking order: in the door, the common rooms, the bedrooms and baths, then outside. */
-export const AREAS: { key: Area; label: string; perRoom: boolean }[] = [
+export interface AreaDef { key: Area; label: string; perRoom: boolean; position?: number; active?: boolean }
+
+/** The built-in areas, in walking order — what the table starts with (067), and the fallback. */
+export const AREAS: AreaDef[] = [
   { key: 'general', label: 'General & entry', perRoom: false },
   { key: 'living', label: 'Living room', perRoom: false },
   { key: 'kitchen', label: 'Kitchen', perRoom: false },
@@ -23,13 +28,36 @@ export const AREAS: { key: Area; label: string; perRoom: boolean }[] = [
   { key: 'bathroom', label: 'Bathroom', perRoom: true },
   { key: 'exterior', label: 'Outside', perRoom: false }
 ];
-export const AREA_KEYS = new Set<string>(AREAS.map(a => a.key));
+
+/** A new area's key from its name: "Pool & hot tub" → `pool_hot_tub`. */
+export const areaKey = (label: string) => label.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+  .replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 40);
+
+/** Where an item applies: every unit, houses, apartments, or the units listed. */
+export type AppliesTo = 'all' | 'house' | 'apartment' | 'units';
+export const APPLIES: AppliesTo[] = ['all', 'house', 'apartment', 'units'];
+/** House or apartment, from the Repository's "Property type"; null when it is not filled. */
+export type UnitType = 'house' | 'apartment' | null;
+export const unitTypeOf = (v: unknown): UnitType => {
+  const t = String(v ?? '').trim().toLowerCase();
+  return t === 'house' ? 'house' : t === 'apartment' ? 'apartment' : null;
+};
 
 export interface InspectionItem {
   id: string; area: Area; label: string; defaultOutcome: DefaultOutcome;
-  /** Only this unit; null = every unit. */
-  unitId: string | null;
+  appliesTo: AppliesTo;
+  /** With appliesTo `units`: which. */
+  unitIds: string[];
   position: number; active: boolean;
+}
+
+export interface UnitShape { id: string; type?: UnitType; bedrooms: number | null; bathrooms: number | null }
+
+/** Does this item apply to this unit? A unit of unknown type gets only the items for all and its own. */
+export function appliesHere(i: Pick<InspectionItem, 'appliesTo' | 'unitIds'>, unit: { id: string; type?: UnitType }): boolean {
+  if (i.appliesTo === 'units') return i.unitIds.includes(unit.id);
+  if (i.appliesTo === 'house' || i.appliesTo === 'apartment') return unit.type === i.appliesTo;
+  return true;
 }
 
 export interface Section { area: Area; n: number; title: string; items: InspectionItem[] }
@@ -41,21 +69,23 @@ export function roomsOf(unit: { bedrooms: number | null; bathrooms: number | nul
   return 1;
 }
 
-export const areaTitle = (area: Area, n: number, count: number) => {
-  const a = AREAS.find(x => x.key === area)!;
+export const areaTitle = (area: Area, n: number, count: number, areas: AreaDef[] = AREAS) => {
+  const a = areas.find(x => x.key === area);
+  if (!a) return area;
   return a.perRoom && count > 1 ? `${a.label} ${n}` : a.label;
 };
 
-/** The checklist one unit gets: its sections, in walking order, each with its active items. */
-export function checklistFor(items: InspectionItem[], unit: { id: string; bedrooms: number | null; bathrooms: number | null }): Section[] {
-  const mine = items.filter(i => i.active && (!i.unitId || i.unitId === unit.id))
+/** The checklist one unit gets: its sections, in walking order, each with its active items. Areas switched off are left out. */
+export function checklistFor(items: InspectionItem[], unit: UnitShape, areas: AreaDef[] = AREAS): Section[] {
+  const mine = items.filter(i => i.active && appliesHere(i, unit))
     .sort((a, b) => a.position - b.position || Number(a.id) - Number(b.id));
   const out: Section[] = [];
-  for (const a of AREAS) {
+  const walk = [...areas].filter(a => a.active !== false).sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  for (const a of walk) {
     const its = mine.filter(i => i.area === a.key);
     if (!its.length) continue;
     const count = roomsOf(unit, a.key);
-    for (let n = 1; n <= (a.perRoom ? count : 1); n++) out.push({ area: a.key, n, title: areaTitle(a.key, n, count), items: its });
+    for (let n = 1; n <= (a.perRoom ? count : 1); n++) out.push({ area: a.key, n, title: areaTitle(a.key, n, count, areas), items: its });
   }
   return out;
 }
