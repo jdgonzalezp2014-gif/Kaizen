@@ -13,7 +13,7 @@
  */
 import { Fragment, useEffect, useState } from 'react';
 import {
-  crewAction, crewAdminAction, crewCleanLink, crewReport, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
+  crewAction, crewAdminAction, crewCleanLink, crewPhoto, crewReport, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
   type CleanFieldState, type CleanLink, type CrewPage, type CrewSchedule, type CrewUpcoming, type PendingExtra, type ToConfirm
 } from '../api.ts';
 import type { CrewClean, CrewExtra } from '../lib/crew.ts';
@@ -78,7 +78,8 @@ export function CrewHome({ token, asCleaner }: { token?: string | null; asCleane
   return <CrewView page={page} mode="cleaner" lang={shown} onLang={choose} onPeriod={setPeriod} reload={load}
                    act={act} upload={asCleaner ? inert : (f, files) => crewUpload(f, files, token)}
                    report={asCleaner ? inert : (f, files) => crewReport(f, files, token)}
-                   shareLink={asCleaner ? inert : key => crewCleanLink(key, token)} />;
+                   shareLink={asCleaner ? inert : key => crewCleanLink(key, token)}
+                   photo={id => crewPhoto(id, asCleaner ? { asCleaner } : { token })} />;
 }
 
 /* ── the team's side, in Operations ───────────────────────────────── */
@@ -216,12 +217,12 @@ function Decide({ id, onDone }: { id: string; onDone: () => void }) {
 
 /* ── the page itself ──────────────────────────────────────────────── */
 
-function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, report, shareLink, lang = 'en', onLang }: {
+function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, report, shareLink, photo, lang = 'en', onLang }: {
   page: CrewPage; mode: 'cleaner' | 'team'; canEdit?: boolean;
   onPeriod: (from: string) => void; reload: () => void;
   act: Act; upload?: Upload;
   /** §134: supplies and problems, and the link for the people they hire — the cleaner's page only. */
-  report?: Send; shareLink?: ShareLink;
+  report?: Send; shareLink?: ShareLink; photo?: (id: string) => Promise<string>;
   /** The cleaner's language (§129); the team's view is English. */
   lang?: Lang; onLang?: (l: Lang) => void;
 }) {
@@ -234,8 +235,8 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
   const excluded = shown.filter(c => c.voidReason).length;
   const team = mode === 'team';
   // §134: Options on each clean of the cleaner's own (today and ahead in Coming up; the last days in Cleans).
-  const ctx: FieldCtx | undefined = report && shareLink && page.supplies && mode === 'cleaner'
-    ? { report, shareLink, supplies: page.supplies, today: page.today, extraFrom: page.extraFrom, reload } : undefined;
+  const ctx: FieldCtx | undefined = report && shareLink && photo && page.supplies && mode === 'cleaner'
+    ? { report, shareLink, photo, supplies: page.supplies, today: page.today, extraFrom: page.extraFrom, reload } : undefined;
   const aheadKeys = new Set(page.upcoming.rows.map(r => r.key));
   const [sec, setSec] = useState<'up' | 'today' | 'past' | 'future' | 'pay' | 'help'>('up');
 
@@ -364,7 +365,8 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
 
 type ShareLink = (key: string) => Promise<{ ok: boolean; message?: string } & Partial<CleanLink>>;
 /** What a clean row needs to offer its Options — absent on the team's view. */
-interface FieldCtx { report: Send; shareLink: ShareLink; supplies: NonNullable<CrewPage['supplies']>; today: string; extraFrom: string; reload: () => void }
+interface FieldCtx { report: Send; shareLink: ShareLink; supplies: NonNullable<CrewPage['supplies']>; today: string; extraFrom: string; reload: () => void;
+  /** A photo of one of their cleans, as an object URL. */ photo: (id: string) => Promise<string> }
 
 /** A clean the cleaner works today or did in the last days (§134). */
 interface ActiveClean {
@@ -477,11 +479,60 @@ function PastCleans({ list, page, lang, ctx, act, reload }: { list: ActiveClean[
             <span><b>{dayLabel(lang, a.date)}</b> · {a.unit}</span>
             <span className="sub-n">{page.field?.[a.key]?.done ? tx.doneShort : tx.notDoneYet} {open === a.key ? '▲' : '▼'}</span>
           </button>
-          {open === a.key && <CleanCard a={a} page={page} lang={lang} ctx={ctx} act={act} reload={reload} head={false} onClose={() => setOpen(null)} />}
+          {open === a.key && <PastCard a={a} page={page} lang={lang} ctx={ctx} reload={reload} onClose={() => setOpen(null)} />}
         </div>
       ))}
     </div>
   );
+}
+
+/**
+ * A clean of the last days, as it was left (the owner: nothing more to
+ * report or photograph on it): its photos before and after, done or not,
+ * what was taken from the storage, its extras — and an extra can still go in.
+ */
+function PastCard({ a, page, lang, ctx, reload, onClose }: { a: ActiveClean; page: CrewPage; lang: Lang; ctx: FieldCtx; reload: () => void; onClose?: () => void }) {
+  const tx = TX[lang];
+  const [extra, setExtra] = useState(false);
+  const fs = page.field?.[a.key];
+  const photos = page.fieldPhotos?.[a.key] ?? [];
+  const extraOk = a.date <= ctx.today && a.date >= ctx.extraFrom;
+  const extras = page.extras.filter(e => e.key === a.key && e.status !== 'cancelled');
+  if (extra) return <ExtraPanel tx={tx} send={(f, files) => ctx.report({ action: 'addExtra', key: a.key, ...f }, files)}
+                                onClose={sent => { setExtra(false); if (sent) reload(); }} />;
+  return (
+    <div className="clean-card bare">
+      <p className={fs?.done ? 'field-ok' : 'note'}>{fs?.done ? tx.doneBy(fs.done.by.replace(/^.*'s team: /, ''), fs.done.at.slice(11, 16)) : tx.notDoneYet}</p>
+      {fs?.supplies && <p className="note">{fs.supplies.none ? tx.takenNone : `🧴 ${tx.takenCount(fs.supplies.lines)}`}</p>}
+      {(['before', 'after'] as const).map(st => {
+        const list = photos.filter(p => p.stage === st);
+        return list.length ? <div key={st}>
+          <p className="fr-cat">{st === 'before' ? tx.stepBefore : tx.stepAfter}</p>
+          <div className="fr-thumbs">{list.map(p => <CrewImg key={p.id} id={p.id} get={ctx.photo} />)}</div>
+        </div> : null;
+      })}
+      {!photos.length && <p className="note">{tx.noPhotos}</p>}
+      {extras.map(e => <p key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>💵 +{money2(e.amount)} — {e.description} · {tx.extraWord[e.status]}</p>)}
+      {extraOk && <button className="fr-btn secondary" onClick={() => setExtra(true)}>{tx.optExtra}</button>}
+      {onClose && <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>}
+    </div>
+  );
+}
+
+/** A clean's photo, fetched through Kaizen (the team's Drive is not theirs); tap to see it large, tap again to close. */
+function CrewImg({ id, get }: { id: string; get: (id: string) => Promise<string> }) {
+  const [url, setUrl] = useState<string | null>(null);
+  const [big, setBig] = useState(false);
+  useEffect(() => {
+    let u: string | null = null, live = true;
+    get(id).then(x => { u = x; if (live) setUrl(x); else URL.revokeObjectURL(x); }).catch(() => {});
+    return () => { live = false; if (u) URL.revokeObjectURL(u); };
+  }, [id]);
+  if (!url) return <span className="fr-thumb loading-thumb" />;
+  return <>
+    <button className="fr-thumb" onClick={() => setBig(true)}><img src={url} alt="" /></button>
+    {big && <button className="photo-big" onClick={() => setBig(false)}><img src={url} alt="" /></button>}
+  </>;
 }
 
 /** The small buttons a row of "Cleans & pay" offers: the same as in Today / Past / Future. */
@@ -496,19 +547,22 @@ function quickFor(page: CrewPage, key: string, ctx: FieldCtx): Quick | undefined
 /** A row's small buttons, and what they open in place. */
 function QuickActions({ q, cleanKey, lang, act, reload }: { q: Quick; cleanKey: string; lang: Lang; act: Act; reload: () => void }) {
   const tx = TX[lang];
-  const [open, setOpen] = useState<null | 'clean' | 'report' | 'extra' | 'share'>(null);
+  const [open, setOpen] = useState<null | 'clean' | 'report' | 'extra' | 'share' | 'past'>(null);
   const extraOk = !!q.active && q.active.date <= q.ctx.today && q.active.date >= q.ctx.extraFrom;
+  const past = !!q.active && q.active.date < q.ctx.today;
   const btn = (k: NonNullable<typeof open>, label: string) =>
     <button className={open === k ? 'small' : 'small secondary'} onClick={() => setOpen(open === k ? null : k)}>{label}</button>;
   return (
     <div className="quick no-print">
       <div className="quick-row">
-        {q.active && <>{btn('clean', tx.tabClean)}{btn('report', tx.tabReport)}{extraOk && btn('extra', tx.tabExtra)}</>}
-        {btn('share', tx.shareShort)}
+        {q.active && past && btn('past', tx.viewClean)}
+        {q.active && !past && <>{btn('clean', tx.tabClean)}{btn('report', tx.tabReport)}{extraOk && btn('extra', tx.tabExtra)}</>}
+        {!past && btn('share', tx.shareShort)}
         {q.future && <Decline cleanKey={cleanKey} act={act} reload={reload} lang={lang} />}
       </div>
       {open === 'share' && <SharePanel cleanKey={cleanKey} lang={lang} get={q.ctx.shareLink} onClose={() => setOpen(null)} />}
-      {open && open !== 'share' && q.active &&
+      {open === 'past' && q.active && <PastCard a={q.active} page={q.page} lang={lang} ctx={q.ctx} reload={reload} onClose={() => setOpen(null)} />}
+      {open && open !== 'share' && open !== 'past' && q.active &&
         <CleanCard key={open} a={q.active} page={q.page} lang={lang} ctx={q.ctx} act={act} reload={reload} head={false}
                    initialTab={open} onClose={() => setOpen(null)} />}
     </div>

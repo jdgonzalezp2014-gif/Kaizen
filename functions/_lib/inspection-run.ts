@@ -48,12 +48,12 @@ async function checksOf(sql: SqlFn, inspectionId: string): Promise<CheckRow[]> {
 
 async function inspectionRow(sql: SqlFn, id: string) {
   const [r] = await sql`SELECT i.id::text, i.unit_id, i.unit_name, i.inspected_on::text AS date, i.inspector, i.result, i.notes,
-                               i.started_at IS NOT NULL AS started, i.finished_at, u.bedrooms, u.bathrooms
+                               i.started_at IS NOT NULL AS started, i.finished_at, i.rooms, u.bedrooms, u.bathrooms
                           FROM inspections i
                           LEFT JOIN units u ON u.account_id = i.account_id AND u.id = i.unit_id
                          WHERE i.account_id = 1 AND i.id = ${Number(id)}` as
     { id: string; unit_id: string | null; unit_name: string; date: string; inspector: string | null; result: string | null; notes: string | null;
-      started: boolean; finished_at: string | null; bedrooms: number | null; bathrooms: number | null }[];
+      started: boolean; finished_at: string | null; rooms: string[] | null; bedrooms: number | null; bathrooms: number | null }[];
   return r ?? null;
 }
 
@@ -78,7 +78,8 @@ export async function loadRun(sql: SqlFn, id: string) {
   return {
     inspection: { id: ins.id, unitId: ins.unit_id, unit: ins.unit_name, date: ins.date, inspector: ins.inspector,
                   result: ins.result, notes: ins.notes, finished: !!ins.result },
-    sections: checklistFor(items, unit),
+    // §135: an inspection of only some rooms asks only those.
+    sections: checklistFor(items, unit).filter(s => !ins.rooms?.length || ins.rooms.includes(`${s.area}:${s.n}`)),
     rooms: { bedrooms: roomsOf(unit, 'bedroom'), bathrooms: roomsOf(unit, 'bathroom') },
     checks: await checksOf(sql, id),
     nextClean: await nextClean(sql, ins.unit_id, today),

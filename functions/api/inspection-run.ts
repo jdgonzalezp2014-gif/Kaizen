@@ -8,6 +8,7 @@
  *   POST { action: 'add', inspectionId, kind: clean|repair|purchase, label, note?, area?, n? }
  *   POST { action: 'remove', inspectionId, checkId }       an on-the-spot finding only
  *   POST { action: 'finish', inspectionId, result?, notes?, cleanDate? }
+ *   POST { action: 'link', inspectionId }                  the inspector's link, no account (§135)
  *   POST multipart: inspectionId, checkId, file…           photos, to Drive
  *
  * GET with `operations`; POST with `operations.edit` (roles.ts). Every answer
@@ -16,6 +17,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
+import { linkFor } from '../_lib/inspect-link.ts';
 import { addFinding, addPhotos, allOk, finishRun, loadRun, pushMade, removeFinding, saveCheck, startRun } from '../_lib/inspection-run.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -47,6 +49,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       case 'allOk': return Response.json({ ok: true, added: await allOk(sql, who.email, b) });
       case 'add': return Response.json({ ok: true, checkId: await addFinding(sql, who.email, b) });
       case 'remove': await removeFinding(sql, b); return Response.json({ ok: true });
+      case 'link': return Response.json({ ok: true, ...(await linkFor(sql, env.ENCRYPTION_KEY, String(b.inspectionId ?? ''), new URL(request.url).origin)) });
       case 'finish': {
         const r = await finishRun(sql, who.email, b);
         waitUntil(pushMade(sql, env.ENCRYPTION_KEY, r.toPush));

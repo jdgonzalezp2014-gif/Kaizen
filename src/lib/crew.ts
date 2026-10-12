@@ -210,9 +210,10 @@ export function movementText(m: Movement, day: (d: DateStr) => string, you = tru
     case 'added': return `New: ${m.unit} on ${day(m.date)}`;
     case 'moved': return `${m.unit}: checkout moved from ${day(m.from)} to ${day(m.to)} (${m.later ? 'stay extended' : 'stay shortened'})`;
     case 'time': return `${m.unit} on ${day(m.date)}: checkout time changed from ${m.from} to ${m.to}`;
+    // §134, the owner: a cleaner is told only that it is cancelled for them — not that someone else got it.
     case 'removed': return `${m.unit} on ${day(m.date)}: ${({
       cancelled: 'booking cancelled — no clean', declined: you ? 'you declined it' : 'declined',
-      not_needed: 'no clean needed any more', unassigned: `taken off ${you ? 'your' : 'their'} schedule, not given to anyone yet`,
-      reassigned: 'given to someone else' })[m.why]}`;
+      not_needed: 'no clean needed any more', unassigned: you ? 'cancelled' : 'taken off their schedule, not given to anyone yet',
+      reassigned: you ? 'cancelled' : 'given to someone else' })[m.why]}`;
   }
 }

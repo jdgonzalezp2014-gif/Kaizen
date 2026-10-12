@@ -201,10 +201,15 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   right under it four sections, one at a time: **☀️ Today** (one big button per clean when there are
   several; the chosen one open: tabs 🧽 My clean · 🙋 Report or ask · 💵 Extra — the cleaner's alone — then
   "📤 Send the link to my helper" and "Can't do it" while still in Coming up) · **↩️ Past** (last 3 days,
-  a list; each opens to finish/fix and has Close) · **📅 Future** (only share the link or Can't do it;
+  a list; each opens AS IT WAS LEFT — its photos before/after, done or not, what was taken — with only
+  "Add an extra" and Close: nothing more to report or photograph on a past clean, the owner) · **📅 Future** (only share the link or Can't do it;
   the calendar below) · **💲 Pay** (period, cleans, invoice; recent and coming rows carry the same small
   buttons). The team's view (Operations → Crew) keeps the one long page. Shells (`/crew`, preview,
   crew-only sign-in) drop the app header for it.
+  Photos reach the cleaner through Kaizen (`GET /api/crew?photo=<id>`, same on crew-link and the team's
+  preview): only a photo of a clean whose `clean_records.cleaner` is them; the team's Drive stays theirs.
+  In "Changes since", a clean taken off a cleaner (reassigned or unassigned) reads just "cancelled" to
+  them; the team's view still says what happened.
 - **A clean's 4 steps (§134):** 1 photos BEFORE · 2 🧴 what I took from storage (**required**: lines, or
   the explicit "I took nothing from storage" — `clean_records.supplies_at/by/none`) · 3 photos AFTER ·
   4 ✅ done. Done is refused until 2 and 3 are there. "What I took" is no longer in the reports menu.

@@ -77,20 +77,21 @@ export async function opsConfig(sql: SqlFn): Promise<{
 }
 
 export async function inspectionLog(sql: SqlFn): Promise<{
-  done: (OpsInspection & { id: string; reservationId: string | null; started: boolean; checklist: boolean })[];
-  scheduled: (OpsInspection & { id: string; reservationId: string | null; started: boolean; checklist: boolean })[];
+  done: (OpsInspection & { id: string; reservationId: string | null; started: boolean; checklist: boolean; sentBy: string | null })[];
+  scheduled: (OpsInspection & { id: string; reservationId: string | null; started: boolean; checklist: boolean; sentBy: string | null })[];
 }> {
   const rows = await sql`
     SELECT i.id, i.unit_name, i.inspected_on::text AS date, i.inspector, i.result, i.notes, i.reservation_id,
-           i.started_at IS NOT NULL AS started,
+           i.started_at IS NOT NULL AS started, CASE WHEN i.sent_at IS NOT NULL THEN i.sent_by END AS sent_by,
            EXISTS (SELECT 1 FROM inspection_checks c WHERE c.account_id = 1 AND c.inspection_id = i.id) AS checklist
       FROM inspections i WHERE i.account_id = 1 ORDER BY i.inspected_on DESC, i.id DESC LIMIT 2000` as
     { id: string; unit_name: string; date: string; inspector: string | null; result: string | null;
-      notes: string | null; reservation_id: string | null; started: boolean; checklist: boolean }[];
+      notes: string | null; reservation_id: string | null; started: boolean; checklist: boolean; sent_by: string | null }[];
+  // `sentBy`: sent from the inspector's link, waiting for the team's review (§135).
   // `started`: walked as a checklist and not finished (§133); `checklist`: has a checklist report to open.
   const map = (r: typeof rows[number]) => ({ id: String(r.id), date: r.date, unit: r.unit_name,
     by: r.inspector ?? '', result: r.result ?? '', notes: r.notes ?? '', reservationId: r.reservation_id,
-    started: !!r.started, checklist: !!r.checklist });
+    started: !!r.started, checklist: !!r.checklist, sentBy: r.sent_by });
   return {
     done: rows.filter(r => r.result).map(map),
     // A row with no result is a plan, and a plan must never reset the

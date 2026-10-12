@@ -300,6 +300,8 @@ export interface InspectionEntry {
   reservationId: string | null;
   /** §133: walked as a checklist and not finished; has a checklist report. */
   started?: boolean; checklist?: boolean;
+  /** §135: sent from the inspector's link (who sent it) — waiting for the team's review. */
+  sentBy?: string | null;
 }
 export interface NoteEntry {
   resId: string; kind: 'checkin' | 'checkout'; unit: string | null; guest: string | null;
@@ -441,6 +443,8 @@ export interface CrewPage {
   supplies?: { items: SupplyItem[]; units: { id: string; name: string }[] };
   /** §134: each recent or coming clean's photos and done, by key. */
   field?: Record<string, CleanFieldState>;
+  /** §134: the photos of those cleans (ids for crewPhoto), by key. */
+  fieldPhotos?: Record<string, { id: string; stage: 'before' | 'after' }[]>;
   upcoming: {
     enabled: boolean; days: number; through: string | null; rows: CrewUpcoming[]; problem: string | null;
     autoDays: number; confirmed: { at: string; through: string } | null; movements: Movement[];
@@ -530,6 +534,17 @@ export const getCrewAdmin = (cleaner?: string | null, period?: string | null) =>
 /** A cleaner's page through the same server code that answers the cleaner — for "View as cleaner". */
 export const getCrewAsCleaner = (cleaner: string, period?: string | null) =>
   call<({ ok: true } & CrewPage) | Fail>(`/api/crew-admin?${new URLSearchParams({ view: 'cleaner', cleaner, ...(period ? { period } : {}) })}`);
+/**
+ * One photo of a clean, as an object URL for an <img> (§134): fetched with the page's own credential —
+ * the secret link's header, the sign-in, or the team's preview — since an <img> cannot send a header.
+ */
+export async function crewPhoto(id: string, door: { token?: string | null; asCleaner?: string }): Promise<string> {
+  const url = door.asCleaner ? `/api/crew-admin?${new URLSearchParams({ view: 'cleaner', cleaner: door.asCleaner, photo: id })}`
+    : `${crewPath(door.token)}?photo=${encodeURIComponent(id)}`;
+  const res = await fetch(url, { headers: crewHeaders(door.token) });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return URL.createObjectURL(await res.blob());
+}
 export const crewAdminAction = (body: Record<string, unknown>) =>
   call<{ ok: true } | Fail>('/api/crew-admin', { method: 'POST', body: JSON.stringify(body) });
 export const crewLink = (name: string, revoke = false) =>
@@ -565,6 +580,26 @@ export async function runPhotos(inspectionId: string, checkId: string, files: Fi
   return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as
     { ok: true; photos: { name: string; url: string }[] } | Fail;
 }
+/* §135: the inspector's link — /report#i=<token>, through the field door (/api/report-link). */
+export interface InspectLinkData {
+  inspection: { unit: string; date: string; inspector: string | null; until: string };
+  sections: Section[]; checks: RunCheck[]; lang: 'en' | 'es'; sent: { at: string; by: string } | null;
+}
+const inspectHeaders = (token: string) => ({ 'X-Inspect-Token': token });
+export const getInspectLink = (token: string) =>
+  call<({ ok: true } & InspectLinkData) | Fail>('/api/report-link', { headers: inspectHeaders(token) });
+export const inspectAction = (token: string, body: Record<string, unknown>) =>
+  call<({ ok: true; checkId?: string } & InspectLinkData) | Fail>('/api/report-link', {
+    method: 'POST', headers: { ...inspectHeaders(token), 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+export async function inspectPhotos(token: string, reporter: string, checkId: string, files: File[]) {
+  const form = new FormData();
+  form.append('reporter', reporter); form.append('checkId', checkId);
+  for (const f of files) form.append('file', f);
+  const res = await fetch('/api/report-link', { method: 'POST', headers: inspectHeaders(token), body: form });
+  return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as ({ ok: true } & InspectLinkData) | Fail;
+}
+export interface InspectionLink { link: string; unit: string; date: string; expires: string }
+export const inspectionLinkFor = (inspectionId: string) => runAction<InspectionLink>({ action: 'link', inspectionId });
 export const getInspectionItems = () => call<{ ok: true; items: InspectionItem[] } | Fail>('/api/inspection-items');
 export const saveInspectionItem = (body: Record<string, unknown>) =>
   call<{ ok: true; items: InspectionItem[]; switchedOff?: boolean } | Fail>('/api/inspection-items', { method: 'POST', body: JSON.stringify(body) });

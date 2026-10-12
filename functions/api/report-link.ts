@@ -18,6 +18,9 @@
  * Cloudflare Access BYPASS (with /report and /assets/*), so it reads no
  * identity header: the `X-Report-Token` secret is the only credential,
  * matched by its SHA-256. SELF_AUTHENTICATING in the middleware.
+ *
+ * §135: the same door answers an inspector's link — a request with
+ * `X-Inspect-Token` instead goes to inspect-link.ts, so no new path needs a bypass.
  */
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
@@ -28,6 +31,7 @@ import { tellCleanThread } from '../_lib/clean-slack.ts';
 import { tellCleaner } from '../_lib/crew-slack.ts';
 import type { HelperEvent } from '../../src/lib/crew-slack.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type Stage } from '../_lib/clean-record.ts';
+import { inspectGet, inspectPost } from '../_lib/inspect-link.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
 
@@ -53,6 +57,7 @@ const gone = (ended = false) => Response.json({ ok: false, error: 'bad_link', me
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
+  if (request.headers.has('X-Inspect-Token')) return inspectGet(sql, request);
   const l = await linkOf(sql, request);
   if (l instanceof Response) return l;
   const items = (await invItems(sql)).filter(i => i.active).map(i => ({ id: i.id, name: i.name, measure: i.measure, category: i.category }));
@@ -63,6 +68,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const sql = db(env) as unknown as SqlFn;
+  if (request.headers.has('X-Inspect-Token')) return inspectPost(sql, env.ENCRYPTION_KEY, request);
   const l = await linkOf(sql, request);
   if (l instanceof Response) return l;
   const es = l.lang === 'es';

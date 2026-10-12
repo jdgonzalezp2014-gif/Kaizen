@@ -90,7 +90,7 @@ export function movementFor(lang: Lang, m: Movement): string {
     case 'time': return `${m.unit} el ${day(m.date)}: la hora de salida cambió de ${m.from} a ${m.to}`;
     case 'removed': return `${m.unit} el ${day(m.date)}: ${({
       cancelled: 'reserva cancelada — sin limpieza', declined: 'la rechazaste', not_needed: 'ya no hace falta limpiar',
-      unassigned: 'quitada de tu agenda, aún sin asignar a nadie', reassigned: 'asignada a otra persona' })[m.why]}`;
+      unassigned: 'cancelada', reassigned: 'cancelada' })[m.why]}`;
   }
 }
 
@@ -166,7 +166,8 @@ export const TX = {
     secUpcoming: '📅 Coming up', secCalendar: '🗓 Calendar', secPay: '💲 Pay', secHelp: '❓ Help',
     secToday: (n: number) => `☀️ Today${n ? ` (${n})` : ''}`, secPast: (n: number) => `↩️ Past${n ? ` (${n})` : ''}`,
     secFuture: (n: number) => `📅 Future${n ? ` (${n})` : ''}`,
-    pastNone: 'No cleans in the last 3 days.', pastNote: 'The last 3 days: open one to finish its steps, report, or add an extra.',
+    pastNone: 'No cleans in the last 3 days.', pastNote: 'The last 3 days, as they were left: photos, done, what was taken. An extra can still be added.',
+    noPhotos: 'No photos were sent for this clean.', viewClean: '📷 See',
     notDoneYet: '○ not done', doneShort: '✅ done', shareShort: '📤 Send link',
     optExtra: '💵 Add an extra', extraAmount: 'How much? ($)', extraWhat: 'What was it for?',
     extraNote: 'For work beyond the clean (an extra laundry load, a deep spot…). The team approves or denies it; only approved extras are paid, with this clean.',
@@ -259,7 +260,8 @@ export const TX = {
     secUpcoming: '📅 Próximas', secCalendar: '🗓 Calendario', secPay: '💲 Pago', secHelp: '❓ Ayuda',
     secToday: (n: number) => `☀️ Hoy${n ? ` (${n})` : ''}`, secPast: (n: number) => `↩️ Pasadas${n ? ` (${n})` : ''}`,
     secFuture: (n: number) => `📅 Futuras${n ? ` (${n})` : ''}`,
-    pastNone: 'No hay limpiezas en los últimos 3 días.', pastNote: 'Los últimos 3 días: abre una para terminar sus pasos, avisar algo o agregar un extra.',
+    pastNone: 'No hay limpiezas en los últimos 3 días.', pastNote: 'Los últimos 3 días, como quedaron: fotos, completada, lo que se tomó. Todavía puedes agregar un extra.',
+    noPhotos: 'No se enviaron fotos de esta limpieza.', viewClean: '📷 Ver',
     notDoneYet: '○ sin completar', doneShort: '✅ completada', shareShort: '📤 Enviar enlace',
     optExtra: '💵 Agregar un extra', extraAmount: '¿Cuánto? ($)', extraWhat: '¿Para qué fue?',
     extraNote: 'Para trabajo más allá de la limpieza (una carga extra de lavandería, una mancha profunda…). El equipo lo aprueba o lo rechaza; solo se pagan los extras aprobados, junto con esta limpieza.',

@@ -3642,4 +3642,7 @@ The "Options…" list per clean is gone.
 He found the top wasted space: the header and greeting became one line and the sections moved right under
 it — Today (a button per clean), Past (open to edit, close each), Future (share or turn down) and Pay
 (with the same small buttons on recent rows).
+Past cleans became a record, not a form: their photos (served through Kaizen, only to that cleaner),
+done, what was taken, and an extra still possible — no reporting or photos after the fact. A clean given
+to someone else now reads "cancelled" to the cleaner who lost it.
 

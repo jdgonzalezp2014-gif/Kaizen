@@ -56,6 +56,8 @@ export interface CrewPage {
   help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; lang: 'en' | 'es' }[];
   /** §134: each recent or coming clean's photos before/after and done — by key. */
   field?: Record<string, CleanState>;
+  /** §134: the photos themselves (ids to ask for), by clean — shown on the cleaner's past cleans. */
+  fieldPhotos?: Record<string, { id: string; stage: Stage }[]>;
   /** §134: what they can report — the supplies and the units. */
   supplies?: { items: { id: string; name: string; measure: string; category: string }[]; units: { id: string; name: string }[] };
   upcoming: {
@@ -266,7 +268,14 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
     today, periods, period, cleans: shown, extras: extras.filter(e => shown.some(x => x.key === e.key)), extraFrom,
     invoice: buildInvoice(c.name, period, shown, extras, today),
     upcoming,
-    field: await cleanStates(sql, [...new Set([...shown.filter(x => x.date >= addDays(today, -LINK_PAST_DAYS)).map(x => x.key), ...ahead])])
+    ...await (async () => {
+      const keys = [...new Set([...shown.filter(x => x.date >= addDays(today, -LINK_PAST_DAYS)).map(x => x.key), ...ahead])];
+      const photos = keys.length ? await sql`SELECT id::text, cleaning_key AS key, stage FROM clean_photos
+                                              WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) ORDER BY id` as { id: string; key: string; stage: Stage }[] : [];
+      const fieldPhotos: Record<string, { id: string; stage: Stage }[]> = {};
+      for (const p of photos) (fieldPhotos[p.key] ??= []).push({ id: p.id, stage: p.stage });
+      return { field: await cleanStates(sql, keys), fieldPhotos };
+    })()
   };
 }
 
@@ -277,6 +286,17 @@ export interface CrewCaller { name: string; by: string }
 
 /** GET for whichever door identified the cleaner. */
 export async function crewGet(request: Request, env: Env, sql: SqlFn, me: CrewCaller): Promise<Response> {
+  // §134: one photo of one of THEIR cleans, from the team's Drive (they have no access to it) — never another's.
+  const photoId = new URL(request.url).searchParams.get('photo');
+  if (photoId) {
+    const [ph] = await sql`SELECT p.drive_id FROM clean_photos p JOIN clean_records r ON r.account_id = p.account_id AND r.cleaning_key = p.cleaning_key
+                            WHERE p.account_id = 1 AND p.id = ${Number(photoId) || 0} AND r.cleaner = ${me.name}` as { drive_id: string }[];
+    if (!ph) return refuse(404, 'not_found', 'No such photo.');
+    const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(ph.drive_id)}?alt=media`,
+      { headers: { Authorization: `Bearer ${await driveToken(sql, env.ENCRYPTION_KEY)}` } });
+    if (!res.ok) return refuse(502, 'drive', `Drive said ${res.status}.`);
+    return new Response(res.body, { headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'image/jpeg', 'Cache-Control': 'private, max-age=86400' } });
+  }
   const page = await loadCrewPage(sql, env.ENCRYPTION_KEY, me.name, new URL(request.url).searchParams.get('period'));
   if (!page) return refuse(404, 'not_on_roster', 'You are not on the roster any more.');
   // Their rating is the team's business — not sent, not just not drawn.
