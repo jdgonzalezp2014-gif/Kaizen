@@ -103,6 +103,9 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 - Operations → Crew: pick a cleaner → their page for the team (level, flag/correct/decide), or
   **👁 View as cleaner ↗** — a separate tab (`/#as-cleaner/<name>`, PreviewShell in App.tsx) with only the
   cleaner's page, loaded through `crewGet` (the cleaner's own server code: level stripped), buttons inert.
+- **Cancelled before arrival (§130):** `voidCancelled` — void_reason "booking cancelled in Hostaway",
+  assignment `not_needed`, cleaner/price NULL, decided_by "cancelled before arrival — it was X's". A booking
+  that comes back is restored as TBD (unassigned). Migration 054 fixed the 8 rows that kept a cleaner.
 - **Spanish for cleaners (§129):** `cleaners.lang` (en/es; Setup → Crew pages "Page language"; the cleaner
   switches it on their page → `setLang`, remembered). Everything the cleaner reads goes through
   `src/lib/crew-i18n.ts` (TX dictionary, dates, periods, paydays, Kaizen-written void reasons, movements,

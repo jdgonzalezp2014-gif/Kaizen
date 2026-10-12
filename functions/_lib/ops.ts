@@ -308,8 +308,7 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
       await sql`UPDATE cleanings SET checkout_on = ${moved.departure}, imported_at = now()
                  WHERE account_id = 1 AND key = ${key}`;
     } else {
-      await sql`UPDATE cleanings SET void_reason = 'booking cancelled in Hostaway', imported_at = now()
-                 WHERE account_id = 1 AND key = ${key}`;
+      await voidCancelled(sql, key);
     }
   }
   await refreshCleaningRates(sql);
@@ -326,7 +325,9 @@ async function holdForConfirm(sql: SqlFn, key: string, date: string, cancelledLo
   const done = await sql`
     UPDATE cleanings SET
       needs_confirm = ${`Cancelled ${cancelledLocal} (New York), on or after the arrival — was the unit used, and who cleaned it?`}
-                      || COALESCE(' It was ' || cleaner || '''s clean.', ''),
+                      -- whose it was: the cleaner on it, or the one a void before arrival noted (§130)
+                      || COALESCE(' It was ' || cleaner || '''s clean.',
+                                  ' It was ' || substring(decided_by from ' — it was (.+)''s$') || '''s clean.', ''),
       assignment = 'tbd', cleaner = NULL, price = NULL, void_reason = NULL, checkout_on = ${date},
       decided_by = 'cancelled after arrival — to confirm', imported_at = now()
      WHERE account_id = 1 AND key = ${key} AND confirmed_by IS NULL AND needs_confirm IS NULL
@@ -348,6 +349,18 @@ function cancelledFate(c: CancelledStay | undefined, active: Awaited<ReturnType<
   const at = utcToLocal(c.cancellationDate, OPS_TZ);
   const date = cancelledClean(c.arrival, c.departure, at);
   return date && at ? { date, at } : null;
+}
+
+/**
+ * A booking cancelled before its guest arrived (§130): no clean, and nobody
+ * on it — a cleaner's name on a cancelled stay reads as work still to do.
+ * Who had it stays in decided_by; the reason in void_reason.
+ */
+async function voidCancelled(sql: SqlFn, key: string): Promise<void> {
+  await sql`UPDATE cleanings SET void_reason = 'booking cancelled in Hostaway', assignment = 'not_needed',
+                   decided_by = 'cancelled before arrival' || COALESCE(' — it was ' || cleaner || '''s', ''),
+                   cleaner = NULL, price = NULL, imported_at = now()
+             WHERE account_id = 1 AND key = ${key}`;
 }
 
 /** A clean held (or recorded) for a booking that was in fact changed, not cancelled: released, never paid twice. */
@@ -401,12 +414,15 @@ export async function reconcileRecent(sql: SqlFn, creds: HostawayCredentials, to
         continue;
       }
       if (!r.void_reason) {
-        await sql`UPDATE cleanings SET void_reason = 'booking cancelled in Hostaway' WHERE account_id = 1 AND key = ${r.key}`;
+        await voidCancelled(sql, r.key);
         out.cancelled++;
       }
     } else {
       if (r.void_reason === 'booking cancelled in Hostaway') {
-        await sql`UPDATE cleanings SET void_reason = NULL WHERE account_id = 1 AND key = ${r.key}`;
+        // The booking came back: a clean again, unassigned until someone gives it to a cleaner (§130).
+        await sql`UPDATE cleanings SET void_reason = NULL,
+                         assignment = CASE WHEN cleaner IS NULL THEN 'tbd' ELSE assignment END
+                   WHERE account_id = 1 AND key = ${r.key}`;
         out.restored++;
       }
       if (stay.departure !== r.day) {

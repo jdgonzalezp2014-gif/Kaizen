@@ -3520,3 +3520,12 @@ paid, the phone-calendar file, and the server's error messages — has both lang
 (a flag, a denial, an extra's description) is shown as written. The cleaners' SOP has a Spanish twin, and
 the page shows the one in the cleaner's language. Not translatable from here: Cloudflare's sign-in screen.
 
+## §130 — A booking cancelled before arrival: "no clean needed", nobody on it (2026-10-11)
+
+The owner: those cancellations should read "no clean needed" or unassigned, to avoid misunderstandings.
+A clean voided for a cancellation kept its cleaner and price, so lists showed a cleaner on a booking that no
+longer existed. Now it becomes "no clean needed" with no cleaner and no price; who had it stays in
+decided_by ("cancelled before arrival — it was Michelle's"). If the booking comes back, the clean returns
+unassigned. Eight rows in production were corrected (migration 054). One of them, P2-4308 on Oct 11, was in
+fact cancelled after arrival; the daily reconcile moves it to "confirm who cleaned", keeping whose it was.
+
