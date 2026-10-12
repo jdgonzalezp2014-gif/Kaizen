@@ -9,6 +9,7 @@ import { Repository } from './screens/Repository.tsx';
 import { Home } from './screens/Home.tsx';
 import { CrewHome } from './screens/Crew.tsx';
 import { ReportPage } from './screens/Report.tsx';
+import { InspectPage } from './screens/Inspect.tsx';
 import { Sops } from './screens/Sops.tsx';
 import { SopButton, SopPanel } from './components/Sops.tsx';
 import { featureOf } from './lib/sops.ts';
@@ -35,6 +36,22 @@ if (CREW_TOKEN) { try { sessionStorage.setItem('crewToken', CREW_TOKEN); } catch
  * the helper's phone (localStorage) so the page opens again from a home-screen
  * icon; taken out of the address bar like the crew link.
  */
+/**
+ * An inspector's link (§135): /report#i=<token> — the same field door as the
+ * helpers'. Read BEFORE the report token (which clears the address bar); the
+ * phone remembers which of the two it opened last, for a home-screen icon.
+ */
+const INSPECT_TOKEN = (() => {
+  if (location.pathname !== '/report') return null;
+  const h = new URLSearchParams(location.hash.slice(1));
+  const i = h.get('i');
+  try {
+    if (i) { history.replaceState(null, '', '/report'); localStorage.setItem('inspectToken', i); localStorage.setItem('fieldLast', 'i'); return i; }
+    if (h.get('t')) { localStorage.setItem('fieldLast', 't'); return null; }
+    return localStorage.getItem('fieldLast') === 'i' ? localStorage.getItem('inspectToken') : null;
+  } catch { return i; }
+})();
+
 const REPORT_TOKEN = (() => {
   if (location.pathname !== '/report') return null;
   const t = new URLSearchParams(location.hash.slice(1)).get('t');
@@ -46,7 +63,7 @@ export function App() {
   // The link door has no sign-in: the page and nothing else.
   if (location.pathname === '/crew') return <CrewShell token={CREW_TOKEN} />;
   // The helpers' page has its own one-line header: the language sits beside day/night (§134).
-  if (location.pathname === '/report') return <main><ReportPage token={REPORT_TOKEN} /></main>;
+  if (location.pathname === '/report') return <main>{INSPECT_TOKEN ? <InspectPage token={INSPECT_TOKEN} /> : <ReportPage token={REPORT_TOKEN} />}</main>;
   // The team's "View as cleaner" (§122): a tab with that cleaner's page and nothing of the team's.
   const preview = /^#as-cleaner\/(.+)$/.exec(location.hash);
   if (preview) return <PreviewShell name={decodeURIComponent(preview[1]!)} />;

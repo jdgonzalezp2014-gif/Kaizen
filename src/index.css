@@ -1898,6 +1898,24 @@ header.mini-head, header.mini-head:is(header) { display: flex; flex-direction: r
 .fr-urg { display: flex; flex-direction: column; gap: 8px; }
 .fr-urg .on { border-color: var(--ink); border-width: 3px; font-weight: 800; }
 .fr-urg .urg-urgent.on { border-color: var(--warn); }
+/* §135 the inspector's link: the clean's step look, plus where a room stands. Shape and word carry it, colour helps. */
+.ins-item { color: var(--ink); font-size: 22px; line-height: 1.3; }
+.ins-dots { display: flex; gap: 6px; flex-wrap: wrap; }
+.ins-dots span { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--line); }
+.ins-dots .ok { background: var(--good); border-color: var(--good); }
+.ins-dots .attention { background: var(--warn); border-color: var(--warn); border-radius: 2px; }
+.ins-dots .na { background: var(--muted); border-color: var(--muted); }
+.ins-dots .cur { outline: 2px solid var(--ink); outline-offset: 2px; }
+.fr-choice.ins-ok.on { border-color: var(--good); border-width: 3px; font-weight: 800; }
+.fr-choice.ins-bad.on { border-color: var(--warn); border-width: 3px; font-weight: 800; }
+.fr-choice.on { border-color: var(--ink); border-width: 3px; font-weight: 800; }
+.fr-num.ins-done { background: var(--good); color: #fff; }
+.ins-prob { color: var(--warn) !important; font-weight: 700 !important; }
+.ins-sug { font-size: 14px; color: var(--muted); font-weight: 400; }
+.ins-bar { height: 8px; border-radius: 4px; background: var(--line); overflow: hidden; }
+.ins-bar i { display: block; height: 100%; background: var(--good); }
+button.fr-line { width: 100%; background: none; border: 0; border-bottom: 1px solid var(--line); text-align: left; color: var(--ink); font-size: 16px; cursor: pointer; }
+.fr-btn.off { opacity: .45; pointer-events: none; }
 .fr-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .fr-thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; }
 .fr-photos { display: flex; flex-direction: column; gap: 10px; }

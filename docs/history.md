@@ -3646,3 +3646,17 @@ Past cleans became a record, not a form: their photos (served through Kaizen, on
 done, what was taken, and an extra still possible — no reporting or photos after the fact. A clean given
 to someone else now reads "cancelled" to the cleaner who lost it.
 
+## §135 — Inspections from a link, like a clean's helper (2026-10-12)
+
+The owner asked for inspections the team can "enter easily", using the cleanings' logic: a mock first
+(rejected as a separate page — "give me a real one with Kaizen's link"), tried on apartment P2-1304.
+The team sends a link per scheduled inspection (🔗 Link → WhatsApp); it opens `/report#i=<token>`, the
+same field door as the helpers' (§134), so the existing Access bypass covers it and no new path was
+opened. The page is the helpers' look and habits: unit and day on top, name once, EN/ES, a numbered step
+per room, one item per screen with big ✓ OK / ▲ Problem / N/A, "everything else here is OK", a problem
+needs a photo and what it needs (Repair / Buy / Clean, the item's usual one suggested). Answers go through
+the same inspection-run lib as the team's pop-up, saved on each tap. **The inspector sends; the team
+finishes** — Review & finish (§133) stays with the team and is the only place work is made, so a link
+holder never creates work orders or Hostaway tasks. Sent is locked until reopened from the link.
+The link ends the day after the inspection, or when it is finished or cancelled.
+

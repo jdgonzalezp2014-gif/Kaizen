@@ -30,7 +30,7 @@ import {
   type Todo, type HostawayTasksState,
   type StayDocs, type OperationsResponse, type ManualClean, type ManualCleanKind, type StayOnDay,
   getStaysOnDay, manualClean, todoAction, saveClaim, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry,
-  previewAssign, type AssignPreview, crewLink, crewAdminAction, runAction,
+  previewAssign, type AssignPreview, crewLink, crewAdminAction, runAction, inspectionLinkFor, type InspectionLink,
   getInspectionItems, saveInspectionItem, getVendors, saveVendor, type Vendor
 } from '../api.ts';
 import {
@@ -1208,6 +1208,8 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
   const canEdit = can(data.permissions, 'operations.edit');
   // §133: the inspection open in the checklist sheet.
   const [run, setRun] = useState<string | null>(null);
+  // §135: the scheduled inspection whose link is open.
+  const [linkFor, setLinkFor] = useState<string | null>(null);
   const start = async (body: Record<string, unknown>) => {
     setMsg('');
     const r = await runAction<{ id: string }>({ action: 'start', ...body }).catch(e => ({ ok: false as const, message: String(e) }));
@@ -1249,13 +1251,18 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
         {msg && <p className="note">{msg}</p>}
         <div className="grid-scroll"><table className="units compact"><tbody>
           {data.inspectionLog.scheduled.map(e => (
-            <tr key={e.id}>
-              <td>{e.date}</td><td><b>{e.unit}</b></td><td>{e.by}</td><td className="ops-note">{e.notes}</td>
+            <Fragment key={e.id}>
+            <tr>
+              <td>{e.date}</td><td><b>{e.unit}</b></td><td>{e.by}</td>
+              <td className="ops-note">{e.sentBy && <div><b>📨 Sent from the link by {e.sentBy}</b> — review and finish</div>}{e.notes}</td>
               <td className="n">{canEdit && <>
-                <button className="small" onClick={() => void start({ inspectionId: e.id })}>▶ {e.started ? 'Continue' : 'Start'}</button>{' '}
+                <button className="small" onClick={() => void start({ inspectionId: e.id })}>▶ {e.sentBy ? 'Review' : e.started ? 'Continue' : 'Start'}</button>{' '}
+                <button className="small secondary" onClick={() => setLinkFor(linkFor === e.id ? null : e.id)}>🔗 Link</button>{' '}
                 <button className="link tiny danger" onClick={() => void cancelInspection(e.id).then(reload)}>cancel</button>
               </>}</td>
             </tr>
+            {linkFor === e.id && <tr><td colSpan={5}><InspectionLinkPanel id={e.id} unit={e.unit} date={e.date} inspector={e.by} onClose={() => setLinkFor(null)} /></td></tr>}
+            </Fragment>
           ))}
           {!data.inspectionLog.scheduled.length && <tr><td className="note">Nothing scheduled.</td></tr>}
         </tbody></table></div>
@@ -1305,6 +1312,35 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
         </details>
       )}
     </>
+  );
+}
+
+/**
+ * §135: the inspector's link for one scheduled inspection — no account, it
+ * opens /report on that unit and day. WhatsApp first, like a clean's helper
+ * link; the inspector sends, the team reviews and finishes here.
+ */
+function InspectionLinkPanel({ id, unit, date, inspector, onClose }: { id: string; unit: string; date: string; inspector: string; onClose: () => void }) {
+  const [l, setL] = useState<InspectionLink | null>(null);
+  const [msg, setMsg] = useState('');
+  useEffect(() => {
+    inspectionLinkFor(id).then(r => r.ok ? setL(r) : setMsg(r.message ?? 'No link.')).catch(e => setMsg(String(e)));
+  }, [id]);
+  if (!l) return <p className={msg ? 'breach' : 'note loading-dot'}>{msg || 'Making the link…'}</p>;
+  const text = `Inspection of ${unit} on ${date}${inspector ? ` (${inspector})` : ''}. Open this link, go room by room, and send it when you finish: ${l.link}`;
+  return (
+    <div className="ops-form">
+      <p><b>Link for {unit}, {date}</b> — no sign-in; it works only for this inspection, until {l.expires}.
+        The inspector answers and sends; findings become work only when you finish it here.</p>
+      <p className="note" style={{ overflowWrap: 'anywhere', fontFamily: 'ui-monospace, monospace', userSelect: 'all' }}>{l.link}</p>
+      <div className="button-row">
+        <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noreferrer')}>💬 Send on WhatsApp</button>
+        <button className="secondary" onClick={() => void navigator.clipboard.writeText(l.link).then(() => setMsg('Copied.'), () => setMsg('Select the link above and copy it.'))}>📋 Copy link</button>
+        <a className="link" href={l.link} target="_blank" rel="noreferrer">Open it ↗</a>
+        <button className="link" onClick={onClose}>Close</button>
+        {msg && <span className="note">{msg}</span>}
+      </div>
+    </div>
   );
 }
 

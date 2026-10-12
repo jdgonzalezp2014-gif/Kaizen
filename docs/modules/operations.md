@@ -129,6 +129,16 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   Maintenance needed). Repairs/purchases are mirrored to Hostaway (pushWork after the response); not
   announced in Slack. Inspections view: Inspect now / Schedule, month calendar (○ ◐ ✓ ▲), ▶ Start/Continue,
   View report; the old log form is folded ("past inspection without the checklist").
+- **The inspector's link (§135).** Operations → Inspections → a scheduled row → **🔗 Link** (WhatsApp / copy):
+  `/report#i=<token>`, no account — the helpers' field door (§134), so no new Access bypass: `/api/report-link`
+  with `X-Inspect-Token` goes to `functions/_lib/inspect-link.ts` (team side: `/api/inspection-run` action `link`,
+  `linkFor`). Columns on `inspections` (062): `link_token_enc/hash`, `link_expires_on` (the day after the
+  inspection), `sent_at/by`. Page `src/screens/Inspect.tsx` (EN/ES, name once, a numbered step per room, one
+  item per screen, ✓/▲/N/A saved on each tap through the inspection-run lib, a ▲ needs a photo + Repair/Buy/
+  Clean, "something else" is created on its first photo). **The inspector only sends** (every item answered,
+  every problem with a photo); the row then reads "📨 Sent from the link by X" and ▶ Review opens the team's
+  run, where Review & finish makes the work. Reopen from the link clears `sent_at`. Refused when expired,
+  finished or cancelled. App.tsx reads `#i=` before `#t=`; the phone remembers which it opened last.
 - **Vendors (§133):** `vendors` directory (Setup → Vendors & handymen; switched off, never erased); the repair
   form's Vendor field suggests them (free text kept). A vendor page is a later step (email kept for it).
 - **Carry (§131):** the record stores `prepares_for` (the next reservation when recorded). A rule-decided
@@ -236,6 +246,10 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 
 ## Open items
 
+- **Inspector's link built (§135), test inspection P2-1304 on 2026-10-12.** Checklist items are English only
+  (the page says so in ES) — a Spanish label per item in Setup is not built. Not built: a Slack notice when an
+  inspection is sent; choosing the inspector's language on the team side (it follows the roster, else EN).
+  Cancelling a scheduled inspection that has answers fails (FK from `inspection_checks`) — pre-existing.
 - **Inventory and the field steps built, not in use (§134).** Migrations 057–059 applied. To start:
   count Storage and the busiest units (Operations → Inventory → ▣ Count), adjust the starter list (13
   items, estimates are guesses). Access **Bypass** app "Kaizen — public links" (Bypass Everyone) is live since

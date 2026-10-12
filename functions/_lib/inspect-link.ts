@@ -75,7 +75,9 @@ async function linkOf(sql: SqlFn, request: Request): Promise<LinkRow | Response>
 async function page(sql: SqlFn, l: LinkRow) {
   const run = await loadRun(sql, l.id);
   if (!run) return null;
-  const [s] = await sql`SELECT sent_at::text, sent_by FROM inspections WHERE account_id = 1 AND id = ${Number(l.id)}` as
+  // ISO, not Postgres' text form ("…+00"), which Safari's Date cannot read.
+  const [s] = await sql`SELECT to_char(sent_at AT TIME ZONE 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') AS sent_at, sent_by
+                          FROM inspections WHERE account_id = 1 AND id = ${Number(l.id)}` as
     { sent_at: string | null; sent_by: string | null }[];
   // An inspector who is on the roster reads it in their language; anyone else in English (the page has a switch).
   const [c] = run.inspection.inspector
