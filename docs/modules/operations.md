@@ -287,6 +287,14 @@ key had no SOPs.
   made from the field or Inventory is announced in Slack's tasks channel (`taskCreated`) and mirrored.
 - **Cleans' daily thread in Slack (§134):** see the slack module (`functions/_lib/clean-slack.ts`).
 
+- **Practice (§139):** `src/screens/Practice.tsx`, route `/#practice/<inspection|work-link|vendor|cleaner|helper>`
+  (App.tsx, before the team app), linked from the SOP panel ("🧪 Practice · Practicar", `PRACTICE_FOR` by screen:
+  Inspections → inspection + both handyman doors; Cleaners / Calendar → cleaner + helper). The real screens with example
+  data ("🧪 Practice House / Loft") and in-browser transports: InspectionRun's `transport`, `CrewHome practice`,
+  `ReportPage practice`, `WorkLinkPage` / `VendorHome practice`. Nothing reaches the server; a reload starts over; the
+  helper practice never touches the phone's saved name or language. Open to everyone signed in. A change to one of those
+  screens' actions needs its mock in Practice.tsx too (or the practice drifts from the real page).
+
 ## Open items
 
 - **Access for cleaners (§136):** all 21 active units complete (2026-10-12, after the owner filled Bobcat

@@ -2013,3 +2013,7 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
   .checklist-tbl td { display: block; width: auto !important; border: 0 !important; padding: 2px 4px; }
   .checklist-tbl td:first-child, .checklist-tbl td[colspan] { grid-column: 1 / -1; }
 }
+/* §139 practice: the banner on top, and the SOP panel's links to it. */
+.practice-banner { line-height: 1.5; }
+.sop-practice { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
+.sop-practice .sop-row { display: flex; flex-direction: column; gap: 2px; text-decoration: none; color: inherit; }

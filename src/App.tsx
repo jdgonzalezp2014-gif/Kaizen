@@ -10,6 +10,7 @@ import { Home } from './screens/Home.tsx';
 import { CrewHome } from './screens/Crew.tsx';
 import { ReportPage } from './screens/Report.tsx';
 import { VendorHome, WorkLinkPage } from './screens/Work.tsx';
+import { PracticePage, isPractice } from './screens/Practice.tsx';
 import { InspectPage } from './screens/Inspect.tsx';
 import { Sops } from './screens/Sops.tsx';
 import { SopButton, SopPanel } from './components/Sops.tsx';
@@ -78,6 +79,9 @@ export function App() {
   // The helpers' page has its own one-line header: the language sits beside day/night (§134).
   if (location.pathname === '/report') return <main>{WORK_TOKEN ? <WorkLinkPage token={WORK_TOKEN} />
     : INSPECT_TOKEN ? <InspectPage token={INSPECT_TOKEN} /> : <ReportPage token={REPORT_TOKEN} />}</main>;
+  // §139 practice: a field page with example data, nothing sent — opened from the SOP panel.
+  const practice = /^#practice\/([a-z-]+)$/.exec(location.hash)?.[1];
+  if (practice && isPractice(practice)) return <PracticePage which={practice} />;
   // The team's "View as cleaner" (§122): a tab with that cleaner's page and nothing of the team's.
   const preview = /^#as-cleaner\/(.+)$/.exec(location.hash);
   if (preview) return <PreviewShell name={decodeURIComponent(preview[1]!)} />;

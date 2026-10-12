@@ -60,27 +60,33 @@ const Files = ({ files }: { files?: { id: string; name: string; url: string }[] 
  * `asCleaner`, the team previewing it: the same page from the same server
  * code, with the cleaner's buttons sending nothing.
  */
-export function CrewHome({ token, asCleaner }: { token?: string | null; asCleaner?: string }) {
+/** §139: the cleaner's page with example data, every button kept in the browser (Practice.tsx). */
+export interface PracticeCrew {
+  get: () => Promise<CrewPage>; act: Act; upload: Upload; report: Send; shareLink: ShareLink; photo: (id: string) => Promise<string>;
+}
+
+export function CrewHome({ token, asCleaner, practice }: { token?: string | null; asCleaner?: string; practice?: PracticeCrew }) {
   const [page, setPage] = useState<CrewPage | null>(null);
   const [period, setPeriod] = useState<string | null>(null);
   const [err, setErr] = useState('');
   // §129: the cleaner's language — theirs from the server; a switch here is saved for every device.
   const [lang, setLang] = useState<Lang | null>(null);
   const shown: Lang = lang ?? page?.cleaner.lang ?? 'en';
-  const load = () => (asCleaner ? getCrewAsCleaner(asCleaner, period) : getCrew(period, token))
+  const load = () => (practice ? practice.get().then(p => ({ ok: true as const, ...p }))
+                     : asCleaner ? getCrewAsCleaner(asCleaner, period) : getCrew(period, token))
     .then(r => { if (r.ok) { setPage(r); setErr(''); } else setErr(r.message ?? TX[shown].loadFail); })
     .catch(e => setErr(String(e)));
   useEffect(() => { void load(); }, [period]);
-  const act: Act = asCleaner ? inert : body => crewAction(body, token);
+  const act: Act = practice ? practice.act : asCleaner ? inert : body => crewAction(body, token);
   const choose = (l: Lang) => { setLang(l); void act({ action: 'setLang', lang: l }).catch(() => {}); };
 
   if (err) return <p className="banner error">{err}</p>;
   if (!page) return <p className="note loading-dot">{TX[shown].loading}</p>;
   return <CrewView page={page} mode="cleaner" lang={shown} onLang={choose} onPeriod={setPeriod} reload={load}
-                   act={act} upload={asCleaner ? inert : (f, files) => crewUpload(f, files, token)}
-                   report={asCleaner ? inert : (f, files) => crewReport(f, files, token)}
-                   shareLink={asCleaner ? inert : key => crewCleanLink(key, token)}
-                   photo={id => crewPhoto(id, asCleaner ? { asCleaner } : { token })} />;
+                   act={act} upload={practice ? practice.upload : asCleaner ? inert : (f, files) => crewUpload(f, files, token)}
+                   report={practice ? practice.report : asCleaner ? inert : (f, files) => crewReport(f, files, token)}
+                   shareLink={practice ? practice.shareLink : asCleaner ? inert : key => crewCleanLink(key, token)}
+                   photo={practice ? practice.photo : id => crewPhoto(id, asCleaner ? { asCleaner } : { token })} />;
 }
 
 /* ── the team's side, in Operations ───────────────────────────────── */

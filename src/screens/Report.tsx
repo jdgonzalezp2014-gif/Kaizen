@@ -37,20 +37,24 @@ const remember = (s: Saved) => put('reportLinks', JSON.stringify([s, ...savedLin
   .sort((a, b) => a.date.localeCompare(b.date)).slice(0, 10)));
 const forget = (t: string) => put('reportLinks', JSON.stringify(savedLinks().filter(x => x.t !== t)));
 
-export function ReportPage({ token: first }: { token: string | null }) {
-  const [token, setToken] = useState(first);
-  const [links, setLinks] = useState<Saved[]>(savedLinks);
-  const [team, setTeam] = useState<ReportTeam | null>(null);
+/** §139 practice: the helper's page with example data, its steps kept in the browser — and nothing of this phone's saved. */
+type Post = (f: Record<string, string>, files: File[]) => Promise<{ ok: boolean; message?: string; state?: ReportTeam['state'] }>;
+
+export function ReportPage({ token: first, practice }: { token: string | null; practice?: { team: ReportTeam; post: Post } }) {
+  const [token, setToken] = useState(practice ? 'practice' : first);
+  const [links, setLinks] = useState<Saved[]>(practice ? [] : savedLinks);
+  const [team, setTeam] = useState<ReportTeam | null>(practice?.team ?? null);
   const [err, setErr] = useState('');
   const [lang, setLang] = useState<Lang | null>(() => { const l = get('reportLang'); return isLang(l) ? l : null; });
-  const [name, setName] = useState(() => get('reportName') ?? '');
-  const [named, setNamed] = useState(() => !!get('reportName'));
+  const [name, setName] = useState(() => practice ? '' : get('reportName') ?? '');
+  const [named, setNamed] = useState(() => !practice && !!get('reportName'));
+  const keep = (k: string, v: string) => { if (!practice) put(k, v); };
   const [tab, setTab] = useState<'clean' | 'report'>('clean');
   const shown: Lang = lang ?? team?.lang ?? 'es';
   const tx = TX[shown];
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || practice) return;
     setTeam(null); setErr(''); setTab('clean');
     getReportLink(token).then(r => {
       if (r.ok) { setTeam(r); remember({ t: token, unit: r.clean.unit, date: r.clean.date, until: r.clean.until }); put('reportToken', token); }
@@ -68,8 +72,8 @@ export function ReportPage({ token: first }: { token: string | null }) {
     </label>
   ) : null;
 
-  const post = (f: Record<string, string>, files: File[]) =>
-    sendFieldReport('/api/report-link', { 'X-Report-Token': token! }, { ...f, reporter: name.trim() }, files);
+  const post = (f: Record<string, string>, files: File[]) => practice ? practice.post({ ...f, reporter: name.trim() }, files)
+    : sendFieldReport('/api/report-link', { 'X-Report-Token': token! }, { ...f, reporter: name.trim() }, files);
   const head = (
     <header className="mini-head">
       {team ? <span className="mini-clean"><b>🏠 {team.clean.unit}</b><small>{dayLabel(shown, team.clean.date)}</small></span>
@@ -77,7 +81,7 @@ export function ReportPage({ token: first }: { token: string | null }) {
       <span className="mini-tools">
         <span className="todo-kind" role="group" aria-label="Language / Idioma">
           {LANGS.map(l => <button key={l} className={l === shown ? 'chip active' : 'chip'} aria-label={LANG_NAME[l]}
-                                  onClick={() => { setLang(l); put('reportLang', l); }}>{l.toUpperCase()}</button>)}
+                                  onClick={() => { setLang(l); keep('reportLang', l); }}>{l.toUpperCase()}</button>)}
         </span>
         <ThemeToggle />
       </span>
@@ -99,7 +103,7 @@ export function ReportPage({ token: first }: { token: string | null }) {
                    onChange={e => setName(e.target.value)} />
             <p className="fr-tip">{tx.repNameNote}</p>
             <button className="fr-btn fr-go" disabled={!name.trim()}
-                    onClick={() => { put('reportName', name.trim()); setNamed(true); }}>{tx.repContinue}</button>
+                    onClick={() => { keep('reportName', name.trim()); setNamed(true); }}>{tx.repContinue}</button>
           </div>
         </div>
       ) : <>

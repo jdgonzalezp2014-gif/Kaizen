@@ -78,27 +78,27 @@ const useLang = (): [Lang, (l: Lang) => void] => {
 };
 
 /** The link door: one work order. */
-export function WorkLinkPage({ token }: { token: string }) {
+export function WorkLinkPage({ token, practice }: { token: string; practice?: { page: WorkPage; send: Send } }) {
   const [lang, setLang] = useLang();
-  const [page, setPage] = useState<WorkPage | null>(null);
+  const [page, setPage] = useState<WorkPage | null>(practice?.page ?? null);
   const [err, setErr] = useState('');
-  useEffect(() => { getWorkLink(token).then(r => r.ok ? setPage(r.page) : setErr(r.message ?? 'Not valid.')).catch(e => setErr(String(e))); }, [token]);
+  useEffect(() => { if (!practice) getWorkLink(token).then(r => r.ok ? setPage(r.page) : setErr(r.message ?? 'Not valid.')).catch(e => setErr(String(e))); }, [token]);
   return <>
     <Head title={page?.work.unit ? `🔧 ${page.work.unit}` : 'Kaizen'} lang={lang} setLang={setLang} />
     <div className="report-page">
       {err ? <p className="banner error">{err}</p> : !page ? <p className="note loading-dot">…</p>
-        : <WorkCard page={page} lang={lang} send={(f, files) => workLinkAct(token, f, files)} onPage={setPage} />}
+        : <WorkCard page={page} lang={lang} send={practice?.send ?? ((f, files) => workLinkAct(token, f, files))} onPage={setPage} />}
     </div>
   </>;
 }
 
 /** The account door: a handyman signed in sees their work orders. */
-export function VendorHome() {
+export function VendorHome({ practice }: { practice?: { vendor: string; works: WorkPage[]; send: (id: string, fields: Record<string, string>, files: File[]) => ReturnType<Send> } } = {}) {
   const [lang, setLang] = useLang();
-  const [data, setData] = useState<{ vendor: string; works: WorkPage[] } | null>(null);
+  const [data, setData] = useState<{ vendor: string; works: WorkPage[] } | null>(practice ? { vendor: practice.vendor, works: practice.works } : null);
   const [err, setErr] = useState('');
   const load = () => getVendorWork().then(r => r.ok ? setData(r) : setErr(r.message ?? 'Could not load.')).catch(e => setErr(String(e)));
-  useEffect(() => { void load(); }, []);
+  useEffect(() => { if (!practice) void load(); }, []);
   const w = W[lang];
   return <>
     <Head title={data ? w.hello(data.vendor) : 'Kaizen'} lang={lang} setLang={setLang} />
@@ -106,7 +106,7 @@ export function VendorHome() {
       {err ? <p className="banner error">{err}</p> : !data ? <p className="note loading-dot">…</p>
         : !data.works.length ? <div className="card"><p className="note">{w.none}</p></div>
         : data.works.map(p => <WorkCard key={p.work.id} page={p} lang={lang}
-            send={(f, files) => vendorAct(p.work.id, f, files)}
+            send={(f, files) => practice ? practice.send(p.work.id, f, files) : vendorAct(p.work.id, f, files)}
             onPage={np => setData(d => d && { ...d, works: d.works.map(x => x.work.id === np.work.id ? np : x) })} />)}
     </div>
   </>;

@@ -11,6 +11,7 @@ import { getSops, getSopVersions, sopAction, type SopsResult } from '../api.ts';
 import { FEATURES, featureLabel, forFeature, sectionPath, sectionTree, parseBody, reviewDueOn, reviewOverdue, type Inline, type Sop, type SopSection,
          type SopStep, type SopVersion } from '../lib/sops.ts';
 import { todayIn } from '../lib/dates.ts';
+import { PRACTICE, PRACTICE_FOR } from '../screens/Practice.tsx';
 
 const TZ = 'America/New_York';
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -462,6 +463,16 @@ export function SopPanel({ feature, canEdit, onClose, onLibrary }: {
               </ul>
             ) : (
               <p className="note">No procedure for this screen yet.{canWrite ? ' Write the first one — it will show here for everyone once published.' : ''}</p>
+            )}
+            {PRACTICE_FOR[feature] && (
+              <div className="sop-practice">
+                <p className="sop-kicker">🧪 Practice · Practicar</p>
+                <p className="note">Opens in a new tab with example data. Nothing is saved or sent. / Se abre en otra pestaña con datos de ejemplo; nada se guarda ni se envía.</p>
+                <ul className="sop-list">
+                  {PRACTICE_FOR[feature]!.map(k => <li key={k}><a className="sop-row" href={`/#practice/${k}`} target="_blank" rel="noreferrer">
+                    <span>{PRACTICE[k].en}</span><small className="sub-n">{PRACTICE[k].es}</small></a></li>)}
+                </ul>
+              </div>
             )}
             <div className="sop-drawer-foot">
               {canWrite && <button className="small" onClick={() => setEditing(blankSop(defaultSection, [feature]))}>+ New SOP for this screen</button>}

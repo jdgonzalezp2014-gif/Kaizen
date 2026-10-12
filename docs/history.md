@@ -3727,3 +3727,13 @@ inspections read the same); an item's `unit_id` became `applies_to` + `unit_ids`
 (if any)" item moved to a new "Pool & hot tub" area for Bobcat House and Amber Valley. Tested on the branch:
 Amber Valley (house) got the house-only and pool areas, P2-1304 (apartment) neither; duplicate area names,
 removing an area with items and a "some units" item with none picked are refused.
+
+## §139 — Practice pages for the team (2026-10-12)
+
+The owner wanted, from the SOPs of Inspections and Cleaners, a way to try the inspection, a repair as a
+handyman with and without an account, and the cleaner's and helper's pages — in English and Spanish, for
+everyone. Built as the same screens with example data and transports that keep everything in the browser,
+instead of a sandbox in the database: nothing to clean up, nothing that can leak into Costs, the board,
+Hostaway, Slack or Drive. The existing "View as cleaner" (real data, buttons inert) stays as it was. Checked
+on a phone: all five load; an inspection walked to "Inspection finished — What it made"; the handyman accepts;
+the helper's steps run without overwriting the phone's saved name.
