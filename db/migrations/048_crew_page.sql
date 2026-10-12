@@ -14,7 +14,7 @@ CREATE UNIQUE INDEX cleaners_email_idx ON cleaners (account_id, lower(email)) WH
 -- /crew and /api/crew through (see docs/modules/operations.md).
 ALTER TABLE cleaners ADD COLUMN link_token_hash TEXT;
 
--- The invoice Kaizen builds for them: per week (Monday–Sunday) or per month.
+-- The invoice Kaizen builds for them: per week (Saturday–Friday, paid Saturday) or per month.
 ALTER TABLE cleaners ADD COLUMN invoice_period TEXT NOT NULL DEFAULT 'monthly'
   CHECK (invoice_period IN ('weekly', 'monthly'));
 

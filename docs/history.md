@@ -3420,3 +3420,7 @@ in shadow mode (no Hostaway writes): extra → approve → invoice $455 + $25; d
 rule picks K&M not Irene; a simulated extension and cancellation show as movements; a cleaner's
 Access address gets 403 on every other route.
 
+Later the same day: the crew week is **Saturday–Friday, paid on Saturday** (the owner). Some cleaners
+are monthly, so the period stays per cleaner (default monthly); a monthly invoice is paid the first
+Saturday after the month ends — an assumption, not stated by the owner. The invoice shows its
+payment date.

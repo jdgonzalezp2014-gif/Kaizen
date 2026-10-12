@@ -1399,7 +1399,7 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
                 <td><input type="email" value={c.email ?? ''} placeholder="name@example.com"
                            onChange={e => set(i, { email: e.target.value || null })} /></td>
                 <td><select value={c.invoicePeriod ?? 'monthly'} onChange={e => set(i, { invoicePeriod: e.target.value as 'weekly' | 'monthly' })}>
-                  <option value="weekly">weekly (Mon–Sun)</option><option value="monthly">monthly</option></select></td>
+                  <option value="weekly">weekly (Sat–Fri, paid Saturday)</option><option value="monthly">monthly (paid the first Saturday after)</option></select></td>
                 <td>
                   {c.hasLink ? <span className="sub-n">● link active </span> : <span className="sub-n">○ none </span>}
                   {c.name && <button className="link tiny" onClick={() => void makeLink(c.name, false)}>{c.hasLink ? 'new link' : 'make link'}</button>}

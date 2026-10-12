@@ -61,7 +61,8 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   permission `crew` (not assignable; opens /api/crew + /api/settings only); exempt from the
   allow-list; a member row for the same address wins and roster save refuses a member's address.
   **Cleaners never see stars** — stripped from the payload, not just hidden.
-- Invoice = done, assigned, not-void cleans in the period (Mon–Sun or month) + approved extras on
+- Invoice = done, assigned, not-void cleans in the period — per cleaner: **weekly Saturday–Friday, paid
+  the next Saturday**, or monthly, paid the first Saturday after the month (assumed) — + approved extras on
   them; void rows listed as "not paid" with the reason; unpriced counted, never $0.
 - Extras: cleaner, own clean, done, ≤60 days, ≤$500, optional receipts/photos (≤5, 15 MB, image or
   PDF) to Drive "Kaizen — crew extras" uploaded BEFORE the row is saved. Team approves (note

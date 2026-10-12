@@ -176,7 +176,7 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload }
         <h2>{team ? page.cleaner.name : `Hi, ${page.cleaner.name}`}
           {team && page.cleaner.stars != null && <span className="chan-tag" title="Only the team sees this">★{page.cleaner.stars}</span>}
           {!page.cleaner.active && <span className="chan-tag">inactive</span>}</h2>
-        <label>Invoice period ({page.cleaner.invoicePeriod})
+        <label>Invoice period ({page.cleaner.invoicePeriod === 'weekly' ? 'weekly, Saturday to Friday' : 'monthly'} — paid on Saturdays)
           <select value={period.from} onChange={e => onPeriod(e.target.value)}>
             {page.periods.map(p => <option key={p.from} value={p.from}>{p.label}</option>)}
           </select></label>
@@ -371,10 +371,11 @@ function InvoiceView({ page }: { page: CrewPage }) {
         <div><h2>Invoice {inv.number}</h2>
           <div>From: <b>{page.cleaner.name}</b></div>
           <div>To: <b>Kaizen Guest Properties</b></div>
-          <div>Period: {inv.period.label} ({inv.period.from} – {inv.period.to})</div></div>
+          <div>Period: {inv.period.label} ({inv.period.from} – {inv.period.to})</div>
+          <div>Payment date: <b>{day(inv.period.payday)}</b></div></div>
         <button className="secondary no-print" onClick={() => window.print()}>Print / save as PDF</button>
       </div>
-      {inv.open && <p className="note">○ This period is still open — cleans done before it ends are added.</p>}
+      {inv.open && <p className="note">○ This period is still open — cleans done by {day(inv.period.to)} are added. Paid {day(inv.period.payday)}.</p>}
       <table className="units compact">
         <thead><tr><th>Date</th><th>Unit</th><th>Work</th><th className="n">Amount</th></tr></thead>
         <tbody>

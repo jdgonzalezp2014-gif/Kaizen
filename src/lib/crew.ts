@@ -7,11 +7,15 @@
  * same function draws the cleaner's page and the team's preview of it,
  * so the two can never show different totals.
  */
-import { addDays, addMonths, endOfMonth, startOfMonth, startOfWeek, type DateStr } from './dates.ts';
+import { addDays, addMonths, endOfMonth, startOfMonth, type DateStr } from './dates.ts';
 
 export type InvoicePeriod = 'weekly' | 'monthly';
 
-export interface Period { from: DateStr; to: DateStr; label: string }
+export interface Period {
+  from: DateStr; to: DateStr; label: string;
+  /** The Saturday it is paid: the day after a week ends, or the first Saturday after a month. */
+  payday: DateStr;
+}
 
 export interface CrewClean {
   key: string; unit: string; date: DateStr; beds: number | null; deep: boolean;
@@ -36,14 +40,22 @@ export interface CrewExtra {
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const md = (d: DateStr) => `${MON[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}`;
 
-/** The invoice period holding a day: Monday–Sunday, or the calendar month. */
+const dow = (d: DateStr) => new Date(`${d}T12:00:00Z`).getUTCDay();   // 0 = Sunday, 6 = Saturday
+/** The first Saturday after a day. */
+const saturdayAfter = (d: DateStr) => addDays(d, ((6 - dow(d) + 7) % 7) || 7);
+
+/**
+ * The invoice period holding a day. Kaizen's crew week runs Saturday to
+ * Friday and is paid the next day, Saturday; a monthly invoice is paid the
+ * first Saturday after the month ends.
+ */
 export function periodOf(d: DateStr, kind: InvoicePeriod): Period {
   if (kind === 'weekly') {
-    const from = startOfWeek(d), to = addDays(from, 6);
-    return { from, to, label: `${md(from)} – ${md(to)}, ${to.slice(0, 4)}` };
+    const from = addDays(d, -((dow(d) - 6 + 7) % 7)), to = addDays(from, 6);
+    return { from, to, label: `${md(from)} – ${md(to)}, ${to.slice(0, 4)}`, payday: addDays(to, 1) };
   }
-  const from = startOfMonth(d);
-  return { from, to: endOfMonth(d), label: `${MON[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}` };
+  const from = startOfMonth(d), to = endOfMonth(d);
+  return { from, to, label: `${MON[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`, payday: saturdayAfter(to) };
 }
 
 /** The current period and the `n - 1` before it, newest first. */

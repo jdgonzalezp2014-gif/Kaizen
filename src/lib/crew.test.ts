@@ -8,13 +8,20 @@ const clean = (key: string, date: string, extra: Partial<CrewClean> = {}): CrewC
 const extra = (id: string, key: string, status: CrewExtra['status'], amount = 20): CrewExtra =>
   ({ id, key, amount, description: 'laundry', status, decisionNote: null, decidedBy: null, createdAt: '2026-10-01' });
 
-test('a week runs Monday to Sunday; a month is the calendar month', () => {
-  assert.deepEqual(periodOf('2026-10-11', 'weekly'), { from: '2026-10-05', to: '2026-10-11', label: 'Oct 5 – Oct 11, 2026' });
-  assert.deepEqual(periodOf('2026-10-11', 'monthly'), { from: '2026-10-01', to: '2026-10-31', label: 'Oct 2026' });
+test('a week runs Saturday to Friday and is paid the Saturday after; a month, the first Saturday after it', () => {
+  // 2026-10-11 is a Sunday; 2026-10-10 a Saturday; 2026-10-16 a Friday.
+  const week = { from: '2026-10-10', to: '2026-10-16', label: 'Oct 10 – Oct 16, 2026', payday: '2026-10-17' };
+  assert.deepEqual(periodOf('2026-10-11', 'weekly'), week);
+  assert.deepEqual(periodOf('2026-10-10', 'weekly'), week);          // Saturday opens the week
+  assert.deepEqual(periodOf('2026-10-16', 'weekly'), week);          // Friday closes it
+  assert.equal(periodOf('2026-10-17', 'weekly').from, '2026-10-17');  // payday is the next week's first day
+  assert.deepEqual(periodOf('2026-10-11', 'monthly'), { from: '2026-10-01', to: '2026-10-31', label: 'Oct 2026', payday: '2026-11-07' });
+  assert.equal(periodOf('2026-01-15', 'monthly').payday, '2026-02-07');
+  assert.equal(periodOf('2026-02-15', 'monthly').payday, '2026-03-07');  // Feb 28 2026 is a Saturday → the next one
 });
 
 test('recent periods go back without gaps, newest first', () => {
-  assert.deepEqual(recentPeriods('2026-10-11', 'weekly', 3).map(p => p.from), ['2026-10-05', '2026-09-28', '2026-09-21']);
+  assert.deepEqual(recentPeriods('2026-10-11', 'weekly', 3).map(p => p.from), ['2026-10-10', '2026-10-03', '2026-09-26']);
   assert.deepEqual(recentPeriods('2026-01-15', 'monthly', 2).map(p => p.from), ['2026-01-01', '2025-12-01']);
 });
 
@@ -42,7 +49,7 @@ test('the invoice pays done, assigned, not-excluded cleans plus approved extras 
 });
 
 test('a manual clean says what it was', () => {
-  const inv = buildInvoice('Irene', periodOf('2026-10-11', 'weekly'),
+  const inv = buildInvoice('Irene', periodOf('2026-10-06', 'weekly'),
     [clean('MAN-1', '2026-10-06', { kind: 'early_departure', deep: true, beds: 2 })], [], '2026-10-20');
   assert.equal(inv.lines[0]!.what, '2BR deep clean (early departure)');
   assert.equal(inv.open, false);
