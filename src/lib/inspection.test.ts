@@ -29,13 +29,12 @@ test('progress counts each item in each room', () => {
   assert.deepEqual(p, { total: 5, done: 2, attention: 2 });
 });
 
-test('a finding needs a photo and a decision before the inspection can finish', () => {
+test('a finding needs a decision before the inspection can finish — a photo never (§135)', () => {
   const r = readyToFinish([check('1', 1, 'attention', { outcome: 'purchase' }), check('2', 1, 'attention', { photos: [{ name: 'a', url: 'u' }] }),
                            check('3', 1, 'ok')]);
   assert.equal(r.ok, false);
-  assert.equal(r.missingPhoto.length, 1);
   assert.equal(r.undecided.length, 1);
-  assert.equal(readyToFinish([check('1', 1, 'attention', { outcome: 'purchase', photos: [{ name: 'a', url: 'u' }] })]).ok, true);
+  assert.equal(readyToFinish([check('1', 1, 'attention', { outcome: 'purchase' })]).ok, true);
 });
 
 test('overall result: OK, minor issues, or maintenance needed when anything becomes a repair', () => {

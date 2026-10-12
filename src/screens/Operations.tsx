@@ -1202,15 +1202,17 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
           {data.inspectionLog.scheduled.map(e => (
             <Fragment key={e.id}>
             <tr>
-              <td>{e.date}</td><td><b>{e.unit}</b></td><td>{e.by}</td>
+              {/* The unit and its buttons first — on a phone the last column scrolled out of sight (the owner
+                  could not find Start / Continue); the reason wraps beside it. */}
+              <td className="insp-sched-main"><b>{e.unit}</b><div className="sub-n">{e.date} · {e.by}</div>
+                {canEdit && <div className="insp-sched-actions">
+                  <button className="small" onClick={() => void start({ inspectionId: e.id })}>▶ {e.sentBy ? 'Review' : e.started ? 'Continue' : 'Start'}</button>
+                  <button className="small secondary" onClick={() => setLinkFor(linkFor === e.id ? null : e.id)}>🔗 Link</button>
+                  <button className="link tiny danger" onClick={() => void cancelInspection(e.id).then(reload)}>cancel</button>
+                </div>}</td>
               <td className="ops-note">{e.sentBy && <div><b>📨 Sent from the link by {e.sentBy}</b> — review and finish</div>}{e.notes}</td>
-              <td className="n">{canEdit && <>
-                <button className="small" onClick={() => void start({ inspectionId: e.id })}>▶ {e.sentBy ? 'Review' : e.started ? 'Continue' : 'Start'}</button>{' '}
-                <button className="small secondary" onClick={() => setLinkFor(linkFor === e.id ? null : e.id)}>🔗 Link</button>{' '}
-                <button className="link tiny danger" onClick={() => void cancelInspection(e.id).then(reload)}>cancel</button>
-              </>}</td>
             </tr>
-            {linkFor === e.id && <tr><td colSpan={5}><InspectionLinkPanel id={e.id} unit={e.unit} date={e.date} inspector={e.by} onClose={() => setLinkFor(null)} /></td></tr>}
+            {linkFor === e.id && <tr><td colSpan={2}><InspectionLinkPanel id={e.id} unit={e.unit} date={e.date} inspector={e.by} onClose={() => setLinkFor(null)} /></td></tr>}
             </Fragment>
           ))}
           {!data.inspectionLog.scheduled.length && <tr><td className="note">Nothing scheduled.</td></tr>}

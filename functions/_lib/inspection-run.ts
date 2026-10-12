@@ -255,7 +255,7 @@ async function nextManualKey(sql: SqlFn) {
 }
 
 /**
- * Finish: every finding has a photo and a decision (readyToFinish), then the
+ * Finish: every finding has a decision (readyToFinish; photos are optional), then the
  * work is made, the inspection is closed with its overall result, and a
  * summary of what was made comes back. Pushes to Hostaway are returned for
  * the caller to run after the response.
@@ -272,9 +272,7 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
   const checks = await checksOf(sql, id);
   const ready = readyToFinish(checks);
   if (!ready.ok) {
-    throw new Error(ready.missingPhoto.length
-      ? `${ready.missingPhoto.length} finding${ready.missingPhoto.length === 1 ? ' needs' : 's need'} a photo first.`
-      : `Choose what ${ready.undecided.length === 1 ? 'one finding' : `${ready.undecided.length} findings`} become${ready.undecided.length === 1 ? 's' : ''}.`);
+    throw new Error(`Choose what ${ready.undecided.length === 1 ? 'one finding' : `${ready.undecided.length} findings`} become${ready.undecided.length === 1 ? 's' : ''}.`);
   }
   const today = todayIn(TZ);
   // Everything is checked BEFORE anything is made: a finish that fails half way must not leave

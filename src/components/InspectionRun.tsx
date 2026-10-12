@@ -4,8 +4,8 @@
  * Fixed at the top: Cleaning · Repair · Purchase — something seen on the
  * spot, written down in two taps. Below, the unit room by room (its
  * bedrooms and bathrooms come from the unit), each item ✓ OK, ▲ needs
- * attention or N/A. A finding asks for a photo (required) and what it
- * becomes. Every tap is saved at once: a phone that loses signal in a
+ * attention or N/A. A finding can have a photo (never required, §135) and
+ * says what it becomes. Every tap is saved at once: a phone that loses signal in a
  * bathroom loses nothing, and the inspection can be closed and continued.
  *
  * Then a review: each finding's outcome — a repair (work order + "Assign and
@@ -14,6 +14,7 @@
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getRun, runAction, runPhotos, type InspectionRunData, type RunCheck } from '../api.ts';
+import { shrink } from './PhotoPicker.tsx';
 import { checkKey, overallResult, progress, readyToFinish, reviewSteps, type Area, type Outcome, type Section } from '../lib/inspection.ts';
 
 const OUTCOME_LABEL: Record<Outcome, string> = {
@@ -24,10 +25,33 @@ const QUICK: { kind: 'clean' | 'repair' | 'purchase'; label: string }[] = [
   { kind: 'clean', label: '🧽 Cleaning' }, { kind: 'repair', label: '🔧 Repair' }, { kind: 'purchase', label: '🛒 Purchase' }
 ];
 const RESULTS = ['OK', 'Minor issues', 'Maintenance needed', 'Urgent'];
+
+type Fail = { ok: false; error?: string; message?: string };
+/** The run as read: the team's, or the link's (which also says whether the inspector sent it). */
+type RunData = InspectionRunData & { sent?: { at: string; by: string } | null };
+/**
+ * Where a run is read and saved (§135): the team's API, or an inspector's
+ * link — the same sheet either way (the owner: the link shows this same view).
+ */
+export interface RunTransport {
+  get: () => Promise<({ ok: true } & RunData) | Fail>;
+  act: <T extends object = Record<string, unknown>>(body: Record<string, unknown>) => Promise<({ ok: true } & T) | Fail>;
+  photos: (checkId: string, files: File[]) => Promise<{ ok: true } | Fail>;
+}
+const teamTransport = (id: string): RunTransport => ({
+  get: () => getRun(id), act: body => runAction(body),
+  photos: async (checkId, files) => runPhotos(id, checkId, await Promise.all(files.map(shrink)))
+});
 const secKey = (s: { area: Area; n: number }) => `${s.area}:${s.n}`;
 
-export function InspectionRun({ id, onClose, canEdit }: { id: string; onClose: (changed: boolean) => void; canEdit: boolean }) {
-  const [data, setData] = useState<InspectionRunData | null>(null);
+export function InspectionRun({ id, onClose, canEdit, transport, link = false }: {
+  id: string; onClose: (changed: boolean) => void; canEdit: boolean;
+  transport?: RunTransport;
+  /** The inspector's link: no review here — the inspector SENDS, the team reviews and finishes (§135). */
+  link?: boolean;
+}) {
+  const tr = useMemo(() => transport ?? teamTransport(id), [id, transport]);
+  const [data, setData] = useState<RunData | null>(null);
   const [err, setErr] = useState('');
   const [step, setStep] = useState<'walk' | 'review' | 'done'>('walk');
   const [open, setOpen] = useState<Set<string>>(new Set());
@@ -35,7 +59,7 @@ export function InspectionRun({ id, onClose, canEdit }: { id: string; onClose: (
   const [made, setMade] = useState<{ kind: string; title: string }[]>([]);
   const changed = useRef(false);
 
-  const load = () => getRun(id).then(r => {
+  const load = () => tr.get().then(r => {
     if (!r.ok) { setErr(r.message ?? 'Could not load the inspection.'); return; }
     setData(r);
     // The first room with something left to check opens by itself.
@@ -53,7 +77,7 @@ export function InspectionRun({ id, onClose, canEdit }: { id: string; onClose: (
   if (!data) return <Sheet title="Inspection" onClose={() => onClose(false)}><p className="note loading-dot">Loading the checklist…</p></Sheet>;
 
   const ins = data.inspection;
-  const readOnly = ins.finished || !canEdit;
+  const readOnly = ins.finished || !canEdit || (link && !!data.sent);
   const prog = progress(data.sections, data.checks);
   const patchLocal = (key: string, c: Partial<RunCheck>) => setData(d => d && {
     ...d, checks: d.checks.some(x => checkKey(x) === key) ? d.checks.map(x => checkKey(x) === key ? { ...x, ...c } : x)
@@ -67,7 +91,7 @@ export function InspectionRun({ id, onClose, canEdit }: { id: string; onClose: (
     const cur = byKey.get(key);
     patchLocal(key, { itemId, area: s.area, n: s.n, label, note: null, photos: [], outcome: null, result: null, ...cur, ...patch, id: cur?.id ?? '' });
     changed.current = true;
-    const r = await runAction<{ checkId: string }>({ action: 'check', inspectionId: ins.id, itemId, n: s.n, ...patch }).catch(() => null);
+    const r = await tr.act<{ checkId: string }>({ action: 'check', inspectionId: ins.id, itemId, n: s.n, ...patch }).catch(() => null);
     if (!r?.ok) { fail(r && !r.ok ? r.message : undefined); return null; }
     setErr('');
     // The server picks the item's usual outcome for a new finding: read it back once.
@@ -78,19 +102,19 @@ export function InspectionRun({ id, onClose, canEdit }: { id: string; onClose: (
   const saveExisting = async (c: RunCheck, patch: Partial<RunCheck>) => {
     patchLocal(checkKey(c), patch);
     changed.current = true;
-    const r = await runAction({ action: 'check', inspectionId: ins.id, checkId: c.id, ...patch }).catch(() => null);
+    const r = await tr.act({ action: 'check', inspectionId: ins.id, checkId: c.id, ...patch }).catch(() => null);
     if (!r?.ok) fail(r && !r.ok ? r.message : undefined); else setErr('');
   };
   const photos = async (checkId: string, files: FileList | null) => {
     if (!files?.length) return;
     setErr('Uploading the photo…');
-    const r = await runPhotos(ins.id, checkId, [...files]).catch(e => ({ ok: false as const, message: String(e) }));
+    const r = await tr.photos(checkId, [...files]).catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { fail(r.message); return; }
     setErr(''); changed.current = true; await load();
   };
   const allOk = async (s: Section) => {
     changed.current = true;
-    const r = await runAction({ action: 'allOk', inspectionId: ins.id, area: s.area, n: s.n }).catch(() => null);
+    const r = await tr.act({ action: 'allOk', inspectionId: ins.id, area: s.area, n: s.n }).catch(() => null);
     if (!r?.ok) { fail(r && !r.ok ? r.message : undefined); return; }
     await load();
     // On to the next room still to check.
@@ -117,13 +141,17 @@ export function InspectionRun({ id, onClose, canEdit }: { id: string; onClose: (
   }
 
   if (step === 'review') {
-    return <Review data={data} onBack={() => setStep('walk')} onSave={saveExisting} onPhotos={photos}
+    return <Review data={data} tr={tr} onBack={() => setStep('walk')} onSave={saveExisting} onPhotos={photos}
                    onFinished={m => { setMade(m); changed.current = true; setStep('done'); }} />;
   }
 
   return (
     <Sheet title={`${readOnly ? 'Inspection' : 'Inspecting'} · ${ins.unit}`} sub={`${ins.date}${ins.inspector ? ` · ${ins.inspector}` : ''}${ins.finished ? ` · ${ins.result}` : ''}`}
-           onClose={() => onClose(changed.current)}>
+           onClose={link ? undefined : () => onClose(changed.current)}>
+      {link && data.sent && <SentBanner sent={data.sent} onReopen={async () => {
+        const r = await tr.act({ action: 'reopen' }).catch(() => null);
+        if (!r?.ok) fail(r && !r.ok ? r.message : undefined); else await load();
+      }} />}
       {!readOnly && (
         <div className="insp-quick">
           {QUICK.map(q => <button key={q.kind} className="chip" onClick={() => setQuick(q)}>{q.label}</button>)}
@@ -134,7 +162,7 @@ export function InspectionRun({ id, onClose, canEdit }: { id: string; onClose: (
         <span className="note">{prog.done} of {prog.total} checked{prog.attention ? ` · ▲ ${prog.attention} need attention` : ''}</span>
       </div>
       {err && <p className={err.startsWith('Uploading') ? 'note' : 'banner warn'}>{err}</p>}
-      {quick && <QuickAdd data={data} kind={quick.kind} onCancel={() => setQuick(null)}
+      {quick && <QuickAdd data={data} tr={tr} kind={quick.kind} onCancel={() => setQuick(null)}
                           onDone={async () => { setQuick(null); changed.current = true; await load(); }} />}
 
       <div className="insp-body">
@@ -166,7 +194,7 @@ export function InspectionRun({ id, onClose, canEdit }: { id: string; onClose: (
                   {extra.map(c => (
                     <ItemRow key={c.id} label={`${c.label} (added)`} c={c} readOnly={readOnly} adhoc
                              onResult={() => {}} onNote={t => void saveExisting(c, { note: t })} onPhotos={files => photos(c.id, files)}
-                             onRemove={async () => { await runAction({ action: 'remove', inspectionId: ins.id, checkId: c.id }); changed.current = true; await load(); }} />
+                             onRemove={async () => { await tr.act({ action: 'remove', inspectionId: ins.id, checkId: c.id }); changed.current = true; await load(); }} />
                   ))}
                 </div>
               )}
@@ -180,7 +208,12 @@ export function InspectionRun({ id, onClose, canEdit }: { id: string; onClose: (
       {!readOnly && (
         <div className="insp-foot">
           <span className="note">Saved as you go{prog.total - prog.done ? ` · ${prog.total - prog.done} not checked yet` : ''}</span>
-          <button onClick={() => setStep('review')}>Review & finish →</button>
+          {link
+            ? <button disabled={prog.total - prog.done > 0} onClick={async () => {
+                const r = await tr.act({ action: 'send' }).catch(() => null);
+                if (!r?.ok) fail(r && !r.ok ? r.message : undefined); else { setErr(''); await load(); }
+              }}>Send to the team →</button>
+            : <button onClick={() => setStep('review')}>Review & finish →</button>}
         </div>
       )}
     </Sheet>
@@ -216,8 +249,8 @@ function ItemRow({ label, c, readOnly, adhoc, onResult, onNote, onPhotos, onRemo
           <div className="insp-photos">
             {(c?.photos ?? []).map((p, i) => <a key={i} href={p.url} target="_blank" rel="noreferrer">📷 {p.name}</a>)}
             {!readOnly && (
-              <label className={`chip ${c?.photos?.length ? '' : 'need'}`}>📷 {c?.photos?.length ? 'Add photo' : 'Photo (required)'}
-                <input type="file" accept="image/*" capture="environment" multiple hidden onChange={e => void onPhotos(e.target.files)} /></label>
+              <label className="chip">📷 {c?.photos?.length ? 'Add photo' : 'Photo (optional)'}
+                <input type="file" accept="image/*" multiple hidden onChange={e => void onPhotos(e.target.files)} /></label>
             )}
             {!readOnly && onRemove && <button className="link tiny danger" onClick={onRemove}>remove</button>}
           </div>
@@ -229,8 +262,8 @@ function ItemRow({ label, c, readOnly, adhoc, onResult, onNote, onPhotos, onRemo
 }
 
 /** The fixed buttons: a finding written down on the spot, with its photo. */
-function QuickAdd({ data, kind, onCancel, onDone }: {
-  data: InspectionRunData; kind: 'clean' | 'repair' | 'purchase'; onCancel: () => void; onDone: () => void;
+function QuickAdd({ data, tr, kind, onCancel, onDone }: {
+  data: RunData; tr: RunTransport; kind: 'clean' | 'repair' | 'purchase'; onCancel: () => void; onDone: () => void;
 }) {
   const [label, setLabel] = useState('');
   const [where, setWhere] = useState(data.sections[0] ? secKey(data.sections[0]) : 'general:1');
@@ -241,10 +274,10 @@ function QuickAdd({ data, kind, onCancel, onDone }: {
   const save = async () => {
     setBusy(true); setMsg('');
     const [area, n] = where.split(':');
-    const r = await runAction<{ checkId: string }>({ action: 'add', inspectionId: data.inspection.id, kind, label, area, n: Number(n) }).catch(() => null);
+    const r = await tr.act<{ checkId: string }>({ action: 'add', inspectionId: data.inspection.id, kind, label, area, n: Number(n) }).catch(() => null);
     if (!r?.ok) { setBusy(false); setMsg(r && !r.ok ? r.message ?? 'Not saved.' : 'Not saved.'); return; }
     if (files.length) {
-      const p = await runPhotos(data.inspection.id, r.checkId, files).catch(e => ({ ok: false as const, message: String(e) }));
+      const p = await tr.photos(r.checkId, files).catch(e => ({ ok: false as const, message: String(e) }));
       if (!p.ok) { setBusy(false); setMsg(`Saved, but the photo did not upload: ${p.message}`); return; }
     }
     setBusy(false); onDone();
@@ -257,10 +290,10 @@ function QuickAdd({ data, kind, onCancel, onDone }: {
         {data.sections.map(s => <option key={secKey(s)} value={secKey(s)}>{s.title}</option>)}
         {!data.sections.length && <option value="general:1">General</option>}
       </select>
-      <label className={`chip ${files.length ? '' : 'need'}`}>📷 {files.length ? `${files.length} photo${files.length === 1 ? '' : 's'}` : 'Photo (required)'}
-        <input type="file" accept="image/*" capture="environment" multiple hidden onChange={e => setFiles([...(e.target.files ?? [])])} /></label>
+      <label className="chip">📷 {files.length ? `${files.length} photo${files.length === 1 ? '' : 's'}` : 'Photo (optional)'}
+        <input type="file" accept="image/*" multiple hidden onChange={e => setFiles([...(e.target.files ?? [])])} /></label>
       <div className="button-row">
-        <button className="small" disabled={busy || !label.trim() || !files.length} onClick={() => void save()}>{busy ? 'Saving…' : 'Add'}</button>
+        <button className="small" disabled={busy || !label.trim()} onClick={() => void save()}>{busy ? 'Saving…' : 'Add'}</button>
         <button className="small secondary" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
       {msg && <p className="breach">{msg}</p>}
@@ -275,8 +308,8 @@ function QuickAdd({ data, kind, onCancel, onDone }: {
  * Repairs become one work order each; purchases ONE to-do, a shopping list;
  * cleaning findings go to the next clean or one new clean — one choice for all.
  */
-function Review({ data, onBack, onSave, onPhotos, onFinished }: {
-  data: InspectionRunData; onBack: () => void;
+function Review({ data, tr, onBack, onSave, onPhotos, onFinished }: {
+  data: RunData; tr: RunTransport; onBack: () => void;
   onSave: (c: RunCheck, patch: Partial<RunCheck>) => Promise<void>;
   onPhotos: (checkId: string, files: FileList | null) => Promise<void>;
   onFinished: (made: { kind: string; title: string }[]) => void;
@@ -298,11 +331,10 @@ function Review({ data, onBack, onSave, onPhotos, onFinished }: {
   const prog = progress(data.sections, data.checks);
   const isClean = (c: RunCheck) => c.outcome === 'clean_next' || c.outcome === 'clean_new';
   const group = findings.filter(c => step === 'repair' ? c.outcome === 'repair' : step === 'purchase' ? c.outcome === 'purchase' : step === 'clean' ? isClean(c) : false);
-  const needPhoto = group.filter(c => !c.photos.length);
   const go = (d: number) => { setMsg(''); setIdx(i => Math.max(0, Math.min(steps.length - 1, i + d))); };
   const finish = async () => {
     setBusy(true); setMsg('');
-    const r = await runAction<{ made: { kind: string; title: string }[] }>({ action: 'finish', inspectionId: ins.id, result, notes, cleanMode, cleanDate })
+    const r = await tr.act<{ made: { kind: string; title: string }[] }>({ action: 'finish', inspectionId: ins.id, result, notes, cleanMode, cleanDate })
       .catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (!r.ok) { setMsg(r.message ?? 'Not finished.'); return; }
@@ -332,7 +364,6 @@ function Review({ data, onBack, onSave, onPhotos, onFinished }: {
               {cleanMode === 'new' && <label>Day<input type="date" value={cleanDate} min={data.today} onChange={e => setCleanDate(e.target.value)} /></label>}
             </div>
           )}
-          {needPhoto.length > 0 && <p className="breach">▲ {needPhoto.length} need{needPhoto.length === 1 ? 's' : ''} a photo before you continue.</p>}
         </>}
         {step === 'finish' && <>
           {prog.total - prog.done > 0 && <p className="banner warn">▲ {prog.total - prog.done} item{prog.total - prog.done === 1 ? ' is' : 's are'} not checked —
@@ -359,7 +390,7 @@ function Review({ data, onBack, onSave, onPhotos, onFinished }: {
       <div className="insp-foot">
         <button className="secondary" onClick={() => (idx === 0 ? onBack() : go(-1))}>{idx === 0 ? '← Rooms' : '← Back'}</button>
         {step !== 'finish'
-          ? <button disabled={needPhoto.length > 0} onClick={() => go(1)}>Confirm & continue →</button>
+          ? <button onClick={() => go(1)}>Confirm & continue →</button>
           : <button disabled={busy || !readyToFinish(findings).ok} onClick={() => void finish()}>{busy ? 'Finishing…' : 'Finish inspection'}</button>}
       </div>
     </Sheet>
@@ -379,8 +410,8 @@ function FindingCard({ c, title, onSave, onPhotos }: {
       <div><b>{title}</b> · {c.label}</div>
       <div className="insp-photos">
         {c.photos.map((p, i) => <a key={i} href={p.url} target="_blank" rel="noreferrer">📷 {p.name}</a>)}
-        <label className={`chip ${c.photos.length ? '' : 'need'}`}>📷 {c.photos.length ? 'Add photo' : 'Photo (required)'}
-          <input type="file" accept="image/*" capture="environment" multiple hidden onChange={e => void onPhotos(c.id, e.target.files)} /></label>
+        <label className="chip">📷 {c.photos.length ? 'Add photo' : 'Photo (optional)'}
+          <input type="file" accept="image/*" multiple hidden onChange={e => void onPhotos(c.id, e.target.files)} /></label>
       </div>
       <textarea rows={2} value={note} maxLength={1000} placeholder="Notes — what exactly, where, what to bring…"
                 onChange={e => setNote(e.target.value)} onBlur={() => { if (note !== (c.note ?? '')) void onSave(c, { note }); }} />
@@ -395,7 +426,7 @@ function FindingCard({ c, title, onSave, onPhotos }: {
 
 /** Full screen on a phone, a centred panel on a desk. */
 function Sheet({ title, sub, onClose, closeLabel = '✕', children }: {
-  title: string; sub?: string; onClose: () => void; closeLabel?: string; children: ReactNode;
+  title: string; sub?: string; onClose?: () => void; closeLabel?: string; children: ReactNode;
 }) {
   useEffect(() => {
     const was = document.body.style.overflow;
@@ -407,9 +438,27 @@ function Sheet({ title, sub, onClose, closeLabel = '✕', children }: {
       <div className="insp-sheet" role="dialog" aria-modal="true" aria-label={title}>
         <div className="insp-head">
           <div><h2>{title}</h2>{sub && <div className="sub-n">{sub}</div>}</div>
-          <button className="link" onClick={onClose} aria-label="Close">{closeLabel}</button>
+          {onClose && <button className="link" onClick={onClose} aria-label="Close">{closeLabel}</button>}
         </div>
         {children}
+      </div>
+    </div>
+  );
+}
+
+/** On the link, once sent: who sent it and when, and a way back in — confirmed on the spot. */
+function SentBanner({ sent, onReopen }: { sent: { at: string; by: string }; onReopen: () => Promise<void> }) {
+  const [asking, setAsking] = useState(false);
+  const at = new Date(sent.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+  return (
+    <div className="banner ok">
+      ✓ Sent to the team by {sent.by}, {at}. The team reviews it and makes the work — you can close this page.
+      <div className="button-row">
+        {!asking ? <button className="small secondary" onClick={() => setAsking(true)}>Reopen to change something</button> : <>
+          <span className="note">Reopen? The team will see it as not sent.</span>
+          <button className="small" onClick={() => void onReopen().then(() => setAsking(false))}>Yes, reopen</button>
+          <button className="small secondary" onClick={() => setAsking(false)}>No</button>
+        </>}
       </div>
     </div>
   );

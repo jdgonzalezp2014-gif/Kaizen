@@ -3662,4 +3662,9 @@ The link ends the day after the inspection, or when it is finished or cancelled.
 Operations: "By cleaner" had lost its point (each cleaner's page does it) and was removed; Setup — one
 long page — was split into sections (general, cleaners & pay, crew pages, inspections, inventory), and
 each view got a ⚙ that opens its own section. The supplies list moved from Inventory into Setup.
+Then the owner: the inspector's link must show the same view as the team's, photos are never required,
+and on a phone the scheduled list hid Start / Continue. The link page became the team's sheet
+(`InspectionRun`) reading and saving through the link, ending in "Send to the team" (the team still
+reviews and finishes); photos became optional in the rule, the server and every button; the scheduled
+rows put the unit and the buttons first.
 

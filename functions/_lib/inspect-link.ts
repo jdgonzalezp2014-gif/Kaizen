@@ -7,7 +7,7 @@
  * The link is for ONE inspection: its unit, day and checklist are fixed by
  * the link, never sent by the page. The inspector answers room by room (each
  * tap saved, through the same inspection-run lib the team uses), a problem
- * needs a photo, and at the end SENDS. Sending makes no work: the team
+ * may have a photo (never required), and at the end SENDS. Sending makes no work: the team
  * reviews and finishes in Kaizen, where findings become work orders, the
  * shopping list and clean tasks. Refused once the link expires (the day after
  * the inspection), the inspection is finished, or it was cancelled.
@@ -26,7 +26,7 @@ import { decrypt, encrypt } from './crypto.ts';
 import { newToken, sha256 } from './crew.ts';
 import { addFinding, addPhotos, allOk, loadRun, removeFinding, saveCheck } from './inspection-run.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
-import { progress, readyToFinish } from '../../src/lib/inspection.ts';
+import { progress } from '../../src/lib/inspection.ts';
 
 const TZ = 'America/New_York';
 
@@ -135,8 +135,6 @@ export async function inspectPost(sql: SqlFn, encryptionKey: string, request: Re
         if (!run) return gone(true);
         const p = progress(run.sections, run.checks);
         if (p.done < p.total) throw new Error(`${p.total - p.done} item${p.total - p.done === 1 ? ' is' : 's are'} not answered yet.`);
-        const ready = readyToFinish(run.checks);
-        if (ready.missingPhoto.length) throw new Error(`${ready.missingPhoto.length} problem${ready.missingPhoto.length === 1 ? ' needs' : 's need'} a photo first.`);
         await sql`UPDATE inspections SET sent_at = now(), sent_by = ${reporter}, updated_at = now() WHERE account_id = 1 AND id = ${Number(l.id)}`;
         break;
       }

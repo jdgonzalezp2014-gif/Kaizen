@@ -130,8 +130,8 @@ key had no SOPs.
   A run (`/api/inspection-run`, lib `functions/_lib/inspection-run.ts`, pure `src/lib/inspection.ts`, UI
   `src/components/InspectionRun.tsx`): sections from the unit's bedrooms and bathrooms (half bath = one),
   each item ✓/▲/N/A saved on every tap (`inspection_checks`), "Everything else here is OK", fixed
-  Cleaning/Repair/Purchase buttons for on-the-spot findings; a finding needs a photo (Drive folder "Kaizen —
-  inspections") and an outcome. Review & finish is a step wizard (the owner's flow): 🔧 Repairs → 🛒 Purchases →
+  Cleaning/Repair/Purchase buttons for on-the-spot findings; a finding needs an outcome — a photo is optional
+  everywhere (Drive folder "Kaizen — inspections"; the owner: photos are never required). Review & finish is a step wizard (the owner's flow): 🔧 Repairs → 🛒 Purchases →
   🧽 Cleaning → ✓ Finish, each with editable notes, "move to another kind" and "Confirm & continue". Finish
   (validated BEFORE anything is made, idempotent via todo_id / clean_task_id): repair → work order + sub-task
   "Assign and schedule"; ALL purchases → ONE to-do "Buy for <unit>: N items", a sub-task per item; cleaning →
@@ -145,12 +145,15 @@ key had no SOPs.
   `/report#i=<token>`, no account — the helpers' field door (§134), so no new Access bypass: `/api/report-link`
   with `X-Inspect-Token` goes to `functions/_lib/inspect-link.ts` (team side: `/api/inspection-run` action `link`,
   `linkFor`). Columns on `inspections` (062): `link_token_enc/hash`, `link_expires_on` (the day after the
-  inspection), `sent_at/by`. Page `src/screens/Inspect.tsx` (EN/ES, name once, a numbered step per room, one
-  item per screen, ✓/▲/N/A saved on each tap through the inspection-run lib, a ▲ needs a photo + Repair/Buy/
-  Clean, "something else" is created on its first photo). **The inspector only sends** (every item answered,
-  every problem with a photo); the row then reads "📨 Sent from the link by X" and ▶ Review opens the team's
+  inspection), `sent_at/by`. Page `src/screens/Inspect.tsx`: the name once (this phone remembers it), then
+  **the team's own sheet** — `InspectionRun` with a `RunTransport` over the link (the owner: the link shows the
+  same view), English like the team's; its foot is "Send to the team" instead of Review & finish, and a sent
+  inspection is read-only with "Reopen" confirmed in place. **The inspector only sends** (every item
+  answered); the row then reads "📨 Sent from the link by X" and ▶ Review opens the team's
   run, where Review & finish makes the work. Reopen from the link clears `sent_at`. Refused when expired,
   finished or cancelled. App.tsx reads `#i=` before `#t=`; the phone remembers which it opened last.
+- Scheduled inspections on a phone: each row starts with the unit, its day and inspector, and the buttons
+  (▶ Start/Continue/Review · 🔗 Link · cancel) — they were in the last column, scrolled out of sight.
 - **Vendors (§133):** `vendors` directory (Setup → Vendors & handymen; switched off, never erased); the repair
   form's Vendor field suggests them (free text kept). A vendor page is a later step (email kept for it).
 - **Carry (§131):** the record stores `prepares_for` (the next reservation when recorded). A rule-decided

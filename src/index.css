@@ -1976,3 +1976,5 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .clean-card > .link { align-self: flex-start; padding-left: 0; }
 .setup-secs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
 .setup-secs .chip { font-size: 13px; padding: 6px 12px; }
+.insp-sched-main { min-width: 150px; }
+.insp-sched-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }

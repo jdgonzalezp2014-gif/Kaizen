@@ -86,12 +86,13 @@ export function progress(sections: Section[], checks: Check[]) {
 export const suggestedOutcome = (d: DefaultOutcome | null | undefined): Outcome =>
   d === 'purchase' ? 'purchase' : d === 'clean' ? 'clean_next' : 'repair';
 
-/** Before finishing: every finding needs a photo, and a decision. */
-export function readyToFinish(checks: Check[]): { ok: boolean; missingPhoto: Check[]; undecided: Check[] } {
-  const att = checks.filter(c => c.result === 'attention');
-  const missingPhoto = att.filter(c => !c.photos.length);
-  const undecided = att.filter(c => !c.outcome);
-  return { ok: !missingPhoto.length && !undecided.length, missingPhoto, undecided };
+/**
+ * Before finishing: every finding needs a decision. Photos help but are
+ * never required (§135, the owner: "las fotos no son requeridas para nada").
+ */
+export function readyToFinish(checks: Check[]): { ok: boolean; undecided: Check[] } {
+  const undecided = checks.filter(c => c.result === 'attention' && !c.outcome);
+  return { ok: !undecided.length, undecided };
 }
 
 /** The inspection's overall result, in the log's own words. */
