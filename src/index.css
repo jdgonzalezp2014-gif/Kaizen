@@ -1974,3 +1974,5 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
   display: flex; align-items: center; justify-content: center; }
 .photo-big img { max-width: 100%; max-height: 100%; object-fit: contain; }
 .clean-card > .link { align-self: flex-start; padding-left: 0; }
+.setup-secs { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 12px; }
+.setup-secs .chip { font-size: 13px; padding: 6px 12px; }

@@ -3659,4 +3659,7 @@ the same inspection-run lib as the team's pop-up, saved on each tap. **The inspe
 finishes** — Review & finish (§133) stays with the team and is the only place work is made, so a link
 holder never creates work orders or Hostaway tasks. Sent is locked until reopened from the link.
 The link ends the day after the inspection, or when it is finished or cancelled.
+Operations: "By cleaner" had lost its point (each cleaner's page does it) and was removed; Setup — one
+long page — was split into sections (general, cleaners & pay, crew pages, inspections, inventory), and
+each view got a ⚙ that opens its own section. The supplies list moved from Inventory into Setup.
 

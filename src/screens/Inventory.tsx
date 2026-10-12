@@ -20,7 +20,7 @@ const KIND_WORD: Record<string, string> = { count: '▣ counted', used: '− use
                                              taken: '↗ taken for a clean' };
 const SOURCE_WORD: Record<string, string> = { team: 'team', cleaner: 'cleaner', link: 'cleaner’s helper' };
 
-export function InventoryView({ canEdit, canSetup }: { canEdit: boolean; canSetup: boolean }) {
+export function InventoryView({ canEdit }: { canEdit: boolean }) {
   const [inv, setInv] = useState<Inventory | null>(null);
   const [err, setErr] = useState('');
   const [place, setPlace] = useState<string>('storage');
@@ -53,7 +53,6 @@ export function InventoryView({ canEdit, canSetup }: { canEdit: boolean; canSetu
       <PlaceStock key={place} inv={inv} unitId={current.unitId} canEdit={canEdit} onSaved={setInv} />
       <OrderPlan inv={inv} canEdit={canEdit} onSaved={setInv} />
       <RecentMoves inv={inv} />
-      {canSetup && <Catalog items={inv.items} onSaved={() => void load()} />}
     </div>
   );
 }
@@ -230,6 +229,15 @@ function RecentMoves({ inv }: { inv: Inventory }) {
       </>}
     </div>
   );
+}
+
+/** Operations → Setup → Inventory (§134): the supplies list, with the rest of the setup. */
+export function InventorySetup() {
+  const [items, setItems] = useState<InvItemRow[] | null>(null);
+  const load = () => void getInventory().then(r => { if (r.ok) setItems(r.items); });
+  useEffect(load, []);
+  if (!items) return <div className="card"><h2>Supplies list</h2><p className="note loading-dot">Loading…</p></div>;
+  return <Catalog items={items} onSaved={load} />;
 }
 
 /** The supplies the team keeps track of. Switching one off keeps its history. */

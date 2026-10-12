@@ -76,7 +76,6 @@ export const FEATURES: { key: string; label: string; tab: string; view?: string;
   { key: 'operations.board', label: 'Operations · Movements', tab: 'operations', view: 'board', section: 'turnover' },
   { key: 'operations.todos', label: 'Operations · To-do', tab: 'operations', view: 'todos', section: 'maintenance' },
   { key: 'operations.calendar', label: 'Operations · Calendar', tab: 'operations', view: 'calendar', section: 'turnover' },
-  { key: 'operations.cleaners', label: 'Operations · By cleaner', tab: 'operations', view: 'cleaners', section: 'turnover' },
   { key: 'operations.crew', label: 'Operations · Crew', tab: 'operations', view: 'crew', section: 'turnover' },
   // The cleaner's own page (§122): its published SOPs show there as "How this page works".
   { key: 'crew.page', label: "Cleaner's page", tab: 'crew', section: 'turnover' },

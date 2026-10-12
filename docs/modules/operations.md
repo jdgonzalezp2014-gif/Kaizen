@@ -1,7 +1,7 @@
 # Module: operations
 
 Kaizen runs the day's operations (the daily file sheet is an archive). Tab **Operations**:
-Movements (the board, §124) · To-do (→ work module) · Calendar · By cleaner · Crew · Inspections ·
+Movements (the board, §124) · To-do (→ work module) · Calendar · Crew · Inspections ·
 Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page** each cleaner sees (§122).
 
 ## Files
@@ -40,6 +40,13 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 `extra_inspectors`, `host_note_pushes`, `inventory_items`, `inventory_moves` (§134), `cleaners.report_token_enc/hash`,
 `accounts.field_reports_folder`, `clean_links` (058), `clean_records` / `clean_photos` / `clean_marks`,
 `accounts.clean_photos_folder` (059). (057's `cleaners.report_token_*` were dropped in 058.)
+
+**Setup by section (§134, owner):** ⚙ General (who decides, daily-file import, Hostaway tasks mirror,
+guest documents) · 👥 Cleaners & pay (roster and rates, levels, assignment rules) · 🧹 Crew pages ·
+🔍 Inspections (due rules and who inspects, checklist, vendors) · 📦 Inventory (the supplies list, moved
+out of the Inventory view). Every view has a "⚙ Setup" chip by Refresh that opens its own section
+(`SETUP_OF` in Operations.tsx). "By cleaner" was removed (the crew pages replaced it); its SOP feature
+key had no SOPs.
 
 ## Rules that bite
 

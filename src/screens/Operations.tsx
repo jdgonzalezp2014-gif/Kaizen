@@ -17,7 +17,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { WorkView } from '../components/Todos.tsx';
 import { CrewAdmin } from './Crew.tsx';
-import { InventoryView } from './Inventory.tsx';
+import { InventorySetup, InventoryView } from './Inventory.tsx';
 import { InspectionRun } from '../components/InspectionRun.tsx';
 import { visibleAhead } from '../lib/crew.ts';
 import { AREAS, type Area, type InspectionItem } from '../lib/inspection.ts';
@@ -44,8 +44,17 @@ import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
 
-type View = 'board' | 'todos' | 'calendar' | 'cleaners' | 'crew' | 'inspections' | 'inventory' | 'notes' | 'rates' | 'setup';
-const VIEWS: View[] = ['board', 'todos', 'calendar', 'cleaners', 'crew', 'inspections', 'inventory', 'notes', 'rates', 'setup'];
+type View = 'board' | 'todos' | 'calendar' | 'crew' | 'inspections' | 'inventory' | 'notes' | 'rates' | 'setup';
+const VIEWS: View[] = ['board', 'todos', 'calendar', 'crew', 'inspections', 'inventory', 'notes', 'rates', 'setup'];
+
+/** Setup, by section (§134, the owner: one long page was a mess); each view's ⚙ opens its own. */
+type SetupSection = 'general' | 'cleaners' | 'crew' | 'inspections' | 'inventory';
+const SETUP_SECTIONS: [SetupSection, string][] = [['general', '⚙ General'], ['cleaners', '👥 Cleaners & pay'], ['crew', '🧹 Crew pages'],
+  ['inspections', '🔍 Inspections'], ['inventory', '📦 Inventory']];
+const SETUP_OF: Record<Exclude<View, 'setup'>, SetupSection> = {
+  board: 'cleaners', todos: 'general', calendar: 'cleaners', crew: 'crew', inspections: 'inspections', inventory: 'inventory',
+  notes: 'general', rates: 'cleaners'
+};
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -121,6 +130,8 @@ export function Operations({ permissions, initialView, onView }: {
   const [err, setErr] = useState('');
   const [busy, setBusy] = useState(true);
   const [view, setView] = useState<View>(VIEWS.includes(initialView as View) ? initialView as View : 'board');
+  const [setupSec, setSetupSec] = useState<SetupSection>('general');
+  const openSetup = (sec: SetupSection) => { setSetupSec(sec); setView('setup'); };
   useEffect(() => { onView?.(view); }, [view]);
   const canTodos = can(permissions, 'todos');
   const nyToday = todayIn('America/New_York');
@@ -156,7 +167,7 @@ export function Operations({ permissions, initialView, onView }: {
     });
 
   const views: [View, string][] = [
-    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['cleaners', 'By cleaner'], ['crew', 'Crew'], ['inspections', 'Inspections'], ['inventory', 'Inventory'],
+    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['crew', 'Crew'], ['inspections', 'Inspections'], ['inventory', 'Inventory'],
     ['notes', 'Notes log'], ['rates', 'Rates & rules'],
     ...(can(data?.permissions, 'operations.setup') ? [['setup', 'Setup'] as [View, string]] : [])
   ];
@@ -176,6 +187,9 @@ export function Operations({ permissions, initialView, onView }: {
         <button className="chip" disabled={busy} onClick={() => load(true)}>
           {busy && data ? 'Refreshing…' : 'Refresh'}
         </button>
+        {view !== 'setup' && can(data?.permissions, 'operations.setup') && (
+          <button className="chip" title="This section's settings" onClick={() => openSetup(SETUP_OF[view])}>⚙ Setup</button>
+        )}
         {data?.sheetUrl && data.mode === 'shadow' && (
           <a className="chip" href={data.sheetUrl} target="_blank" rel="noreferrer">Open the daily file ↗</a>
         )}
@@ -187,19 +201,18 @@ export function Operations({ permissions, initialView, onView }: {
                  stages={['Fetching reservations from Hostaway…', 'Applying the cleaner rules…',
                           'Checking inspections…', 'Building the board…']} />
       )}
-      {data && <ModeBanner data={data} onSetup={() => setView('setup')} />}
+      {data && <ModeBanner data={data} onSetup={() => openSetup('general')} />}
 
       <div className={busy && data ? 'is-stale' : undefined}>
         {data && view === 'board' && <Board data={data} range={range} patch={patch} reload={() => load()} />}
         {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} />}
         {view === 'calendar' && <CleaningsMonth />}
-        {data && view === 'cleaners' && <ByCleaner data={data} />}
         {data && view === 'crew' && <CrewAdmin roster={data.roster} canEdit={can(data.permissions, 'operations.edit')} />}
         {data && view === 'inspections' && <Inspections data={data} reload={() => load()} />}
-        {data && view === 'inventory' && <InventoryView canEdit={can(data.permissions, 'operations.edit')} canSetup={can(data.permissions, 'operations.setup')} />}
+        {data && view === 'inventory' && <InventoryView canEdit={can(data.permissions, 'operations.edit')} />}
         {data && view === 'notes' && <Notes data={data} />}
         {data && view === 'rates' && <Rates data={data} />}
-        {data && view === 'setup' && <Setup data={data} reload={() => load(true)} />}
+        {data && view === 'setup' && <Setup data={data} reload={() => load(true)} section={setupSec} onSection={setSetupSec} />}
       </div>
     </section>
   );
@@ -1128,70 +1141,6 @@ function DocDrop({ title, files, busy, onFiles }: {
   );
 }
 
-/* ── By cleaner — what their tab in the sheet showed ──────────────── */
-
-function ByCleaner({ data }: { data: OperationsResponse }) {
-  const jobs = data.rows.filter(r => r.kind === 'out' && r.assignment === 'assigned' && r.cleaner);
-  const names = useMemo(() => {
-    const set = new Set<string>(data.roster.filter(c => c.active).map(c => c.name));
-    jobs.forEach(j => set.add(j.cleaner!));
-    return [...set];
-  }, [data]);
-  const [who, setWho] = useState<string>(() => names[0] ?? '');
-  const mine = jobs.filter(j => j.cleaner === who);
-  const unassigned = data.rows.filter(r => r.kind === 'out' && r.assignment === 'tbd');
-  const pay = mine.reduce((a, j) => a + (j.price ?? 0), 0);
-  const unpriced = mine.filter(j => j.price == null).length;
-
-  return (
-    <>
-      <div className="row-controls">
-        {names.map(n => (
-          <button key={n} className={who === n ? 'chip active' : 'chip'} onClick={() => setWho(n)}>
-            {n} <b>{jobs.filter(j => j.cleaner === n).length}</b>
-          </button>
-        ))}
-      </div>
-      <dl className="strip">
-        <div><dt>Cleans</dt><dd>{mine.length}</dd></div>
-        <div><dt>Deep</dt><dd>{mine.filter(j => j.deep).length}</dd></div>
-        <div><dt>Same-day</dt><dd>{mine.filter(j => j.urgency === 'turnover').length}</dd></div>
-        <div><dt>Pays, through {short(data.end)}</dt><dd>{money2(pay)}{unpriced > 0 && <small>+{unpriced} not priced</small>}</dd></div>
-      </dl>
-      <table className="units compact">
-        <thead><tr><th>Day</th><th>Unit</th><th>Checkout</th><th>Next guest</th><th>Flags</th><th className="n">Pays</th><th>Notes</th></tr></thead>
-        <tbody>
-          {mine.map(j => (
-            <tr key={j.resId}>
-              <td>{dayLabel(j.date)}</td>
-              <td><b>{j.unit}</b>{j.beds ? <span className="sub-n"> {j.beds}BR</span> : null}</td>
-              <td>{j.time}</td>
-              <td>{j.next ? (j.next.gapDays === 0 ? <b className="breach">same day</b> : `${short(j.next.arrival)} · +${j.next.gapDays}d`)
-                : <span className="note">nothing booked through {short(data.lookaheadTo)}</span>}</td>
-              <td>
-                {j.deep && <span className="ops-flag deep">🧽 deep</span>}
-                {(j.inspection.key === 'req' || j.inspection.key === 'due') && <span className="ops-flag due">🔍 inspection</span>}
-              </td>
-              <td className="n">{j.price == null ? <span className="note">not priced</span> : money2(j.price)}</td>
-              <td className="ops-note">{j.note}</td>
-            </tr>
-          ))}
-          {!mine.length && <tr><td colSpan={7} className="note">No cleans for {who || 'anyone'} through {short(data.end)}.</td></tr>}
-        </tbody>
-      </table>
-      {unassigned.length > 0 && (
-        <div className="group">
-          <h3>Nobody on these yet <span className="count">{unassigned.length}</span></h3>
-          <table className="units compact"><tbody>
-            {unassigned.map(r => <tr key={r.resId}><td>{dayLabel(r.date)}</td><td><b>{r.unit}</b></td>
-              <td className="breach">▲ unassigned</td></tr>)}
-          </tbody></table>
-        </div>
-      )}
-    </>
-  );
-}
-
 /* ── Inspections ──────────────────────────────────────────────────── */
 
 const TIER: Record<InspectionTier, [string, string]> = {
@@ -1586,7 +1535,7 @@ const RULE_LABELS: [keyof OpsRules, string][] = [
   ['inspectionValueTrigger', 'Inspection before a booking of ($)']
 ];
 
-function Setup({ data, reload }: { data: OperationsResponse; reload: () => void }) {
+function Setup({ data, reload, section, onSection }: { data: OperationsResponse; reload: () => void; section: SetupSection; onSection: (s: SetupSection) => void }) {
   const [cfg, setCfg] = useState<OpsSettings | null>(null);
   const [roster, setRoster] = useState<Cleaner[]>([]);
   const [rules, setRules] = useState<Record<string, string>>({});
@@ -1626,10 +1575,32 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
   if (!cfg) return <p className="note loading-dot">Loading setup…</p>;
   const shared = data.summary.departures - data.summary.notInDailyFile;
 
+  const ruleCard = (title: string, keys: [keyof OpsRules, string][], withInspectors: boolean) => (
+    <div className="card">
+      <h2>{title}</h2>
+      <div className="row">
+        {keys.map(([k, label]) => (
+          <label key={k}>{label}
+            <input value={rules[k] ?? ''} placeholder={String(cfg.defaults[k])}
+                   onChange={e => setRules(r => ({ ...r, [k]: e.target.value }))} /></label>
+        ))}
+      </div>
+      {withInspectors && <label>People who inspect but do not clean (comma-separated; Manager and Owner are always included)
+        <input value={extra} onChange={e => setExtra(e.target.value)} /></label>}
+      <div className="button-row">
+        <button onClick={() => void save(withInspectors ? { rules, extraInspectors: extra.split(',') } : { rules }, 'Rules saved.')}>Save</button>
+      </div>
+    </div>
+  );
+
   return (
     <>
+      <nav className="setup-secs" aria-label="Setup sections">
+        {SETUP_SECTIONS.map(([k, l]) => <button key={k} className={section === k ? 'chip active' : 'chip'} onClick={() => onSection(k)}>{l}</button>)}
+      </nav>
       {msg && <p className={`banner ${msg.ok ? 'ok' : 'error'}`}>{msg.text}</p>}
 
+      {section === 'general' && <>
       <div className="card">
         <h2>Who decides <span className={cfg.mode === 'live' ? 'ok-tag' : 'chan-tag'}>{cfg.mode}</span></h2>
         {cfg.mode === 'shadow' ? (
@@ -1692,6 +1663,11 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
         )}
       </div>
 
+      <GuestDocUnits initial={cfg.guestDocUnits ?? []} onSave={ids => save({ guestDocUnits: ids }, 'Guest documents saved.')} />
+      {cfg.hostawayTasks && <HostawayTasks state={cfg.hostawayTasks} onChanged={() => void fetchCfg()} />}
+      </>}
+
+      {section === 'cleaners' && <>
       <div className="card">
         <h2>Roster and pay</h2>
         <p className="note">
@@ -1728,28 +1704,18 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
       </div>
 
       <LevelSetup cfg={cfg} roster={roster} setRoster={setRoster} rules={rules} setRules={setRules} save={save} />
-      <CrewSetup cfg={cfg} roster={roster} setRoster={setRoster} save={save} />
+      {ruleCard('Assignment rules', RULE_LABELS.filter(([k]) => !k.startsWith('inspection')), false)}
+      </>}
+
+      {section === 'crew' && <CrewSetup cfg={cfg} roster={roster} setRoster={setRoster} save={save} />}
+
+      {section === 'inspections' && <>
+      {ruleCard('When inspections are due, and who inspects', RULE_LABELS.filter(([k]) => k.startsWith('inspection')), true)}
       <ChecklistSetup />
       <VendorSetup />
+      </>}
 
-      <div className="card">
-        <h2>Rules</h2>
-        <div className="row">
-          {RULE_LABELS.map(([k, label]) => (
-            <label key={k}>{label}
-              <input value={rules[k] ?? ''} placeholder={String(cfg.defaults[k])}
-                     onChange={e => setRules(r => ({ ...r, [k]: e.target.value }))} /></label>
-          ))}
-        </div>
-        <label>People who inspect but do not clean (comma-separated; Manager and Owner are always included)
-          <input value={extra} onChange={e => setExtra(e.target.value)} /></label>
-        <div className="button-row">
-          <button onClick={() => void save({ rules, extraInspectors: extra.split(',') }, 'Rules saved.')}>Save rules</button>
-        </div>
-      </div>
-
-      <GuestDocUnits initial={cfg.guestDocUnits ?? []} onSave={ids => save({ guestDocUnits: ids }, 'Guest documents saved.')} />
-      {cfg.hostawayTasks && <HostawayTasks state={cfg.hostawayTasks} onChanged={() => void fetchCfg()} />}
+      {section === 'inventory' && <InventorySetup />}
     </>
   );
 }
