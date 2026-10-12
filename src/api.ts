@@ -437,6 +437,8 @@ export interface CrewPage {
   cleans: CrewClean[]; extras: CrewExtra[]; invoice: Invoice; extraFrom: string;
   /** Published SOPs for the cleaner's page (§128). */
   help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; lang?: 'en' | 'es' }[];
+  /** §134: what they can report — the supplies and the units. */
+  supplies?: { items: SupplyItem[]; units: { id: string; name: string }[] };
   upcoming: {
     enabled: boolean; days: number; through: string | null; rows: CrewUpcoming[]; problem: string | null;
     autoDays: number; confirmed: { at: string; through: string } | null; movements: Movement[];
@@ -464,6 +466,43 @@ export async function crewUpload(fields: Record<string, string>, files: File[], 
   const res = await fetch(crewPath(token), { method: 'POST', headers: crewHeaders(token), body: form });
   return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as { ok: true } | Fail;
 }
+
+/* ── inventory (§134) ─────────────────────────────────────────────── */
+
+export interface SupplyItem { id: string; name: string; measure: string; category: string }
+export interface InvItemRow extends SupplyItem { perClean: number | null; reorderAt: number | null; active: boolean }
+export interface InvLevel {
+  itemId: string; qty: number | null; countedAt: string | null; missingSince: string | null;
+  perClean: number | null; learned: boolean; toOrder: number;
+}
+export interface InvPlace { unitId: string | null; place: string; cleansAhead: number; items: InvLevel[] }
+export interface InvMove {
+  id: string; item: string; place: string; kind: 'count' | 'used' | 'purchase' | 'adjust' | 'missing'; qty: number;
+  note: string | null; byName: string; source: 'team' | 'cleaner' | 'link'; photos: { name: string; url: string }[]; at: string;
+}
+export interface Inventory { items: InvItemRow[]; places: InvPlace[]; recent: InvMove[]; aheadDays: number; windowDays: number }
+export const getInventory = () => call<({ ok: true } & Inventory) | Fail>('/api/inventory');
+export const inventoryAction = (body: Record<string, unknown>) =>
+  call<({ ok: true; todoId?: string } & Inventory) | Fail>('/api/inventory', { method: 'POST', body: JSON.stringify(body) });
+export const inventoryItemAction = (body: Record<string, unknown>) =>
+  call<{ ok: true; items: InvItemRow[] } | Fail>('/api/inventory-items', { method: 'POST', body: JSON.stringify(body) });
+
+/** A cleaner's helpers, by the shared report link (§134): no account, the token is the only credential. */
+export interface ReportTeam { team: string; lang: 'en' | 'es'; items: SupplyItem[]; units: { id: string; name: string }[] }
+export const getReportLink = (token: string) =>
+  call<({ ok: true } & ReportTeam) | Fail>('/api/report-link', { headers: { 'X-Report-Token': token } });
+/** Any field report — JSON fields, plus photos when there are some (multipart, the browser sets the boundary). */
+export async function sendFieldReport(url: string, headers: Record<string, string>, fields: Record<string, string>, files: File[]) {
+  const init: RequestInit = files.length
+    ? { method: 'POST', headers, body: (() => { const f = new FormData(); for (const [k, v] of Object.entries(fields)) f.append(k, v); for (const x of files) f.append('file', x); return f; })() }
+    : { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(fields) };
+  const res = await fetch(url, init);
+  return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as { ok: true } | Fail;
+}
+export const crewReport = (fields: Record<string, string>, files: File[], token?: string | null) =>
+  sendFieldReport(crewPath(token), crewHeaders(token), fields, files);
+export const crewReportLink = (reset: boolean, token?: string | null) =>
+  call<{ ok: true; link: string } | Fail>(crewPath(token), { method: 'POST', headers: crewHeaders(token), body: JSON.stringify({ action: 'reportLink', reset }) });
 
 export interface PendingExtra {
   id: string; cleaner: string; key: string; amount: number; description: string; createdAt: string;

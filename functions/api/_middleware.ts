@@ -38,7 +38,8 @@ import { accessOf, type SqlFn } from '../_lib/accounts.ts';
 // scheduler carries the ingest token (/api/slack-cron checks it).
 // §122: a cleaner's secret link carries its own token (/api/crew-link checks it,
 // and reads no identity header — that path sits behind an Access bypass).
-const SELF_AUTHENTICATING = new Set(['/api/observations', '/api/slack', '/api/slack-cron', '/api/crew-link']);
+// §134: a cleaner's team reports from a shared link (/api/report-link checks its token, reads no identity header).
+const SELF_AUTHENTICATING = new Set(['/api/observations', '/api/slack', '/api/slack-cron', '/api/crew-link', '/api/report-link']);
 
 export const onRequest: PagesFunction<Env> = async (ctx) => {
   if (SELF_AUTHENTICATING.has(new URL(ctx.request.url).pathname)) return ctx.next();

@@ -11,6 +11,8 @@ import { getCredentials } from './accounts.ts';
 import type { Env } from './db.ts';
 import { loadOps, pushHostNotes, recordCleanings } from './ops.ts';
 import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
+import { decrypt, encrypt } from './crypto.ts';
+import { activeUnits, esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, recordMove } from './inventory.ts';
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
 import type { Level } from '../../src/lib/operations.ts';
 import {
@@ -50,6 +52,8 @@ export interface CrewPage {
   extraFrom: DateStr;
   /** Published SOPs for the cleaner's page (feature `crew.page`), shown as "How this page works". */
   help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; lang: 'en' | 'es' }[];
+  /** §134: what they can report — the supplies and the units. */
+  supplies?: { items: { id: string; name: string; measure: string; category: string }[]; units: { id: string; name: string }[] };
   upcoming: {
     enabled: boolean; days: number; through: DateStr | null; rows: CrewUpcoming[]; problem: string | null;
     /** Unpublished, the rule's picks show this many days ahead (§127). */
@@ -278,6 +282,8 @@ export async function crewGet(request: Request, env: Env, sql: SqlFn, me: CrewCa
                           WHERE account_id = 1 AND status = 'published' AND ('crew.page' = ANY(features) OR 'crew.page.es' = ANY(features))
                           ORDER BY title` as { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; es: boolean }[])
     .map(h => ({ title: h.title, purpose: h.purpose, steps: h.steps, body: h.body, lang: h.es ? 'es' : 'en' }));
+  const [items, units] = await Promise.all([invItems(sql), activeUnits(sql)]);
+  page.supplies = { items: items.filter(i => i.active).map(i => ({ id: i.id, name: i.name, measure: i.measure, category: i.category })), units };
   return Response.json({ ok: true, ...page });
 }
 
@@ -433,6 +439,35 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
       })());
     }
     return Response.json({ ok: true });
+  }
+
+  // §134: supplies taken, bought or missing; a problem or a request — each from the field, each to the team.
+  if (body.action === 'supply' || body.action === 'problem' || body.action === 'request') {
+    const who2 = { name: me.name, source: 'cleaner' as const };
+    try {
+      const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${me.name} ${String(body.kind ?? body.action)}`);
+      const r = body.action === 'supply'
+        ? (await recordMove(sql, who2, body, photos)).todoId
+        : await fieldTodo(sql, who2, { ...body, kind: body.action }, photos);
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r]));
+    } catch (e) {
+      const m = e instanceof Error ? e.message : String(e);
+      return refuse(400, 'bad_request', who?.lang === 'es' ? esMessage(m) : m);
+    }
+    return Response.json({ ok: true });
+  }
+
+  // §134: the link a cleaner shares with the people they hire — no account; it only reports.
+  // Kept encrypted so it can be shared again; `reset` makes a new one (the old stops working).
+  if (body.action === 'reportLink') {
+    const [c] = await sql`SELECT report_token_enc FROM cleaners WHERE account_id = 1 AND name = ${me.name}` as { report_token_enc: string | null }[];
+    let token = c?.report_token_enc && body.reset !== true && body.reset !== 'true' ? await decrypt(c.report_token_enc, env.ENCRYPTION_KEY).catch(() => null) : null;
+    if (!token) {
+      token = newToken();
+      await sql`UPDATE cleaners SET report_token_enc = ${await encrypt(token, env.ENCRYPTION_KEY)}, report_token_hash = ${await sha256(token)}
+                 WHERE account_id = 1 AND name = ${me.name}`;
+    }
+    return Response.json({ ok: true, link: `${new URL(request.url).origin}/report#t=${token}` });
   }
 
   if (body.action === 'cancelExtra') {

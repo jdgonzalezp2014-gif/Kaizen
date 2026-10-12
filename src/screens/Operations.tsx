@@ -17,6 +17,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { WorkView } from '../components/Todos.tsx';
 import { CrewAdmin } from './Crew.tsx';
+import { InventoryView } from './Inventory.tsx';
 import { InspectionRun } from '../components/InspectionRun.tsx';
 import { visibleAhead } from '../lib/crew.ts';
 import { AREAS, type Area, type InspectionItem } from '../lib/inspection.ts';
@@ -43,8 +44,8 @@ import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
 
-type View = 'board' | 'todos' | 'calendar' | 'cleaners' | 'crew' | 'inspections' | 'notes' | 'rates' | 'setup';
-const VIEWS: View[] = ['board', 'todos', 'calendar', 'cleaners', 'crew', 'inspections', 'notes', 'rates', 'setup'];
+type View = 'board' | 'todos' | 'calendar' | 'cleaners' | 'crew' | 'inspections' | 'inventory' | 'notes' | 'rates' | 'setup';
+const VIEWS: View[] = ['board', 'todos', 'calendar', 'cleaners', 'crew', 'inspections', 'inventory', 'notes', 'rates', 'setup'];
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -155,7 +156,7 @@ export function Operations({ permissions, initialView, onView }: {
     });
 
   const views: [View, string][] = [
-    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['cleaners', 'By cleaner'], ['crew', 'Crew'], ['inspections', 'Inspections'],
+    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['cleaners', 'By cleaner'], ['crew', 'Crew'], ['inspections', 'Inspections'], ['inventory', 'Inventory'],
     ['notes', 'Notes log'], ['rates', 'Rates & rules'],
     ...(can(data?.permissions, 'operations.setup') ? [['setup', 'Setup'] as [View, string]] : [])
   ];
@@ -195,6 +196,7 @@ export function Operations({ permissions, initialView, onView }: {
         {data && view === 'cleaners' && <ByCleaner data={data} />}
         {data && view === 'crew' && <CrewAdmin roster={data.roster} canEdit={can(data.permissions, 'operations.edit')} />}
         {data && view === 'inspections' && <Inspections data={data} reload={() => load()} />}
+        {data && view === 'inventory' && <InventoryView canEdit={can(data.permissions, 'operations.edit')} canSetup={can(data.permissions, 'operations.setup')} />}
         {data && view === 'notes' && <Notes data={data} />}
         {data && view === 'rates' && <Rates data={data} />}
         {data && view === 'setup' && <Setup data={data} reload={() => load(true)} />}

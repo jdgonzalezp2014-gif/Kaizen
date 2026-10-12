@@ -8,6 +8,7 @@ import { Operations } from './screens/Operations.tsx';
 import { Repository } from './screens/Repository.tsx';
 import { Home } from './screens/Home.tsx';
 import { CrewHome } from './screens/Crew.tsx';
+import { ReportPage } from './screens/Report.tsx';
 import { Sops } from './screens/Sops.tsx';
 import { SopButton, SopPanel } from './components/Sops.tsx';
 import { featureOf } from './lib/sops.ts';
@@ -29,9 +30,22 @@ const CREW_TOKEN = (() => {
 })();
 if (CREW_TOKEN) { try { sessionStorage.setItem('crewToken', CREW_TOKEN); } catch { /* private mode */ } }
 
+/**
+ * A cleaner's report link for their helpers (§134): /report#t=<token>. Kept on
+ * the helper's phone (localStorage) so the page opens again from a home-screen
+ * icon; taken out of the address bar like the crew link.
+ */
+const REPORT_TOKEN = (() => {
+  if (location.pathname !== '/report') return null;
+  const t = new URLSearchParams(location.hash.slice(1)).get('t');
+  if (t) { history.replaceState(null, '', '/report'); try { localStorage.setItem('reportToken', t); } catch { /* private mode */ } return t; }
+  try { return localStorage.getItem('reportToken'); } catch { return null; }
+})();
+
 export function App() {
   // The link door has no sign-in: the page and nothing else.
   if (location.pathname === '/crew') return <CrewShell token={CREW_TOKEN} />;
+  if (location.pathname === '/report') return <main><header><h1>Kaizen</h1><nav><ThemeToggle /></nav></header><ReportPage token={REPORT_TOKEN} /></main>;
   // The team's "View as cleaner" (§122): a tab with that cleaner's page and nothing of the team's.
   const preview = /^#as-cleaner\/(.+)$/.exec(location.hash);
   if (preview) return <PreviewShell name={decodeURIComponent(preview[1]!)} />;

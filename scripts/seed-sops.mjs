@@ -292,6 +292,67 @@ Operations → Setup → Inspection checklist: add, edit, reorder or remove item
     ],
     doneWhen: 'Sabes tus limpiezas de los próximos días, y tu invoice coincide con el trabajo que hiciste.',
     body: `¿Preguntas sobre una limpieza o un pago? Escríbele al equipo.`
+  },
+  // §134 — inventory: the team's side, and the cleaners' (both languages).
+  {
+    section: 'turnover', title: 'Keep the supplies counted and ordered',
+    features: ['operations.inventory'],
+    purpose: 'Know what each unit and the storage really hold, find out where the record drifted, and buy what the coming cleans need — in one shopping list.',
+    trigger: 'Weekly before buying; whenever Inventory shows ⚠ (something reported not there); after a big purchase.',
+    owner: 'Operations',
+    steps: [
+      { text: 'Open Operations → Inventory and read the top line.', who: 'Ops',
+        detail: '- ⚠ lists the places where a cleaner or a helper did not find something the record says is there. Each one also made a to-do "Check stock: …".\n- "never counted" places have no trustworthy number yet.' },
+      { text: 'Count a place: choose it, ▣ Count, type what is really there, Save the count.', who: 'Ops',
+        detail: '- Only the items you fill in are counted; the rest keep their record.\n- The Gap column shows how far off the record was (+ more than expected, − less). A big gap is worth asking about.\n- A count clears the ⚠ for that item. Close the matching "Check stock" to-do.' },
+      { text: 'Record what came in: "Record a move here" → Bought / brought in.', who: 'Ops',
+        detail: 'Purchases normally go to Storage. Use "Correct (+ or −)" only to fix a mistake, with a note.' },
+      { text: 'To order: check the lines, change quantities, untick what you do not want, Create the shopping to-do.', who: 'Ops',
+        detail: '- A line is a counted unit: what its cleans in the next 14 days use, plus the minimum to keep, minus what is there.\n- Units never counted are listed under "Count first" — count them to get their lines.\n- Totals subtract what Storage holds: "buy" is what is left to buy.\n- The to-do has one sub-task per line, to tick off while shopping; it goes to Hostaway like any task.' },
+      { text: 'Keep the list right: Supplies list (Setup permission) — name, how it is counted, the estimate per clean, the minimum to keep.', who: 'Ops',
+        detail: 'After 3 cleans in a unit report what they used, Kaizen uses that ("learned") instead of the estimate.' }
+    ],
+    doneWhen: 'No ⚠ left without a count, and the shopping to-do covers the next two weeks of cleans.',
+    body: `## Where reports come from
+Cleaners report from their page (Supplies & problems): what they took for a clean, what they bought, what is not there, a problem, or something they need. The people a cleaner hires report from the link the cleaner shares (no account) — they appear as "<cleaner>'s team: <name>". Neither can count or correct; only the team can.`
+  },
+  {
+    section: 'turnover', title: 'Supplies, problems and your team’s link',
+    features: ['crew.page'],
+    purpose: 'Tell the team what you used and what is missing, so supplies are bought before they run out — and let the people who clean with you do the same.',
+    trigger: 'After each clean; when you buy something; when something is not there or not working.',
+    owner: 'Each cleaner',
+    steps: [
+      { text: 'After a clean: Supplies & problems → "Took for a clean" → choose the clean → write how many of each you took → Send to the team.',
+        detail: 'Leave empty what you did not use. Your cleans of the last three days are listed first.' },
+      { text: 'Bought something: "Bought" → where it went, the item, how many, the total paid, and a photo of the receipt.' },
+      { text: 'Something is not there: "Not there" → where, the item, how many you found (0 if none).',
+        detail: 'The team gets a task to count it — the number is not changed on one report.' },
+      { text: 'A problem or something you need: write it, add a photo if it helps, Send.',
+        detail: 'The team gets it as a task.' },
+      { text: 'People who clean with you: "Get the link" → Send by WhatsApp (or Copy link).',
+        detail: '- They need no account. From the link they can only report — nothing of your pay or schedule.\n- Their reports reach the team with their name, as your team.\n- If the link reaches someone it should not: "Make a new link" — the old one stops working.' }
+    ],
+    doneWhen: 'Every clean has its supplies reported, and nothing missing goes unsaid.'
+  },
+  {
+    section: 'turnover', title: 'Insumos, problemas y el enlace de tu equipo',
+    features: ['crew.page.es'],
+    purpose: 'Avisar al equipo qué usaste y qué falta, para comprar antes de que se acabe — y que las personas que limpian contigo hagan lo mismo.',
+    trigger: 'Después de cada limpieza; cuando compras algo; cuando algo no está o no funciona.',
+    owner: 'Cada cleaner',
+    steps: [
+      { text: 'Después de una limpieza: Insumos y problemas → "Tomé para limpieza" → elige la limpieza → escribe cuántos tomaste de cada uno → Enviar al equipo.',
+        detail: 'Deja vacío lo que no usaste. Primero aparecen tus limpiezas de los últimos tres días.' },
+      { text: 'Compraste algo: "Compré" → dónde quedó, el artículo, cuántos, el total pagado y una foto del recibo.' },
+      { text: 'Algo no está: "No hay" → dónde, el artículo, cuántos encontraste (0 si ninguno).',
+        detail: 'El equipo recibe una tarea para contarlo — el número no se cambia con un solo reporte.' },
+      { text: 'Un problema o algo que necesitas: escríbelo, agrega una foto si ayuda, Enviar.',
+        detail: 'Al equipo le llega como tarea.' },
+      { text: 'Personas que limpian contigo: "Obtener el enlace" → Enviar por WhatsApp (o Copiar enlace).',
+        detail: '- No necesitan cuenta. Desde el enlace solo pueden reportar — nada de tu pago ni de tu agenda.\n- Sus reportes le llegan al equipo con su nombre, como parte de tu equipo.\n- Si el enlace llega a alguien que no debe: "Crear un enlace nuevo" — el anterior deja de funcionar.' }
+    ],
+    doneWhen: 'Cada limpieza tiene sus insumos reportados, y no se queda sin decir nada que falte.'
   }
 ];
 

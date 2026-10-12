@@ -83,6 +83,7 @@ export const FEATURES: { key: string; label: string; tab: string; view?: string;
   // The same page in Spanish (§129): a cleaner reading in Spanish sees these instead.
   { key: 'crew.page.es', label: "Cleaner's page (Español)", tab: 'crew', section: 'turnover' },
   { key: 'operations.inspections', label: 'Operations · Inspections', tab: 'operations', view: 'inspections', section: 'inspections' },
+  { key: 'operations.inventory', label: 'Operations · Inventory', tab: 'operations', view: 'inventory', section: 'turnover' },
   { key: 'operations.notes', label: 'Operations · Notes log', tab: 'operations', view: 'notes', section: 'guest' },
   { key: 'operations.rates', label: 'Operations · Rates & rules', tab: 'operations', view: 'rates', section: 'turnover' },
   { key: 'operations.setup', label: 'Operations · Setup', tab: 'operations', view: 'setup', section: 'systems' },

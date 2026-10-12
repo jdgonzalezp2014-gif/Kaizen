@@ -39,6 +39,8 @@ export const PERMISSIONS: Permission[] = [
     // Inspections as a checklist, its template, and the vendor directory (§133).
     { path: '/api/inspection-run', methods: ['GET'] }, { path: '/api/inspection-items', methods: ['GET'] },
     { path: '/api/vendors', methods: ['GET'] },
+    // Supplies per unit and in storage (§134).
+    { path: '/api/inventory', methods: ['GET'] },
     // The cleanings calendar lives in Operations; it reads the record.
     { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'operations.edit', label: 'Operations — assign cleaners, times, notes, log inspections', routes: [
@@ -47,11 +49,15 @@ export const PERMISSIONS: Permission[] = [
     // Approve or deny a cleaner's extra, flag a clean (§122).
     { path: '/api/crew-admin', methods: ['POST'] },
     // Walk an inspection: answers, photos, and the work it makes (§133).
-    { path: '/api/inspection-run', methods: ['POST'] }] },
+    { path: '/api/inspection-run', methods: ['POST'] },
+    // Counts, moves and orders of supplies (§134).
+    { path: '/api/inventory', methods: ['POST'] }] },
   { key: 'operations.setup', label: 'Operations — roster, pay, rules and the live switch', routes: [
     { path: '/api/ops-settings', methods: ['GET', 'POST'] },
     // The inspection checklist and the vendor directory (§133).
-    { path: '/api/inspection-items', methods: ['POST'] }, { path: '/api/vendors', methods: ['POST'] }] },
+    { path: '/api/inspection-items', methods: ['POST'] }, { path: '/api/vendors', methods: ['POST'] },
+    // The supplies catalog (§134).
+    { path: '/api/inventory-items', methods: ['POST'] }] },
   { key: 'todos', label: 'To-do list — see, add and tick off the team\'s to-dos', routes: [
     { path: '/api/todos', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] },
     // A repair's vendor is picked from the directory (§133).

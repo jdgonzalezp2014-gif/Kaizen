@@ -13,7 +13,7 @@
  */
 import { Fragment, useEffect, useState } from 'react';
 import {
-  crewAction, crewAdminAction, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
+  crewAction, crewAdminAction, crewReport, crewReportLink, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
   type CrewPage, type CrewSchedule, type CrewUpcoming, type PendingExtra, type ToConfirm
 } from '../api.ts';
 import type { CrewClean, CrewExtra } from '../lib/crew.ts';
@@ -23,6 +23,8 @@ import {
   stampLabel, voidReasonText, workText, type Lang, type Tx
 } from '../lib/crew-i18n.ts';
 import { money2 } from '../lib/format.ts';
+import { addDays } from '../lib/dates.ts';
+import { FieldReport, type Send } from '../components/FieldReport.tsx';
 import type { Cleaner } from '../lib/operations.ts';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -71,7 +73,9 @@ export function CrewHome({ token, asCleaner }: { token?: string | null; asCleane
   if (err) return <p className="banner error">{err}</p>;
   if (!page) return <p className="note loading-dot">{TX[shown].loading}</p>;
   return <CrewView page={page} mode="cleaner" lang={shown} onLang={choose} onPeriod={setPeriod} reload={load}
-                   act={act} upload={asCleaner ? inert : (f, files) => crewUpload(f, files, token)} />;
+                   act={act} upload={asCleaner ? inert : (f, files) => crewUpload(f, files, token)}
+                   report={asCleaner ? inert : (f, files) => crewReport(f, files, token)}
+                   shareLink={asCleaner ? inert : reset => crewReportLink(reset, token)} />;
 }
 
 /* ── the team's side, in Operations ───────────────────────────────── */
@@ -209,10 +213,12 @@ function Decide({ id, onDone }: { id: string; onDone: () => void }) {
 
 /* ── the page itself ──────────────────────────────────────────────── */
 
-function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, lang = 'en', onLang }: {
+function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, report, shareLink, lang = 'en', onLang }: {
   page: CrewPage; mode: 'cleaner' | 'team'; canEdit?: boolean;
   onPeriod: (from: string) => void; reload: () => void;
   act: Act; upload?: Upload;
+  /** §134: supplies and problems, and the link for the people they hire — the cleaner's page only. */
+  report?: Send; shareLink?: (reset: boolean) => Promise<{ ok: boolean; link?: string; message?: string }>;
   /** The cleaner's language (§129); the team's view is English. */
   lang?: Lang; onLang?: (l: Lang) => void;
 }) {
@@ -255,6 +261,8 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
         </div>
       )}
       <Upcoming page={page} act={mode === 'cleaner' ? act : undefined} reload={reload} lang={lang} />
+      {/* §134: right under what is coming — reporting supplies is what they do after each clean. */}
+      {report && page.supplies && <Supplies page={page} lang={lang} report={report} />}
       <CrewCalendar page={page} lang={lang} />
 
       <div className="card no-print">
@@ -275,7 +283,67 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
         )}
       </div>
 
+      {shareLink && <ShareReport name={page.cleaner.name} lang={lang} get={shareLink} />}
       <InvoiceView page={page} lang={lang} />
+    </div>
+  );
+}
+
+/* ── supplies and problems (§134) ─────────────────────────────────── */
+
+/** What they took, bought, did not find; a problem; a need — against one of their recent cleans or any unit. */
+function Supplies({ page, lang, report }: { page: CrewPage; lang: Lang; report: Send }) {
+  const tx = TX[lang];
+  const sup = page.supplies!;
+  // Their cleans of the last three days and today, newest first: what "took for a clean" is about.
+  const cleans = page.cleans.filter(c => !c.voidReason && c.date <= page.today && c.date >= addDays(page.today, -3))
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .map(c => ({ key: c.key, label: tx.supCleanOpt(dayLabel(lang, c.date), c.unit), unitId: sup.units.find(u => u.name === c.unit)?.id ?? null }));
+  return (
+    <div className="card no-print">
+      <h2>{tx.supTitle}</h2>
+      <p className="note">{tx.supNote}</p>
+      <FieldReport tx={tx} items={sup.items} units={sup.units} cleans={cleans} send={report} />
+    </div>
+  );
+}
+
+/**
+ * The link for the people a cleaner hires: no account, reports only. Fetched
+ * on demand (it is made the first time), then sent by WhatsApp, the phone's
+ * share sheet, or copied.
+ */
+function ShareReport({ name, lang, get }: { name: string; lang: Lang; get: (reset: boolean) => Promise<{ ok: boolean; link?: string; message?: string }> }) {
+  const tx = TX[lang];
+  const [link, setLink] = useState<string | null>(null);
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const fetchLink = async (reset: boolean) => {
+    if (reset && !confirm(tx.shareResetAsk)) return;
+    setBusy(true); setMsg('');
+    try { const r = await get(reset); if (r.ok && r.link) setLink(r.link); else setMsg(r.message ?? tx.notSaved); }
+    catch (e) { setMsg(String(e)); } finally { setBusy(false); }
+  };
+  const text = link ? tx.shareMsg(name, link) : '';
+  const share = async () => { try { await navigator.share({ text }); } catch { /* closed the sheet */ } };
+  const copy = async () => { try { await navigator.clipboard.writeText(link!); setMsg(tx.shareCopied); } catch { setMsg(link!); } };
+  return (
+    <div className="card no-print">
+      <h2>🔗 {tx.shareTitle}</h2>
+      <p className="note">{tx.shareNote}</p>
+      {!link ? <div className="share-row"><button disabled={busy} onClick={() => void fetchLink(false)}>{busy ? tx.sending : tx.shareGet}</button></div> : (
+        <>
+          <div className="share-row">
+            <a className="button" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">💬 {tx.shareWa}</a>
+            {typeof navigator.share === 'function' && <button className="secondary" onClick={() => void share()}>{tx.shareMore}</button>}
+            <button className="secondary" onClick={() => void copy()}>📋 {tx.shareCopy}</button>
+          </div>
+          <p className="share-link">{link}</p>
+          <button className="small" disabled={busy} onClick={() => void fetchLink(true)}>{tx.shareReset}</button>
+          <span className="note"> {tx.shareResetNote}</span>
+        </>
+      )}
+      {msg && <p className={msg === tx.shareCopied ? 'field-ok' : 'breach'}>{msg}</p>}
     </div>
   );
 }

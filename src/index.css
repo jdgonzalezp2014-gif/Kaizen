@@ -1836,3 +1836,19 @@ input[type=file][hidden] { display: none !important; }
 .insp-steps span.done { border-color: var(--green, #34a853); opacity: .9; }
 .insp-finding textarea { margin: 0; }
 .insp-finding textarea, .insp-sheet textarea { font-family: inherit; font-size: 15px; }
+
+/* §134 field reports: supplies and problems, from the crew page and the shared link — phone first. */
+.field-report > label { display: block; margin-top: 10px; }
+.field-kinds { flex-wrap: wrap; gap: 6px; }
+.field-kinds .chip { font-size: 13px; padding: 7px 12px; }
+.field-items { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px 8px; margin: 10px 0 0; }
+.field-items legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
+.field-item { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 10px; align-items: center; margin: 4px 0 0; }
+.field-item input { text-align: right; }
+.field-ok { color: var(--good); font-weight: 600; }
+.share-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+.share-link { font-size: 12px; word-break: break-all; color: var(--muted); margin-top: 8px; }
+.report-page { max-width: 560px; margin: 0 auto; }
+/* A link that acts as the main button (WhatsApp opens its own app). */
+a.button { background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 7px; font-size: 13px; font-weight: 600; text-decoration: none; }
+.inv-qty { width: 76px; text-align: right; }
