@@ -463,6 +463,9 @@ export interface ToConfirm { key: string; unit: string; date: string; beds: numb
 export const getCrewAdmin = (cleaner?: string | null, period?: string | null) =>
   call<{ ok: true; pending: PendingExtra[]; page: CrewPage | null; schedule: CrewSchedule; toConfirm: ToConfirm[] } | Fail>(
     `/api/crew-admin?${new URLSearchParams({ ...(cleaner ? { cleaner } : {}), ...(period ? { period } : {}) })}`);
+/** A cleaner's page through the same server code that answers the cleaner — for "View as cleaner". */
+export const getCrewAsCleaner = (cleaner: string, period?: string | null) =>
+  call<({ ok: true } & CrewPage) | Fail>(`/api/crew-admin?${new URLSearchParams({ view: 'cleaner', cleaner, ...(period ? { period } : {}) })}`);
 export const crewAdminAction = (body: Record<string, unknown>) =>
   call<{ ok: true } | Fail>('/api/crew-admin', { method: 'POST', body: JSON.stringify(body) });
 export const crewLink = (name: string, revoke = false) =>

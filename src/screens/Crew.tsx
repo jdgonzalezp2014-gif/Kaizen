@@ -13,7 +13,7 @@
  */
 import { Fragment, useEffect, useState } from 'react';
 import {
-  crewAction, crewAdminAction, crewUpload, getCrew, getCrewAdmin,
+  crewAction, crewAdminAction, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
   type CrewPage, type CrewSchedule, type CrewUpcoming, type PendingExtra, type ToConfirm
 } from '../api.ts';
 import type { CrewClean, CrewExtra } from '../lib/crew.ts';
@@ -46,12 +46,16 @@ const EXTRA_WORD: Record<CrewExtra['status'], string> = { pending: '○ waiting 
 
 /* ── the cleaner's own page ───────────────────────────────────────── */
 
-/** What a cleaner sees, signed in or through their link. */
-export function CrewHome({ token }: { token?: string | null }) {
+/**
+ * What a cleaner sees, signed in or through their link — or, with
+ * `asCleaner`, the team previewing it: the same page from the same server
+ * code, with the cleaner's buttons sending nothing.
+ */
+export function CrewHome({ token, asCleaner }: { token?: string | null; asCleaner?: string }) {
   const [page, setPage] = useState<CrewPage | null>(null);
   const [period, setPeriod] = useState<string | null>(null);
   const [err, setErr] = useState('');
-  const load = () => getCrew(period, token)
+  const load = () => (asCleaner ? getCrewAsCleaner(asCleaner, period) : getCrew(period, token))
     .then(r => { if (r.ok) { setPage(r); setErr(''); } else setErr(r.message ?? 'Could not load your page.'); })
     .catch(e => setErr(String(e)));
   useEffect(() => { void load(); }, [period]);
@@ -59,7 +63,8 @@ export function CrewHome({ token }: { token?: string | null }) {
   if (err) return <p className="banner error">{err}</p>;
   if (!page) return <p className="note loading-dot">Loading your cleans…</p>;
   return <CrewView page={page} mode="cleaner" onPeriod={setPeriod} reload={load}
-                   act={body => crewAction(body, token)} upload={(f, files) => crewUpload(f, files, token)} />;
+                   act={asCleaner ? inert : body => crewAction(body, token)}
+                   upload={asCleaner ? inert : (f, files) => crewUpload(f, files, token)} />;
 }
 
 /* ── the team's side, in Operations ───────────────────────────────── */
@@ -73,8 +78,6 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
   const [page, setPage] = useState<CrewPage | null>(null);
   const [schedule, setSchedule] = useState<CrewSchedule | null>(null);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
-  // The page exactly as the cleaner gets it — to check it makes sense before they do.
-  const [asCleaner, setAsCleaner] = useState(false);
   const [confirming, setConfirming] = useState(false);
   const [err, setErr] = useState('');
   const load = () => getCrewAdmin(name || null, period)
@@ -93,21 +96,10 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
             <option value="">Choose…</option>
             {roster.map(c => <option key={c.name} value={c.name}>{c.name}{c.active ? '' : ' (inactive)'}{c.email ? '' : ' — no sign-in address'}</option>)}
           </select></label>
-        {page && (
-          <div className="todo-kind" role="group" aria-label="View">
-            <button className={!asCleaner ? 'chip active' : 'chip'} onClick={() => setAsCleaner(false)}>Team view</button>
-            <button className={asCleaner ? 'chip active' : 'chip'} onClick={() => setAsCleaner(true)}>👁 View as cleaner</button>
-          </div>
-        )}
+        {/* A separate tab with only the cleaner's page — nothing of the team's around it. */}
+        {name && <a className="chip" href={`/#as-cleaner/${encodeURIComponent(name)}`} target="_blank" rel="noreferrer">👁 View as cleaner ↗</a>}
       </div>
-      {page && asCleaner && (
-        <>
-          <p className="banner warn no-print">👁 This is {page.cleaner.name}'s page exactly as they see it — no ratings, no team controls.
-            Their buttons are here but do nothing from this view.</p>
-          <CrewView page={page} mode="cleaner" onPeriod={setPeriod} reload={load} act={inert} upload={inert} />
-        </>
-      )}
-      {page && !asCleaner && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={setPeriod} reload={load} act={crewAdminAction} />}
+      {page && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={setPeriod} reload={load} act={crewAdminAction} />}
       {toConfirm.length > 0 && (
         <div className="card">
           <h2>Cancelled after arrival — confirm <span className="chan-tag">{toConfirm.length}</span></h2>
@@ -281,7 +273,7 @@ function Upcoming({ page, act, reload }: { page: CrewPage; act?: Act; reload: ()
         : !u.rows.length ? <p className="note">Nothing assigned to you through {u.through ? day(u.through) : 'the next days'}.</p>
         : !u.enabled ? (
           <>
-            <p className="note">○ The full schedule is not shared yet. These were assigned to you by the team:</p>
+            <p className="note">○ Your full schedule is not published yet. These cleans were assigned to you directly by the team, so they are set:</p>
             <div className="crew-list">{u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload} />)}</div>
           </>
         )

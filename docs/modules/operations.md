@@ -100,8 +100,9 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   Crew → "Cancelled after arrival — confirm" (who cleaned + date + deep, or no clean needed) →
   `confirmed_by`; reconcile and record never undo a settled row. `fetchCancelledTouching` skips iCal.
   Only rows already in the record are held (older never-recorded cancellations are not back-filled).
-- Operations → Crew: pick a cleaner → **Team view** (stars, flag/correct/decide) or **👁 View as cleaner**
-  (the same page exactly as they get it — no stars, no team controls; their buttons send nothing).
+- Operations → Crew: pick a cleaner → their page for the team (level, flag/correct/decide), or
+  **👁 View as cleaner ↗** — a separate tab (`/#as-cleaner/<name>`, PreviewShell in App.tsx) with only the
+  cleaner's page, loaded through `crewGet` (the cleaner's own server code: level stripped), buttons inert.
 - **Deep is a person's call (§126):** every clean is regular unless someone sets "Deep — confirmed" on the
   row (an override); a stay of `deepCleanNights`+ only shows "○ deep suggested" (`row.deepSuggested`).
 - **Rebooked ≠ cancelled (§126):** a cancelled booking whose guest has a live booking in the same unit

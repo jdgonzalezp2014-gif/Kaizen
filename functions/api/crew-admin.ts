@@ -2,7 +2,9 @@
  * /api/crew-admin — the team's side of the crew pages (§122).
  *
  *   GET  [?cleaner=<name>&period=YYYY-MM-DD]     extras waiting on the team; with a
- *                                               cleaner, their page exactly as they see it
+ *                                               cleaner, their page for the team
+ *   GET  ?view=cleaner&cleaner=<name>[&period]  that cleaner's page through the SAME code that
+ *                                               answers the cleaner (crewGet) — nothing of the team's
  *   POST { action: 'decideExtra', id, status: 'approved' | 'denied', note }
  *   POST { action: 'flag', key, note }          flag a clean; the cleaner sees the note
  *   POST { action: 'unflag', key }
@@ -21,7 +23,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { attachFiles, confirmSchedule, loadCrewPage, refuse, scheduleState } from '../_lib/crew.ts';
+import { attachFiles, confirmSchedule, crewGet, loadCrewPage, refuse, scheduleState } from '../_lib/crew.ts';
 import { scheduleMovements, type Movement } from '../../src/lib/crew.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { rateFor } from '../../src/lib/operations.ts';
@@ -35,6 +37,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
   const url = new URL(request.url);
   const name = url.searchParams.get('cleaner');
+  // "View as cleaner": exactly what the cleaner's own request returns, by the same function.
+  if (url.searchParams.get('view') === 'cleaner' && name) return crewGet(request, env, sql, { name, by: who.email });
   // The schedule once, for the movements of every cleaner and the page shown.
   const [acc] = await sql`SELECT crew_calendar, crew_calendar_days FROM accounts WHERE id = 1` as { crew_calendar: boolean; crew_calendar_days: number }[];
   let schedule: { enabled: boolean; confirmed: { at: string; by: string; through: string } | null;

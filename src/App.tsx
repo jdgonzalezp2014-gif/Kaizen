@@ -32,7 +32,20 @@ if (CREW_TOKEN) { try { sessionStorage.setItem('crewToken', CREW_TOKEN); } catch
 export function App() {
   // The link door has no sign-in: the page and nothing else.
   if (location.pathname === '/crew') return <CrewShell token={CREW_TOKEN} />;
+  // The team's "View as cleaner" (§122): a tab with that cleaner's page and nothing of the team's.
+  const preview = /^#as-cleaner\/(.+)$/.exec(location.hash);
+  if (preview) return <PreviewShell name={decodeURIComponent(preview[1]!)} />;
   return <TeamApp />;
+}
+
+function PreviewShell({ name }: { name: string }) {
+  return (
+    <main>
+      <header><h1>Kaizen OS</h1><nav><ThemeToggle /></nav></header>
+      <p className="banner warn">👁 Preview — {name}'s page exactly as they get it. Their buttons do nothing here. Close this tab to go back.</p>
+      <CrewHome asCleaner={name} />
+    </main>
+  );
 }
 
 function CrewShell({ token }: { token: string | null }) {
