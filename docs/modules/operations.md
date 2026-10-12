@@ -207,8 +207,9 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 
 - **Inventory and the field steps built, not in use (§134).** Migrations 057–059 applied. To start:
   count Storage and the busiest units (Operations → Inventory → ▣ Count), adjust the starter list (13
-  items, estimates are guesses). The `/report` page needs the Cloudflare Access **Bypass** for `/report`,
-  `/assets/*`, `/api/report-link` (same app as the crew link). SOP drafts: "Keep the supplies counted and
+  items, estimates are guesses). Access **Bypass** app "Kaizen — public links" (Bypass Everyone) is live since
+  2026-10-12 for `/report`, `/api/report-link`, `/crew`, `/api/crew-link`, `/assets/*` — verified: those
+  answer without sign-in (APIs 403 without a token), `/` and every other `/api/*` still redirect. SOP drafts: "Keep the supplies counted and
   ordered", and the cleaners' "Your clean step by step: photos, done, supplies" / "Tu limpieza paso a
   paso: fotos, completada, insumos" (publish them to show on the crew page). Not built: photos and done
   on the Operations board; done does not feed the record or pay. Not built: transfers Storage → unit (a use in a unit does not take
@@ -228,8 +229,8 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 - **Crew page built, not switched on (§122).** To start: set each cleaner's email (Setup → Crew
   pages); in Cloudflare Zero Trust add those emails to the Kaizen Access policy with One-time PIN
   on. Calendar stays off until the star schedule is checked; then turn it on and Confirm in
-  Operations → Crew. Fallback links need an Access Bypass app for `/crew`, `/assets/*`,
-  `/api/crew-link` (not created). Not built: notifying the team on a decline (Slack), approved
+  Operations → Crew. Fallback links work: the Access Bypass app for `/crew`, `/assets/*`,
+  `/api/crew-link` exists since 2026-10-12. Not built: notifying the team on a decline (Slack), approved
   extras in Costs (they are only on the invoice), payment status ("paid") on invoices.
 - Stars limitations: manual cleans (`MAN-`) don't count toward a cleaner's daily max; zones are
   derived from unit names (building prefix, else Houses) — a house can't be its own zone yet.
