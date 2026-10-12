@@ -3420,7 +3420,22 @@ in shadow mode (no Hostaway writes): extra → approve → invoice $455 + $25; d
 rule picks K&M not Irene; a simulated extension and cancellation show as movements; a cleaner's
 Access address gets 403 on every other route.
 
-Later the same day: the crew week is **Saturday–Friday, paid on Saturday** (the owner). Some cleaners
-are monthly, so the period stays per cleaner (default monthly); a monthly invoice is paid the first
-Saturday after the month ends — an assumption, not stated by the owner. The invoice shows its
-payment date.
+Later the same day: the crew week is **Saturday–Friday, paid on Saturday**; monthly is the whole month,
+paid in the first days of the next (the owner). Some cleaners are monthly, so it stays per cleaner.
+
+## §123 — Cancellations after arrival, hand-assigned cleans shown at once, corrections (2026-10-11)
+
+**Cancellations.** Every cancelled booking used to void its clean. Hostaway, Jun–Oct: 19 non-iCal
+bookings cancelled on or after the arrival day; four had recorded cleans voided (Michelle $35 and $55,
+Veronica $90, one TBD). The owner: after check-in usually there is a clean, before not — "lo más
+sencillo es marcarla TBD y confirmar"; the day is the same or the next "depende de la hora". Hostaway
+gives the cancellation time (taken as UTC) but not whether the guest got in — same-day cancellations
+before check-in time and Booking.com no-shows cancelled after arrival both exist — so Kaizen never
+decides: cancelled before the arrival day = no clean; on or after = TBD, unpaid, held for a person, the
+day proposed by noon New York. A settled row is never undone by the daily reconcile.
+
+**Hand-assigned cleans** show on the cleaner's page at once, calendar off or not — a person checked them.
+**Corrections:** a past clean's deep/price can be corrected with a note the cleaner sees (a "deep" that
+was not done as one). Older rows from the sheet carry no bedroom count; the unit's is used, and a
+correction that would leave a clean unpriced is refused.
+

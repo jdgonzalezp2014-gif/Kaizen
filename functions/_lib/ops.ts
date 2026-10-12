@@ -15,13 +15,13 @@
  *           Host Note. The sheet's import is no longer read, so the two
  *           never write the same key.
  */
-import { fetchListings, fetchReservationsTouching, fetchHostNote, writeHostNote,
+import { fetchCancelledTouching, fetchListings, fetchReservationsTouching, fetchHostNote, writeHostNote,
          type HostawayCredentials } from './hostaway.ts';
 import { importCleanings } from './cleanings-import.ts';
 import type { SqlFn } from './accounts.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
 import {
-  blockForReservation, buildBoard, inspectionPanel, mergeHostNote, summarize, withDefaults,
+  blockForReservation, buildBoard, cancelledClean, inspectionPanel, mergeHostNote, summarize, utcToLocal, withDefaults,
   type AssignRule, type BoardRow, type Cleaner, type OpsCleaning, type OpsInspection, type OpsRules, type Override
 } from '../../src/lib/operations.ts';
 
@@ -145,7 +145,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     }
   }
 
-  const [listings, reservations, inspections, overrideRows, noteRows, declineRows] = await Promise.all([
+  const [listings, reservations, inspections, overrideRows, noteRows, declineRows, cancelledRaw] = await Promise.all([
     timed('listings', fetchListings(creds)),
     // One live question: every stay still in the building today or
     // arriving before the look-ahead ends. Stays that began months ago but
@@ -161,13 +161,16 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
          ORDER BY reservation_id, kind, id DESC`,
     // Cleans a cleaner turned down on their page (§122), still ahead.
     sql`SELECT cleaning_key, cleaner, reason FROM crew_declines
-         WHERE account_id = 1 AND clean_on >= ${today}::date ORDER BY id`
+         WHERE account_id = 1 AND clean_on >= ${today}::date ORDER BY id`,
+    // Bookings cancelled while the guest may have been in (§123): their clean waits for a person.
+    timed('cancelled', fetchCancelledTouching(creds, today, end))
   ]) as [Awaited<ReturnType<typeof fetchListings>>, Awaited<ReturnType<typeof fetchReservationsTouching>>,
          Awaited<ReturnType<typeof inspectionLog>>,
          { reservation_id: string; assignment: Override['assignment']; cleaner: string | null;
            deep: boolean | null; checkout_time: string | null; checkin_time: string | null; updated_by: string }[],
          { reservation_id: string; kind: string; notes: string }[],
-         { cleaning_key: string; cleaner: string; reason: string | null }[]];
+         { cleaning_key: string; cleaner: string; reason: string | null }[],
+         Awaited<ReturnType<typeof fetchCancelledTouching>>];
 
   const overrides = new Map<string, Override>(overrideRows.map(o => [o.reservation_id, {
     assignment: o.assignment, cleaner: o.cleaner, deep: o.deep,
@@ -193,6 +196,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
   const boardInput: Parameters<typeof buildBoard>[0] = {
     today, windowDays: days, listings: opsListings, reservations, roster: cfg.roster, rules: cfg.rules,
     overrides, notes, inspections: panel, sheet: sheetMap, assignRule: cfg.assignRule, declines,
+    cancelled: cancelledRaw.map(r => ({ ...r, cancelledAt: utcToLocal(r.cancellationDate, OPS_TZ) })),
     // With no inspection ever recorded here, "never inspected" would be a
     // claim about every unit made from no evidence (§63).
     inspectionLogRead: inspections.done.length + inspections.scheduled.length > 0
@@ -227,25 +231,34 @@ const URGENCY_LABEL: Record<string, string> = { turnover: '⚡', same_guest: '�
 export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> {
   const outs = s.rows.filter(r => r.kind === 'out');
   const decidedBy = (r: BoardRow) => r.manual.cleaner ? `override:${s.overrideBy.get(r.resId) ?? 'someone'}`
+    : r.cancelled ? 'cancelled after arrival — to confirm'
     : r.sameDayOf ? `rule: one clean per unit per day (${r.sameDayOf})` : s.assignRule === 'stars' ? 'rule:stars' : 'rule';
+  // §123: a stay cancelled after arrival is unpaid until a person settles it; a person's choice on the board settles it.
+  const toConfirm = (r: BoardRow) => r.cancelled && !r.manual.cleaner
+    ? `Cancelled ${r.cancelled} (New York), on or after the arrival — was the unit used, and who cleaned it?` : null;
+  const settledBy = (r: BoardRow) => r.cancelled && r.manual.cleaner ? (s.overrideBy.get(r.resId) ?? 'someone') : null;
   if (outs.length) {
     await sql`
       INSERT INTO cleanings (account_id, key, unit_id, unit_name, checkout_on, cleaner, assignment,
-                             guest, price, deep, urgency, checkout_time, beds, source, decided_by)
-      SELECT 1, k, u, n, d, c, a, g, p, dp, ug, tm, bd, 'kaizen', db
+                             guest, price, deep, urgency, checkout_time, beds, source, decided_by, needs_confirm, confirmed_by)
+      SELECT 1, k, u, n, d, c, a, g, p, dp, ug, tm, bd, 'kaizen', db, nc, cb
         FROM unnest(${outs.map(r => r.resId)}::text[], ${outs.map(r => r.unitId)}::text[],
                     ${outs.map(r => r.unit)}::text[], ${outs.map(r => r.date)}::date[],
                     ${outs.map(r => r.cleaner)}::text[], ${outs.map(r => r.assignment === 'unknown' ? 'tbd' : r.assignment)}::text[],
                     ${outs.map(r => r.guest || null)}::text[], ${outs.map(r => r.price)}::numeric[],
                     ${outs.map(r => r.deep)}::boolean[], ${outs.map(r => (r.urgency && URGENCY_LABEL[r.urgency]) || null)}::text[],
-                    ${outs.map(r => r.time)}::text[], ${outs.map(r => r.beds)}::smallint[], ${outs.map(decidedBy)}::text[])
-             AS t(k, u, n, d, c, a, g, p, dp, ug, tm, bd, db)
+                    ${outs.map(r => r.time)}::text[], ${outs.map(r => r.beds)}::smallint[], ${outs.map(decidedBy)}::text[],
+                    ${outs.map(toConfirm)}::text[], ${outs.map(settledBy)}::text[])
+             AS t(k, u, n, d, c, a, g, p, dp, ug, tm, bd, db, nc, cb)
       ON CONFLICT (account_id, key) DO UPDATE SET
         unit_id = EXCLUDED.unit_id, unit_name = EXCLUDED.unit_name, checkout_on = EXCLUDED.checkout_on,
         cleaner = EXCLUDED.cleaner, assignment = EXCLUDED.assignment, guest = EXCLUDED.guest,
         price = EXCLUDED.price, deep = EXCLUDED.deep, urgency = EXCLUDED.urgency,
         checkout_time = EXCLUDED.checkout_time, beds = EXCLUDED.beds, source = 'kaizen',
-        decided_by = EXCLUDED.decided_by, void_reason = NULL, imported_at = now()
+        decided_by = EXCLUDED.decided_by, void_reason = NULL, imported_at = now(),
+        needs_confirm = EXCLUDED.needs_confirm,
+        confirmed_by = COALESCE(EXCLUDED.confirmed_by, cleanings.confirmed_by),
+        confirmed_at = CASE WHEN EXCLUDED.confirmed_by IS NOT NULL AND cleanings.confirmed_by IS NULL THEN now() ELSE cleanings.confirmed_at END
       WHERE cleanings.checkout_on >= ${s.today}::date`;
   }
 
@@ -256,9 +269,14 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
        AND checkout_on >= ${s.today}::date AND checkout_on <= ${s.end}::date
        AND NOT (key = ANY(${onBoard}::text[]))` as { key: string }[];
   const known = new Map(s.reservations.map(r => [r.reservationId, r]));
+  const cancelled = new Map((s.boardInput.cancelled ?? []).map(r => [r.reservationId, r]));
   for (const { key } of stale) {
     const moved = known.get(key);
-    if (moved) {
+    // Cancelled mid-stay, its clean proposed before today: held for a person, not voided (§123).
+    const held = !moved ? cancelledFate(cancelled.get(key) as never) : null;
+    if (held) {
+      await holdForConfirm(sql, key, held.date, held.at);
+    } else if (moved) {
       // Extended or shortened: the clean moves with the checkout.
       await sql`UPDATE cleanings SET checkout_on = ${moved.departure}, imported_at = now()
                  WHERE account_id = 1 AND key = ${key}`;
@@ -272,6 +290,32 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
 }
 
 /**
+ * A recorded clean whose booking was cancelled on or after its arrival
+ * (§123): unpaid and unassigned until a person confirms it, moved to the
+ * proposed day, and saying whose it was. Never touches a row a person has
+ * already settled, and does nothing to a row already waiting.
+ */
+async function holdForConfirm(sql: SqlFn, key: string, date: string, cancelledLocal: string): Promise<boolean> {
+  const done = await sql`
+    UPDATE cleanings SET
+      needs_confirm = ${`Cancelled ${cancelledLocal} (New York), on or after the arrival — was the unit used, and who cleaned it?`}
+                      || COALESCE(' It was ' || cleaner || '''s clean.', ''),
+      assignment = 'tbd', cleaner = NULL, price = NULL, void_reason = NULL, checkout_on = ${date},
+      decided_by = 'cancelled after arrival — to confirm', imported_at = now()
+     WHERE account_id = 1 AND key = ${key} AND confirmed_by IS NULL AND needs_confirm IS NULL
+    RETURNING key`;
+  return done.length > 0;
+}
+
+/** A cancelled booking's clean to confirm, if it may have had one: its day and when it was cancelled. */
+function cancelledFate(c: { arrival: string; departure: string; cancellationDate?: string | null } | undefined) {
+  if (!c) return null;
+  const at = utcToLocal(c.cancellationDate, OPS_TZ);
+  const date = cancelledClean(c.arrival, c.departure, at);
+  return date && at ? { date, at } : null;
+}
+
+/**
  * The recent past, checked against Hostaway: rows already recorded for
  * the last `days` days whose booking was cancelled, whose checkout moved,
  * or which share their unit and day with another row. Run by the daily
@@ -280,18 +324,29 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
  */
 export async function reconcileRecent(sql: SqlFn, creds: HostawayCredentials, today: string, days = 45) {
   const from = addDays(today, -days);
-  const [rows, stays] = await Promise.all([
-    sql`SELECT key, unit_id, checkout_on::text AS day, void_reason FROM cleanings
+  const [rows, stays, cancelledStays] = await Promise.all([
+    sql`SELECT key, unit_id, checkout_on::text AS day, void_reason, confirmed_by, needs_confirm FROM cleanings
          WHERE account_id = 1 AND key ~ '^[0-9]+$' AND checkout_on >= ${from}::date AND checkout_on < ${today}::date` as
-      Promise<{ key: string; unit_id: string | null; day: string; void_reason: string | null }[]>,
-    fetchReservationsTouching(creds, from, today)
+      Promise<{ key: string; unit_id: string | null; day: string; void_reason: string | null;
+                confirmed_by: string | null; needs_confirm: string | null }[]>,
+    fetchReservationsTouching(creds, from, today),
+    fetchCancelledTouching(creds, from, today)
   ]);
   const byId = new Map(stays.map(r => [r.reservationId, r]));
-  const out = { cancelled: 0, moved: 0, restored: 0, sameDay: 0 };
+  const cancelledById = new Map(cancelledStays.map(r => [r.reservationId, r]));
+  const out = { cancelled: 0, moved: 0, restored: 0, sameDay: 0, toConfirm: 0 };
 
   for (const r of rows) {
     const stay = byId.get(r.key);
     if (!stay) {
+      // A person already settled it (§123): their word stands.
+      if (r.confirmed_by || r.needs_confirm) continue;
+      // Cancelled on or after arrival: maybe used — held for a person, not voided.
+      const held = cancelledFate(cancelledById.get(r.key));
+      if (held) {
+        if (await holdForConfirm(sql, r.key, held.date, held.at)) out.toConfirm++;
+        continue;
+      }
       if (!r.void_reason) {
         await sql`UPDATE cleanings SET void_reason = 'booking cancelled in Hostaway' WHERE account_id = 1 AND key = ${r.key}`;
         out.cancelled++;
@@ -372,7 +427,7 @@ export async function pushHostNotes(
   // perform this action for an archived listing", 403). Asking anyway
   // fails on every pass forever; the note stays in Kaizen, and the editor
   // says so.
-  const archived = new Set(s.rows.filter(r => !r.listed).map(r => r.resId));
+  const archived = new Set(s.rows.filter(r => !r.listed || r.cancelled).map(r => r.resId));
   const ids = [...new Set(s.rows.map(r => r.resId))]
     .filter(id => (!only || only.includes(id)) && !archived.has(id));
   const last = ids.length ? await sql`

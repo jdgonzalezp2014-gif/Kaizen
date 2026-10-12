@@ -62,19 +62,32 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   allow-list; a member row for the same address wins and roster save refuses a member's address.
   **Cleaners never see stars** — stripped from the payload, not just hidden.
 - Invoice = done, assigned, not-void cleans in the period — per cleaner: **weekly Saturday–Friday, paid
-  the next Saturday**, or monthly, paid the first Saturday after the month (assumed) — + approved extras on
+  the next Saturday**, or **monthly, the whole month, paid in the first days of the next** — + approved extras on
   them; void rows listed as "not paid" with the reason; unpriced counted, never $0.
 - Extras: cleaner, own clean, done, ≤60 days, ≤$500, optional receipts/photos (≤5, 15 MB, image or
   PDF) to Drive "Kaizen — crew extras" uploaded BEFORE the row is saved. Team approves (note
   optional) or denies (note required); only pending can be decided or withdrawn.
 - Flag by hand = a note the cleaner reads; does not change pay.
 - Schedule shown only with `crew_calendar` on (Setup → Crew pages): live board, `crew_calendar_days`
-  ahead. The team **confirms** it (Operations → Crew) = a snapshot; cleaners see "last confirmed"
+  ahead. **Exception (§123): what a person assigned (override, or a MAN- clean) shows at once**, calendar
+  off or not, and can be declined. The team **confirms** it (Operations → Crew) = a snapshot; cleaners see "last confirmed"
   and movements since (moved/extended, shortened, cancelled, declined, reassigned, new, time);
   after the snapshot's last day = "not confirmed yet".
 - Decline: only with the calendar on, only a clean the board gives them now → override `tbd`
   (`declined by <name>`) or, for MAN-, the record set tbd; `crew_declines` row; the star rule
   never hands it back to them; board shows "▲ declined by X — reason"; live mode pushes the Host Note.
+
+- **Cancellations (§123).** Hostaway's `cancellationDate` (taken as UTC → New York). Cancelled before
+  the arrival day → no clean (void, as before). On or after it → the guest may have used the unit:
+  the clean is **TBD, unpaid, `needs_confirm`**, proposed that day if cancelled before noon NY, else the
+  next, never past the original checkout. Board shows "▲ cancelled … — confirm who cleaned"; the rule
+  never assigns it; no Host Note pushed. A person settles it: on the board (an override) or Operations →
+  Crew → "Cancelled after arrival — confirm" (who cleaned + date + deep, or no clean needed) →
+  `confirmed_by`; reconcile and record never undo a settled row. `fetchCancelledTouching` skips iCal.
+  Only rows already in the record are held (older never-recorded cancellations are not back-filled).
+- **Corrections (§123):** Operations → Crew → a cleaner → "✎ Correct" on a PAST clean: deep/normal and
+  price (blank = the card's rate at the unit's size; no rate → must type one), note required and shown
+  to the cleaner (`edited_by/at`, `edit_note`). Today and ahead are changed on the board.
 
 ## Open items
 
@@ -99,4 +112,4 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 
 ## History
 
-§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122.
+§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123.

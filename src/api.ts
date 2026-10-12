@@ -450,8 +450,10 @@ export interface PendingExtra {
   unit: string; date: string; price: number | null;
   files?: { id: string; name: string; url: string }[];
 }
+/** A clean held after a cancellation on or after arrival (§123), waiting for a person. */
+export interface ToConfirm { key: string; unit: string; date: string; beds: number | null; deep: boolean; guest: string | null; note: string }
 export const getCrewAdmin = (cleaner?: string | null, period?: string | null) =>
-  call<{ ok: true; pending: PendingExtra[]; page: CrewPage | null; schedule: CrewSchedule } | Fail>(
+  call<{ ok: true; pending: PendingExtra[]; page: CrewPage | null; schedule: CrewSchedule; toConfirm: ToConfirm[] } | Fail>(
     `/api/crew-admin?${new URLSearchParams({ ...(cleaner ? { cleaner } : {}), ...(period ? { period } : {}) })}`);
 export const crewAdminAction = (body: Record<string, unknown>) =>
   call<{ ok: true } | Fail>('/api/crew-admin', { method: 'POST', body: JSON.stringify(body) });

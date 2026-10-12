@@ -63,13 +63,14 @@ type Ops = Awaited<ReturnType<typeof loadOps>>;
 async function scheduleNow(sql: SqlFn, s: Ops): Promise<ScheduleItem[]> {
   const items: ScheduleItem[] = s.rows
     .filter(r => r.kind === 'out' && r.assignment === 'assigned' && r.cleaner && r.date >= s.today)
-    .map(r => ({ key: r.resId, cleaner: r.cleaner!, date: r.date, unit: r.unit, time: r.time }));
+    .map(r => ({ key: r.resId, cleaner: r.cleaner!, date: r.date, unit: r.unit, time: r.time, byHand: r.manual.cleaner }));
   const manual = await sql`
     SELECT key, cleaner, checkout_on::text AS date, unit_name, coalesce(checkout_time, '') AS time FROM cleanings
      WHERE account_id = 1 AND key LIKE 'MAN-%' AND assignment = 'assigned' AND cleaner IS NOT NULL AND void_reason IS NULL
        AND checkout_on >= ${s.today}::date AND checkout_on <= ${s.end}::date` as
     { key: string; cleaner: string; date: string; unit_name: string; time: string }[];
-  return [...items, ...manual.map(m => ({ key: m.key, cleaner: m.cleaner, date: m.date, unit: m.unit_name, time: m.time }))];
+  // A manual clean is a person's decision by construction.
+  return [...items, ...manual.map(m => ({ key: m.key, cleaner: m.cleaner, date: m.date, unit: m.unit_name, time: m.time, byHand: true }))];
 }
 
 export interface ScheduleState {
@@ -162,17 +163,17 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
 
   const [rows, acc] = await Promise.all([
     sql`SELECT key, unit_name, checkout_on::text AS date, beds, deep, kind, price::float AS price, assignment,
-               void_reason, flag_note
+               void_reason, flag_note, edit_note
           FROM cleanings WHERE account_id = 1 AND cleaner = ${c.name}
            AND checkout_on >= ${from}::date AND checkout_on <= ${to}::date
          ORDER BY checkout_on, unit_name`,
     sql`SELECT crew_calendar, crew_calendar_days FROM accounts WHERE id = 1`
   ]) as [{ key: string; unit_name: string; date: string; beds: number | null; deep: boolean; kind: string | null;
-           price: number | null; assignment: string; void_reason: string | null; flag_note: string | null }[],
+           price: number | null; assignment: string; void_reason: string | null; flag_note: string | null; edit_note: string | null }[],
          { crew_calendar: boolean; crew_calendar_days: number }[]];
   const cleans: CrewClean[] = rows.map(r => ({
     key: r.key, unit: r.unit_name, date: r.date, beds: r.beds, deep: !!r.deep, kind: r.kind ?? 'checkout',
-    price: r.price, assignment: r.assignment, voidReason: r.void_reason, flagNote: r.flag_note
+    price: r.price, assignment: r.assignment, voidReason: r.void_reason, flagNote: r.flag_note, editNote: r.edit_note
   }));
   const keys = cleans.map(x => x.key);
   const extras = keys.length ? (await sql`
@@ -185,7 +186,8 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
   const enabled = !!acc[0]?.crew_calendar;
   const days = acc[0]?.crew_calendar_days ?? 14;
   const upcoming: CrewPage['upcoming'] = { enabled, days, through: null, rows: [], problem: null, confirmed: null, movements: [] };
-  if (enabled) {
+  // What a person assigned is shown even while the whole schedule is not (§123): it was checked by someone.
+  {
     try {
       const st = preloaded ?? await scheduleState(sql, encryptionKey, days);
       const s = st.s;
@@ -197,7 +199,7 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
          WHERE account_id = 1 AND key LIKE 'MAN-%' AND cleaner = ${c.name} AND checkout_on >= ${today}::date` as
         { key: string; beds: number | null; deep: boolean; kind: string; price: number | null }[];
       const man = new Map(manual.map(m => [m.key, m]));
-      upcoming.rows = st.now.filter(i => i.cleaner === c.name).map(i => {
+      upcoming.rows = st.now.filter(i => i.cleaner === c.name && (enabled || i.byHand)).map(i => {
         const r = outs.get(i.key), m = man.get(i.key);
         return r
           ? { key: i.key, date: i.date, unit: i.unit, beds: r.beds, time: r.time, deep: r.deep, sameDay: r.urgency === 'turnover',
@@ -205,7 +207,7 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
           : { key: i.key, date: i.date, unit: i.unit, beds: m?.beds ?? null, time: i.time, deep: !!m?.deep, sameDay: false,
               checkIn: null, price: m?.price ?? null, manual: m?.kind ?? 'extra' };
       }).sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time) || a.unit.localeCompare(b.unit));
-      if (st.confirm) {
+      if (enabled && st.confirm) {
         upcoming.confirmed = { at: st.confirm.at, through: st.confirm.through };
         upcoming.movements = scheduleMovements(c.name, st.confirm.snapshot, st.now, st.confirm.through, today, st.fate(c.name));
       }
@@ -339,7 +341,6 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     const key = String(body.key ?? '');
     const reason = String(body.reason ?? '').trim().slice(0, 300) || null;
     const [acc] = await sql`SELECT crew_calendar, crew_calendar_days FROM accounts WHERE id = 1` as { crew_calendar: boolean; crew_calendar_days: number }[];
-    if (!acc?.crew_calendar) return refuse(400, 'bad_request', 'The schedule is not shared yet, so there is nothing to decline.');
     if (key.startsWith('MAN-')) {
       const [m] = await sql`UPDATE cleanings SET assignment = 'tbd', cleaner = NULL, price = NULL, decided_by = ${`declined by ${me.name}`}
                              WHERE account_id = 1 AND key = ${key} AND cleaner = ${me.name} AND assignment = 'assigned'
@@ -352,9 +353,11 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     }
     // A checkout: only one the board gives them right now.
     const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
-    const s = await loadOps(sql, creds, { days: acc.crew_calendar_days });
+    const s = await loadOps(sql, creds, { days: acc?.crew_calendar_days ?? 14 });
     const row = s.rows.find(r => r.kind === 'out' && r.resId === key);
-    if (!row || row.assignment !== 'assigned' || row.cleaner !== me.name || row.date < today) {
+    // Only what their page shows them: the whole schedule once shared, else what a person assigned (§123).
+    if (!row || row.assignment !== 'assigned' || row.cleaner !== me.name || row.date < today ||
+        !(acc?.crew_calendar || row.manual.cleaner)) {
       return refuse(400, 'bad_request', 'That clean is not on your schedule any more.');
     }
     await sql`INSERT INTO turnover_overrides (account_id, reservation_id, assignment, cleaner, updated_by)

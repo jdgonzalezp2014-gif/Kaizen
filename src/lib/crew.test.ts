@@ -8,16 +8,16 @@ const clean = (key: string, date: string, extra: Partial<CrewClean> = {}): CrewC
 const extra = (id: string, key: string, status: CrewExtra['status'], amount = 20): CrewExtra =>
   ({ id, key, amount, description: 'laundry', status, decisionNote: null, decidedBy: null, createdAt: '2026-10-01' });
 
-test('a week runs Saturday to Friday and is paid the Saturday after; a month, the first Saturday after it', () => {
+test('a week runs Saturday to Friday and is paid the Saturday after; a month, in the first days of the next', () => {
   // 2026-10-11 is a Sunday; 2026-10-10 a Saturday; 2026-10-16 a Friday.
-  const week = { from: '2026-10-10', to: '2026-10-16', label: 'Oct 10 – Oct 16, 2026', payday: '2026-10-17' };
+  const week = { from: '2026-10-10', to: '2026-10-16', label: 'Oct 10 – Oct 16, 2026', payday: '2026-10-17', payNote: 'Saturday, Oct 17' };
   assert.deepEqual(periodOf('2026-10-11', 'weekly'), week);
   assert.deepEqual(periodOf('2026-10-10', 'weekly'), week);          // Saturday opens the week
   assert.deepEqual(periodOf('2026-10-16', 'weekly'), week);          // Friday closes it
   assert.equal(periodOf('2026-10-17', 'weekly').from, '2026-10-17');  // payday is the next week's first day
-  assert.deepEqual(periodOf('2026-10-11', 'monthly'), { from: '2026-10-01', to: '2026-10-31', label: 'Oct 2026', payday: '2026-11-07' });
-  assert.equal(periodOf('2026-01-15', 'monthly').payday, '2026-02-07');
-  assert.equal(periodOf('2026-02-15', 'monthly').payday, '2026-03-07');  // Feb 28 2026 is a Saturday → the next one
+  assert.deepEqual(periodOf('2026-10-11', 'monthly'),
+    { from: '2026-10-01', to: '2026-10-31', label: 'Oct 2026', payday: '2026-11-01', payNote: 'the first days of November' });
+  assert.equal(periodOf('2026-12-15', 'monthly').payNote, 'the first days of January');
 });
 
 test('recent periods go back without gaps, newest first', () => {

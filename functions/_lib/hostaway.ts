@@ -157,6 +157,8 @@ export interface HostawayReservation {
   guests?: number | null;
   /** Only to recognise the same guest booking again. Never sent to a browser. */
   phone?: string;
+  /** When it was cancelled, as Hostaway writes it ("YYYY-MM-DD HH:MM:SS", UTC) — cancelled ones only (§123). */
+  cancellationDate?: string | null;
 }
 
 export interface CalendarDay {
@@ -424,11 +426,27 @@ const RECENT_ACTIVITY_DAYS = 30;
 const addDaysIso = (d: DateStr, n: number): DateStr =>
   new Date(Date.parse(`${d}T00:00:00Z`) + n * 864e5).toISOString().slice(0, 10);
 
-async function pagedReservations(creds: HostawayCredentials, query: string): Promise<HostawayReservation[]> {
-  return withToken(creds, token => pagedReservationsWith(token, query));
+async function pagedReservations(creds: HostawayCredentials, query: string,
+                                  keep: (status: string) => boolean = reservationCounts): Promise<HostawayReservation[]> {
+  return withToken(creds, token => pagedReservationsWith(token, query, keep));
 }
 
-async function pagedReservationsWith(token: string, query: string): Promise<HostawayReservation[]> {
+/**
+ * Cancelled bookings touching [from, to], with when they were cancelled —
+ * iCal mirrors left out (their blocks are re-made and cancelled daily). A
+ * booking cancelled on or after its arrival day may have used the unit
+ * (§123), so the clean is held for a person to confirm.
+ */
+export async function fetchCancelledTouching(
+  creds: HostawayCredentials, from: DateStr, to: DateStr
+): Promise<HostawayReservation[]> {
+  return (await pagedReservations(creds, `&departureStartDate=${from}&arrivalEndDate=${to}`,
+                                  st => String(st).toLowerCase() === 'cancelled'))
+    .filter(r => r.departure >= from && r.arrival <= to && !/ical/i.test(r.channel));
+}
+
+async function pagedReservationsWith(token: string, query: string,
+                                     keep: (status: string) => boolean = reservationCounts): Promise<HostawayReservation[]> {
 
   // The first page reports the total, so the rest are fetched together
   // rather than discovered one round trip at a time.
@@ -451,7 +469,7 @@ async function pagedReservationsWith(token: string, query: string): Promise<Host
   }
 
   return raw
-    .filter(r => reservationCounts(String(r.status ?? '')))
+    .filter(r => keep(String(r.status ?? '')))
     .map(r => {
       const arrival = asDate(r.arrivalDate ?? r.checkInDate ?? r.startDate);
       const departure = asDate(r.departureDate ?? r.checkOutDate ?? r.endDate);
@@ -475,7 +493,8 @@ async function pagedReservationsWith(token: string, query: string): Promise<Host
         agreement: (r.reservationAgreement === 'signed' ? 'signed' : r.reservationAgreement ? 'not_signed' : null) as 'signed' | 'not_signed' | null,
         idVerified: Number(r.isGuestIdentityVerified) === 1 || Number(r.isGuestVerifiedByGovernmentId) === 1,
         guests: Number(r.numberOfGuests ?? r.adults) || null,
-        phone: String(r.phone ?? '')
+        phone: String(r.phone ?? ''),
+        cancellationDate: r.cancellationDate ? String(r.cancellationDate) : null
       };
     })
     .filter(r => r.arrival && r.departure && r.listingId);

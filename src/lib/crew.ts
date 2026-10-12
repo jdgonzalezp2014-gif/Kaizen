@@ -13,8 +13,10 @@ export type InvoicePeriod = 'weekly' | 'monthly';
 
 export interface Period {
   from: DateStr; to: DateStr; label: string;
-  /** The Saturday it is paid: the day after a week ends, or the first Saturday after a month. */
+  /** When it is paid: the Saturday after a week; a month, from the first of the next one. */
   payday: DateStr;
+  /** The same, in words: "Saturday, Oct 17" or "the first days of November". */
+  payNote: string;
 }
 
 export interface CrewClean {
@@ -27,6 +29,8 @@ export interface CrewClean {
   voidReason: string | null;
   /** Flagged by hand by the team; does not change the pay. */
   flagNote: string | null;
+  /** Corrected by the team after the fact (deep, price), and why (§123). */
+  editNote?: string | null;
 }
 
 export type ExtraStatus = 'pending' | 'approved' | 'denied' | 'cancelled';
@@ -41,21 +45,22 @@ const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct
 const md = (d: DateStr) => `${MON[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}`;
 
 const dow = (d: DateStr) => new Date(`${d}T12:00:00Z`).getUTCDay();   // 0 = Sunday, 6 = Saturday
-/** The first Saturday after a day. */
-const saturdayAfter = (d: DateStr) => addDays(d, ((6 - dow(d) + 7) % 7) || 7);
+const MONTH = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 /**
  * The invoice period holding a day. Kaizen's crew week runs Saturday to
- * Friday and is paid the next day, Saturday; a monthly invoice is paid the
- * first Saturday after the month ends.
+ * Friday and is paid the next day, Saturday; a monthly invoice covers the
+ * whole month and is paid in the first days of the next — no fixed day.
  */
 export function periodOf(d: DateStr, kind: InvoicePeriod): Period {
   if (kind === 'weekly') {
     const from = addDays(d, -((dow(d) - 6 + 7) % 7)), to = addDays(from, 6);
-    return { from, to, label: `${md(from)} – ${md(to)}, ${to.slice(0, 4)}`, payday: addDays(to, 1) };
+    const payday = addDays(to, 1);
+    return { from, to, label: `${md(from)} – ${md(to)}, ${to.slice(0, 4)}`, payday, payNote: `Saturday, ${md(payday)}` };
   }
-  const from = startOfMonth(d), to = endOfMonth(d);
-  return { from, to, label: `${MON[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`, payday: saturdayAfter(to) };
+  const from = startOfMonth(d), to = endOfMonth(d), payday = addDays(to, 1);
+  return { from, to, label: `${MON[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`, payday,
+           payNote: `the first days of ${MONTH[Number(payday.slice(5, 7)) - 1]}` };
 }
 
 /** The current period and the `n - 1` before it, newest first. */
@@ -128,7 +133,11 @@ export const EXTRA_MAX_AGE_DAYS = 60;
 /* ── the confirmed schedule and what moved since (§122) ───────────── */
 
 /** One assigned clean, as the schedule holds it. */
-export interface ScheduleItem { key: string; cleaner: string; date: DateStr; unit: string; time: string }
+export interface ScheduleItem {
+  key: string; cleaner: string; date: DateStr; unit: string; time: string;
+  /** Assigned by a person — shown to the cleaner even before the whole schedule is (§123). */
+  byHand?: boolean;
+}
 
 /** What became of a confirmed clean that is no longer on this cleaner's schedule. */
 export type Fate =

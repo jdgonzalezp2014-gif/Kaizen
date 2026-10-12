@@ -1767,3 +1767,4 @@ button.sop-num { cursor: pointer; }
 }
 .crew-row .ops-flag { margin-left: 6px; }
 .crew-moves { margin: 6px 0 10px; padding-left: 18px; }
+.crew-decide input[type=date] { flex: 0 0 auto; width: auto; }

@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assign, blockForReservation, pickByStars, requiredStars, typicalNightly, zoneOf, buildBoard, eligibleInspectors, inspectionPanel, inspectionTier,
+  assign, blockForReservation, cancelledClean, pickByStars, utcToLocal, requiredStars, typicalNightly, zoneOf, buildBoard, eligibleInspectors, inspectionPanel, inspectionTier,
   mergeHostNote, proposeInspections, rateFor, sameGuest, summarize, withDefaults,
   type Cleaner, type OpsCleaning, type OpsListing, type OpsReservation, type OpsRules, type Override
 } from './operations.ts';
@@ -409,4 +409,42 @@ test('a cleaner who declined a clean is not handed it back by the rule (§122)',
     declines: new Map([['a', [{ cleaner: 'Michelle', reason: 'sick' }]]]) });
   assert.equal(out(r, 'a').cleaner, 'Veronica');
   assert.deepEqual(out(r, 'a').declined, [{ cleaner: 'Michelle', reason: 'sick' }]);
+});
+
+/* ── cancellations (§123) ── */
+
+test('Hostaway\'s UTC cancellation time, in New York', () => {
+  assert.equal(utcToLocal('2026-10-10 04:18:13', 'America/New_York'), '2026-10-10 00:18');
+  assert.equal(utcToLocal('2026-10-10 18:06:25', 'America/New_York'), '2026-10-10 14:06');
+  assert.equal(utcToLocal('', 'America/New_York'), null);
+});
+
+test('a cancelled booking: no clean before arrival; that day before noon, the next after; never past checkout', () => {
+  assert.equal(cancelledClean('2026-10-09', '2026-10-11', '2026-10-08 22:00'), null);
+  assert.equal(cancelledClean('2026-10-09', '2026-10-11', '2026-10-10 00:18'), '2026-10-10');
+  assert.equal(cancelledClean('2026-10-09', '2026-10-11', '2026-10-09 14:06'), '2026-10-10');
+  assert.equal(cancelledClean('2026-10-09', '2026-10-11', '2026-10-11 15:00'), '2026-10-11');
+});
+
+test('a booking cancelled after arrival is a TBD clean for a person, never assigned by a rule', () => {
+  const cancelled = [res('c', '1', '2026-09-22', '2026-09-28', 600, 6, { cancelledAt: '2026-09-24 09:30' }),
+                     res('early', '2', '2026-09-26', '2026-09-28', 300, 2, { cancelledAt: '2026-09-20 10:00' })];
+  for (const assignRule of ['tiers', 'stars'] as const) {
+    const r = buildBoard({ today: TODAY, windowDays: 10, listings: L, reservations: [], roster: ROSTER, rules: RULES,
+      overrides: new Map(), notes: new Map(), inspections: [], assignRule, cancelled });
+    const o = out(r, 'c');
+    assert.equal(o.date, '2026-09-24');
+    assert.equal(o.assignment, 'tbd');
+    assert.equal(o.cleaner, null);
+    assert.equal(o.cancelled, '2026-09-24 09:30');
+    assert.equal(o.nights, 2);
+    assert.match(o.auto.reason, /cancelled .* confirm/);
+    assert.equal(r.some(x => x.resId === 'early'), false);   // cancelled before arrival: no clean
+    assert.equal(r.some(x => x.resId === 'c' && x.kind === 'in'), false);
+  }
+  const ov = new Map<string, Override>([['c', { assignment: 'assigned', cleaner: 'Michelle', deep: null, checkoutTime: null, checkinTime: null }]]);
+  const r = buildBoard({ today: TODAY, windowDays: 10, listings: L, reservations: [], roster: ROSTER, rules: RULES,
+    overrides: ov, notes: new Map(), inspections: [], assignRule: 'stars', cancelled });
+  assert.equal(out(r, 'c').cleaner, 'Michelle');
+  assert.equal(out(r, 'c').price, 55);
 });

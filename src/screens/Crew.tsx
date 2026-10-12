@@ -14,7 +14,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import {
   crewAction, crewAdminAction, crewUpload, getCrew, getCrewAdmin,
-  type CrewPage, type CrewSchedule, type CrewUpcoming, type PendingExtra
+  type CrewPage, type CrewSchedule, type CrewUpcoming, type PendingExtra, type ToConfirm
 } from '../api.ts';
 import type { CrewClean, CrewExtra } from '../lib/crew.ts';
 import { isBilled, movementText, EXTRA_MAX_AMOUNT, type Movement } from '../lib/crew.ts';
@@ -72,10 +72,12 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
   const [pending, setPending] = useState<PendingExtra[]>([]);
   const [page, setPage] = useState<CrewPage | null>(null);
   const [schedule, setSchedule] = useState<CrewSchedule | null>(null);
+  const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
   const [confirming, setConfirming] = useState(false);
   const [err, setErr] = useState('');
   const load = () => getCrewAdmin(name || null, period)
-    .then(r => { if (r.ok) { setPending(r.pending); setPage(r.page); setSchedule(r.schedule); setErr(''); } else setErr(r.message ?? 'Could not load.'); })
+    .then(r => { if (r.ok) { setPending(r.pending); setPage(r.page); setSchedule(r.schedule); setToConfirm(r.toConfirm ?? []); setErr(''); }
+                 else setErr(r.message ?? 'Could not load.'); })
     .catch(e => setErr(String(e)));
   useEffect(() => { void load(); }, [name, period]);
   useEffect(() => { if (name) history.replaceState(null, '', `#crew/${encodeURIComponent(name)}`); }, [name]);
@@ -83,6 +85,16 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
   return (
     <>
       {err && <p className="banner error">{err}</p>}
+      {toConfirm.length > 0 && (
+        <div className="card">
+          <h2>Cancelled after arrival — confirm <span className="chan-tag">{toConfirm.length}</span></h2>
+          <p className="note">These bookings were cancelled on or after their arrival day, so the guest may have used the unit.
+            Each clean waits here — unpaid, unassigned — until someone says who cleaned it, or that no clean was needed.</p>
+          <div className="crew-list">
+            {toConfirm.map(t => <ConfirmRow key={t.key} t={t} roster={roster} canEdit={canEdit} onDone={load} />)}
+          </div>
+        </div>
+      )}
       {schedule && (
         <div className="card">
           <h2>Schedule shared with cleaners <span className={schedule.enabled ? 'ok-tag' : 'chan-tag'}>{schedule.enabled ? 'on' : 'off'}</span></h2>
@@ -138,6 +150,40 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
   );
 }
 
+/** One held clean: who cleaned it and when — or no clean. */
+function ConfirmRow({ t, roster, canEdit, onDone }: { t: ToConfirm; roster: Cleaner[]; canEdit: boolean; onDone: () => void }) {
+  const [cleaner, setCleaner] = useState('');
+  const [date, setDate] = useState(t.date);
+  const [deep, setDeep] = useState(t.deep);
+  const [msg, setMsg] = useState('');
+  const go = async (who: string | null) => {
+    const r = await crewAdminAction({ action: 'confirmClean', key: t.key, cleaner: who, date, deep })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
+    onDone();
+  };
+  return (
+    <div className="crew-row">
+      <div><b>{t.unit}</b>{t.beds ? ` · ${t.beds}BR` : ''}<div className="sub-n">{t.guest ?? ''}</div></div>
+      <div className="breach">▲ {t.note}</div>
+      <div />
+      {canEdit && (
+        <div className="crew-decide">
+          <select value={cleaner} onChange={e => setCleaner(e.target.value)}>
+            <option value="">Who cleaned it?</option>
+            {roster.filter(c => c.active).map(c => <option key={c.name} value={c.name}>{c.name}</option>)}
+          </select>
+          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+          <label className="check inline"><input type="checkbox" checked={deep} onChange={e => setDeep(e.target.checked)} /> deep</label>
+          <button className="small" disabled={!cleaner} onClick={() => void go(cleaner)}>✓ Cleaned</button>
+          <button className="small secondary" onClick={() => void go(null)}>No clean needed</button>
+        </div>
+      )}
+      {msg && <div className="breach">{msg}</div>}
+    </div>
+  );
+}
+
 function Decide({ id, onDone }: { id: string; onDone: () => void }) {
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState('');
@@ -176,7 +222,7 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload }
         <h2>{team ? page.cleaner.name : `Hi, ${page.cleaner.name}`}
           {team && page.cleaner.stars != null && <span className="chan-tag" title="Only the team sees this">★{page.cleaner.stars}</span>}
           {!page.cleaner.active && <span className="chan-tag">inactive</span>}</h2>
-        <label>Invoice period ({page.cleaner.invoicePeriod === 'weekly' ? 'weekly, Saturday to Friday' : 'monthly'} — paid on Saturdays)
+        <label>Invoice period ({page.cleaner.invoicePeriod === 'weekly' ? 'weekly, Saturday to Friday, paid Saturday' : 'monthly, paid in the first days of the next month'})
           <select value={period.from} onChange={e => onPeriod(e.target.value)}>
             {page.periods.map(p => <option key={p.from} value={p.from}>{p.label}</option>)}
           </select></label>
@@ -212,9 +258,15 @@ function Upcoming({ page, act, reload }: { page: CrewPage; act?: Act; reload: ()
   return (
     <div className="card no-print">
       <h2>Coming up</h2>
-      {!u.enabled ? <p className="note">○ The schedule is not shared here yet. The team turns it on once it has been checked.</p>
-        : u.problem ? <p className="banner warn">▲ {u.problem}</p>
+      {u.problem ? <p className="banner warn">▲ {u.problem}</p>
+        : !u.enabled && !u.rows.length ? <p className="note">○ The schedule is not shared here yet. The team turns it on once it has been checked.</p>
         : !u.rows.length ? <p className="note">Nothing assigned to you through {u.through ? day(u.through) : 'the next days'}.</p>
+        : !u.enabled ? (
+          <>
+            <p className="note">○ The full schedule is not shared yet. These were assigned to you by the team:</p>
+            <div className="crew-list">{u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload} />)}</div>
+          </>
+        )
         : (
           <>
             {u.confirmed
@@ -280,6 +332,8 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
 }) {
   const [adding, setAdding] = useState(false);
   const [flagging, setFlagging] = useState(false);
+  const [correcting, setCorrecting] = useState(false);
+  const [deep, setDeep] = useState(c.deep);
   const [amount, setAmount] = useState('');
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
@@ -290,7 +344,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
   const done = (r: { ok: boolean; message?: string }) => {
     setBusy(false);
     if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
-    setAdding(false); setFlagging(false); setAmount(''); setText(''); setFiles([]); reload();
+    setAdding(false); setFlagging(false); setCorrecting(false); setAmount(''); setText(''); setFiles([]); reload();
   };
   const send = async (body: Record<string, unknown>) => {
     setMsg(''); setBusy(true);
@@ -319,6 +373,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
           : billed ? <span>✓ {pay(c.price)}</span>
           : <span className="note">○ not assigned to you any more</span>}
         {c.flagNote && <div className="breach">⚑ Flagged: {c.flagNote}</div>}
+        {c.editNote && <div className="sub-n">✎ Corrected by the team: {c.editNote}</div>}
         {extras.map(e => (
           <div key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>
             Extra +{money2(e.amount)} — {e.description} · {EXTRA_WORD[e.status]}
@@ -335,6 +390,8 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
       <div className="crew-actions no-print">
         {mode === 'cleaner' && billed && c.date >= extraFrom && !adding &&
           <button className="link tiny" onClick={() => setAdding(true)}>+ Add an extra</button>}
+        {mode === 'team' && canEdit && c.date < today && !correcting &&
+          <button className="link tiny" onClick={() => { setCorrecting(true); setDeep(c.deep); setAmount(c.price == null ? '' : String(c.price)); }}>✎ Correct</button>}
         {mode === 'team' && canEdit && !flagging && (c.flagNote
           ? <button className="link tiny" onClick={() => void send({ action: 'unflag', key: c.key })}>Remove flag</button>
           : <button className="link tiny" onClick={() => setFlagging(true)}>⚑ Flag</button>)}
@@ -348,6 +405,18 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
           <button className="small" disabled={busy || !(Number(amount) > 0) || Number(amount) > EXTRA_MAX_AMOUNT || !text.trim()}
                   onClick={() => void sendExtra()}>{busy ? 'Sending…' : 'Send to the team'}</button>
           <button className="small secondary" onClick={() => setAdding(false)}>Cancel</button>
+        </div>
+      )}
+      {correcting && (
+        <div className="crew-decide">
+          <select value={deep ? 'deep' : 'normal'} onChange={e => setDeep(e.target.value === 'deep')}>
+            <option value="normal">normal clean</option><option value="deep">deep clean</option></select>
+          <input className="amt" inputMode="decimal" value={amount} placeholder="rate card" onChange={e => setAmount(e.target.value)} />
+          <input value={text} maxLength={500} placeholder="Why (the cleaner reads it), e.g. deep was not done" onChange={e => setText(e.target.value)} />
+          <button className="small" disabled={busy || !text.trim()}
+                  onClick={() => void send({ action: 'editClean', key: c.key, deep, price: amount, note: text })}>Save correction</button>
+          <button className="small secondary" onClick={() => setCorrecting(false)}>Cancel</button>
+          <span className="note">Blank price = the cleaner's rate for the new type.</span>
         </div>
       )}
       {flagging && (
@@ -372,10 +441,10 @@ function InvoiceView({ page }: { page: CrewPage }) {
           <div>From: <b>{page.cleaner.name}</b></div>
           <div>To: <b>Kaizen Guest Properties</b></div>
           <div>Period: {inv.period.label} ({inv.period.from} – {inv.period.to})</div>
-          <div>Payment date: <b>{day(inv.period.payday)}</b></div></div>
+          <div>Paid: <b>{inv.period.payNote}</b></div></div>
         <button className="secondary no-print" onClick={() => window.print()}>Print / save as PDF</button>
       </div>
-      {inv.open && <p className="note">○ This period is still open — cleans done by {day(inv.period.to)} are added. Paid {day(inv.period.payday)}.</p>}
+      {inv.open && <p className="note">○ This period is still open — cleans done by {day(inv.period.to)} are added. Paid {inv.period.payNote}.</p>}
       <table className="units compact">
         <thead><tr><th>Date</th><th>Unit</th><th>Work</th><th className="n">Amount</th></tr></thead>
         <tbody>

@@ -37,6 +37,8 @@ export interface OpsReservation {
   idVerified?: boolean;
   /** Only used to recognise the same guest booking again. Never shown. */
   phone?: string;
+  /** A cancelled booking (§123): when, in New York time ("YYYY-MM-DD HH:MM"). */
+  cancelledAt?: string | null;
 }
 
 export type Assignment = 'assigned' | 'tbd' | 'not_needed';
@@ -205,6 +207,12 @@ export interface BoardRow {
   stars: StarDecision | null;
   /** Cleaners who turned this clean down on their page (§122), latest last. */
   declined: { cleaner: string; reason: string | null }[];
+  /**
+   * Cancelled on or after its arrival day (§123), New York time: the unit
+   * may have been used. Held as TBD for a person to confirm; never assigned
+   * by the rule.
+   */
+  cancelled: string | null;
   cleaner: string | null;
   assignment: Assignment | 'unknown';
   price: number | null;
@@ -317,6 +325,39 @@ export function assign(
     : next ? `next booking is ${next.gapDays} days out, beyond the ${r.nextResValueHorizonDays}-day horizon`
     : 'nothing booked next';
   return pick('mid', reason);
+}
+
+/* ── cancellations (§123) ─────────────────────────────────────────── */
+
+/** Cancelled before noon, the unit is cleaned that day; later, the next. */
+export const CANCEL_SAME_DAY_BEFORE_HOUR = 12;
+
+/**
+ * Hostaway's cancellation timestamp ("YYYY-MM-DD HH:MM:SS", taken as UTC)
+ * in a time zone, as "YYYY-MM-DD HH:MM". Null when it cannot be read.
+ */
+export function utcToLocal(ts: string | null | undefined, timeZone: string): string | null {
+  const m = /^(\d{4}-\d{2}-\d{2})[ T](\d{2}):(\d{2})/.exec(String(ts ?? ''));
+  if (!m) return null;
+  const at = new Date(`${m[1]}T${m[2]}:${m[3]}:00Z`);
+  if (Number.isNaN(at.getTime())) return null;
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }).formatToParts(at).map(x => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day} ${p.hour}:${p.minute}`;
+}
+
+/**
+ * A cancelled booking's clean, if it may have one: cancelled ON OR AFTER
+ * the arrival day — the guest may have come — proposed that day when
+ * before noon, else the next, never past the original checkout. Before
+ * the arrival day nobody came: null, no clean.
+ */
+export function cancelledClean(arrival: DateStr, departure: DateStr, cancelledLocal: string | null): DateStr | null {
+  if (!cancelledLocal) return null;
+  const day = cancelledLocal.slice(0, 10), hour = Number(cancelledLocal.slice(11, 13));
+  if (day < arrival) return null;
+  const date = hour < CANCEL_SAME_DAY_BEFORE_HOUR ? day : addDays(day, 1);
+  return date > departure ? departure : date;
 }
 
 /* ── the star rule (§121) ─────────────────────────────────────────── */
@@ -519,6 +560,8 @@ export function buildBoard(input: {
   assignRule?: AssignRule;
   /** Cleans turned down by a cleaner (§122), by reservation. */
   declines?: Map<string, { cleaner: string; reason: string | null }[]>;
+  /** Cancelled bookings, each with `cancelledAt` (§123); those cancelled on or after arrival get a clean to confirm. */
+  cancelled?: OpsReservation[];
 }): BoardRow[] {
   const { today, windowDays, listings, reservations, roster, rules, overrides, notes, inspections } = input;
   const end = addDays(today, windowDays);
@@ -537,23 +580,30 @@ export function buildBoard(input: {
     (byUnit.get(x.listingId) ?? []).find(y => y.reservationId !== x.reservationId && y.arrival >= x.departure) ?? null;
 
   const rows: BoardRow[] = [];
-  for (const x of reservations) {
+  // A booking cancelled on or after its arrival day leaves on the proposed
+  // day instead of its original checkout (§123).
+  const cancelledStays = (input.cancelled ?? []).flatMap(x => {
+    const d = cancelledClean(x.arrival, x.departure, x.cancelledAt ?? null);
+    return d ? [{ ...x, departure: d }] : [];
+  });
+  for (const x of [...reservations, ...cancelledStays]) {
     const l = listing.get(x.listingId);
     if (!l) continue;
     const ov = overrides.get(x.reservationId);
+    const cx = x.cancelledAt ?? null;
     const base: BoardRow = {
       date: x.arrival, kind: 'in', resId: x.reservationId, unitId: l.id, unit: l.name,
       beds: l.bedrooms, guest: x.guestName ?? '', docName: x.docName || x.guestName || 'Guest', agreement: x.agreement ?? null, idVerified: !!x.idVerified, guests: x.guests ?? null, nights: x.nights,
       channel: x.channel, total: x.totalPaid, time: '', note: '',
       next: null, auto: { cleaner: null, tier: 'none', reason: '' }, stars: null,
-      declined: input.declines?.get(x.reservationId) ?? [],
+      declined: input.declines?.get(x.reservationId) ?? [], cancelled: cx,
       cleaner: null, assignment: 'unknown', price: null, deep: false, urgency: null,
       manual: { cleaner: false, deep: false, time: false },
       inspection: { key: 'none', reason: '' }, sheet: null, inDailyFile: false, differs: [],
       sameDayOf: null, listed: l.active, preppedBy: null
     };
 
-    if (x.arrival >= today && x.arrival <= end) {
+    if (!cx && x.arrival >= today && x.arrival <= end) {
       rows.push({ ...base, time: ov?.checkinTime || DEFAULT_CHECKIN_TIME,
                   manual: { ...base.manual, time: !!ov?.checkinTime },
                   note: notes.get(`${x.reservationId}|checkin`) ?? '' });
@@ -570,11 +620,15 @@ export function buildBoard(input: {
       longVacancy: gapDays >= rules.longVacancyDays
     } : null;
 
-    const auto = assign(x.nights, next, roster, rules);
+    // A cancelled stay is never assigned by a rule: a person confirms it was cleaned (§123).
+    const stayed = cx ? daysBetween(x.arrival, x.departure) : x.nights;
+    const auto = cx
+      ? { cleaner: null, tier: 'none' as Tier, reason: `the booking was cancelled ${cx}, on or after its arrival — confirm whether the unit was used and who cleaned it` }
+      : assign(x.nights, next, roster, rules);
     const manualCleaner = !!ov?.assignment;
     const assignment: Assignment = ov?.assignment ?? (auto.cleaner ? 'assigned' : 'tbd');
     const cleaner = assignment === 'assigned' ? (manualCleaner ? ov!.cleaner : auto.cleaner) : null;
-    const deep = ov?.deep ?? (x.nights >= rules.deepCleanNights);
+    const deep = ov?.deep ?? (stayed >= rules.deepCleanNights);
     const price = assignment === 'assigned' ? rateFor(roster, cleaner, l.bedrooms, deep) : null;
 
     const sameDayIn = reservations.some(y => y.listingId === x.listingId && y.arrival === x.departure &&
@@ -588,7 +642,7 @@ export function buildBoard(input: {
       ...base, date: x.departure, kind: 'out',
       time: ov?.checkoutTime || DEFAULT_CHECKOUT_TIME,
       note: notes.get(`${x.reservationId}|checkout`) ?? '',
-      next, auto, cleaner, assignment, deep, price, urgency,
+      nights: stayed, next, auto, cleaner, assignment, deep, price, urgency,
       manual: { cleaner: manualCleaner, deep: ov?.deep != null, time: !!ov?.checkoutTime },
       sheet, inDailyFile: !!sheet, differs: []
     });
@@ -677,9 +731,10 @@ export function assignByStars(rows: BoardRow[], roster: Cleaner[], rules: OpsRul
       const pick = pickByStars(req.stars, zoneOf(r.unit), r.beds, r.deep, roster, load,
                                new Set(r.declined.map(d => d.cleaner)));
       r.stars = { required: req.stars, why: req.why, ...pick };
-      if (apply) r.auto = { cleaner: pick.cleaner, tier: 'none', reason: `★${req.stars} needed (${req.why}) — ${pick.reason}` };
-      // A row a person decided is shown what the rule would say, and takes no slot for it.
-      if (r.manual.cleaner) continue;
+      if (apply && !r.cancelled) r.auto = { cleaner: pick.cleaner, tier: 'none', reason: `★${req.stars} needed (${req.why}) — ${pick.reason}` };
+      // A row a person decided is shown what the rule would say, and takes no slot for it;
+      // a cancelled stay waits for a person (§123).
+      if (r.manual.cleaner || r.cancelled) continue;
       if (pick.cleaner) load.set(pick.cleaner, (load.get(pick.cleaner) ?? 0) + 1);
       if (!apply) continue;
       r.assignment = pick.cleaner ? 'assigned' : 'tbd';
