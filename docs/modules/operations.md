@@ -20,12 +20,16 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   `src/lib/operations.ts` (star rule: zoneOf, requiredStars, pickByStars,
   assignByStars, typicalNightly; old tier rule `assign`; rateFor, sameGuest,
   oneCleanPerUnitDay, mergeHostNote, proposeInspections, hostawayReservationUrl), `dates.ts`.
-- Inventory and the field (§134): `src/screens/Inventory.tsx` (Operations → Inventory),
-  `src/components/FieldReport.tsx` (supplies/problems, one question per screen) and `CleanSteps.tsx`
-  (photos before/after, done/reopen) — both on each clean's "Options…" (crew page) and on `/report`
-  (`src/screens/Report.tsx`, the helpers' page); server `functions/_lib/clean-record.ts`;
+- Inventory and the field (§134): `src/screens/Inventory.tsx` (Operations → Inventory; `InventorySetup` =
+  Setup → Inventory), `src/components/FieldReport.tsx` (report or ask, one question per screen),
+  `CleanSteps.tsx` (the 4 steps) and `PhotoPicker.tsx` (camera / gallery, shrink) — used by the cleaner's
+  page (`CleanCard`, `PastCard`, `TodayCleans`, `QuickActions` in `src/screens/Crew.tsx`) and by `/report`
+  (`src/screens/Report.tsx`, the helpers' page); server `functions/_lib/clean-record.ts` (records,
+  photos to Drive, done/reopen), `clean-slack.ts` and `crew-slack.ts` (→ slack module);
   API `inventory.ts` (GET `operations`, POST `operations.edit`), `inventory-items.ts` (`operations.setup`),
-  `report-link.ts` (SELF_AUTHENTICATING, `X-Report-Token`); server lib `functions/_lib/inventory.ts`;
+  `report-link.ts` (SELF_AUTHENTICATING, `X-Report-Token`; GET the clean, POST photo/taken/nothing/
+  done/reopened/problem/request/missing/purchase), the crew handler's `cleanLink`/`cleanPhoto`/`cleanTaken`/
+  `cleanNothing`/`cleanMark`/`supply`/`problem`/`request` actions and `GET ?photo=`; server lib `functions/_lib/inventory.ts`;
   pure `src/lib/inventory.ts` (stockLevels, reconcile, perClean, toOrder, toBuy, orderList).
 - Script: `scripts/whatsapp-cleanings.mjs` (crew chat history, one-off).
 
@@ -37,9 +41,10 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 `link_token_hash`), `accounts.assign_rule`, `accounts.crew_calendar(_days)`, `crew_extras_folder`,
 `cleanings.flag_note/flagged_by/at`, `cleaning_extras` (+ `cleaning_extra_files`), `crew_declines`,
 `crew_schedule_confirms` (snapshot jsonb), `accounts.ops_rules` / `ops_mode`, `stay_notes`, `inspections`,
-`extra_inspectors`, `host_note_pushes`, `inventory_items`, `inventory_moves` (§134), `cleaners.report_token_enc/hash`,
-`accounts.field_reports_folder`, `clean_links` (058), `clean_records` / `clean_photos` / `clean_marks`,
-`accounts.clean_photos_folder` (059). (057's `cleaners.report_token_*` were dropped in 058.)
+`extra_inspectors`, `host_note_pushes`, `inventory_items`, `inventory_moves` (057; kind `taken` 061),
+`accounts.field_reports_folder`, `clean_links` (058), `clean_records` (+ `supplies_at/by/none` 061) / `clean_photos` /
+`clean_marks`, `accounts.clean_photos_folder` (059), `clean_slack_posts` (060). (057's `cleaners.report_token_*`
+were dropped in 058.)
 
 **Setup by section (§134, owner):** ⚙ General (who decides, daily-file import, Hostaway tasks mirror,
 guest documents) · 👥 Cleaners & pay (roster and rates, levels, assignment rules) · 🧹 Crew pages ·
@@ -206,9 +211,8 @@ key had no SOPs.
   next 14 days) + the item's minimum − storage stock, only once the storage is counted. A counted house
   short of its own minimum also gets a line (`toOrder(null) = 0`: never-counted is not guessed — 273 lines
   on the first test). An order = one to-do with a sub-task per line, mirrored like any work.
-- **Per clean, not per team (§134, owner):** each clean of the cleaner's (Coming up; Cleans of the last
-  3 days) has one native "Options…" list: 📷 Photos & mark as done · what I took · bought · missing ·
-  wrong · need · 📤 send the link to my helper. The helper link (`clean_links`, token encrypted to be
+- **Per clean, not per team (§134, owner):** everything a cleaner does is on one clean (see "The cleaner's
+  page" below), and the helper's link too. The helper link (`clean_links`, token encrypted to be
   shared again, `/report#t=…`) is for THAT clean: unit and key come from the link, never the page; it
   closes 2 days after the clean, when the clean is voided or given to another cleaner, or the cleaner is
   inactive. Several helpers can use one link; each gives a name once (localStorage), reports are
@@ -233,13 +237,13 @@ key had no SOPs.
   4 ✅ done. Done is refused until 2 and 3 are there. "What I took" is no longer in the reports menu.
   The helper page (`/report`): the header IS the clean (unit, day small under it; EN/ES beside ☾), then two
   big tabs "🧽 My clean" / "🙋 Report or ask" so both show without scrolling. Reports in the owner's
-  order: ⚠️ wrong · 🙋 need · ❓ missing · 🛒 bought (also in the cleaner's "Options…"). A link is per clean,
+  order: ⚠️ wrong · 🙋 need · ❓ missing · 🛒 bought (the same in the cleaner's "Report or ask"). A link is per clean,
   not per person: several helpers use the same one, each with their name. A phone keeps every clean it
   was sent while the link lasts (`localStorage.reportLinks`) and shows "Your cleans on this phone" to
   switch when there is more than one.
-  The cleaner's "Options…" also has **💵 Add an extra** (clean today or before, within the extra window —
-  same `addExtra` as before, in the big form with the photo picker); the old "+ Add an extra" link stays
-  only on cleans older than the Options window.
+  The cleaner's **💵 Extra** tab (Today, Past, and Pay's small buttons; clean today or before, within the
+  extra window) is the same `addExtra` as before, in the big form with the photo picker; the old
+  "+ Add an extra" link stays only on cleans older than the last 3 days.
   One photo picker everywhere (`PhotoPicker.tsx`): "📷 Take a photo" (camera, one shot, "Take another")
   and "🖼️ Choose from the gallery" (several), thumbnails with ✕ — `multiple` alone hides the camera on
   many Android phones.

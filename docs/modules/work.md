@@ -29,6 +29,11 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   priority none/low/medium/high/urgent = null/1/2/3/4 (**scale unverified** — flip in
   PRIORITY_NUMBER); one listing per task; owner/supervisor = Hostaway users; times NY → UTC.
 - Owners are optional (days off, shifts) — never shown as "no owner".
+- **To-dos from the field (§134)** are made by `functions/_lib/inventory.ts` (`newTodo`), not /api/todos:
+  a problem or a need from a cleaner or a helper link ("Problem at <unit>: …", "Request at …") with the
+  priority the reporter chose (urgent / high / low; medium otherwise), "Check stock: …" (medium) when
+  something is reported missing, and "Buy supplies: …" (one to-do, a sub-task per line) from Inventory.
+  `mirrorTodos` announces each in Slack's tasks channel (`taskCreated`) and mirrors it to Hostaway.
 - Sub-tasks one level; removing a parent removes its sub-tasks with one stamp; restore
   brings back exactly those (§78, §82).
 - Comments (`note`) vs activity log (system lines, pop-up) (§103). Open task: description →

@@ -11,7 +11,7 @@ Hostaway client, sync, crypto, migrations.
   Slack panel, ingest token, daily file links), `Sops.tsx`; components `Sops.tsx` (panel,
   floating button, step by step), `ThemeToggle.tsx`, `Modal.tsx`, `Loading.tsx`.
 - API: `_middleware.ts` (allow-list + role gate; SELF_AUTHENTICATING = `/api/observations`,
-  `/api/slack`, `/api/slack-cron`), `settings.ts`, `roles.ts`, `sops.ts`, `sync-units.ts`.
+  `/api/slack`, `/api/slack-cron`, `/api/crew-link`, `/api/report-link`), `settings.ts`, `roles.ts`, `sops.ts`, `sync-units.ts`.
 - Server libs: `auth.ts` (identify), `roles.ts` (permissions → routes/tabs, `mayAccess`),
   `accounts.ts` (credentials, accessOf), `crypto.ts`, `db.ts`, `hostaway.ts` (client: token
   kept, paging, calendar writes verified by read-back), `sync.ts`.
@@ -29,7 +29,11 @@ Hostaway client, sync, crypto, migrations.
 - Two gates: Access decides who reaches the app; `allowed_emails` decides who is ours.
   Exception (§122): an address on the cleaners roster gets role `cleaner` (only its own crew page),
   checked in accessOf BEFORE "no member row = admin", and skips the allow-list.
-  SELF_AUTHENTICATING also lists `/api/crew-link` (secret-link door; never trusts identity headers).
+  SELF_AUTHENTICATING also lists `/api/crew-link` and `/api/report-link` (secret-link doors: the token is
+  the only credential, they never trust identity headers). Cloudflare Access has a **Bypass app "Kaizen —
+  public links"** (Bypass Everyone, live 2026-10-12) for `/report`, `/api/report-link`, `/crew`,
+  `/api/crew-link`, `/assets/*` — verified: those answer without sign-in, `/` and every other `/api/*`
+  still redirect. A new public page needs its path added there (§134).
   Empty list = any authenticated caller; DB failure = 503, never a pass (§29).
 - Roles are named sets of permissions (Settings grid, each tick saves at once); allow-list
   of routes — a new route is closed until listed; no member row = admin; unreadable role =

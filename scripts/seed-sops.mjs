@@ -314,7 +314,7 @@ Operations → Setup → Inspection checklist: add, edit, reorder or remove item
     ],
     doneWhen: 'No ⚠ left without a count, and the shopping to-do covers the next two weeks of cleans.',
     body: `## Where reports come from
-Cleaners report from each clean's "Options…" on their page: what they took, what they bought, what is missing, a problem, or something they need — plus photos before/after and "done". Whoever helps them on a clean reports the same from the link the cleaner sends for that clean (no account) — they appear as "<cleaner>'s team: <name>". Neither can count or correct; only the team can.`
+Cleaners report from each clean on their page (☀️ Today, its tabs): what they took, what they bought, what is missing, a problem, or something they need — plus photos before/after and "done". Whoever helps them on a clean reports the same from the link the cleaner sends for that clean (no account) — they appear as "<cleaner>'s team: <name>". Neither can count or correct; only the team can.`
   },
   {
     section: 'turnover', title: 'Your clean step by step: photos, done, supplies',
@@ -323,17 +323,19 @@ Cleaners report from each clean's "Options…" on their page: what they took, wh
     trigger: 'At every clean: when you arrive, when you finish, and whenever something is missing or wrong.',
     owner: 'Each cleaner',
     steps: [
-      { text: 'Find the clean in "Coming up" (or in Cleans, if it was in the last days) and open its "Options…" list.',
-        detail: 'Everything you choose there is about that clean only — you never pick the house or the day.' },
-      { text: 'Arriving: "📷 Photos & mark as done" → 1 Photos BEFORE cleaning → take or choose the photos → Send.',
+      { text: 'Open your page: ☀️ Today shows your cleans of the day. Several today? Tap the house at the top to switch — that row stays on top while you scroll.',
+        detail: '- Each clean has its tabs on top: 🧽 My clean · 🙋 Report or ask · 💵 Extra · 📤 Helper.\n- Everything there is about that clean only — you never pick the house or the day.\n- ↩️ Past: the last 3 days as they were left (photos, done); you can still add an extra there.\n- 📅 Future: send the helper link or tap "Can\'t do it". 💲 Pay: your cleans and invoice.' },
+      { text: 'Arriving: 🧽 My clean → 1 📷 Photos BEFORE cleaning → 📷 Take a photo (or 🖼️ Choose from the gallery) → Send.',
         detail: 'One photo of each room from the door is enough, and close-ups of anything wrong. They go to the team’s Drive, in a folder for that house and day.' },
       { text: '2 🧴 What I took from storage: tap + on each thing you took OUT OF THE STORAGE for this house → Send. Took nothing? "I took nothing from storage".',
         detail: 'Required. What was already in the house does not count. The storage’s stock goes down by what you send — that is how the team knows what to buy.' },
       { text: 'Finishing: 3 Photos AFTER cleaning → Send → 4 ✅ Mark as done.',
         detail: '"Mark as done" needs step 2 and at least one AFTER photo; the screen says which is missing. If you marked it by mistake: ↩️ Reopen → "Yes, reopen".' },
-      { text: 'What you bought, what is missing, a problem, something you need: choose it in "Options…".',
+      { text: 'Something is wrong, you need something, something is missing, or you bought something: 🙋 Report or ask.',
         detail: '- Bought: the item, how many, a photo of the receipt.\n- Missing: the item and how many are there (0 if none) — the team gets a task to count it.\n- A problem or a need: write it or say it with the 🎤 of your keyboard; add a photo if it helps; choose how urgent (🔴 before the next guest · 🟠 next days · ⚪ when possible) — it reaches the team as a task with that priority.' },
-      { text: 'Someone helps you on this clean: "Options…" → 📤 Send the link to my helper → Send by WhatsApp.',
+      { text: 'An extra (more work than the clean): 💵 Extra → the amount, what it was for, a photo of the receipt.',
+        detail: 'The team approves or denies it; only approved extras are paid, with that clean.' },
+      { text: 'Someone helps you on this clean: 📤 Helper → Send by WhatsApp (also from 📅 Future, ahead of time).',
         detail: '- The link is for that clean only and needs no account. Your helper can do the same steps: photos, done, supplies, problems.\n- Several people can use the same link; each writes their name once.\n- It stops working two days after the clean, or if the clean is given to someone else.' }
     ],
     doneWhen: 'Every clean has its before and after photos, is marked done, and nothing missing goes unsaid.'
@@ -345,17 +347,19 @@ Cleaners report from each clean's "Options…" on their page: what they took, wh
     trigger: 'En cada limpieza: al llegar, al terminar, y cuando algo falta o está mal.',
     owner: 'Cada cleaner',
     steps: [
-      { text: 'Busca la limpieza en "Próximas" (o en Limpiezas, si fue en los últimos días) y abre su lista "Opciones…".',
-        detail: 'Todo lo que elijas ahí es solo de esa limpieza — nunca eliges la casa ni el día.' },
-      { text: 'Al llegar: "📷 Fotos y marcar completada" → 1 Fotos ANTES de limpiar → toma o elige las fotos → Enviar.',
+      { text: 'Abre tu página: ☀️ Hoy muestra tus limpiezas del día. ¿Varias hoy? Toca la casa arriba para cambiar — esa fila se queda arriba aunque bajes.',
+        detail: '- Cada limpieza tiene sus pestañas arriba: 🧽 Mi limpieza · 🙋 Avisar o pedir · 💵 Extra · 📤 Ayudante.\n- Todo ahí es solo de esa limpieza — nunca eliges la casa ni el día.\n- ↩️ Pasadas: los últimos 3 días como quedaron (fotos, completada); ahí todavía puedes agregar un extra.\n- 📅 Futuras: envía el enlace al ayudante o toca "No puedo". 💲 Pago: tus limpiezas y tu invoice.' },
+      { text: 'Al llegar: 🧽 Mi limpieza → 1 📷 Fotos ANTES de limpiar → 📷 Tomar foto (o 🖼️ Elegir de la galería) → Enviar.',
         detail: 'Basta una foto de cada cuarto desde la puerta, y de cerca lo que esté mal. Van al Drive del equipo, en una carpeta de esa casa y ese día.' },
       { text: '2 🧴 Lo que tomé del storage: toca + en cada cosa que sacaste DEL STORAGE para esta casa → Enviar. ¿No tomaste nada? "No tomé nada del storage".',
         detail: 'Obligatorio. Lo que ya estaba en la casa no cuenta. El inventario del storage baja con lo que envías — así el equipo sabe qué comprar.' },
       { text: 'Al terminar: 3 Fotos DESPUÉS de limpiar → Enviar → 4 ✅ Marcar como completada.',
         detail: '"Marcar como completada" necesita el paso 2 y al menos una foto del DESPUÉS; la pantalla dice qué falta. Si la marcaste por error: ↩️ Reabrir → "Sí, reabrir".' },
-      { text: 'Lo que compraste, lo que falta, un problema, algo que necesitas: elígelo en "Opciones…".',
+      { text: 'Algo está mal, necesitas algo, falta algo o compraste algo: 🙋 Avisar o pedir.',
         detail: '- Compré: el artículo, cuántos y una foto del recibo.\n- Falta algo: el artículo y cuántos hay (0 si ninguno) — el equipo recibe una tarea para contarlo.\n- Un problema o algo que necesitas: escríbelo o dilo con el 🎤 del teclado; agrega una foto si ayuda; elige qué tan urgente es (🔴 antes del próximo huésped · 🟠 próximos días · ⚪ cuando se pueda) — le llega al equipo como tarea con esa prioridad.' },
-      { text: 'Alguien te ayuda en esta limpieza: "Opciones…" → 📤 Enviar el enlace a mi ayudante → Enviar por WhatsApp.',
+      { text: 'Un extra (trabajo más allá de la limpieza): 💵 Extra → el monto, para qué fue y una foto del recibo.',
+        detail: 'El equipo lo aprueba o lo rechaza; solo se pagan los extras aprobados, junto con esa limpieza.' },
+      { text: 'Alguien te ayuda en esta limpieza: 📤 Ayudante → Enviar por WhatsApp (también desde 📅 Futuras, con tiempo).',
         detail: '- El enlace es solo de esa limpieza y no necesita cuenta. Tu ayudante puede hacer los mismos pasos: fotos, completada, insumos, problemas.\n- Varias personas pueden usar el mismo enlace; cada una escribe su nombre una vez.\n- Deja de funcionar dos días después de la limpieza, o si la limpieza se le da a otra persona.' }
     ],
     doneWhen: 'Cada limpieza tiene sus fotos del antes y el después, está completada, y no se queda sin decir nada que falte.'
