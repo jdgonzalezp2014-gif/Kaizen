@@ -23,7 +23,7 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  can, getClaims, getForward, getGuestDocs, getOperations, getVariable, uploadGuestDoc,
+  can, getClaims, getCrewAdmin, getForward, getGuestDocs, getOperations, getVariable, uploadGuestDoc,
   type Claim, type OperationsResponse, type StayDocs, type VariableExpense
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
@@ -77,6 +77,17 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   const claims = useLoad(canClaims, async () => {
     const r = await getClaims();
     return r.claims ?? [];
+  });
+  // Cleaners' extras and purchases paid in the field, waiting for a decision.
+  // Lost here means Costs is off and the person who paid is unpaid, so Home
+  // keeps the door — the approval screen is Operations → Cleaners (§122, §137).
+  const canApprove = can(permissions, 'operations.edit');
+  const approvals = useLoad(canApprove, async () => {
+    const r = await getCrewAdmin();
+    if (!r.ok) throw new Error(r.message ?? r.error ?? 'Could not load approvals.');
+    const extras = (r.pending ?? []).reduce((a, e) => a + Number(e.amount || 0), 0);
+    const field = (r.fieldPending ?? []).reduce((a, e) => a + Number(e.amount || 0), 0);
+    return { count: (r.pending?.length ?? 0) + (r.fieldPending?.length ?? 0), total: extras + field };
   });
 
   const tomorrow = addDays(today, 1);
@@ -220,6 +231,12 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
                               onClick={() => onGo('units')} tone={red.data?.list.length ? 'bad' : undefined} />}
           {canOps && <Pulse n={inspections.length} one="inspection this week" many="inspections this week" busy={ops.busy}
                             onClick={() => onGo('operations')} />}
+          {/* §137 approvals do not surface anywhere else on Home: a $ paid in the field
+              is unpaid until a person says yes, and extras do not reach the invoice. */}
+          {canApprove && <Pulse n={approvals.data?.count ?? 0} one="approval waiting" many="approvals waiting"
+                                busy={approvals.busy} onClick={() => onGo('operations:crew')}
+                                tone={approvals.data?.count ? 'warn' : undefined}
+                                note={approvals.data?.count && can(permissions, 'money') ? `${money(approvals.data.total)} at stake` : ''} />}
         </div>
       </header>
 

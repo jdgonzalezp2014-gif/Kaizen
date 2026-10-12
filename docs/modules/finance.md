@@ -54,6 +54,9 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
   purchase with a cost, Restock); `field` (money paid in the field — a cleaner's, helper's or
   handyman's — once a person approves it: `field_expenses`, Operations → Cleaners). Before §137 Costs
   held only three manual rows: the cleaners' pay ($26.7k since April) was missing from profit.
+- Approvals Home door: pending `cleaning_extras` + `field_expenses` surface as a Pulse on Home
+  (count + $ at stake, gated on `operations.edit`) that opens Operations → Cleaners — nothing
+  else on Home shows them, and a field purchase stays unpaid until approved.
 - Money formatting pinned to `en-US` (§20). Dates: an optional filter is `null`, never `''` (§54).
 
 ## Open items

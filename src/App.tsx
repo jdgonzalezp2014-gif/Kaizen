@@ -10,7 +10,7 @@ import { Home } from './screens/Home.tsx';
 import { CrewHome } from './screens/Crew.tsx';
 import { ReportPage } from './screens/Report.tsx';
 import { VendorHome, WorkLinkPage } from './screens/Work.tsx';
-import { PracticePage, isPractice } from './screens/Practice.tsx';
+import { PracticePage, isPractice, type PracticeWhich } from './screens/Practice.tsx';
 import { InspectPage } from './screens/Inspect.tsx';
 import { Sops } from './screens/Sops.tsx';
 import { SopButton, SopPanel } from './components/Sops.tsx';
@@ -80,7 +80,16 @@ export function App() {
   if (location.pathname === '/report') return <main>{WORK_TOKEN ? <WorkLinkPage token={WORK_TOKEN} />
     : INSPECT_TOKEN ? <InspectPage token={INSPECT_TOKEN} /> : <ReportPage token={REPORT_TOKEN} />}</main>;
   // §139 practice: a field page with example data, nothing sent — opened from the SOP panel.
-  const practice = /^#practice\/([a-z-]+)$/.exec(location.hash)?.[1];
+  // Two doors to the same page: the in-app hash (team, signed in) and a real
+  // path a cleaner or helper opens without a sign-in. The public paths live
+  // under /crew, which Access already bypasses for the token-link door — so no
+  // new Access policy is needed (§140). The page is pure mock, no API call fires.
+  // The pathname is normalised (trailing slash, case) because a browser may add
+  // either and this door MUST open before TeamApp attempts to load settings.
+  const PUBLIC: Record<string, PracticeWhich> = { '/crew/mock': 'cleaner', '/crew/mock-helper': 'helper' };
+  const normalPath = location.pathname.replace(/\/+$/, '').toLowerCase() || '/';
+  const publicWhich = PUBLIC[normalPath];
+  const practice = publicWhich ?? /^#practice\/([a-z-]+)$/.exec(location.hash)?.[1];
   if (practice && isPractice(practice)) return <PracticePage which={practice} />;
   // The team's "View as cleaner" (§122): a tab with that cleaner's page and nothing of the team's.
   const preview = /^#as-cleaner\/(.+)$/.exec(location.hash);

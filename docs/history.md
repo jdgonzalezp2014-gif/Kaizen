@@ -3737,3 +3737,16 @@ instead of a sandbox in the database: nothing to clean up, nothing that can leak
 Hostaway, Slack or Drive. The existing "View as cleaner" (real data, buttons inert) stays as it was. Checked
 on a phone: all five load; an inspection walked to "Inspection finished — What it made"; the handyman accepts;
 the helper's steps run without overwriting the phone's saved name.
+
+## §140 — Practice pages reachable without a sign-in (2026-10-12)
+
+The owner wanted to send cleaners and helpers a link to the practice page so they could see
+and try their field view before the real one, without asking them to sign in. The screens were
+already pure in-browser mock (§139), so the barrier was Cloudflare Access at the edge. The
+cheapest door: live under `/crew`, which Access already lets through unauthenticated for the
+token-link page. Two new paths, mapped in `App.tsx` before the team app: `/crew/mock` opens
+the cleaner practice, `/crew/mock-helper` opens the helper practice. The hash form stays for
+the SOP panel. No new Access policy needed, no secrets in the bundle; the mock data is
+explicitly fake ("🧪 Practice House"), buttons do not reach any server. The handyman practice
+has not been exposed publicly — add it under `/report/mock` if ever needed (same trick, `/report`
+already bypassed).
