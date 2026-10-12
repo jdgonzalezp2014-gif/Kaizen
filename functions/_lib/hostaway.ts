@@ -280,11 +280,18 @@ async function apiGetEnvelope<T>(path: string, token: string): Promise<{ result:
     if (res.status === 401 || res.status === 403) throw new HostawayAuthError(`Hostaway refused the access token (${res.status}).`);
     if (!res.ok) throw new Error(`Hostaway ${path} returned ${res.status}.`);
 
-    const json = await res.json() as { result?: T[]; count?: number } | T[];
+    // A body cut off in transit ("Unterminated string in JSON", seen 2026-10-12 on a
+    // large reservations page) is retried like a 5xx, not thrown at the board.
+    let json: { result?: T[]; count?: number } | T[];
+    try { json = await res.json() as typeof json; }
+    catch {
+      await new Promise(r => setTimeout(r, 400 * (attempt + 1) ** 2));
+      continue;
+    }
     if (Array.isArray(json)) return { result: json, count: json.length };
     return { result: (json.result ?? []) as T[], count: Number(json.count ?? 0) };
   }
-  throw new Error(`Hostaway ${path} kept failing after 4 attempts.`);
+  throw new Error(`Hostaway ${path} kept failing after 4 attempts (busy, or its answer arrived cut off).`);
 }
 
 async function apiGet<T>(path: string, token: string): Promise<T[]> {
