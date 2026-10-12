@@ -27,6 +27,7 @@ import { addDays } from '../lib/dates.ts';
 import { FieldReport, KINDS, type Kind, type Send } from '../components/FieldReport.tsx';
 import { CleanSteps, type Result } from '../components/CleanSteps.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
+import { ThemeToggle } from '../components/ThemeToggle.tsx';
 import type { Cleaner } from '../lib/operations.ts';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -236,9 +237,9 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
   const ctx: FieldCtx | undefined = report && shareLink && page.supplies && mode === 'cleaner'
     ? { report, shareLink, supplies: page.supplies, today: page.today, extraFrom: page.extraFrom, reload } : undefined;
   const aheadKeys = new Set(page.upcoming.rows.map(r => r.key));
-  const [sec, setSec] = useState<'up' | 'cal' | 'pay' | 'help'>('up');
+  const [sec, setSec] = useState<'up' | 'today' | 'past' | 'future' | 'pay' | 'help'>('up');
 
-  const cleansList = (noExtraFor: Set<string>) => (
+  const cleansList = (noExtraFor: Set<string>, fieldCtx?: FieldCtx) => (
     <div className="card no-print">
       <h2>{tx.cleansTitle(periodLabel(lang, period, kind))}</h2>
       <p className="note">
@@ -252,6 +253,7 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
           {shown.map(c => (
             <CleanRow key={c.key} c={c} extras={extrasOf(c.key)} today={page.today} extraFrom={page.extraFrom}
                       fs={aheadKeys.has(c.key) ? undefined : page.field?.[c.key]} noExtra={noExtraFor.has(c.key)}
+                      quick={fieldCtx ? quickFor(page, c.key, fieldCtx) : undefined}
                       mode={mode} canEdit={canEdit} act={act} upload={upload} reload={reload} lang={lang} />
           ))}
         </div>
@@ -266,39 +268,46 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
   );
   const help = page.help?.filter(h => (h.lang ?? 'en') === lang) ?? [];
 
-  // §134, the owner: the cleaner's own cleans on top, worked like a helper's (plus the extra); the rest
-  // — what is coming, the calendar, cleans and pay, help — in sections below, one at a time.
+  // §134, the owner: no wasted space on top — one line (hello, language, help, day/night) and the
+  // sections right under it: Today (a button per clean), Past (open to edit, close each), Future (share
+  // or turn down) and Pay (the list and invoice, each recent row with the same small buttons).
   if (mode === 'cleaner' && ctx) {
     const active = activeCleans(page);
+    const todays = active.filter(a => a.date === page.today);
+    const past = active.filter(a => a.date < page.today);
+    const future = page.upcoming.rows.filter(r => r.date > page.today);
     const activeKeys = new Set(active.map(a => a.key));
-    const secs: ['up' | 'cal' | 'pay' | 'help', string][] = [['up', tx.secUpcoming], ['cal', tx.secCalendar], ['pay', tx.secPay],
-      ...(help.length ? [['help', tx.secHelp] as ['help', string]] : [])];
+    const sec2 = sec === 'up' ? (todays.length ? 'today' : future.length ? 'future' : 'today') : sec;
+    const secs: [typeof sec2, string][] = [['today', tx.secToday(todays.length)], ['past', tx.secPast(past.length)],
+      ['future', tx.secFuture(future.length)], ['pay', tx.secPay]];
     return (
       <div className="crew">
-        <div className="card no-print crew-hello">
-          <h2>{tx.hi(page.cleaner.name)}{!page.cleaner.active && <span className="chan-tag">{tx.inactive}</span>}</h2>
-          {onLang && (
-            <div className="todo-kind" role="group" aria-label="Language / Idioma">
-              {LANGS.map(l => <button key={l} className={l === lang ? 'chip active' : 'chip'} onClick={() => onLang(l)}>{LANG_NAME[l]}</button>)}
-            </div>
-          )}
-        </div>
-        <div className="card no-print">
-          <h2>{tx.activeTitle}</h2>
-          {!active.length ? <p className="note">{tx.activeNone}</p>
-            : active.map(a => <CleanCard key={a.key} a={a} page={page} lang={lang} ctx={ctx} act={act} reload={reload} />)}
+        <div className="crew-top no-print">
+          <b className="crew-top-name">{tx.hi(page.cleaner.name)}{!page.cleaner.active && <span className="chan-tag">{tx.inactive}</span>}</b>
+          <span className="mini-tools">
+            {onLang && <span className="todo-kind" role="group" aria-label="Language / Idioma">
+              {LANGS.map(l => <button key={l} className={l === lang ? 'chip active' : 'chip'} aria-label={LANG_NAME[l]} onClick={() => onLang(l)}>{l.toUpperCase()}</button>)}
+            </span>}
+            {!!help.length && <button className={sec2 === 'help' ? 'chip active' : 'chip'} aria-label={tx.secHelp} onClick={() => setSec(sec2 === 'help' ? 'up' : 'help')}>❓</button>}
+            <ThemeToggle />
+          </span>
         </div>
         <div className="crew-secs no-print" role="tablist">
-          {secs.map(([k, l]) => <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => setSec(k)}>{l}</button>)}
+          {secs.map(([k, l]) => <button key={k} role="tab" aria-selected={sec2 === k} className={sec2 === k ? 'on' : ''} onClick={() => setSec(k)}>{l}</button>)}
         </div>
-        {sec === 'up' && <Upcoming page={page} act={act} reload={reload} lang={lang} ctx={ctx} afterToday />}
-        {sec === 'cal' && <CrewCalendar page={page} lang={lang} />}
-        {sec === 'pay' && <>
+
+        {sec2 === 'today' && <TodayCleans list={todays} page={page} lang={lang} ctx={ctx} act={act} reload={reload} />}
+        {sec2 === 'past' && <PastCleans list={past} page={page} lang={lang} ctx={ctx} act={act} reload={reload} />}
+        {sec2 === 'future' && <>
+          <Upcoming page={page} act={act} reload={reload} lang={lang} ctx={ctx} afterToday />
+          <CrewCalendar page={page} lang={lang} />
+        </>}
+        {sec2 === 'pay' && <>
           <div className="card no-print">{periodPick}</div>
-          {cleansList(activeKeys)}
+          {cleansList(activeKeys, ctx)}
           <InvoiceView page={page} lang={lang} />
         </>}
-        {sec === 'help' && (
+        {sec2 === 'help' && (
           <div className="card no-print">
             {help.map(h => (
               <details key={h.title} open={help.length === 1}>
@@ -384,11 +393,14 @@ function activeCleans(page: CrewPage): ActiveClean[] {
  * ask", and "Extra", the cleaner's alone; the helper's link one tap below.
  * Today's open; the last days' closed until opened.
  */
-function CleanCard({ a, page, lang, ctx, act, reload }: { a: ActiveClean; page: CrewPage; lang: Lang; ctx: FieldCtx; act?: Act; reload: () => void }) {
+function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', share = false, onClose, head = true }: {
+  a: ActiveClean; page: CrewPage; lang: Lang; ctx: FieldCtx; act?: Act; reload: () => void;
+  initialTab?: 'clean' | 'report' | 'extra'; share?: boolean; onClose?: () => void;
+  /** False inside a row that already says which clean it is. */ head?: boolean;
+}) {
   const tx = TX[lang];
-  const [open, setOpen] = useState(a.date === page.today);
-  const [tab, setTab] = useState<'clean' | 'report' | 'extra'>('clean');
-  const [sharing, setSharing] = useState(false);
+  const [tab, setTab] = useState<'clean' | 'report' | 'extra'>(initialTab);
+  const [sharing, setSharing] = useState(share);
   const [fs, setFs] = useState<CleanFieldState | undefined>(page.field?.[a.key]);
   const unitId = ctx.supplies.units.find(u => u.name === a.unit)?.id ?? '';
   // An extra only on a clean done (today or before) and recent enough — the server checks the same.
@@ -396,17 +408,19 @@ function CleanCard({ a, page, lang, ctx, act, reload }: { a: ActiveClean; page: 
   const extras = page.extras.filter(e => e.key === a.key && e.status !== 'cancelled');
   const tabs: ['clean' | 'report' | 'extra', string][] = [['clean', tx.tabClean], ['report', tx.tabReport], ...(extraOk ? [['extra', tx.tabExtra] as ['extra', string]] : [])];
   return (
-    <div className="clean-card">
-      <p className="clean-card-title"><b>{dayLabel(lang, a.date)}</b>{a.date < page.today ? <span className="sub-n"> · {tx.earlierDay}</span> : null}</p>
-      <p className="clean-card-unit">🏠 {a.unit}{a.beds ? <span className="sub-n"> · {bedsWord(lang, a.beds)}</span> : null}
-        {a.price != null && <span className="sub-n"> · {money2(a.price)}</span>}</p>
-      <p className="note">{a.manual ? tx.manualClean(kindWord(lang, a.manual)) : a.time ? tx.checkout(a.time) : ''}
-        {a.sameDay && <span className="ops-flag urgent">{a.checkIn ? tx.nextGuestAt(a.checkIn) : tx.nextGuestSameDay}</span>}
-        {a.deep && <span className="ops-flag deep">{tx.deep}</span>}</p>
-      {!!a.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{a.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
-      <FieldLine fs={fs} lang={lang} />
-      {extras.map(e => <p key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>💵 +{money2(e.amount)} — {e.description} · {tx.extraWord[e.status]}</p>)}
-      {!open ? <button className="fr-btn secondary" onClick={() => setOpen(true)}>{tx.openClean}</button> : <>
+    <div className={head ? 'clean-card' : 'clean-card bare'}>
+      {head && <>
+        <p className="clean-card-title"><b>{dayLabel(lang, a.date)}</b></p>
+        <p className="clean-card-unit">🏠 {a.unit}{a.beds ? <span className="sub-n"> · {bedsWord(lang, a.beds)}</span> : null}
+          {a.price != null && <span className="sub-n"> · {money2(a.price)}</span>}</p>
+        <p className="note">{a.manual ? tx.manualClean(kindWord(lang, a.manual)) : a.time ? tx.checkout(a.time) : ''}
+          {a.sameDay && <span className="ops-flag urgent">{a.checkIn ? tx.nextGuestAt(a.checkIn) : tx.nextGuestSameDay}</span>}
+          {a.deep && <span className="ops-flag deep">{tx.deep}</span>}</p>
+        {!!a.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{a.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
+        <FieldLine fs={fs} lang={lang} />
+        {extras.map(e => <p key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>💵 +{money2(e.amount)} — {e.description} · {tx.extraWord[e.status]}</p>)}
+      </>}
+      <>
         <div className={`report-tabs${tabs.length === 3 ? ' three' : ''}`} role="tablist">
           {tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
         </div>
@@ -423,8 +437,80 @@ function CleanCard({ a, page, lang, ctx, act, reload }: { a: ActiveClean; page: 
           {!sharing ? <button className="fr-btn secondary" onClick={() => setSharing(true)}>{tx.optShare}</button>
             : <SharePanel cleanKey={a.key} lang={lang} get={ctx.shareLink} onClose={() => setSharing(false)} />}
           {a.ahead && act && <Decline cleanKey={a.key} act={act} reload={reload} lang={lang} />}
+          {onClose && <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>}
         </div>
-      </>}
+      </>
+    </div>
+  );
+}
+
+/** Today: one big button per clean when there are several; the chosen one open with its tabs. */
+function TodayCleans({ list, page, lang, ctx, act, reload }: { list: ActiveClean[]; page: CrewPage; lang: Lang; ctx: FieldCtx; act?: Act; reload: () => void }) {
+  const tx = TX[lang];
+  const [pick, setPick] = useState(list[0]?.key ?? '');
+  const a = list.find(x => x.key === pick) ?? list[0];
+  if (!a) return <div className="card no-print"><p className="note">{tx.activeNone}</p></div>;
+  return (
+    <div className="card no-print">
+      {list.length > 1 && (
+        <div className="today-picks" role="tablist">
+          {list.map(x => <button key={x.key} role="tab" aria-selected={x.key === a.key} className={x.key === a.key ? 'on' : ''} onClick={() => setPick(x.key)}>
+            🏠 {x.unit}{x.time ? <small>{x.time}</small> : null}{page.field?.[x.key]?.done ? <small>✅</small> : null}</button>)}
+        </div>
+      )}
+      <CleanCard key={a.key} a={a} page={page} lang={lang} ctx={ctx} act={act} reload={reload} />
+    </div>
+  );
+}
+
+/** The last days' cleans: a list; each opens to finish or fix it, and closes again. */
+function PastCleans({ list, page, lang, ctx, act, reload }: { list: ActiveClean[]; page: CrewPage; lang: Lang; ctx: FieldCtx; act?: Act; reload: () => void }) {
+  const tx = TX[lang];
+  const [open, setOpen] = useState<string | null>(null);
+  if (!list.length) return <div className="card no-print"><p className="note">{tx.pastNone}</p></div>;
+  return (
+    <div className="card no-print">
+      <p className="note">{tx.pastNote}</p>
+      {list.map(a => (
+        <div key={a.key} className="past-row">
+          <button className="past-head" aria-expanded={open === a.key} onClick={() => setOpen(open === a.key ? null : a.key)}>
+            <span><b>{dayLabel(lang, a.date)}</b> · {a.unit}</span>
+            <span className="sub-n">{page.field?.[a.key]?.done ? tx.doneShort : tx.notDoneYet} {open === a.key ? '▲' : '▼'}</span>
+          </button>
+          {open === a.key && <CleanCard a={a} page={page} lang={lang} ctx={ctx} act={act} reload={reload} head={false} onClose={() => setOpen(null)} />}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+/** The small buttons a row of "Cleans & pay" offers: the same as in Today / Past / Future. */
+interface Quick { active?: ActiveClean; future?: boolean; ctx: FieldCtx; page: CrewPage }
+function quickFor(page: CrewPage, key: string, ctx: FieldCtx): Quick | undefined {
+  const active = activeCleans(page).find(a => a.key === key);
+  if (active) return { active, ctx, page };
+  if (page.upcoming.rows.some(r => r.key === key && r.date > page.today)) return { future: true, ctx, page };
+  return undefined;
+}
+
+/** A row's small buttons, and what they open in place. */
+function QuickActions({ q, cleanKey, lang, act, reload }: { q: Quick; cleanKey: string; lang: Lang; act: Act; reload: () => void }) {
+  const tx = TX[lang];
+  const [open, setOpen] = useState<null | 'clean' | 'report' | 'extra' | 'share'>(null);
+  const extraOk = !!q.active && q.active.date <= q.ctx.today && q.active.date >= q.ctx.extraFrom;
+  const btn = (k: NonNullable<typeof open>, label: string) =>
+    <button className={open === k ? 'small' : 'small secondary'} onClick={() => setOpen(open === k ? null : k)}>{label}</button>;
+  return (
+    <div className="quick no-print">
+      <div className="quick-row">
+        {q.active && <>{btn('clean', tx.tabClean)}{btn('report', tx.tabReport)}{extraOk && btn('extra', tx.tabExtra)}</>}
+        {btn('share', tx.shareShort)}
+        {q.future && <Decline cleanKey={cleanKey} act={act} reload={reload} lang={lang} />}
+      </div>
+      {open === 'share' && <SharePanel cleanKey={cleanKey} lang={lang} get={q.ctx.shareLink} onClose={() => setOpen(null)} />}
+      {open && open !== 'share' && q.active &&
+        <CleanCard key={open} a={q.active} page={q.page} lang={lang} ctx={q.ctx} act={act} reload={reload} head={false}
+                   initialTab={open} onClose={() => setOpen(null)} />}
     </div>
   );
 }
@@ -462,7 +548,7 @@ function FieldLine({ fs, lang }: { fs?: CleanFieldState; lang: Lang }) {
   return (
     <div className="sub-n clean-opts">
       {fs.folderUrl ? <a href={fs.folderUrl} target="_blank" rel="noreferrer">{tx.stateLine(fs.before, fs.after)}</a> : tx.stateLine(fs.before, fs.after)}
-      {fs.done && <> · <b>{tx.stateDone(fs.done.by)}</b></>}
+      {fs.done && <> · <b>{tx.stateDone(fs.done.by.replace(/^.*'s team: /, ''))}</b></>}
     </div>
   );
 }
@@ -726,8 +812,9 @@ function UpcomingRow({ r, act, reload, tag, lang, ctx, fs }: { r: CrewUpcoming; 
   );
 }
 
-function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, reload, lang, noExtra = false, fs }: {
+function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, reload, lang, noExtra = false, fs, quick }: {
   c: CrewClean; extras: CrewExtra[]; today: string; extraFrom: string; mode: 'cleaner' | 'team'; canEdit: boolean;
+  /** §134: the same small actions as the sections above, on a recent or coming clean of the cleaner's. */ quick?: Quick;
   /** Worked in "Your cleans" above, where its extra is (§134). */ noExtra?: boolean; fs?: CleanFieldState;
   act: Act; upload?: Upload; reload: () => void; lang: Lang;
 }) {
@@ -790,6 +877,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
         ))}
       </div>
       <FieldLine fs={fs} lang={lang} />
+      {quick && <QuickActions q={quick} cleanKey={c.key} lang={lang} act={act} reload={reload} />}
       <div className="crew-actions no-print">
         {/* Recent cleans have their "Extra" tab in "Your cleans" (§134); older ones keep this link. */}
         {mode === 'cleaner' && !noExtra && billed && c.date >= extraFrom && !adding &&

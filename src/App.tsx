@@ -56,7 +56,7 @@ export function App() {
 function PreviewShell({ name }: { name: string }) {
   return (
     <main>
-      <header><h1>Kaizen OS</h1><nav><ThemeToggle /></nav></header>
+      {/* The cleaner's page has its own one-line top (§134): no big header here either. */}
       <p className="banner warn">👁 Preview — {name}'s page exactly as they get it. Their buttons do nothing here. Close this tab to go back.</p>
       <CrewHome asCleaner={name} />
     </main>
@@ -66,7 +66,6 @@ function PreviewShell({ name }: { name: string }) {
 function CrewShell({ token }: { token: string | null }) {
   return (
     <main>
-      <header><h1>Kaizen OS</h1><nav><ThemeToggle /></nav></header>
       {token ? <CrewHome token={token} /> : <p className="banner error">This link is incomplete — ask the team to send it again. / Este enlace está incompleto — pide al equipo que lo envíe de nuevo.</p>}
     </main>
   );
@@ -154,9 +153,11 @@ function TeamApp() {
       });
   }, []);
 
+  // A cleaner signed in sees only their page, which has its own one-line top (§134).
+  const crewOnly = allowed?.length === 1 && allowed[0] === 'crew';
   return (
     <main>
-      <header>
+      {!crewOnly && <header>
         {/* No tagline. It restated a framing the owner had already lost an
             argument about, and a slogan nobody reads is pure vertical
             space on a screen whose job is a list. */}
@@ -173,7 +174,7 @@ function TeamApp() {
           })}
           <ThemeToggle />
         </nav>
-      </header>
+      </header>}
 
       {/* Only shown to someone who can act on it. Telling an ops account
           to go to Settings → Sync listings names a screen they cannot

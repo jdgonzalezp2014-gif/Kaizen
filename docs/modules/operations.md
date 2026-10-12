@@ -197,12 +197,14 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   inactive. Several helpers can use one link; each gives a name once (localStorage), reports are
   `"<cleaner>'s team: <name>"`. A cleaner's clean is checked against their page once (`myClean`, reads
   the schedule) and then by `clean_records.cleaner`.
-- **The cleaner's page (§134, owner's layout):** on top "Your cleans" — today's (open) and the last 3 days'
-  (closed until opened), each a card worked like a helper's page: tabs 🧽 My clean · 🙋 Report or ask ·
-  💵 Extra (the cleaner's alone, while the extra window is open), "📤 Send the link to my helper", and
-  "Can't do it" while still in Coming up. Below, one section at a time: 📅 Coming up (future cleans: only
-  share the link and Can't do it — nothing to report yet) · 🗓 Calendar · 💲 Cleans & pay (period, list,
-  invoice) · ❓ Help. The team's view (Operations → Crew) keeps the one long page.
+- **The cleaner's page (§134, owner's layout):** no big header — one line (hello · EN/ES · ❓ help · ☾) and
+  right under it four sections, one at a time: **☀️ Today** (one big button per clean when there are
+  several; the chosen one open: tabs 🧽 My clean · 🙋 Report or ask · 💵 Extra — the cleaner's alone — then
+  "📤 Send the link to my helper" and "Can't do it" while still in Coming up) · **↩️ Past** (last 3 days,
+  a list; each opens to finish/fix and has Close) · **📅 Future** (only share the link or Can't do it;
+  the calendar below) · **💲 Pay** (period, cleans, invoice; recent and coming rows carry the same small
+  buttons). The team's view (Operations → Crew) keeps the one long page. Shells (`/crew`, preview,
+  crew-only sign-in) drop the app header for it.
 - **A clean's 4 steps (§134):** 1 photos BEFORE · 2 🧴 what I took from storage (**required**: lines, or
   the explicit "I took nothing from storage" — `clean_records.supplies_at/by/none`) · 3 photos AFTER ·
   4 ✅ done. Done is refused until 2 and 3 are there. "What I took" is no longer in the reports menu.

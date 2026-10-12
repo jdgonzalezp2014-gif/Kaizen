@@ -3639,4 +3639,7 @@ The cleaner's page was then laid out his way: their own cleans on top, each with
 clean, report or ask) plus the extra and the helper's link; the rest — coming up, calendar, cleans and
 pay, help — as sections below, one at a time; future cleans only share the link or say "can't do it".
 The "Options…" list per clean is gone.
+He found the top wasted space: the header and greeting became one line and the sections moved right under
+it — Today (a button per clean), Past (open to edit, close each), Future (share or turn down) and Pay
+(with the same small buttons on recent rows).
 
