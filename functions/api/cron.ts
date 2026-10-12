@@ -26,6 +26,7 @@ import {
 } from '../../src/lib/revenue.ts';
 import { redListings, edges, compose } from '../../src/lib/alerts.ts';
 import { loadOps, pushHostNotes, recordCleanings, reconcileRecent } from '../_lib/ops.ts';
+import { confirmSchedule } from '../_lib/crew.ts';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
@@ -181,6 +182,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       // two rows for one unit and day. The board only looks forward.
       const reconciled = await reconcileRecent(sql, creds, s.today);
       operations = { recorded, reconciled, notes: await pushHostNotes(sql, creds, s) };
+      // §127: the day's snapshot of the schedule, once a day — what each cleaner's "changes since"
+      // are measured from, so nobody on the team has to confirm anything.
+      const [last] = await sql`SELECT day::text AS day FROM crew_schedule_confirms WHERE account_id = 1 ORDER BY id DESC LIMIT 1` as { day: string }[];
+      if (!last || last.day < s.today) operations.snapshot = await confirmSchedule(sql, env.ENCRYPTION_KEY, 'daily update');
     } else {
       operations = { mode: 'shadow' };
     }

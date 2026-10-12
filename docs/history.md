@@ -3486,3 +3486,15 @@ it in the same unit is a change: no clean to confirm, and a clean already held i
 guest overlapping is not — Cynthia's booking on the same unit, cancelled at 00:18 on the 10th, the day
 Jennifer arrived, is still held: the unit may have needed a clean before her.
 
+## §127 — Cleaners see 4 days ahead, the team verifies nothing, 👁 on the board (2026-10-11)
+
+The crew page showed rule-picked future cleans in its Cleans list while the calendar, rightly, did not
+— one rule now decides what is ahead everywhere. The owner did not want to send cleaners anything to
+book their crews on, nor make his team tick every clean to publish it: "el equipo ve los 10 días pero
+no debe verificar, solo ser mindful de hasta 4 días porque eso lo ven los cleaners — márcalas con un
+ojito". So: a cleaner sees what a person assigned, and the rule's picks 4 days ahead (under the levels
+rule a clean is only assigned once the next guest is within 4 days anyway); the board marks those 👁;
+a daily snapshot replaces "confirm the schedule" for "changes since", and compares only what was in
+view, so cleans merely entering the window are not reported as new. Checked on production: Karina &
+Marvin see Oct 11, 12 and 15; the board's 👁 stops at Oct 15.
+

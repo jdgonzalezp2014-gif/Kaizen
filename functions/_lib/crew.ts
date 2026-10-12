@@ -14,8 +14,8 @@ import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
 import type { Level } from '../../src/lib/operations.ts';
 import {
-  buildInvoice, periodOf, recentPeriods, scheduleMovements, EXTRA_MAX_AGE_DAYS, EXTRA_MAX_AMOUNT,
-  type CrewClean, type CrewExtra, type Fate, type InvoicePeriod, type Movement, type Period, type ScheduleItem
+  buildInvoice, periodOf, recentPeriods, scheduleMovements, visibleAhead, EXTRA_MAX_AGE_DAYS, EXTRA_MAX_AMOUNT,
+  type CrewClean, type CrewExtra, type Fate, type InvoicePeriod, type Movement, type Period, type ScheduleItem, type Visibility
 } from '../../src/lib/crew.ts';
 
 const TZ = 'America/New_York';
@@ -48,7 +48,9 @@ export interface CrewPage {
   extraFrom: DateStr;
   upcoming: {
     enabled: boolean; days: number; through: DateStr | null; rows: CrewUpcoming[]; problem: string | null;
-    /** The team's last confirmation of the schedule — when, and how far it reached. */
+    /** Unpublished, the rule's picks show this many days ahead (§127). */
+    autoDays: number;
+    /** The last snapshot of the schedule (daily, or by the team) — when, and how far it reached. */
     confirmed: { at: string; through: DateStr } | null;
     /** What moved for this cleaner since then. */
     movements: Movement[];
@@ -75,7 +77,7 @@ async function scheduleNow(sql: SqlFn, s: Ops): Promise<ScheduleItem[]> {
 
 export interface ScheduleState {
   s: Ops; now: ScheduleItem[];
-  confirm: { at: string; by: string; through: DateStr; snapshot: ScheduleItem[] } | null;
+  confirm: { at: string; by: string; through: DateStr; snapshot: ScheduleItem[]; day: DateStr; vis: Visibility } | null;
   /** What happened to a confirmed clean that left this cleaner's schedule. */
   fate: (cleaner: string) => (key: string) => Fate;
 }
@@ -85,10 +87,12 @@ export async function scheduleState(sql: SqlFn, encryptionKey: string, days: num
   const [now, confirms] = await Promise.all([
     scheduleNow(sql, s),
     sql`SELECT to_char(confirmed_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS at, confirmed_by AS by,
-               through::text AS through, snapshot
+               through::text AS through, snapshot, day::text AS day, published, auto_days
           FROM crew_schedule_confirms WHERE account_id = 1 ORDER BY id DESC LIMIT 1`
-  ]) as [ScheduleItem[], { at: string; by: string; through: string; snapshot: ScheduleItem[] }[]];
-  const confirm = confirms[0] ?? null;
+  ]) as [ScheduleItem[], { at: string; by: string; through: string; snapshot: ScheduleItem[]; day: string; published: boolean; auto_days: number }[]];
+  const c0 = confirms[0];
+  const confirm = c0 ? { at: c0.at, by: c0.by, through: c0.through, snapshot: c0.snapshot, day: c0.day,
+                         vis: { published: c0.published, autoDays: Number(c0.auto_days) || 0 } } : null;
   const manualKeys = (confirm?.snapshot ?? []).map(i => i.key).filter(k => k.startsWith('MAN-'));
   const manual = new Map((manualKeys.length ? await sql`
     SELECT key, cleaner, assignment, void_reason, decided_by, checkout_on::text AS date FROM cleanings
@@ -116,14 +120,26 @@ export async function scheduleState(sql: SqlFn, encryptionKey: string, days: num
   return { s, now, confirm, fate };
 }
 
-/** The team confirms the schedule as it stands: what cleaners' "changes since" are measured from. */
+/**
+ * A snapshot of the schedule as it stands — by the daily pass ("daily
+ * update"), or by a person — and what was in view then: what cleaners'
+ * "changes since" are measured from.
+ */
 export async function confirmSchedule(sql: SqlFn, encryptionKey: string, by: string) {
-  const [acc] = await sql`SELECT crew_calendar_days FROM accounts WHERE id = 1` as { crew_calendar_days: number }[];
+  const [acc] = await sql`SELECT crew_calendar, crew_calendar_days, crew_auto_days FROM accounts WHERE id = 1` as
+    { crew_calendar: boolean; crew_calendar_days: number; crew_auto_days: number }[];
   const s = await loadOps(sql, await getCredentials(sql, encryptionKey), { days: acc?.crew_calendar_days ?? 14 });
   const items = await scheduleNow(sql, s);
-  await sql`INSERT INTO crew_schedule_confirms (account_id, through, snapshot, confirmed_by)
-            VALUES (1, ${s.end}, ${JSON.stringify(items)}::jsonb, ${by})`;
+  await sql`INSERT INTO crew_schedule_confirms (account_id, through, snapshot, confirmed_by, published, auto_days, day)
+            VALUES (1, ${s.end}, ${JSON.stringify(items)}::jsonb, ${by}, ${!!acc?.crew_calendar}, ${acc?.crew_auto_days ?? 4}, ${s.today})`;
   return { through: s.end, cleans: items.length };
+}
+
+/** What cleaners can see ahead, as the account is set now (§127). */
+export async function crewVisibility(sql: SqlFn): Promise<Visibility & { days: number }> {
+  const [acc] = await sql`SELECT crew_calendar, crew_calendar_days, crew_auto_days FROM accounts WHERE id = 1` as
+    { crew_calendar: boolean; crew_calendar_days: number; crew_auto_days: number }[];
+  return { published: !!acc?.crew_calendar, autoDays: Number(acc?.crew_auto_days ?? 4), days: acc?.crew_calendar_days ?? 14 };
 }
 
 export async function findCleaner(sql: SqlFn, name: string) {
@@ -167,10 +183,10 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
           FROM cleanings WHERE account_id = 1 AND cleaner = ${c.name}
            AND checkout_on >= ${from}::date AND checkout_on <= ${to}::date
          ORDER BY checkout_on, unit_name`,
-    sql`SELECT crew_calendar, crew_calendar_days FROM accounts WHERE id = 1`
+    sql`SELECT crew_calendar, crew_calendar_days, crew_auto_days FROM accounts WHERE id = 1`
   ]) as [{ key: string; unit_name: string; date: string; beds: number | null; deep: boolean; kind: string | null;
            price: number | null; assignment: string; void_reason: string | null; flag_note: string | null; edit_note: string | null }[],
-         { crew_calendar: boolean; crew_calendar_days: number }[]];
+         { crew_calendar: boolean; crew_calendar_days: number; crew_auto_days: number }[]];
   const cleans: CrewClean[] = rows.map(r => ({
     key: r.key, unit: r.unit_name, date: r.date, beds: r.beds, deep: !!r.deep, kind: r.kind ?? 'checkout',
     price: r.price, assignment: r.assignment, voidReason: r.void_reason, flagNote: r.flag_note, editNote: r.edit_note
@@ -185,7 +201,8 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
 
   const enabled = !!acc[0]?.crew_calendar;
   const days = acc[0]?.crew_calendar_days ?? 14;
-  const upcoming: CrewPage['upcoming'] = { enabled, days, through: null, rows: [], problem: null, confirmed: null, movements: [] };
+  const vis: Visibility = { published: enabled, autoDays: Number(acc[0]?.crew_auto_days ?? 4) };
+  const upcoming: CrewPage['upcoming'] = { enabled, days, autoDays: vis.autoDays, through: null, rows: [], problem: null, confirmed: null, movements: [] };
   // What a person assigned is shown even while the whole schedule is not (§123): it was checked by someone.
   {
     try {
@@ -199,7 +216,7 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
          WHERE account_id = 1 AND key LIKE 'MAN-%' AND cleaner = ${c.name} AND checkout_on >= ${today}::date` as
         { key: string; beds: number | null; deep: boolean; kind: string; price: number | null }[];
       const man = new Map(manual.map(m => [m.key, m]));
-      upcoming.rows = st.now.filter(i => i.cleaner === c.name && (enabled || i.byHand)).map(i => {
+      upcoming.rows = st.now.filter(i => i.cleaner === c.name && visibleAhead(i, today, vis)).map(i => {
         const r = outs.get(i.key), m = man.get(i.key);
         return r
           ? { key: i.key, date: i.date, unit: i.unit, beds: r.beds, time: r.time, deep: r.deep, sameDay: r.urgency === 'turnover',
@@ -207,9 +224,10 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
           : { key: i.key, date: i.date, unit: i.unit, beds: m?.beds ?? null, time: i.time, deep: !!m?.deep, sameDay: false,
               checkIn: null, price: m?.price ?? null, manual: m?.kind ?? 'extra' };
       }).sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time) || a.unit.localeCompare(b.unit));
-      if (enabled && st.confirm) {
+      if (st.confirm) {
         upcoming.confirmed = { at: st.confirm.at, through: st.confirm.through };
-        upcoming.movements = scheduleMovements(c.name, st.confirm.snapshot, st.now, st.confirm.through, today, st.fate(c.name));
+        upcoming.movements = scheduleMovements(c.name, { items: st.confirm.snapshot, day: st.confirm.day, through: st.confirm.through,
+          vis: st.confirm.vis }, st.now, today, vis, st.fate(c.name));
       }
     } catch (e) {
       upcoming.problem = `The schedule could not be read just now (${e instanceof Error ? e.message : String(e)}). Try again in a minute.`;
@@ -346,7 +364,7 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
   if (body.action === 'decline') {
     const key = String(body.key ?? '');
     const reason = String(body.reason ?? '').trim().slice(0, 300) || null;
-    const [acc] = await sql`SELECT crew_calendar, crew_calendar_days FROM accounts WHERE id = 1` as { crew_calendar: boolean; crew_calendar_days: number }[];
+    const acc = await crewVisibility(sql);
     if (key.startsWith('MAN-')) {
       const [m] = await sql`UPDATE cleanings SET assignment = 'tbd', cleaner = NULL, price = NULL, decided_by = ${`declined by ${me.name}`}
                              WHERE account_id = 1 AND key = ${key} AND cleaner = ${me.name} AND assignment = 'assigned'
@@ -359,11 +377,11 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     }
     // A checkout: only one the board gives them right now.
     const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
-    const s = await loadOps(sql, creds, { days: acc?.crew_calendar_days ?? 14 });
+    const s = await loadOps(sql, creds, { days: acc.days });
     const row = s.rows.find(r => r.kind === 'out' && r.resId === key);
     // Only what their page shows them: the whole schedule once shared, else what a person assigned (§123).
     if (!row || row.assignment !== 'assigned' || row.cleaner !== me.name || row.date < today ||
-        !(acc?.crew_calendar || row.manual.cleaner)) {
+        !visibleAhead({ date: row.date, byHand: row.manual.cleaner }, today, acc)) {
       return refuse(400, 'bad_request', 'That clean is not on your schedule any more.');
     }
     await sql`INSERT INTO turnover_overrides (account_id, reservation_id, assignment, cleaner, updated_by)

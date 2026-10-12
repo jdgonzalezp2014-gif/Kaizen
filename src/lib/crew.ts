@@ -139,6 +139,16 @@ export interface ScheduleItem {
   byHand?: boolean;
 }
 
+/**
+ * What a cleaner can see ahead (§127): everything once the schedule is
+ * published; until then what a person assigned, plus the rule's picks
+ * within `autoDays` of the day — close enough that they rarely move. The
+ * team's board marks these with 👁, so nobody has to confirm anything.
+ */
+export interface Visibility { published: boolean; autoDays: number }
+export const visibleAhead = (i: { date: DateStr; byHand?: boolean }, day: DateStr, v: Visibility) =>
+  v.published || !!i.byHand || i.date <= addDays(day, v.autoDays);
+
 /** What became of a confirmed clean that is no longer on this cleaner's schedule. */
 export type Fate =
   | { status: 'cancelled' }
@@ -158,23 +168,32 @@ export type Movement =
   | { kind: 'removed'; key: string; unit: string; date: DateStr; why: 'cancelled' | 'declined' | 'not_needed' | 'unassigned' | 'reassigned' };
 
 /**
- * One cleaner's movements between the confirmed schedule and now. Only
- * what the confirmation covered can have "moved": a clean after its
- * last day is not new, it is not confirmed yet. Cleans already in the
- * past are left out — the schedule is about what is coming.
+ * One cleaner's movements between the last snapshot of the schedule and
+ * now — only among what they could see. A clean that merely came into
+ * view as the days passed is not "new"; one that is new (or newly theirs)
+ * and would have been in view is. Cleans already in the past are left
+ * out — the schedule is about what is coming.
  */
-export function scheduleMovements(cleaner: string, confirmed: ScheduleItem[], now: ScheduleItem[],
-                                  through: DateStr, today: DateStr, fate: (key: string) => Fate): Movement[] {
-  const before = new Map(confirmed.filter(i => i.cleaner === cleaner && i.date >= today).map(i => [i.key, i]));
-  const mine = now.filter(i => i.cleaner === cleaner);
+export function scheduleMovements(
+  cleaner: string,
+  snap: { items: ScheduleItem[]; day: DateStr; through: DateStr; vis: Visibility },
+  now: ScheduleItem[], today: DateStr, visNow: Visibility, fate: (key: string) => Fate
+): Movement[] {
+  const before = new Map(snap.items.filter(i => i.cleaner === cleaner && i.date >= today && visibleAhead(i, snap.day, snap.vis))
+    .map(i => [i.key, i]));
+  const all = now.filter(i => i.cleaner === cleaner);
+  const mine = all.filter(i => visibleAhead(i, today, visNow));
   const out: Movement[] = [];
   for (const n of mine) {
     const b = before.get(n.key);
-    if (!b) { if (n.date <= through) out.push({ kind: 'added', key: n.key, unit: n.unit, date: n.date }); continue; }
+    if (!b) {
+      if (n.date <= snap.through && visibleAhead(n, snap.day, snap.vis)) out.push({ kind: 'added', key: n.key, unit: n.unit, date: n.date });
+      continue;
+    }
     if (b.date !== n.date) out.push({ kind: 'moved', key: n.key, unit: n.unit, from: b.date, to: n.date, later: n.date > b.date });
     else if (b.time && n.time && b.time !== n.time) out.push({ kind: 'time', key: n.key, unit: n.unit, date: n.date, from: b.time, to: n.time });
   }
-  const still = new Set(mine.map(n => n.key));
+  const still = new Set(all.map(n => n.key));
   for (const b of before.values()) {
     if (still.has(b.key)) continue;
     const f = fate(b.key);

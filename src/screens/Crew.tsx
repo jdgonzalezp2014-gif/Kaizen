@@ -116,9 +116,9 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
           <p className="note">
             {!schedule.enabled && 'Cleaners do not see what is coming yet (Setup → Crew pages). '}
             {schedule.confirmed
-              ? <>Last confirmed {stamp(schedule.confirmed.at)} by {schedule.confirmed.by}, through {day(schedule.confirmed.through)}.
+              ? <>Last snapshot {stamp(schedule.confirmed.at)} — {schedule.confirmed.by === 'daily update' ? 'the automatic daily update' : `by ${schedule.confirmed.by}`}, through {day(schedule.confirmed.through)}.
                   Cleaners see that date, and every change since.</>
-              : 'Never confirmed — cleaners are told the schedule is not confirmed yet.'}
+              : 'No snapshot yet — the daily pass takes one each day.'}
           </p>
           {schedule.problem && <p className="banner warn">▲ {schedule.problem}</p>}
           {schedule.confirmed && (schedule.movements.length
@@ -340,7 +340,7 @@ function CrewCalendar({ page }: { page: CrewPage }) {
         )}
       </div>
       <p className="note">Tap a day for its cleans. ✓ done and paid · ⚑ flagged · ○ not paid · • coming up · ⚡ next guest the same day.
-        {!page.upcoming.enabled && ' Coming up shows only what the team assigned to you directly until the full schedule is published.'}</p>
+        {!page.upcoming.enabled && ` Coming up shows your cleans ${page.upcoming.autoDays} days ahead, and any the team assigned to you directly.`}</p>
       {page.upcoming.rows.length > 0 && (
         <div className="button-row">
           <button className="secondary" onClick={() => downloadIcs(page)}>📅 Add my coming cleans to my phone calendar</button>
@@ -387,32 +387,23 @@ function Upcoming({ page, act, reload }: { page: CrewPage; act?: Act; reload: ()
   return (
     <div className="card no-print">
       <h2>Coming up</h2>
-      {u.problem ? <p className="banner warn">▲ {u.problem}</p>
-        : !u.enabled && !u.rows.length ? <p className="note">○ The schedule is not shared here yet. The team turns it on once it has been checked.</p>
-        : !u.rows.length ? <p className="note">Nothing assigned to you through {u.through ? day(u.through) : 'the next days'}.</p>
-        : !u.enabled ? (
-          <>
-            <p className="note">○ Your full schedule is not published yet. These cleans were assigned to you directly by the team, so they are set:</p>
-            <div className="crew-list">{u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload} />)}</div>
-          </>
-        )
-        : (
-          <>
-            {u.confirmed
-              ? <p><b>Last confirmed by the team: {stamp(u.confirmed.at)}</b> <span className="note">(covers through {day(u.confirmed.through)})</span></p>
-              : <p className="breach">▲ Not confirmed by the team yet — treat this as tentative.</p>}
-            {u.confirmed && (u.movements.length
-              ? <><b>Changes since then</b><Moves list={u.movements} /></>
-              : <p className="note">✓ No changes since then.</p>)}
-            <p className="note">Through {u.through ? day(u.through) : '—'}. Check here before you plan the day.</p>
+      {u.problem ? <p className="banner warn">▲ {u.problem}</p> : (
+        <>
+          {u.confirmed && <p><b>Last update: {stamp(u.confirmed.at)}</b></p>}
+          {u.confirmed && u.movements.length > 0 && <><b>Changes since then</b><Moves list={u.movements} /></>}
+          {u.confirmed && u.movements.length === 0 && u.rows.length > 0 && <p className="note">✓ No changes since then.</p>}
+          <p className="note">{u.enabled
+            ? `Through ${u.through ? day(u.through) : '—'}. Check here before you plan the day.`
+            : `Your cleans show here ${u.autoDays} days ahead — sooner when the team assigns one to you directly. Check here before you plan the day.`}</p>
+          {!u.rows.length ? <p className="note">Nothing for you {u.enabled ? `through ${u.through ? day(u.through) : 'the next days'}` : `in the next ${u.autoDays} days`} yet.</p> : (
             <div className="crew-list">
               {u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload}
-                                            tag={!u.confirmed ? null : r.date > u.confirmed.through ? '○ not confirmed yet'
-                                              : (() => { const m = u.movements.find(x => x.key === r.key);
-                                                         return !m ? null : m.kind === 'added' ? '+ new' : m.kind === 'moved' ? `⇢ moved from ${day(m.from)}` : m.kind === 'time' ? '◷ time changed' : null; })()} />)}
+                tag={(() => { const m = u.movements.find(x => x.key === r.key);
+                              return !m ? null : m.kind === 'added' ? '+ new' : m.kind === 'moved' ? `⇢ moved from ${day(m.from)}` : m.kind === 'time' ? '◷ time changed' : null; })()} />)}
             </div>
-          </>
-        )}
+          )}
+        </>
+      )}
     </div>
   );
 }

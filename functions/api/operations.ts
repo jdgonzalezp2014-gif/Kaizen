@@ -16,6 +16,7 @@ import { can } from '../_lib/roles.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadOps, recordCleanings, trimForOps, OPS_TZ } from '../_lib/ops.ts';
 import { syncUnits } from '../_lib/sync.ts';
+import { crewVisibility } from '../_lib/crew.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const who = identify(request, env);
@@ -95,7 +96,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
     rows: s.rows, summary: s.summary, panel: s.panel,
     inspectionLog: { done: s.inspections.done.slice(0, 200), scheduled: s.inspections.scheduled },
     noteLog, pushes,
-    rules: s.rules, assignRule: s.assignRule, extraInspectors: s.extraInspectors, guestDocUnits: s.guestDocUnits, manualCleans,
+    rules: s.rules, assignRule: s.assignRule,
+    // What cleaners can already see on their page (§127), so the board can mark it 👁.
+    crewView: await crewVisibility(sql), extraInspectors: s.extraInspectors, guestDocUnits: s.guestDocUnits, manualCleans,
     flags: Object.fromEntries(flagRows.map(f => [f.key, { note: f.note, by: f.by }])),
     // Pay per size is cost data ops already record; names and tiers are
     // what the edit menus need.

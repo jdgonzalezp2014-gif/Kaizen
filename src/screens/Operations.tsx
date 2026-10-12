@@ -17,6 +17,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { WorkView } from '../components/Todos.tsx';
 import { CrewAdmin } from './Crew.tsx';
+import { visibleAhead } from '../lib/crew.ts';
 import { addDays, daysBetween, isDateStr, todayIn } from '../lib/dates.ts';
 import { stayLabel } from '../lib/todos.ts';
 import {
@@ -271,6 +272,18 @@ function needsAttention(r: BoardRow, today: string): boolean {
     r.inspection.key === 'req' || r.inspection.key === 'due' || r.urgency === 'turnover';
 }
 
+/**
+ * The cleaner already sees this clean on their crew page (§127): assigned,
+ * ahead, in view (by hand, close enough, or the schedule published) — and
+ * the cleaner can actually sign in or has a link, or nobody sees anything.
+ */
+function cleanerSees(r: BoardRow, data: OperationsResponse): boolean {
+  if (r.kind !== 'out' || r.assignment !== 'assigned' || !r.cleaner || r.date < data.today || !data.crewView) return false;
+  const c = data.roster.find(x => x.name === r.cleaner);
+  if (!c?.email && !c?.hasLink) return false;
+  return visibleAhead({ date: r.date, byHand: r.manual.cleaner }, data.today, data.crewView);
+}
+
 const LEVEL_LABEL: Record<string, string> = { high: 'high level', standard: 'standard', manual: 'manual only' };
 
 function Board({ data, range, patch, reload }: {
@@ -417,6 +430,8 @@ function Board({ data, range, patch, reload }: {
         <input className="date-in" placeholder="Unit, guest or cleaner" value={q} onChange={e => setQ(e.target.value)} />
         {canEdit && <button className="small secondary" onClick={() => setAddingClean({})}>+ Manual clean</button>}
         {canEdit && <span className="note right">click or tap a row to change it</span>}
+        {data.crewView && <span className="note">👁 the cleaner already sees it on their page{data.crewView.published ? '' :
+          ` (set by hand, or within ${data.crewView.autoDays} days)`}</span>}
       </div>
 
       {addingClean && (
@@ -495,6 +510,7 @@ function Board({ data, range, patch, reload }: {
                     <Fragment key={key}>
                       <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'} through={short(data.lookaheadTo)}
                                  byLevels={data.assignRule === 'levels'} today={data.today}
+                                 seen={cleanerSees(r, data)}
                                  docs={canDocs && r.kind === 'in' && docUnits.has(r.unitId) ? docs[r.resId] ?? null : undefined}
                                  todos={todosBy.get(r.unitId)} flag={r.kind === 'out' ? flags[r.resId] : undefined}
                                  open={open === key} onToggle={() => {
@@ -526,12 +542,14 @@ function Board({ data, range, patch, reload }: {
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, today, flag }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, today, flag, seen }: {
   r: BoardRow; showMoney: boolean; shadow: boolean; open: boolean; onToggle: () => void;
   /** Flagged by hand (§124): the note the cleaner reads. */
   flag?: string;
   /** Whether the levels rule decides (§125), or rides along beside the rule in charge. */
   byLevels: boolean; today: string;
+  /** The cleaner can already see this clean on their page (§127). */
+  seen?: boolean;
   /** An arrival's filed documents: undefined = not shown to this role, null = still reading. */
   docs?: StayDocs | null;
   /** Open to-dos about this unit. */
@@ -571,6 +589,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
             <span className={r.assignment === 'tbd' ? 'breach' : r.assignment === 'not_needed' ? 'note' : undefined}>
               {r.assignment === 'tbd' ? '▲ ' : ''}{r.assignment === 'assigned' ? r.cleaner : r.assignment === 'not_needed' ? 'no clean needed' : 'unassigned'}
             </span>
+            {seen && <span title={`${r.cleaner} sees this on their crew page`}> 👁</span>}
             {r.manual.cleaner && <span className="sub-n"> · set by hand</span>}
             {/* "★4 · Veronica ★5 ✓": what the clean needs against what the cleaner has. */}
             {/* The level the clean needs, or why it waits (§125). */}
@@ -1588,6 +1607,7 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
 }) {
   const [calendar, setCalendar] = useState(cfg.crewCalendar);
   const [days, setDays] = useState(String(cfg.crewCalendarDays));
+  const [autoDays, setAutoDays] = useState(String(cfg.crewAutoDays ?? 4));
   const [link, setLink] = useState<{ name: string; url: string | null } | null>(null);
   const [err, setErr] = useState('');
   const set = (i: number, patch: Partial<Cleaner>) => setRoster(rs => rs.map((c, j) => j === i ? { ...c, ...patch } : c));
@@ -1649,16 +1669,18 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
       </div>
 
       <h3>What is coming</h3>
-      <p className="note">Off until the schedule has been checked: cleaners book their days off what they see here. When on, each
-        cleaner sees what the board gives them now (live — it can still change), and can decline a clean, which goes back
-        to the team as unassigned.</p>
+      <p className="note">Nobody has to confirm anything. Each cleaner sees what a person assigned to them, and the rule's picks
+        <b> {autoDays || 0} days ahead</b> — close enough that they rarely move. On the board these carry 👁. A daily snapshot
+        tells them what changed since. Publishing the whole schedule shows them everything ahead.</p>
+      <label>The rule's picks show this many days ahead (0 = only what a person assigned)
+        <input className="amt" value={autoDays} onChange={e => setAutoDays(e.target.value)} /></label>
       <label className="check"><input type="checkbox" checked={calendar} onChange={e => setCalendar(e.target.checked)} />
-        Show cleaners their upcoming cleans</label>
-      <label>Days ahead (1–30)<input className="amt" value={days} onChange={e => setDays(e.target.value)} /></label>
+        Publish the whole schedule</label>
+      <label>Whole schedule: days ahead (1–30)<input className="amt" value={days} onChange={e => setDays(e.target.value)} /></label>
       <div className="button-row">
-        <button disabled={calendar === cfg.crewCalendar && Number(days) === cfg.crewCalendarDays}
-                onClick={() => void save({ crewCalendar: calendar, crewCalendarDays: Number(days) },
-                                         calendar ? 'Cleaners now see what is coming.' : 'The schedule is hidden from cleaners.')}>Save</button>
+        <button disabled={calendar === cfg.crewCalendar && Number(days) === cfg.crewCalendarDays && Number(autoDays) === (cfg.crewAutoDays ?? 4)}
+                onClick={() => void save({ crewCalendar: calendar, crewCalendarDays: Number(days), crewAutoDays: Number(autoDays) },
+                                         'What cleaners see ahead is saved.')}>Save</button>
       </div>
     </div>
   );

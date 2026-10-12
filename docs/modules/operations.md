@@ -103,6 +103,13 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 - Operations → Crew: pick a cleaner → their page for the team (level, flag/correct/decide), or
   **👁 View as cleaner ↗** — a separate tab (`/#as-cleaner/<name>`, PreviewShell in App.tsx) with only the
   cleaner's page, loaded through `crewGet` (the cleaner's own server code: level stripped), buttons inert.
+- **What cleaners see ahead (§127)** — `visibleAhead` (src/lib/crew.ts), one rule for the crew page,
+  declines and the board: the whole schedule if published (`crew_calendar`); else what a person
+  assigned (override / MAN-) plus the rule's picks within `crew_auto_days` (default **4**). The team
+  verifies nothing: the board marks those rows **👁** (only if the cleaner has an email or a link).
+  The daily cron pass takes one snapshot a day ("daily update", `crew_schedule_confirms` with
+  `published/auto_days/day`); "Changes since" compares against it, only among what was in view — a clean
+  that just came into the 4-day window is not "new". The manual "Confirm" button still takes one.
 - **One rule for what is ahead (crew page):** a clean after today reaches the cleaner — in Coming up,
   Cleans and the calendar alike — only if Coming up shows it (published schedule, else hand-assigned).
   The record holds the rule's picks for the board's window; unpublished, `loadCrewPage` drops them.

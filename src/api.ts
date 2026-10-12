@@ -316,6 +316,8 @@ export interface OperationsResponse {
   rules: OpsRules; extraInspectors: string[]; roster: Cleaner[];
   /** Which rule decides who cleans (§121). */
   assignRule: AssignRule;
+  /** What cleaners can already see on their page (§127) — the board marks it 👁. */
+  crewView?: { published: boolean; autoDays: number; days: number };
   /** Units whose guests must have an ID and agreement on file (§73), by listing ID. */
   guestDocUnits: string[];
   /** Cleans no checkout scheduled (§79), in the window. */
@@ -376,6 +378,8 @@ export interface OpsSettings {
   assignRule: AssignRule;
   /** The schedule on the crew pages (§122). */
   crewCalendar: boolean; crewCalendarDays: number;
+  /** Unpublished, the rule's picks show on a cleaner's page this many days ahead (§127). */
+  crewAutoDays: number;
   /** Zone → its active units' names (§121). */
   zones: Record<string, string[]>;
   counts: { inspections: number; notes: number; overrides: number };
@@ -427,7 +431,7 @@ export interface CrewPage {
   cleans: CrewClean[]; extras: CrewExtra[]; invoice: Invoice; extraFrom: string;
   upcoming: {
     enabled: boolean; days: number; through: string | null; rows: CrewUpcoming[]; problem: string | null;
-    confirmed: { at: string; through: string } | null; movements: Movement[];
+    autoDays: number; confirmed: { at: string; through: string } | null; movements: Movement[];
   };
 }
 export interface CrewSchedule {

@@ -196,7 +196,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (typeof body.crewCalendar === 'boolean') {
       const days = Math.round(Number(body.crewCalendarDays ?? 14));
       if (!(days >= 1 && days <= 30)) return bad('Show 1 to 30 days ahead.');
-      await sql`UPDATE accounts SET crew_calendar = ${body.crewCalendar}, crew_calendar_days = ${days} WHERE id = 1`;
+      const auto = Math.round(Number(body.crewAutoDays ?? 4));
+      if (!(auto >= 0 && auto <= 14)) return bad('The rule\'s picks show 0 to 14 days ahead.');
+      await sql`UPDATE accounts SET crew_calendar = ${body.crewCalendar}, crew_calendar_days = ${days}, crew_auto_days = ${auto} WHERE id = 1`;
     }
 
     // §122: the fallback link. Only its hash is kept, so it is shown once, here.

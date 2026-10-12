@@ -47,15 +47,17 @@ export async function opsConfig(sql: SqlFn): Promise<{
   assignRule: AssignRule;
   /** Cleaners see what is coming on their page (§122), this many days ahead. */
   crewCalendar: boolean; crewCalendarDays: number;
+  /** Unpublished, the rule's picks show on a cleaner's page this many days ahead (§127). */
+  crewAutoDays: number;
 }> {
   const [acc, roster] = await Promise.all([
-    sql`SELECT ops_mode, ops_rules, extra_inspectors, guest_docs_units, assign_rule, crew_calendar, crew_calendar_days
+    sql`SELECT ops_mode, ops_rules, extra_inspectors, guest_docs_units, assign_rule, crew_calendar, crew_calendar_days, crew_auto_days
           FROM accounts WHERE id = 1`,
     sql`SELECT name, tier, position, rates, deep_rates, active, stars, level, zones, max_per_day, email, invoice_period,
                link_token_hash IS NOT NULL AS has_link FROM cleaners
          WHERE account_id = 1 ORDER BY tier, position, name`
   ]) as [{ ops_mode: OpsMode; ops_rules: Record<string, unknown>; extra_inspectors: string[]; guest_docs_units: string[];
-           assign_rule: string; crew_calendar: boolean; crew_calendar_days: number }[],
+           assign_rule: string; crew_calendar: boolean; crew_calendar_days: number; crew_auto_days: number }[],
          { name: string; tier: Cleaner['tier']; position: number; rates: Record<string, number | null>;
            deep_rates: Record<string, number | null>; active: boolean; stars: number; level: Cleaner['level']; zones: string[];
            max_per_day: number | null; email: string | null; invoice_period: 'weekly' | 'monthly'; has_link: boolean }[]];
@@ -66,6 +68,7 @@ export async function opsConfig(sql: SqlFn): Promise<{
     guestDocUnits: acc[0]?.guest_docs_units ?? [],
     assignRule: acc[0]?.assign_rule === 'levels' ? 'levels' : acc[0]?.assign_rule === 'stars' ? 'stars' : 'tiers',
     crewCalendar: !!acc[0]?.crew_calendar, crewCalendarDays: Number(acc[0]?.crew_calendar_days) || 14,
+    crewAutoDays: Number(acc[0]?.crew_auto_days ?? 4),
     roster: roster.map(c => ({ name: c.name, tier: c.tier, position: c.position,
       rates: c.rates ?? {}, deepRates: c.deep_rates ?? {}, active: c.active,
       stars: Number(c.stars) || 1, level: c.level ?? 'standard', zones: c.zones ?? [], maxPerDay: c.max_per_day == null ? null : Number(c.max_per_day),

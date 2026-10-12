@@ -23,7 +23,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { attachFiles, confirmSchedule, crewGet, loadCrewPage, refuse, scheduleState } from '../_lib/crew.ts';
+import { attachFiles, confirmSchedule, crewGet, crewVisibility, loadCrewPage, refuse, scheduleState } from '../_lib/crew.ts';
 import { scheduleMovements, type Movement } from '../../src/lib/crew.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { rateFor } from '../../src/lib/operations.ts';
@@ -40,19 +40,20 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // "View as cleaner": exactly what the cleaner's own request returns, by the same function.
   if (url.searchParams.get('view') === 'cleaner' && name) return crewGet(request, env, sql, { name, by: who.email });
   // The schedule once, for the movements of every cleaner and the page shown.
-  const [acc] = await sql`SELECT crew_calendar, crew_calendar_days FROM accounts WHERE id = 1` as { crew_calendar: boolean; crew_calendar_days: number }[];
-  let schedule: { enabled: boolean; confirmed: { at: string; by: string; through: string } | null;
+  const vis = await crewVisibility(sql);
+  let schedule: { enabled: boolean; autoDays: number; confirmed: { at: string; by: string; through: string } | null;
                   movements: (Movement & { cleaner: string })[]; problem: string | null } =
-    { enabled: !!acc?.crew_calendar, confirmed: null, movements: [], problem: null };
+    { enabled: vis.published, autoDays: vis.autoDays, confirmed: null, movements: [], problem: null };
   let st: Awaited<ReturnType<typeof scheduleState>> | undefined;
   try {
-    st = await scheduleState(sql, env.ENCRYPTION_KEY, acc?.crew_calendar_days ?? 14);
-    if (st.confirm) {
+    st = await scheduleState(sql, env.ENCRYPTION_KEY, vis.days);
+    const c = st.confirm;
+    if (c) {
       const today = todayIn(TZ);
-      const people = new Set([...st.confirm.snapshot, ...st.now].map(i => i.cleaner));
-      schedule = { ...schedule, confirmed: { at: st.confirm.at, by: st.confirm.by, through: st.confirm.through },
-        movements: [...people].flatMap(c => scheduleMovements(c, st!.confirm!.snapshot, st!.now, st!.confirm!.through, today, st!.fate(c))
-          .map(m => ({ ...m, cleaner: c }))) };
+      const people = new Set([...c.snapshot, ...st.now].map(i => i.cleaner));
+      schedule = { ...schedule, confirmed: { at: c.at, by: c.by, through: c.through },
+        movements: [...people].flatMap(p => scheduleMovements(p, { items: c.snapshot, day: c.day, through: c.through, vis: c.vis },
+          st!.now, today, vis, st!.fate(p)).map(m => ({ ...m, cleaner: p }))) };
     }
   } catch (e) {
     schedule.problem = `The schedule could not be read (${e instanceof Error ? e.message : String(e)}).`;
