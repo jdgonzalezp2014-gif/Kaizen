@@ -7,12 +7,15 @@
  *   · a repair (work order) completed with a cost → an expense in Costs,
  *     category Repairs, on its listing (portfolio-wide without one), dated
  *     the New York day it was completed;
+ *   · §137: any other to-do completed with a cost too (a shopping list, a
+ *     purchase) — "Buy…" is Restock, else the category its title names;
  *   · anything else (reopened, cancelled, removed, no cost) → no expense.
  * Idempotent: the Costs row is keyed by the task (source 'repair',
  * external_ref = id) and the Hostaway expense id is kept on the task.
  */
 import type { SqlFn } from './accounts.ts';
 import { getAccessToken, type HostawayCredentials } from './hostaway.ts';
+import { guessCategory } from '../../src/lib/costs.ts';
 
 const TZ = 'America/New_York';
 const nyDay = (d: string | Date) => new Intl.DateTimeFormat('en-CA', { timeZone: TZ, year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(d));
@@ -44,7 +47,9 @@ export async function settleRepair(sql: SqlFn, id: string, by: string, creds: ()
                           FROM todos WHERE account_id = 1 AND id = ${id}` as Row[];
   if (!r) return;
   const cost = r.cost_actual == null ? 0 : Number(r.cost_actual);
-  const counts = r.kind === 'work_order' && r.status === 'completed' && !r.deleted_at && cost > 0;
+  const counts = r.status === 'completed' && !r.deleted_at && cost > 0;
+  const repair = r.kind === 'work_order';
+  const category = repair ? 'Repairs' : /^buy\b/i.test(r.title) ? 'Restock' : guessCategory(r.title, 'General') ?? 'General';
   const unit = r.unit_ids?.[0] ?? null;
   const day = nyDay(r.done_at ?? new Date());
   const what = `🔧 ${r.title}${r.vendor ? ` — ${r.vendor}` : ''}`;
@@ -55,21 +60,21 @@ export async function settleRepair(sql: SqlFn, id: string, by: string, creds: ()
     { id: string; amount: number; day: string; unit_id: string | null; label: string | null }[];
   if (counts && !e) {
     await sql`INSERT INTO expenses (account_id, unit_id, shared, start_date, category, frequency, amount, label, notes, source, external_ref, created_by)
-              VALUES (1, ${unit}, ${!unit}, ${day}, 'Repairs', 'One-time', ${cost}, ${r.title.slice(0, 120)},
-                      ${`Repair #${id}${r.vendor ? ` · ${r.vendor}` : ''}`}, 'repair', ${id}, ${by})`;
-    await note(sql, id, `Recorded in Costs: ${money(cost)} · Repairs · ${day}${unit ? '' : ' · portfolio-wide'}`, by);
+              VALUES (1, ${unit}, ${!unit}, ${day}, ${category}, 'One-time', ${cost}, ${r.title.slice(0, 120)},
+                      ${`${repair ? 'Repair' : 'To-do'} #${id}${r.vendor ? ` · ${r.vendor}` : ''}`}, 'repair', ${id}, ${by})`;
+    await note(sql, id, `Recorded in Costs: ${money(cost)} · ${category} · ${day}${unit ? '' : ' · portfolio-wide'}`, by);
   } else if (counts && e && (e.amount !== cost || e.day !== day || (e.unit_id ?? null) !== unit || e.label !== r.title.slice(0, 120))) {
     await sql`UPDATE expenses SET amount = ${cost}, start_date = ${day}, unit_id = ${unit}, shared = ${!unit}, label = ${r.title.slice(0, 120)},
-                                  notes = ${`Repair #${id}${r.vendor ? ` · ${r.vendor}` : ''}`}
+                                  category = ${category}, notes = ${`${repair ? 'Repair' : 'To-do'} #${id}${r.vendor ? ` · ${r.vendor}` : ''}`}
                WHERE account_id = 1 AND id = ${e.id}`;
     if (e.amount !== cost) await note(sql, id, `Costs updated: ${money(e.amount)} → ${money(cost)}`, by);
   } else if (!counts && e) {
     await sql`DELETE FROM expenses WHERE account_id = 1 AND id = ${e.id}`;
-    await note(sql, id, `Removed from Costs (${money(e.amount)}) — no longer a completed repair with a cost.`, by);
+    await note(sql, id, `Removed from Costs (${money(e.amount)}) — no longer completed with a cost.`, by);
   }
 
   // ── The owner's charge, in Hostaway ──
-  const charge = counts && r.charge_owner && !!unit;
+  const charge = counts && repair && r.charge_owner && !!unit;
   if (!charge && !r.hostaway_expense_id) return;
   try {
     const c = await creds();

@@ -9,6 +9,7 @@ import { getCredentials } from './accounts.ts';
 import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { mirrorOn, pushWork } from './hostaway-tasks.ts';
 import { notifyTask } from './slack.ts';
+import { addFieldExpense } from './field-costs.ts';
 import type { Priority } from '../../src/lib/todos.ts';
 
 const FIELD_PRIORITY = new Set(['urgent', 'high', 'low']);
@@ -91,6 +92,7 @@ const ES: Record<string, string> = {
   'Which item?': '¿Cuál artículo?',
   'Which unit?': '¿Cuál unidad?',
   'The cost is a number.': 'El costo es un número.',
+  'Write the total you paid.': 'Escribe el total que pagaste.',
   'Say what it is.': 'Di qué es.',
   'At most 5 photos at a time.': 'Máximo 5 fotos a la vez.',
   'Before or after?': '¿Antes o después?',
@@ -148,6 +150,8 @@ export async function recordMove(sql: SqlFn, who: Who, b: Record<string, unknown
   const note = String(b.note ?? '').trim().slice(0, 500) || null;
   const cost = b.cost == null || b.cost === '' ? null : Math.round(Number(b.cost) * 100) / 100;
   if (cost !== null && !(cost >= 0)) throw new Error('The cost is a number.');
+  // §137: what the field buys reaches Costs only with what it cost.
+  if (kind === 'purchase' && who.source !== 'team' && !(cost && cost > 0)) throw new Error('Write the total you paid.');
   let todoId: string | null = null;
   if (kind === 'missing') {
     const levels = stockLevels(await sql`SELECT item_id::text AS "itemId", unit_id AS "unitId", kind, qty::float AS qty,
@@ -159,10 +163,27 @@ export async function recordMove(sql: SqlFn, who: Who, b: Record<string, unknown
       photos.map(p => `\nPhoto: ${p.url}`).join('') + `\nCount it in Operations → Inventory to set the record right.`,
       unitId, who.email ?? who.name, [], 'medium');
   }
-  await sql`INSERT INTO inventory_moves (account_id, item_id, unit_id, kind, qty, cleaning_key, cost, note, photos, by_name, source, todo_id)
+  const [mv] = await sql`INSERT INTO inventory_moves (account_id, item_id, unit_id, kind, qty, cleaning_key, cost, note, photos, by_name, source, todo_id)
             VALUES (1, ${item.id}, ${unitId}, ${kind}, ${qty}, ${b.cleaningKey ? String(b.cleaningKey) : null}, ${cost}, ${note},
-                    ${JSON.stringify(photos)}::jsonb, ${who.name}, ${who.source}, ${todoId ? Number(todoId) : null})`;
-  return { todoId, place, item: item.name };
+                    ${JSON.stringify(photos)}::jsonb, ${who.name}, ${who.source}, ${todoId ? Number(todoId) : null})
+            RETURNING id::text` as { id: string }[];
+  // §137: a purchase with what it cost reaches Costs — the team's at once (they bought it), the field's
+  // (a cleaner's, a helper's) once the team approves it with its receipt.
+  let fieldExpense: string | null = null;
+  if (kind === 'purchase' && cost && cost > 0) {
+    const what = `Bought: ${item.name} × ${qty}${note ? ` — ${note}` : ''}`;
+    if (who.source === 'team') {
+      const [u] = unitId ? await sql`SELECT id FROM units WHERE account_id = 1 AND id = ${unitId}` as { id: string }[] : [];
+      await sql`INSERT INTO expenses (account_id, unit_id, shared, start_date, category, frequency, amount, label, notes, source, external_ref, created_by)
+                VALUES (1, ${u?.id ?? null}, ${!u}, ${todayIn(TZ)}, 'Restock', 'One-time', ${cost}, ${what.slice(0, 120)},
+                        ${`Inventory purchase at ${place}`}, 'inventory', ${mv!.id}, ${who.email ?? who.name})
+                ON CONFLICT (source, external_ref) WHERE external_ref IS NOT NULL DO NOTHING`;
+    } else {
+      fieldExpense = await addFieldExpense(sql, { source: who.source, by: who.name, amount: cost, description: what, category: 'Restock',
+        cleaningKey: b.cleaningKey ? String(b.cleaningKey) : null, unitId, photos, moveId: mv!.id });
+    }
+  }
+  return { todoId, place, item: item.name, moveId: mv!.id, fieldExpense };
 }
 
 /**

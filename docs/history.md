@@ -3688,3 +3688,13 @@ edited in place and the reports, extras and declines never reached it. Now every
 own reply in the day's thread (photos batched per person within 15 minutes), with the summary message on
 top still re-drawn.
 
+## §137 — Everything spent reaches Costs; handymen like cleaners (2026-10-12)
+
+The owner asked for repair work like the cleaners' (a link, an account, or handled inside), handymen
+recording what they spend, and — "importante" — every repair, clean and purchase in Costs. Costs held
+three manual rows: the cleaners' pay ($26.7k since April), approved extras and every purchase were
+outside the profit. Now every money flow writes its own expense, keyed so it can be re-run: cleans and
+approved extras by a nightly sync that follows the record (back-filled from April), any to-do completed
+with a cost (not only work orders), the team's inventory purchases at once, and money paid in the field
+only after a person approves it (`field_expenses`, 065) — a field purchase must say what it cost.
+

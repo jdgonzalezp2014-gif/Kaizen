@@ -21,7 +21,8 @@ scheduled_on/start_time, due_on/due_time, vendor, cost_estimate, cost_actual, re
 parent_id, claim_id, reservation_id/label, charge_owner, hostaway_task_id, hostaway_state,
 hostaway_expense_id, deleted_at), `work_updates` (subject task|claim; kind `note` = comment,
 others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_users`,
-`expenses` rows with `source='repair'`.
+`expenses` rows with `source='repair'` — for a work order AND (§137) any to-do completed with a cost
+(category Repairs / Restock for "Buy…" / the title's category).
 
 ## Rules that bite
 

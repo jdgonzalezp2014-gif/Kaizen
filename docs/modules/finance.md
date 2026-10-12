@@ -44,6 +44,16 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
   (`quo_live` false) (§44, §45).
 - Cost categories live in `src/lib/costs.ts` (one list for Costs and Slack); one-offs can
   also be logged from Slack (§117).
+- **Everything spent reaches Costs (§137, the owner).** Profit = revenue − `expenses`, so every
+  money flow writes an expense, each keyed `(source, external_ref)` so it is idempotent:
+  `cleaning` (every clean done and priced — key = clean key, its unit and day, category Cleaning),
+  `cleaning_extra` (approved extras), both kept in step nightly by `syncCleaningCosts`
+  (`functions/_lib/field-costs.ts`, run by /api/cron and after an extra is approved; a voided or
+  re-priced clean follows); `repair` (a work order — or §137 any to-do — completed with a cost:
+  `settleRepair`; Repairs, "Buy…" = Restock, else the title's category); `inventory` (the team's
+  purchase with a cost, Restock); `field` (money paid in the field — a cleaner's, helper's or
+  handyman's — once a person approves it: `field_expenses`, Operations → Crew). Before §137 Costs
+  held only three manual rows: the cleaners' pay ($26.7k since April) was missing from profit.
 - Money formatting pinned to `en-US` (§20). Dates: an optional filter is `null`, never `''` (§54).
 
 ## Open items

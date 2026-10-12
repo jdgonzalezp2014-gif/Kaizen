@@ -74,7 +74,9 @@ export function FieldReport({ tx, items, start, send, onClose }: {
   );
 
   // What is still missing — said on the Send button's line, never only by a greyed-out button.
-  const missing = kind === 'purchase' || kind === 'missing' ? (!itemId ? tx.supNeedItem : kind === 'purchase' && qty < 1 ? tx.supNeedQty : '')
+  // §137: a purchase reaches Costs only with what it cost — so the total is required (the team approves it).
+  const missing = kind === 'purchase' || kind === 'missing' ? (!itemId ? tx.supNeedItem : kind === 'purchase' && qty < 1 ? tx.supNeedQty
+      : kind === 'purchase' && !(Number(cost) > 0) ? tx.supNeedCost : '')
     : (!text.trim() ? tx.supNeedText : !prio ? tx.urgNeed : '');
 
   async function submit() {

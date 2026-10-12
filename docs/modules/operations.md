@@ -152,6 +152,11 @@ key had no SOPs.
   answered); the row then reads "📨 Sent from the link by X" and ▶ Review opens the team's
   run, where Review & finish makes the work. Reopen from the link clears `sent_at`. Refused when expired,
   finished or cancelled. App.tsx reads `#i=` before `#t=`; the phone remembers which it opened last.
+- **Purchases reach Costs (§137):** a purchase from the field (cleaner, helper) needs its total — the
+  form and the server require it — and becomes a `field_expenses` row waiting for approval in
+  Operations → Crew ("Purchases waiting for approval": who, unit, amount, receipt; deny needs a reason);
+  approved → an expense (Restock) on its unit. The team's purchase in Inventory → Record a move takes a
+  cost and goes to Costs at once. Approved extras and every clean's pay are in Costs too (finance module).
 - **How cleaners get in (§136):** `src/lib/unit-access.ts` (pure, tested: `repoMatch`, `unitAccess`) +
   `functions/_lib/unit-access.ts` (`accessByUnit`). Address and Wi-Fi (and Hostaway's door code) come from
   Hostaway into `units.address / wifi_name / wifi_password / door_code` (063) on every units sync (Settings →

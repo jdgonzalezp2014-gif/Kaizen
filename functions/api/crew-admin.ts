@@ -5,7 +5,8 @@
  *                                               cleaner, their page for the team
  *   GET  ?view=cleaner&cleaner=<name>[&period]  that cleaner's page through the SAME code that
  *                                               answers the cleaner (crewGet) — nothing of the team's
- *   POST { action: 'decideExtra', id, status: 'approved' | 'denied', note }
+ *   POST { action: 'decideExtra', id, status: 'approved' | 'denied', note }   an approved extra goes to Costs (§137)
+ *   POST { action: 'decideField', id, status: 'approved' | 'denied', note }   a purchase paid in the field → Costs (§137)
  *   POST { action: 'flag', key, note, price? }  flag a clean; the cleaner sees the note — and, for a clean
  *                                               today or before, optionally correct what it pays (§128)
  *   POST { action: 'unflag', key }
@@ -27,6 +28,7 @@ import { scheduleMovements, type Movement } from '../../src/lib/crew.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { rateFor } from '../../src/lib/operations.ts';
 import { opsConfig } from '../_lib/ops.ts';
+import { decideFieldExpense, pendingFieldExpenses, syncCleaningCosts } from '../_lib/field-costs.ts';
 
 const TZ = 'America/New_York';
 
@@ -73,7 +75,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   ]);
   if (name && !page) return refuse(404, 'not_on_roster', `${name} is not on the roster.`);
   await attachFiles(sql, pending as { id: string }[]);
-  return Response.json({ ok: true, pending, page, schedule, toConfirm });
+  // §137: purchases paid in the field, waiting for approval before they reach Costs.
+  const fieldPending = await pendingFieldExpenses(sql);
+  return Response.json({ ok: true, pending, fieldPending, page, schedule, toConfirm });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -92,6 +96,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
                                   decided_by = ${who.email}, decided_at = now()
                             WHERE account_id = 1 AND id = ${Number(body.id) || 0} AND status = 'pending' RETURNING id`;
     if (!done.length) return refuse(409, 'already_decided', 'That extra was already decided or withdrawn — reload.');
+    // §137: approved, it is part of what the clean cost — in Costs at once.
+    if (status === 'approved') await syncCleaningCosts(sql, who.email);
+    return Response.json({ ok: true });
+  }
+
+  if (body.action === 'decideField') {
+    const status = body.status;
+    if (status !== 'approved' && status !== 'denied') return refuse(400, 'bad_request', 'Approve or deny.');
+    if (status === 'denied' && !note) return refuse(400, 'bad_request', 'Say why it is denied — whoever paid reads the note.');
+    try { await decideFieldExpense(sql, String(body.id ?? ''), status, note || null, who.email); }
+    catch (e) { return refuse(409, 'already_decided', e instanceof Error ? e.message : String(e)); }
     return Response.json({ ok: true });
   }
 

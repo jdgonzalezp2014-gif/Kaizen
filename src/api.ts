@@ -529,6 +529,12 @@ export interface CleanLink { link: string; unit: string; date: string; expires: 
 export const crewCleanLink = (key: string, token?: string | null) =>
   call<({ ok: true } & CleanLink) | Fail>(crewPath(token), { method: 'POST', headers: crewHeaders(token), body: JSON.stringify({ action: 'cleanLink', key }) });
 
+/** Money paid in the field, waiting for the team's approval before it reaches Costs (§137). */
+export interface FieldExpense {
+  id: string; source: 'cleaner' | 'link' | 'vendor'; byName: string; cleaningKey: string | null; todoId: string | null;
+  unit: string | null; category: string; amount: number; description: string; photos: { name: string; url: string }[]; at: string;
+}
+
 export interface PendingExtra {
   id: string; cleaner: string; key: string; amount: number; description: string; createdAt: string;
   unit: string; date: string; price: number | null;
@@ -537,7 +543,7 @@ export interface PendingExtra {
 /** A clean held after a cancellation on or after arrival (§123), waiting for a person. */
 export interface ToConfirm { key: string; unit: string; date: string; beds: number | null; deep: boolean; guest: string | null; note: string }
 export const getCrewAdmin = (cleaner?: string | null, period?: string | null) =>
-  call<{ ok: true; pending: PendingExtra[]; page: CrewPage | null; schedule: CrewSchedule; toConfirm: ToConfirm[] } | Fail>(
+  call<{ ok: true; pending: PendingExtra[]; fieldPending?: FieldExpense[]; page: CrewPage | null; schedule: CrewSchedule; toConfirm: ToConfirm[] } | Fail>(
     `/api/crew-admin?${new URLSearchParams({ ...(cleaner ? { cleaner } : {}), ...(period ? { period } : {}) })}`);
 /** A cleaner's page through the same server code that answers the cleaner — for "View as cleaner". */
 export const getCrewAsCleaner = (cleaner: string, period?: string | null) =>

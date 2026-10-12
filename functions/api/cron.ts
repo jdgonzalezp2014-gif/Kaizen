@@ -26,6 +26,7 @@ import {
 } from '../../src/lib/revenue.ts';
 import { redListings, edges, compose } from '../../src/lib/alerts.ts';
 import { loadOps, pushHostNotes, recordCleanings, reconcileRecent } from '../_lib/ops.ts';
+import { syncCleaningCosts } from '../_lib/field-costs.ts';
 import { confirmSchedule } from '../_lib/crew.ts';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -193,10 +194,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     operations = { error: e instanceof Error ? e.message : String(e) };
   }
 
+  // §137: every clean done and priced, and every approved extra, is an expense in Costs — kept in step with
+  // the record each night (a price corrected, a clean voided). Isolated like the rest.
+  let costs: Record<string, unknown> | null = null;
+  try { costs = await syncCleaningCosts(sql, 'Kaizen (nightly)'); }
+  catch (e) { costs = { error: e instanceof Error ? e.message : String(e) }; }
+
   return Response.json({
     ok: true,
     outcomes,
     operations,
+    costs,
     red: conditions.filter(c => c.active).length,
     changed: changed.length,
     quoLive: quo.live,

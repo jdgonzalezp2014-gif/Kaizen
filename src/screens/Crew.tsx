@@ -14,7 +14,7 @@
 import { Fragment, useEffect, useState } from 'react';
 import {
   crewAction, crewAdminAction, crewCleanLink, crewPhoto, crewReport, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
-  type CleanFieldState, type CleanLink, type CrewPage, type CrewSchedule, type CrewUpcoming, type PendingExtra, type ToConfirm
+  type CleanFieldState, type CleanLink, type CrewPage, type FieldExpense, type CrewSchedule, type CrewUpcoming, type PendingExtra, type ToConfirm
 } from '../api.ts';
 import type { CrewClean, CrewExtra } from '../lib/crew.ts';
 import { isBilled, movementText, EXTRA_MAX_AMOUNT, type Movement } from '../lib/crew.ts';
@@ -91,12 +91,13 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
   const [name, setName] = useState(roster.some(c => c.name === fromHash) ? fromHash : '');
   const [period, setPeriod] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingExtra[]>([]);
+  const [fieldPending, setFieldPending] = useState<FieldExpense[]>([]);
   const [page, setPage] = useState<CrewPage | null>(null);
   const [schedule, setSchedule] = useState<CrewSchedule | null>(null);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
   const [err, setErr] = useState('');
   const load = () => getCrewAdmin(name || null, period)
-    .then(r => { if (r.ok) { setPending(r.pending); setPage(r.page); setSchedule(r.schedule); setToConfirm(r.toConfirm ?? []); setErr(''); }
+    .then(r => { if (r.ok) { setPending(r.pending); setFieldPending(r.fieldPending ?? []); setPage(r.page); setSchedule(r.schedule); setToConfirm(r.toConfirm ?? []); setErr(''); }
                  else setErr(r.message ?? 'Could not load.'); })
     .catch(e => setErr(String(e)));
   useEffect(() => { void load(); }, [name, period]);
@@ -156,6 +157,24 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
           </div>
         )}
       </div>
+      <div className="card">
+        <h2>Purchases waiting for approval <span className="chan-tag">{fieldPending.length}</span></h2>
+        <p className="note">Paid in the field with its receipt — by a cleaner, a cleaner’s helper, later a handyman. Approved, it goes to
+          Costs on its unit (and is owed back to whoever paid); denied, they read why. Nothing reaches Costs before a person approves it.</p>
+        {!fieldPending.length ? <p className="note">None waiting.</p> : (
+          <div className="crew-list">
+            {fieldPending.map(f => (
+              <div key={f.id} className="crew-row">
+                <div><b>{f.byName.replace(/^(.*)'s team: (.*)$/, '$2 ($1’s team)')}</b>{f.unit ? ` · ${f.unit}` : ''}
+                  <div className="sub-n">{f.category} · asked {f.at}</div></div>
+                <div><b>{money2(f.amount)}</b> — {f.description} <Files files={f.photos.map((p, i) => ({ id: String(i), ...p }))} />
+                  {!f.photos.length && <span className="breach"> no receipt</span>}</div>
+                {canEdit && <Decide id={f.id} kind="decideField" onDone={load} />}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
     </>
   );
@@ -198,11 +217,11 @@ function ConfirmRow({ t, roster, canEdit, onDone }: { t: ToConfirm; roster: Clea
   );
 }
 
-function Decide({ id, onDone }: { id: string; onDone: () => void }) {
+function Decide({ id, onDone, kind = 'decideExtra' }: { id: string; onDone: () => void; kind?: 'decideExtra' | 'decideField' }) {
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState('');
   const go = async (status: 'approved' | 'denied') => {
-    const r = await crewAdminAction({ action: 'decideExtra', id, status, note }).catch(e => ({ ok: false as const, message: String(e) }));
+    const r = await crewAdminAction({ action: kind, id, status, note }).catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
     onDone();
   };

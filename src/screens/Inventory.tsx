@@ -65,7 +65,7 @@ function PlaceStock({ inv, unitId, canEdit, onSaved }: { inv: Inventory; unitId:
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
-  const [move, setMove] = useState({ kind: 'purchase', itemId: '', qty: '', note: '' });
+  const [move, setMove] = useState({ kind: 'purchase', itemId: '', qty: '', note: '', cost: '' });
   const levelOf = (id: string) => p.items.find(l => l.itemId === id);
   const send = async (body: Record<string, unknown>, done: string) => {
     setBusy(true); setMsg('');
@@ -138,10 +138,12 @@ function PlaceStock({ inv, unitId, canEdit, onSaved }: { inv: Inventory; unitId:
               <option value="">—</option>{items.map(i => <option key={i.id} value={i.id}>{i.name} ({i.measure})</option>)}</select></label>
             <label>Quantity<input type="number" inputMode="decimal" step="any" value={move.qty} onChange={e => setMove(m => ({ ...m, qty: e.target.value }))} /></label>
             <label>Note<input value={move.note} maxLength={500} onChange={e => setMove(m => ({ ...m, note: e.target.value }))} /></label>
+            {move.kind === 'purchase' && <label>Cost ($) <span className="sub-n">→ Costs, Restock</span>
+              <input type="number" inputMode="decimal" min="0" step="0.01" value={move.cost} onChange={e => setMove(m => ({ ...m, cost: e.target.value }))} /></label>}
           </div>
           <div className="button-row">
             <button disabled={busy || !move.itemId || move.qty === ''}
-                    onClick={async () => { if (await send({ action: 'move', ...move, unitId }, 'Saved.')) setMove(m => ({ ...m, itemId: '', qty: '', note: '' })); }}>Save</button>
+                    onClick={async () => { if (await send({ action: 'move', ...move, unitId }, 'Saved.')) setMove(m => ({ ...m, itemId: '', qty: '', note: '', cost: '' })); }}>Save</button>
           </div>
         </>
       )}
