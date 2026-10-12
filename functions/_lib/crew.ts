@@ -12,7 +12,8 @@ import type { Env } from './db.ts';
 import { loadOps, pushHostNotes, recordCleanings } from './ops.ts';
 import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { decrypt, encrypt } from './crypto.ts';
-import { activeUnits, esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, recordMove } from './inventory.ts';
+import { addPhotos, cleanStates, ensureRecord, markClean, type CleanState, type Stage } from './clean-record.ts';
+import { activeUnits, esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, recordMove, recordUses } from './inventory.ts';
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
 import type { Level } from '../../src/lib/operations.ts';
 import {
@@ -52,6 +53,8 @@ export interface CrewPage {
   extraFrom: DateStr;
   /** Published SOPs for the cleaner's page (feature `crew.page`), shown as "How this page works". */
   help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; lang: 'en' | 'es' }[];
+  /** §134: each recent or coming clean's photos before/after and done — by key. */
+  field?: Record<string, CleanState>;
   /** §134: what they can report — the supplies and the units. */
   supplies?: { items: { id: string; name: string; measure: string; category: string }[]; units: { id: string; name: string }[] };
   upcoming: {
@@ -261,7 +264,8 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
     cleaner: { name: c.name, level: c.level, invoicePeriod: c.invoice_period, active: c.active, lang: c.lang ?? 'en' },
     today, periods, period, cleans: shown, extras: extras.filter(e => shown.some(x => x.key === e.key)), extraFrom,
     invoice: buildInvoice(c.name, period, shown, extras, today),
-    upcoming
+    upcoming,
+    field: await cleanStates(sql, [...new Set([...shown.filter(x => x.date >= addDays(today, -LINK_PAST_DAYS)).map(x => x.key), ...ahead])])
   };
 }
 
@@ -295,6 +299,9 @@ export async function attachFiles(sql: SqlFn, extras: { id: string; files?: Crew
     { id: string; extra: string; name: string; url: string }[];
   for (const e of extras) e.files = files.filter(f => f.extra === e.id).map(f => ({ id: f.id, name: f.name, url: f.url }));
 }
+
+/** A helper's link (§134): for a clean ahead or done in the last LINK_PAST_DAYS, good until LINK_AFTER_DAYS after it. */
+const LINK_PAST_DAYS = 3, LINK_AFTER_DAYS = 2;
 
 /** Evidence limits: a few photos or PDFs per request, each small enough to pass through the Worker. */
 const MAX_FILES = 5;
@@ -446,9 +453,9 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     const who2 = { name: me.name, source: 'cleaner' as const };
     try {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${me.name} ${String(body.kind ?? body.action)}`);
-      const r = body.action === 'supply'
-        ? (await recordMove(sql, who2, body, photos)).todoId
-        : await fieldTodo(sql, who2, { ...body, kind: body.action }, photos);
+      const r = body.action !== 'supply' ? await fieldTodo(sql, who2, { ...body, kind: body.action }, photos)
+        : body.kind === 'used' ? (await recordUses(sql, who2, body), null)
+        : (await recordMove(sql, who2, body, photos)).todoId;
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r]));
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
@@ -457,17 +464,57 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     return Response.json({ ok: true });
   }
 
-  // §134: the link a cleaner shares with the people they hire — no account; it only reports.
-  // Kept encrypted so it can be shared again; `reset` makes a new one (the old stops working).
-  if (body.action === 'reportLink') {
-    const [c] = await sql`SELECT report_token_enc FROM cleaners WHERE account_id = 1 AND name = ${me.name}` as { report_token_enc: string | null }[];
-    let token = c?.report_token_enc && body.reset !== true && body.reset !== 'true' ? await decrypt(c.report_token_enc, env.ENCRYPTION_KEY).catch(() => null) : null;
+  // §134: a clean the cleaner reports on must be one their page shows — coming, or done in the last
+  // days. Checked against the page the first time (it reads the schedule), then by its field record.
+  const myClean = async (key: string) => {
+    const [r] = await sql`SELECT unit_name, clean_date::text AS date FROM clean_records
+                           WHERE account_id = 1 AND cleaning_key = ${key} AND cleaner = ${me.name}` as { unit_name: string; date: string }[];
+    if (r && r.date >= addDays(today, -LINK_PAST_DAYS)) return { unit: r.unit_name, date: r.date };
+    const page = await loadCrewPage(sql, env.ENCRYPTION_KEY, me.name);
+    const recent = page?.cleans.find(c => c.key === key && !c.voidReason && c.date <= today && c.date >= addDays(today, -LINK_PAST_DAYS));
+    const ahead = page?.upcoming.rows.find(x => x.key === key);
+    const clean = ahead ? { unit: ahead.unit, date: ahead.date } : recent ? { unit: recent.unit, date: recent.date } : null;
+    if (!clean) return null;
+    const [u] = await sql`SELECT id FROM units WHERE account_id = 1 AND name = ${clean.unit}` as { id: string }[];
+    await ensureRecord(sql, { key, cleaner: me.name, unitId: u?.id ?? null, unitName: clean.unit, date: clean.date });
+    return clean;
+  };
+  const notMine = () => refuse(400, 'bad_request', say('That clean is not on your page any more.', 'Esa limpieza ya no está en tu página.'));
+  const inLang = (e: unknown) => { const m = e instanceof Error ? e.message : String(e); return who?.lang === 'es' ? esMessage(m) : m; };
+
+  // §134: a link for the person helping on ONE clean — no account; it only reports, for that clean.
+  // The same link is given again while it lasts (kept encrypted for that); it ends two days after the clean.
+  if (body.action === 'cleanLink') {
+    const key = String(body.key ?? '');
+    const clean = await myClean(key);
+    if (!clean) return notMine();
+    const expires = addDays(clean.date, LINK_AFTER_DAYS);
+    const [had] = await sql`SELECT token_enc FROM clean_links WHERE account_id = 1 AND cleaner = ${me.name} AND cleaning_key = ${key}
+                               AND expires_on >= ${today}::date` as { token_enc: string }[];
+    let token = had ? await decrypt(had.token_enc, env.ENCRYPTION_KEY).catch(() => null) : null;
     if (!token) {
       token = newToken();
-      await sql`UPDATE cleaners SET report_token_enc = ${await encrypt(token, env.ENCRYPTION_KEY)}, report_token_hash = ${await sha256(token)}
-                 WHERE account_id = 1 AND name = ${me.name}`;
+      const [u] = await sql`SELECT id FROM units WHERE account_id = 1 AND name = ${clean.unit}` as { id: string }[];
+      await sql`INSERT INTO clean_links (account_id, cleaner, cleaning_key, unit_id, unit_name, clean_date, expires_on, token_enc, token_hash)
+                VALUES (1, ${me.name}, ${key}, ${u?.id ?? null}, ${clean.unit}, ${clean.date}, ${expires},
+                        ${await encrypt(token, env.ENCRYPTION_KEY)}, ${await sha256(token)})
+                ON CONFLICT (account_id, cleaner, cleaning_key) DO UPDATE
+                  SET token_enc = EXCLUDED.token_enc, token_hash = EXCLUDED.token_hash, unit_id = EXCLUDED.unit_id,
+                      unit_name = EXCLUDED.unit_name, clean_date = EXCLUDED.clean_date, expires_on = EXCLUDED.expires_on, created_at = now()`;
     }
-    return Response.json({ ok: true, link: `${new URL(request.url).origin}/report#t=${token}` });
+    return Response.json({ ok: true, link: `${new URL(request.url).origin}/report#t=${token}`, unit: clean.unit, date: clean.date, expires });
+  }
+
+  // §134: photos before / after a clean, to the team's Drive; and done / reopened.
+  if (body.action === 'cleanPhoto' || body.action === 'cleanMark') {
+    const key = String(body.key ?? '');
+    if (!(await myClean(key))) return notMine();
+    const by = { name: me.name, source: 'cleaner' as const };
+    try {
+      if (body.action === 'cleanPhoto') await addPhotos(sql, env.ENCRYPTION_KEY, key, String(body.stage) as Stage, files, by);
+      else await markClean(sql, key, String(body.kind) as 'done' | 'reopened', by);
+    } catch (e) { return refuse(400, 'bad_request', inLang(e)); }
+    return Response.json({ ok: true, state: (await cleanStates(sql, [key]))[key] });
   }
 
   if (body.action === 'cancelExtra') {

@@ -1837,18 +1837,60 @@ input[type=file][hidden] { display: none !important; }
 .insp-finding textarea { margin: 0; }
 .insp-finding textarea, .insp-sheet textarea { font-family: inherit; font-size: 15px; }
 
-/* §134 field reports: supplies and problems, from the crew page and the shared link — phone first. */
-.field-report > label { display: block; margin-top: 10px; }
-.field-kinds { flex-wrap: wrap; gap: 6px; }
-.field-kinds .chip { font-size: 13px; padding: 7px 12px; }
-.field-items { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px 8px; margin: 10px 0 0; }
-.field-items legend { font-size: 12px; color: var(--muted); padding: 0 4px; }
-.field-item { display: grid; grid-template-columns: minmax(0, 1fr) 84px; gap: 10px; align-items: center; margin: 4px 0 0; }
-.field-item input { text-align: right; }
-.field-ok { color: var(--good); font-weight: 600; }
-.share-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
-.share-link { font-size: 12px; word-break: break-all; color: var(--muted); margin-top: 8px; }
+/* §134 field reports, one clean at a time — for people not at home on a phone: 17px+ text, 56px
+   targets (well over the 44px minimum), full-width choices, an icon and a word on each. */
+.fr { display: flex; flex-direction: column; gap: 12px; font-size: 17px; }
+.fr p { margin: 0; }
+.fr-q { font-size: 19px; font-weight: 700; margin-top: 6px !important; }
+.fr-kind { font-size: 15px; color: var(--muted); }
+.fr-big { font-size: 26px; font-weight: 800; color: var(--good); }
+.fr-btn { min-height: 56px; width: 100%; font-size: 17px; border-radius: 12px; padding: 12px 16px; text-align: center;
+  display: flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; }
+.fr-btn.secondary { background: transparent; color: var(--ink); border: 2px solid var(--line); font-weight: 600; }
+label.fr-btn { margin: 0; }
+.fr-pick { background: var(--ink); color: var(--bg); font-weight: 700; }
+.fr-choice { justify-content: flex-start; text-align: left; background: var(--card); color: var(--ink); border: 2px solid var(--line); }
+.fr-go { background: var(--good); color: #fff; font-weight: 800; }
+.fr-back { align-self: flex-start; font-size: 16px; padding: 8px 0; }
+.fr-group { border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; }
+.fr-cat { font-size: 14px; color: var(--muted); padding-top: 8px; }
+.fr-line { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.fr-line:last-child { border-bottom: 0; }
+.fr-line.on > span { font-weight: 700; }
+.fr-line small { color: var(--muted); font-size: 14px; }
+.fr-step { display: inline-flex; align-items: center; gap: 6px; flex: none; }
+.fr-step button { width: 52px; height: 52px; padding: 0; font-size: 26px; border-radius: 12px; }
+.fr-step b { min-width: 36px; text-align: center; font-size: 22px; }
+.fr-select, .fr-text, .fr-field input { font-size: 17px; min-height: 56px; border-radius: 12px; }
+.fr-field { font-size: 15px; color: var(--muted); }
+.fr-tip, .fr-missing { font-size: 15px; color: var(--muted); }
+.fr-missing { text-align: center; }
+.fr-send { position: sticky; bottom: 0; background: var(--card); padding: 10px 0 4px; display: flex; flex-direction: column; gap: 6px; }
+.fr-done { align-items: stretch; text-align: center; padding: 18px 0; }
+.clean-opts { grid-column: 1 / -1; }
+.clean-opts select { font-size: 16px; min-height: 48px; border-radius: 10px; }
+.clean-panel { grid-column: 1 / -1; border: 2px solid var(--line); border-radius: 14px; padding: 14px; margin: 6px 0 4px; background: var(--card); }
+.share-row { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.share-wa { background: #1f8f4e; color: #fff; }
 .report-page { max-width: 560px; margin: 0 auto; }
-/* A link that acts as the main button (WhatsApp opens its own app). */
-a.button { background: var(--ink); color: var(--bg); padding: 9px 16px; border-radius: 7px; font-size: 13px; font-weight: 600; text-decoration: none; }
+.report-head { font-size: 24px; font-weight: 800; margin: 0; }
+.report-clean .fr-q { margin-top: 4px !important; }
+.report-clean .fr-kind { margin-top: 2px; }
+/* One line on top: the name small, language and day/night together — the clean fills the screen. */
+header.mini-head, header.mini-head:is(header) { display: flex; flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; margin: 0 0 12px;
+  padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.mini-brand { font-weight: 700; font-size: 15px; }
+.mini-tools { display: flex; align-items: center; gap: 8px; }
+.mini-tools .chip { min-width: 44px; min-height: 40px; font-size: 14px; }
+.fr-stepbtn { gap: 12px; }
+.fr-stepbtn small { display: block; font-size: 14px; font-weight: 400; color: var(--muted); }
+.fr-go small { color: inherit; }
+.fr-num { flex: none; width: 34px; height: 34px; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+  background: var(--ink); color: var(--bg); font-weight: 800; font-size: 17px; }
+.fr-done-line { font-size: 19px; font-weight: 800; color: var(--good); text-align: center; padding: 6px 0; }
+.fr-confirm { display: flex; flex-direction: column; gap: 10px; border: 2px solid var(--warn); border-radius: 12px; padding: 12px; }
+.fr-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.fr-thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
+/* A link that acts as a button (WhatsApp opens its own app). */
+a.fr-btn { text-decoration: none; font-weight: 700; }
 .inv-qty { width: 76px; text-align: right; }

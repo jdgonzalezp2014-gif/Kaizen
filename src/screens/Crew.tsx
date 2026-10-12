@@ -13,8 +13,8 @@
  */
 import { Fragment, useEffect, useState } from 'react';
 import {
-  crewAction, crewAdminAction, crewReport, crewReportLink, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
-  type CrewPage, type CrewSchedule, type CrewUpcoming, type PendingExtra, type ToConfirm
+  crewAction, crewAdminAction, crewCleanLink, crewReport, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
+  type CleanFieldState, type CleanLink, type CrewPage, type CrewSchedule, type CrewUpcoming, type PendingExtra, type ToConfirm
 } from '../api.ts';
 import type { CrewClean, CrewExtra } from '../lib/crew.ts';
 import { isBilled, movementText, EXTRA_MAX_AMOUNT, type Movement } from '../lib/crew.ts';
@@ -24,7 +24,8 @@ import {
 } from '../lib/crew-i18n.ts';
 import { money2 } from '../lib/format.ts';
 import { addDays } from '../lib/dates.ts';
-import { FieldReport, type Send } from '../components/FieldReport.tsx';
+import { FieldReport, KINDS, type Kind, type Send } from '../components/FieldReport.tsx';
+import { CleanSteps, type Result } from '../components/CleanSteps.tsx';
 import type { Cleaner } from '../lib/operations.ts';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -75,7 +76,7 @@ export function CrewHome({ token, asCleaner }: { token?: string | null; asCleane
   return <CrewView page={page} mode="cleaner" lang={shown} onLang={choose} onPeriod={setPeriod} reload={load}
                    act={act} upload={asCleaner ? inert : (f, files) => crewUpload(f, files, token)}
                    report={asCleaner ? inert : (f, files) => crewReport(f, files, token)}
-                   shareLink={asCleaner ? inert : reset => crewReportLink(reset, token)} />;
+                   shareLink={asCleaner ? inert : key => crewCleanLink(key, token)} />;
 }
 
 /* ── the team's side, in Operations ───────────────────────────────── */
@@ -218,7 +219,7 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
   onPeriod: (from: string) => void; reload: () => void;
   act: Act; upload?: Upload;
   /** §134: supplies and problems, and the link for the people they hire — the cleaner's page only. */
-  report?: Send; shareLink?: (reset: boolean) => Promise<{ ok: boolean; link?: string; message?: string }>;
+  report?: Send; shareLink?: ShareLink;
   /** The cleaner's language (§129); the team's view is English. */
   lang?: Lang; onLang?: (l: Lang) => void;
 }) {
@@ -230,6 +231,11 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
   const flagged = shown.filter(c => c.flagNote).length;
   const excluded = shown.filter(c => c.voidReason).length;
   const team = mode === 'team';
+  // §134: Options on each clean of the cleaner's own (today and ahead in Coming up; the last days in Cleans).
+  const ctx: FieldCtx | undefined = report && shareLink && page.supplies && mode === 'cleaner'
+    ? { report, shareLink, supplies: page.supplies, today: page.today, reload } : undefined;
+  const aheadKeys = new Set(page.upcoming.rows.map(r => r.key));
+  const optionsFrom = addDays(page.today, -3);
 
   return (
     <div className="crew">
@@ -260,9 +266,8 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
           ))}
         </div>
       )}
-      <Upcoming page={page} act={mode === 'cleaner' ? act : undefined} reload={reload} lang={lang} />
+      <Upcoming page={page} act={mode === 'cleaner' ? act : undefined} reload={reload} lang={lang} ctx={ctx} />
       {/* §134: right under what is coming — reporting supplies is what they do after each clean. */}
-      {report && page.supplies && <Supplies page={page} lang={lang} report={report} />}
       <CrewCalendar page={page} lang={lang} />
 
       <div className="card no-print">
@@ -277,73 +282,102 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
           <div className="crew-list">
             {shown.map(c => (
               <CleanRow key={c.key} c={c} extras={extrasOf(c.key)} today={page.today} extraFrom={page.extraFrom}
+                        fs={aheadKeys.has(c.key) ? undefined : page.field?.[c.key]}
+                        ctx={ctx && !aheadKeys.has(c.key) && !c.voidReason && c.date <= page.today && c.date >= optionsFrom ? ctx : undefined}
                         mode={mode} canEdit={canEdit} act={act} upload={upload} reload={reload} lang={lang} />
             ))}
           </div>
         )}
       </div>
 
-      {shareLink && <ShareReport name={page.cleaner.name} lang={lang} get={shareLink} />}
       <InvoiceView page={page} lang={lang} />
     </div>
   );
 }
 
-/* ── supplies and problems (§134) ─────────────────────────────────── */
+/* ── reports and the helper's link, per clean (§134) ─────────────── */
 
-/** What they took, bought, did not find; a problem; a need — against one of their recent cleans or any unit. */
-function Supplies({ page, lang, report }: { page: CrewPage; lang: Lang; report: Send }) {
+type ShareLink = (key: string) => Promise<{ ok: boolean; message?: string } & Partial<CleanLink>>;
+/** What a clean row needs to offer its Options — absent on the team's view. */
+interface FieldCtx { report: Send; shareLink: ShareLink; supplies: NonNullable<CrewPage['supplies']>; today: string; reload: () => void }
+
+/**
+ * One "Options…" list on each of the cleaner's cleans (the owner: not a
+ * card for the whole team — overwhelming). A native list: the phone shows it
+ * big and familiar. Each choice opens below the clean, already about it.
+ */
+function CleanOptions({ cleanKey, unit, date, lang, ctx, fs }: { cleanKey: string; unit: string; date: string; lang: Lang; ctx: FieldCtx; fs?: CleanFieldState }) {
   const tx = TX[lang];
-  const sup = page.supplies!;
-  // Their cleans of the last three days and today, newest first: what "took for a clean" is about.
-  const cleans = page.cleans.filter(c => !c.voidReason && c.date <= page.today && c.date >= addDays(page.today, -3))
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .map(c => ({ key: c.key, label: tx.supCleanOpt(dayLabel(lang, c.date), c.unit), unitId: sup.units.find(u => u.name === c.unit)?.id ?? null }));
+  const [open, setOpen] = useState<Kind | 'share' | 'steps' | null>(null);
+  const [changed, setChanged] = useState(false);
+  const unitId = ctx.supplies.units.find(u => u.name === unit)?.id ?? '';
+  // The clean's own steps first (photos, done), then what to tell the team, then the helper's link.
+  const choices = ['steps' as const, ...KINDS.filter(k => k !== 'used' || date <= ctx.today), 'share' as const];
+  const close = () => { setOpen(null); if (changed) { setChanged(false); ctx.reload(); } };
   return (
-    <div className="card no-print">
-      <h2>{tx.supTitle}</h2>
-      <p className="note">{tx.supNote}</p>
-      <FieldReport tx={tx} items={sup.items} units={sup.units} cleans={cleans} send={report} />
+    <>
+      <div className="clean-opts no-print">
+        <select value="" aria-label={tx.optLabel} onChange={e => setOpen((e.target.value || null) as Kind | 'share' | 'steps' | null)}>
+          <option value="">{tx.optLabel}</option>
+          {choices.map(k => <option key={k} value={k}>{k === 'share' ? tx.optShare : k === 'steps' ? tx.optSteps : tx.supKind[k]}</option>)}
+        </select>
+      </div>
+      {open && (
+        <div className="clean-panel no-print">
+          <p className="fr-kind">{dayLabel(lang, date)} · {unit}</p>
+          {open === 'steps' ? <>
+              <CleanSteps tx={tx} state={fs} onState={() => setChanged(true)}
+                          sendPhoto={(stage, f) => ctx.report({ action: 'cleanPhoto', key: cleanKey, stage }, [f]) as Promise<Result>}
+                          mark={kind => ctx.report({ action: 'cleanMark', key: cleanKey, kind }, []) as Promise<Result>} />
+              <button className="fr-btn secondary" style={{ marginTop: 12 }} onClick={close}>{tx.supClose}</button>
+            </>
+          : open === 'share'
+            ? <SharePanel cleanKey={cleanKey} lang={lang} get={ctx.shareLink} onClose={() => setOpen(null)} />
+            : <FieldReport key={open} tx={tx} items={ctx.supplies.items} start={open} onClose={() => setOpen(null)}
+                           send={(f, files) => ctx.report({ ...f, cleaningKey: cleanKey, unitId }, files)} />}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** Where a clean stands in the field: photos before/after (the Drive folder) and done — for the cleaner and the team. */
+function FieldLine({ fs, lang }: { fs?: CleanFieldState; lang: Lang }) {
+  if (!fs || (!fs.before && !fs.after && !fs.done)) return null;
+  const tx = TX[lang];
+  return (
+    <div className="sub-n clean-opts">
+      {fs.folderUrl ? <a href={fs.folderUrl} target="_blank" rel="noreferrer">{tx.stateLine(fs.before, fs.after)}</a> : tx.stateLine(fs.before, fs.after)}
+      {fs.done && <> · <b>{tx.stateDone(fs.done.by)}</b></>}
     </div>
   );
 }
 
-/**
- * The link for the people a cleaner hires: no account, reports only. Fetched
- * on demand (it is made the first time), then sent by WhatsApp, the phone's
- * share sheet, or copied.
- */
-function ShareReport({ name, lang, get }: { name: string; lang: Lang; get: (reset: boolean) => Promise<{ ok: boolean; link?: string; message?: string }> }) {
+/** The link for whoever helps on this clean: WhatsApp first, the phone's share sheet, or copy. */
+function SharePanel({ cleanKey, lang, get, onClose }: { cleanKey: string; lang: Lang; get: ShareLink; onClose: () => void }) {
   const tx = TX[lang];
-  const [link, setLink] = useState<string | null>(null);
+  const [l, setL] = useState<CleanLink | null>(null);
   const [msg, setMsg] = useState('');
-  const [busy, setBusy] = useState(false);
-  const fetchLink = async (reset: boolean) => {
-    if (reset && !confirm(tx.shareResetAsk)) return;
-    setBusy(true); setMsg('');
-    try { const r = await get(reset); if (r.ok && r.link) setLink(r.link); else setMsg(r.message ?? tx.notSaved); }
-    catch (e) { setMsg(String(e)); } finally { setBusy(false); }
-  };
-  const text = link ? tx.shareMsg(name, link) : '';
-  const share = async () => { try { await navigator.share({ text }); } catch { /* closed the sheet */ } };
-  const copy = async () => { try { await navigator.clipboard.writeText(link!); setMsg(tx.shareCopied); } catch { setMsg(link!); } };
+  useEffect(() => {
+    get(cleanKey).then(r => { if (r.ok && r.link) setL(r as CleanLink); else setMsg(r.message ?? tx.notSaved); }).catch(e => setMsg(String(e)));
+  }, [cleanKey]);
+  if (!l) return <div className="fr">{msg ? <p className="breach">{msg}</p> : <p>{tx.sending}</p>}
+    <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button></div>;
+  const day = dayLabel(lang, l.date);
+  const text = tx.shareMsg(l.unit, day, l.link);
   return (
-    <div className="card no-print">
-      <h2>🔗 {tx.shareTitle}</h2>
-      <p className="note">{tx.shareNote}</p>
-      {!link ? <div className="share-row"><button disabled={busy} onClick={() => void fetchLink(false)}>{busy ? tx.sending : tx.shareGet}</button></div> : (
-        <>
-          <div className="share-row">
-            <a className="button" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">💬 {tx.shareWa}</a>
-            {typeof navigator.share === 'function' && <button className="secondary" onClick={() => void share()}>{tx.shareMore}</button>}
-            <button className="secondary" onClick={() => void copy()}>📋 {tx.shareCopy}</button>
-          </div>
-          <p className="share-link">{link}</p>
-          <button className="small" disabled={busy} onClick={() => void fetchLink(true)}>{tx.shareReset}</button>
-          <span className="note"> {tx.shareResetNote}</span>
-        </>
-      )}
-      {msg && <p className={msg === tx.shareCopied ? 'field-ok' : 'breach'}>{msg}</p>}
+    <div className="fr">
+      <p className="fr-q">{tx.shareFor(l.unit, day)}</p>
+      <p>{tx.shareWhat} {tx.shareUntil(dayLabel(lang, l.expires))}</p>
+      <div className="share-row">
+        <a className="fr-btn share-wa" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">💬 {tx.shareWa}</a>
+        {typeof navigator.share === 'function' &&
+          <button className="fr-btn secondary" onClick={() => void navigator.share({ text }).catch(() => {})}>📤 {tx.shareMore}</button>}
+        <button className="fr-btn secondary" onClick={() => void navigator.clipboard.writeText(text).then(() => setMsg(tx.shareCopied), () => setMsg(l.link))}>
+          📋 {tx.shareCopy}</button>
+        {msg && <p className="fr-big" style={{ fontSize: 18 }}>{msg}</p>}
+        <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>
+      </div>
     </div>
   );
 }
@@ -470,7 +504,7 @@ function downloadIcs(page: CrewPage, lang: Lang) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function Upcoming({ page, act, reload, lang }: { page: CrewPage; act?: Act; reload: () => void; lang: Lang }) {
+function Upcoming({ page, act, reload, lang, ctx }: { page: CrewPage; act?: Act; reload: () => void; lang: Lang; ctx?: FieldCtx }) {
   const u = page.upcoming;
   const tx = TX[lang];
   const day = (d: string) => dayLabel(lang, d);
@@ -487,7 +521,7 @@ function Upcoming({ page, act, reload, lang }: { page: CrewPage; act?: Act; relo
           <p className="note">{u.enabled ? tx.through(u.through ? day(u.through) : '—') : tx.autoNote(u.autoDays)}</p>
           {!u.rows.length ? <p className="note">{u.enabled ? tx.nothingThrough(u.through ? day(u.through) : tx.theNextDays) : tx.nothingNext(u.autoDays)}</p> : (
             <div className="crew-list">
-              {u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload} lang={lang}
+              {u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload} lang={lang} ctx={ctx} fs={page.field?.[r.key]}
                 tag={(() => { const m = u.movements.find(x => x.key === r.key);
                               return !m ? null : m.kind === 'added' ? tx.tagNew : m.kind === 'moved' ? tx.tagMoved(day(m.from)) : m.kind === 'time' ? tx.tagTime : null; })()} />)}
             </div>
@@ -499,7 +533,7 @@ function Upcoming({ page, act, reload, lang }: { page: CrewPage; act?: Act; relo
 }
 
 /** One clean ahead. A cleaner can turn it down: it goes back to the team, unassigned. */
-function UpcomingRow({ r, act, reload, tag, lang }: { r: CrewUpcoming; act?: Act; reload: () => void; tag?: string | null; lang: Lang }) {
+function UpcomingRow({ r, act, reload, tag, lang, ctx, fs }: { r: CrewUpcoming; act?: Act; reload: () => void; tag?: string | null; lang: Lang; ctx?: FieldCtx; fs?: CleanFieldState }) {
   const tx = TX[lang];
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState('');
@@ -534,12 +568,14 @@ function UpcomingRow({ r, act, reload, tag, lang }: { r: CrewUpcoming; act?: Act
         </div>
       )}
       {msg && <div className="breach">{msg}</div>}
+      <FieldLine fs={fs} lang={lang} />
+      {ctx && <CleanOptions cleanKey={r.key} unit={r.unit} date={r.date} lang={lang} ctx={ctx} fs={fs} />}
     </div>
   );
 }
 
-function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, reload, lang }: {
-  c: CrewClean; extras: CrewExtra[]; today: string; extraFrom: string; mode: 'cleaner' | 'team'; canEdit: boolean;
+function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, reload, lang, ctx, fs }: {
+  c: CrewClean; extras: CrewExtra[]; today: string; extraFrom: string; mode: 'cleaner' | 'team'; canEdit: boolean; ctx?: FieldCtx; fs?: CleanFieldState;
   act: Act; upload?: Upload; reload: () => void; lang: Lang;
 }) {
   const tx: Tx = TX[lang];
@@ -600,6 +636,8 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
           </div>
         ))}
       </div>
+      <FieldLine fs={fs} lang={lang} />
+      {ctx && <CleanOptions cleanKey={c.key} unit={c.unit} date={c.date} lang={lang} ctx={ctx} fs={fs} />}
       <div className="crew-actions no-print">
         {mode === 'cleaner' && billed && c.date >= extraFrom && !adding &&
           <button className="link tiny" onClick={() => setAdding(true)}>{tx.addExtra}</button>}

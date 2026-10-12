@@ -74,9 +74,16 @@ const ES: Record<string, string> = {
   'Which unit?': '¿Cuál unidad?',
   'The cost is a number.': 'El costo es un número.',
   'Say what it is.': 'Di qué es.',
-  'At most 5 photos at a time.': 'Máximo 5 fotos a la vez.'
+  'At most 5 photos at a time.': 'Máximo 5 fotos a la vez.',
+  'Before or after?': '¿Antes o después?',
+  'No photo.': 'No hay foto.',
+  'At most 10 photos at a time.': 'Máximo 10 fotos a la vez.',
+  'Which clean?': '¿Cuál limpieza?',
+  'Add at least one AFTER photo first.': 'Primero agrega al menos una foto del DESPUÉS.',
+  'Done or reopen?': '¿Completada o reabrir?'
 };
-export const esMessage = (m: string) => ES[m] ?? m.replace(/ is over 15 MB\.$/, ' pesa más de 15 MB.').replace(/: a photo or a PDF, please\.$/, ': una foto o un PDF, por favor.');
+export const esMessage = (m: string) => ES[m] ?? m.replace(/ is over 15 MB\.$/, ' pesa más de 15 MB.').replace(/: a photo or a PDF, please\.$/, ': una foto o un PDF, por favor.')
+  .replace(/: a photo, please\.$/, ': una foto, por favor.');
 
 const KINDS = new Set(['count', 'used', 'purchase', 'adjust', 'missing']);
 export type Who = { name: string; source: 'team' | 'cleaner' | 'link'; email?: string };
@@ -136,6 +143,23 @@ export async function recordMove(sql: SqlFn, who: Who, b: Record<string, unknown
             VALUES (1, ${item.id}, ${unitId}, ${kind}, ${qty}, ${b.cleaningKey ? String(b.cleaningKey) : null}, ${cost}, ${note},
                     ${JSON.stringify(photos)}::jsonb, ${who.name}, ${who.source}, ${todoId ? Number(todoId) : null})`;
   return { todoId, place, item: item.name };
+}
+
+/**
+ * Several uses at once — what was taken for one clean, sent with one tap
+ * (§134). All lines are checked before any is saved, so a mistake in one
+ * never leaves half a report.
+ */
+export async function recordUses(sql: SqlFn, who: Who, b: Record<string, unknown>) {
+  const raw = typeof b.lines === 'string' ? JSON.parse(b.lines || '[]') : b.lines;
+  const lines = (Array.isArray(raw) ? raw : []).map((l: { itemId?: unknown; qty?: unknown }) => ({ itemId: Number(l.itemId), qty: Number(l.qty) }))
+    .filter(l => l.qty > 0);
+  if (!lines.length) throw new Error('How many?');
+  const known = new Set((await invItems(sql)).filter(i => i.active).map(i => Number(i.id)));
+  if (lines.some(l => !known.has(l.itemId))) throw new Error('Which item?');
+  if (lines.some(l => !Number.isFinite(l.qty) || l.qty > 10000)) throw new Error('How many?');
+  for (const l of lines) await recordMove(sql, who, { ...b, kind: 'used', itemId: l.itemId, qty: l.qty });
+  return lines.length;
 }
 
 /** A problem or a request from the field: a to-do for the team. */

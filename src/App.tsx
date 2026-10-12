@@ -45,7 +45,8 @@ const REPORT_TOKEN = (() => {
 export function App() {
   // The link door has no sign-in: the page and nothing else.
   if (location.pathname === '/crew') return <CrewShell token={CREW_TOKEN} />;
-  if (location.pathname === '/report') return <main><header><h1>Kaizen</h1><nav><ThemeToggle /></nav></header><ReportPage token={REPORT_TOKEN} /></main>;
+  // The helpers' page has its own one-line header: the language sits beside day/night (§134).
+  if (location.pathname === '/report') return <main><ReportPage token={REPORT_TOKEN} /></main>;
   // The team's "View as cleaner" (§122): a tab with that cleaner's page and nothing of the team's.
   const preview = /^#as-cleaner\/(.+)$/.exec(location.hash);
   if (preview) return <PreviewShell name={decodeURIComponent(preview[1]!)} />;

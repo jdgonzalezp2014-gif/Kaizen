@@ -1,158 +1,169 @@
 /**
- * Reports from the field (§134) — one form, two doors: the cleaner's own
- * page, and the link a cleaner shares with the people they hire (/report,
- * no account). What they took for a clean, what they bought, what is not
- * there, a problem, or something they need. The server decides what each
- * becomes: a move in the inventory, and a to-do when someone has to act.
+ * Reports from the field for ONE clean (§134) — the cleaner's Options on a
+ * clean, and the link they send to whoever helps them (/report, no account).
+ * What was taken, bought, is missing, is wrong, or is needed. The server
+ * decides what each becomes: a move in the inventory, and a to-do when
+ * someone has to act.
  *
- * Phone first and light: one choice at a time, big targets, the place
- * remembered between reports.
+ * Built for people who are not at home on a phone (the owner: "personas
+ * mayores"), mistake-proof by design:
+ *  - one question per screen, and the clean always fixed by where it was
+ *    opened — nobody chooses a unit or a day, so nobody picks the wrong one;
+ *  - choices to tap, not things to type: + / − instead of a keyboard, a list
+ *    of the supplies, the camera for a receipt; typing only for a problem,
+ *    with the keyboard's microphone suggested;
+ *  - big targets, an icon AND a word on each, the Send button saying what is
+ *    still missing instead of just going grey;
+ *  - one tap sends everything (all lines or none), a second tap cannot send
+ *    twice, and a full-screen ✓ says it arrived.
  */
 import { useState } from 'react';
 import type { SupplyItem } from '../api.ts';
 import type { Tx } from '../lib/crew-i18n.ts';
 
-type Kind = 'used' | 'purchase' | 'missing' | 'problem' | 'request';
-const KINDS: Kind[] = ['used', 'purchase', 'missing', 'problem', 'request'];
+export type Kind = 'used' | 'purchase' | 'missing' | 'problem' | 'request';
+export const KINDS: Kind[] = ['used', 'purchase', 'missing', 'problem', 'request'];
 const CATS = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'];
 export type Send = (fields: Record<string, string>, files: File[]) => Promise<{ ok: boolean; message?: string }>;
-/** A clean of theirs to report against: its key, how it reads, and its unit's id when known. */
-export interface CleanPick { key: string; label: string; unitId: string | null }
 
-export function FieldReport({ tx, items, units, cleans = [], send, guard }: {
-  tx: Tx; items: SupplyItem[]; units: { id: string; name: string }[];
-  cleans?: CleanPick[];
+export function FieldReport({ tx, items, start, send, onClose }: {
+  tx: Tx; items: SupplyItem[];
+  /** Open straight on one report (the cleaner chose it from Options); else the menu. */
+  start?: Kind;
+  /** The clean's fields (unit, key) are the caller's to add. */
   send: Send;
-  /** Something to fix before anything is sent (the link's reporter name), or null. */
-  guard?: () => string | null;
+  /** The cleaner's panel closes; the helper's page goes back to the menu. */
+  onClose?: () => void;
 }) {
-  const [kind, setKind] = useState<Kind>('used');
-  // The place: `c:<key>` a clean of theirs, `u:<id>` a unit, `s` the storage.
-  const [where, setWhere] = useState(cleans[0] ? `c:${cleans[0].key}` : '');
+  const [kind, setKind] = useState<Kind | null>(start ?? null);
+  const [done, setDone] = useState<null | { task: boolean }>(null);
+  const [counts, setCounts] = useState<Record<string, number>>({});
   const [itemId, setItemId] = useState('');
-  const [qty, setQty] = useState('');
-  const [many, setMany] = useState<Record<string, string>>({});
+  const [qty, setQty] = useState(start === 'missing' ? 0 : 1);
   const [cost, setCost] = useState('');
-  const [note, setNote] = useState('');
   const [text, setText] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
-  const supply = kind === 'used' || kind === 'purchase' || kind === 'missing';
+  const [err, setErr] = useState('');
 
-  const place = () => {
-    if (where.startsWith('c:')) { const c = cleans.find(x => `c:${x.key}` === where); return { unitId: c?.unitId ?? '', cleaningKey: c?.key ?? '' }; }
-    if (where.startsWith('u:')) return { unitId: where.slice(2), cleaningKey: '' };
-    return { unitId: '', cleaningKey: '' };
+  const reset = (k: Kind | null) => {
+    setKind(k); setDone(null); setCounts({}); setItemId(''); setQty(k === 'missing' ? 0 : 1); setCost(''); setText(''); setFiles([]); setErr('');
   };
-  const reset = () => { setItemId(''); setQty(''); setMany({}); setCost(''); setNote(''); setText(''); setFiles([]); };
+  const back = () => (start || !kind ? onClose?.() : reset(null));
+  const byCat = CATS.map(c => [c, items.filter(i => (CATS.includes(i.category) ? i.category : 'other') === c)] as const).filter(([, l]) => l.length);
+
+  if (done) return (
+    <div className="fr fr-done" role="status">
+      <p className="fr-big">{tx.supDone}</p>
+      {done.task && <p>{tx.supDoneTask}</p>}
+      <button className="fr-btn" onClick={() => reset(null)}>{tx.supAnother}</button>
+      {onClose && <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>}
+    </div>
+  );
+
+  if (!kind) return (
+    <div className="fr">
+      <p className="fr-q">{tx.supMenuQ}</p>
+      {KINDS.map(k => <button key={k} className="fr-btn fr-choice" onClick={() => reset(k)}>{tx.supKind[k]}</button>)}
+      {onClose && <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>}
+    </div>
+  );
+
+  // What is still missing — said on the Send button's line, never only by a greyed-out button.
+  const picked = Object.entries(counts).filter(([, n]) => n > 0);
+  const missing = kind === 'used' ? (picked.length ? '' : tx.supNeedAny)
+    : kind === 'purchase' || kind === 'missing' ? (!itemId ? tx.supNeedItem : kind === 'purchase' && qty < 1 ? tx.supNeedQty : '')
+    : (!text.trim() ? tx.supNeedText : '');
 
   async function submit() {
-    setMsg(null);
-    const g = guard?.();
-    if (g) { setMsg({ ok: false, text: g }); return; }
-    if (!where && kind !== 'request') { setMsg({ ok: false, text: tx.supNeedPlace }); return; }
-    const p = place();
-    if (where.startsWith('c:') && !p.unitId) { setMsg({ ok: false, text: tx.supNeedPlace }); return; }
-    setBusy(true);
+    if (missing || busy) return;
+    setBusy(true); setErr('');
     try {
-      if (kind === 'used') {
-        const lines = Object.entries(many).filter(([, v]) => Number(v) > 0);
-        if (!lines.length) { setMsg({ ok: false, text: tx.supNeedAny }); return; }
-        let sent = 0;
-        for (const [id, v] of lines) {
-          const r = await send({ action: 'supply', kind, itemId: id, qty: v, ...p, note }, []);
-          if (!r.ok) { setMsg({ ok: false, text: sent ? tx.supPartial(sent, r.message ?? tx.notSaved) : r.message ?? tx.notSaved });
-                       setMany(m => Object.fromEntries(Object.entries(m).filter(([k]) => !lines.slice(0, sent).some(([d]) => d === k)))); return; }
-          sent++;
-        }
-        reset(); setMsg({ ok: true, text: tx.supSentMany(sent) });
-      } else if (supply) {
-        if (!itemId) { setMsg({ ok: false, text: tx.supNeedItem }); return; }
-        if (qty === '' || (kind === 'purchase' && !(Number(qty) > 0))) { setMsg({ ok: false, text: tx.supNeedQty }); return; }
-        const r = await send({ action: 'supply', kind, itemId, qty, ...p, note, ...(kind === 'purchase' && cost ? { cost } : {}) }, files);
-        if (!r.ok) { setMsg({ ok: false, text: r.message ?? tx.notSaved }); return; }
-        reset(); setMsg({ ok: true, text: kind === 'missing' ? tx.supSentTask : tx.supSent });
-      } else {
-        if (!text.trim()) { setMsg({ ok: false, text: tx.supNeedText }); return; }
-        const r = await send({ action: kind, kind, text: text.trim(), unitId: p.unitId }, files);
-        if (!r.ok) { setMsg({ ok: false, text: r.message ?? tx.notSaved }); return; }
-        reset(); setMsg({ ok: true, text: tx.supSentTask });
-      }
-    } catch (e) {
-      setMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
-    } finally { setBusy(false); }
+      const r = kind === 'used'
+        ? await send({ action: 'supply', kind, lines: JSON.stringify(picked.map(([id, n]) => ({ itemId: id, qty: n }))) }, [])
+        : kind === 'purchase' || kind === 'missing'
+          ? await send({ action: 'supply', kind: kind!, itemId, qty: String(qty), ...(kind === 'purchase' && cost ? { cost } : {}) }, files)
+          : await send({ action: kind!, kind: kind!, text: text.trim() }, files);
+      if (!r.ok) { setErr(r.message ?? tx.notSaved); return; }
+      setDone({ task: kind !== 'used' && kind !== 'purchase' });
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   }
 
-  const byCat = CATS.map(c => [c, items.filter(i => (CATS.includes(i.category) ? i.category : 'other') === c)] as const).filter(([, l]) => l.length);
+  const photo = (label: string) => (
+    <div className="fr-photo">
+      <label className="fr-btn secondary">{label}
+        <input type="file" accept="image/*,application/pdf" multiple hidden
+               onChange={e => setFiles(f => [...f, ...(e.target.files ?? [])].slice(0, 5))} /></label>
+      {!!files.length && <p>{tx.supPhotos(files.length)} <button className="link" onClick={() => setFiles([])}>{tx.supRemove}</button></p>}
+    </div>
+  );
+  const itemPick = (
+    <select className="fr-select" value={itemId} onChange={e => setItemId(e.target.value)}>
+      <option value="">{tx.supPickItem}</option>
+      {byCat.map(([c, list]) => <optgroup key={c} label={tx.supCat[c] ?? c}>
+        {list.map(i => <option key={i.id} value={i.id}>{i.name} ({i.measure})</option>)}</optgroup>)}
+    </select>
+  );
+
   return (
-    <div className="field-report">
-      <div className="todo-kind field-kinds" role="group" aria-label={tx.supTitle}>
-        {KINDS.map(k => <button key={k} type="button" className={k === kind ? 'chip active' : 'chip'}
-                                onClick={() => { setKind(k); setMsg(null); }}>{tx.supKind[k]}</button>)}
-      </div>
+    <div className="fr">
+      <button className="link fr-back" onClick={back}>{start ? tx.supClose : tx.supBack}</button>
+      <p className="fr-kind">{tx.supKind[kind]}</p>
 
-      <label>{tx.supWhere}
-        <select value={where} onChange={e => setWhere(e.target.value)}>
-          <option value="">{tx.supPickClean}</option>
-          {!!cleans.length && <optgroup label={tx.supCleansGroup}>
-            {cleans.map(c => <option key={c.key} value={`c:${c.key}`}>{c.label}</option>)}</optgroup>}
-          <optgroup label={tx.supUnitsGroup}>
-            {units.map(u => <option key={u.id} value={`u:${u.id}`}>{u.name}</option>)}
-          </optgroup>
-          {(kind === 'purchase' || kind === 'missing' || kind === 'request') && <option value="s">{tx.supStorage}</option>}
-        </select></label>
+      {kind === 'used' && <>
+        <p className="fr-q">{tx.supUsedQ}</p>
+        {byCat.map(([c, list]) => (
+          <div key={c} className="fr-group">
+            <p className="fr-cat">{tx.supCat[c] ?? c}</p>
+            {list.map(i => {
+              const n = counts[i.id] ?? 0;
+              return (
+                <div key={i.id} className={n ? 'fr-line on' : 'fr-line'}>
+                  <span>{i.name} <small>({i.measure})</small></span>
+                  <Stepper n={n} onStep={d => setCounts(m => ({ ...m, [i.id]: Math.max(0, Math.min(999, (m[i.id] ?? 0) + d)) }))} />
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </>}
 
-      {kind === 'used' && (
-        <>
-          <p className="note">{tx.supUsedHint}</p>
-          {byCat.map(([c, list]) => (
-            <fieldset key={c} className="field-items">
-              <legend>{tx.supCat[c] ?? c}</legend>
-              {list.map(i => (
-                <label key={i.id} className="field-item">
-                  <span>{i.name} <span className="note">({i.measure})</span></span>
-                  <input type="number" inputMode="decimal" min="0" step="any" value={many[i.id] ?? ''} placeholder="0"
-                         onChange={e => setMany(m => ({ ...m, [i.id]: e.target.value }))} />
-                </label>
-              ))}
-            </fieldset>
-          ))}
-        </>
-      )}
+      {(kind === 'purchase' || kind === 'missing') && <>
+        <p className="fr-q">{kind === 'purchase' ? tx.supBuyQ : tx.supMissQ}</p>
+        {itemPick}
+        <p className="fr-q">{kind === 'purchase' ? tx.supHowMany : tx.supFound}</p>
+        <Stepper n={qty} min={kind === 'purchase' ? 1 : 0} onStep={d => setQty(q => Math.max(kind === 'purchase' ? 1 : 0, Math.min(999, q + d)))} />
+        {kind === 'purchase' && <>
+          {photo(tx.supReceiptBtn)}
+          <label className="fr-field">{tx.supCost}
+            <input type="number" inputMode="decimal" min="0" step="0.01" value={cost} onChange={e => setCost(e.target.value)} /></label>
+        </>}
+      </>}
 
-      {(kind === 'purchase' || kind === 'missing') && (
-        <>
-          <label>{tx.supItem}
-            <select value={itemId} onChange={e => setItemId(e.target.value)}>
-              <option value="">—</option>
-              {byCat.map(([c, list]) => <optgroup key={c} label={tx.supCat[c] ?? c}>
-                {list.map(i => <option key={i.id} value={i.id}>{i.name} ({i.measure})</option>)}</optgroup>)}
-            </select></label>
-          <label>{kind === 'missing' ? tx.supFound : tx.supQty}
-            <input type="number" inputMode="decimal" min="0" step="any" value={qty} placeholder={kind === 'missing' ? '0' : ''}
-                   onChange={e => setQty(e.target.value)} /></label>
-          {kind === 'purchase' && <label>{tx.supCost}
-            <input type="number" inputMode="decimal" min="0" step="0.01" value={cost} onChange={e => setCost(e.target.value)} /></label>}
-        </>
-      )}
+      {(kind === 'problem' || kind === 'request') && <>
+        <p className="fr-q">{kind === 'problem' ? tx.supProblemQ : tx.supRequestQ}</p>
+        <textarea className="fr-text" rows={4} maxLength={300} value={text} onChange={e => setText(e.target.value)} />
+        <p className="fr-tip">{tx.supSpeakTip}</p>
+        {photo(tx.supPhotoBtn)}
+      </>}
 
-      {(kind === 'problem' || kind === 'request') && (
-        <label>{kind === 'problem' ? tx.supProblem : tx.supRequest}
-          <textarea rows={3} maxLength={300} value={text} onChange={e => setText(e.target.value)} /></label>
-      )}
-
-      {supply && <label>{tx.supNoteField}<input value={note} maxLength={500} onChange={e => setNote(e.target.value)} /></label>}
-      {kind !== 'used' && (
-        <label>{kind === 'purchase' ? tx.supReceipt : tx.supPhoto}
-          <input type="file" accept="image/*,application/pdf" multiple onChange={e => setFiles([...(e.target.files ?? [])].slice(0, 5))} />
-        </label>
-      )}
-
-      <div className="row">
-        <button disabled={busy} onClick={() => void submit()}>{busy ? tx.sending : tx.sendTeam}</button>
-        {msg && <span className={msg.ok ? 'field-ok' : 'breach'} role="status">{msg.text}</span>}
+      <div className="fr-send">
+        <button className="fr-btn fr-go" disabled={busy || !!missing} onClick={() => void submit()}>
+          {busy ? tx.sending : kind === 'used' && picked.length ? tx.supSendCount(picked.length) : tx.sendTeam}</button>
+        {missing && <p className="fr-missing">{missing}</p>}
+        {err && <p className="breach" role="alert">{err}</p>}
       </div>
     </div>
+  );
+}
+
+/** − n + : no keyboard, no typo, never below the minimum; quick taps all count (each one a step). */
+function Stepper({ n, min = 0, onStep }: { n: number; min?: number; onStep: (delta: number) => void }) {
+  return (
+    <span className="fr-step">
+      <button type="button" aria-label="−" disabled={n <= min} onClick={() => onStep(-1)}>−</button>
+      <b aria-live="polite">{n}</b>
+      <button type="button" aria-label="+" onClick={() => onStep(1)}>+</button>
+    </span>
   );
 }

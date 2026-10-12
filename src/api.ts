@@ -439,6 +439,8 @@ export interface CrewPage {
   help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; lang?: 'en' | 'es' }[];
   /** §134: what they can report — the supplies and the units. */
   supplies?: { items: SupplyItem[]; units: { id: string; name: string }[] };
+  /** §134: each recent or coming clean's photos and done, by key. */
+  field?: Record<string, CleanFieldState>;
   upcoming: {
     enabled: boolean; days: number; through: string | null; rows: CrewUpcoming[]; problem: string | null;
     autoDays: number; confirmed: { at: string; through: string } | null; movements: Movement[];
@@ -487,8 +489,12 @@ export const inventoryAction = (body: Record<string, unknown>) =>
 export const inventoryItemAction = (body: Record<string, unknown>) =>
   call<{ ok: true; items: InvItemRow[] } | Fail>('/api/inventory-items', { method: 'POST', body: JSON.stringify(body) });
 
-/** A cleaner's helpers, by the shared report link (§134): no account, the token is the only credential. */
-export interface ReportTeam { team: string; lang: 'en' | 'es'; items: SupplyItem[]; units: { id: string; name: string }[] }
+/** Whoever helps on one clean, by the link the cleaner sent (§134): no account, the token is the only credential. */
+/** A clean as the field reports it (§134): photos before/after (in Drive) and done. */
+export interface CleanFieldState { before: number; after: number; folderUrl: string | null; done: { by: string; at: string } | null }
+export interface ReportTeam {
+  team: string; lang: 'en' | 'es'; items: SupplyItem[]; clean: { unit: string; date: string; until: string }; state?: CleanFieldState;
+}
 export const getReportLink = (token: string) =>
   call<({ ok: true } & ReportTeam) | Fail>('/api/report-link', { headers: { 'X-Report-Token': token } });
 /** Any field report — JSON fields, plus photos when there are some (multipart, the browser sets the boundary). */
@@ -497,12 +503,13 @@ export async function sendFieldReport(url: string, headers: Record<string, strin
     ? { method: 'POST', headers, body: (() => { const f = new FormData(); for (const [k, v] of Object.entries(fields)) f.append(k, v); for (const x of files) f.append('file', x); return f; })() }
     : { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(fields) };
   const res = await fetch(url, init);
-  return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as { ok: true } | Fail;
+  return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as { ok: true; state?: CleanFieldState } | Fail;
 }
 export const crewReport = (fields: Record<string, string>, files: File[], token?: string | null) =>
   sendFieldReport(crewPath(token), crewHeaders(token), fields, files);
-export const crewReportLink = (reset: boolean, token?: string | null) =>
-  call<{ ok: true; link: string } | Fail>(crewPath(token), { method: 'POST', headers: crewHeaders(token), body: JSON.stringify({ action: 'reportLink', reset }) });
+export interface CleanLink { link: string; unit: string; date: string; expires: string }
+export const crewCleanLink = (key: string, token?: string | null) =>
+  call<({ ok: true } & CleanLink) | Fail>(crewPath(token), { method: 'POST', headers: crewHeaders(token), body: JSON.stringify({ action: 'cleanLink', key }) });
 
 export interface PendingExtra {
   id: string; cleaner: string; key: string; amount: number; description: string; createdAt: string;

@@ -314,45 +314,47 @@ Operations → Setup → Inspection checklist: add, edit, reorder or remove item
     ],
     doneWhen: 'No ⚠ left without a count, and the shopping to-do covers the next two weeks of cleans.',
     body: `## Where reports come from
-Cleaners report from their page (Supplies & problems): what they took for a clean, what they bought, what is not there, a problem, or something they need. The people a cleaner hires report from the link the cleaner shares (no account) — they appear as "<cleaner>'s team: <name>". Neither can count or correct; only the team can.`
+Cleaners report from each clean's "Options…" on their page: what they took, what they bought, what is missing, a problem, or something they need — plus photos before/after and "done". Whoever helps them on a clean reports the same from the link the cleaner sends for that clean (no account) — they appear as "<cleaner>'s team: <name>". Neither can count or correct; only the team can.`
   },
   {
-    section: 'turnover', title: 'Supplies, problems and your team’s link',
+    section: 'turnover', title: 'Your clean step by step: photos, done, supplies',
     features: ['crew.page'],
-    purpose: 'Tell the team what you used and what is missing, so supplies are bought before they run out — and let the people who clean with you do the same.',
-    trigger: 'After each clean; when you buy something; when something is not there or not working.',
+    purpose: 'Show the team each clean before and after, say when it is done, and say what you used or what is missing — from the clean itself, in a few taps.',
+    trigger: 'At every clean: when you arrive, when you finish, and whenever something is missing or wrong.',
     owner: 'Each cleaner',
     steps: [
-      { text: 'After a clean: Supplies & problems → "Took for a clean" → choose the clean → write how many of each you took → Send to the team.',
-        detail: 'Leave empty what you did not use. Your cleans of the last three days are listed first.' },
-      { text: 'Bought something: "Bought" → where it went, the item, how many, the total paid, and a photo of the receipt.' },
-      { text: 'Something is not there: "Not there" → where, the item, how many you found (0 if none).',
-        detail: 'The team gets a task to count it — the number is not changed on one report.' },
-      { text: 'A problem or something you need: write it, add a photo if it helps, Send.',
-        detail: 'The team gets it as a task.' },
-      { text: 'People who clean with you: "Get the link" → Send by WhatsApp (or Copy link).',
-        detail: '- They need no account. From the link they can only report — nothing of your pay or schedule.\n- Their reports reach the team with their name, as your team.\n- If the link reaches someone it should not: "Make a new link" — the old one stops working.' }
+      { text: 'Find the clean in "Coming up" (or in Cleans, if it was in the last days) and open its "Options…" list.',
+        detail: 'Everything you choose there is about that clean only — you never pick the house or the day.' },
+      { text: 'Arriving: "📷 Photos & mark as done" → 1 Photos BEFORE cleaning → take or choose the photos → Send.',
+        detail: 'One photo of each room from the door is enough, and close-ups of anything wrong. They go to the team’s Drive, in a folder for that house and day.' },
+      { text: 'Finishing: 2 Photos AFTER cleaning → Send → 3 ✅ Mark as done.',
+        detail: '"Mark as done" needs at least one AFTER photo. If you marked it by mistake: ↩️ Reopen → "Yes, reopen".' },
+      { text: 'What you took, what you bought, what is missing, a problem, something you need: choose it in "Options…".',
+        detail: '- What I took: tap + on each thing, then Send — all of it goes at once.\n- Bought: the item, how many, a photo of the receipt.\n- Missing: the item and how many are there (0 if none) — the team gets a task to count it.\n- A problem or a need: write it or say it with the 🎤 of your keyboard; add a photo if it helps.' },
+      { text: 'Someone helps you on this clean: "Options…" → 📤 Send the link to my helper → Send by WhatsApp.',
+        detail: '- The link is for that clean only and needs no account. Your helper can do the same steps: photos, done, supplies, problems.\n- Several people can use the same link; each writes their name once.\n- It stops working two days after the clean, or if the clean is given to someone else.' }
     ],
-    doneWhen: 'Every clean has its supplies reported, and nothing missing goes unsaid.'
+    doneWhen: 'Every clean has its before and after photos, is marked done, and nothing missing goes unsaid.'
   },
   {
-    section: 'turnover', title: 'Insumos, problemas y el enlace de tu equipo',
+    section: 'turnover', title: 'Tu limpieza paso a paso: fotos, completada, insumos',
     features: ['crew.page.es'],
-    purpose: 'Avisar al equipo qué usaste y qué falta, para comprar antes de que se acabe — y que las personas que limpian contigo hagan lo mismo.',
-    trigger: 'Después de cada limpieza; cuando compras algo; cuando algo no está o no funciona.',
+    purpose: 'Mostrarle al equipo cada limpieza antes y después, avisar cuando está completada, y decir qué usaste o qué falta — desde la limpieza misma, en pocos toques.',
+    trigger: 'En cada limpieza: al llegar, al terminar, y cuando algo falta o está mal.',
     owner: 'Cada cleaner',
     steps: [
-      { text: 'Después de una limpieza: Insumos y problemas → "Tomé para limpieza" → elige la limpieza → escribe cuántos tomaste de cada uno → Enviar al equipo.',
-        detail: 'Deja vacío lo que no usaste. Primero aparecen tus limpiezas de los últimos tres días.' },
-      { text: 'Compraste algo: "Compré" → dónde quedó, el artículo, cuántos, el total pagado y una foto del recibo.' },
-      { text: 'Algo no está: "No hay" → dónde, el artículo, cuántos encontraste (0 si ninguno).',
-        detail: 'El equipo recibe una tarea para contarlo — el número no se cambia con un solo reporte.' },
-      { text: 'Un problema o algo que necesitas: escríbelo, agrega una foto si ayuda, Enviar.',
-        detail: 'Al equipo le llega como tarea.' },
-      { text: 'Personas que limpian contigo: "Obtener el enlace" → Enviar por WhatsApp (o Copiar enlace).',
-        detail: '- No necesitan cuenta. Desde el enlace solo pueden reportar — nada de tu pago ni de tu agenda.\n- Sus reportes le llegan al equipo con su nombre, como parte de tu equipo.\n- Si el enlace llega a alguien que no debe: "Crear un enlace nuevo" — el anterior deja de funcionar.' }
+      { text: 'Busca la limpieza en "Próximas" (o en Limpiezas, si fue en los últimos días) y abre su lista "Opciones…".',
+        detail: 'Todo lo que elijas ahí es solo de esa limpieza — nunca eliges la casa ni el día.' },
+      { text: 'Al llegar: "📷 Fotos y marcar completada" → 1 Fotos ANTES de limpiar → toma o elige las fotos → Enviar.',
+        detail: 'Basta una foto de cada cuarto desde la puerta, y de cerca lo que esté mal. Van al Drive del equipo, en una carpeta de esa casa y ese día.' },
+      { text: 'Al terminar: 2 Fotos DESPUÉS de limpiar → Enviar → 3 ✅ Marcar como completada.',
+        detail: '"Marcar como completada" necesita al menos una foto del DESPUÉS. Si la marcaste por error: ↩️ Reabrir → "Sí, reabrir".' },
+      { text: 'Lo que tomaste, lo que compraste, lo que falta, un problema, algo que necesitas: elígelo en "Opciones…".',
+        detail: '- Lo que tomé: toca + en cada cosa y Enviar — se va todo junto.\n- Compré: el artículo, cuántos y una foto del recibo.\n- Falta algo: el artículo y cuántos hay (0 si ninguno) — el equipo recibe una tarea para contarlo.\n- Un problema o algo que necesitas: escríbelo o dilo con el 🎤 del teclado; agrega una foto si ayuda.' },
+      { text: 'Alguien te ayuda en esta limpieza: "Opciones…" → 📤 Enviar el enlace a mi ayudante → Enviar por WhatsApp.',
+        detail: '- El enlace es solo de esa limpieza y no necesita cuenta. Tu ayudante puede hacer los mismos pasos: fotos, completada, insumos, problemas.\n- Varias personas pueden usar el mismo enlace; cada una escribe su nombre una vez.\n- Deja de funcionar dos días después de la limpieza, o si la limpieza se le da a otra persona.' }
     ],
-    doneWhen: 'Cada limpieza tiene sus insumos reportados, y no se queda sin decir nada que falte.'
+    doneWhen: 'Cada limpieza tiene sus fotos del antes y el después, está completada, y no se queda sin decir nada que falte.'
   }
 ];
 
