@@ -16,7 +16,7 @@
 import { getAccessToken, fetchReservationDetail, type HostawayCredentials } from './hostaway.ts';
 import type { SqlFn } from './accounts.ts';
 import {
-  changesFrom, FOOTER_MARK, importable, sameState, stateOf, toHostawayBody, userName, workFromState,
+  changesFrom, importable, isKaizens, kaizenIdOf, sameState, stateOf, toHostawayBody, userName, workFromState,
   type HostawayTask, type HostawayUser, type SyncState, type WorkForSync, type WorkPatch
 } from '../../src/lib/hostaway-tasks.ts';
 import { stayLabel } from '../../src/lib/todos.ts';
@@ -166,7 +166,7 @@ export async function pushWork(sql: SqlFn, creds: HostawayCredentials, id: strin
   }
 }
 
-export interface PullResult { skipped?: string; changed: number; imported: number; unlinked: number; retried: number }
+export interface PullResult { skipped?: string; changed: number; imported: number; unlinked: number; retried: number; relinked?: number }
 
 /** Hostaway → Kaizen: changes to linked tasks, and hand-made tasks to bring in. */
 export async function pullAll(sql: SqlFn, creds: HostawayCredentials, force = false,
@@ -229,7 +229,26 @@ export async function pullAll(sql: SqlFn, creds: HostawayCredentials, force = fa
   // Hand-made in Hostaway, open, and not already Kaizen's (Kaizen's tasks carry its footer).
   const known = new Set(linked.map(r => r.hostaway_task_id));
   for (const t of test ? [] : tasks) {
-    if (!importable(t) || known.has(String(t.id)) || (t.description ?? '').includes(FOOTER_MARK)) continue;
+    if (known.has(String(t.id))) continue;
+    // Kaizen's own task is never imported (§132). When the to-do its footer names lost its link —
+    // the §120 bug unlinked them — it gets the link back, rather than a duplicate. A cancelled task
+    // (a duplicate Hostaway already dropped) does not take the link.
+    if (isKaizens(t.description)) {
+      const ref = kaizenIdOf(t.description);
+      if (ref && t.status !== 'cancelled') {
+        const back = await sql`UPDATE todos SET hostaway_task_id = ${String(t.id)}, hostaway_state = ${JSON.stringify(stateOf(t))}::jsonb,
+                                         hostaway_synced_at = now()
+                                WHERE account_id = 1 AND id = ${Number(ref)} AND hostaway_task_id IS NULL
+                                  AND NOT EXISTS (SELECT 1 FROM todos WHERE account_id = 1 AND hostaway_task_id = ${String(t.id)})
+                                RETURNING id::text` as { id: string }[];
+        if (back.length) {
+          await note(sql, back[0]!.id, 'change', `Linked again to its Hostaway task #${t.id} — the link had been lost.`, 'Kaizen');
+          out.relinked = (out.relinked ?? 0) + 1;
+        }
+      }
+      continue;
+    }
+    if (!importable(t)) continue;
     const s = stateOf(t);
     const k = workFromState(s, users);
     const creator = users.find(u => u.id === t.createdByUserId);

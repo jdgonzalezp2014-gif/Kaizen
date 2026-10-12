@@ -111,8 +111,24 @@ export const userName = (u: HostawayUser) => [u.firstName, u.lastName].filter(Bo
 
 export const FOOTER_MARK = '\n\n— Kaizen OS';
 
+/**
+ * Kaizen's footer at the end of a Hostaway description — after the text, or
+ * ALONE when the task has no description (§132): the body is trimmed, so an
+ * empty description loses the blank lines before "— Kaizen OS". Matching only
+ * "\n\n— Kaizen OS" missed those, and the pull took Kaizen's own tasks for
+ * hand-made ones.
+ */
+const FOOTER_RE = /(?:^|\n+)— Kaizen OS(?: · [^\n]*)?\s*$/;
+
 /** Kaizen's own description, without the footer it adds for Hostaway readers. */
-export const coreOf = (description: string | null | undefined) => (description ?? '').split(FOOTER_MARK)[0]!.trim();
+export const coreOf = (description: string | null | undefined) => (description ?? '').replace(FOOTER_RE, '').trim();
+
+/** The task carries Kaizen's footer: it was made by Kaizen, never one to import. */
+export const isKaizens = (description: string | null | undefined) => FOOTER_RE.test(description ?? '');
+
+/** The to-do or repair a Hostaway task's footer names ("— Kaizen OS · To-do #19"), or null. */
+export const kaizenIdOf = (description: string | null | undefined): string | null =>
+  /— Kaizen OS · (?:To-do|Repair) #(\d+)/.exec(description ?? '')?.[1] ?? null;
 
 /** What only Kaizen holds, said for Hostaway readers. */
 function footer(w: WorkForSync): string {

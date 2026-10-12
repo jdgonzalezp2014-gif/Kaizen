@@ -3539,3 +3539,16 @@ for; when that guest is no longer the next after the recorded checkout, the clea
 to is carried to the new booking's checkout, marked ↪ on the board. Only the rule's decisions move — a
 person's choice stays — and it starts with cleans recorded from now on.
 
+## §132 — "Vent and Cinema sound" twice: Kaizen's own tasks imported back as duplicates (2026-10-11)
+
+Napa Valley's repair #42 showed twice. The §120 bug had unlinked Kaizen to-dos from their Hostaway tasks;
+the fix stopped new unlinking but did not repair the links, and the pull then imported those Hostaway
+tasks as new to-dos — 8 duplicates of 7 to-dos (#46–#53). The import was meant to skip Kaizen's tasks by
+their footer, but it looked for "\n\n— Kaizen OS"; a task with no description carries the footer alone
+(the body is trimmed), so it was not recognised. Now the footer is matched anywhere at the end, a
+Kaizen task is never imported, and if the to-do its footer names has lost its link, it gets it back.
+Repaired: the 7 originals re-linked to their Hostaway tasks (state taken from Hostaway, so the pull does
+not overwrite Kaizen), the 8 duplicates removed (soft), one comment moved to #33, a note on each original.
+Nothing was written to Hostaway. Three to-dos disagree (Kaizen completed, Hostaway open) — left for the
+owner: #19, #25, #33.
+

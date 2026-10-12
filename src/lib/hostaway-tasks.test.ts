@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { changesFrom, coreOf, fromHostawayStatus, importable, nyToUtc, priorityOf, PRIORITY_NUMBER, stateOf, toHostawayBody,
+import { changesFrom, coreOf, isKaizens, kaizenIdOf, fromHostawayStatus, importable, nyToUtc, priorityOf, PRIORITY_NUMBER, stateOf, toHostawayBody,
          toHostawayStatus, utcToNy, workFromState, type HostawayTask, type HostawayUser, type WorkForSync } from './hostaway-tasks.ts';
 
 const users: HostawayUser[] = [
@@ -83,4 +83,20 @@ test('only hand-made, open Hostaway tasks come in — never the automatic cleans
   assert.ok(importable(task()));
   assert.ok(!importable(task({ autoTaskId: 375343 })));
   assert.ok(!importable(task({ status: 'completed' })));
+});
+
+test('the footer alone — a task with no description — is still Kaizen\'s (§132)', () => {
+  assert.equal(coreOf('— Kaizen OS · To-do #19'), '');
+  assert.equal(coreOf('Unit is warm\n\n— Kaizen OS · Repair #12 · Vendor: Tim'), 'Unit is warm');
+  assert.equal(isKaizens('— Kaizen OS · To-do #19'), true);
+  assert.equal(isKaizens('Call the plumber'), false);
+  assert.equal(kaizenIdOf('— Kaizen OS · Repair #42 · Vendor: Tim'), '42');
+  assert.equal(kaizenIdOf('Leak\n\n— Kaizen OS · To-do #7'), '7');
+  assert.equal(kaizenIdOf('Hand-made in Hostaway'), null);
+  // What Kaizen sends for an empty description reads back as empty, and as Kaizen's.
+  const body = toHostawayBody({ id: '19', kind: 'task', title: 'x', description: '', status: 'pending', priority: null,
+    unitIds: [], assigneeUserId: null, supervisorUserId: null, scheduledOn: null, startTime: null, dueOn: null, dueTime: null,
+    costActual: null, costEstimate: null, vendor: null, resolutionNote: null, reservationId: null } as never);
+  assert.equal(coreOf(body.description), '');
+  assert.equal(kaizenIdOf(body.description), '19');
 });

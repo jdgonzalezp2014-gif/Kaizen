@@ -37,6 +37,9 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 - Hostaway mirror is **ON**: every change pushes after the response; the pull applies only
   fields that moved there (`hostaway_state`); removed here = cancelled there; tasks typed by
   hand in Hostaway come in as to-dos (§93, §94).
+- Kaizen's tasks carry a footer "— Kaizen OS · To-do #N" — ALONE when the description is empty
+  (the body is trimmed). `isKaizens` / `kaizenIdOf` / `coreOf` match it anywhere at the end; the pull
+  never imports such a task, and re-links it to to-do #N if #N lost its link (§132).
 - A completed repair with a cost is always an expense in Costs › Repairs (`settleRepair`);
   "Charge to owner" also writes a Hostaway expense (negative amount) (§95).
 - A claim is a case: `occurred_on` never moves; soft delete with undo; open cases first;
@@ -46,8 +49,11 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 
 ## Open items
 
+- §132 left three to-dos completed in Kaizen but open in Hostaway (#19 pending, #25 in progress,
+  #33 pending — #33's comment says the couch is not rescheduled yet): the owner decides which is right.
+
 - Verify Hostaway's priority order in its UI.
 
 ## History
 
-§46, §76–§78, §82–§88, §93–§95, §103–§105.
+§46, §76–§78, §82–§88, §93–§95, §103–§105, §120, §132.
