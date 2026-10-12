@@ -1950,10 +1950,15 @@ a.fr-btn { text-decoration: none; font-weight: 700; }
 .crew-top .chip { min-width: 40px; min-height: 38px; font-size: 13px; }
 .crew .crew-secs { margin: 10px 0 10px; grid-template-columns: repeat(4, 1fr); }
 .crew .crew-secs button { font-size: 13px; line-height: 1.2; }
-.today-picks { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 8px; margin-bottom: 4px; }
-.today-picks button { min-height: 56px; border-radius: 12px; font-size: 15px; font-weight: 700; background: var(--card); color: var(--ink);
-  border: 2px solid var(--line); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; }
+.today-picks { position: sticky; top: 0; z-index: 5; display: flex; gap: 6px; overflow-x: auto; scrollbar-width: none;
+  margin: -6px -4px 4px; padding: 8px 4px; background: var(--card); box-shadow: 0 6px 8px -8px rgba(0,0,0,.35); }
+.today-picks::-webkit-scrollbar { display: none; }
+/* Up to 3 fit side by side on a phone (none hidden); a 4th and more slide sideways. */
+.today-picks button { flex: 1 0 90px; min-width: 0; min-height: 58px; border-radius: 12px; font-size: 14px; font-weight: 700; line-height: 1.2;
+  background: var(--card); color: var(--ink); border: 2px solid var(--line); display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 2px; padding: 6px 12px; }
 .today-picks button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+#today-card { scroll-margin-top: 84px; }
 .today-picks small { font-size: 12px; font-weight: 400; opacity: .8; }
 .past-row { border-top: 1px solid var(--line); }
 .past-row:first-of-type { border-top: 0; }

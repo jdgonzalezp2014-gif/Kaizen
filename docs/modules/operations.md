@@ -209,7 +209,8 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   the schedule) and then by `clean_records.cleaner`.
 - **The cleaner's page (§134, owner's layout):** no big header — one line (hello · EN/ES · ❓ help · ☾) and
   right under it four sections, one at a time: **☀️ Today** (one big button per clean when there are
-  several; the chosen one open with every option as a tab on top — 🧽 My clean · 🙋 Report or ask ·
+  several — a row that stays on top while scrolling, up to 3 in view and sliding sideways beyond, opening
+  on the first clean not done; choosing one jumps to its top; the chosen one open with every option as a tab on top — 🧽 My clean · 🙋 Report or ask ·
   💵 Extra (the cleaner's alone) · 📤 Helper — and "Can't do it" by the clean's time while still in Coming up) · **↩️ Past** (last 3 days,
   a list; each opens AS IT WAS LEFT — its photos before/after, done or not, what was taken — with only
   "Add an extra" and Close: nothing more to report or photograph on a past clean, the owner) · **📅 Future** (only share the link or Can't do it;

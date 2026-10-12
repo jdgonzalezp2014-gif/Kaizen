@@ -444,20 +444,31 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onCl
   );
 }
 
-/** Today: one big button per clean when there are several; the chosen one open with its tabs. */
+/**
+ * Today: one big button per clean when there are several — a row that stays
+ * on top while scrolling (the owner: switch without scrolling back up), and
+ * slides sideways when there are many; the chosen one open with its tabs.
+ */
 function TodayCleans({ list, page, lang, ctx, act, reload }: { list: ActiveClean[]; page: CrewPage; lang: Lang; ctx: FieldCtx; act?: Act; reload: () => void }) {
   const tx = TX[lang];
-  const [pick, setPick] = useState(list[0]?.key ?? '');
+  // The first clean not yet done is the one to work on; after that, the cleaner's choice.
+  const [pick, setPick] = useState(() => (list.find(x => !page.field?.[x.key]?.done) ?? list[0])?.key ?? '');
   const a = list.find(x => x.key === pick) ?? list[0];
+  const choose = (k: string) => {
+    setPick(k);
+    // Back to the top of the chosen clean, just under the row that stays on top.
+    requestAnimationFrame(() => document.getElementById('today-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
+  };
   if (!a) return <div className="card no-print"><p className="note">{tx.activeNone}</p></div>;
   return (
     <div className="card no-print">
       {list.length > 1 && (
         <div className="today-picks" role="tablist">
-          {list.map(x => <button key={x.key} role="tab" aria-selected={x.key === a.key} className={x.key === a.key ? 'on' : ''} onClick={() => setPick(x.key)}>
-            🏠 {x.unit}{x.time ? <small>{x.time}</small> : null}{page.field?.[x.key]?.done ? <small>✅</small> : null}</button>)}
+          {list.map(x => <button key={x.key} role="tab" aria-selected={x.key === a.key} className={x.key === a.key ? 'on' : ''} onClick={() => choose(x.key)}>
+            🏠 {x.unit}<small>{x.time ?? ''}{page.field?.[x.key]?.done ? ' · ✅' : ''}</small></button>)}
         </div>
       )}
+      <div id="today-card" />
       <CleanCard key={a.key} a={a} page={page} lang={lang} ctx={ctx} act={act} reload={reload} />
     </div>
   );
