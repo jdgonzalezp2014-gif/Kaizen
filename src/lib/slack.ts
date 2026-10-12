@@ -125,9 +125,11 @@ export function cleanPhotosMessage(p: { unit: string; stage: 'before' | 'after';
 }
 
 /** Done, or reopened — a reply each time, so the thread keeps the story. */
-export function cleanMarkMessage(p: { unit: string; kind: 'done' | 'reopened'; by: string; time: string; before: number; after: number; folderUrl: string | null }) {
+export function cleanMarkMessage(p: { unit: string; kind: 'done' | 'reopened'; by: string; time: string; before: number; after: number; folderUrl: string | null;
+                                        taken?: { lines: number; none: boolean } | null }) {
   const head = p.kind === 'done' ? `✅ *${esc(p.unit)}* done` : `↩️ *${esc(p.unit)}* reopened`;
-  const facts = `📷 ${p.before} before · ${p.after} after` + (p.folderUrl ? ` · <${p.folderUrl}|Open in Drive>` : '');
+  const took = !p.taken ? '' : p.taken.none ? ' · 🧴 nothing from storage' : ` · 🧴 ${p.taken.lines} item${p.taken.lines === 1 ? '' : 's'} from storage`;
+  const facts = `📷 ${p.before} before · ${p.after} after${took}` + (p.folderUrl ? ` · <${p.folderUrl}|Open in Drive>` : '');
   return { text: `${p.kind === 'done' ? '✅' : '↩️'} ${p.unit} ${p.kind}`, blocks: [section(`${head} — ${esc(p.by)}, ${esc(p.time)}`), context(facts)] };
 }
 

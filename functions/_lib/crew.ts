@@ -14,7 +14,7 @@ import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { decrypt, encrypt } from './crypto.ts';
 import { tellCleanThread } from './clean-slack.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type CleanState, type Stage } from './clean-record.ts';
-import { activeUnits, esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, recordMove, recordUses } from './inventory.ts';
+import { activeUnits, esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, nothingTaken, recordMove, recordUses } from './inventory.ts';
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
 import type { Level } from '../../src/lib/operations.ts';
 import {
@@ -506,13 +506,19 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     return Response.json({ ok: true, link: `${new URL(request.url).origin}/report#t=${token}`, unit: clean.unit, date: clean.date, expires });
   }
 
-  // §134: photos before / after a clean, to the team's Drive; and done / reopened.
-  if (body.action === 'cleanPhoto' || body.action === 'cleanMark') {
+  // §134: a clean's steps — photos before / after to the team's Drive, what was taken from the
+  // storage (or nothing), and done / reopened.
+  if (body.action === 'cleanPhoto' || body.action === 'cleanMark' || body.action === 'cleanTaken' || body.action === 'cleanNothing') {
     const key = String(body.key ?? '');
     if (!(await myClean(key))) return notMine();
     const by = { name: me.name, source: 'cleaner' as const };
     try {
-      if (body.action === 'cleanPhoto') {
+      if (body.action === 'cleanTaken' || body.action === 'cleanNothing') {
+        const [u] = await sql`SELECT unit_id FROM clean_records WHERE account_id = 1 AND cleaning_key = ${key}` as { unit_id: string | null }[];
+        const inv = { name: me.name, source: 'cleaner' as const };
+        if (body.action === 'cleanTaken') await recordUses(sql, inv, { lines: body.lines, cleaningKey: key, unitId: u?.unit_id ?? null });
+        else await nothingTaken(sql, inv, key);
+      } else if (body.action === 'cleanPhoto') {
         const stage = String(body.stage) as Stage;
         await addPhotos(sql, env.ENCRYPTION_KEY, key, stage, files, by);
         waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'photos', stage }));

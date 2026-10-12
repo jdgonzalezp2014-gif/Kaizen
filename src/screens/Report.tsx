@@ -74,8 +74,9 @@ export function ReportPage({ token }: { token: string | null }) {
       ) : <>
         <div className="card">
           <p className="fr-kind">👤 {name} · <button className="link" onClick={() => setNamed(false)}>{tx.repChange}</button></p>
-          <CleanSteps tx={tx} state={team.state}
+          <CleanSteps tx={tx} items={team.items} state={team.state}
                       sendPhoto={(stage, f) => post({ kind: 'photo', stage }, [f]) as Promise<Result>}
+                      taken={lines => post(lines ? { kind: 'taken', lines: JSON.stringify(lines) } : { kind: 'nothing' }, []) as Promise<Result>}
                       mark={kind => post({ kind }, []) as Promise<Result>} />
         </div>
         <div className="card">

@@ -20,9 +20,11 @@
 import { useState } from 'react';
 import type { SupplyItem } from '../api.ts';
 import type { Tx } from '../lib/crew-i18n.ts';
+import { PhotoPicker, shrink } from './PhotoPicker.tsx';
 
-export type Kind = 'used' | 'purchase' | 'missing' | 'problem' | 'request';
-export const KINDS: Kind[] = ['used', 'purchase', 'missing', 'problem', 'request'];
+// What was taken from the storage is not here: it is a required step of the clean (CleanSteps, §134).
+export type Kind = 'purchase' | 'missing' | 'problem' | 'request';
+export const KINDS: Kind[] = ['purchase', 'missing', 'problem', 'request'];
 const CATS = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'];
 export type Send = (fields: Record<string, string>, files: File[]) => Promise<{ ok: boolean; message?: string }>;
 
@@ -37,7 +39,6 @@ export function FieldReport({ tx, items, start, send, onClose }: {
 }) {
   const [kind, setKind] = useState<Kind | null>(start ?? null);
   const [done, setDone] = useState<null | { task: boolean }>(null);
-  const [counts, setCounts] = useState<Record<string, number>>({});
   const [itemId, setItemId] = useState('');
   const [qty, setQty] = useState(start === 'missing' ? 0 : 1);
   const [cost, setCost] = useState('');
@@ -49,7 +50,7 @@ export function FieldReport({ tx, items, start, send, onClose }: {
   const [err, setErr] = useState('');
 
   const reset = (k: Kind | null) => {
-    setKind(k); setDone(null); setCounts({}); setItemId(''); setQty(k === 'missing' ? 0 : 1); setCost(''); setText(''); setPrio(''); setFiles([]); setErr('');
+    setKind(k); setDone(null); setItemId(''); setQty(k === 'missing' ? 0 : 1); setCost(''); setText(''); setPrio(''); setFiles([]); setErr('');
   };
   const back = () => (start || !kind ? onClose?.() : reset(null));
   const byCat = CATS.map(c => [c, items.filter(i => (CATS.includes(i.category) ? i.category : 'other') === c)] as const).filter(([, l]) => l.length);
@@ -72,33 +73,26 @@ export function FieldReport({ tx, items, start, send, onClose }: {
   );
 
   // What is still missing — said on the Send button's line, never only by a greyed-out button.
-  const picked = Object.entries(counts).filter(([, n]) => n > 0);
-  const missing = kind === 'used' ? (picked.length ? '' : tx.supNeedAny)
-    : kind === 'purchase' || kind === 'missing' ? (!itemId ? tx.supNeedItem : kind === 'purchase' && qty < 1 ? tx.supNeedQty : '')
+  const missing = kind === 'purchase' || kind === 'missing' ? (!itemId ? tx.supNeedItem : kind === 'purchase' && qty < 1 ? tx.supNeedQty : '')
     : (!text.trim() ? tx.supNeedText : !prio ? tx.urgNeed : '');
 
   async function submit() {
     if (missing || busy) return;
     setBusy(true); setErr('');
     try {
-      const r = kind === 'used'
-        ? await send({ action: 'supply', kind, lines: JSON.stringify(picked.map(([id, n]) => ({ itemId: id, qty: n }))) }, [])
-        : kind === 'purchase' || kind === 'missing'
-          ? await send({ action: 'supply', kind: kind!, itemId, qty: String(qty), ...(kind === 'purchase' && cost ? { cost } : {}) }, files)
-          : await send({ action: kind!, kind: kind!, text: text.trim(), priority: prio }, files);
+      const r = kind === 'purchase' || kind === 'missing'
+          ? await send({ action: 'supply', kind: kind!, itemId, qty: String(qty), ...(kind === 'purchase' && cost ? { cost } : {}) }, await Promise.all(files.map(shrink)))
+          : await send({ action: kind!, kind: kind!, text: text.trim(), priority: prio }, await Promise.all(files.map(shrink)));
       if (!r.ok) { setErr(r.message ?? tx.notSaved); return; }
-      setDone({ task: kind !== 'used' && kind !== 'purchase' });
+      setDone({ task: kind !== 'purchase' });
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   }
 
-  const photo = (label: string) => (
-    <div className="fr-photo">
-      <label className="fr-btn secondary">{label}
-        <input type="file" accept="image/*,application/pdf" multiple hidden
-               onChange={e => setFiles(f => [...f, ...(e.target.files ?? [])].slice(0, 5))} /></label>
-      {!!files.length && <p>{tx.supPhotos(files.length)} <button className="link" onClick={() => setFiles([])}>{tx.supRemove}</button></p>}
-    </div>
-  );
+  // The same photo buttons as everywhere else (PhotoPicker); five at most with one report.
+  const photo = (label: string) => <>
+    <p className="fr-q">{label}</p>
+    <PhotoPicker tx={tx} files={files} onChange={setFiles} max={5} disabled={busy} />
+  </>;
   const itemPick = (
     <select className="fr-select" value={itemId} onChange={e => setItemId(e.target.value)}>
       <option value="">{tx.supPickItem}</option>
@@ -111,24 +105,6 @@ export function FieldReport({ tx, items, start, send, onClose }: {
     <div className="fr">
       <button className="link fr-back" onClick={back}>{start ? tx.supClose : tx.supBack}</button>
       <p className="fr-kind">{tx.supKind[kind]}</p>
-
-      {kind === 'used' && <>
-        <p className="fr-q">{tx.supUsedQ}</p>
-        {byCat.map(([c, list]) => (
-          <div key={c} className="fr-group">
-            <p className="fr-cat">{tx.supCat[c] ?? c}</p>
-            {list.map(i => {
-              const n = counts[i.id] ?? 0;
-              return (
-                <div key={i.id} className={n ? 'fr-line on' : 'fr-line'}>
-                  <span>{i.name} <small>({i.measure})</small></span>
-                  <Stepper n={n} onStep={d => setCounts(m => ({ ...m, [i.id]: Math.max(0, Math.min(999, (m[i.id] ?? 0) + d)) }))} />
-                </div>
-              );
-            })}
-          </div>
-        ))}
-      </>}
 
       {(kind === 'purchase' || kind === 'missing') && <>
         <p className="fr-q">{kind === 'purchase' ? tx.supBuyQ : tx.supMissQ}</p>
@@ -159,7 +135,7 @@ export function FieldReport({ tx, items, start, send, onClose }: {
 
       <div className="fr-send">
         <button className="fr-btn fr-go" disabled={busy || !!missing} onClick={() => void submit()}>
-          {busy ? tx.sending : kind === 'used' && picked.length ? tx.supSendCount(picked.length) : tx.sendTeam}</button>
+          {busy ? tx.sending : tx.sendTeam}</button>
         {missing && <p className="fr-missing">{missing}</p>}
         {err && <p className="breach" role="alert">{err}</p>}
       </div>
@@ -167,8 +143,29 @@ export function FieldReport({ tx, items, start, send, onClose }: {
   );
 }
 
+/** The supplies, by category, each with − n + — what was taken from the storage for a clean. */
+export function SupplyCounter({ tx, items, counts, onCounts }: {
+  tx: Tx; items: SupplyItem[]; counts: Record<string, number>; onCounts: (f: (m: Record<string, number>) => Record<string, number>) => void;
+}) {
+  const byCat = CATS.map(c => [c, items.filter(i => (CATS.includes(i.category) ? i.category : 'other') === c)] as const).filter(([, l]) => l.length);
+  return <>{byCat.map(([c, list]) => (
+    <div key={c} className="fr-group">
+      <p className="fr-cat">{tx.supCat[c] ?? c}</p>
+      {list.map(i => {
+        const n = counts[i.id] ?? 0;
+        return (
+          <div key={i.id} className={n ? 'fr-line on' : 'fr-line'}>
+            <span>{i.name} <small>({i.measure})</small></span>
+            <Stepper n={n} onStep={d => onCounts(m => ({ ...m, [i.id]: Math.max(0, Math.min(999, (m[i.id] ?? 0) + d)) }))} />
+          </div>
+        );
+      })}
+    </div>
+  ))}</>;
+}
+
 /** − n + : no keyboard, no typo, never below the minimum; quick taps all count (each one a step). */
-function Stepper({ n, min = 0, onStep }: { n: number; min?: number; onStep: (delta: number) => void }) {
+export function Stepper({ n, min = 0, onStep }: { n: number; min?: number; onStep: (delta: number) => void }) {
   return (
     <span className="fr-step">
       <button type="button" aria-label="−" disabled={n <= min} onClick={() => onStep(-1)}>−</button>

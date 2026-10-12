@@ -476,10 +476,12 @@ export interface InvItemRow extends SupplyItem { perClean: number | null; reorde
 export interface InvLevel {
   itemId: string; qty: number | null; countedAt: string | null; missingSince: string | null;
   perClean: number | null; learned: boolean; toOrder: number;
+  /** Storage only: what the coming cleans of every unit will take out of it (§134). */
+  need?: number;
 }
 export interface InvPlace { unitId: string | null; place: string; cleansAhead: number; items: InvLevel[] }
 export interface InvMove {
-  id: string; item: string; place: string; kind: 'count' | 'used' | 'purchase' | 'adjust' | 'missing'; qty: number;
+  id: string; item: string; place: string; kind: 'count' | 'used' | 'purchase' | 'adjust' | 'missing' | 'taken'; qty: number;
   note: string | null; byName: string; source: 'team' | 'cleaner' | 'link'; photos: { name: string; url: string }[]; at: string;
 }
 export interface Inventory { items: InvItemRow[]; places: InvPlace[]; recent: InvMove[]; aheadDays: number; windowDays: number }
@@ -491,7 +493,11 @@ export const inventoryItemAction = (body: Record<string, unknown>) =>
 
 /** Whoever helps on one clean, by the link the cleaner sent (§134): no account, the token is the only credential. */
 /** A clean as the field reports it (§134): photos before/after (in Drive) and done. */
-export interface CleanFieldState { before: number; after: number; folderUrl: string | null; done: { by: string; at: string } | null }
+export interface CleanFieldState {
+  before: number; after: number; folderUrl: string | null; done: { by: string; at: string } | null;
+  /** The required "what I took from the storage" step: lines, or nothing — null until answered. */
+  supplies: { lines: number; none: boolean } | null;
+}
 export interface ReportTeam {
   team: string; lang: 'en' | 'es'; items: SupplyItem[]; clean: { unit: string; date: string; until: string }; state?: CleanFieldState;
 }

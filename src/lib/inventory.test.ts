@@ -46,3 +46,9 @@ test('to order: coming cleans × use, plus the minimum, minus what is there, rou
   const l = orderList([{ item: TP, place: 'CL1250', qty: 9 }, { item: { ...TP, name: 'Coffee pods', measure: 'pod' }, place: 'Storage', qty: 0 }])!;
   assert.deepEqual(l, { title: 'Buy supplies: Toilet paper × 9', items: ['Buy: Toilet paper × 9 rolls — CL1250'] });
 });
+
+test('taken for a clean comes out of the storage, not the unit it went to (§134)', () => {
+  const l = stockLevels([mv('count', 40, '2026-10-01', null), mv('count', 3, '2026-10-01', 'u1'), mv('taken', 6, '2026-10-02', 'u1')]);
+  assert.equal(l.get('tp|storage')!.qty, 34);
+  assert.equal(l.get('tp|u1')!.qty, 3);
+});

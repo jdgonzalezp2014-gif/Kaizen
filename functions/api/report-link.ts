@@ -5,7 +5,8 @@
  * the link, never sent by the page — and read nothing else.
  *
  *   GET                       the clean (unit, day, until when), the cleaner's name and language, the supplies
- *   POST { kind: used, reporter, lines: [{ itemId, qty }] }          what was taken, all at once
+ *   POST { kind: taken, reporter, lines: [{ itemId, qty }] }         what was taken from the storage, all at once
+ *   POST { kind: nothing, reporter }                                   nothing was taken (the step is required)
  *   POST { kind: purchase|missing, reporter, itemId, qty, note?, cost? }
  *   POST { kind: problem|request, reporter, text }
  *   POST { kind: photo, stage: before|after, reporter } + one or more photos     to the clean's Drive folder
@@ -21,7 +22,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { sha256 } from '../_lib/crew.ts';
-import { esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, recordMove, recordUses } from '../_lib/inventory.ts';
+import { esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, nothingTaken, recordMove, recordUses } from '../_lib/inventory.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { tellCleanThread } from '../_lib/clean-slack.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type Stage } from '../_lib/clean-record.ts';
@@ -86,8 +87,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
       const id = await fieldTodo(sql, who, b, photos);
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.name));
-    } else if (b.kind === 'used') {
+    } else if (b.kind === 'taken' || b.kind === 'used') {
       await recordUses(sql, who, b);
+    } else if (b.kind === 'nothing') {
+      await nothingTaken(sql, who, l.cleaning_key);
     } else if (b.kind === 'purchase' || b.kind === 'missing') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
       const r = await recordMove(sql, who, b, photos);

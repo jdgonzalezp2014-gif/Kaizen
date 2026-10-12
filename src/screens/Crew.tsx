@@ -312,7 +312,7 @@ function CleanOptions({ cleanKey, unit, date, lang, ctx, fs }: { cleanKey: strin
   const [changed, setChanged] = useState(false);
   const unitId = ctx.supplies.units.find(u => u.name === unit)?.id ?? '';
   // The clean's own steps first (photos, done), then what to tell the team, then the helper's link.
-  const choices = ['steps' as const, ...KINDS.filter(k => k !== 'used' || date <= ctx.today), 'share' as const];
+  const choices = ['steps' as const, ...KINDS, 'share' as const];
   const close = () => { setOpen(null); if (changed) { setChanged(false); ctx.reload(); } };
   return (
     <>
@@ -326,8 +326,10 @@ function CleanOptions({ cleanKey, unit, date, lang, ctx, fs }: { cleanKey: strin
         <div className="clean-panel no-print">
           <p className="fr-kind">{dayLabel(lang, date)} · {unit}</p>
           {open === 'steps' ? <>
-              <CleanSteps tx={tx} state={fs} onState={() => setChanged(true)}
+              <CleanSteps tx={tx} items={ctx.supplies.items} state={fs} onState={() => setChanged(true)}
                           sendPhoto={(stage, f) => ctx.report({ action: 'cleanPhoto', key: cleanKey, stage }, [f]) as Promise<Result>}
+                          taken={lines => ctx.report(lines ? { action: 'cleanTaken', key: cleanKey, lines: JSON.stringify(lines) }
+                                                           : { action: 'cleanNothing', key: cleanKey }, []) as Promise<Result>}
                           mark={kind => ctx.report({ action: 'cleanMark', key: cleanKey, kind }, []) as Promise<Result>} />
               <button className="fr-btn secondary" style={{ marginTop: 12 }} onClick={close}>{tx.supClose}</button>
             </>

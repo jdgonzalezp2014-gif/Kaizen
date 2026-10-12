@@ -10,13 +10,14 @@
  */
 import { Fragment, useEffect, useMemo, useState } from 'react';
 import { getInventory, inventoryAction, inventoryItemAction, type InvItemRow, type Inventory } from '../api.ts';
-import { CATEGORIES, reconcile, toBuy } from '../lib/inventory.ts';
+import { CATEGORIES, reconcile } from '../lib/inventory.ts';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2026-10-12 …" → "Oct 12". */
 const short = (at: string) => `${MON[Number(at.slice(5, 7)) - 1]} ${Number(at.slice(8, 10))}`;
 const fmt = (n: number | null | undefined) => n == null ? '—' : String(Math.round(n * 100) / 100);
-const KIND_WORD: Record<string, string> = { count: '▣ counted', used: '− used', purchase: '+ bought', adjust: '± corrected', missing: '⚠ not there' };
+const KIND_WORD: Record<string, string> = { count: '▣ counted', used: '− used', purchase: '+ bought', adjust: '± corrected', missing: '⚠ not there',
+                                             taken: '↗ taken for a clean' };
 const SOURCE_WORD: Record<string, string> = { team: 'team', cleaner: 'cleaner', link: 'cleaner’s helper' };
 
 export function InventoryView({ canEdit, canSetup }: { canEdit: boolean; canSetup: boolean }) {
@@ -81,11 +82,14 @@ function PlaceStock({ inv, unitId, canEdit, onSaved }: { inv: Inventory; unitId:
       <h2>{p.place}</h2>
       <p className="note">{unitId ? <>{p.cleansAhead} clean{p.cleansAhead === 1 ? '' : 's'} in the next {inv.aheadDays} days. Per clean: the item's estimate,
           until 3 cleans here have reported uses (then “learned”, over the last {inv.windowDays} days).</>
-          : 'The central storage: what is bought goes here unless it goes straight to a unit.'}</p>
+          : <>The central storage: what is bought goes here; what cleaners take for a clean comes out of here (the
+            houses' own records do not change). "Cleans take" is what the next {inv.aheadDays} days of cleans will take out,
+            from what each house's cleans took before (or the item's estimate); "To order" adds the minimum to keep and
+            subtracts what is here — once the storage has been counted.</>}</p>
       <div className="grid-scroll">
         <table className="units compact">
           <thead><tr><th>Item</th><th className="n">On record</th><th>Counted</th>{unitId && <th className="n">Per clean</th>}
-            {unitId && <th className="n">To order</th>}{counting && <><th className="n">Counted now</th><th className="n">Gap</th></>}</tr></thead>
+            {!unitId && <th className="n">Cleans take ({inv.aheadDays} d)</th>}<th className="n">To order</th>{counting && <><th className="n">Counted now</th><th className="n">Gap</th></>}</tr></thead>
           <tbody>
             {items.map(i => {
               const l = levelOf(i.id);
@@ -98,7 +102,8 @@ function PlaceStock({ inv, unitId, canEdit, onSaved }: { inv: Inventory; unitId:
                   <td className="n">{fmt(l?.qty)}</td>
                   <td>{l?.countedAt ? short(l.countedAt) : <span className="sub-n">never</span>}</td>
                   {unitId && <td className="n">{fmt(l?.perClean)}{l?.perClean != null && <span className="sub-n">{l.learned ? ' learned' : ' est.'}</span>}</td>}
-                  {unitId && <td className="n">{l?.toOrder ? <b>{l.toOrder}</b> : '—'}</td>}
+                  {!unitId && <td className="n">{l?.need ? l.need : '—'}</td>}
+                  <td className="n">{l?.toOrder ? <b>{l.toOrder}</b> : '—'}</td>
                   {counting && <>
                     <td className="n"><input className="inv-qty" type="number" inputMode="decimal" min="0" step="any" value={c}
                                              onChange={e => setCounts(m => ({ ...m, [i.id]: e.target.value }))} /></td>
@@ -147,7 +152,8 @@ function PlaceStock({ inv, unitId, canEdit, onSaved }: { inv: Inventory; unitId:
 
 /** What the coming cleans need, every unit at once — chosen lines become one shopping to-do. */
 function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean; onSaved: (i: Inventory) => void }) {
-  const lines = useMemo(() => inv.places.filter(p => p.unitId).flatMap(p => p.items.filter(l => l.toOrder > 0)
+  // The storage first (what the cleans will take out of it), then any counted house short of its minimum.
+  const lines = useMemo(() => inv.places.flatMap(p => p.items.filter(l => l.toOrder > 0)
     .map(l => ({ key: `${p.unitId}|${l.itemId}`, unitId: p.unitId, place: p.place, itemId: l.itemId, qty: l.toOrder }))), [inv]);
   const [pick, setPick] = useState<Record<string, string>>({});
   const [off, setOff] = useState<Set<string>>(new Set());
@@ -155,17 +161,16 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
   const [busy, setBusy] = useState(false);
   const name = (id: string) => inv.items.find(i => i.id === id);
   const chosen = lines.filter(l => !off.has(l.key)).map(l => ({ ...l, qty: Number(pick[l.key] ?? l.qty) || 0 })).filter(l => l.qty > 0);
-  const storage = inv.places.find(p => !p.unitId);
-  // Units with cleans coming and no record at all: their need is unknown until someone counts them.
-  const uncounted = inv.places.filter(p => p.unitId && p.cleansAhead > 0 && p.items.every(l => !l.countedAt));
+  // Nothing is ordered for the storage until it has been counted: its record would be a guess.
+  const storageUncounted = inv.places.find(p => !p.unitId)?.items.every(l => !l.countedAt) ?? true;
   const totals = new Map<string, number>();
   for (const l of chosen) totals.set(l.itemId, (totals.get(l.itemId) ?? 0) + l.qty);
   return (
     <div className="card">
       <h2>To order — next {inv.aheadDays} days</h2>
-      <p className="note">Per unit: what its coming cleans use, plus the minimum to keep, minus what the record says is there.
-        Only items counted in that unit — a unit never counted is not guessed at; it is listed to count first.</p>
-      {!!uncounted.length && <p className="note">▲ Count first ({uncounted.length}, with cleans coming): {uncounted.map(p => `${p.place} (${p.cleansAhead})`).join(', ')}</p>}
+      <p className="note">Storage: what the next {inv.aheadDays} days of cleans will take out of it, plus the minimum, minus what
+        it holds (once counted). A counted house short of its own minimum also gets a line. Houses never counted are not guessed at.</p>
+      {storageUncounted && <p className="note">▲ Count the storage first (choose Storage above → ▣ Count) — until then nothing is ordered for it.</p>}
       {!lines.length ? <p className="note">Nothing to order from what has been counted.</p> : <>
         <div className="grid-scroll">
           <table className="units compact">
@@ -183,10 +188,7 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
             </tbody>
           </table>
         </div>
-        <p className="note"><b>Totals:</b> {[...totals].map(([id, q]) => {
-          const st = storage?.items.find(l => l.itemId === id)?.qty ?? null;
-          return `${name(id)?.name}: units need ${q}${st != null ? `, storage has ${st}` : ''} → buy ${toBuy(q, st)}`;
-        }).join(' · ') || '—'}</p>
+        <p className="note"><b>Totals to buy:</b> {[...totals].map(([id, q]) => `${name(id)?.name} × ${q}`).join(' · ') || '—'}</p>
         {canEdit && <div className="button-row">
           <button disabled={busy || !chosen.length} onClick={async () => {
             setBusy(true); setMsg('');
@@ -215,7 +217,8 @@ function RecentMoves({ inv }: { inv: Inventory }) {
             <tbody>
               {shown.map(m => (
                 <tr key={m.id}>
-                  <td>{m.at}</td><td>{m.byName}<div className="sub-n">{SOURCE_WORD[m.source]}</div></td><td>{m.place}</td><td>{m.item}</td>
+                  <td>{m.at}</td><td>{m.byName}<div className="sub-n">{SOURCE_WORD[m.source]}</div></td>
+                  <td>{m.kind === 'taken' ? <>Storage → {m.place}</> : m.place}</td><td>{m.item}</td>
                   <td className={m.kind === 'missing' ? 'breach' : undefined}>{KIND_WORD[m.kind]}</td><td className="n">{fmt(m.qty)}</td>
                   <td className="ops-note">{m.note}{m.photos?.map((p, i) => <Fragment key={i}> <a href={p.url} target="_blank" rel="noreferrer">📎</a></Fragment>)}</td>
                 </tr>

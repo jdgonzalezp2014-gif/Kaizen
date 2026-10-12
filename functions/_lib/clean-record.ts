@@ -14,6 +14,8 @@ export interface CleanState {
   before: number; after: number; folderUrl: string | null;
   /** Done and not reopened since: by whom, when (New York). */
   done: { by: string; at: string } | null;
+  /** The required "what I took from the storage" step: how many lines, or nothing — null until answered. */
+  supplies: { lines: number; none: boolean } | null;
 }
 const TZ = 'America/New_York';
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
@@ -29,13 +31,15 @@ export async function ensureRecord(sql: SqlFn, r: { key: string; cleaner: string
 export async function cleanStates(sql: SqlFn, keys: string[]): Promise<Record<string, CleanState>> {
   if (!keys.length) return {};
   const [recs, photos, marks] = await Promise.all([
-    sql`SELECT cleaning_key AS key, drive_folder FROM clean_records WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[])`,
+    sql`SELECT r.cleaning_key AS key, r.drive_folder, r.supplies_at IS NOT NULL AS answered, r.supplies_none,
+               (SELECT count(*)::int FROM inventory_moves m WHERE m.account_id = 1 AND m.cleaning_key = r.cleaning_key AND m.kind = 'taken') AS lines
+          FROM clean_records r WHERE r.account_id = 1 AND r.cleaning_key = ANY(${keys}::text[])`,
     sql`SELECT cleaning_key AS key, stage, count(*)::int AS n FROM clean_photos
          WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) GROUP BY 1, 2`,
     sql`SELECT DISTINCT ON (cleaning_key) cleaning_key AS key, kind, by_name,
                to_char(created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS at
           FROM clean_marks WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) ORDER BY cleaning_key, id DESC`
-  ]) as [{ key: string; drive_folder: string | null }[], { key: string; stage: Stage; n: number }[], { key: string; kind: string; by_name: string; at: string }[]];
+  ]) as [{ key: string; drive_folder: string | null; answered: boolean; supplies_none: boolean; lines: number }[], { key: string; stage: Stage; n: number }[], { key: string; kind: string; by_name: string; at: string }[]];
   const out: Record<string, CleanState> = {};
   for (const r of recs) {
     const m = marks.find(x => x.key === r.key);
@@ -43,7 +47,8 @@ export async function cleanStates(sql: SqlFn, keys: string[]): Promise<Record<st
       before: photos.find(p => p.key === r.key && p.stage === 'before')?.n ?? 0,
       after: photos.find(p => p.key === r.key && p.stage === 'after')?.n ?? 0,
       folderUrl: r.drive_folder ? folderUrl(r.drive_folder) : null,
-      done: m?.kind === 'done' ? { by: m.by_name, at: m.at } : null
+      done: m?.kind === 'done' ? { by: m.by_name, at: m.at } : null,
+      supplies: r.answered || r.lines ? { lines: r.lines, none: !r.lines } : null
     };
   }
   return out;
@@ -89,13 +94,14 @@ export async function addPhotos(sql: SqlFn, encryptionKey: string, key: string, 
 }
 
 /**
- * Done, or reopened — true when it changed something. Done needs at least one AFTER photo — the team's only
- * way to see the result, and the step most easily forgotten.
+ * Done, or reopened — true when it changed something. Done needs what was taken from the storage answered
+ * (lines, or "nothing") and at least one AFTER photo — the steps most easily forgotten.
  */
 export async function markClean(sql: SqlFn, key: string, kind: 'done' | 'reopened', who: FieldWho): Promise<boolean> {
   if (kind !== 'done' && kind !== 'reopened') throw new Error('Done or reopen?');
   const st = (await cleanStates(sql, [key]))[key];
   if (!st) throw new Error('Which clean?');
+  if (kind === 'done' && !st.supplies) throw new Error('First say what you took from the storage (step 2).');
   if (kind === 'done' && !st.after) throw new Error('Add at least one AFTER photo first.');
   if (kind === 'done' && st.done) return false;     // already done: a second tap changes nothing (and tells nobody)
   if (kind === 'reopened' && !st.done) return false;

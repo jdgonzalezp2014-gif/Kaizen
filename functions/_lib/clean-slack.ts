@@ -67,7 +67,7 @@ export async function tellCleanThread(sql: SqlFn, encryptionKey: string, cleanin
                              WHERE account_id = 1 AND cleaning_key = ${cleaningKey} ORDER BY id DESC LIMIT 1` as { by_name: string; at: string }[];
       if (!m) return;
       await posted({ ...cleanMarkMessage({ unit: rec.unit_name, kind: what.kind, by: m.by_name, time: m.at, before: st.before, after: st.after,
-                                           folderUrl: st.folderUrl }), thread_ts: day.ts });
+                                           folderUrl: st.folderUrl, taken: st.supplies }), thread_ts: day.ts });
     }
   } catch { /* the thread is a courtesy: the report itself is already saved */ }
 }

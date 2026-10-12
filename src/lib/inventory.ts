@@ -8,7 +8,8 @@
  * count instead of silently zeroing the record on one person's word.
  */
 
-export type MoveKind = 'count' | 'used' | 'purchase' | 'adjust' | 'missing';
+/** `taken`: out of the storage for a clean — `unitId` is where it went, but the unit's own record does not change. */
+export type MoveKind = 'count' | 'used' | 'purchase' | 'adjust' | 'missing' | 'taken';
 export const CATEGORIES = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'] as const;
 
 export interface InvItem { id: string; name: string; category: string; measure: string; perClean: number | null; reorderAt: number | null; active: boolean }
@@ -35,12 +36,14 @@ export function stockLevels(moves: Move[]): Map<string, Level> {
   const out = new Map<string, Level>();
   const sorted = [...moves].sort((a, b) => a.at.localeCompare(b.at));
   for (const m of sorted) {
-    const key = `${m.itemId}|${placeKey(m.unitId)}`;
-    const l = out.get(key) ?? { itemId: m.itemId, place: placeKey(m.unitId), qty: null, countedAt: null, missingSince: null };
+    // What was taken for a clean left the storage, whichever unit it went to.
+    const place = m.kind === 'taken' ? placeKey(null) : placeKey(m.unitId);
+    const key = `${m.itemId}|${place}`;
+    const l = out.get(key) ?? { itemId: m.itemId, place, qty: null, countedAt: null, missingSince: null };
     switch (m.kind) {
       case 'count': l.qty = m.qty; l.countedAt = m.at; l.missingSince = null; break;
       case 'purchase': l.qty = (l.qty ?? 0) + m.qty; break;
-      case 'used': l.qty = (l.qty ?? 0) - m.qty; break;
+      case 'used': case 'taken': l.qty = (l.qty ?? 0) - m.qty; break;
       case 'adjust': l.qty = (l.qty ?? 0) + m.qty; break;
       case 'missing': l.missingSince ??= m.at; break;
     }

@@ -13,7 +13,7 @@ import type { Priority } from '../../src/lib/todos.ts';
 
 const FIELD_PRIORITY = new Set(['urgent', 'high', 'low']);
 import { todayIn, addDays } from '../../src/lib/dates.ts';
-import { orderList, perClean, placeKey, stockLevels, toOrder, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
+import { orderList, perClean, placeKey, stockLevels, toBuy, toOrder, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
 
 const TZ = 'America/New_York';
 const WINDOW_DAYS = 60, AHEAD_DAYS = 14;
@@ -44,13 +44,27 @@ export async function overview(sql: SqlFn) {
   const ahead = new Map(aheadCleans.map(r => [r.unit_id, r.n]));
   const since = addDays(today, -WINDOW_DAYS);
   const places = [{ id: null as string | null, name: 'Storage' }, ...units.map(u => ({ id: u.id as string | null, name: u.name }))];
+  // What each clean of a unit takes (from the storage) or uses — learned per unit.
+  const rateOf = (itemId: string, unitId: string | null) => {
+    const i = items.find(x => x.id === itemId)!;
+    const uses = moveRows.filter(m => m.itemId === itemId && placeKey(m.unitId) === placeKey(unitId) && (m.kind === 'used' || m.kind === 'taken') && m.at >= since);
+    const cleansWithUses = new Set(uses.map(u => u.cleaningKey ?? u.at.slice(0, 10))).size;
+    return perClean(i, uses.reduce((a, u) => a + u.qty, 0), cleansWithUses);
+  };
   const rows = places.map(p => {
     const cleansAhead = p.id ? ahead.get(p.id) ?? 0 : 0;
     return {
       unitId: p.id, place: p.name, cleansAhead,
       items: items.filter(i => i.active).map(i => {
         const l = levels.get(`${i.id}|${placeKey(p.id)}`);
-        const uses = moveRows.filter(m => m.itemId === i.id && placeKey(m.unitId) === placeKey(p.id) && m.kind === 'used' && m.at >= since);
+        if (!p.id) {
+          // The storage: what the coming cleans of every unit will take out of it, minus what it holds (§134).
+          const need = units.reduce((a, u) => a + (rateOf(i.id, u.id).rate ?? 0) * (ahead.get(u.id) ?? 0), 0);
+          return { itemId: i.id, qty: l?.qty ?? null, countedAt: l?.countedAt ?? null, missingSince: l?.missingSince ?? null,
+                   perClean: null, learned: false, need: Math.ceil(need),
+                   toOrder: l?.countedAt ? toBuy(need + (i.reorderAt ?? 0), l.qty) : 0 };
+        }
+        const uses = moveRows.filter(m => m.itemId === i.id && placeKey(m.unitId) === placeKey(p.id) && (m.kind === 'used' || m.kind === 'taken') && m.at >= since);
         const cleansWithUses = new Set(uses.map(u => u.cleaningKey ?? u.at.slice(0, 10))).size;
         const r = perClean(i, uses.reduce((a, u) => a + u.qty, 0), cleansWithUses);
         return { itemId: i.id, qty: l?.qty ?? null, countedAt: l?.countedAt ?? null, missingSince: l?.missingSince ?? null,
@@ -84,12 +98,13 @@ const ES: Record<string, string> = {
   'At most 10 photos at a time.': 'Máximo 10 fotos a la vez.',
   'Which clean?': '¿Cuál limpieza?',
   'Add at least one AFTER photo first.': 'Primero agrega al menos una foto del DESPUÉS.',
+  'First say what you took from the storage (step 2).': 'Primero di qué tomaste del storage (paso 2).',
   'Done or reopen?': '¿Completada o reabrir?'
 };
 export const esMessage = (m: string) => ES[m] ?? m.replace(/ is over 15 MB\.$/, ' pesa más de 15 MB.').replace(/: a photo or a PDF, please\.$/, ': una foto o un PDF, por favor.')
   .replace(/: a photo, please\.$/, ': una foto, por favor.');
 
-const KINDS = new Set(['count', 'used', 'purchase', 'adjust', 'missing']);
+const KINDS = new Set(['count', 'used', 'purchase', 'adjust', 'missing', 'taken']);
 export type Who = { name: string; source: 'team' | 'cleaner' | 'link'; email?: string };
 
 async function unitName(sql: SqlFn, unitId: string | null) {
@@ -124,7 +139,7 @@ export async function recordMove(sql: SqlFn, who: Who, b: Record<string, unknown
   if (who.source !== 'team' && (kind === 'count' || kind === 'adjust')) throw new Error('Counts and corrections are the team’s.');
   const qty = Math.round(Number(b.qty) * 100) / 100;
   if (!Number.isFinite(qty) || (kind === 'adjust' ? qty === 0 : qty < 0) || Math.abs(qty) > 10000) throw new Error('How many?');
-  if ((kind === 'used' || kind === 'purchase') && qty === 0) throw new Error('How many?');
+  if ((kind === 'used' || kind === 'purchase' || kind === 'taken') && qty === 0) throw new Error('How many?');
   const [item] = await sql`SELECT id, name, measure FROM inventory_items WHERE account_id = 1 AND id = ${Number(b.itemId)} AND active` as
     { id: number; name: string; measure: string }[];
   if (!item) throw new Error('Which item?');
@@ -151,9 +166,9 @@ export async function recordMove(sql: SqlFn, who: Who, b: Record<string, unknown
 }
 
 /**
- * Several uses at once — what was taken for one clean, sent with one tap
- * (§134). All lines are checked before any is saved, so a mistake in one
- * never leaves half a report.
+ * What was taken from the storage for one clean, sent with one tap (§134).
+ * All lines are checked before any is saved, so a mistake in one never
+ * leaves half a report. It also ticks the clean's required "what I took" step.
  */
 export async function recordUses(sql: SqlFn, who: Who, b: Record<string, unknown>) {
   const raw = typeof b.lines === 'string' ? JSON.parse(b.lines || '[]') : b.lines;
@@ -163,8 +178,17 @@ export async function recordUses(sql: SqlFn, who: Who, b: Record<string, unknown
   const known = new Set((await invItems(sql)).filter(i => i.active).map(i => Number(i.id)));
   if (lines.some(l => !known.has(l.itemId))) throw new Error('Which item?');
   if (lines.some(l => !Number.isFinite(l.qty) || l.qty > 10000)) throw new Error('How many?');
-  for (const l of lines) await recordMove(sql, who, { ...b, kind: 'used', itemId: l.itemId, qty: l.qty });
+  for (const l of lines) await recordMove(sql, who, { ...b, kind: 'taken', itemId: l.itemId, qty: l.qty });
+  if (b.cleaningKey) await sql`UPDATE clean_records SET supplies_at = now(), supplies_by = ${who.name}, supplies_none = false
+                               WHERE account_id = 1 AND cleaning_key = ${String(b.cleaningKey)}`;
   return lines.length;
+}
+
+/** "Nothing from the storage" — said, not skipped: the step is answered. */
+export async function nothingTaken(sql: SqlFn, who: Who, cleaningKey: string) {
+  await sql`UPDATE clean_records SET supplies_at = now(), supplies_by = ${who.name},
+                   supplies_none = NOT EXISTS (SELECT 1 FROM inventory_moves WHERE account_id = 1 AND cleaning_key = ${cleaningKey} AND kind = 'taken')
+             WHERE account_id = 1 AND cleaning_key = ${cleaningKey}`;
 }
 
 /** A problem or a request from the field: a to-do for the team. */

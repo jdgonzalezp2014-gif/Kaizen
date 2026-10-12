@@ -1893,7 +1893,12 @@ header.mini-head, header.mini-head:is(header) { display: flex; flex-direction: r
 .fr-urg .on { border-color: var(--ink); border-width: 3px; font-weight: 800; }
 .fr-urg .urg-urgent.on { border-color: var(--warn); }
 .fr-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.fr-thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
+.fr-thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; display: block; }
+.fr-photos { display: flex; flex-direction: column; gap: 10px; }
+.fr-photos .off { opacity: .4; pointer-events: none; }
+.fr-thumb { position: relative; }
+.fr-thumb button { position: absolute; top: 4px; right: 4px; width: 32px; height: 32px; padding: 0; border-radius: 50%;
+  font-size: 16px; line-height: 1; background: rgba(0,0,0,.65); color: #fff; }
 /* A link that acts as a button (WhatsApp opens its own app). */
 a.fr-btn { text-decoration: none; font-weight: 700; }
 .inv-qty { width: 76px; text-align: right; }
