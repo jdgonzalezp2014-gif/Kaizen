@@ -198,6 +198,10 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   `Kaizen — clean photos / <unit> / <date> <unit>` (made on first photo). **Done needs ≥1 AFTER photo**;
   a second "done" is a no-op; reopen asks "Yes, reopen" in place. Every mark is kept (`clean_marks`);
   the latest is the state. The crew rows show "📷 n before · n after · ✅ done (who)" (team view too).
+- **Field tasks have a priority (§134):** a problem or a need asks "How urgent?" (required: urgent =
+  before the next guest / high = next days / low = when possible); "Check stock" is medium. Every to-do
+  made from the field or Inventory is announced in Slack's tasks channel (`taskCreated`) and mirrored.
+- **Cleans' daily thread in Slack (§134):** see the slack module (`functions/_lib/clean-slack.ts`).
 
 ## Open items
 

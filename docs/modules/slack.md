@@ -49,6 +49,14 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   total) and ↘ the next arrival (same day + time, or date + days empty; guest, nights, guests,
   total) — totals only for roles with `money` (§116). The board is read a week past the day.
 - Task card and claim card (comments, Add comment with focus). Kaizen comments → thread.
+- **Cleans' daily thread (§134)**, event `cleanThread` (**off by default**; Settings → Slack → "Cleans:
+  one thread a day"): in the Reservations channel, one message per clean DATE ("🧽 Cleans — Mon, Oct 12"),
+  made on the first photo/done of that day's cleans; under it one line per clean and stage ("📷 Timber
+  Crest — AFTER: 4 photos · Luz, Ana · Open in Drive") **edited in place** as photos arrive, and a reply
+  for each ✅ done / ↩️ reopened (a repeated "done" posts nothing). `clean_slack_posts` takes the row
+  before posting (ts NULL) so two photos at once make one message. Runs in waitUntil; a Slack error
+  never fails the report. Field to-dos (problems, needs with priority, "Check stock") are announced
+  like app-created work.
 - DMs to owners via People mapping; cleaner channels prepared, manual send only.
 
 ## Slack API rules that bite
@@ -69,6 +77,10 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
 
 ## Open items
 
+- **Cleans' thread built, off (§134).** Tested on the Neon branch with every channel pointed at
+  #kaizen-task. To start: Settings → Slack → tick "Cleans: one thread a day" (posts to #kaizen-ops), then
+  add it to SOP 8 "Kaizen in Slack". The bot has no `*:history` scope (it cannot read threads; not needed).
+
 - Clock moved to Cloudflare (2026-10-07) after GitHub sent the 8 AM at 12:19 PM and missed a
   check-out. Verified: runs every 5 min, 200, sends only what is due. Wrangler is logged in as
   jdgonzalezp2014@gmail.com (account d217bb2fee2ba40210af9e0dee4d45c2, Pages project `kaizen`).
@@ -79,4 +91,4 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
 
 ## History
 
-§99–§102, §107–§117, §119.
+§99–§102, §107–§117, §119, §134.

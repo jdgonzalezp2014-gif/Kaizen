@@ -3612,4 +3612,12 @@ and AFTER to Drive (a folder per unit and clean) and "done" / "reopen" (059), as
 needs an after photo, reopening asks "Yes, reopen". The helper page's header became one line (language
 beside day/night) so the clean fills the screen. Testing uploaded two test photos to the real Drive
 (the branch shares the Google connection); trashed after.
+Then the owner: a daily thread of cleans in #kaizen-ops saying when photos go up or a clean is done; and
+what a cleaner needs must be a task with a priority, as problems are. Built so: an event "Cleans: one
+thread a day" (off until he ticks it) posts one message per clean date in the Reservations channel, one
+line per clean and stage that is edited as photos arrive (five photos are one line, not five messages),
+and a reply per done/reopened; the row is taken before posting so two photos at once do not make two
+day messages (tested: two concurrent uploads, one message). Problems and needs ask "How urgent?" (three
+big choices, required); every field to-do is announced in Slack like work made in the app. Tested on
+the branch with all channels pointed at #kaizen-task.
 
