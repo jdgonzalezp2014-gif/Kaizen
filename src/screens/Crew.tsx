@@ -453,6 +453,7 @@ function UpcomingRow({ r, act, reload, tag, lang }: { r: CrewUpcoming; act?: Act
         {r.manual ? tx.manualClean(kindWord(lang, r.manual)) : tx.checkout(r.time)}
         {r.sameDay && <span className="ops-flag urgent">{r.checkIn ? tx.nextGuestAt(r.checkIn) : tx.nextGuestSameDay}</span>}
         {r.deep && <span className="ops-flag deep">{tx.deep}</span>}
+        {!!r.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{r.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
       </div>
       <div className="n">{r.price == null ? tx.notPriced : money2(r.price)}
         {act && !declining && <div><button className="link tiny" onClick={() => setDeclining(true)}>{tx.cantDoIt}</button></div>}</div>

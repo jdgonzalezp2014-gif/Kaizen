@@ -17,7 +17,9 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { WorkView } from '../components/Todos.tsx';
 import { CrewAdmin } from './Crew.tsx';
+import { InspectionRun } from '../components/InspectionRun.tsx';
 import { visibleAhead } from '../lib/crew.ts';
+import { AREAS, type Area, type InspectionItem } from '../lib/inspection.ts';
 import { addDays, daysBetween, isDateStr, todayIn } from '../lib/dates.ts';
 import { stayLabel } from '../lib/todos.ts';
 import {
@@ -27,7 +29,8 @@ import {
   type Todo, type HostawayTasksState,
   type StayDocs, type OperationsResponse, type ManualClean, type ManualCleanKind, type StayOnDay,
   getStaysOnDay, manualClean, todoAction, saveClaim, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry,
-  previewAssign, type AssignPreview, crewLink, crewAdminAction
+  previewAssign, type AssignPreview, crewLink, crewAdminAction, runAction,
+  getInspectionItems, saveInspectionItem, getVendors, saveVendor, type Vendor
 } from '../api.ts';
 import {
   BEDROOM_SIZES, DEFAULT_CHECKIN_TIME, DEFAULT_CHECKOUT_TIME, INSPECTION_RESULTS,
@@ -504,7 +507,7 @@ function Board({ data, range, patch, reload }: {
                   </td>
                 </tr>
                 {!dayRows.length && !manual.length && <tr><td colSpan={9} className="note ops-quiet">no arrivals or departures</td></tr>}
-                {manual.map(c => <ManualLine key={c.key} c={c} canEdit={canEdit} onChanged={reload}
+                {manual.map(c => <ManualLine key={c.key} c={c} canEdit={canEdit} onChanged={reload} cleanTasks={data.cleanTasks?.[c.key]}
                                              flag={flags[c.key] ?? null} onFlag={note => setFlag(c.key, note)} />)}
                 {dayRows.map(r => {
                   const key = `${r.resId}-${r.kind}`;
@@ -515,6 +518,7 @@ function Board({ data, range, patch, reload }: {
                                  seen={cleanerSees(r, data)}
                                  docs={canDocs && r.kind === 'in' && docUnits.has(r.unitId) ? docs[r.resId] ?? null : undefined}
                                  todos={todosBy.get(r.unitId)} flag={r.kind === 'out' ? flags[r.resId] : undefined}
+                                 cleanTasks={r.kind === 'out' ? data.cleanTasks?.[r.resId] : undefined}
                                  open={open === key} onToggle={() => {
                                    // Read-only roles see the board; the editor is not offered.
                                    if (can(data.permissions, 'operations.edit')) setOpen(open === key ? null : key);
@@ -544,7 +548,9 @@ function Board({ data, range, patch, reload }: {
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, today, flag, seen }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, today, flag, seen, cleanTasks }: {
+  /** §133: what an inspection asked this clean to do. */
+  cleanTasks?: string[];
   r: BoardRow; showMoney: boolean; shadow: boolean; open: boolean; onToggle: () => void;
   /** Flagged by hand (§124): the note the cleaner reads. */
   flag?: string;
@@ -621,6 +627,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
       </td>
       <td>
         {r.cancelled && <span className="ops-flag urgent" title={r.auto.reason}>▲ cancelled {r.cancelled} — {r.manual.cleaner ? 'confirmed' : 'confirm who cleaned'}</span>}
+        {cleanTasks?.length ? <span className="ops-flag due" title={cleanTasks.map(t => `🧾 ${t}`).join('\n')}>🧾 {cleanTasks.length} from the inspection</span> : null}
         {r.deep && <span className="ops-flag deep">🧽 deep · confirmed</span>}
         {r.kind === 'out' && !r.deep && r.deepSuggested && !r.manual.deep &&
           <span className="sub-n" title="A long stay — confirm it in the row if it will be cleaned as deep">○ deep suggested ({r.nights} nights)</span>}
@@ -907,8 +914,10 @@ const MANUAL_WORD: Record<ManualCleanKind, string> = {
 };
 
 /** A manual clean on its day: what, who, what it pays — and a way to undo it. */
-function ManualLine({ c, canEdit, onChanged, flag, onFlag }: {
+function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks }: {
   c: ManualClean; canEdit: boolean; onChanged: () => void;
+  /** §133: what an inspection asked this clean to do. */
+  cleanTasks?: string[];
   /** Flagged by hand (§124): the note the cleaner reads. */
   flag: string | null; onFlag: (note: string | null) => void;
 }) {
@@ -930,7 +939,8 @@ function ManualLine({ c, canEdit, onChanged, flag, onFlag }: {
       <td className="sub-n">{c.kind === 'early_departure' ? 'checkout clean → not needed' : ''}</td>
       <td>{c.cleaner ?? <span className="breach">▲ unassigned</span>}</td>
       <td className="n">{c.price != null ? money2(c.price) : c.cleaner ? <span className="note">not priced</span> : null}</td>
-      <td>{c.deep && <span className="ops-flag deep">🧽 deep</span>}</td>
+      <td>{c.deep && <span className="ops-flag deep">🧽 deep</span>}
+        {cleanTasks?.length ? <span className="ops-flag due" title={cleanTasks.map(t => `🧾 ${t}`).join('\n')}>🧾 {cleanTasks.length} from the inspection</span> : null}</td>
       <td className="ops-note">
         {c.note}
         {canEdit && c.cleaner ? <FlagControl cleanKey={c.key} flag={flag} onChanged={onFlag} />
@@ -1193,6 +1203,15 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
   const [msg, setMsg] = useState('');
   const [editing, setEditing] = useState<InspectionEntry | null>(null);
   const hasHistory = data.inspectionLog.done.length + data.inspectionLog.scheduled.length > 0;
+  const canEdit = can(data.permissions, 'operations.edit');
+  // §133: the inspection open in the checklist sheet.
+  const [run, setRun] = useState<string | null>(null);
+  const start = async (body: Record<string, unknown>) => {
+    setMsg('');
+    const r = await runAction<{ id: string }>({ action: 'start', ...body }).catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setMsg(r.message ?? 'Could not start.'); return; }
+    setRun(r.id);
+  };
 
   const schedule = async () => {
     setMsg('Scheduling…');
@@ -1218,30 +1237,30 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
         {!hasHistory && ' No inspection is recorded in Kaizen yet, so no unit is called overdue — import the daily file\'s log in Setup, or log them here.'}
       </p>
 
-      {can(data.permissions, 'operations.edit') &&
-        <InspectionForm data={data} editing={editing} onDone={() => { setEditing(null); reload(); }} />}
+      {run && <InspectionRun id={run} canEdit={canEdit} onClose={changed => { setRun(null); if (changed) reload(); }} />}
+      {canEdit && <InspectStart data={data} onStart={b => void start(b)} onScheduled={reload} />}
+      <InspectionCalendar data={data} onOpen={e => { if (!e.result) { if (canEdit) void start({ inspectionId: e.id }); } else if (e.checklist) setRun(e.id); }} />
 
       <div className="group">
         <h3>Scheduled <span className="count">{data.inspectionLog.scheduled.length}</span>{' '}
-          {can(data.permissions, 'operations.edit') &&
-            <button className="link" onClick={() => void schedule()}>Auto-schedule what is due</button>}</h3>
+          {canEdit && <button className="link" onClick={() => void schedule()}>Auto-schedule what is due</button>}</h3>
         {msg && <p className="note">{msg}</p>}
-        <table className="units compact"><tbody>
+        <div className="grid-scroll"><table className="units compact"><tbody>
           {data.inspectionLog.scheduled.map(e => (
             <tr key={e.id}>
               <td>{e.date}</td><td><b>{e.unit}</b></td><td>{e.by}</td><td className="ops-note">{e.notes}</td>
-              <td className="n">{can(data.permissions, 'operations.edit') && <>
-                <button className="link tiny" onClick={() => setEditing(e)}>mark done</button>{' '}
+              <td className="n">{canEdit && <>
+                <button className="small" onClick={() => void start({ inspectionId: e.id })}>▶ {e.started ? 'Continue' : 'Start'}</button>{' '}
                 <button className="link tiny danger" onClick={() => void cancelInspection(e.id).then(reload)}>cancel</button>
               </>}</td>
             </tr>
           ))}
           {!data.inspectionLog.scheduled.length && <tr><td className="note">Nothing scheduled.</td></tr>}
-        </tbody></table>
+        </tbody></table></div>
       </div>
 
       {hasHistory && (
-        <table className="units compact">
+        <div className="grid-scroll"><table className="units compact">
           <thead><tr><th></th><th>Unit</th><th>Last inspected</th><th>By</th><th>Result</th><th>Big booking ahead</th><th>Scheduled</th></tr></thead>
           <tbody>
             {data.panel.map(p => (
@@ -1256,26 +1275,111 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
               </tr>
             ))}
           </tbody>
-        </table>
+        </table></div>
       )}
 
       <div className="group">
         <h3>Inspection log <span className="count">{data.inspectionLog.done.length}</span></h3>
-        <table className="units compact">
-          <thead><tr><th>Date</th><th>Unit</th><th>By</th><th>Result</th><th>Notes</th></tr></thead>
+        <div className="grid-scroll"><table className="units compact">
+          <thead><tr><th>Date</th><th>Unit</th><th>By</th><th>Result</th><th>Notes</th><th></th></tr></thead>
           <tbody>
             {data.inspectionLog.done.slice(0, 60).map(e => (
               <tr key={e.id}>
                 <td>{e.date}</td><td>{e.unit}</td><td>{e.by}</td>
                 <td className={/urgent|maintenance/i.test(e.result) ? 'breach' : undefined}>{e.result}</td>
                 <td className="ops-note">{e.notes}</td>
+                <td>{e.checklist && <button className="link tiny" onClick={() => setRun(e.id)}>View report</button>}</td>
               </tr>
             ))}
             {!data.inspectionLog.done.length && <tr><td colSpan={5} className="note">Nothing logged yet.</td></tr>}
           </tbody>
-        </table>
+        </table></div>
       </div>
+
+      {canEdit && (
+        <details className="group">
+          <summary className="note">Log a past inspection without the checklist</summary>
+          <InspectionForm data={data} editing={editing} onDone={() => { setEditing(null); reload(); }} />
+        </details>
+      )}
     </>
+  );
+}
+
+/**
+ * §133: start an inspection now, or put one on the calendar. The inspector
+ * is anyone who did not clean the unit last — an inspection audits the clean.
+ */
+function InspectStart({ data, onStart, onScheduled }: {
+  data: OperationsResponse; onStart: (b: Record<string, unknown>) => void; onScheduled: () => void;
+}) {
+  const units = useMemo(() => data.panel.map(p => ({ id: p.unitId, name: p.unit })).sort((a, b) => a.name.localeCompare(b.name)), [data.panel]);
+  const [unitId, setUnitId] = useState('');
+  const [date, setDate] = useState(data.today);
+  const [by, setBy] = useState('');
+  const [msg, setMsg] = useState('');
+  const unit = units.find(u => u.id === unitId)?.name ?? '';
+  const cleanedBy = data.rows.filter(r => r.kind === 'out' && r.unitId === unitId && r.date <= date && r.cleaner).map(r => r.cleaner).pop() ?? null;
+  const who = eligibleInspectors(data.roster, data.extraInspectors, cleanedBy);
+  const schedule = async () => {
+    setMsg('');
+    const r = await logInspection({ unit, date, inspector: by, result: null, notes: '' }).catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setMsg(r.message ?? 'Not scheduled.'); return; }
+    setMsg(`Scheduled: ${unit} on ${date}.`); onScheduled();
+  };
+  return (
+    <div className="card ops-form">
+      <h2>Inspect a unit</h2>
+      <div className="row">
+        <label>Unit<select value={unitId} onChange={e => setUnitId(e.target.value)}>
+          <option value="">—</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
+        <label>Day<input type="date" value={date} min={data.today} onChange={e => setDate(e.target.value)} /></label>
+        <label>Inspector<select value={by} onChange={e => setBy(e.target.value)}>
+          <option value="">—</option>{who.map(n => <option key={n}>{n}</option>)}</select></label>
+      </div>
+      {cleanedBy && <p className="note">{cleanedBy} cleaned {unit} last, so is not offered as the inspector.</p>}
+      <div className="button-row">
+        <button disabled={!unitId || !by || date !== data.today} onClick={() => onStart({ unitId, date, inspector: by })}>▶ Inspect now</button>
+        <button className="secondary" disabled={!unitId || !by} onClick={() => void schedule()}>Schedule for {date === data.today ? 'today' : date}</button>
+        {msg && <span className="note">{msg}</span>}
+      </div>
+      <p className="note">The checklist follows the unit's bedrooms and bathrooms. Edit it in Setup → Inspection checklist.</p>
+    </div>
+  );
+}
+
+/** §133: the month's inspections — scheduled (○) and done (✓ / ▲) — by unit and inspector. */
+function InspectionCalendar({ data, onOpen }: { data: OperationsResponse; onOpen: (e: InspectionEntry) => void }) {
+  const all = [...data.inspectionLog.scheduled, ...data.inspectionLog.done];
+  const [month, setMonth] = useState(data.today.slice(0, 7));
+  const [y, m] = month.split('-').map(Number) as [number, number];
+  const first = new Date(Date.UTC(y, m - 1, 1)), days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const cells: (string | null)[] = [...Array(first.getUTCDay()).fill(null),
+    ...Array.from({ length: days }, (_, i) => `${month}-${String(i + 1).padStart(2, '0')}`)];
+  const shift = (k: number) => { const d = new Date(Date.UTC(y, m - 1 + k, 1)); setMonth(d.toISOString().slice(0, 7)); };
+  const mark = (e: InspectionEntry) => !e.result ? (e.started ? '◐' : '○') : /urgent|maintenance/i.test(e.result) ? '▲' : '✓';
+  return (
+    <div className="card">
+      <div className="crew-cal-head">
+        <button className="chip" onClick={() => shift(-1)}>‹</button>
+        <h2>Inspections · {MON[m - 1]} {y}</h2>
+        <button className="chip" onClick={() => shift(1)}>›</button>
+      </div>
+      <div className="crew-cal">
+        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="crew-cal-dow">{d}</div>)}
+        {cells.map((d, i) => d === null ? <div key={i} /> : (
+          <div key={d} className={`crew-cal-day${d === data.today ? ' today' : ''}`}>
+            <div className="crew-cal-n">{Number(d.slice(8))}</div>
+            {all.filter(e => e.date === d).map(e => (
+              <button key={e.id} className={`link crew-cal-item ${/urgent|maintenance/i.test(e.result) ? 'flag' : !e.result ? 'ahead' : 'done'}`}
+                      title={`${e.unit} · ${e.by || 'no inspector'}${e.result ? ` · ${e.result}` : ''}`} onClick={() => onOpen(e)}>
+                {mark(e)} {/\d{3,}$/.exec(e.unit.trim())?.[0] ?? e.unit.trim().split(/\s+/)[0]}</button>
+            ))}
+          </div>
+        ))}
+      </div>
+      <p className="note">○ scheduled · ◐ started · ✓ done · ▲ maintenance needed or urgent. Tap one to start, continue or open its report.</p>
+    </div>
   );
 }
 
@@ -1587,6 +1691,8 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
 
       <LevelSetup cfg={cfg} roster={roster} setRoster={setRoster} rules={rules} setRules={setRules} save={save} />
       <CrewSetup cfg={cfg} roster={roster} setRoster={setRoster} save={save} />
+      <ChecklistSetup />
+      <VendorSetup />
 
       <div className="card">
         <h2>Rules</h2>
@@ -1698,6 +1804,152 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
         <button disabled={calendar === cfg.crewCalendar && Number(days) === cfg.crewCalendarDays && Number(autoDays) === (cfg.crewAutoDays ?? 4)}
                 onClick={() => void save({ crewCalendar: calendar, crewCalendarDays: Number(days), crewAutoDays: Number(autoDays) },
                                          'What cleaners see ahead is saved.')}>Save</button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * §133: the inspection checklist — what is checked, room by room. Items for
+ * every unit, or for one; reordered, switched off, or removed (an item
+ * already answered is switched off instead, so old reports keep their words).
+ */
+function ChecklistSetup() {
+  const [items, setItems] = useState<InspectionItem[] | null>(null);
+  const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
+  const [msg, setMsg] = useState('');
+  const [draft, setDraft] = useState<{ area: Area; label: string; defaultOutcome: string; unitId: string }>({ area: 'kitchen', label: '', defaultOutcome: 'repair', unitId: '' });
+  const [editing, setEditing] = useState<string | null>(null);
+  const [edit, setEdit] = useState<{ label: string; defaultOutcome: string; unitId: string }>({ label: '', defaultOutcome: 'repair', unitId: '' });
+  useEffect(() => {
+    void getInspectionItems().then(r => { if (r.ok) setItems(r.items); });
+    void getUnits().then(r => setUnits((r.units ?? []).filter(u => u.active).map(u => ({ id: u.id, name: u.name })).sort((a, b) => a.name.localeCompare(b.name))));
+  }, []);
+  const send = async (body: Record<string, unknown>, done?: string) => {
+    const r = await saveInspectionItem(body).catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return false; }
+    setItems(r.items);
+    setMsg('switchedOff' in r && r.switchedOff ? 'It was used in an inspection, so it is switched off (old reports keep it) rather than deleted.' : done ?? '');
+    return true;
+  };
+  const OUT: Record<string, string> = { repair: '🔧 repair', purchase: '🛒 purchase', clean: '🧽 clean' };
+  const unitName = (id: string | null) => id ? units.find(u => u.id === id)?.name ?? id : 'all units';
+  if (!items) return <div className="card"><h2>Inspection checklist</h2><p className="note loading-dot">Loading…</p></div>;
+  return (
+    <div className="card">
+      <h2>Inspection checklist</h2>
+      <p className="note">What the inspector checks, room by room. Bedrooms and bathrooms repeat once per room in the unit.
+        Each item says what a failure usually becomes — the inspector can change it at the end.</p>
+      {AREAS.map(a => {
+        const list = items.filter(i => i.area === a.key);
+        return (
+          <div key={a.key} className="group">
+            <h3>{a.label}{a.perRoom ? ' (each one)' : ''} <span className="count">{list.filter(i => i.active).length}</span></h3>
+            <table className="units compact"><tbody>
+              {list.map(i => editing === i.id ? (
+                <tr key={i.id}><td colSpan={4}>
+                  <div className="row">
+                    <label>Check<input value={edit.label} maxLength={200} onChange={e => setEdit(v => ({ ...v, label: e.target.value }))} /></label>
+                    <label>If it fails<select value={edit.defaultOutcome} onChange={e => setEdit(v => ({ ...v, defaultOutcome: e.target.value }))}>
+                      {Object.entries(OUT).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+                    <label>Units<select value={edit.unitId} onChange={e => setEdit(v => ({ ...v, unitId: e.target.value }))}>
+                      <option value="">All units</option>{units.map(u => <option key={u.id} value={u.id}>{u.name} only</option>)}</select></label>
+                  </div>
+                  <div className="button-row">
+                    <button className="small" disabled={!edit.label.trim()} onClick={async () => {
+                      if (await send({ action: 'save', id: i.id, area: i.area, label: edit.label, defaultOutcome: edit.defaultOutcome, unitId: edit.unitId || null, active: i.active }, 'Saved.')) setEditing(null);
+                    }}>Save</button>
+                    <button className="small secondary" onClick={() => setEditing(null)}>Cancel</button>
+                  </div>
+                </td></tr>
+              ) : (
+                <tr key={i.id} className={i.active ? undefined : 'muted-row'}>
+                  <td>{i.label}{!i.active && <span className="sub-n"> · off</span>}</td>
+                  <td className="sub-n">{OUT[i.defaultOutcome]}</td>
+                  <td className="sub-n">{unitName(i.unitId)}</td>
+                  <td className="n">
+                    <button className="link tiny" title="Up" onClick={() => void send({ action: 'move', id: i.id, dir: -1 })}>↑</button>
+                    <button className="link tiny" title="Down" onClick={() => void send({ action: 'move', id: i.id, dir: 1 })}>↓</button>{' '}
+                    <button className="link tiny" onClick={() => { setEditing(i.id); setEdit({ label: i.label, defaultOutcome: i.defaultOutcome, unitId: i.unitId ?? '' }); }}>edit</button>{' '}
+                    {i.active
+                      ? <button className="link tiny danger" onClick={() => void send({ action: 'delete', id: i.id }, 'Removed.')}>remove</button>
+                      : <button className="link tiny" onClick={() => void send({ action: 'save', id: i.id, area: i.area, label: i.label, defaultOutcome: i.defaultOutcome, unitId: i.unitId, active: true }, 'Back on.')}>turn on</button>}
+                  </td>
+                </tr>
+              ))}
+              {!list.length && <tr><td className="note">Nothing checked here.</td></tr>}
+            </tbody></table>
+          </div>
+        );
+      })}
+      <h3>Add an item</h3>
+      <div className="row">
+        <label>Room<select value={draft.area} onChange={e => setDraft(d => ({ ...d, area: e.target.value as Area }))}>
+          {AREAS.map(a => <option key={a.key} value={a.key}>{a.label}</option>)}</select></label>
+        <label>Check<input value={draft.label} maxLength={200} placeholder="e.g. Hair dryer works" onChange={e => setDraft(d => ({ ...d, label: e.target.value }))} /></label>
+        <label>If it fails<select value={draft.defaultOutcome} onChange={e => setDraft(d => ({ ...d, defaultOutcome: e.target.value }))}>
+          {Object.entries(OUT).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+        <label>Units<select value={draft.unitId} onChange={e => setDraft(d => ({ ...d, unitId: e.target.value }))}>
+          <option value="">All units</option>{units.map(u => <option key={u.id} value={u.id}>{u.name} only</option>)}</select></label>
+      </div>
+      <div className="button-row">
+        <button disabled={!draft.label.trim()} onClick={async () => {
+          if (await send({ action: 'save', area: draft.area, label: draft.label, defaultOutcome: draft.defaultOutcome, unitId: draft.unitId || null }, 'Added.')) setDraft(d => ({ ...d, label: '' }));
+        }}>Add</button>
+        {msg && <span className="note">{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
+/** §133: handymen and suppliers — a directory the repairs pick from. */
+function VendorSetup() {
+  const [vendors, setVendors] = useState<Vendor[] | null>(null);
+  const blank = { id: '', name: '', trade: '', phone: '', email: '', notes: '', active: true };
+  const [form, setForm] = useState(blank);
+  const [msg, setMsg] = useState('');
+  useEffect(() => { void getVendors().then(r => { if (r.ok) setVendors(r.vendors); }); }, []);
+  const send = async (body: Record<string, unknown>, done: string) => {
+    const r = await saveVendor(body).catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return false; }
+    setVendors(r.vendors); setMsg(done); return true;
+  };
+  return (
+    <div className="card">
+      <h2>Vendors &amp; handymen</h2>
+      <p className="note">Who does repairs and supplies, and how to reach them. A repair's vendor is picked from this list.
+        A vendor's own page (their repairs, like the cleaners' page) comes later; their email is kept for it.</p>
+      <table className="units compact">
+        <thead><tr><th>Name</th><th>Trade</th><th>Phone</th><th>Email</th><th>Notes</th><th></th></tr></thead>
+        <tbody>
+          {(vendors ?? []).map(v => (
+            <tr key={v.id} className={v.active ? undefined : 'muted-row'}>
+              <td><b>{v.name}</b>{!v.active && <span className="sub-n"> · off</span>}</td><td>{v.trade}</td>
+              <td>{v.phone && <a href={`tel:${v.phone}`}>{v.phone}</a>}</td>
+              <td>{v.email && <a href={`mailto:${v.email}`}>{v.email}</a>}</td><td className="ops-note">{v.notes}</td>
+              <td className="n">
+                <button className="link tiny" onClick={() => setForm({ id: v.id, name: v.name, trade: v.trade ?? '', phone: v.phone ?? '', email: v.email ?? '', notes: v.notes ?? '', active: v.active })}>edit</button>{' '}
+                {v.active && <button className="link tiny danger" onClick={() => void send({ action: 'delete', id: v.id }, `${v.name} switched off.`)}>remove</button>}
+              </td>
+            </tr>
+          ))}
+          {vendors && !vendors.length && <tr><td colSpan={6} className="note">No vendors yet.</td></tr>}
+        </tbody>
+      </table>
+      <h3>{form.id ? `Edit ${form.name}` : 'Add a vendor'}</h3>
+      <div className="row">
+        <label>Name<input value={form.name} maxLength={120} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></label>
+        <label>Trade<input value={form.trade} maxLength={80} placeholder="Plumber, handyman, A/C…" onChange={e => setForm(f => ({ ...f, trade: e.target.value }))} /></label>
+        <label>Phone<input value={form.phone} maxLength={40} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} /></label>
+        <label>Email<input type="email" value={form.email} maxLength={160} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} /></label>
+      </div>
+      <label>Notes<input value={form.notes} maxLength={1000} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} /></label>
+      {form.id && <label className="check"><input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} /> Active</label>}
+      <div className="button-row">
+        <button disabled={!form.name.trim()} onClick={async () => { if (await send({ action: 'save', ...form, id: form.id || undefined }, form.id ? 'Saved.' : 'Added.')) setForm(blank); }}>
+          {form.id ? 'Save' : 'Add'}</button>
+        {form.id && <button className="secondary" onClick={() => setForm(blank)}>Cancel</button>}
+        {msg && <span className="note">{msg}</span>}
       </div>
     </div>
   );

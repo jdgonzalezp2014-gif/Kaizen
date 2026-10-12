@@ -3560,3 +3560,18 @@ task. The 20 recoverable links were restored with Hostaway's current state as th
 written to Hostaway, nothing changed in Kaizen. 16 tasks remain done in Kaizen and open in Hostaway; the
 owner chose to leave them as they are.
 
+## §133 — Inspections become a checklist that turns findings into work (2026-10-12)
+
+The owner: inspections should walk the unit room by room (by its number of rooms), with a customizable,
+quality-first checklist; a pop-up with fixed Cleaning / Repair / Purchase buttons on top and the rooms
+below; at the end, what needs attention becomes work — a purchase is a to-do, a repair a work order not
+yet assigned with a sub-task to assign and schedule it; cleaning findings go to the next clean or a new
+one, the inspector decides at the end; vendors in a directory (a page later); photos required on a
+finding; repairs and purchases go to Hostaway like any task. Built so: a template per area edited in
+Setup, sections from bedrooms/bathrooms, every tap saved (a phone losing signal loses nothing), and a
+review that blocks finishing without a photo and a decision. Testing found finishing was not atomic — it
+made the work and then failed on a missing next clean, so a retry would duplicate it; now everything is
+checked first and a finding that already made its work makes nothing again. The phone view of
+Inspections was 555 px wide on a 390 px phone (unwrapped tables, calendar names); fixed, and hidden
+file inputs are hidden everywhere (it affected the cleaners' "+ receipt" too).
+

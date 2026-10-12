@@ -103,6 +103,22 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 - Operations → Crew: pick a cleaner → their page for the team (level, flag/correct/decide), or
   **👁 View as cleaner ↗** — a separate tab (`/#as-cleaner/<name>`, PreviewShell in App.tsx) with only the
   cleaner's page, loaded through `crewGet` (the cleaner's own server code: level stripped), buttons inert.
+- **Inspections as a checklist (§133).** Template `inspection_items` (area general/living/kitchen/bedroom/
+  bathroom/exterior, label, default_outcome repair|purchase|clean, unit_id = one unit or NULL, position, active)
+  — Setup → Inspection checklist (CRUD, reorder; an item already answered is switched off, not deleted).
+  A run (`/api/inspection-run`, lib `functions/_lib/inspection-run.ts`, pure `src/lib/inspection.ts`, UI
+  `src/components/InspectionRun.tsx`): sections from the unit's bedrooms and bathrooms (half bath = one),
+  each item ✓/▲/N/A saved on every tap (`inspection_checks`), "Everything else here is OK", fixed
+  Cleaning/Repair/Purchase buttons for on-the-spot findings; a finding needs a photo (Drive folder "Kaizen —
+  inspections") and an outcome. Finish (validated BEFORE anything is made, idempotent via todo_id /
+  clean_task_id): repair → work order + sub-task "Assign and schedule"; purchase → to-do "Buy: …"; clean_next →
+  `clean_tasks` on the unit's next clean in the record (board 🧾, cleaner's page "From the inspection");
+  clean_new → one MAN- extra clean, TBD, carrying them; overall result suggested (OK / Minor issues /
+  Maintenance needed). Repairs/purchases are mirrored to Hostaway (pushWork after the response); not
+  announced in Slack. Inspections view: Inspect now / Schedule, month calendar (○ ◐ ✓ ▲), ▶ Start/Continue,
+  View report; the old log form is folded ("past inspection without the checklist").
+- **Vendors (§133):** `vendors` directory (Setup → Vendors & handymen; switched off, never erased); the repair
+  form's Vendor field suggests them (free text kept). A vendor page is a later step (email kept for it).
 - **Carry (§131):** the record stores `prepares_for` (the next reservation when recorded). A rule-decided
   clean before guest X held by A: if a booking lands in between, the original checkout is decided again by
   the new guest, and A takes the new booking's checkout (the clean now before X) — `applyCarry`, before

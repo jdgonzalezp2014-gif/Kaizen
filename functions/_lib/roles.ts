@@ -36,17 +36,26 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/operations', methods: ['GET'] },
     // The crew pages as each cleaner sees them, and what is waiting on the team (§122).
     { path: '/api/crew-admin', methods: ['GET'] },
+    // Inspections as a checklist, its template, and the vendor directory (§133).
+    { path: '/api/inspection-run', methods: ['GET'] }, { path: '/api/inspection-items', methods: ['GET'] },
+    { path: '/api/vendors', methods: ['GET'] },
     // The cleanings calendar lives in Operations; it reads the record.
     { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'operations.edit', label: 'Operations — assign cleaners, times, notes, log inspections', routes: [
     { path: '/api/turnover', methods: ['POST'] }, { path: '/api/inspections', methods: ['POST', 'DELETE'] },
     { path: '/api/manual-clean', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] },
     // Approve or deny a cleaner's extra, flag a clean (§122).
-    { path: '/api/crew-admin', methods: ['POST'] }] },
+    { path: '/api/crew-admin', methods: ['POST'] },
+    // Walk an inspection: answers, photos, and the work it makes (§133).
+    { path: '/api/inspection-run', methods: ['POST'] }] },
   { key: 'operations.setup', label: 'Operations — roster, pay, rules and the live switch', routes: [
-    { path: '/api/ops-settings', methods: ['GET', 'POST'] }] },
+    { path: '/api/ops-settings', methods: ['GET', 'POST'] },
+    // The inspection checklist and the vendor directory (§133).
+    { path: '/api/inspection-items', methods: ['POST'] }, { path: '/api/vendors', methods: ['POST'] }] },
   { key: 'todos', label: 'To-do list — see, add and tick off the team\'s to-dos', routes: [
-    { path: '/api/todos', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] }] },
+    { path: '/api/todos', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] },
+    // A repair's vendor is picked from the directory (§133).
+    { path: '/api/vendors', methods: ['GET'] }] },
   { key: 'guests.documents', label: 'Guest documents — see and upload IDs and rental agreements', routes: [
     { path: '/api/guest-docs', methods: ['POST'] }, { path: '/api/guest-docs-upload', methods: ['POST'] }] },
   { key: 'repository', label: 'Repository — look up records and documents', tab: 'repository', routes: [

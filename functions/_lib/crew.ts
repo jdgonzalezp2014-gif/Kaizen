@@ -32,6 +32,8 @@ export interface CrewUpcoming {
   price: number | null;
   /** A manual clean (§79) rather than a checkout. */
   manual: string | null;
+  /** §133: what an inspection asked this clean to do. */
+  tasks?: string[];
 }
 
 export interface CrewPage {
@@ -226,6 +228,13 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
           : { key: i.key, date: i.date, unit: i.unit, beds: m?.beds ?? null, time: i.time, deep: !!m?.deep, sameDay: false,
               checkIn: null, price: m?.price ?? null, manual: m?.kind ?? 'extra' };
       }).sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time) || a.unit.localeCompare(b.unit));
+      // §133: what the inspection asked these cleans to do.
+      const keys = upcoming.rows.map(r => r.key);
+      if (keys.length) {
+        const ts = await sql`SELECT cleaning_key AS key, text FROM clean_tasks WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) ORDER BY id` as
+          { key: string; text: string }[];
+        for (const r of upcoming.rows) r.tasks = ts.filter(t => t.key === r.key).map(t => t.text);
+      }
       if (st.confirm) {
         upcoming.confirmed = { at: st.confirm.at, through: st.confirm.through };
         upcoming.movements = scheduleMovements(c.name, { items: st.confirm.snapshot, day: st.confirm.day, through: st.confirm.through,

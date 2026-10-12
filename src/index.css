@@ -1786,3 +1786,44 @@ button.crew-cal-day { background: var(--card); color: inherit; font: inherit; te
 .crew-cal-detail ul { margin: 4px 0 0; padding-left: 18px; }
 .crew-cal-detail .crew-cal-item { white-space: normal; font-size: 13px; }
 .crew-help { white-space: pre-line; }
+
+/* ── the inspection sheet (§133): full screen on a phone, thumb-sized controls ── */
+.insp-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 60; display: flex; justify-content: center; align-items: stretch; }
+.insp-sheet { background: var(--bg); width: 100%; max-width: 760px; display: flex; flex-direction: column; overflow: hidden; }
+@media (min-width: 761px) { .insp-sheet { margin: 24px 0; border-radius: 12px; } }
+.insp-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+.insp-head h2 { margin: 0; font-size: 17px; }
+.insp-quick { display: flex; gap: 8px; padding: 10px 16px; background: var(--card); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
+.insp-quick .chip { flex: 1 1 0; min-height: 44px; font-size: 15px; }
+.insp-progress { padding: 8px 16px; display: flex; flex-direction: column; gap: 4px; }
+.insp-bar { height: 6px; background: var(--line); border-radius: 3px; overflow: hidden; }
+.insp-bar span { display: block; height: 100%; background: var(--ink); }
+.insp-body { flex: 1; overflow-y: auto; padding: 8px 16px 16px; -webkit-overflow-scrolling: touch; }
+.insp-sec { border: 1px solid var(--line); border-radius: 10px; margin-bottom: 10px; background: var(--card); }
+.insp-sec-head { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 14px; background: none; border: 0; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.insp-sec-head b { flex: 1; }
+.insp-items { padding: 0 14px 12px; display: flex; flex-direction: column; gap: 10px; }
+.insp-item { border-top: 1px solid var(--line); padding-top: 10px; }
+.insp-item-top { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.insp-label { flex: 1 1 200px; }
+.insp-seg { display: flex; gap: 4px; }
+.insp-seg button { min-width: 64px; min-height: 40px; border: 1px solid var(--line); background: var(--bg); color: inherit; border-radius: 8px; font: inherit; cursor: pointer; }
+.insp-seg button.on.ok { background: #e6f4ea; border-color: #34a853; color: #1e6b33; }
+.insp-seg button.on.attention { background: #fff4e5; border-color: #e8a33d; color: #8a4b00; }
+.insp-seg button.on.na { background: var(--line); }
+.insp-att { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.insp-att input { margin: 0; }
+.insp-photos { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.insp-photos a { font-size: 13px; }
+.chip.need { border-color: #e8a33d; color: #8a4b00; }
+.insp-foot { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 12px 16px; background: var(--card); border-top: 1px solid var(--line); flex-wrap: wrap; }
+.insp-foot button { min-height: 44px; }
+.insp-quick-form { margin: 0 16px 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); display: flex; flex-direction: column; gap: 8px; }
+.insp-quick-form input, .insp-quick-form select { margin: 0; }
+.insp-finding { border: 1px solid var(--line); border-radius: 10px; padding: 10px; margin-bottom: 8px; background: var(--card); display: flex; flex-direction: column; gap: 6px; }
+.insp-finding select { margin: 0; }
+.insp-made { padding-left: 18px; }
+/* A file input behind a label (camera chip, "+ receipt"): hidden means hidden, whatever else styles inputs. */
+input[type=file][hidden] { display: none !important; }
+/* Calendar entries that are buttons stay inside their day (§133). */
+.crew-cal button.crew-cal-item { display: block; width: 100%; max-width: 100%; text-align: left; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

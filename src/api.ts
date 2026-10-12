@@ -298,6 +298,8 @@ import type { AssignRule, BoardRow, BoardSummary, Cleaner, OpsRules, UnitInspect
 export interface InspectionEntry {
   id: string; date: string; unit: string; by: string; result: string; notes: string;
   reservationId: string | null;
+  /** §133: walked as a checklist and not finished; has a checklist report. */
+  started?: boolean; checklist?: boolean;
 }
 export interface NoteEntry {
   resId: string; kind: 'checkin' | 'checkout'; unit: string | null; guest: string | null;
@@ -324,6 +326,8 @@ export interface OperationsResponse {
   manualCleans: ManualClean[];
   /** Cleans flagged by hand (§124), by record key (reservation ID or MAN-n): the note the cleaner reads. */
   flags: Record<string, { note: string; by: string | null }>;
+  /** §133: what an inspection asked each clean to do, by its key (reservation or MAN-n). */
+  cleanTasks?: Record<string, string[]>;
   sheet: { ok: boolean; problem: string | null; warning: string | null } | null;
   recorded: number | null; tookMs: number;
   error?: string; message?: string;
@@ -421,6 +425,8 @@ export const cutoverImport = (commit: boolean) =>
 import type { CrewClean, CrewExtra, Invoice, InvoicePeriod, Movement, Period } from './lib/crew.ts';
 
 export interface CrewUpcoming {
+  /** §133: what an inspection asked this clean to do. */
+  tasks?: string[];
   key: string; date: string; unit: string; beds: number | null; time: string; deep: boolean;
   sameDay: boolean; checkIn: string | null; price: number | null; manual: string | null;
 }
@@ -478,6 +484,43 @@ export const crewLink = (name: string, revoke = false) =>
   call<{ ok: true; link: string | null } | Fail>('/api/ops-settings', {
     method: 'POST', body: JSON.stringify({ action: 'crewLink', name, revoke })
   });
+
+/* ── inspections as a checklist (§133) ───────────────────────────── */
+
+import type { Area, CheckResult, InspectionItem, Outcome, Section } from './lib/inspection.ts';
+
+export interface RunCheck {
+  id: string; itemId: string | null; area: Area; n: number; label: string; result: CheckResult | null;
+  note: string | null; photos: { name: string; url: string }[]; outcome: Outcome | null;
+  todoId?: string | null; cleanTaskId?: string | null;
+}
+export interface InspectionRunData {
+  inspection: { id: string; unitId: string | null; unit: string; date: string; inspector: string | null;
+                result: string | null; notes: string | null; finished: boolean };
+  sections: Section[]; rooms: { bedrooms: number; bathrooms: number };
+  checks: RunCheck[]; nextClean: { key: string; date: string; cleaner: string | null } | null;
+  inspectors: string[]; today: string;
+}
+export const getRun = (id: string) => call<({ ok: true } & InspectionRunData) | Fail>(`/api/inspection-run?id=${encodeURIComponent(id)}`);
+export const runAction = <T extends object = Record<string, unknown>>(body: Record<string, unknown>) =>
+  call<({ ok: true } & T) | Fail>('/api/inspection-run', { method: 'POST', body: JSON.stringify(body) });
+/** Photos onto one finding: multipart, so the browser sets the boundary. */
+export async function runPhotos(inspectionId: string, checkId: string, files: File[]) {
+  const form = new FormData();
+  form.append('inspectionId', inspectionId); form.append('checkId', checkId);
+  for (const f of files) form.append('file', f);
+  const res = await fetch('/api/inspection-run', { method: 'POST', body: form });
+  return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as
+    { ok: true; photos: { name: string; url: string }[] } | Fail;
+}
+export const getInspectionItems = () => call<{ ok: true; items: InspectionItem[] } | Fail>('/api/inspection-items');
+export const saveInspectionItem = (body: Record<string, unknown>) =>
+  call<{ ok: true; items: InspectionItem[]; switchedOff?: boolean } | Fail>('/api/inspection-items', { method: 'POST', body: JSON.stringify(body) });
+
+export interface Vendor { id: string; name: string; trade: string | null; phone: string | null; email: string | null; notes: string | null; active: boolean }
+export const getVendors = () => call<{ ok: true; vendors: Vendor[] } | Fail>('/api/vendors');
+export const saveVendor = (body: Record<string, unknown>) =>
+  call<{ ok: true; vendors: Vendor[] } | Fail>('/api/vendors', { method: 'POST', body: JSON.stringify(body) });
 
 /* ── the Data Repository ──────────────────────────────────────────── */
 

@@ -14,6 +14,7 @@
  * Everything is read from the server as it is now.
  */
 import { Modal } from './Modal.tsx';
+import { getVendors } from '../api.ts';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
@@ -636,7 +637,8 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
           )}
           {wo && <>
             <label>Vendor
-              <input value={v.vendor ?? ''} placeholder="Plumber, handyman…" onChange={e => set('vendor', e.target.value || null)} /></label>
+              <input value={v.vendor ?? ''} placeholder="Plumber, handyman…" list="kaizen-vendors" onChange={e => set('vendor', e.target.value || null)} /></label>
+            <VendorOptions />
             <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
           </>}
           <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
@@ -1256,4 +1258,18 @@ function DoneLog({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
       )}
     </div>
   );
+}
+
+/**
+ * §133: the vendor directory as suggestions for a repair's vendor — the field
+ * stays free text, for someone not in the list yet. Read once per page.
+ */
+let vendorCache: Promise<{ name: string; trade: string | null }[]> | null = null;
+function VendorOptions() {
+  const [list, setList] = useState<{ name: string; trade: string | null }[]>([]);
+  useEffect(() => {
+    vendorCache ??= getVendors().then(r => r.ok ? r.vendors.filter(x => x.active).map(x => ({ name: x.name, trade: x.trade })) : []).catch(() => []);
+    void vendorCache.then(setList);
+  }, []);
+  return <datalist id="kaizen-vendors">{list.map(x => <option key={x.name} value={x.name}>{x.trade ?? ''}</option>)}</datalist>;
 }

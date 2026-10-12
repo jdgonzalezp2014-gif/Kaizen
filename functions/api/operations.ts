@@ -50,7 +50,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
   }
 
   // Newest first, bounded: a log is read from the top.
-  const [noteLog, pushes, manualCleans, flagRows] = await Promise.all([
+  const [noteLog, pushes, manualCleans, flagRows, cleanTaskRows] = await Promise.all([
     sql`SELECT n.reservation_id AS "resId", n.kind, n.unit_name AS unit, n.guest,
                n.check_in::text AS "checkIn", n.notes, n.source, n.created_by AS "by",
                to_char(n.created_at AT TIME ZONE ${OPS_TZ}, 'YYYY-MM-DD HH24:MI') AS "loggedAt"
@@ -71,8 +71,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
     sql`SELECT key, flag_note AS note, flagged_by AS "by"
           FROM cleanings
          WHERE account_id = 1 AND flag_note IS NOT NULL
-           AND checkout_on >= ${s.today}::date - 7 AND checkout_on <= ${s.end}::date`
-  ]) as [unknown[], unknown[], unknown[], { key: string; note: string; by: string | null }[]];
+           AND checkout_on >= ${s.today}::date - 7 AND checkout_on <= ${s.end}::date`,
+    // §133: what an inspection asked the next clean to do.
+    sql`SELECT cleaning_key AS key, text FROM clean_tasks
+         WHERE account_id = 1 AND clean_on >= ${s.today}::date - 7 AND clean_on <= ${s.end}::date ORDER BY id`
+  ]) as [unknown[], unknown[], unknown[], { key: string; note: string; by: string | null }[], { key: string; text: string }[]];
 
   // A listing new to Hostaway is on the board before it is in `units`, and
   // until it is there it cannot be ticked in Setup, claimed against or
@@ -100,6 +103,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
     // What cleaners can already see on their page (§127), so the board can mark it 👁.
     crewView: await crewVisibility(sql), extraInspectors: s.extraInspectors, guestDocUnits: s.guestDocUnits, manualCleans,
     flags: Object.fromEntries(flagRows.map(f => [f.key, { note: f.note, by: f.by }])),
+    // §133: what an inspection asked a clean to do, by the clean's key.
+    cleanTasks: cleanTaskRows.reduce<Record<string, string[]>>((m, t) => { (m[t.key] ??= []).push(t.text); return m; }, {}),
     // Pay per size is cost data ops already record; names and tiers are
     // what the edit menus need.
     roster: s.roster,
