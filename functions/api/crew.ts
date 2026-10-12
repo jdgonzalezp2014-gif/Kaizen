@@ -25,7 +25,7 @@ async function caller(request: Request, env: Env, sql: SqlFn): Promise<CrewCalle
   if (who.local && as) return { name: as, by: `local-dev as ${as}` };
   const access = await accessOf(sql, who);
   if (access.cleaner) return { name: access.cleaner, by: who.email };
-  return refuse(403, 'not_a_cleaner', 'This page is for cleaners signing in with their own address. The team sees it in Operations → Crew.');
+  return refuse(403, 'not_a_cleaner', 'This page is for cleaners signing in with their own address. The team sees it in Operations → Cleaners.');
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

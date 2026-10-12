@@ -167,7 +167,7 @@ export function Operations({ permissions, initialView, onView }: {
     });
 
   const views: [View, string][] = [
-    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['crew', 'Crew'], ['inspections', 'Inspections'], ['inventory', 'Inventory'],
+    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['crew', 'Cleaners'], ['inspections', 'Inspections'], ['inventory', 'Inventory'],
     ['notes', 'Notes log'], ['rates', 'Rates & rules'],
     ...(can(data?.permissions, 'operations.setup') ? [['setup', 'Setup'] as [View, string]] : [])
   ];
@@ -490,7 +490,7 @@ function Board({ data, range, patch, reload }: {
                                 setPast(p => p && { ...p, rows: p.rows.map(x => x.key === c.key ? { ...x, flag_note: note } : x) })}
                                 date={c.checkout_on.slice(0, 10)} today={data.today} price={c.price == null ? null : Number(c.price)}
                                 onPrice={v => setPast(p => p && { ...p, rows: p.rows.map(x => x.key === c.key ? { ...x, price: String(v) } : x) })} />
-                              <div className="note">To switch deep / regular on a clean already done: Operations → Crew → the cleaner → ✎ Correct.</div>
+                              <div className="note">To switch deep / regular on a clean already done: Operations → Cleaners → the cleaner → ✎ Correct.</div>
                             </div>
                           </td></tr>
                         )}
@@ -1794,7 +1794,7 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
       <h2>Crew pages</h2>
       <p className="note">
         Each cleaner sees their cleans, what each paid, what was flagged or not paid, their invoice, and can ask for extras
-        (with a receipt or photo) that the team approves or denies in Operations → Crew. To see a page as the cleaner sees it:
+        (with a receipt or photo) that the team approves or denies in Operations → Cleaners. To see a page as the cleaner sees it:
         {' '}<code>{app}/#crew/&lt;name&gt;</code>.
       </p>
       <ol className="note">

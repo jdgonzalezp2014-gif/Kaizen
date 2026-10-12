@@ -52,7 +52,7 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
   re-priced clean follows); `repair` (a work order — or §137 any to-do — completed with a cost:
   `settleRepair`; Repairs, "Buy…" = Restock, else the title's category); `inventory` (the team's
   purchase with a cost, Restock); `field` (money paid in the field — a cleaner's, helper's or
-  handyman's — once a person approves it: `field_expenses`, Operations → Crew). Before §137 Costs
+  handyman's — once a person approves it: `field_expenses`, Operations → Cleaners). Before §137 Costs
   held only three manual rows: the cleaners' pay ($26.7k since April) was missing from profit.
 - Money formatting pinned to `en-US` (§20). Dates: an optional filter is `null`, never `''` (§54).
 

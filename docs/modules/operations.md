@@ -1,13 +1,13 @@
 # Module: operations
 
 Kaizen runs the day's operations (the daily file sheet is an archive). Tab **Operations**:
-Movements (the board, §124) · To-do (→ work module) · Calendar · Crew · Inspections ·
+Movements (the board, §124) · To-do (→ work module) · Calendar · Cleaners (view key `crew`) · Inspections ·
 Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page** each cleaner sees (§122).
 
 ## Files
 
 - Screen: `src/screens/Operations.tsx` (Board, Setup incl. StarSetup/CrewSetup, Inspections, CleaningsMonth…),
-  `src/screens/Crew.tsx` (CrewHome = the cleaner's page, CrewAdmin = Operations → Crew; one CrewView for both),
+  `src/screens/Crew.tsx` (CrewHome = the cleaner's page, CrewAdmin = Operations → Cleaners; one CrewView for both),
   `src/components/CleaningCalendar.tsx`, `DayPicker.tsx`.
 - API: `crew.ts` (cleaner, behind Access), `crew-link.ts` (secret link, SELF_AUTHENTICATING, reads
   no identity header), `crew-admin.ts` (team: GET `operations`, POST `operations.edit`),
@@ -97,7 +97,7 @@ key had no SOPs.
 - Extras: cleaner, own clean, done, ≤60 days, ≤$500, optional receipts/photos (≤5, 15 MB, image or
   PDF) to Drive "Kaizen — crew extras" uploaded BEFORE the row is saved. Team approves (note
   optional) or denies (note required); only pending can be decided or withdrawn.
-- Flag by hand = a note the cleaner reads; does not change pay. Set from Operations → Crew or from
+- Flag by hand = a note the cleaner reads; does not change pay. Set from Operations → Cleaners or from
   Movements (§124): a departure's editor, a manual clean's row, a recorded day's row (same
   `crew-admin` flag/unflag; needs the record row, so not in shadow mode).
 - Movements (§124) = the board in a date window, default today + 10. From today on it is live
@@ -106,7 +106,7 @@ key had no SOPs.
   with not-paid rows listed. The strip counts the live rows in the window, plus "before today".
 - Schedule shown only with `crew_calendar` on (Setup → Crew pages): live board, `crew_calendar_days`
   ahead. **Exception (§123): what a person assigned (override, or a MAN- clean) shows at once**, calendar
-  off or not, and can be declined. The team **confirms** it (Operations → Crew) = a snapshot; cleaners see "last confirmed"
+  off or not, and can be declined. The team **confirms** it (Operations → Cleaners) = a snapshot; cleaners see "last confirmed"
   and movements since (moved/extended, shortened, cancelled, declined, reassigned, new, time);
   after the snapshot's last day = "not confirmed yet".
 - Decline: only with the calendar on, only a clean the board gives them now → override `tbd`
@@ -121,7 +121,7 @@ key had no SOPs.
   Crew → "Cancelled after arrival — confirm" (who cleaned + date + deep, or no clean needed) →
   `confirmed_by`; reconcile and record never undo a settled row. `fetchCancelledTouching` skips iCal.
   Only rows already in the record are held (older never-recorded cancellations are not back-filled).
-- Operations → Crew: pick a cleaner → their page for the team (level, flag/correct/decide), or
+- Operations → Cleaners: pick a cleaner → their page for the team (level, flag/correct/decide), or
   **👁 View as cleaner ↗** — a separate tab (`/#as-cleaner/<name>`, PreviewShell in App.tsx) with only the
   cleaner's page, loaded through `crewGet` (the cleaner's own server code: level stripped), buttons inert.
 - **Inspections as a checklist (§133).** Template `inspection_items` (area, label, default_outcome
@@ -163,7 +163,7 @@ key had no SOPs.
   finished or cancelled. App.tsx reads `#i=` before `#t=`; the phone remembers which it opened last.
 - **Purchases reach Costs (§137):** a purchase from the field (cleaner, helper) needs its total — the
   form and the server require it — and becomes a `field_expenses` row waiting for approval in
-  Operations → Crew ("Purchases & charges waiting for approval": who, unit, amount, receipt; deny needs a reason);
+  Operations → Cleaners ("Purchases & charges waiting for approval": who, unit, amount, receipt; deny needs a reason);
   approved → an expense (Restock) on its unit. The team's purchase in Inventory → Record a move takes a
   cost and goes to Costs at once. Approved extras and every clean's pay are in Costs too (finance module).
 - **How cleaners get in (§136):** `src/lib/unit-access.ts` (pure, tested: `repoMatch`, `unitAccess`) +
@@ -226,7 +226,7 @@ key had no SOPs.
   name starting with the other) is a change: no clean to confirm; a held row is released
   (`releaseRebooked`, void "booking changed — booked again as …"). A different guest overlapping is
   still held (the unit may need a clean between them).
-- **Corrections (§123):** Operations → Crew → a cleaner → "✎ Correct" on a PAST clean: deep/normal and
+- **Corrections (§123):** Operations → Cleaners → a cleaner → "✎ Correct" on a PAST clean: deep/normal and
   price (blank = the card's rate at the unit's size; no rate → must type one), note required and shown
   to the cleaner (`edited_by/at`, `edit_note`). Today and ahead are changed on the board.
 
@@ -257,7 +257,7 @@ key had no SOPs.
   a list; each opens AS IT WAS LEFT — its photos before/after, done or not, what was taken — with only
   "Add an extra" and Close: nothing more to report or photograph on a past clean, the owner) · **📅 Future** (only share the link or Can't do it;
   the calendar below) · **💲 Pay** (period, cleans, invoice; recent and coming rows carry the same small
-  buttons). The team's view (Operations → Crew) keeps the one long page. Shells (`/crew`, preview,
+  buttons). The team's view (Operations → Cleaners) keeps the one long page. Shells (`/crew`, preview,
   crew-only sign-in) drop the app header for it.
   Photos reach the cleaner through Kaizen (`GET /api/crew?photo=<id>`, same on crew-link and the team's
   preview): only a photo of a clean whose `clean_records.cleaner` is them; the team's Drive stays theirs.
@@ -326,7 +326,7 @@ key had no SOPs.
 - **Crew page built, not switched on (§122).** To start: set each cleaner's email (Setup → Crew
   pages); in Cloudflare Zero Trust add those emails to the Kaizen Access policy with One-time PIN
   on. Calendar stays off until the star schedule is checked; then turn it on and Confirm in
-  Operations → Crew. Fallback links work: the Access Bypass app for `/crew`, `/assets/*`,
+  Operations → Cleaners. Fallback links work: the Access Bypass app for `/crew`, `/assets/*`,
   `/api/crew-link` exists since 2026-10-12. Not built: notifying the team on a decline (Slack), approved
   extras in Costs (they are only on the invoice), payment status ("paid") on invoices.
 - Stars limitations: manual cleans (`MAN-`) don't count toward a cleaner's daily max; zones are

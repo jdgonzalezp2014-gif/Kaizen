@@ -3,7 +3,7 @@
  * invoice, and (once the team turns it on) what is coming.
  *
  * One view, two audiences. A cleaner opens it signed in (or by their
- * secret link) and sees only their own; the team opens Operations → Crew
+ * secret link) and sees only their own; the team opens Operations → Cleaners
  * and sees the same page for any cleaner, with the controls to flag a
  * clean and decide extras. Same data, same totals — what the team checks
  * is what the cleaner sees.
@@ -85,7 +85,7 @@ export function CrewHome({ token, asCleaner }: { token?: string | null; asCleane
 
 /* ── the team's side, in Operations ───────────────────────────────── */
 
-/** Operations → Crew: extras waiting on the team, and any cleaner's page as they see it. */
+/** Operations → Cleaners: extras waiting on the team, and any cleaner's page as they see it. */
 export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boolean }) {
   const fromHash = decodeURIComponent(/^#crew\/(.+)$/.exec(location.hash)?.[1] ?? '');
   const [name, setName] = useState(roster.some(c => c.name === fromHash) ? fromHash : '');

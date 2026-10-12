@@ -72,7 +72,7 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   and a reply in the task's Slack thread; pushWork when the mirror is on.
 - **The access (codes, lockbox, Wi-Fi) shows only on the day set and while the order is open.**
 - **No preset prices.** A handyman's charge is a pending `field_expenses` row (source `vendor`);
-  approving it in Operations → Crew sets `cost_actual` = the sum of approved charges and runs
+  approving it in Operations → Cleaners sets `cost_actual` = the sum of approved charges and runs
   `settleRepair` → Costs › Repairs (once completed). Denying needs a note the handyman reads.
 
 ## Open items
