@@ -529,7 +529,7 @@ function Board({ data, range, patch, reload }: {
                   </td>
                 </tr>
                 {!dayRows.length && !manual.length && <tr><td colSpan={9} className="note ops-quiet">no arrivals or departures</td></tr>}
-                {manual.map(c => <ManualLine key={c.key} c={c} canEdit={canEdit} onChanged={reload} cleanTasks={data.cleanTasks?.[c.key]}
+                {manual.map(c => <ManualLine key={c.key} c={c} canEdit={canEdit} onChanged={reload} cleanTasks={data.cleanTasks?.[c.key]} today={data.today}
                                              flag={flags[c.key] ?? null} onFlag={note => setFlag(c.key, note)} />)}
                 {dayRows.map(r => {
                   const key = `${r.resId}-${r.kind}`;
@@ -702,18 +702,23 @@ function FlagControl({ cleanKey, flag, onChanged, date, today, price, onPrice }:
   const [editing, setEditing] = useState(false);
   const [text, setText] = useState('');
   const [pay, setPay] = useState('');
+  const [cut, setCut] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const canPay = !!date && !!today && date <= today;
+  // A deduction is taken off the pay shown; it becomes the corrected pay, and the note says so.
+  const canCut = canPay && price != null;
+  const newPay = cut !== '' && price != null ? Math.max(0, Math.round((price - Number(cut)) * 100) / 100) : pay !== '' ? Number(pay) : null;
   const send = async (note: string | null) => {
     setBusy(true); setMsg('');
-    const r = await crewAdminAction(note === null ? { action: 'unflag', key: cleanKey }
-      : { action: 'flag', key: cleanKey, note, ...(canPay && pay !== '' ? { price: Number(pay) } : {}) })
+    const full = note !== null && cut !== '' ? `${note} (−$${Number(cut)} deducted)` : note;
+    const r = await crewAdminAction(full === null ? { action: 'unflag', key: cleanKey }
+      : { action: 'flag', key: cleanKey, note: full, ...(canPay && newPay != null ? { price: newPay } : {}) })
       .catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
-    if (note !== null && canPay && pay !== '') onPrice?.(Number(pay));
-    setEditing(false); setText(''); setPay(''); onChanged(note);
+    if (full !== null && canPay && newPay != null) onPrice?.(newPay);
+    setEditing(false); setText(''); setPay(''); setCut(''); onChanged(full);
   };
   return (
     <div className="button-row ops-manual-actions" onClick={e => e.stopPropagation()}>
@@ -726,10 +731,12 @@ function FlagControl({ cleanKey, flag, onChanged, date, today, price, onPrice }:
         <form className="stay-work" onSubmit={e => { e.preventDefault(); if (text.trim()) void send(text.trim()); }}>
           <input autoFocus value={text} maxLength={500} placeholder="What the cleaner should know (they read this)"
                  onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setEditing(false); }} />
-          {canPay && <input className="amt" inputMode="decimal" value={pay} onChange={e => setPay(e.target.value)}
+          {canCut && <input className="amt" inputMode="decimal" value={cut} disabled={pay !== ''}
+                            onChange={e => setCut(e.target.value)} placeholder="deduct $" title={`Taken off the ${price} this clean pays`} />}
+          {canPay && <input className="amt" inputMode="decimal" value={pay} disabled={cut !== ''} onChange={e => setPay(e.target.value)}
                             placeholder={price != null ? `pays ${price}` : 'pay'} title="Leave blank to keep the pay as it is" />}
-          <button className="small" disabled={!text.trim() || busy || (pay !== '' && !(Number(pay) >= 0))}>
-            {busy ? '…' : pay !== '' ? 'Flag and correct pay' : 'Flag'}</button>
+          <button className="small" disabled={!text.trim() || busy || (pay !== '' && !(Number(pay) >= 0)) || (cut !== '' && !(Number(cut) > 0))}>
+            {busy ? '…' : cut !== '' ? `Flag and deduct (pays ${newPay})` : pay !== '' ? 'Flag and correct pay' : 'Flag'}</button>
           <button type="button" className="link tiny" onClick={() => setEditing(false)}>Cancel</button>
         </form>
       )}
@@ -936,8 +943,8 @@ const MANUAL_WORD: Record<ManualCleanKind, string> = {
 };
 
 /** A manual clean on its day: what, who, what it pays — and a way to undo it. */
-function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks }: {
-  c: ManualClean; canEdit: boolean; onChanged: () => void;
+function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks, today }: {
+  c: ManualClean; canEdit: boolean; onChanged: () => void; today: string;
   /** §133: what an inspection asked this clean to do. */
   cleanTasks?: string[];
   /** Flagged by hand (§124): the note the cleaner reads. */
@@ -965,7 +972,8 @@ function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks }: {
         {cleanTasks?.length ? <span className="ops-flag due" title={cleanTasks.map(t => `🧾 ${t}`).join('\n')}>🧾 {cleanTasks.length} from the inspection</span> : null}</td>
       <td className="ops-note">
         {c.note}
-        {canEdit && c.cleaner ? <FlagControl cleanKey={c.key} flag={flag} onChanged={onFlag} />
+        {canEdit && c.cleaner ? <FlagControl cleanKey={c.key} flag={flag} onChanged={onFlag}
+                                         date={c.date} today={today} price={c.price} onPrice={() => onChanged()} />
           : flag && <div className="breach">⚑ Flagged: {flag}</div>}
         {canEdit && (!confirm
           ? <div><button className="link tiny danger" onClick={() => setConfirm(true)}>cancel…</button></div>

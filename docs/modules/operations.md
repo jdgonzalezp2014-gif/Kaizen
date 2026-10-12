@@ -200,6 +200,8 @@ key had no SOPs.
 - **Flag + pay (§128):** ⚑ Flag (board row, Movements past, manual cleans, Crew page) takes an optional
   corrected pay for a clean due today or before ("Flag and correct pay") → `edited_by/at`, `edit_note` = the
   flag note. `recordCleanings` and `loadOps` keep a corrected price/deep while the same cleaner holds the clean.
+  The flag form also has "deduct $" (price − amount → the corrected pay; the note gets "(−$X deducted)"); it works
+  on past cleans (Movements past rows), board rows and manual cleans, all once the clean is due and priced.
 - **SOPs (§128):** drafts #10 "Cleaners' pages: what they see, and the team's part" (operations.crew,
   operations.board), #11 "Give a cleaner access to their page" (operations.setup, operations.crew), #12 "Your
   Kaizen page (for cleaners)" (feature `crew.page` — once PUBLISHED it shows on the cleaner's page as "❓",
