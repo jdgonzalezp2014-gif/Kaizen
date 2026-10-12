@@ -3579,4 +3579,8 @@ checklist would have had one bedroom and one bathroom and no next clean — the 
 name when it starts; "the inspector is never who cleaned last" was only enforced by the screen, now the
 server refuses it too; the ✓/▲ buttons had light colours in the dark theme. SOP drafts: "Inspect a unit
 with the checklist"; the cleaners' guides (both languages) say what 🧾 "From the inspection" means.
+The owner then described the review he wanted: repairs, then purchases, then cleaning, each with notes,
+"confirm and continue" or edit; all purchases as one task; cleaning as one choice — the next clean or a
+new one. Rebuilt so: a step wizard, one shopping-list to-do with a sub-task per item, and a group choice
+for cleaning findings.
 

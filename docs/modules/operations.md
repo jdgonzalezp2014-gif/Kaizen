@@ -110,8 +110,11 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   `src/components/InspectionRun.tsx`): sections from the unit's bedrooms and bathrooms (half bath = one),
   each item ✓/▲/N/A saved on every tap (`inspection_checks`), "Everything else here is OK", fixed
   Cleaning/Repair/Purchase buttons for on-the-spot findings; a finding needs a photo (Drive folder "Kaizen —
-  inspections") and an outcome. Finish (validated BEFORE anything is made, idempotent via todo_id /
-  clean_task_id): repair → work order + sub-task "Assign and schedule"; purchase → to-do "Buy: …"; clean_next →
+  inspections") and an outcome. Review & finish is a step wizard (the owner's flow): 🔧 Repairs → 🛒 Purchases →
+  🧽 Cleaning → ✓ Finish, each with editable notes, "move to another kind" and "Confirm & continue". Finish
+  (validated BEFORE anything is made, idempotent via todo_id / clean_task_id): repair → work order + sub-task
+  "Assign and schedule"; ALL purchases → ONE to-do "Buy for <unit>: N items", a sub-task per item; cleaning →
+  one choice for the group (`cleanMode`): clean_next →
   `clean_tasks` on the unit's next clean in the record (board 🧾, cleaner's page "From the inspection");
   clean_new → one MAN- extra clean, TBD, carrying them; overall result suggested (OK / Minor issues /
   Maintenance needed). Repairs/purchases are mirrored to Hostaway (pushWork after the response); not
