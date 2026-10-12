@@ -244,6 +244,29 @@ Setup → Crew pages → "The rule's picks show this many days ahead" (4). What 
     doneWhen: 'You know your cleans for the coming days, and your invoice matches the work you did.',
     body: `Questions about a clean or a payment: message the team.`
   },
+  // §133 — inspections as a checklist.
+  {
+    section: 'inspections', title: 'Inspect a unit with the checklist',
+    features: ['operations.inspections', 'operations.setup'],
+    purpose: 'Walk the unit room by room, catch what is wrong, and turn each finding into work in one go — a repair, a purchase, or something for a clean.',
+    trigger: 'A scheduled inspection (Operations → Inspections → calendar or Scheduled), a unit due or overdue, or before a big booking.',
+    owner: 'Inspector',
+    steps: [
+      { text: 'Open Operations → Inspections. ▶ Start a scheduled one, or pick the unit and inspector and ▶ Inspect now.', who: 'Inspector',
+        detail: '- The inspector is never who cleaned the unit last — Kaizen will not allow it.\n- On a phone the checklist opens full screen. Everything is saved as you tap; you can close and ▶ Continue later.' },
+      { text: 'Go room by room. Each item: ✓ OK, ▲ Fix, or N/A.', who: 'Inspector',
+        detail: '- Bedrooms and bathrooms appear once per room in the unit.\n- "Everything else here is OK" marks the rest of a room in one tap.\n- On ▲: say what is wrong (optional) and take a photo — the photo is required.' },
+      { text: 'Something not on the list? Use the buttons at the top: 🧽 Cleaning · 🔧 Repair · 🛒 Purchase.', who: 'Inspector',
+        detail: 'Say what it is, the room, and take a photo.' },
+      { text: 'Review & finish: choose what each finding becomes.', who: 'Inspector',
+        detail: '- 🔧 Repair: a work order, nobody on it yet, with the sub-task "Assign and schedule".\n- 🛒 Purchase: a to-do "Buy: …".\n- 🧽 Task for the next clean: the cleaner sees it on their page with that clean.\n- 🧽 A new clean: one extra clean on the day you pick, unassigned — the team gives it to a cleaner.\n- No action: kept in the report only.\nThen the overall result (suggested), and Finish.' },
+      { text: 'After: give each new repair an owner and a day — its "Assign and schedule" sub-task.', who: 'Ops',
+        detail: 'Repairs and purchases are in Operations → To-do and in Hostaway. Pick the vendor from the list (Setup → Vendors & handymen).' }
+    ],
+    doneWhen: 'The inspection shows ✓ or ▲ in the calendar, and every finding has its repair, purchase or clean task.',
+    body: `## The checklist
+Operations → Setup → Inspection checklist: add, edit, reorder or remove items per room, for every unit or one unit only. An item already used in an inspection is switched off rather than deleted, so old reports keep it.`
+  },
   // §129 — the same guide in Spanish; the cleaner's page shows the one in their language.
   {
     section: 'turnover', title: 'Tu página de Kaizen (para cleaners)',

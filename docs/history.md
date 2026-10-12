@@ -3574,4 +3574,9 @@ made the work and then failed on a missing next clean, so a retry would duplicat
 checked first and a finding that already made its work makes nothing again. The phone view of
 Inspections was 555 px wide on a 390 px phone (unwrapped tables, calendar names); fixed, and hidden
 file inputs are hidden everywhere (it affected the cleaners' "+ receipt" too).
+Review pass the same night: a plan imported from the daily file has only the unit's name, so its
+checklist would have had one bedroom and one bathroom and no next clean — the unit is now found by
+name when it starts; "the inspector is never who cleaned last" was only enforced by the screen, now the
+server refuses it too; the ✓/▲ buttons had light colours in the dark theme. SOP drafts: "Inspect a unit
+with the checklist"; the cleaners' guides (both languages) say what 🧾 "From the inspection" means.
 

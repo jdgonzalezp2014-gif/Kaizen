@@ -88,9 +88,25 @@ export async function loadRun(sql: SqlFn, id: string) {
 }
 
 /** Start one: a scheduled inspection, or a new one for a unit and day (one per unit per day). */
+/** The inspector is never who cleaned the unit last, on or before the day — an inspection audits the clean. */
+async function auditsOwnClean(sql: SqlFn, unitId: string | null, date: string, inspector: string | null) {
+  if (!unitId || !inspector) return;
+  const [c] = await sql`SELECT cleaner FROM cleanings WHERE account_id = 1 AND unit_id = ${unitId} AND checkout_on <= ${date}::date
+                          AND assignment = 'assigned' AND void_reason IS NULL ORDER BY checkout_on DESC LIMIT 1` as { cleaner: string | null }[];
+  if (c?.cleaner && c.cleaner === inspector) throw new Error(`${inspector} cleaned this unit last, so cannot inspect it — an inspection audits the clean.`);
+}
+
 export async function startRun(sql: SqlFn, who: string, b: { inspectionId?: unknown; unitId?: unknown; date?: unknown; inspector?: unknown }) {
   const inspector = String(b.inspector ?? '').trim() || null;
   if (b.inspectionId) {
+    // A plan imported from the daily file has the unit's name only: found by name, so the checklist
+    // gets its real bedrooms and bathrooms and its next clean.
+    await sql`UPDATE inspections i SET unit_id = u.id FROM units u
+               WHERE i.account_id = 1 AND i.id = ${Number(b.inspectionId)} AND i.unit_id IS NULL AND u.account_id = 1
+                 AND lower(regexp_replace(u.name, '[^a-zA-Z0-9]', '', 'g')) = lower(regexp_replace(i.unit_name, '[^a-zA-Z0-9]', '', 'g'))`;
+    const [plan] = await sql`SELECT unit_id, inspected_on::text AS date, inspector FROM inspections WHERE account_id = 1 AND id = ${Number(b.inspectionId)}` as
+      { unit_id: string | null; date: string; inspector: string | null }[];
+    if (plan) await auditsOwnClean(sql, plan.unit_id, plan.date, inspector ?? plan.inspector);
     const done = await sql`UPDATE inspections SET started_at = COALESCE(started_at, now()), inspector = COALESCE(${inspector}, inspector),
                                   updated_at = now()
                             WHERE account_id = 1 AND id = ${Number(b.inspectionId)} AND result IS NULL RETURNING id::text` as { id: string }[];
@@ -101,6 +117,7 @@ export async function startRun(sql: SqlFn, who: string, b: { inspectionId?: unkn
   const date = /^\d{4}-\d{2}-\d{2}$/.test(String(b.date ?? '')) ? String(b.date) : todayIn(TZ);
   const [unit] = await sql`SELECT id, name FROM units WHERE account_id = 1 AND id = ${unitId}` as { id: string; name: string }[];
   if (!unit) throw new Error('Which unit?');
+  await auditsOwnClean(sql, unit.id, date, inspector);
   const [row] = await sql`
     INSERT INTO inspections (account_id, unit_id, unit_name, inspected_on, inspector, started_at, created_by)
     VALUES (1, ${unit.id}, ${unit.name}, ${date}, ${inspector}, now(), ${who})

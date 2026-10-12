@@ -1827,3 +1827,6 @@ button.crew-cal-day { background: var(--card); color: inherit; font: inherit; te
 input[type=file][hidden] { display: none !important; }
 /* Calendar entries that are buttons stay inside their day (§133). */
 .crew-cal button.crew-cal-item { display: block; width: 100%; max-width: 100%; text-align: left; padding: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+:root[data-theme="dark"] .insp-seg button.on.ok { background: rgba(78,201,138,.18); border-color: var(--green); color: var(--green); }
+:root[data-theme="dark"] .insp-seg button.on.attention { background: rgba(233,162,59,.18); border-color: var(--amber); color: var(--amber); }
+:root[data-theme="dark"] .chip.need { border-color: var(--amber); color: var(--amber); }
