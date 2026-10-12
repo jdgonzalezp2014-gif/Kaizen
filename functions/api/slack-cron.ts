@@ -21,6 +21,7 @@ import { remindCleaners } from '../_lib/crew-slack.ts';
 import { postCleanDay } from '../_lib/clean-slack.ts';
 import { dueCrewReminders } from '../../src/lib/crew-slack.ts';
 import { todayIn } from '../../src/lib/dates.ts';
+import { loadOps, pushHostNotes } from '../_lib/ops.ts';
 
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -35,8 +36,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return Response.json({ ok: false, error: 'unauthenticated' }, { status: 403 });
     }
   }
+  // The Host Notes on the clock: /api/cron was meant to push them, but nothing calls it (it sits behind
+  // Access), so only stays someone edited got their note. Once an hour, not every 5-minute tick: the board
+  // reads Hostaway, and a reservation whose block is what was last pushed is not even asked about.
+  // Isolated: it must never cost the reminders. A failed pass frees the hour to try again next tick.
+  let notes: unknown = null;
+  const notesKey = `hostnotes:${new Date().toISOString().slice(0, 13)}`;
+  if ((await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${notesKey}) ON CONFLICT DO NOTHING RETURNING key`).length) {
+    try {
+      const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
+      const ops = await loadOps(sql, creds);
+      notes = ops.mode === 'live' ? await pushHostNotes(sql, creds, ops) : 'shadow';
+    } catch (e) {
+      await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${notesKey}`;
+      notes = { error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
   const s = await slackSetup(sql, env.ENCRYPTION_KEY);
-  if (!s.token) return Response.json({ ok: true, sent: [], skipped: 'slack not set up' });
+  if (!s.token) return Response.json({ ok: true, sent: [], notes, skipped: 'slack not set up' });
   const out: string[] = [];
 
   // §107: the tasks' check-in and check-out, in the team's own time zone, to the tasks channel.
@@ -103,10 +121,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const today = todayIn(TZ);
   const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
   const nudged = await nudgeOverdue(sql, s, hour, today);
-  if (!s.config.channels?.reservations) return Response.json({ ok: true, sent: out, nudged, hour });
+  if (!s.config.channels?.reservations) return Response.json({ ok: true, sent: out, nudged, hour, notes });
   const sent = new Set((await sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE ${`digest:%:${today}`}` as { key: string }[]).map(r => r.key));
   const due = dueDigests(hour, today, s.config, sent);
-  if (!due.length) return Response.json({ ok: true, sent: out, nudged, hour });
+  if (!due.length) return Response.json({ ok: true, sent: out, nudged, hour, notes });
 
   const facts = await digestFacts(sql, await getCredentials(sql, env.ENCRYPTION_KEY), env.ENCRYPTION_KEY);
   for (const kind of due) {
@@ -117,7 +135,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!r?.ok) await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${`digest:${kind}:${today}`}`;
     else out.push(kind);
   }
-  return Response.json({ ok: true, sent: out, nudged, hour });
+  return Response.json({ ok: true, sent: out, nudged, hour, notes });
 };
 
 /**

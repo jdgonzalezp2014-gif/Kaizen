@@ -83,6 +83,9 @@ key had no SOPs.
   clean "no clean needed"; undo restores (§79).
 - Host Note: `mergeHostNote` replaces only Kaizen's line, keeps hand text, pushes only when
   our block changed, verifies by reading back; archived listings refuse (403) — skipped (§64, §70).
+  The scheduled push runs from `/api/slack-cron` (the 5-minute clock), at most once an hour (`slack_sent`
+  key `hostnotes:<UTC hour>`): `/api/cron` sits behind Access and nothing calls it, so before 2026-10-12
+  only stays someone edited got their note.
 - "Not needed" / "TBD" are states, not cleaners; match on words, not emoji (§57).
 - Bulk writes with `unnest`, never one INSERT per row (§62).
 - Ops role sees the board without booking values (`money` permission) (§63, §65).

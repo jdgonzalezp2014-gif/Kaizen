@@ -14,7 +14,7 @@ both ways. Settings → Slack (`SlackPanel.tsx`). SOP id 8 "Kaizen in Slack" is 
   runs the app's own handlers as the member), `slack-cron.ts` (the clock), `slack-settings.ts`.
 - `src/components/SlackPanel.tsx` (manifest, channels, events, hours, people, cleaner channels).
 - The clock: **`clock/`** — Cloudflare Worker `kaizen-clock` (cron `*/5 * * * *` → POST
-  `/api/slack-cron` with secret `KAIZEN_INGEST_TOKEN`); deploy `cd clock && npx wrangler deploy`,
+  `/api/slack-cron` with secret `KAIZEN_INGEST_TOKEN`; it also runs the hourly Host Note push → operations); deploy `cd clock && npx wrangler deploy`,
   logs `cd clock && npx wrangler tail kaizen-clock --format json`. `.github/workflows/slack-cron.yml`
   stays as a backup (GitHub's schedule ran every 5–6 h).
 
