@@ -36,6 +36,12 @@ export const PRACTICE_FOR: Record<string, PracticeWhich[]> = {
   'operations.calendar': ['cleaner', 'helper']
 };
 export const isPractice = (s: string): s is PracticeWhich => s in PRACTICE;
+/**
+ * The practices a cleaner or helper opens without a sign-in (§140): under /crew,
+ * which Access already lets through. The rest stay on the hash door, behind Access.
+ */
+export const PUBLIC_PRACTICE: Partial<Record<PracticeWhich, string>> = { cleaner: '/crew/mock', helper: '/crew/mock-helper' };
+export const practiceUrl = (k: PracticeWhich) => PUBLIC_PRACTICE[k] ?? `/#practice/${k}`;
 
 const TZ = 'America/New_York';
 const UNIT = '🧪 Practice House', LOFT = '🧪 Practice Loft';
@@ -323,7 +329,7 @@ function crewPractice(): PracticeCrew {
     shareLink: async key => {
       await sleep();
       const r = page.upcoming.rows.find(x => x.key === key);
-      return { ok: true, link: `${location.origin}/#practice/helper`, unit: r?.unit ?? UNIT, date: r?.date ?? today, expires: addDays(today, 2) };
+      return { ok: true, link: `${location.origin}${practiceUrl('helper')}`, unit: r?.unit ?? UNIT, date: r?.date ?? today, expires: addDays(today, 2) };
     },
     photo: async id => photos.get(id) ?? ''
   };

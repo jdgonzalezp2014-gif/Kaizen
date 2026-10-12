@@ -11,7 +11,7 @@ import { getSops, getSopVersions, sopAction, type SopsResult } from '../api.ts';
 import { FEATURES, featureLabel, forFeature, sectionPath, sectionTree, parseBody, reviewDueOn, reviewOverdue, type Inline, type Sop, type SopSection,
          type SopStep, type SopVersion } from '../lib/sops.ts';
 import { todayIn } from '../lib/dates.ts';
-import { PRACTICE, PRACTICE_FOR } from '../screens/Practice.tsx';
+import { PRACTICE, PRACTICE_FOR, practiceUrl } from '../screens/Practice.tsx';
 
 const TZ = 'America/New_York';
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -469,7 +469,7 @@ export function SopPanel({ feature, canEdit, onClose, onLibrary }: {
                 <p className="sop-kicker">🧪 Practice · Practicar</p>
                 <p className="note">Opens in a new tab with example data. Nothing is saved or sent. / Se abre en otra pestaña con datos de ejemplo; nada se guarda ni se envía.</p>
                 <ul className="sop-list">
-                  {PRACTICE_FOR[feature]!.map(k => <li key={k}><a className="sop-row" href={`/#practice/${k}`} target="_blank" rel="noreferrer">
+                  {PRACTICE_FOR[feature]!.map(k => <li key={k}><a className="sop-row" href={practiceUrl(k)} target="_blank" rel="noreferrer">
                     <span>{PRACTICE[k].en}</span><small className="sub-n">{PRACTICE[k].es}</small></a></li>)}
                 </ul>
               </div>

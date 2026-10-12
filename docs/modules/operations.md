@@ -295,7 +295,7 @@ key had no SOPs.
 - **Practice (§139):** `src/screens/Practice.tsx`, two doors to the same page: the in-app hash
   `/#practice/<which>` for the team, and two public paths for cleaners / helpers to open without
   a sign-in — `/crew/mock` (cleaner) and `/crew/mock-helper` (helper) — reusing the Access bypass
-  that already fronts `/crew` (§140); `which ∈ inspection | work-link | vendor | cleaner | helper`.
+  that already fronts `/crew` (§140; `PUBLIC_PRACTICE` / `practiceUrl` in Practice.tsx, which the SOP panel links use); `which ∈ inspection | work-link | vendor | cleaner | helper`.
   Linked from the SOP panel ("🧪 Practice · Practicar", `PRACTICE_FOR` by screen:
   Inspections → inspection + both handyman doors; Cleaners / Calendar → cleaner + helper). The real screens with example
   data ("🧪 Practice House / Loft") and in-browser transports: InspectionRun's `transport`, `CrewHome practice`,

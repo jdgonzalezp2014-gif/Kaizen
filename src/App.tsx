@@ -10,7 +10,7 @@ import { Home } from './screens/Home.tsx';
 import { CrewHome } from './screens/Crew.tsx';
 import { ReportPage } from './screens/Report.tsx';
 import { VendorHome, WorkLinkPage } from './screens/Work.tsx';
-import { PracticePage, isPractice, type PracticeWhich } from './screens/Practice.tsx';
+import { PracticePage, isPractice, PUBLIC_PRACTICE, type PracticeWhich } from './screens/Practice.tsx';
 import { InspectPage } from './screens/Inspect.tsx';
 import { Sops } from './screens/Sops.tsx';
 import { SopButton, SopPanel } from './components/Sops.tsx';
@@ -86,9 +86,8 @@ export function App() {
   // new Access policy is needed (§140). The page is pure mock, no API call fires.
   // The pathname is normalised (trailing slash, case) because a browser may add
   // either and this door MUST open before TeamApp attempts to load settings.
-  const PUBLIC: Record<string, PracticeWhich> = { '/crew/mock': 'cleaner', '/crew/mock-helper': 'helper' };
   const normalPath = location.pathname.replace(/\/+$/, '').toLowerCase() || '/';
-  const publicWhich = PUBLIC[normalPath];
+  const publicWhich = (Object.keys(PUBLIC_PRACTICE) as PracticeWhich[]).find(k => PUBLIC_PRACTICE[k] === normalPath);
   const practice = publicWhich ?? /^#practice\/([a-z-]+)$/.exec(location.hash)?.[1];
   if (practice && isPractice(practice)) return <PracticePage which={practice} />;
   // The team's "View as cleaner" (§122): a tab with that cleaner's page and nothing of the team's.
