@@ -426,11 +426,11 @@ export interface CrewUpcoming {
 }
 export interface CrewPage {
   /** `level` only reaches the team's view (§122): cleaners are not shown their rating. */
-  cleaner: { name: string; level?: 'high' | 'standard' | 'manual'; invoicePeriod: InvoicePeriod; active: boolean };
+  cleaner: { name: string; level?: 'high' | 'standard' | 'manual'; invoicePeriod: InvoicePeriod; active: boolean; lang: 'en' | 'es' };
   today: string; periods: Period[]; period: Period;
   cleans: CrewClean[]; extras: CrewExtra[]; invoice: Invoice; extraFrom: string;
   /** Published SOPs for the cleaner's page (§128). */
-  help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null }[];
+  help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; lang?: 'en' | 'es' }[];
   upcoming: {
     enabled: boolean; days: number; through: string | null; rows: CrewUpcoming[]; problem: string | null;
     autoDays: number; confirmed: { at: string; through: string } | null; movements: Movement[];

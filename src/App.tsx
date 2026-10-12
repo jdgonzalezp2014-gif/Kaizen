@@ -52,7 +52,7 @@ function CrewShell({ token }: { token: string | null }) {
   return (
     <main>
       <header><h1>Kaizen OS</h1><nav><ThemeToggle /></nav></header>
-      {token ? <CrewHome token={token} /> : <p className="banner error">This link is incomplete — ask the team to send it again.</p>}
+      {token ? <CrewHome token={token} /> : <p className="banner error">This link is incomplete — ask the team to send it again. / Este enlace está incompleto — pide al equipo que lo envíe de nuevo.</p>}
     </main>
   );
 }

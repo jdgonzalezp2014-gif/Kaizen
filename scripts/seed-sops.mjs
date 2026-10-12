@@ -243,6 +243,32 @@ Setup → Crew pages → "The rule's picks show this many days ahead" (4). What 
     ],
     doneWhen: 'You know your cleans for the coming days, and your invoice matches the work you did.',
     body: `Questions about a clean or a payment: message the team.`
+  },
+  // §129 — the same guide in Spanish; the cleaner's page shows the one in their language.
+  {
+    section: 'turnover', title: 'Tu página de Kaizen (para cleaners)',
+    features: ['crew.page.es'],
+    purpose: 'Ver tus limpiezas y lo que paga cada una, planear tus próximos días, pedir extras y tener tu invoice.',
+    trigger: 'Antes de planear tus días, después de una limpieza que necesitó algo extra, y cuando haces tu invoice.',
+    owner: 'Cada cleaner',
+    steps: [
+      { text: 'Entra: abre la dirección de Kaizen, escribe tu email y pon el código que te llega por email.',
+        detail: 'Guarda la dirección en la pantalla de inicio de tu teléfono para volver rápido. Arriba puedes cambiar entre English y Español.' },
+      { text: 'Próximas: tus limpiezas que vienen.',
+        detail: '- Ves las limpiezas que el equipo te dio, y las demás 4 días antes.\n- "Última actualización" y "Cambios desde entonces" te dicen qué se movió: una estancia extendida o acortada, una reserva cancelada, una limpieza nueva.\n- ⚡ quiere decir que el siguiente huésped llega el mismo día — se muestra la hora de entrada.\n- Revisa aquí antes de planear tu día.' },
+      { text: '¿No puedes hacer una? Toca "No puedo" y di por qué, lo antes posible.',
+        detail: 'Vuelve al equipo, que se la da a otra persona.' },
+      { text: 'Calendario: tu mes de un vistazo. Toca un día para ver sus limpiezas.',
+        detail: '"Agregar mis próximas limpiezas al calendario del teléfono" las pone en tu teléfono. Si algo cambia, vuelve a agregarlas.' },
+      { text: 'Limpiezas: cada limpieza con lo que paga.',
+        detail: '- ✓ pagada · ○ sin pago, con el motivo · ⚑ una nota del equipo sobre esa limpieza — léela, por favor.\n- "✎ Corregida por el equipo" quiere decir que se cambió el pago o el tipo de limpieza, y por qué.' },
+      { text: 'Extras: en una limpieza que hiciste, "+ Agregar un extra": el monto, para qué fue y una foto del recibo o invoice.',
+        detail: 'El equipo lo aprueba o lo rechaza con una nota. Solo se pagan los extras aprobados, junto con esa limpieza.' },
+      { text: 'Invoice: elige el periodo y revísalo. "Imprimir / guardar como PDF" guarda una copia.',
+        detail: 'Semanal: de sábado a viernes, se paga el sábado. Mensual: el mes completo, se paga los primeros días del mes siguiente.' }
+    ],
+    doneWhen: 'Sabes tus limpiezas de los próximos días, y tu invoice coincide con el trabajo que hiciste.',
+    body: `¿Preguntas sobre una limpieza o un pago? Escríbele al equipo.`
   }
 ];
 

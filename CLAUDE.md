@@ -40,14 +40,14 @@ finishing. A new decision worth the long form gets a `## §N` section in history
 ## Workflow
 
 ```
-npm test                 # node --test (~239)
+npm test                 # node --test (~243)
 npx tsc --noEmit
 npm run build
 npm run migrate          # db/migrations/NNN_*.sql, recorded in _migrations — BEFORE pushing
                          # (reads DATABASE_URL_UNPOOLED first: to migrate a Neon branch, override BOTH)
 git push origin master   # deploys
 ```
-- Migrations applied: 001–052. New ones are the next number.
+- Migrations applied: 001–053. New ones are the next number.
 - Local server (`$S` = scratch dir):
   `U=$(grep -h '^DATABASE_URL=' .env.local|head -1|cut -d= -f2-|tr -d '"'"'"); EK=$(grep -h '^ENCRYPTION_KEY=' .env.local .dev.vars|head -1|cut -d= -f2-|tr -d '"'"'"); nohup npx wrangler pages dev dist --port 8799 --binding "DATABASE_URL=$U" --binding "ENCRYPTION_KEY=$EK" --binding "ALLOW_UNAUTHENTICATED=true" > $S/wrangler.log 2>&1 &`
   Stop it with `ps -eo pid,args | grep "[w]rangler pages dev"` + kill (`pkill -f` kills its own shell).
@@ -62,7 +62,8 @@ git push origin master   # deploys
 - **Ask before changing the daily file sheet or its Apps Script** (`../cliente-gas`) — the team edits it daily.
 - **Never run destructive Neon tools** without asking.
 - Never repeat or write back secrets; the Hostaway key is never shown.
-- **All UI text in English** (the owner writes in Spanish; answer him in Spanish).
+- **All UI text in English** (the owner writes in Spanish; answer him in Spanish). Exception: the
+  cleaners' crew page is English or Spanish per cleaner (§129, `src/lib/crew-i18n.ts`).
 - Outward actions (posting to the team's Slack, writing to Hostaway) need confirmation.
   Slack tests → #kaizen-task or ephemeral to Juan; the team is in #kaizen-ops.
 - The Hostaway task mirror is ON: a test task is also created in Hostaway — avoid, or clean both.

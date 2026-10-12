@@ -85,6 +85,8 @@ export interface Cleaner {
   email?: string | null;
   invoicePeriod?: 'weekly' | 'monthly';
   hasLink?: boolean;
+  /** The crew page's language (§129). */
+  lang?: 'en' | 'es';
 }
 
 /** Which rule decides who cleans (§121, §125). */

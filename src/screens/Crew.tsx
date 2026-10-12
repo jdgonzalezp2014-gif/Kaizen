@@ -18,6 +18,10 @@ import {
 } from '../api.ts';
 import type { CrewClean, CrewExtra } from '../lib/crew.ts';
 import { isBilled, movementText, EXTRA_MAX_AMOUNT, type Movement } from '../lib/crew.ts';
+import {
+  DOW_LETTER, LANGS, LANG_NAME, TX, bedsWord, dayLabel, kindWord, monthTitle, movementFor, payNote, periodLabel,
+  stampLabel, voidReasonText, workText, type Lang, type Tx
+} from '../lib/crew-i18n.ts';
 import { money2 } from '../lib/format.ts';
 import type { Cleaner } from '../lib/operations.ts';
 
@@ -42,7 +46,6 @@ const ACCEPT = 'image/*,application/pdf';
 const Files = ({ files }: { files?: { id: string; name: string; url: string }[] }) => !files?.length ? null : (
   <span className="crew-files">{files.map(f => <a key={f.id} href={f.url} target="_blank" rel="noreferrer">📎 {f.name}</a>)}</span>
 );
-const EXTRA_WORD: Record<CrewExtra['status'], string> = { pending: '○ waiting for the team', approved: '✓ approved', denied: '■ denied', cancelled: 'withdrawn' };
 
 /* ── the cleaner's own page ───────────────────────────────────────── */
 
@@ -55,16 +58,20 @@ export function CrewHome({ token, asCleaner }: { token?: string | null; asCleane
   const [page, setPage] = useState<CrewPage | null>(null);
   const [period, setPeriod] = useState<string | null>(null);
   const [err, setErr] = useState('');
+  // §129: the cleaner's language — theirs from the server; a switch here is saved for every device.
+  const [lang, setLang] = useState<Lang | null>(null);
+  const shown: Lang = lang ?? page?.cleaner.lang ?? 'en';
   const load = () => (asCleaner ? getCrewAsCleaner(asCleaner, period) : getCrew(period, token))
-    .then(r => { if (r.ok) { setPage(r); setErr(''); } else setErr(r.message ?? 'Could not load your page.'); })
+    .then(r => { if (r.ok) { setPage(r); setErr(''); } else setErr(r.message ?? TX[shown].loadFail); })
     .catch(e => setErr(String(e)));
   useEffect(() => { void load(); }, [period]);
+  const act: Act = asCleaner ? inert : body => crewAction(body, token);
+  const choose = (l: Lang) => { setLang(l); void act({ action: 'setLang', lang: l }).catch(() => {}); };
 
   if (err) return <p className="banner error">{err}</p>;
-  if (!page) return <p className="note loading-dot">Loading your cleans…</p>;
-  return <CrewView page={page} mode="cleaner" onPeriod={setPeriod} reload={load}
-                   act={asCleaner ? inert : body => crewAction(body, token)}
-                   upload={asCleaner ? inert : (f, files) => crewUpload(f, files, token)} />;
+  if (!page) return <p className="note loading-dot">{TX[shown].loading}</p>;
+  return <CrewView page={page} mode="cleaner" lang={shown} onLang={choose} onPeriod={setPeriod} reload={load}
+                   act={act} upload={asCleaner ? inert : (f, files) => crewUpload(f, files, token)} />;
 }
 
 /* ── the team's side, in Operations ───────────────────────────────── */
@@ -202,12 +209,16 @@ function Decide({ id, onDone }: { id: string; onDone: () => void }) {
 
 /* ── the page itself ──────────────────────────────────────────────── */
 
-function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload }: {
+function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, lang = 'en', onLang }: {
   page: CrewPage; mode: 'cleaner' | 'team'; canEdit?: boolean;
   onPeriod: (from: string) => void; reload: () => void;
   act: Act; upload?: Upload;
+  /** The cleaner's language (§129); the team's view is English. */
+  lang?: Lang; onLang?: (l: Lang) => void;
 }) {
   const { invoice: inv, period } = page;
+  const tx = TX[lang];
+  const kind = page.cleaner.invoicePeriod;
   const shown = page.cleans.filter(c => c.date >= period.from && c.date <= period.to);
   const extrasOf = (key: string) => page.extras.filter(e => e.key === key);
   const flagged = shown.filter(c => c.flagNote).length;
@@ -217,18 +228,23 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload }
   return (
     <div className="crew">
       <div className="card no-print">
-        <h2>{team ? page.cleaner.name : `Hi, ${page.cleaner.name}`}
+        <h2>{team ? page.cleaner.name : tx.hi(page.cleaner.name)}
           {team && page.cleaner.level && <span className="chan-tag" title="Only the team sees this">{page.cleaner.level} level</span>}
-          {!page.cleaner.active && <span className="chan-tag">inactive</span>}</h2>
-        <label>Invoice period ({page.cleaner.invoicePeriod === 'weekly' ? 'weekly, Saturday to Friday, paid Saturday' : 'monthly, paid in the first days of the next month'})
+          {!page.cleaner.active && <span className="chan-tag">{tx.inactive}</span>}</h2>
+        {onLang && (
+          <div className="todo-kind" role="group" aria-label="Language / Idioma">
+            {LANGS.map(l => <button key={l} className={l === lang ? 'chip active' : 'chip'} onClick={() => onLang(l)}>{LANG_NAME[l]}</button>)}
+          </div>
+        )}
+        <label>{tx.periodField(kind)}
           <select value={period.from} onChange={e => onPeriod(e.target.value)}>
-            {page.periods.map(p => <option key={p.from} value={p.from}>{p.label}</option>)}
+            {page.periods.map(p => <option key={p.from} value={p.from}>{periodLabel(lang, p, kind)}</option>)}
           </select></label>
       </div>
 
-      {mode === 'cleaner' && !!page.help?.length && (
+      {mode === 'cleaner' && !!page.help?.filter(h => (h.lang ?? 'en') === lang).length && (
         <div className="card no-print">
-          {page.help.map(h => (
+          {page.help.filter(h => (h.lang ?? 'en') === lang).map(h => (
             <details key={h.title}>
               <summary><b>❓ {h.title}</b></summary>
               {h.purpose && <p className="note">{h.purpose}</p>}
@@ -238,35 +254,34 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload }
           ))}
         </div>
       )}
-      <Upcoming page={page} act={mode === 'cleaner' ? act : undefined} reload={reload} />
-      <CrewCalendar page={page} />
+      <Upcoming page={page} act={mode === 'cleaner' ? act : undefined} reload={reload} lang={lang} />
+      <CrewCalendar page={page} lang={lang} />
 
       <div className="card no-print">
-        <h2>Cleans — {period.label}</h2>
+        <h2>{tx.cleansTitle(periodLabel(lang, period, kind))}</h2>
         <p className="note">
-          {inv.lines.length} paid · {money2(inv.total)}{inv.open ? ' so far' : ''}
-          {excluded > 0 && <> · ○ {excluded} not paid</>}
-          {flagged > 0 && <> · <span className="breach">⚑ {flagged} flagged</span></>}
-          {inv.pendingExtras > 0 && <> · ○ {inv.pendingExtras} extra{inv.pendingExtras === 1 ? '' : 's'} waiting</>}
+          {tx.paidCount(inv.lines.length)} · {money2(inv.total)}{inv.open ? tx.soFar : ''}
+          {excluded > 0 && <> · {tx.notPaidCount(excluded)}</>}
+          {flagged > 0 && <> · <span className="breach">{tx.flaggedCount(flagged)}</span></>}
+          {inv.pendingExtras > 0 && <> · {tx.extrasWaiting(inv.pendingExtras)}</>}
         </p>
-        {!shown.length ? <p className="note">No cleans in this period.</p> : (
+        {!shown.length ? <p className="note">{tx.noCleans}</p> : (
           <div className="crew-list">
             {shown.map(c => (
               <CleanRow key={c.key} c={c} extras={extrasOf(c.key)} today={page.today} extraFrom={page.extraFrom}
-                        mode={mode} canEdit={canEdit} act={act} upload={upload} reload={reload} />
+                        mode={mode} canEdit={canEdit} act={act} upload={upload} reload={reload} lang={lang} />
             ))}
           </div>
         )}
       </div>
 
-      <InvoiceView page={page} />
+      <InvoiceView page={page} lang={lang} />
     </div>
   );
 }
 
 /* ── the calendar ─────────────────────────────────────────────────── */
 
-const MONTH_NAME = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 type CalItem = { date: string; unit: string; mark: string; title: string; tone: 'done' | 'off' | 'flag' | 'ahead' };
 /** A unit's name short enough for a phone's calendar cell: "P2-4304" → "4304", "Bobcat House" → "Bobcat". */
 const shortUnit = (u: string) => /\d{3,}$/.exec(u.trim())?.[0] ?? u.trim().split(/\s+/)[0]!;
@@ -277,14 +292,17 @@ const shortUnit = (u: string) => /\d{3,}$/.exec(u.trim())?.[0] ?? u.trim().split
  * last two months and the days ahead it shows, so the months it can draw
  * are those.
  */
-function CrewCalendar({ page }: { page: CrewPage }) {
+function CrewCalendar({ page, lang }: { page: CrewPage; lang: Lang }) {
+  const tx = TX[lang];
+  const pay = (v: number | null) => v == null ? tx.notPriced : money2(v);
+  const day = (d: string) => dayLabel(lang, d);
   // Each clean once, with the same status as the Cleans list: today and before from the record
   // (✓ paid, ⚑ flagged, ○ not paid), after today as coming up — the server already sent only
   // what this cleaner may see ahead.
   const next = new Map(page.upcoming.rows.map(r => [r.key, r]));
   const detail = (key: string) => {
     const r = next.get(key);
-    return r ? `${r.manual ? 'manual clean' : `checkout ${r.time}`}${r.sameDay ? ` · next guest in${r.checkIn ? ` at ${r.checkIn}` : ''}` : ''}` : '';
+    return r ? `${r.manual ? tx.manualClean(kindWord(lang, r.manual)) : tx.checkout(r.time)}${r.sameDay ? tx.calNextGuest(r.checkIn) : ''}` : '';
   };
   const items: CalItem[] = [
     ...page.cleans.map(c => {
@@ -293,10 +311,10 @@ function CrewCalendar({ page }: { page: CrewPage }) {
         return { date: c.date, unit: c.unit, mark: next.get(c.key)?.sameDay ? '⚡' : '•', tone: 'ahead' as const,
                  title: `${extra ? `${extra} · ` : ''}${pay(c.price)}` };
       }
-      const base = c.voidReason ? { mark: '○', tone: 'off' as const, title: `not paid — ${c.voidReason}` }
-        : c.flagNote ? { mark: '⚑', tone: 'flag' as const, title: `flagged — ${c.flagNote} · ${pay(c.price)}` }
-        : c.assignment === 'assigned' ? { mark: '✓', tone: 'done' as const, title: `${pay(c.price)}${c.deep ? ' · deep' : ''}` }
-        : { mark: '○', tone: 'off' as const, title: 'not assigned to you any more' };
+      const base = c.voidReason ? { mark: '○', tone: 'off' as const, title: tx.calNotPaid(voidReasonText(lang, c.voidReason)) }
+        : c.flagNote ? { mark: '⚑', tone: 'flag' as const, title: `${tx.calFlagged(c.flagNote)} · ${pay(c.price)}` }
+        : c.assignment === 'assigned' ? { mark: '✓', tone: 'done' as const, title: `${pay(c.price)}${c.deep ? tx.calDeep : ''}` }
+        : { mark: '○', tone: 'off' as const, title: tx.calNotYours };
       return { date: c.date, unit: c.unit, ...base, title: `${extra ? `${extra} · ` : ''}${base.title}` };
     }),
     // Ahead and not in the record yet (beyond the board's window).
@@ -318,11 +336,11 @@ function CrewCalendar({ page }: { page: CrewPage }) {
     <div className="card no-print">
       <div className="crew-cal-head">
         <button className="chip" disabled={at <= 0} onClick={() => setMonth(months[at - 1]!)}>‹</button>
-        <h2>{MONTH_NAME[m - 1]} {y}</h2>
+        <h2>{monthTitle(lang, y, m)}</h2>
         <button className="chip" disabled={at >= months.length - 1} onClick={() => setMonth(months[at + 1]!)}>›</button>
       </div>
       <div className="crew-cal">
-        {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((d, i) => <div key={i} className="crew-cal-dow">{d}</div>)}
+        {DOW_LETTER[lang].map((d, i) => <div key={i} className="crew-cal-dow">{d}</div>)}
         {cells.map((d, i) => d === null ? <div key={i} /> : (
           <button key={d} className={`crew-cal-day${d === page.today ? ' today' : ''}${d === sel ? ' sel' : ''}`} onClick={() => setSel(d)}>
             <div className="crew-cal-n">{Number(d.slice(8))}</div>
@@ -335,16 +353,16 @@ function CrewCalendar({ page }: { page: CrewPage }) {
       {/* The day tapped, in full — a cell only has room for a short name. */}
       <div className="crew-cal-detail">
         <b>{day(sel)}</b>
-        {(byDay.get(sel) ?? []).length === 0 ? <span className="note"> — nothing</span> : (
+        {(byDay.get(sel) ?? []).length === 0 ? <span className="note">{tx.nothing}</span> : (
           <ul>{(byDay.get(sel) ?? []).map((it, j) => <li key={j} className={`crew-cal-item ${it.tone}`}>{it.mark} {it.unit} — {it.title}</li>)}</ul>
         )}
       </div>
-      <p className="note">Tap a day for its cleans. ✓ done and paid · ⚑ flagged · ○ not paid · • coming up · ⚡ next guest the same day.
-        {!page.upcoming.enabled && ` Coming up shows your cleans ${page.upcoming.autoDays} days ahead, and any the team assigned to you directly.`}</p>
+      <p className="note">{tx.calLegend}
+        {!page.upcoming.enabled && tx.calAuto(page.upcoming.autoDays)}</p>
       {page.upcoming.rows.length > 0 && (
         <div className="button-row">
-          <button className="secondary" onClick={() => downloadIcs(page)}>📅 Add my coming cleans to my phone calendar</button>
-          <span className="note">A copy of them as they are now — if one changes, check this page and add them again.</span>
+          <button className="secondary" onClick={() => downloadIcs(page, lang)}>{tx.icsBtn}</button>
+          <span className="note">{tx.icsNote}</span>
         </div>
       )}
     </div>
@@ -356,7 +374,9 @@ function CrewCalendar({ page }: { page: CrewPage }) {
  * checkout time, an hour and a half long, in the board's time (New York) —
  * written as local time, which is what a cleaner in Texas reads them as.
  */
-function downloadIcs(page: CrewPage) {
+function downloadIcs(page: CrewPage, lang: Lang) {
+  const tx = TX[lang];
+  const pay = (v: number | null) => v == null ? tx.notPriced : money2(v);
   const esc = (t: string) => t.replace(/[\\,;]/g, m => `\\${m}`).replace(/\n/g, '\\n');
   const at = (date: string, time: string) => {
     const m = /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(time.trim());
@@ -368,10 +388,10 @@ function downloadIcs(page: CrewPage) {
   const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15) + 'Z';
   const events = page.upcoming.rows.map(r => {
     const t = at(r.date, r.time);
-    const what = r.manual ? `manual clean (${r.manual.replace('_', ' ')})` : 'checkout clean';
+    const what = r.manual ? tx.manualClean(kindWord(lang, r.manual)) : tx.icsCheckout;
     return ['BEGIN:VEVENT', `UID:kaizen-${r.key}@kaizen-os`, `DTSTAMP:${stamp}`, `DTSTART:${t.start}`, `DTEND:${t.end}`,
-            `SUMMARY:${esc(`Clean ${r.unit}${r.beds ? ` (${r.beds}BR)` : ''}`)}`,
-            `DESCRIPTION:${esc(`${what}${r.sameDay ? ` — next guest in${r.checkIn ? ` at ${r.checkIn}` : ' the same day'}` : ''}. Pays ${pay(r.price)}.`)}`,
+            `SUMMARY:${esc(tx.icsSummary(r.unit, bedsWord(lang, r.beds)))}`,
+            `DESCRIPTION:${esc(`${what}${r.sameDay ? tx.icsNextGuest(r.checkIn) : ''}.${tx.icsPays(pay(r.price))}`)}`,
             'END:VEVENT'].join('\r\n');
   });
   const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kaizen OS//Crew//EN', 'CALSCALE:GREGORIAN', ...events, 'END:VCALENDAR'].join('\r\n');
@@ -382,24 +402,26 @@ function downloadIcs(page: CrewPage) {
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
-function Upcoming({ page, act, reload }: { page: CrewPage; act?: Act; reload: () => void }) {
+function Upcoming({ page, act, reload, lang }: { page: CrewPage; act?: Act; reload: () => void; lang: Lang }) {
   const u = page.upcoming;
+  const tx = TX[lang];
+  const day = (d: string) => dayLabel(lang, d);
   return (
     <div className="card no-print">
-      <h2>Coming up</h2>
+      <h2>{tx.comingUp}</h2>
       {u.problem ? <p className="banner warn">▲ {u.problem}</p> : (
         <>
-          {u.confirmed && <p><b>Last update: {stamp(u.confirmed.at)}</b></p>}
-          {u.confirmed && u.movements.length > 0 && <><b>Changes since then</b><Moves list={u.movements} /></>}
-          {u.confirmed && u.movements.length === 0 && u.rows.length > 0 && <p className="note">✓ No changes since then.</p>}
-          <p className="note">{u.enabled
-            ? `Through ${u.through ? day(u.through) : '—'}. Check here before you plan the day.`
-            : `Your cleans show here ${u.autoDays} days ahead — sooner when the team assigns one to you directly. Check here before you plan the day.`}</p>
-          {!u.rows.length ? <p className="note">Nothing for you {u.enabled ? `through ${u.through ? day(u.through) : 'the next days'}` : `in the next ${u.autoDays} days`} yet.</p> : (
+          {u.confirmed && <p><b>{tx.lastUpdate(stampLabel(lang, u.confirmed.at))}</b></p>}
+          {u.confirmed && u.movements.length > 0 && <><b>{tx.changesSince}</b>
+            <ul className="crew-moves">{u.movements.map((m, i) => <li key={i} className={m.kind === 'removed' ? 'breach' : undefined}>
+              {MOVE_ICON[m.kind]} {movementFor(lang, m)}</li>)}</ul></>}
+          {u.confirmed && u.movements.length === 0 && u.rows.length > 0 && <p className="note">{tx.noChanges}</p>}
+          <p className="note">{u.enabled ? tx.through(u.through ? day(u.through) : '—') : tx.autoNote(u.autoDays)}</p>
+          {!u.rows.length ? <p className="note">{u.enabled ? tx.nothingThrough(u.through ? day(u.through) : tx.theNextDays) : tx.nothingNext(u.autoDays)}</p> : (
             <div className="crew-list">
-              {u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload}
+              {u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload} lang={lang}
                 tag={(() => { const m = u.movements.find(x => x.key === r.key);
-                              return !m ? null : m.kind === 'added' ? '+ new' : m.kind === 'moved' ? `⇢ moved from ${day(m.from)}` : m.kind === 'time' ? '◷ time changed' : null; })()} />)}
+                              return !m ? null : m.kind === 'added' ? tx.tagNew : m.kind === 'moved' ? tx.tagMoved(day(m.from)) : m.kind === 'time' ? tx.tagTime : null; })()} />)}
             </div>
           )}
         </>
@@ -409,7 +431,8 @@ function Upcoming({ page, act, reload }: { page: CrewPage; act?: Act; reload: ()
 }
 
 /** One clean ahead. A cleaner can turn it down: it goes back to the team, unassigned. */
-function UpcomingRow({ r, act, reload, tag }: { r: CrewUpcoming; act?: Act; reload: () => void; tag?: string | null }) {
+function UpcomingRow({ r, act, reload, tag, lang }: { r: CrewUpcoming; act?: Act; reload: () => void; tag?: string | null; lang: Lang }) {
+  const tx = TX[lang];
   const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
@@ -419,26 +442,26 @@ function UpcomingRow({ r, act, reload, tag }: { r: CrewUpcoming; act?: Act; relo
     setBusy(true); setMsg('');
     const res = await act({ action: 'decline', key: r.key, reason }).catch(e => ({ ok: false, message: String(e) }));
     setBusy(false);
-    if (!res.ok) { setMsg(res.message ?? 'Not saved.'); return; }
+    if (!res.ok) { setMsg(res.message ?? tx.notSaved); return; }
     reload();
   };
   return (
     <div className="crew-row">
-      <div><b>{day(r.date)}</b> · {r.unit}{r.beds ? ` · ${r.beds}BR` : ''}
+      <div><b>{dayLabel(lang, r.date)}</b> · {r.unit}{r.beds ? ` · ${bedsWord(lang, r.beds)}` : ''}
         {tag && <div className={tag.startsWith('○') ? 'sub-n' : 'breach'}>{tag}</div>}</div>
       <div>
-        {r.manual ? `manual clean (${r.manual.replace('_', ' ')})` : `checkout ${r.time}`}
-        {r.sameDay && <span className="ops-flag urgent">⚡ next guest in{r.checkIn ? ` at ${r.checkIn}` : ' the same day'}</span>}
-        {r.deep && <span className="ops-flag deep">🧽 deep</span>}
+        {r.manual ? tx.manualClean(kindWord(lang, r.manual)) : tx.checkout(r.time)}
+        {r.sameDay && <span className="ops-flag urgent">{r.checkIn ? tx.nextGuestAt(r.checkIn) : tx.nextGuestSameDay}</span>}
+        {r.deep && <span className="ops-flag deep">{tx.deep}</span>}
       </div>
-      <div className="n">{pay(r.price)}
-        {act && !declining && <div><button className="link tiny" onClick={() => setDeclining(true)}>Can't do it</button></div>}</div>
+      <div className="n">{r.price == null ? tx.notPriced : money2(r.price)}
+        {act && !declining && <div><button className="link tiny" onClick={() => setDeclining(true)}>{tx.cantDoIt}</button></div>}</div>
       {declining && (
         <div className="crew-decide">
-          <input value={reason} maxLength={300} placeholder="Why (optional) — the team reads it" onChange={e => setReason(e.target.value)} />
-          <button className="small" disabled={busy} onClick={() => void decline()}>{busy ? 'Sending…' : 'Decline this clean'}</button>
-          <button className="small secondary" disabled={busy} onClick={() => setDeclining(false)}>Keep it</button>
-          <span className="note">It goes back to the team unassigned, for someone else.</span>
+          <input value={reason} maxLength={300} placeholder={tx.whyOptional} onChange={e => setReason(e.target.value)} />
+          <button className="small" disabled={busy} onClick={() => void decline()}>{busy ? tx.sending : tx.declineBtn}</button>
+          <button className="small secondary" disabled={busy} onClick={() => setDeclining(false)}>{tx.keepIt}</button>
+          <span className="note">{tx.declineNote}</span>
         </div>
       )}
       {msg && <div className="breach">{msg}</div>}
@@ -446,10 +469,11 @@ function UpcomingRow({ r, act, reload, tag }: { r: CrewUpcoming; act?: Act; relo
   );
 }
 
-function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, reload }: {
+function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, reload, lang }: {
   c: CrewClean; extras: CrewExtra[]; today: string; extraFrom: string; mode: 'cleaner' | 'team'; canEdit: boolean;
-  act: Act; upload?: Upload; reload: () => void;
+  act: Act; upload?: Upload; reload: () => void; lang: Lang;
 }) {
+  const tx: Tx = TX[lang];
   const [adding, setAdding] = useState(false);
   const [flagging, setFlagging] = useState(false);
   const [correcting, setCorrecting] = useState(false);
@@ -463,7 +487,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
   const upcoming = c.date > today;
   const done = (r: { ok: boolean; message?: string }) => {
     setBusy(false);
-    if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
+    if (!r.ok) { setMsg(r.message ?? tx.notSaved); return; }
     setAdding(false); setFlagging(false); setCorrecting(false); setAmount(''); setText(''); setFiles([]); reload();
   };
   const send = async (body: Record<string, unknown>) => {
@@ -485,23 +509,23 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
 
   return (
     <div className="crew-row">
-      <div><b>{day(c.date)}</b> · {c.unit}{c.beds ? ` · ${c.beds}BR` : ''}{c.deep ? ' · 🧽 deep' : ''}
-        {c.kind !== 'checkout' && <span className="sub-n"> · manual ({c.kind.replace('_', ' ')})</span>}</div>
+      <div><b>{dayLabel(lang, c.date)}</b> · {c.unit}{c.beds ? ` · ${bedsWord(lang, c.beds)}` : ''}{c.deep ? ` · ${tx.deep}` : ''}
+        {c.kind !== 'checkout' && <span className="sub-n">{tx.manualTag(kindWord(lang, c.kind))}</span>}</div>
       <div>
-        {c.voidReason ? <span className="note">○ not paid — {c.voidReason}</span>
-          : upcoming ? <span className="note">○ coming up</span>
-          : billed ? <span>✓ {pay(c.price)}</span>
-          : <span className="note">○ not assigned to you any more</span>}
-        {c.flagNote && <div className="breach">⚑ Flagged: {c.flagNote}</div>}
-        {c.editNote && <div className="sub-n">✎ Corrected by the team: {c.editNote}</div>}
+        {c.voidReason ? <span className="note">{tx.notPaidReason(voidReasonText(lang, c.voidReason))}</span>
+          : upcoming ? <span className="note">{tx.comingUpTag}</span>
+          : billed ? <span>✓ {c.price == null ? tx.notPriced : money2(c.price)}</span>
+          : <span className="note">{tx.notYours}</span>}
+        {c.flagNote && <div className="breach">{tx.flaggedNote(c.flagNote)}</div>}
+        {c.editNote && <div className="sub-n">{tx.corrected(c.editNote)}</div>}
         {extras.map(e => (
           <div key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>
-            Extra +{money2(e.amount)} — {e.description} · {EXTRA_WORD[e.status]}
+            Extra +{money2(e.amount)} — {e.description} · {tx.extraWord[e.status]}
             {e.decisionNote && <> · “{e.decisionNote}”</>} <Files files={e.files} />
             {mode === 'cleaner' && e.status === 'pending' && <>
-              <label className="link tiny crew-attach">+ receipt / photo
+              <label className="link tiny crew-attach">{tx.attach}
                 <input type="file" accept={ACCEPT} multiple hidden disabled={busy} onChange={ev => void attach(e.id, ev.target.files)} /></label>
-              <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'cancelExtra', id: e.id })}>withdraw</button>
+              <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'cancelExtra', id: e.id })}>{tx.withdraw}</button>
             </>}
             {mode === 'team' && canEdit && e.status === 'pending' && <Decide id={e.id} onDone={reload} />}
           </div>
@@ -509,7 +533,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
       </div>
       <div className="crew-actions no-print">
         {mode === 'cleaner' && billed && c.date >= extraFrom && !adding &&
-          <button className="link tiny" onClick={() => setAdding(true)}>+ Add an extra</button>}
+          <button className="link tiny" onClick={() => setAdding(true)}>{tx.addExtra}</button>}
         {mode === 'team' && canEdit && c.date < today && !correcting &&
           <button className="link tiny" onClick={() => { setCorrecting(true); setDeep(c.deep); setAmount(c.price == null ? '' : String(c.price)); }}>✎ Correct</button>}
         {mode === 'team' && canEdit && !flagging && (c.flagNote
@@ -519,12 +543,12 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
       {adding && (
         <div className="crew-decide">
           <input className="amt" inputMode="decimal" value={amount} placeholder="$" onChange={e => setAmount(e.target.value)} />
-          <input value={text} maxLength={300} placeholder="What for (e.g. extra laundry load)" onChange={e => setText(e.target.value)} />
-          <label className="crew-attach">Receipt, invoice or photo (optional)
+          <input value={text} maxLength={300} placeholder={tx.whatFor} onChange={e => setText(e.target.value)} />
+          <label className="crew-attach">{tx.receiptOptional}
             <input type="file" accept={ACCEPT} multiple onChange={e => setFiles([...(e.target.files ?? [])])} /></label>
           <button className="small" disabled={busy || !(Number(amount) > 0) || Number(amount) > EXTRA_MAX_AMOUNT || !text.trim()}
-                  onClick={() => void sendExtra()}>{busy ? 'Sending…' : 'Send to the team'}</button>
-          <button className="small secondary" onClick={() => setAdding(false)}>Cancel</button>
+                  onClick={() => void sendExtra()}>{busy ? tx.sending : tx.sendTeam}</button>
+          <button className="small secondary" onClick={() => setAdding(false)}>{tx.cancel}</button>
         </div>
       )}
       {correcting && (
@@ -557,44 +581,52 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
 }
 
 /** The invoice Kaizen builds — printed or saved as PDF from the browser. */
-function InvoiceView({ page }: { page: CrewPage }) {
+function InvoiceView({ page, lang }: { page: CrewPage; lang: Lang }) {
   const inv = page.invoice;
+  const tx = TX[lang];
+  const kind = page.cleaner.invoicePeriod;
+  const paid = payNote(lang, inv.period, kind);
+  // The work, said in the cleaner's language from the clean itself.
+  const work = (key: string, fallback: string) => {
+    const c = page.cleans.find(x => x.key === key);
+    return c ? workText(lang, c) : fallback;
+  };
   return (
     <div className="card crew-invoice">
       <div className="crew-invoice-head">
         <div><h2>Invoice {inv.number}</h2>
-          <div>From: <b>{page.cleaner.name}</b></div>
-          <div>To: <b>Kaizen Guest Properties</b></div>
-          <div>Period: {inv.period.label} ({inv.period.from} – {inv.period.to})</div>
-          <div>Paid: <b>{inv.period.payNote}</b></div></div>
-        <button className="secondary no-print" onClick={() => window.print()}>Print / save as PDF</button>
+          <div>{tx.from}: <b>{page.cleaner.name}</b></div>
+          <div>{tx.to}: <b>Kaizen Guest Properties</b></div>
+          <div>{tx.period}: {periodLabel(lang, inv.period, kind)} ({inv.period.from} – {inv.period.to})</div>
+          <div>{tx.paid}: <b>{paid}</b></div></div>
+        <button className="secondary no-print" onClick={() => window.print()}>{tx.print}</button>
       </div>
-      {inv.open && <p className="note">○ This period is still open — cleans done by {day(inv.period.to)} are added. Paid {inv.period.payNote}.</p>}
+      {inv.open && <p className="note">{tx.open(dayLabel(lang, inv.period.to), paid)}</p>}
       <table className="units compact">
-        <thead><tr><th>Date</th><th>Unit</th><th>Work</th><th className="n">Amount</th></tr></thead>
+        <thead><tr><th>{tx.colDate}</th><th>{tx.colUnit}</th><th>{tx.colWork}</th><th className="n">{tx.colAmount}</th></tr></thead>
         <tbody>
           {inv.lines.map(l => (
             <Fragment key={l.key}>
-              <tr><td>{l.date}</td><td>{l.unit}</td><td>{l.what}{l.flag ? ' ⚑' : ''}</td>
-                <td className="n">{l.amount == null ? <span className="note">not priced</span> : money2(l.amount)}</td></tr>
+              <tr><td>{l.date}</td><td>{l.unit}</td><td>{work(l.key, l.what)}{l.flag ? ' ⚑' : ''}</td>
+                <td className="n">{l.amount == null ? <span className="note">{tx.notPriced}</span> : money2(l.amount)}</td></tr>
               {inv.extras.filter(e => e.key === l.key).map(e => (
-                <tr key={e.id}><td></td><td></td><td>Extra — {e.description}</td><td className="n">{money2(e.amount)}</td></tr>
+                <tr key={e.id}><td></td><td></td><td>{tx.extraLine(e.description)}</td><td className="n">{money2(e.amount)}</td></tr>
               ))}
             </Fragment>
           ))}
-          {!inv.lines.length && <tr><td colSpan={4} className="note">No paid cleans in this period.</td></tr>}
+          {!inv.lines.length && <tr><td colSpan={4} className="note">{tx.noPaid}</td></tr>}
         </tbody>
         <tfoot>
-          <tr><td colSpan={3}>Cleans</td><td className="n">{money2(inv.cleansTotal)}</td></tr>
-          {inv.extrasTotal > 0 && <tr><td colSpan={3}>Approved extras</td><td className="n">{money2(inv.extrasTotal)}</td></tr>}
-          <tr><td colSpan={3}><b>Total</b></td><td className="n"><b>{money2(inv.total)}</b></td></tr>
+          <tr><td colSpan={3}>{tx.cleans}</td><td className="n">{money2(inv.cleansTotal)}</td></tr>
+          {inv.extrasTotal > 0 && <tr><td colSpan={3}>{tx.approvedExtras}</td><td className="n">{money2(inv.extrasTotal)}</td></tr>}
+          <tr><td colSpan={3}><b>{tx.total}</b></td><td className="n"><b>{money2(inv.total)}</b></td></tr>
         </tfoot>
       </table>
-      {inv.unpriced > 0 && <p className="breach">▲ {inv.unpriced} clean{inv.unpriced === 1 ? ' has' : 's have'} no rate on the card yet and {inv.unpriced === 1 ? 'is' : 'are'} not in the total — the team sets it.</p>}
-      {inv.pendingExtras > 0 && <p className="note">○ {inv.pendingExtras} extra{inv.pendingExtras === 1 ? ' is' : 's are'} waiting for the team and not in the total yet.</p>}
+      {inv.unpriced > 0 && <p className="breach">{tx.unpriced(inv.unpriced)}</p>}
+      {inv.pendingExtras > 0 && <p className="note">{tx.pendingExtras(inv.pendingExtras)}</p>}
       {inv.excluded.length > 0 && (
-        <div className="note">Not paid in this period:
-          <ul>{inv.excluded.map(x => <li key={x.key}>{x.date} · {x.unit} — {x.reason}</li>)}</ul></div>
+        <div className="note">{tx.notPaidIn}
+          <ul>{inv.excluded.map(x => <li key={x.key}>{x.date} · {x.unit} — {voidReasonText(lang, x.reason)}</li>)}</ul></div>
       )}
     </div>
   );

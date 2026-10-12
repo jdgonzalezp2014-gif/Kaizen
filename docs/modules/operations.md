@@ -103,6 +103,13 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 - Operations → Crew: pick a cleaner → their page for the team (level, flag/correct/decide), or
   **👁 View as cleaner ↗** — a separate tab (`/#as-cleaner/<name>`, PreviewShell in App.tsx) with only the
   cleaner's page, loaded through `crewGet` (the cleaner's own server code: level stripped), buttons inert.
+- **Spanish for cleaners (§129):** `cleaners.lang` (en/es; Setup → Crew pages "Page language"; the cleaner
+  switches it on their page → `setLang`, remembered). Everything the cleaner reads goes through
+  `src/lib/crew-i18n.ts` (TX dictionary, dates, periods, paydays, Kaizen-written void reasons, movements,
+  invoice work, .ics) and server messages in `crewPost` (`say(en, es)`). Notes a person typed stay as written.
+  The team's side stays English. SOP #13 "Tu página de Kaizen (para cleaners)" = feature `crew.page.es`
+  (draft); the page shows the help SOP in the cleaner's language. New sentences must be added to BOTH
+  languages (a test checks the keys match). The Cloudflare sign-in screen itself is English.
 - **Flag + pay (§128):** ⚑ Flag (board row, Movements past, manual cleans, Crew page) takes an optional
   corrected pay for a clean due today or before ("Flag and correct pay") → `edited_by/at`, `edit_note` = the
   flag note. `recordCleanings` and `loadOps` keep a corrected price/deep while the same cleaner holds the clean.

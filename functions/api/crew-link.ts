@@ -17,7 +17,7 @@ async function caller(request: Request, sql: SqlFn): Promise<CrewCaller | Respon
   const token = request.headers.get('X-Crew-Token') ?? '';
   const name = token ? await cleanerByToken(sql, token) : null;
   if (name) return { name, by: `link:${name}` };
-  return refuse(403, 'bad_link', 'This link is not valid any more — ask the team for a new one.');
+  return refuse(403, 'bad_link', 'This link is not valid any more — ask the team for a new one. / Este enlace ya no es válido — pide uno nuevo al equipo.');
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

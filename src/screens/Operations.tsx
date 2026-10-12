@@ -1652,7 +1652,7 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
 
       <div className="grid-scroll">
         <table className="units compact roster-edit">
-          <thead><tr><th>Cleaner</th><th>Sign-in email</th><th>Invoice</th><th>Secret link</th></tr></thead>
+          <thead><tr><th>Cleaner</th><th>Sign-in email</th><th>Invoice</th><th>Page language</th><th>Secret link</th></tr></thead>
           <tbody>
             {roster.map((c, i) => (
               <tr key={i} className={c.active ? undefined : 'muted-row'}>
@@ -1661,6 +1661,9 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
                            onChange={e => set(i, { email: e.target.value || null })} /></td>
                 <td><select value={c.invoicePeriod ?? 'monthly'} onChange={e => set(i, { invoicePeriod: e.target.value as 'weekly' | 'monthly' })}>
                   <option value="weekly">weekly (Sat–Fri, paid Saturday)</option><option value="monthly">monthly (paid early the next month)</option></select></td>
+                {/* §129: what their page opens in; they can switch it on the page, and it is remembered. */}
+                <td><select value={c.lang ?? 'en'} onChange={e => set(i, { lang: e.target.value as 'en' | 'es' })}>
+                  <option value="en">English</option><option value="es">Español</option></select></td>
                 <td>
                   {c.hasLink ? <span className="sub-n">● link active </span> : <span className="sub-n">○ none </span>}
                   {c.name && <button className="link tiny" onClick={() => void makeLink(c.name, false)}>{c.hasLink ? 'new link' : 'make link'}</button>}

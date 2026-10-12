@@ -77,7 +77,8 @@ function parseRoster(raw: Record<string, any>[]): Cleaner[] {
     const level = c.level == null || c.level === '' ? (stars >= 4 ? 'high' : stars <= 1 ? 'manual' : 'standard') : c.level;
     if (!LEVELS.includes(level)) throw new Error(`${name}: level is high, standard or manual.`);
     rows.push({ name, tier: c.tier, position: Number(c.position ?? i) || 0, rates: card(c.rates),
-                deepRates: card(c.deepRates), active: c.active !== false, stars, level, zones, maxPerDay: max, email, invoicePeriod });
+                deepRates: card(c.deepRates), active: c.active !== false, stars, level, zones, maxPerDay: max, email, invoicePeriod,
+                lang: c.lang === 'es' ? 'es' : 'en' });
   }
   return rows;
 }
@@ -180,10 +181,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await sql`DELETE FROM cleaners WHERE account_id = 1`;
       for (const r of rows) {
         await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates, active, stars, level, zones, max_per_day,
-                                        email, invoice_period, link_token_hash)
+                                        email, invoice_period, link_token_hash, lang)
                   VALUES (1, ${r.name}, ${r.tier}, ${r.position}, ${JSON.stringify(r.rates)}::jsonb,
                           ${JSON.stringify(r.deepRates)}::jsonb, ${r.active}, ${r.stars}, ${r.level ?? 'standard'}, ${r.zones}, ${r.maxPerDay},
-                          ${r.email ?? null}, ${r.invoicePeriod ?? 'monthly'}, ${links.get(r.name) ?? null})`;
+                          ${r.email ?? null}, ${r.invoicePeriod ?? 'monthly'}, ${links.get(r.name) ?? null}, ${r.lang ?? 'en'})`;
       }
     }
 

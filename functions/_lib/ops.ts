@@ -53,14 +53,14 @@ export async function opsConfig(sql: SqlFn): Promise<{
   const [acc, roster] = await Promise.all([
     sql`SELECT ops_mode, ops_rules, extra_inspectors, guest_docs_units, assign_rule, crew_calendar, crew_calendar_days, crew_auto_days
           FROM accounts WHERE id = 1`,
-    sql`SELECT name, tier, position, rates, deep_rates, active, stars, level, zones, max_per_day, email, invoice_period,
+    sql`SELECT name, tier, position, rates, deep_rates, active, stars, level, zones, max_per_day, email, invoice_period, lang,
                link_token_hash IS NOT NULL AS has_link FROM cleaners
          WHERE account_id = 1 ORDER BY tier, position, name`
   ]) as [{ ops_mode: OpsMode; ops_rules: Record<string, unknown>; extra_inspectors: string[]; guest_docs_units: string[];
            assign_rule: string; crew_calendar: boolean; crew_calendar_days: number; crew_auto_days: number }[],
          { name: string; tier: Cleaner['tier']; position: number; rates: Record<string, number | null>;
            deep_rates: Record<string, number | null>; active: boolean; stars: number; level: Cleaner['level']; zones: string[];
-           max_per_day: number | null; email: string | null; invoice_period: 'weekly' | 'monthly'; has_link: boolean }[]];
+           max_per_day: number | null; email: string | null; invoice_period: 'weekly' | 'monthly'; has_link: boolean; lang: 'en' | 'es' }[]];
   return {
     mode: acc[0]?.ops_mode === 'live' ? 'live' : 'shadow',
     rules: withDefaults(acc[0]?.ops_rules),
@@ -72,7 +72,7 @@ export async function opsConfig(sql: SqlFn): Promise<{
     roster: roster.map(c => ({ name: c.name, tier: c.tier, position: c.position,
       rates: c.rates ?? {}, deepRates: c.deep_rates ?? {}, active: c.active,
       stars: Number(c.stars) || 1, level: c.level ?? 'standard', zones: c.zones ?? [], maxPerDay: c.max_per_day == null ? null : Number(c.max_per_day),
-      email: c.email, invoicePeriod: c.invoice_period, hasLink: c.has_link }))
+      email: c.email, invoicePeriod: c.invoice_period, hasLink: c.has_link, lang: c.lang ?? 'en' }))
   };
 }
 

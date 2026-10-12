@@ -3510,3 +3510,13 @@ written as drafts (agents draft, humans publish): the team's daily part with the
 cleaner access, and the cleaners' own guide — which, published, appears on their page, since cleaners have
 no access to the SOP library. The mid-stay SOP gained why recording mid-stays matters under the levels rule.
 
+## §129 — The cleaners' page in Spanish (2026-10-11)
+
+"Para los cleaners agrega versión en español de todo." The app's rule is English UI; the crew page is the
+exception, per cleaner: a default set by the team, switched by the cleaner on the page and remembered.
+Every sentence a cleaner reads — dates ("dom 11 oct"), periods, paydays ("el sábado 17 oct", "los
+primeros días de noviembre"), movements, invoice lines, the reasons Kaizen writes when a clean is not
+paid, the phone-calendar file, and the server's error messages — has both languages; what a person typed
+(a flag, a denial, an extra's description) is shown as written. The cleaners' SOP has a Spanish twin, and
+the page shows the one in the cleaner's language. Not translatable from here: Cloudflare's sign-in screen.
+

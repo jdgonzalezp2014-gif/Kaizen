@@ -36,7 +36,7 @@ export interface CrewUpcoming {
 
 export interface CrewPage {
   /** `level` only for the team: a cleaner is never shown their own rating. */
-  cleaner: { name: string; level?: Level; invoicePeriod: InvoicePeriod; active: boolean };
+  cleaner: { name: string; level?: Level; invoicePeriod: InvoicePeriod; active: boolean; lang: 'en' | 'es' };
   today: DateStr;
   periods: Period[];
   period: Period;
@@ -47,7 +47,7 @@ export interface CrewPage {
   /** Cleans an extra can be added to: done, theirs, not excluded, recent. */
   extraFrom: DateStr;
   /** Published SOPs for the cleaner's page (feature `crew.page`), shown as "How this page works". */
-  help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null }[];
+  help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; lang: 'en' | 'es' }[];
   upcoming: {
     enabled: boolean; days: number; through: DateStr | null; rows: CrewUpcoming[]; problem: string | null;
     /** Unpublished, the rule's picks show this many days ahead (§127). */
@@ -145,8 +145,8 @@ export async function crewVisibility(sql: SqlFn): Promise<Visibility & { days: n
 }
 
 export async function findCleaner(sql: SqlFn, name: string) {
-  const [c] = await sql`SELECT name, level, invoice_period, active FROM cleaners WHERE account_id = 1 AND name = ${name}` as
-    { name: string; level: Level; invoice_period: InvoicePeriod; active: boolean }[];
+  const [c] = await sql`SELECT name, level, invoice_period, active, lang FROM cleaners WHERE account_id = 1 AND name = ${name}` as
+    { name: string; level: Level; invoice_period: InvoicePeriod; active: boolean; lang: 'en' | 'es' }[];
   return c ?? null;
 }
 
@@ -232,7 +232,9 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
           vis: st.confirm.vis }, st.now, today, vis, st.fate(c.name));
       }
     } catch (e) {
-      upcoming.problem = `The schedule could not be read just now (${e instanceof Error ? e.message : String(e)}). Try again in a minute.`;
+      upcoming.problem = c.lang === 'es'
+        ? `No se pudo leer la agenda en este momento (${e instanceof Error ? e.message : String(e)}). Intenta de nuevo en un minuto.`
+        : `The schedule could not be read just now (${e instanceof Error ? e.message : String(e)}). Try again in a minute.`;
     }
   }
 
@@ -243,7 +245,7 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
   const ahead = new Set(upcoming.rows.map(r => r.key));
   const shown = cleans.filter(x => x.date <= today || ahead.has(x.key));
   return {
-    cleaner: { name: c.name, level: c.level, invoicePeriod: c.invoice_period, active: c.active },
+    cleaner: { name: c.name, level: c.level, invoicePeriod: c.invoice_period, active: c.active, lang: c.lang ?? 'en' },
     today, periods, period, cleans: shown, extras: extras.filter(e => shown.some(x => x.key === e.key)), extraFrom,
     invoice: buildInvoice(c.name, period, shown, extras, today),
     upcoming
@@ -262,8 +264,11 @@ export async function crewGet(request: Request, env: Env, sql: SqlFn, me: CrewCa
   // Their rating is the team's business — not sent, not just not drawn.
   delete page.cleaner.level;
   // How the page works, as the team wrote it — published SOPs only.
-  page.help = await sql`SELECT title, purpose, steps, body FROM sops
-                         WHERE account_id = 1 AND status = 'published' AND 'crew.page' = ANY(features) ORDER BY title` as CrewPage['help'];
+  // §129: one for each language — `crew.page` English, `crew.page.es` Spanish; the page shows the cleaner's.
+  page.help = (await sql`SELECT title, purpose, steps, body, 'crew.page.es' = ANY(features) AS es FROM sops
+                          WHERE account_id = 1 AND status = 'published' AND ('crew.page' = ANY(features) OR 'crew.page.es' = ANY(features))
+                          ORDER BY title` as { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; es: boolean }[])
+    .map(h => ({ title: h.title, purpose: h.purpose, steps: h.steps, body: h.body, lang: h.es ? 'es' : 'en' }));
   return Response.json({ ok: true, ...page });
 }
 
@@ -281,10 +286,10 @@ const MAX_FILES = 5;
 const MAX_FILE_BYTES = 15 * 1024 * 1024;
 
 /** Files to Drive, into the account's crew-extras folder (made on first use). Nothing is written if one fails. */
-async function uploadEvidence(sql: SqlFn, encryptionKey: string, files: File[], label: string) {
+async function uploadEvidence(sql: SqlFn, encryptionKey: string, files: File[], label: string, say: Say = (en) => en) {
   for (const f of files) {
-    if (f.size > MAX_FILE_BYTES) throw new DriveError(`${f.name} is over 15 MB — send a smaller photo or a PDF.`);
-    if (!/^(image\/|application\/pdf$)/.test(f.type || '')) throw new DriveError(`${f.name}: a photo or a PDF, please.`);
+    if (f.size > MAX_FILE_BYTES) throw new DriveError(say(`${f.name} is over 15 MB — send a smaller photo or a PDF.`, `${f.name} pesa más de 15 MB — envía una foto más pequeña o un PDF.`));
+    if (!/^(image\/|application\/pdf$)/.test(f.type || '')) throw new DriveError(say(`${f.name}: a photo or a PDF, please.`, `${f.name}: una foto o un PDF, por favor.`));
   }
   const token = await driveToken(sql, encryptionKey);
   const [acc] = await sql`SELECT crew_extras_folder FROM accounts WHERE id = 1` as { crew_extras_folder: string | null }[];
@@ -309,6 +314,9 @@ async function saveFiles(sql: SqlFn, extraId: number, by: string, files: Awaited
                           ${files.map(f => f.driveId)}::text[], ${files.map(f => f.url)}::text[]) AS t(n, m, s, d, u)`;
 }
 
+/** A message in the cleaner's language (§129). */
+type Say = (en: string, es: string) => string;
+
 /** POST for whichever door identified the cleaner. JSON, or multipart when files come along. */
 export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewCaller,
                                waitUntil: (p: Promise<unknown>) => void): Promise<Response> {
@@ -316,33 +324,43 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
   let files: File[] = [];
   if ((request.headers.get('Content-Type') ?? '').startsWith('multipart/form-data')) {
     const form = await request.formData().catch(() => null);
-    if (!form) return refuse(400, 'bad_request', 'Could not read the upload.');
+    if (!form) return refuse(400, 'bad_request', 'Could not read the upload. / No se pudo leer el archivo.');
     for (const [k, v] of form.entries()) {
       if (k === 'file') { if (typeof v !== 'string') files.push(v); } else body[k] = v;
     }
   } else {
     body = await request.json().catch(() => ({})) as Record<string, unknown>;
   }
-  if (files.length > MAX_FILES) return refuse(400, 'bad_request', `At most ${MAX_FILES} files at a time.`);
+  const [who] = await sql`SELECT lang FROM cleaners WHERE account_id = 1 AND name = ${me.name}` as { lang: 'en' | 'es' }[];
+  const say: Say = (en, es) => who?.lang === 'es' ? es : en;
+  if (files.length > MAX_FILES) return refuse(400, 'bad_request', say(`At most ${MAX_FILES} files at a time.`, `Máximo ${MAX_FILES} archivos a la vez.`));
   const today = todayIn(TZ);
+
+  // §129: the page's language, remembered for every device they sign in from.
+  if (body.action === 'setLang') {
+    const lang = body.lang === 'es' ? 'es' : body.lang === 'en' ? 'en' : null;
+    if (!lang) return refuse(400, 'bad_request', 'en or es.');
+    await sql`UPDATE cleaners SET lang = ${lang} WHERE account_id = 1 AND name = ${me.name}`;
+    return Response.json({ ok: true });
+  }
 
   if (body.action === 'addExtra') {
     const key = String(body.key ?? '');
     const amount = Math.round(Number(body.amount) * 100) / 100;
     const description = String(body.description ?? '').trim().slice(0, 300);
-    if (!(amount > 0) || amount > EXTRA_MAX_AMOUNT) return refuse(400, 'bad_request', `An extra is more than $0 and at most $${EXTRA_MAX_AMOUNT}.`);
-    if (!description) return refuse(400, 'bad_request', 'Say what the extra is for.');
+    if (!(amount > 0) || amount > EXTRA_MAX_AMOUNT) return refuse(400, 'bad_request', say(`An extra is more than $0 and at most $${EXTRA_MAX_AMOUNT}.`, `Un extra es de más de $0 y como máximo $${EXTRA_MAX_AMOUNT}.`));
+    if (!description) return refuse(400, 'bad_request', say('Say what the extra is for.', 'Di para qué es el extra.'));
     // Only on their own clean, done, paid, and recent.
     const [c] = await sql`SELECT checkout_on::text AS date, unit_name FROM cleanings
                            WHERE account_id = 1 AND key = ${key} AND cleaner = ${me.name} AND assignment = 'assigned'
                              AND void_reason IS NULL` as { date: string; unit_name: string }[];
-    if (!c) return refuse(400, 'bad_request', 'That clean is not one of yours.');
-    if (c.date > today) return refuse(400, 'bad_request', 'Add extras once the clean is done.');
-    if (c.date < addDays(today, -EXTRA_MAX_AGE_DAYS)) return refuse(400, 'bad_request', `Extras go in within ${EXTRA_MAX_AGE_DAYS} days of the clean.`);
+    if (!c) return refuse(400, 'bad_request', say('That clean is not one of yours.', 'Esa limpieza no es tuya.'));
+    if (c.date > today) return refuse(400, 'bad_request', say('Add extras once the clean is done.', 'Agrega extras cuando la limpieza esté hecha.'));
+    if (c.date < addDays(today, -EXTRA_MAX_AGE_DAYS)) return refuse(400, 'bad_request', say(`Extras go in within ${EXTRA_MAX_AGE_DAYS} days of the clean.`, `Los extras se agregan dentro de los ${EXTRA_MAX_AGE_DAYS} días de la limpieza.`));
     // The evidence first: an extra is not saved with half its receipts.
     let up: Awaited<ReturnType<typeof uploadEvidence>> = [];
-    try { up = await uploadEvidence(sql, env.ENCRYPTION_KEY, files, `${c.date} ${c.unit_name} — ${me.name}`); }
-    catch (e) { return refuse(502, 'upload', `The file could not be saved, so the extra was not sent: ${e instanceof Error ? e.message : String(e)}`); }
+    try { up = await uploadEvidence(sql, env.ENCRYPTION_KEY, files, `${c.date} ${c.unit_name} — ${me.name}`, say); }
+    catch (e) { return refuse(502, 'upload', say(`The file could not be saved, so the extra was not sent: ${e instanceof Error ? e.message : String(e)}`, `No se pudo guardar el archivo, así que el extra no se envió: ${e instanceof Error ? e.message : String(e)}`)); }
     const [row] = await sql`INSERT INTO cleaning_extras (account_id, cleaning_key, cleaner, amount, description, created_by)
                             VALUES (1, ${key}, ${me.name}, ${amount}, ${description}, ${me.by}) RETURNING id` as { id: number }[];
     await saveFiles(sql, Number(row!.id), me.by, up);
@@ -351,15 +369,15 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
 
   // More evidence on an extra still waiting for the team.
   if (body.action === 'attachFile') {
-    if (!files.length) return refuse(400, 'bad_request', 'No file.');
+    if (!files.length) return refuse(400, 'bad_request', say('No file.', 'No hay archivo.'));
     const [e] = await sql`SELECT e.id, c.checkout_on::text AS date, c.unit_name FROM cleaning_extras e
                            JOIN cleanings c ON c.account_id = e.account_id AND c.key = e.cleaning_key
                           WHERE e.account_id = 1 AND e.id = ${Number(body.id) || 0} AND e.cleaner = ${me.name} AND e.status = 'pending'` as
       { id: number; date: string; unit_name: string }[];
-    if (!e) return refuse(400, 'bad_request', 'Files go on an extra of yours still waiting for the team.');
+    if (!e) return refuse(400, 'bad_request', say('Files go on an extra of yours still waiting for the team.', 'Los archivos van en un extra tuyo que todavía espera al equipo.'));
     let up: Awaited<ReturnType<typeof uploadEvidence>> = [];
-    try { up = await uploadEvidence(sql, env.ENCRYPTION_KEY, files, `${e.date} ${e.unit_name} — ${me.name}`); }
-    catch (err) { return refuse(502, 'upload', `The file could not be saved: ${err instanceof Error ? err.message : String(err)}`); }
+    try { up = await uploadEvidence(sql, env.ENCRYPTION_KEY, files, `${e.date} ${e.unit_name} — ${me.name}`, say); }
+    catch (err) { return refuse(502, 'upload', say(`The file could not be saved: ${err instanceof Error ? err.message : String(err)}`, `No se pudo guardar el archivo: ${err instanceof Error ? err.message : String(err)}`)); }
     await saveFiles(sql, Number(e.id), me.by, up);
     return Response.json({ ok: true });
   }
@@ -375,7 +393,7 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
                              WHERE account_id = 1 AND key = ${key} AND cleaner = ${me.name} AND assignment = 'assigned'
                                AND void_reason IS NULL AND checkout_on >= ${today}::date
                             RETURNING checkout_on::text AS date, unit_name` as { date: string; unit_name: string }[];
-      if (!m) return refuse(400, 'bad_request', 'That clean is not on your schedule any more.');
+      if (!m) return refuse(400, 'bad_request', say('That clean is not on your schedule any more.', 'Esa limpieza ya no está en tu agenda.'));
       await sql`INSERT INTO crew_declines (account_id, cleaning_key, cleaner, clean_on, unit_name, reason, created_by)
                 VALUES (1, ${key}, ${me.name}, ${m.date}, ${m.unit_name}, ${reason}, ${me.by})`;
       return Response.json({ ok: true });
@@ -387,7 +405,7 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     // Only what their page shows them: the whole schedule once shared, else what a person assigned (§123).
     if (!row || row.assignment !== 'assigned' || row.cleaner !== me.name || row.date < today ||
         !visibleAhead({ date: row.date, byHand: row.manual.cleaner }, today, acc)) {
-      return refuse(400, 'bad_request', 'That clean is not on your schedule any more.');
+      return refuse(400, 'bad_request', say('That clean is not on your schedule any more.', 'Esa limpieza ya no está en tu agenda.'));
     }
     await sql`INSERT INTO turnover_overrides (account_id, reservation_id, assignment, cleaner, updated_by)
               VALUES (1, ${key}, 'tbd', NULL, ${`declined by ${me.name}`})
@@ -412,7 +430,7 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     const done = await sql`UPDATE cleaning_extras SET status = 'cancelled', decided_by = ${me.by}, decided_at = now()
                             WHERE account_id = 1 AND id = ${Number(body.id) || 0} AND cleaner = ${me.name} AND status = 'pending'
                             RETURNING id`;
-    if (!done.length) return refuse(400, 'bad_request', 'Only an extra still waiting for the team can be withdrawn.');
+    if (!done.length) return refuse(400, 'bad_request', say('Only an extra still waiting for the team can be withdrawn.', 'Solo se puede retirar un extra que todavía espera al equipo.'));
     return Response.json({ ok: true });
   }
 

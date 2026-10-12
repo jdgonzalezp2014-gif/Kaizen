@@ -80,6 +80,8 @@ export const FEATURES: { key: string; label: string; tab: string; view?: string;
   { key: 'operations.crew', label: 'Operations · Crew', tab: 'operations', view: 'crew', section: 'turnover' },
   // The cleaner's own page (§122): its published SOPs show there as "How this page works".
   { key: 'crew.page', label: "Cleaner's page", tab: 'crew', section: 'turnover' },
+  // The same page in Spanish (§129): a cleaner reading in Spanish sees these instead.
+  { key: 'crew.page.es', label: "Cleaner's page (Español)", tab: 'crew', section: 'turnover' },
   { key: 'operations.inspections', label: 'Operations · Inspections', tab: 'operations', view: 'inspections', section: 'inspections' },
   { key: 'operations.notes', label: 'Operations · Notes log', tab: 'operations', view: 'notes', section: 'guest' },
   { key: 'operations.rates', label: 'Operations · Rates & rules', tab: 'operations', view: 'rates', section: 'turnover' },
