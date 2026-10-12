@@ -17,7 +17,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { WorkView } from '../components/Todos.tsx';
 import { CrewAdmin } from './Crew.tsx';
-import { addDays, todayIn } from '../lib/dates.ts';
+import { addDays, daysBetween, isDateStr, todayIn } from '../lib/dates.ts';
 import { stayLabel } from '../lib/todos.ts';
 import {
   getCleanings, type Cleaning, type ExcludedCleaning,
@@ -26,7 +26,7 @@ import {
   type Todo, type HostawayTasksState,
   type StayDocs, type OperationsResponse, type ManualClean, type ManualCleanKind, type StayOnDay,
   getStaysOnDay, manualClean, todoAction, saveClaim, type TurnoverSet, type OpsSettings, type CutoverPreview, type InspectionEntry,
-  previewAssign, type AssignPreview, crewLink
+  previewAssign, type AssignPreview, crewLink, crewAdminAction
 } from '../api.ts';
 import {
   BEDROOM_SIZES, DEFAULT_CHECKIN_TIME, DEFAULT_CHECKOUT_TIME, INSPECTION_RESULTS,
@@ -96,6 +96,16 @@ function applyEdit(r: BoardRow, set: TurnoverSet, roster: Cleaner[], rules: OpsR
   return n;
 }
 
+/**
+ * Movements' window (§124): today and the ten days after it unless someone
+ * picks other dates. The live board reaches at most 30 days ahead (the
+ * server's cap); days before today come from the cleanings record.
+ */
+const DEFAULT_DAYS = 10;
+const MAX_AHEAD = 30;
+interface Range { from: string; to: string }
+const defaultRange = (today: string): Range => ({ from: today, to: addDays(today, DEFAULT_DAYS) });
+
 export function Operations({ permissions, initialView, onView }: {
   permissions: string[]; initialView?: string;
   /** Told which view is showing, so the top bar's SOPs button can follow it (§92). */
@@ -107,20 +117,29 @@ export function Operations({ permissions, initialView, onView }: {
   const [view, setView] = useState<View>(VIEWS.includes(initialView as View) ? initialView as View : 'board');
   useEffect(() => { onView?.(view); }, [view]);
   const canTodos = can(permissions, 'todos');
+  const nyToday = todayIn('America/New_York');
+  const [range, setRange] = useState<Range>(() => defaultRange(nyToday));
+  // The live part is loaded from today to the range's end — never fewer than
+  // the default days, so the other views keep the window they describe.
+  const liveDays = Math.min(MAX_AHEAD, Math.max(DEFAULT_DAYS, daysBetween(nyToday, range.to)));
 
+  // Picking dates can start a load while another is out: only the latest is shown.
+  const latest = useRef(0);
   const load = (refresh = false) => {
+    const n = ++latest.current;
     setBusy(true); setErr('');
     const started = Date.now();
-    getOperations(10, refresh)
+    getOperations(liveDays, refresh)
       .then(r => {
+        if (n !== latest.current) return;
         if (!r.ok) { setErr(r.message ?? r.error ?? 'Could not load.'); return; }
         rememberTiming('operations', Date.now() - started);
         setData(r);
       })
-      .catch(e => setErr(e instanceof Error ? e.message : String(e)))
-      .finally(() => setBusy(false));
+      .catch(e => { if (n === latest.current) setErr(e instanceof Error ? e.message : String(e)); })
+      .finally(() => { if (n === latest.current) setBusy(false); });
   };
-  useEffect(() => load(), []);
+  useEffect(() => load(), [liveDays]);
 
   /** Apply a saved edit to the rows on screen and re-total. */
   const patch = (resId: string, kind: 'in' | 'out', f: (r: BoardRow) => BoardRow) =>
@@ -131,7 +150,7 @@ export function Operations({ permissions, initialView, onView }: {
     });
 
   const views: [View, string][] = [
-    ['board', 'Next 10 days'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['cleaners', 'By cleaner'], ['crew', 'Crew'], ['inspections', 'Inspections'],
+    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['calendar', 'Calendar'], ['cleaners', 'By cleaner'], ['crew', 'Crew'], ['inspections', 'Inspections'],
     ['notes', 'Notes log'], ['rates', 'Rates & rules'],
     ...(can(data?.permissions, 'operations.setup') ? [['setup', 'Setup'] as [View, string]] : [])
   ];
@@ -145,7 +164,9 @@ export function Operations({ permissions, initialView, onView }: {
       </nav>
 
       <div className="row-controls">
-        {data && <span className="note">{dayLabel(data.today)} → {dayLabel(data.end)} · New York time</span>}
+        {view === 'board'
+          ? <MovementsRange range={range} today={nyToday} onChange={setRange} />
+          : data && <span className="note">{dayLabel(data.today)} → {dayLabel(data.end)} · New York time</span>}
         <button className="chip" disabled={busy} onClick={() => load(true)}>
           {busy && data ? 'Refreshing…' : 'Refresh'}
         </button>
@@ -163,7 +184,7 @@ export function Operations({ permissions, initialView, onView }: {
       {data && <ModeBanner data={data} onSetup={() => setView('setup')} />}
 
       <div className={busy && data ? 'is-stale' : undefined}>
-        {data && view === 'board' && <Board data={data} patch={patch} reload={() => load()} />}
+        {data && view === 'board' && <Board data={data} range={range} patch={patch} reload={() => load()} />}
         {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} />}
         {view === 'calendar' && <CleaningsMonth />}
         {data && view === 'cleaners' && <ByCleaner data={data} />}
@@ -209,7 +230,34 @@ function ModeBanner({ data, onSetup }: { data: OperationsResponse; onSetup: () =
   );
 }
 
-/* ── Next 10 days ─────────────────────────────────────────────────── */
+/* ── Movements ───────────────────────────────────────────────────── */
+
+/** Shortcuts for the window; the two dates are for any other. */
+const RANGE_PRESETS: [string, (today: string) => Range][] = [
+  ['Next 10 days', defaultRange],
+  ['Last 7 days', t => ({ from: addDays(t, -7), to: t })],
+  ['Next 30 days', t => ({ from: t, to: addDays(t, MAX_AHEAD) })]
+];
+
+function MovementsRange({ range, today, onChange }: { range: Range; today: string; onChange: (r: Range) => void }) {
+  const last = addDays(today, MAX_AHEAD);
+  // A date typed after the other end moves that end along rather than making an empty window.
+  const setFrom = (v: string) => { if (isDateStr(v)) { const from = v > last ? last : v; onChange({ from, to: from > range.to ? from : range.to }); } };
+  const setTo = (v: string) => { if (isDateStr(v)) { const to = v > last ? last : v; onChange({ from: to < range.from ? to : range.from, to }); } };
+  return (
+    <>
+      {RANGE_PRESETS.map(([label, f]) => {
+        const r = f(today);
+        return <button key={label} className={r.from === range.from && r.to === range.to ? 'chip active' : 'chip'}
+                       onClick={() => onChange(r)}>{label}</button>;
+      })}
+      <input type="date" className="date-in" value={range.from} max={range.to} onChange={e => setFrom(e.target.value)} />
+      <span className="note">to</span>
+      <input type="date" className="date-in" value={range.to} min={range.from} max={last} onChange={e => setTo(e.target.value)} />
+      <span className="note">New York time · up to {MAX_AHEAD} days ahead</span>
+    </>
+  );
+}
 
 type Filter = 'all' | 'out' | 'in' | 'attention' | 'differs';
 
@@ -224,8 +272,9 @@ function needsAttention(r: BoardRow, stars: Map<string, number>): boolean {
 const starMap = (roster: Cleaner[]) => new Map(roster.map(c => [c.name, starsOf(c)]));
 const starText = (n: number) => `★${n}`;
 
-function Board({ data, patch, reload }: {
-  data: OperationsResponse; patch: (id: string, k: 'in' | 'out', f: (r: BoardRow) => BoardRow) => void; reload: () => void;
+function Board({ data, range, patch, reload }: {
+  data: OperationsResponse; range: Range;
+  patch: (id: string, k: 'in' | 'out', f: (r: BoardRow) => BoardRow) => void; reload: () => void;
 }) {
   const canEdit = can(data.permissions, 'operations.edit');
   // A manual clean being added (§79): empty, or started from a stay's own row.
@@ -238,8 +287,49 @@ function Board({ data, patch, reload }: {
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<string | null>(null);
-  const s = data.summary;
   const stars = useMemo(() => starMap(data.roster), [data.roster]);
+  // The live rows inside the chosen dates; the figures above the table count these.
+  const live = useMemo(() => data.rows.filter(r => r.date >= range.from && r.date <= range.to), [data.rows, range]);
+  const s = useMemo(() => summarize(live, data.roster), [live, data.roster]);
+
+  // Flags by hand (§124), by record key — kept here so a flag shows at once.
+  const [flags, setFlags] = useState<Record<string, string>>({});
+  useEffect(() => setFlags(Object.fromEntries(Object.entries(data.flags ?? {}).map(([k, f]) => [k, f.note]))), [data.flags]);
+  const setFlag = (key: string, note: string | null) => setFlags(f => {
+    const n = { ...f };
+    if (note === null) delete n[key]; else n[key] = note;
+    return n;
+  });
+
+  // Days before today are the cleanings record — frozen, what was cleaned and paid —
+  // not the live board, which only reaches from today on.
+  const hasPast = range.from < data.today;
+  const pastTo = range.to < data.today ? range.to : addDays(data.today, -1);
+  const [past, setPast] = useState<{ rows: Cleaning[]; excluded: ExcludedCleaning[] } | null>(null);
+  const [pastErr, setPastErr] = useState('');
+  useEffect(() => {
+    setPast(null); setPastErr('');
+    if (!hasPast) return;
+    let current = true;
+    getCleanings(range.from, 'all', [], pastTo, ['tbd', 'not_needed'])
+      .then(r => { if (!current) return; if (r.ok) setPast({ rows: r.cleanings, excluded: r.excluded }); else setPastErr('The cleanings record could not be read.'); })
+      .catch(e => { if (current) setPastErr(String(e)); });
+    return () => { current = false; };
+  }, [hasPast, range.from, pastTo]);
+  const pastBy = useMemo(() => {
+    const m = new Map<string, { rows: Cleaning[]; excluded: ExcludedCleaning[] }>();
+    const at = (d: string) => { const k = d.slice(0, 10); if (!m.has(k)) m.set(k, { rows: [], excluded: [] }); return m.get(k)!; };
+    for (const c of past?.rows ?? []) at(c.checkout_on).rows.push(c);
+    for (const c of past?.excluded ?? []) at(c.checkout_on).excluded.push(c);
+    return m;
+  }, [past]);
+  const pastShown = (c: Cleaning) => {
+    const needle = q.trim().toLowerCase();
+    if (needle && !`${c.unit_name} ${c.guest ?? ''} ${c.cleaner ?? ''}`.toLowerCase().includes(needle)) return false;
+    // A recorded day is departures and manual cleans: no arrivals, nothing to compare with the sheet.
+    return filter === 'all' || filter === 'out' || (filter === 'attention' && (c.assignment === 'tbd' || !!c.needs_confirm));
+  };
+  const pastCleans = (past?.rows ?? []).filter(c => c.assignment === 'assigned');
 
   // Guest documents (§73): what each arrival has filed, read from Drive
   // when the board loads. Only for roles that may see IDs.
@@ -272,25 +362,23 @@ function Board({ data, patch, reload }: {
 
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
-    return data.rows.filter(r =>
+    return live.filter(r =>
       (filter === 'all' || (filter === 'attention' ? needsAttention(r, stars)
         : filter === 'differs' ? r.differs.length > 0 : r.kind === filter)) &&
       (!needle || `${r.unit} ${r.guest} ${r.cleaner ?? ''}`.toLowerCase().includes(needle)));
-  }, [data, filter, q, stars]);
+  }, [live, filter, q, stars]);
 
   const days = useMemo(() => {
+    // Not past what is loaded: a longer window shows once its load arrives.
     const out: string[] = [];
-    for (let d = data.today; d <= data.end;) {
-      out.push(d);
-      const t = new Date(`${d}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + 1);
-      d = t.toISOString().slice(0, 10);
-    }
+    const last = range.to < data.end ? range.to : data.end;
+    for (let d = range.from; d <= last; d = addDays(d, 1)) out.push(d);
     return out;
-  }, [data.today, data.end]);
+  }, [range, data.end]);
 
   const filters: [Filter, string][] = [
     ['all', 'Everything'], ['out', 'Departures'], ['in', 'Arrivals'],
-    ['attention', `Needs attention ${data.rows.filter(r => needsAttention(r, stars)).length}`],
+    ['attention', `Needs attention ${live.filter(r => needsAttention(r, stars)).length}`],
     ...(data.mode === 'shadow' ? [['differs', `Differs from the sheet ${s.differing}`] as [Filter, string]] : [])
   ];
 
@@ -306,7 +394,15 @@ function Board({ data, patch, reload }: {
         <div><dt>Cleaner pay</dt><dd>{money(s.cleaningCost)}
           {s.unpriced > 0 && <small>+{s.unpriced} not priced</small>}</dd></div>
         {data.showMoney && <div><dt>Arriving</dt><dd>{money(s.arriving)}</dd></div>}
+        {hasPast && past && <div><dt>Before today</dt><dd>{pastCleans.length}
+          <small>cleans recorded · {money2(pastCleans.reduce((a, c) => a + Number(c.price ?? 0), 0))}
+            {(past.rows.filter(c => c.flag_note).length > 0) && ` · ⚑ ${past.rows.filter(c => c.flag_note).length} flagged`}</small></dd></div>}
       </dl>
+
+      {hasPast && <p className="note">Days before today show the cleanings record — who cleaned, what it paid, what
+        was flagged. Arrivals are not kept there, so those days list departures and manual cleans only.
+        {range.from < data.today && range.to >= data.today && ' From today on, the live board.'}</p>}
+      {hasPast && pastErr && <p className="banner error">▲ {pastErr}</p>}
 
       {canDocs && docsErr && <p className="banner warn">▲ Guest documents: {docsErr}</p>}
 
@@ -336,6 +432,49 @@ function Board({ data, patch, reload }: {
                 <th>Cleaner</th><th className="n">Pays</th><th>Flags</th><th>Notes</th></tr>
           </thead>
           {days.map(d => {
+            if (d < data.today) {
+              const rec = pastBy.get(d);
+              const shown = (rec?.rows ?? []).filter(pastShown);
+              const voided = filter === 'all' && !q ? rec?.excluded ?? [] : [];
+              if (!shown.length && !voided.length && (filter !== 'all' || q)) return null;
+              return (
+                <tbody key={d}>
+                  <tr className="ops-day">
+                    <td colSpan={9}>
+                      {dayLabel(d)}{isWeekend(d) ? ' · weekend' : ''}
+                      <span className="sub-n"> {past ? `${shown.length} recorded${voided.length ? ` · ${voided.length} not paid` : ''}` : '…'}</span>
+                    </td>
+                  </tr>
+                  {past && !shown.length && !voided.length && <tr><td colSpan={9} className="note ops-quiet">no cleans recorded</td></tr>}
+                  {shown.map(c => {
+                    const key = `rec-${c.key}`;
+                    return (
+                      <Fragment key={key}>
+                        <PastLine c={c} open={open === key} onToggle={() => { if (canEdit) setOpen(open === key ? null : key); }} />
+                        {open === key && (
+                          <tr className="ops-edit-row"><td colSpan={9}>
+                            <div className="ops-editor" onClick={e => e.stopPropagation()}>
+                              <FlagControl cleanKey={c.key} flag={c.flag_note ?? null} onChanged={note =>
+                                setPast(p => p && { ...p, rows: p.rows.map(x => x.key === c.key ? { ...x, flag_note: note } : x) })} />
+                              <div className="note">A clean already done is corrected (deep, price) in Operations → Crew.</div>
+                            </div>
+                          </td></tr>
+                        )}
+                      </Fragment>
+                    );
+                  })}
+                  {voided.map(c => (
+                    <tr key={`void-${c.key}`} className="ops-line">
+                      <td><span className="ops-kind out">OUT</span></td>
+                      <td><b>{c.unit_name}</b></td>
+                      <td colSpan={3} className="note">○ not paid — {c.void_reason}</td>
+                      <td className="note">{c.cleaner ?? ''}</td>
+                      <td></td><td></td><td></td>
+                    </tr>
+                  ))}
+                </tbody>
+              );
+            }
             const dayRows = rows.filter(r => r.date === d);
             const manual = (manualBy.get(d) ?? []).filter(c => !q || `${c.unit} ${c.guest ?? ''} ${c.cleaner ?? ''}`.toLowerCase().includes(q.trim().toLowerCase()));
             if (!dayRows.length && !manual.length && (filter !== 'all' || q)) return null;
@@ -349,7 +488,8 @@ function Board({ data, patch, reload }: {
                   </td>
                 </tr>
                 {!dayRows.length && !manual.length && <tr><td colSpan={9} className="note ops-quiet">no arrivals or departures</td></tr>}
-                {manual.map(c => <ManualLine key={c.key} c={c} canEdit={canEdit} onChanged={reload} />)}
+                {manual.map(c => <ManualLine key={c.key} c={c} canEdit={canEdit} onChanged={reload}
+                                             flag={flags[c.key] ?? null} onFlag={note => setFlag(c.key, note)} />)}
                 {dayRows.map(r => {
                   const key = `${r.resId}-${r.kind}`;
                   return (
@@ -357,7 +497,7 @@ function Board({ data, patch, reload }: {
                       <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'} through={short(data.lookaheadTo)}
                                  stars={stars} byStars={data.assignRule === 'stars'}
                                  docs={canDocs && r.kind === 'in' && docUnits.has(r.unitId) ? docs[r.resId] ?? null : undefined}
-                                 todos={todosBy.get(r.unitId)}
+                                 todos={todosBy.get(r.unitId)} flag={r.kind === 'out' ? flags[r.resId] : undefined}
                                  open={open === key} onToggle={() => {
                                    // Read-only roles see the board; the editor is not offered.
                                    if (can(data.permissions, 'operations.edit')) setOpen(open === key ? null : key);
@@ -365,6 +505,7 @@ function Board({ data, patch, reload }: {
                       {open === key && (
                         <tr className="ops-edit-row"><td colSpan={9}>
                           <Editor r={r} data={data} docs={canDocs && r.kind === 'in' ? docs[r.resId] : undefined}
+                                  flag={flags[r.resId] ?? null} onFlag={note => setFlag(r.resId, note)}
                                   onManualClean={kind => setAddingClean({ unitId: r.unitId, resId: r.resId, kind })}
                                   onDocs={d => setDocs(m => ({ ...m, [r.resId]: d }))} onSaved={(set, note) => {
                             patch(r.resId, r.kind, row => {
@@ -386,8 +527,10 @@ function Board({ data, patch, reload }: {
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, stars, byStars }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, stars, byStars, flag }: {
   r: BoardRow; showMoney: boolean; shadow: boolean; open: boolean; onToggle: () => void;
+  /** Flagged by hand (§124): the note the cleaner reads. */
+  flag?: string;
   /** Each cleaner's stars, and whether stars decide (§121) or ride along beside the tiers. */
   stars: Map<string, number>; byStars: boolean;
   /** An arrival's filed documents: undefined = not shown to this role, null = still reading. */
@@ -488,14 +631,92 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
           : <span className={`ops-flag ${docs.id.length ? 'ok' : 'missing'}`} title="A copy of the ID in the reservation's Drive folder">
               {docs.id.length ? '✓' : '○'} ID in Drive</span>)}
       </td>
-      <td className="ops-note">{r.note}</td>
+      <td className="ops-note">
+        {r.note}
+        {flag && <div className="breach">⚑ Flagged: {flag}</div>}
+      </td>
+    </tr>
+  );
+}
+
+/**
+ * Flag a clean by hand (§122; from Movements, §124): a note the cleaner
+ * reads on their crew page. It does not change the pay.
+ */
+function FlagControl({ cleanKey, flag, onChanged }: {
+  cleanKey: string; flag: string | null; onChanged: (note: string | null) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [text, setText] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const send = async (note: string | null) => {
+    setBusy(true); setMsg('');
+    const r = await crewAdminAction(note === null ? { action: 'unflag', key: cleanKey } : { action: 'flag', key: cleanKey, note })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
+    if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
+    setEditing(false); setText(''); onChanged(note);
+  };
+  return (
+    <div className="button-row ops-manual-actions" onClick={e => e.stopPropagation()}>
+      {flag
+        ? <><span className="breach">⚑ Flagged: {flag}</span>
+            <button className="link tiny" disabled={busy} onClick={() => void send(null)}>Remove flag</button></>
+        : !editing && <><button className="link tiny" onClick={() => setEditing(true)}>⚑ Flag this clean…</button>
+            <span className="note">the cleaner reads it on their crew page; it does not change the pay</span></>}
+      {editing && (
+        <form className="stay-work" onSubmit={e => { e.preventDefault(); if (text.trim()) void send(text.trim()); }}>
+          <input autoFocus value={text} maxLength={500} placeholder="What the cleaner should know (they read this)"
+                 onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setEditing(false); }} />
+          <button className="small" disabled={!text.trim() || busy}>{busy ? '…' : 'Flag'}</button>
+          <button type="button" className="link tiny" onClick={() => setEditing(false)}>Cancel</button>
+        </form>
+      )}
+      {msg && <span className="breach">▲ {msg}</span>}
+    </div>
+  );
+}
+
+/** A day before today, as the cleanings record has it (§124): who cleaned, what it paid, what was flagged. */
+function PastLine({ c, open, onToggle }: { c: Cleaning; open: boolean; onToggle: () => void }) {
+  const manual = !!c.kind && c.kind !== 'checkout';
+  return (
+    <tr className={`ops-line ${open ? 'open' : ''}`} onClick={onToggle}>
+      <td><span className={`ops-kind ${manual ? 'clean' : 'out'}`}>{manual ? 'CLEAN' : 'OUT'}</span></td>
+      <td><b>{c.unit_name}</b></td>
+      <td>
+        {manual ? (MANUAL_WORD[c.kind as ManualCleanKind] ?? 'Manual clean') : (c.guest || <span className="note">—</span>)}
+        {manual && c.guest && <div className="sub-n">{c.guest}</div>}
+        {!manual && /^\d+$/.test(c.key) && <>{' '}<a className="ops-hostaway" href={hostawayReservationUrl(c.key)} target="_blank" rel="noreferrer"
+            onClick={e => e.stopPropagation()} title="Open the reservation in Hostaway">↗</a></>}
+      </td>
+      <td>{c.checkout_time ?? ''}</td>
+      <td></td>
+      <td data-label="Cleaner">
+        {c.assignment === 'assigned' ? c.cleaner
+          : c.assignment === 'tbd' ? <span className="breach">▲ unassigned</span>
+          : <span className="note">no clean needed</span>}
+        {c.needs_confirm && <div className="breach">▲ {c.needs_confirm}</div>}
+      </td>
+      <td className="n">{c.assignment === 'assigned' && (c.price == null ? <span className="note">not priced</span> : money2(Number(c.price)))}</td>
+      <td>
+        {c.deep && <span className="ops-flag deep">🧽 deep</span>}
+        {c.edit_note && <span className="ops-flag due" title={c.edit_note}>✎ corrected</span>}
+      </td>
+      <td className="ops-note">
+        {c.reservation_note}
+        {c.flag_note && <div className="breach">⚑ Flagged: {c.flag_note}</div>}
+      </td>
     </tr>
   );
 }
 
 /** One stay's controls, opened in place under its row. */
-function Editor({ r, data, onSaved, docs, onDocs, onManualClean }: {
+function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag }: {
   r: BoardRow; data: OperationsResponse; onSaved: (set: TurnoverSet | null, note?: string) => void;
+  /** The clean's flag by hand (§124), and what to do when it changes. */
+  flag: string | null; onFlag: (note: string | null) => void;
   /** Start a manual clean for this stay (§79): the guest left early, or a mid-stay clean. */
   onManualClean: (kind: ManualCleanKind) => void;
   /** Present only for an arrival, for a role with guests.documents. */
@@ -583,6 +804,7 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean }: {
         <button className="small" disabled={busy || note === r.note} onClick={() => void send(null, note)}>Save note</button>
         {msg && <span className="note">{msg}</span>}
       </div>
+      {out && r.assignment !== 'not_needed' && <FlagControl cleanKey={r.resId} flag={flag} onChanged={onFlag} />}
       {(can(data.permissions, 'todos') || can(data.permissions, 'claims')) && <StayWork r={r} data={data} />}
       {out && (
         <div className="button-row ops-manual-actions">
@@ -654,7 +876,11 @@ const MANUAL_WORD: Record<ManualCleanKind, string> = {
 };
 
 /** A manual clean on its day: what, who, what it pays — and a way to undo it. */
-function ManualLine({ c, canEdit, onChanged }: { c: ManualClean; canEdit: boolean; onChanged: () => void }) {
+function ManualLine({ c, canEdit, onChanged, flag, onFlag }: {
+  c: ManualClean; canEdit: boolean; onChanged: () => void;
+  /** Flagged by hand (§124): the note the cleaner reads. */
+  flag: string | null; onFlag: (note: string | null) => void;
+}) {
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -676,6 +902,8 @@ function ManualLine({ c, canEdit, onChanged }: { c: ManualClean; canEdit: boolea
       <td>{c.deep && <span className="ops-flag deep">🧽 deep</span>}</td>
       <td className="ops-note">
         {c.note}
+        {canEdit && c.cleaner ? <FlagControl cleanKey={c.key} flag={flag} onChanged={onFlag} />
+          : flag && <div className="breach">⚑ Flagged: {flag}</div>}
         {canEdit && (!confirm
           ? <div><button className="link tiny danger" onClick={() => setConfirm(true)}>cancel…</button></div>
           : <div><span className="note">Cancel this clean{c.kind === 'early_departure' ? ' (the checkout clean comes back)' : ''}? </span>
@@ -885,7 +1113,7 @@ function ByCleaner({ data }: { data: OperationsResponse }) {
         <div><dt>Cleans</dt><dd>{mine.length}</dd></div>
         <div><dt>Deep</dt><dd>{mine.filter(j => j.deep).length}</dd></div>
         <div><dt>Same-day</dt><dd>{mine.filter(j => j.urgency === 'turnover').length}</dd></div>
-        <div><dt>Pays, next 10 days</dt><dd>{money2(pay)}{unpriced > 0 && <small>+{unpriced} not priced</small>}</dd></div>
+        <div><dt>Pays, through {short(data.end)}</dt><dd>{money2(pay)}{unpriced > 0 && <small>+{unpriced} not priced</small>}</dd></div>
       </dl>
       <table className="units compact">
         <thead><tr><th>Day</th><th>Unit</th><th>Checkout</th><th>Next guest</th><th>Flags</th><th className="n">Pays</th><th>Notes</th></tr></thead>
@@ -905,7 +1133,7 @@ function ByCleaner({ data }: { data: OperationsResponse }) {
               <td className="ops-note">{j.note}</td>
             </tr>
           ))}
-          {!mine.length && <tr><td colSpan={7} className="note">No cleans for {who || 'anyone'} in the next 10 days.</td></tr>}
+          {!mine.length && <tr><td colSpan={7} className="note">No cleans for {who || 'anyone'} through {short(data.end)}.</td></tr>}
         </tbody>
       </table>
       {unassigned.length > 0 && (

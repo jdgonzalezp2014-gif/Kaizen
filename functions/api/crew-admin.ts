@@ -127,7 +127,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     // editClean: only the past — what is ahead is changed on the board, which owns it.
-    if (row.date >= today) return refuse(400, 'bad_request', 'This clean is today or ahead — change it on the board (Next 10 days).');
+    if (row.date >= today) return refuse(400, 'bad_request', 'This clean is today or ahead — change it on the board (Movements).');
     if (!note) return refuse(400, 'bad_request', 'Say why it is corrected — the cleaner reads the note.');
     const [cur] = await sql`SELECT cleaner, assignment FROM cleanings WHERE account_id = 1 AND key = ${key}` as { cleaner: string | null; assignment: string }[];
     const typed = body.price === '' || body.price == null ? null : Number(body.price);

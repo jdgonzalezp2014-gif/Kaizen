@@ -1,7 +1,7 @@
 # Module: operations
 
 Kaizen runs the day's operations (the daily file sheet is an archive). Tab **Operations**:
-Next 10 days (board) · To-do (→ work module) · Calendar · By cleaner · Crew · Inspections ·
+Movements (the board, §124) · To-do (→ work module) · Calendar · By cleaner · Crew · Inspections ·
 Notes log · Rates & rules · Setup. Plus the **crew page** each cleaner sees (§122).
 
 ## Files
@@ -67,7 +67,13 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 - Extras: cleaner, own clean, done, ≤60 days, ≤$500, optional receipts/photos (≤5, 15 MB, image or
   PDF) to Drive "Kaizen — crew extras" uploaded BEFORE the row is saved. Team approves (note
   optional) or denies (note required); only pending can be decided or withdrawn.
-- Flag by hand = a note the cleaner reads; does not change pay.
+- Flag by hand = a note the cleaner reads; does not change pay. Set from Operations → Crew or from
+  Movements (§124): a departure's editor, a manual clean's row, a recorded day's row (same
+  `crew-admin` flag/unflag; needs the record row, so not in shadow mode).
+- Movements (§124) = the board in a date window, default today + 10. From today on it is live
+  (Hostaway + rules, `days` up to 30, never fewer than 10 so the other views keep their window);
+  days before today read `/api/cleaning-log` (the record: departures + manual cleans, no arrivals),
+  with not-paid rows listed. The strip counts the live rows in the window, plus "before today".
 - Schedule shown only with `crew_calendar` on (Setup → Crew pages): live board, `crew_calendar_days`
   ahead. **Exception (§123): what a person assigned (override, or a MAN- clean) shows at once**, calendar
   off or not, and can be declined. The team **confirms** it (Operations → Crew) = a snapshot; cleaners see "last confirmed"
@@ -112,4 +118,4 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 
 ## History
 
-§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123.
+§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124.

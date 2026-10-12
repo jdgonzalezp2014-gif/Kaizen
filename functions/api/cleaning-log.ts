@@ -80,6 +80,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const rowsQ = sql`
     SELECT key, unit_id, unit_name, checkout_on, cleaner, assignment, guest,
            price, deep, urgency, reservation_note, checkout_time, decided_by,
+           kind, flag_note, edit_note, needs_confirm,
            (checkout_on > ${now}) AS future
       FROM cleanings
      WHERE account_id = 1 AND void_reason IS NULL

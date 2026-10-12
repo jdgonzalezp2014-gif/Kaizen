@@ -3439,3 +3439,17 @@ day proposed by noon New York. A settled row is never undone by the daily reconc
 was not done as one). Older rows from the sheet carry no bedroom count; the unit's is used, and a
 correction that would leave a clean unpriced is refused.
 
+## §124 — "Next 10 days" becomes Movements: any dates, and flags from the board (2026-10-11)
+
+The owner: flag from the board, call it **Movements**, let the dates change, default 10 days. Asked
+whether the dates may go back: **yes, past and future** — flagging yesterday's bad clean is the use.
+The board is computed live from Hostaway from today on and the past is frozen in the record, so a
+window is two sources: days before today read the cleanings record (`/api/cleaning-log`, which now
+returns `kind`, `flag_note`, `edit_note`, `needs_confirm`), today on is the live board (`days` = to −
+today, at least 10, at most the server's 30). The record keeps no arrivals; the page says so. Flags
+reuse §122's `crew-admin` flag/unflag on the record key; `/api/operations` returns the window's flags.
+In live mode every board load writes each departure in the window to the record (recordCleanings)
+before answering, so a flag ahead has its row; a clean that moves keeps its key and so its flag. Corrections of a past clean
+stay in Operations → Crew. Not tested by flagging a real clean (cleaners can read flags); the
+flag route is §122's, unchanged.
+

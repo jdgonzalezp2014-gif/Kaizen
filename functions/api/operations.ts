@@ -49,7 +49,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
   }
 
   // Newest first, bounded: a log is read from the top.
-  const [noteLog, pushes, manualCleans] = await Promise.all([
+  const [noteLog, pushes, manualCleans, flagRows] = await Promise.all([
     sql`SELECT n.reservation_id AS "resId", n.kind, n.unit_name AS unit, n.guest,
                n.check_in::text AS "checkIn", n.notes, n.source, n.created_by AS "by",
                to_char(n.created_at AT TIME ZONE ${OPS_TZ}, 'YYYY-MM-DD HH24:MI') AS "loggedAt"
@@ -65,8 +65,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
           FROM cleanings
          WHERE account_id = 1 AND key LIKE 'MAN-%' AND void_reason IS NULL
            AND checkout_on >= ${s.today}::date - 7 AND checkout_on <= ${s.end}::date
-         ORDER BY checkout_on, key`
-  ]);
+         ORDER BY checkout_on, key`,
+    // Cleans flagged by hand (§124): the note the cleaner reads, shown on the board's rows.
+    sql`SELECT key, flag_note AS note, flagged_by AS "by"
+          FROM cleanings
+         WHERE account_id = 1 AND flag_note IS NOT NULL
+           AND checkout_on >= ${s.today}::date - 7 AND checkout_on <= ${s.end}::date`
+  ]) as [unknown[], unknown[], unknown[], { key: string; note: string; by: string | null }[]];
 
   // A listing new to Hostaway is on the board before it is in `units`, and
   // until it is there it cannot be ticked in Setup, claimed against or
@@ -91,6 +96,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
     inspectionLog: { done: s.inspections.done.slice(0, 200), scheduled: s.inspections.scheduled },
     noteLog, pushes,
     rules: s.rules, assignRule: s.assignRule, extraInspectors: s.extraInspectors, guestDocUnits: s.guestDocUnits, manualCleans,
+    flags: Object.fromEntries(flagRows.map(f => [f.key, { note: f.note, by: f.by }])),
     // Pay per size is cost data ops already record; names and tiers are
     // what the edit menus need.
     roster: s.roster,

@@ -73,7 +73,7 @@ export const FEATURES: { key: string; label: string; tab: string; view?: string;
   { key: 'home', label: 'Home', tab: 'home', section: 'guest' },
   { key: 'units', label: 'Units', tab: 'units', section: 'revenue' },
   { key: 'revenue', label: 'Revenue', tab: 'revenue', section: 'revenue' },
-  { key: 'operations.board', label: 'Operations · Next 10 days', tab: 'operations', view: 'board', section: 'turnover' },
+  { key: 'operations.board', label: 'Operations · Movements', tab: 'operations', view: 'board', section: 'turnover' },
   { key: 'operations.todos', label: 'Operations · To-do', tab: 'operations', view: 'todos', section: 'maintenance' },
   { key: 'operations.calendar', label: 'Operations · Calendar', tab: 'operations', view: 'calendar', section: 'turnover' },
   { key: 'operations.cleaners', label: 'Operations · By cleaner', tab: 'operations', view: 'cleaners', section: 'turnover' },

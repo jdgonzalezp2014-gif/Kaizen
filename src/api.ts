@@ -268,6 +268,10 @@ export interface Cleaning {
   checkout_time?: string | null;
   /** 'rule', 'override:<email>', 'sheet', 'history'… — who chose the cleaner. */
   decided_by?: string | null;
+  /** 'checkout', or a manual clean's kind (§79). */
+  kind?: string | null;
+  /** Flagged by hand (§122) — the cleaner reads it; corrected by the team (§123); held after a cancellation (§123). */
+  flag_note?: string | null; edit_note?: string | null; needs_confirm?: string | null;
 }
 export interface ExcludedCleaning {
   key: string; unit_name: string; checkout_on: string; cleaner: string | null;
@@ -316,6 +320,8 @@ export interface OperationsResponse {
   guestDocUnits: string[];
   /** Cleans no checkout scheduled (§79), in the window. */
   manualCleans: ManualClean[];
+  /** Cleans flagged by hand (§124), by record key (reservation ID or MAN-n): the note the cleaner reads. */
+  flags: Record<string, { note: string; by: string | null }>;
   sheet: { ok: boolean; problem: string | null; warning: string | null } | null;
   recorded: number | null; tookMs: number;
   error?: string; message?: string;
