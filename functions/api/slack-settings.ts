@@ -162,8 +162,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const inv = await slackApi(s.token, 'conversations.invite', { channel: ch.channelId, users: found.user.id });
       if (!inv.ok && inv.error !== 'already_in_channel') return bad(`Channel ready, but the invite failed: ${inv.error}`);
     }
+    // §136: a private channel is seen only by its members — whoever creates it joins it (the owner made
+    // three and could not see any). Others join with "Add me".
+    const me = await slackApi<{ user?: { id: string } }>(s.token, 'users.lookupByEmail', { email: who.email });
+    if (me.ok && me.user?.id) await slackApi(s.token, 'conversations.invite', { channel: ch.channelId, users: me.user.id });
     await saveConfig({ ...s.config, cleaners: { ...(s.config.cleaners ?? {}), [name]: { ...ch, email: email || ch.email || null, slackUserId: found?.user?.id ?? ch.slackUserId ?? null } } });
     return Response.json({ ok: true, channel: ch });
+  }
+  // §136: someone of the team joins a cleaner's (private) channel to see it.
+  if (b.action === 'cleanerJoin') {
+    const ch = s.config.cleaners?.[name];
+    if (!ch) return bad('That cleaner has no channel yet.');
+    const me = await slackApi<{ user?: { id: string } }>(s.token, 'users.lookupByEmail', { email: who.email });
+    if (!me.ok || !me.user?.id) return bad(`${who.email} is not in your Slack workspace — join it with that email first.`);
+    const inv = await slackApi(s.token, 'conversations.invite', { channel: ch.channelId, users: me.user.id });
+    if (!inv.ok && inv.error !== 'already_in_channel') return bad(`Slack said: ${inv.error}`);
+    return Response.json({ ok: true, already: inv.error === 'already_in_channel' });
   }
   if (b.action === 'cleanerPreview' || b.action === 'cleanerSend') {
     const ch = s.config.cleaners?.[name];

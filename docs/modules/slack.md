@@ -69,6 +69,10 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   (photos as one growing line per clean and stage naming each helper, what they took from storage,
   done/reopened, problems/needs with urgency, missing/bought). The cleaner's own actions are not echoed.
   "Send now" / "Preview" by hand still work.
+  The cleaners' channels are **private**: only members see them. Creating one invites the cleaner AND
+  whoever pressed Create (§136 — the owner made three, for Irene, Veronica and Karina and Marvin, and saw
+  none; he was then added by hand); "👁 Add me" (`cleanerJoin`) lets anyone of the team join one.
+  Michelle has no channel (not in Slack yet).
 
 ## Slack API rules that bite
 

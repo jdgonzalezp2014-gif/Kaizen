@@ -197,7 +197,8 @@ function Cleaners({ cfg, busy, run, onSaved }: {
   return (
     <>
       <h3>6 · Cleaners’ channels</h3>
-      <p className="note">One private channel per cleaner (<code>#cleaning-name</code>), invited with the email they use in Slack. Messages there
+      <p className="note">One private channel per cleaner (<code>#cleaning-name</code>), invited with the email they use in Slack.
+        Private means only its members see it: whoever creates it joins it; anyone else of the team uses <b>👁 Add me</b>. Messages there
         are in the cleaner’s language (English or Spanish, as on their page). Times are the team’s ({cfg.taskCheck?.tz ?? DEFAULT_TASK_CHECK.tz}).</p>
       <div className="slack-events">
         <label className="check"><input type="checkbox" checked={cc.reminders} onChange={e => setCc(p => ({ ...p, reminders: e.target.checked }))} />
@@ -227,6 +228,8 @@ function Cleaners({ cfg, busy, run, onSaved }: {
                   <button className="link" disabled={busy} onClick={() => void run({ action: 'cleanerPreview', name: n }, () => 'Preview below.')
                     .then(r => setPreview(r.ok && r.message ? { name: n, lines: r.message.blocks.map(b => b.text?.text ?? '').filter(Boolean) } : null))}>Preview</button>
                   {ch && <button className="link" disabled={busy} onClick={() => { if (confirm(`Send ${n} their upcoming cleans in #${ch.channelName}?`)) void run({ action: 'cleanerSend', name: n }, () => `Sent to #${ch.channelName}.`); }}>Send now</button>}
+                  {ch && <button className="link" disabled={busy} title="The channel is private: only its members see it"
+                                 onClick={() => void run({ action: 'cleanerJoin', name: n }, r => (r as { already?: boolean }).already ? `You are already in #${ch.channelName}.` : `You are in #${ch.channelName} now — it shows in Slack.`)}>👁 Add me</button>}
                 </span>
               </li>
             );
