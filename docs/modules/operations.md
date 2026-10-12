@@ -273,10 +273,9 @@ key had no SOPs.
 
 ## Open items
 
-- **Access for cleaners (§136), production 2026-10-12:** 18 of 21 active units complete. To fill in
-  Repository → Units: **Bobcat House** (record ROW-0009 empty: lock type and Cleaner Code — until then the
-  cleaner gets Hostaway's guest code, labelled so) and the **Lockbox** of **P2-4212** (LP-4212) and
-  **P2-4315** (LP-4315), which are entered with a fob.
+- **Access for cleaners (§136):** all 21 active units complete (2026-10-12, after the owner filled Bobcat
+  House and the lockboxes of P2-4212 / P2-4315). A new unit shows in Setup → Crew pages → "How cleaners
+  get in" with what it lacks.
 - **Later (owner): a code of their own for each cleaner** instead of one shared Cleaner Code per unit —
   for security (revoke one person without changing everyone's code). Needs per-cleaner codes on the smart
   locks (Schlage / Yale) and a place to keep them encrypted; the access box would then show the cleaner's own.
