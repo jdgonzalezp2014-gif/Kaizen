@@ -3620,4 +3620,10 @@ and a reply per done/reopened; the row is taken before posting so two photos at 
 day messages (tested: two concurrent uploads, one message). Problems and needs ask "How urgent?" (three
 big choices, required); every field to-do is announced in Slack like work made in the app. Tested on
 the branch with all channels pointed at #kaizen-task.
+Testing it on his phone, the owner found the photo buttons differed from place to place, and asked that
+"what I took" be required and mean what left the STORAGE, not what was already in the house. Now: one
+photo picker everywhere (camera — one shot, "take another" — or gallery, several; thumbnails with ✕);
+a clean has four steps, the second required (lines, or an explicit "I took nothing from storage"), and
+done is refused without it; a `taken` move lowers the storage and leaves the house's record alone, and
+the storage's order is forecast from what each house's cleans take (061).
 

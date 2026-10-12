@@ -180,12 +180,15 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   to the cleaner (`edited_by/at`, `edit_note`). Today and ahead are changed on the board.
 
 - **Inventory (§134): the stock is never stored.** It is the last `count` + `purchase` − `used` ± `adjust`
-  per item and place (`unit_id` NULL = Storage), floored at 0. `missing` changes nothing: it marks the
+  per item and place (`unit_id` NULL = Storage), floored at 0. **`taken`** (061) = out of the STORAGE for a
+  clean: it lowers the storage, names the unit and clean it went to, and leaves the unit's record alone —
+  the owner: what matters is what leaves the storage, not what was already in the house. `missing` changes nothing: it marks the
   item ⚠ and makes a "Check stock" to-do; a count clears it. Only the team counts or corrects
   (`recordMove` refuses it from a cleaner or a link). Per clean = the item's estimate until 3 cleans in
-  that unit reported uses in 60 days. **To order only for counted items** (`toOrder(null) = 0`): treating
-  never-counted as empty made 273 lines on the first test; never-counted units with cleans ahead are
-  listed "Count first". An order = one to-do with a sub-task per line, mirrored like any work.
+  that unit reported uses or takes in 60 days. **Storage to order** = Σ units (per-clean take × cleans in the
+  next 14 days) + the item's minimum − storage stock, only once the storage is counted. A counted house
+  short of its own minimum also gets a line (`toOrder(null) = 0`: never-counted is not guessed — 273 lines
+  on the first test). An order = one to-do with a sub-task per line, mirrored like any work.
 - **Per clean, not per team (§134, owner):** each clean of the cleaner's (Coming up; Cleans of the last
   3 days) has one native "Options…" list: 📷 Photos & mark as done · what I took · bought · missing ·
   wrong · need · 📤 send the link to my helper. The helper link (`clean_links`, token encrypted to be
@@ -194,8 +197,14 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   inactive. Several helpers can use one link; each gives a name once (localStorage), reports are
   `"<cleaner>'s team: <name>"`. A cleaner's clean is checked against their page once (`myClean`, reads
   the schedule) and then by `clean_records.cleaner`.
+- **A clean's 4 steps (§134):** 1 photos BEFORE · 2 🧴 what I took from storage (**required**: lines, or
+  the explicit "I took nothing from storage" — `clean_records.supplies_at/by/none`) · 3 photos AFTER ·
+  4 ✅ done. Done is refused until 2 and 3 are there. "What I took" is no longer in the reports menu.
+  One photo picker everywhere (`PhotoPicker.tsx`): "📷 Take a photo" (camera, one shot, "Take another")
+  and "🖼️ Choose from the gallery" (several), thumbnails with ✕ — `multiple` alone hides the camera on
+  many Android phones.
 - **Photos and done (§134):** photos go one per request, shrunk on the phone (2000 px JPEG), to Drive
-  `Kaizen — clean photos / <unit> / <date> <unit>` (made on first photo). **Done needs ≥1 AFTER photo**;
+  `Kaizen — clean photos / <unit> / <date> <unit>` (made on first photo). **Done needs step 2 answered and ≥1 AFTER photo**;
   a second "done" is a no-op; reopen asks "Yes, reopen" in place. Every mark is kept (`clean_marks`);
   the latest is the state. The crew rows show "📷 n before · n after · ✅ done (who)" (team view too).
 - **Field tasks have a priority (§134):** a problem or a need asks "How urgent?" (required: urgent =
