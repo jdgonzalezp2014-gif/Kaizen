@@ -6,9 +6,56 @@
  * Runs after the response (waitUntil): a Slack hiccup never fails a report.
  */
 import type { SqlFn } from './accounts.ts';
-import { slackApi, slackSetup } from './slack.ts';
-import { cleanDayMessage, cleanMarkMessage, cleanPhotosMessage, eventsOf } from '../../src/lib/slack.ts';
+import type { HostawayCredentials } from './hostaway.ts';
+import { slackApi, slackSetup, type SlackSetup } from './slack.ts';
+import { cleanDayMessage, cleanMarkMessage, cleanPhotosMessage, eventsOf, type DayClean } from '../../src/lib/slack.ts';
 import { cleanStates } from './clean-record.ts';
+import { cleansFor } from './slack-digest.ts';
+
+/** A day's cleans as the morning list keeps them. */
+interface Listed { key: string; unit: string; cleaner: string | null; time: string }
+
+/** The day's message drawn from its kept list and where each clean stands now. */
+async function dayMessage(sql: SqlFn, day: string, list: Listed[] | null) {
+  if (!list) return cleanDayMessage(dayText(day));
+  const st = await cleanStates(sql, list.map(c => c.key));
+  const cleans: DayClean[] = list.map(c => ({ unit: c.unit, cleaner: c.cleaner, time: c.time,
+    before: st[c.key]?.before ?? 0, after: st[c.key]?.after ?? 0, done: !!st[c.key]?.done }));
+  return cleanDayMessage(dayText(day), cleans);
+}
+
+/** Re-draw the day's message after something happened on one of its cleans (only once it has its list). */
+async function redrawDay(sql: SqlFn, token: string, day: string) {
+  const [row] = await sql`SELECT channel, ts, cleans FROM clean_slack_posts WHERE account_id = 1 AND key = ${`day:${day}`}` as
+    { channel: string; ts: string | null; cleans: Listed[] | null }[];
+  if (!row?.ts || !row.cleans) return;
+  await slackApi(token, 'chat.update', { channel: row.channel, ts: row.ts, ...(await dayMessage(sql, day, row.cleans)) });
+}
+
+/**
+ * The clock's morning post (§136): the day's message with every clean of the
+ * day — from the board (checkout cleans) and the record (manual cleans) — or,
+ * if a photo already opened the thread, that message filled in. Nothing on a
+ * day without cleans. Returns how many cleans it listed.
+ */
+export async function postCleanDay(sql: SqlFn, s: SlackSetup, creds: HostawayCredentials, day: string): Promise<number> {
+  const channel = s.config.channels?.reservations?.id;
+  if (!s.token || !channel) return 0;
+  const token = s.token;
+  const board = (await cleansFor(sql, creds, day)).filter(c => c.state !== 'not_needed')
+    .map(c => ({ key: c.resId, unit: c.unit, cleaner: c.state === 'assigned' ? c.cleaner : null, time: c.time }));
+  const manual = await sql`SELECT key, unit_name AS unit, cleaner, coalesce(checkout_time, '') AS time FROM cleanings
+                            WHERE account_id = 1 AND key LIKE 'MAN-%' AND void_reason IS NULL AND checkout_on = ${day}::date` as Listed[];
+  const list = [...board, ...manual].sort((a, b) => a.unit.localeCompare(b.unit));
+  if (!list.length) return 0;
+  const msg = await dayMessage(sql, day, list);
+  const r = await once(sql, `day:${day}`, channel, async () =>
+    (await slackApi<{ ts?: string }>(token, 'chat.postMessage', { channel, unfurl_links: false, ...msg })).ts ?? null);
+  if (!r.ts) throw new Error('Slack did not take the day’s message.');
+  await sql`UPDATE clean_slack_posts SET cleans = ${JSON.stringify(list)}::jsonb WHERE account_id = 1 AND key = ${`day:${day}`}`;
+  if (!r.made) await slackApi(token, 'chat.update', { channel, ts: r.ts, ...msg });
+  return list.length;
+}
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -69,5 +116,7 @@ export async function tellCleanThread(sql: SqlFn, encryptionKey: string, cleanin
       await posted({ ...cleanMarkMessage({ unit: rec.unit_name, kind: what.kind, by: m.by_name, time: m.at, before: st.before, after: st.after,
                                            folderUrl: st.folderUrl, taken: st.supplies }), thread_ts: day.ts });
     }
+    // The day's message keeps its list up to date: 📷 counts and ✅.
+    await redrawDay(sql, token, rec.date);
   } catch { /* the thread is a courtesy: the report itself is already saved */ }
 }

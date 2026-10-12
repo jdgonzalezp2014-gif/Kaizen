@@ -15,9 +15,10 @@ import { decrypt } from '../_lib/crypto.ts';
 import { can } from '../_lib/roles.ts';
 import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { digestFacts } from '../_lib/slack-digest.ts';
-import { DEFAULT_DIGEST, DEFAULT_TASK_CHECK, teamTz, digestMessage, dmTarget, dueDigests, dueTaskChecks, esc, helpUrlOf, localNow, taskCheckMessage } from '../../src/lib/slack.ts';
+import { eventsOf, DEFAULT_DIGEST, DEFAULT_TASK_CHECK, teamTz, digestMessage, dmTarget, dueDigests, dueTaskChecks, esc, helpUrlOf, localNow, taskCheckMessage } from '../../src/lib/slack.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import { remindCleaners } from '../_lib/crew-slack.ts';
+import { postCleanDay } from '../_lib/clean-slack.ts';
 import { dueCrewReminders } from '../../src/lib/crew-slack.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 
@@ -72,6 +73,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         } catch (e) {
           await release(pass);
           out.push(`crew ${d.kind} failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    }
+  }
+
+  // §136: the cleans' daily thread, posted by the clock at the morning reminder's hour (the owner: it should
+  // be automatic), listing the day's cleans; photos and ✅ done then fill it in. Once a day; a failure retries.
+  if (eventsOf(s.config).cleanThread && s.config.channels?.reservations) {
+    const now = localNow(teamTz(s.config));
+    const from = String(s.config.digest?.morning ?? DEFAULT_DIGEST.morning).padStart(2, '0') + ':00';
+    if (now.hm >= from && now.hm < '20:00') {
+      const day = todayIn('America/New_York');          // the board's day
+      const key = `cleanday:${day}`;
+      const claimed = await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${key}) ON CONFLICT DO NOTHING RETURNING key`;
+      if (claimed.length) {
+        try { out.push(`cleans thread ${day}: ${await postCleanDay(sql, s, await getCredentials(sql, env.ENCRYPTION_KEY), day)} cleans`); }
+        catch (e) {
+          await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;
+          out.push(`cleans thread failed: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
     }

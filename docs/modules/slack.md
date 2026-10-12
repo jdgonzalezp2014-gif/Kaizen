@@ -49,9 +49,12 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   total) and ↘ the next arrival (same day + time, or date + days empty; guest, nights, guests,
   total) — totals only for roles with `money` (§116). The board is read a week past the day.
 - Task card and claim card (comments, Add comment with focus). Kaizen comments → thread.
-- **Cleans' daily thread (§134)**, event `cleanThread` (**off by default**; Settings → Slack → "Cleans:
-  one thread a day"): in the Reservations channel, one message per clean DATE ("🧽 Cleans — Mon, Oct 12"),
-  made on the first photo/done of that day's cleans; under it one line per clean and stage ("📷 Timber
+- **Cleans' daily thread (§134, §136)**, event `cleanThread` (**ON since 2026-10-12** → #kaizen-ops): the
+  clock posts the day's message at the morning reminder's hour (team time, until 20:00; `slack_sent`
+  `cleanday:<date>`) with EVERY clean of the day — board checkouts + manual MAN- cleans, cleaner or
+  "▲ nobody yet", time — kept in `clean_slack_posts.cleans` (064) and re-drawn as they progress ("3 of 7
+  done", 📷 before/after, ✅). A photo before the clock opens the thread with the title only; the clock then
+  fills it in. Under it, under it one line per clean and stage ("📷 Timber
   Crest — AFTER: 4 photos · Luz, Ana · Open in Drive") **edited in place** as photos arrive, and a reply
   for each ✅ done / ↩️ reopened (a repeated "done" posts nothing). `clean_slack_posts` takes the row
   before posting (ts NULL) so two photos at once make one message. Runs in waitUntil; a Slack error
@@ -89,9 +92,8 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   6 → their Slack email → Create channel, then tick the reminders / helper notices and Save. Tested on
   the Neon branch with K&M's channel pointed at #kaizen-task.
 
-- **Cleans' thread built, off (§134).** Tested on the Neon branch with every channel pointed at
-  #kaizen-task. To start: Settings → Slack → tick "Cleans: one thread a day" (posts to #kaizen-ops), then
-  add it to SOP 8 "Kaizen in Slack". The bot has no `*:history` scope (it cannot read threads; not needed).
+- **Cleans' thread on (§136).** Still to do: add it to SOP 8 "Kaizen in Slack" (the owner's to approve —
+  a step was proposed). The bot has no `*:history` scope (it cannot read threads; not needed).
 
 - Clock moved to Cloudflare (2026-10-07) after GitHub sent the 8 AM at 12:19 PM and missed a
   check-out. Verified: runs every 5 min, 200, sends only what is due. Wrangler is logged in as

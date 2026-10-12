@@ -108,10 +108,21 @@ const what = (t: TaskLite) => t.kind === 'work_order' ? '🔧 Repair' : '☐ To-
 
 /* ── the cleans' daily thread (§134) ───────────────────────────────── */
 
-/** The day's message; everything about that day's cleans is a reply under it. */
-export function cleanDayMessage(dayText: string): { text: string; blocks: Block[] } {
-  return { text: `🧽 Cleans — ${dayText}`, blocks: [
-    section(`*🧽 Cleans — ${esc(dayText)}*`),
+/** One clean on the day's message: who, when, and how far it got. */
+export interface DayClean { unit: string; cleaner: string | null; time: string; before: number; after: number; done: boolean }
+
+/**
+ * The day's message (§136): posted by the clock every morning with the day's
+ * cleans, and re-drawn as photos and ✅ done arrive — the details are replies
+ * under it. Without a list (a photo came before the clock), just the title.
+ */
+export function cleanDayMessage(dayText: string, cleans?: DayClean[]): { text: string; blocks: Block[] } {
+  const done = cleans?.filter(c => c.done).length ?? 0;
+  const head = `🧽 Cleans — ${dayText}${cleans ? ` · ${done} of ${cleans.length} done` : ''}`;
+  const lines = (cleans ?? []).map(c => `${c.done ? '✅' : '○'} *${esc(c.unit)}* — ${c.cleaner ? esc(c.cleaner) : '▲ nobody yet'}` +
+    `${c.time ? ` · ${esc(c.time)}` : ''}${c.before || c.after ? ` · 📷 ${c.before} before / ${c.after} after` : ''}`);
+  return { text: head, blocks: [
+    section(`*${esc(head)}*${lines.length ? `\n${lines.join('\n')}` : ''}`),
     context('Photos before / after and ✅ done arrive in this thread as cleaners and their helpers send them.')
   ] };
 }

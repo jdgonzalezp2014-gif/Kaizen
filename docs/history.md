@@ -3680,4 +3680,7 @@ into `units` (063), the lock, cleaner code and lockbox from the Repository, matc
 number (the Links apartments are P2-… in Hostaway and LP-… in the Repository). The cleaner sees them on the
 clean of the day (folded until tapped), the helper on the clean's link; ahead, only the address; admin
 and backup codes never. Three units are left for the team to fill, listed in Setup → Crew pages.
+The cleans' thread was switched on, and the owner expected it to come by itself: it now does — the clock
+posts each day's message in #kaizen-ops at the morning hour with every clean of the day, and the message
+is re-drawn as photos and "done" arrive (064 keeps the list).
 

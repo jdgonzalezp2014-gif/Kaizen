@@ -358,6 +358,11 @@ test('the cleans thread (§134): off unless switched on; one growing photo line;
   assert.equal(eventsOf({}).cleanThread, false);
   assert.equal(eventsOf({ events: { cleanThread: true } }).cleanThread, true);
   assert.match(cleanDayMessage('Mon, Oct 12').text, /Cleans — Mon, Oct 12/);
+  const day = cleanDayMessage('Mon, Oct 12', [{ unit: 'Timber Crest', cleaner: 'Veronica', time: '10:00 AM', before: 2, after: 3, done: true },
+                                              { unit: 'Quest', cleaner: null, time: '11:00 AM', before: 0, after: 0, done: false }]);
+  assert.match(day.text, /1 of 2 done/);
+  assert.match(JSON.stringify(day.blocks), /✅ \*Timber Crest\* — Veronica · 10:00 AM · 📷 2 before \/ 3 after/);
+  assert.match(JSON.stringify(day.blocks), /○ \*Quest\* — ▲ nobody yet/);
   const p = cleanPhotosMessage({ unit: 'Timber Crest', stage: 'after', n: 4, by: ['Luz', 'Ana <x>'], folderUrl: 'https://drive/f' });
   assert.match(JSON.stringify(p.blocks), /AFTER: 4 photos · Luz, Ana &lt;x&gt; · <https:\/\/drive\/f\|Open in Drive>/);
   const d = cleanMarkMessage({ unit: 'Timber Crest', kind: 'done', by: 'Luz', time: '14:31', before: 3, after: 4, folderUrl: null, taken: { lines: 5, none: false } });
