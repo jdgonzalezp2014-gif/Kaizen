@@ -3683,4 +3683,8 @@ and backup codes never. Three units are left for the team to fill, listed in Set
 The cleans' thread was switched on, and the owner expected it to come by itself: it now does — the clock
 posts each day's message in #kaizen-ops at the morning hour with every clean of the day, and the message
 is re-drawn as photos and "done" arrive (064 keeps the list).
+He then pointed out that Ops must know everything and the thread did not accumulate: photos were one line
+edited in place and the reports, extras and declines never reached it. Now every event on a clean is its
+own reply in the day's thread (photos batched per person within 15 minutes), with the summary message on
+top still re-drawn.
 

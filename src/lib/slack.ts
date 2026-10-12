@@ -127,14 +127,29 @@ export function cleanDayMessage(dayText: string, cleans?: DayClean[]): { text: s
   ] };
 }
 
-/**
- * A clean's photos of one stage: ONE reply, updated as more arrive — five
- * photos are one line that grows, not five messages.
- */
-export function cleanPhotosMessage(p: { unit: string; stage: 'before' | 'after'; n: number; by: string[]; folderUrl: string | null }) {
-  const line = `📷 *${esc(p.unit)}* — ${p.stage === 'before' ? 'BEFORE' : 'AFTER'}: ${p.n} photo${p.n === 1 ? '' : 's'} · ${p.by.map(esc).join(', ')}` +
-    (p.folderUrl ? ` · <${p.folderUrl}|Open in Drive>` : '');
-  return { text: `📷 ${p.unit} — ${p.stage}: ${p.n} photo${p.n === 1 ? '' : 's'}`, blocks: [section(line)] };
+/** "Kaizen's team: Luz" → "Luz (Kaizen's team)": the person first. */
+export const fieldWho = (by: string) => by.replace(/^(.*)'s team: (.*)$/, '$2 ($1’s team)');
+
+/** Everything else that happens on a clean, as its own reply — the thread is the day's whole record (§136). */
+export type CleanEvent =
+  | { kind: 'photos'; stage: 'before' | 'after'; n: number; folderUrl: string | null }
+  | { kind: 'taken'; lines: { name: string; qty: number }[] } | { kind: 'nothing' }
+  | { kind: 'report'; what: 'problem' | 'request' | 'missing' | 'purchase'; text: string; priority?: string | null; todoId?: string | null }
+  | { kind: 'extra'; amount: number; description: string }
+  | { kind: 'declined'; reason: string | null };
+const REPORT_WORD: Record<string, string> = { problem: '⚠️ Something is wrong', request: '🙋 Needs something', missing: '❓ Something is missing', purchase: '🛒 Bought' };
+const URG_WORD: Record<string, string> = { urgent: '🔴 urgent', high: '🟠 soon', low: '⚪ when possible', medium: 'medium' };
+export function cleanEventMessage(unit: string, by: string, time: string, e: CleanEvent): { text: string; blocks: Block[] } {
+  const who = `${esc(fieldWho(by))} · *${esc(unit)}*`;
+  const line = e.kind === 'photos' ? `📷 ${who}: ${e.n} photo${e.n === 1 ? '' : 's'} ${e.stage === 'before' ? 'BEFORE' : 'AFTER'}` +
+      (e.folderUrl ? ` · <${e.folderUrl}|Open in Drive>` : '')
+    : e.kind === 'taken' ? `🧴 ${who}: took from storage — ${e.lines.map(l => `${esc(l.name)} × ${l.qty}`).join(', ')}`
+    : e.kind === 'nothing' ? `🧴 ${who}: took nothing from storage`
+    : e.kind === 'report' ? `${REPORT_WORD[e.what] ?? e.what}${e.priority && URG_WORD[e.priority] ? ` (${URG_WORD[e.priority]})` : ''} — ${who}: ${esc(e.text)}` +
+      (e.todoId ? ` · to-do #${esc(e.todoId)}` : '')
+    : e.kind === 'extra' ? `💵 ${who}: extra +$${e.amount.toFixed(2)} — ${esc(e.description)} · waiting for the team`
+    : `✕ ${who}: can’t do it${e.reason ? ` — “${esc(e.reason)}”` : ''} · back to the team, unassigned`;
+  return { text: line.replace(/\*/g, ''), blocks: [section(line), context(esc(time))] };
 }
 
 /** Done, or reopened — a reply each time, so the thread keeps the story. */
@@ -143,7 +158,7 @@ export function cleanMarkMessage(p: { unit: string; kind: 'done' | 'reopened'; b
   const head = p.kind === 'done' ? `✅ *${esc(p.unit)}* done` : `↩️ *${esc(p.unit)}* reopened`;
   const took = !p.taken ? '' : p.taken.none ? ' · 🧴 nothing from storage' : ` · 🧴 ${p.taken.lines} item${p.taken.lines === 1 ? '' : 's'} from storage`;
   const facts = `📷 ${p.before} before · ${p.after} after${took}` + (p.folderUrl ? ` · <${p.folderUrl}|Open in Drive>` : '');
-  return { text: `${p.kind === 'done' ? '✅' : '↩️'} ${p.unit} ${p.kind}`, blocks: [section(`${head} — ${esc(p.by)}, ${esc(p.time)}`), context(facts)] };
+  return { text: `${p.kind === 'done' ? '✅' : '↩️'} ${p.unit} ${p.kind}`, blocks: [section(`${head} — ${esc(fieldWho(p.by))}, ${esc(p.time)}`), context(facts)] };
 }
 
 /** "Task created / assigned / completed / changed in Hostaway" — with the buttons to act on it. */

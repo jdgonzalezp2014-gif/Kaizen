@@ -24,7 +24,7 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
-import { sha256, strip } from '../_lib/crew.ts';
+import { namedLines, sha256, strip } from '../_lib/crew.ts';
 import { accessByUnit } from '../_lib/unit-access.ts';
 import { esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, nothingTaken, recordMove, recordUses } from '../_lib/inventory.ts';
 import { todayIn } from '../../src/lib/dates.ts';
@@ -93,7 +93,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     if (b.kind === 'photo') {
       const stage = String(b.stage) as Stage;
       await addPhotos(sql, env.ENCRYPTION_KEY, l.cleaning_key, stage, files, { name: who.name, source: 'link' });
-      waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'photos', stage }));
+      waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'photos', stage, by: who.name }));
       // One growing line per clean and stage; it names every helper who sent photos for it.
       const helpers = (await sql`SELECT by_name FROM clean_photos WHERE account_id = 1 AND cleaning_key = ${l.cleaning_key} AND stage = ${stage}
                                    AND source = 'link' GROUP BY by_name ORDER BY min(id)` as { by_name: string }[])
@@ -110,21 +110,26 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
       const id = await fieldTodo(sql, who, b, photos);
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.name));
+      waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: {
+        kind: 'report', what: b.kind, text: String(b.text ?? '').trim().slice(0, 300), priority: String(b.priority ?? '') || null, todoId: id } }));
       tell({ kind: 'report', what: String(b.kind), text: String(b.text ?? '').trim().slice(0, 300), priority: String(b.priority ?? '') || null });
     } else if (b.kind === 'taken' || b.kind === 'used') {
       await recordUses(sql, who, b);
-      const raw = typeof b.lines === 'string' ? JSON.parse(b.lines || '[]') : b.lines;
-      const items = await invItems(sql);
-      tell({ kind: 'taken', lines: (Array.isArray(raw) ? raw : []).filter((x: { qty?: unknown }) => Number(x.qty) > 0)
-        .map((x: { itemId?: unknown; qty?: unknown }) => ({ name: items.find(i => i.id === String(x.itemId))?.name ?? '?', qty: Number(x.qty) })) });
+      const lines = await namedLines(sql, b.lines);
+      tell({ kind: 'taken', lines });
+      waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: { kind: 'taken', lines } }));
     } else if (b.kind === 'nothing') {
       await nothingTaken(sql, who, l.cleaning_key);
       tell({ kind: 'nothing' });
+      waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: { kind: 'nothing' } }));
     } else if (b.kind === 'purchase' || b.kind === 'missing') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
       const r = await recordMove(sql, who, b, photos);
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId], who.name));
-      tell({ kind: 'report', what: String(b.kind), text: `${r.item} × ${Number(b.qty) || 0}` });
+      const text = b.kind === 'missing' ? `${r.item} (found ${Number(b.qty) || 0})` : `${r.item} × ${Number(b.qty) || 0}`;
+      tell({ kind: 'report', what: String(b.kind), text });
+      waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: {
+        kind: 'report', what: b.kind, text, todoId: r.todoId } }));
     } else return bad('Unknown report.');
     return Response.json({ ok: true, state: (await cleanStates(sql, [l.cleaning_key]))[l.cleaning_key] });
   } catch (e) {

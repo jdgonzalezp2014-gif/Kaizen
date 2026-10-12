@@ -330,6 +330,14 @@ export const strip = (a: UnitAccess & { unitId?: string; recordId?: string | nul
   return rest;
 };
 
+/** "What I took" lines with the supplies' names, for the day's thread. */
+export async function namedLines(sql: SqlFn, raw: unknown): Promise<{ name: string; qty: number }[]> {
+  const list = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+  const items = await invItems(sql);
+  return (Array.isArray(list) ? list : []).filter((x: { qty?: unknown }) => Number(x.qty) > 0)
+    .map((x: { itemId?: unknown; qty?: unknown }) => ({ name: items.find(i => i.id === String(x.itemId))?.name ?? '?', qty: Number(x.qty) }));
+}
+
 /** Each extra's evidence files, in place. */
 export async function attachFiles(sql: SqlFn, extras: { id: string; files?: CrewExtra['files'] }[]): Promise<void> {
   if (!extras.length) return;
@@ -425,6 +433,8 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     const [row] = await sql`INSERT INTO cleaning_extras (account_id, cleaning_key, cleaner, amount, description, created_by)
                             VALUES (1, ${key}, ${me.name}, ${amount}, ${description}, ${me.by}) RETURNING id` as { id: number }[];
     await saveFiles(sql, Number(row!.id), me.by, up);
+    waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'extra', amount, description } },
+                              { unit: c.unit_name, date: c.date }));
     return Response.json({ ok: true });
   }
 
@@ -457,6 +467,8 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
       if (!m) return refuse(400, 'bad_request', say('That clean is not on your schedule any more.', 'Esa limpieza ya no está en tu agenda.'));
       await sql`INSERT INTO crew_declines (account_id, cleaning_key, cleaner, clean_on, unit_name, reason, created_by)
                 VALUES (1, ${key}, ${me.name}, ${m.date}, ${m.unit_name}, ${reason}, ${me.by})`;
+      waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'declined', reason } },
+                                { unit: m.unit_name, date: m.date }));
       return Response.json({ ok: true });
     }
     // A checkout: only one the board gives them right now.
@@ -474,6 +486,8 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
                 updated_by = EXCLUDED.updated_by, updated_at = now()`;
     await sql`INSERT INTO crew_declines (account_id, cleaning_key, cleaner, clean_on, unit_name, reason, created_by)
               VALUES (1, ${key}, ${me.name}, ${row.date}, ${row.unit}, ${reason}, ${me.by})`;
+    waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'declined', reason } },
+                              { unit: row.unit, date: row.date }));
     // Live: the record and the Host Note follow at once, as for any reassignment.
     if (s.mode === 'live') {
       waitUntil((async () => {
@@ -492,10 +506,21 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     const who2 = { name: me.name, source: 'cleaner' as const };
     try {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${me.name} ${String(body.kind ?? body.action)}`);
-      const r = body.action !== 'supply' ? await fieldTodo(sql, who2, { ...body, kind: body.action }, photos)
-        : body.kind === 'used' ? (await recordUses(sql, who2, body), null)
-        : (await recordMove(sql, who2, body, photos)).todoId;
+      const what = String(body.action === 'supply' ? body.kind : body.action);
+      let r: string | null = null, text = String(body.text ?? '').trim().slice(0, 300);
+      if (body.action !== 'supply') r = await fieldTodo(sql, who2, { ...body, kind: body.action }, photos);
+      else if (body.kind === 'used') await recordUses(sql, who2, body);
+      else {
+        const m = await recordMove(sql, who2, body, photos);
+        r = m.todoId; text = body.kind === 'missing' ? `${m.item} (found ${Number(body.qty) || 0})` : `${m.item} × ${Number(body.qty) || 0}`;
+      }
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r], me.name));
+      // §136: Ops sees it in the day's thread too, on that clean.
+      const ck = String(body.cleaningKey ?? '');
+      if (ck && what !== 'used' && ['problem', 'request', 'missing', 'purchase'].includes(what)) {
+        waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, ck, { kind: 'event', by: me.name, event: {
+          kind: 'report', what: what as 'problem', text, priority: String(body.priority ?? '') || null, todoId: r } }));
+      }
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       return refuse(400, 'bad_request', who?.lang === 'es' ? esMessage(m) : m);
@@ -554,12 +579,17 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
       if (body.action === 'cleanTaken' || body.action === 'cleanNothing') {
         const [u] = await sql`SELECT unit_id FROM clean_records WHERE account_id = 1 AND cleaning_key = ${key}` as { unit_id: string | null }[];
         const inv = { name: me.name, source: 'cleaner' as const };
-        if (body.action === 'cleanTaken') await recordUses(sql, inv, { lines: body.lines, cleaningKey: key, unitId: u?.unit_id ?? null });
-        else await nothingTaken(sql, inv, key);
+        if (body.action === 'cleanTaken') {
+          await recordUses(sql, inv, { lines: body.lines, cleaningKey: key, unitId: u?.unit_id ?? null });
+          waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'taken', lines: await namedLines(sql, body.lines) } }));
+        } else {
+          await nothingTaken(sql, inv, key);
+          waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'nothing' } }));
+        }
       } else if (body.action === 'cleanPhoto') {
         const stage = String(body.stage) as Stage;
         await addPhotos(sql, env.ENCRYPTION_KEY, key, stage, files, by);
-        waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'photos', stage }));
+        waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'photos', stage, by: me.name }));
       } else {
         const kind = String(body.kind) as 'done' | 'reopened';
         if (await markClean(sql, key, kind, by)) waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind }));

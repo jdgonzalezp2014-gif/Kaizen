@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanDayMessage, cleanMarkMessage, cleanPhotosMessage, eventsOf, costModal, costFromWords, readCostForm, cleanContext, claimCard, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { cleanDayMessage, cleanEventMessage, fieldWho, cleanMarkMessage, eventsOf, costModal, costFromWords, readCostForm, cleanContext, claimCard, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -363,12 +363,21 @@ test('the cleans thread (§134): off unless switched on; one growing photo line;
   assert.match(day.text, /1 of 2 done/);
   assert.match(JSON.stringify(day.blocks), /✅ \*Timber Crest\* — Veronica · 10:00 AM · 📷 2 before \/ 3 after/);
   assert.match(JSON.stringify(day.blocks), /○ \*Quest\* — ▲ nobody yet/);
-  const p = cleanPhotosMessage({ unit: 'Timber Crest', stage: 'after', n: 4, by: ['Luz', 'Ana <x>'], folderUrl: 'https://drive/f' });
-  assert.match(JSON.stringify(p.blocks), /AFTER: 4 photos · Luz, Ana &lt;x&gt; · <https:\/\/drive\/f\|Open in Drive>/);
   const d = cleanMarkMessage({ unit: 'Timber Crest', kind: 'done', by: 'Luz', time: '14:31', before: 3, after: 4, folderUrl: null, taken: { lines: 5, none: false } });
   assert.match(JSON.stringify(d.blocks), /🧴 5 items from storage/);
   assert.match(JSON.stringify(cleanMarkMessage({ unit: 'U', kind: 'done', by: 'K', time: '9:00', before: 0, after: 1, folderUrl: null, taken: { lines: 0, none: true } }).blocks), /nothing from storage/);
   assert.match(JSON.stringify(d.blocks), /✅ \*Timber Crest\* done — Luz, 14:31/);
   assert.match(JSON.stringify(d.blocks), /3 before · 4 after/);
   assert.match(cleanMarkMessage({ unit: 'U', kind: 'reopened', by: 'K', time: '9:00', before: 0, after: 1, folderUrl: null }).text, /↩️ U reopened/);
+});
+
+test('the cleans thread keeps everything (§136): photos, storage, reports, extras, can’t do it — each a reply, person first', () => {
+  assert.equal(fieldWho("Karina and Marvin's team: Luz"), 'Luz (Karina and Marvin’s team)');
+  assert.equal(fieldWho('Veronica'), 'Veronica');
+  const t = (e: Parameters<typeof cleanEventMessage>[3]) => cleanEventMessage('Quest', "K's team: Luz", '14:05', e).text;
+  assert.match(t({ kind: 'photos', stage: 'after', n: 3, folderUrl: null }), /📷 Luz \(K’s team\) · Quest: 3 photos AFTER/);
+  assert.match(t({ kind: 'taken', lines: [{ name: 'Toilet paper', qty: 4 }] }), /took from storage — Toilet paper × 4/);
+  assert.match(t({ kind: 'report', what: 'problem', text: 'Leak', priority: 'urgent', todoId: '70' }), /⚠️ Something is wrong \(🔴 urgent\) — .*Leak · to-do #70/);
+  assert.match(t({ kind: 'extra', amount: 25, description: 'Laundry' }), /extra \+\$25\.00 — Laundry/);
+  assert.match(t({ kind: 'declined', reason: 'Sick' }), /can’t do it — “Sick”/);
 });

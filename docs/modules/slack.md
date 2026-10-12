@@ -54,7 +54,12 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   `cleanday:<date>`) with EVERY clean of the day — board checkouts + manual MAN- cleans, cleaner or
   "▲ nobody yet", time — kept in `clean_slack_posts.cleans` (064) and re-drawn as they progress ("3 of 7
   done", 📷 before/after, ✅). A photo before the clock opens the thread with the title only; the clock then
-  fills it in. Under it, under it one line per clean and stage ("📷 Timber
+  fills it in. **The thread is the day's whole record for Ops** (§136, the owner: Ops must know everything):
+  every event on a clean is a NEW reply — 📷 photos (a batch: same person and stage within 15 minutes is one
+  reply that grows, `photos:<key>:<stage>:<by>:<bucket>`), 🧴 what was taken from storage (or nothing),
+  ⚠️🙋❓🛒 problems / needs / missing / bought (with urgency and the to-do #), 💵 extras, ✕ can't do it
+  (with the reason), ✅ done / ↩️ reopened — from the cleaner's page and the helper link alike, the person
+  first ("Luz (Karina and Marvin's team)"). Under it, under it one line per clean and stage ("📷 Timber
   Crest — AFTER: 4 photos · Luz, Ana · Open in Drive") **edited in place** as photos arrive, and a reply
   for each ✅ done / ↩️ reopened (a repeated "done" posts nothing). `clean_slack_posts` takes the row
   before posting (ts NULL) so two photos at once make one message. Runs in waitUntil; a Slack error

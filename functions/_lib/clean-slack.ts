@@ -8,7 +8,7 @@
 import type { SqlFn } from './accounts.ts';
 import type { HostawayCredentials } from './hostaway.ts';
 import { slackApi, slackSetup, type SlackSetup } from './slack.ts';
-import { cleanDayMessage, cleanMarkMessage, cleanPhotosMessage, eventsOf, type DayClean } from '../../src/lib/slack.ts';
+import { cleanDayMessage, cleanEventMessage, cleanMarkMessage, eventsOf, type CleanEvent, type DayClean } from '../../src/lib/slack.ts';
 import { cleanStates } from './clean-record.ts';
 import { cleansFor } from './slack-digest.ts';
 
@@ -85,34 +85,54 @@ export async function once(sql: SqlFn, key: string, channel: string, post: () =>
   return { ts: null, made: false };
 }
 
-export async function tellCleanThread(sql: SqlFn, encryptionKey: string, cleaningKey: string,
-                                      what: { kind: 'photos'; stage: 'before' | 'after' } | { kind: 'done' | 'reopened' }) {
+/** What to tell the day's thread about one clean. */
+export type ThreadNews =
+  | { kind: 'photos'; stage: 'before' | 'after'; by: string }
+  | { kind: 'done' | 'reopened' }
+  | { kind: 'event'; by: string; event: Exclude<CleanEvent, { kind: 'photos' }> };
+
+/** A batch of photos: the same person and stage within 15 minutes is one reply that grows; later ones, a new reply. */
+const BATCH_MS = 15 * 60e3;
+
+/**
+ * Tell the day's thread (§136): every thing done on a clean is a reply — the
+ * thread is the day's whole record for Ops — and the day's message is re-drawn.
+ * `fallback` places a clean that has no field record yet (a decline, an extra).
+ */
+export async function tellCleanThread(sql: SqlFn, encryptionKey: string, cleaningKey: string, what: ThreadNews,
+                                      fallback?: { unit: string; date: string }) {
   try {
     const s = await slackSetup(sql, encryptionKey);
     const channel = s.config.channels?.reservations?.id;
     if (!s.token || !channel || !eventsOf(s.config).cleanThread) return;
     const token = s.token;
-    const [rec] = await sql`SELECT unit_name, clean_date::text AS date FROM clean_records WHERE account_id = 1 AND cleaning_key = ${cleaningKey}` as
+    const [r0] = await sql`SELECT unit_name, clean_date::text AS date FROM clean_records WHERE account_id = 1 AND cleaning_key = ${cleaningKey}` as
       { unit_name: string; date: string }[];
+    const rec = r0 ?? (fallback ? { unit_name: fallback.unit, date: fallback.date } : null);
     if (!rec) return;
     const posted = async (body: Record<string, unknown>) =>
       (await slackApi<{ ts?: string }>(token, 'chat.postMessage', { channel, unfurl_links: false, ...body })).ts ?? null;
 
     const day = await once(sql, `day:${rec.date}`, channel, () => posted(cleanDayMessage(dayText(rec.date))));
     if (!day.ts) return;
-    const st = (await cleanStates(sql, [cleaningKey]))[cleaningKey];
-    if (!st) return;
+    const now = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' }).format(new Date());
 
     if (what.kind === 'photos') {
-      const by = (await sql`SELECT by_name FROM clean_photos WHERE account_id = 1 AND cleaning_key = ${cleaningKey} AND stage = ${what.stage}
-                             GROUP BY by_name ORDER BY min(id)` as { by_name: string }[]).map(r => r.by_name);
-      const msg = cleanPhotosMessage({ unit: rec.unit_name, stage: what.stage, n: st[what.stage], by, folderUrl: st.folderUrl });
-      const line = await once(sql, `photos:${cleaningKey}:${what.stage}`, channel, () => posted({ ...msg, thread_ts: day.ts }));
+      const st = (await cleanStates(sql, [cleaningKey]))[cleaningKey];
+      const bucket = Math.floor(Date.now() / BATCH_MS);
+      const [cnt] = await sql`SELECT count(*)::int AS n FROM clean_photos WHERE account_id = 1 AND cleaning_key = ${cleaningKey}
+                                 AND stage = ${what.stage} AND by_name = ${what.by}
+                                 AND created_at >= to_timestamp(${bucket * BATCH_MS / 1000})` as { n: number }[];
+      const msg = cleanEventMessage(rec.unit_name, what.by, now, { kind: 'photos', stage: what.stage, n: Math.max(1, cnt?.n ?? 1), folderUrl: st?.folderUrl ?? null });
+      const line = await once(sql, `photos:${cleaningKey}:${what.stage}:${what.by}:${bucket}`, channel, () => posted({ ...msg, thread_ts: day.ts }));
       if (line.ts && !line.made) await slackApi(token, 'chat.update', { channel, ts: line.ts, ...msg });
+    } else if (what.kind === 'event') {
+      await posted({ ...cleanEventMessage(rec.unit_name, what.by, now, what.event), thread_ts: day.ts });
     } else {
+      const st = (await cleanStates(sql, [cleaningKey]))[cleaningKey];
       const [m] = await sql`SELECT by_name, to_char(created_at AT TIME ZONE 'America/New_York', 'HH24:MI') AS at FROM clean_marks
                              WHERE account_id = 1 AND cleaning_key = ${cleaningKey} ORDER BY id DESC LIMIT 1` as { by_name: string; at: string }[];
-      if (!m) return;
+      if (!m || !st) return;
       await posted({ ...cleanMarkMessage({ unit: rec.unit_name, kind: what.kind, by: m.by_name, time: m.at, before: st.before, after: st.after,
                                            folderUrl: st.folderUrl, taken: st.supplies }), thread_ts: day.ts });
     }
