@@ -3551,4 +3551,12 @@ Repaired: the 7 originals re-linked to their Hostaway tasks (state taken from Ho
 not overwrite Kaizen), the 8 duplicates removed (soft), one comment moved to #33, a note on each original.
 Nothing was written to Hostaway. Three to-dos disagree (Kaizen completed, Hostaway open) — left for the
 owner: #19, #25, #33.
+Then, auditing the integration: 22 Kaizen to-dos had lost their Hostaway link to the same bug, and every one
+of their Hostaway tasks still existed. Hostaway's full task list still fails (403), and tasks without a
+listing are only reachable by id — so a to-do edited while unlinked would have created a second Hostaway
+task (how Shan Eviction got two). Now, before creating, Kaizen recovers the lost link from its own note
+"Sent to Hostaway as task #N" (checked against the task's footer) or from the listing, and updates that
+task. The 20 recoverable links were restored with Hostaway's current state as the snapshot — nothing
+written to Hostaway, nothing changed in Kaizen. 16 tasks remain done in Kaizen and open in Hostaway; the
+owner chose to leave them as they are.
 

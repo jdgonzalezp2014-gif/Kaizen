@@ -139,9 +139,40 @@ const ROWS = (sql: SqlFn, where: { id?: string; linked?: boolean; only?: string[
  * Kaizen → Hostaway for one task. Creates the Hostaway task the first
  * time; never creates one for work already closed or removed.
  */
+/**
+ * The Hostaway task a to-do had before its link was lost (§120, §132), if it
+ * still exists there: from Kaizen's own note "Sent to Hostaway as task #N",
+ * else from its listing's tasks — only a task whose footer names this very
+ * to-do, and not cancelled. Linked again with Hostaway's current state as the
+ * snapshot, so nothing is overwritten on either side by the relinking itself.
+ */
+export async function recoverLink(sql: SqlFn, creds: HostawayCredentials, id: string, unitIds: string[]): Promise<string | null> {
+  const mine = (t: HostawayTask | null | undefined): t is HostawayTask =>
+    !!t && kaizenIdOf(t.description) === String(id) && t.status !== 'cancelled';
+  const [sent] = await sql`SELECT substring(body from 'task #([0-9]+)') AS tid FROM work_updates
+                            WHERE account_id = 1 AND subject = 'task' AND subject_id = ${String(id)} AND body LIKE 'Sent to Hostaway as task #%'
+                            ORDER BY id DESC LIMIT 1` as { tid: string | null }[];
+  let found: HostawayTask | null = null;
+  if (sent?.tid) { const t = await getTask(creds, sent.tid); if (mine(t)) found = t; }
+  if (!found && unitIds.length) found = (await listTasks(creds, unitIds)).tasks.find(mine) ?? null;
+  if (!found) return null;
+  const back = await sql`UPDATE todos SET hostaway_task_id = ${String(found.id)}, hostaway_state = ${JSON.stringify(stateOf(found))}::jsonb,
+                                  hostaway_synced_at = now(), hostaway_error = NULL
+                          WHERE account_id = 1 AND id = ${Number(id)} AND hostaway_task_id IS NULL
+                            AND NOT EXISTS (SELECT 1 FROM todos WHERE account_id = 1 AND hostaway_task_id = ${String(found.id)})
+                          RETURNING id` as unknown[];
+  if (!back.length) return null;
+  await note(sql, String(id), 'change', `Linked again to its Hostaway task #${found.id} — the link had been lost.`, 'Kaizen');
+  return String(found.id);
+}
+
 export async function pushWork(sql: SqlFn, creds: HostawayCredentials, id: string): Promise<'created' | 'updated' | 'skipped' | 'failed'> {
-  const r = (await ROWS(sql, { id }))[0];
+  let r = (await ROWS(sql, { id }))[0];
   if (!r || r.parent_id) return 'skipped';
+  // Never a second Hostaway task for the same to-do: a lost link is found again before anything is created (§132).
+  if (!r.hostaway_task_id && await recoverLink(sql, creds, id, r.unit_ids ?? []).catch(() => null)) {
+    r = (await ROWS(sql, { id }))[0]!;
+  }
   const w = workOf(r);
   if (!r.hostaway_task_id && (r.deleted_at || w.status === 'completed' || w.status === 'cancelled')) return 'skipped';
   try {

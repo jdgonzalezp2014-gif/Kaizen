@@ -40,6 +40,10 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 - Kaizen's tasks carry a footer "— Kaizen OS · To-do #N" — ALONE when the description is empty
   (the body is trimmed). `isKaizens` / `kaizenIdOf` / `coreOf` match it anywhere at the end; the pull
   never imports such a task, and re-links it to to-do #N if #N lost its link (§132).
+- **Never a second Hostaway task for one to-do:** `pushWork` first calls `recoverLink` for an unlinked
+  to-do — its "Sent to Hostaway as task #N" note (verified with getTask + footer), else its listing's
+  tasks — and updates that task instead of creating one. GET /tasks still fails (403); unit-less tasks are
+  reachable only by id, which is why the note matters (§132).
 - A completed repair with a cost is always an expense in Costs › Repairs (`settleRepair`);
   "Charge to owner" also writes a Hostaway expense (negative amount) (§95).
 - A claim is a case: `occurred_on` never moves; soft delete with undo; open cases first;
@@ -49,8 +53,9 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 
 ## Open items
 
-- §132 left three to-dos completed in Kaizen but open in Hostaway (#19 pending, #25 in progress,
-  #33 pending — #33's comment says the couch is not rescheduled yet): the owner decides which is right.
+- §132: 16 to-dos are done (or cancelled) in Kaizen but still open in Hostaway — they changed in Kaizen
+  while unlinked: #19 #20 #21 #25 #27 #28 #30 #33 #34 #35 #37 #38 #39 #40 #43 #44. The owner said leave
+  them; syncing would be a Hostaway write (pushWork each). #33's comment says the couch is not rescheduled.
 
 - Verify Hostaway's priority order in its UI.
 
