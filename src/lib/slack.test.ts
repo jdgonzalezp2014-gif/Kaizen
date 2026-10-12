@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { costModal, costFromWords, readCostForm, cleanContext, claimCard, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { cleanDayMessage, cleanMarkMessage, cleanPhotosMessage, eventsOf, costModal, costFromWords, readCostForm, cleanContext, claimCard, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -352,4 +352,16 @@ test('a cost: the form asks every field, filled from the words, and refuses a ba
   assert.equal((readCostForm(st('45', '__shared')) as { body: Record<string, unknown> }).body.shared, true);
   assert.deepEqual(readCostForm(st('abc', '10')), { error: { block: 'amount', message: 'A number above zero, like 45 or 45.50.' } });
   assert.equal((newButtons('x', 'cost') as { elements: { action_id: string }[] }).elements[0]!.action_id, 'mention_new_cost');
+});
+
+test('the cleans thread (§134): off unless switched on; one growing photo line; done says who and the photos', () => {
+  assert.equal(eventsOf({}).cleanThread, false);
+  assert.equal(eventsOf({ events: { cleanThread: true } }).cleanThread, true);
+  assert.match(cleanDayMessage('Mon, Oct 12').text, /Cleans — Mon, Oct 12/);
+  const p = cleanPhotosMessage({ unit: 'Timber Crest', stage: 'after', n: 4, by: ['Luz', 'Ana <x>'], folderUrl: 'https://drive/f' });
+  assert.match(JSON.stringify(p.blocks), /AFTER: 4 photos · Luz, Ana &lt;x&gt; · <https:\/\/drive\/f\|Open in Drive>/);
+  const d = cleanMarkMessage({ unit: 'Timber Crest', kind: 'done', by: 'Luz', time: '14:31', before: 3, after: 4, folderUrl: null });
+  assert.match(JSON.stringify(d.blocks), /✅ \*Timber Crest\* done — Luz, 14:31/);
+  assert.match(JSON.stringify(d.blocks), /3 before · 4 after/);
+  assert.match(cleanMarkMessage({ unit: 'U', kind: 'reopened', by: 'K', time: '9:00', before: 0, after: 1, folderUrl: null }).text, /↩️ U reopened/);
 });

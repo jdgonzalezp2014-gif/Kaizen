@@ -23,6 +23,7 @@ import type { SqlFn } from '../_lib/accounts.ts';
 import { sha256 } from '../_lib/crew.ts';
 import { esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, recordMove, recordUses } from '../_lib/inventory.ts';
 import { todayIn } from '../../src/lib/dates.ts';
+import { tellCleanThread } from '../_lib/clean-slack.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type Stage } from '../_lib/clean-record.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
@@ -75,19 +76,22 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     b = { ...b, unitId: l.unit_id, cleaningKey: l.cleaning_key };
     const who = { name: `${l.cleaner}'s team: ${reporter}`, source: 'link' as const };
     if (b.kind === 'photo') {
-      await addPhotos(sql, env.ENCRYPTION_KEY, l.cleaning_key, String(b.stage) as Stage, files, { name: who.name, source: 'link' });
+      const stage = String(b.stage) as Stage;
+      await addPhotos(sql, env.ENCRYPTION_KEY, l.cleaning_key, stage, files, { name: who.name, source: 'link' });
+      waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'photos', stage }));
     } else if (b.kind === 'done' || b.kind === 'reopened') {
-      await markClean(sql, l.cleaning_key, b.kind, { name: who.name, source: 'link' });
+      if (await markClean(sql, l.cleaning_key, b.kind, { name: who.name, source: 'link' }))
+        waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: b.kind }));
     } else if (b.kind === 'problem' || b.kind === 'request') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
       const id = await fieldTodo(sql, who, b, photos);
-      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id]));
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.name));
     } else if (b.kind === 'used') {
       await recordUses(sql, who, b);
     } else if (b.kind === 'purchase' || b.kind === 'missing') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
       const r = await recordMove(sql, who, b, photos);
-      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId]));
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId], who.name));
     } else return bad('Unknown report.');
     return Response.json({ ok: true, state: (await cleanStates(sql, [l.cleaning_key]))[l.cleaning_key] });
   } catch (e) {

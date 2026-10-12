@@ -9,7 +9,8 @@ import { DEFAULT_DIGEST, DEFAULT_EVENTS, DEFAULT_TASK_CHECK, TOPICS, type SlackC
 
 const EVENT_LABEL: Record<keyof typeof DEFAULT_EVENTS, string> = {
   taskCreated: 'A task is created', taskAssigned: 'A task is assigned', taskClosed: 'A task is completed, cancelled or reopened',
-  fromHostaway: 'The team changes a task in Hostaway', claimOpened: 'A claim is opened', claimChanged: 'A claim changes status'
+  fromHostaway: 'The team changes a task in Hostaway', claimOpened: 'A claim is opened', claimChanged: 'A claim changes status',
+  cleanThread: 'Cleans: one thread a day (Reservations channel) with photos before/after and ✅ done'
 };
 const HOURS = Array.from({ length: 18 }, (_, i) => i + 5);
 const hourWord = (h: number) => `${h % 12 || 12}:00 ${h < 12 ? 'AM' : 'PM'}`;

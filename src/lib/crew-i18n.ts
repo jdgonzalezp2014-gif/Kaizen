@@ -165,6 +165,8 @@ export const TX = {
     repFor: (team: string) => `Helping ${team}`, repName: 'What is your name?', repNameNote: 'So the team knows who it was. This phone remembers it.',
     repContinue: 'Continue', repChange: 'Change name', repBad: 'This link is incomplete — ask for it again.',
     // §134: the clean step by step — photos before, after, done.
+    urgQ: 'How urgent is it?', urgNeed: 'Choose how urgent it is.',
+    urg: { urgent: '🔴 Urgent — before the next guest', high: '🟠 Soon — in the next days', low: '⚪ When possible' } as Record<string, string>,
     optSteps: '📷 Photos & mark as done', stepsTitle: 'Your clean, step by step',
     stepBefore: '📷 Photos BEFORE cleaning', stepAfter: '📷 Photos AFTER cleaning', stepDone: '✅ Mark as done',
     stepCount: (k: number) => k ? `✓ ${k} photo${k === 1 ? '' : 's'}` : 'Not yet',
@@ -241,6 +243,8 @@ export const TX = {
     shareMsg: (unit: string, day: string, link: string) => `Kaizen — ${unit}, ${day}. Abre esto para avisarle al equipo qué tomaste o un problema: ${link}`,
     repFor: (team: string) => `Ayudando a ${team}`, repName: '¿Cómo te llamas?', repNameNote: 'Para que el equipo sepa quién fue. Este teléfono lo recuerda.',
     repContinue: 'Continuar', repChange: 'Cambiar nombre', repBad: 'Este enlace está incompleto — pídelo de nuevo.',
+    urgQ: '¿Qué tan urgente es?', urgNeed: 'Elige qué tan urgente es.',
+    urg: { urgent: '🔴 Urgente — antes del próximo huésped', high: '🟠 Pronto — en los próximos días', low: '⚪ Cuando se pueda' } as Record<string, string>,
     optSteps: '📷 Fotos y marcar completada', stepsTitle: 'Tu limpieza, paso a paso',
     stepBefore: '📷 Fotos ANTES de limpiar', stepAfter: '📷 Fotos DESPUÉS de limpiar', stepDone: '✅ Marcar como completada',
     stepCount: (k: number) => k ? `✓ ${k} foto${k === 1 ? '' : 's'}` : 'Todavía no',

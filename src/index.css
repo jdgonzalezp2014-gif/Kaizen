@@ -1861,7 +1861,7 @@ label.fr-btn { margin: 0; }
 .fr-step { display: inline-flex; align-items: center; gap: 6px; flex: none; }
 .fr-step button { width: 52px; height: 52px; padding: 0; font-size: 26px; border-radius: 12px; }
 .fr-step b { min-width: 36px; text-align: center; font-size: 22px; }
-.fr-select, .fr-text, .fr-field input { font-size: 17px; min-height: 56px; border-radius: 12px; }
+.fr-select, .fr-text, .fr-field input { font-family: inherit; font-size: 17px; min-height: 56px; border-radius: 12px; }
 .fr-field { font-size: 15px; color: var(--muted); }
 .fr-tip, .fr-missing { font-size: 15px; color: var(--muted); }
 .fr-missing { text-align: center; }
@@ -1889,6 +1889,9 @@ header.mini-head, header.mini-head:is(header) { display: flex; flex-direction: r
   background: var(--ink); color: var(--bg); font-weight: 800; font-size: 17px; }
 .fr-done-line { font-size: 19px; font-weight: 800; color: var(--good); text-align: center; padding: 6px 0; }
 .fr-confirm { display: flex; flex-direction: column; gap: 10px; border: 2px solid var(--warn); border-radius: 12px; padding: 12px; }
+.fr-urg { display: flex; flex-direction: column; gap: 8px; }
+.fr-urg .on { border-color: var(--ink); border-width: 3px; font-weight: 800; }
+.fr-urg .urg-urgent.on { border-color: var(--warn); }
 .fr-thumbs { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .fr-thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 8px; }
 /* A link that acts as a button (WhatsApp opens its own app). */

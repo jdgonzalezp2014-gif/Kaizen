@@ -89,15 +89,16 @@ export async function addPhotos(sql: SqlFn, encryptionKey: string, key: string, 
 }
 
 /**
- * Done, or reopened. Done needs at least one AFTER photo — the team's only
+ * Done, or reopened — true when it changed something. Done needs at least one AFTER photo — the team's only
  * way to see the result, and the step most easily forgotten.
  */
-export async function markClean(sql: SqlFn, key: string, kind: 'done' | 'reopened', who: FieldWho) {
+export async function markClean(sql: SqlFn, key: string, kind: 'done' | 'reopened', who: FieldWho): Promise<boolean> {
   if (kind !== 'done' && kind !== 'reopened') throw new Error('Done or reopen?');
   const st = (await cleanStates(sql, [key]))[key];
   if (!st) throw new Error('Which clean?');
   if (kind === 'done' && !st.after) throw new Error('Add at least one AFTER photo first.');
-  if (kind === 'done' && st.done) return;           // already done: a second tap changes nothing
-  if (kind === 'reopened' && !st.done) return;
+  if (kind === 'done' && st.done) return false;     // already done: a second tap changes nothing (and tells nobody)
+  if (kind === 'reopened' && !st.done) return false;
   await sql`INSERT INTO clean_marks (account_id, cleaning_key, kind, by_name, source) VALUES (1, ${key}, ${kind}, ${who.name}, ${who.source})`;
+  return true;
 }

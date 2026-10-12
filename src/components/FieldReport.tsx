@@ -42,12 +42,14 @@ export function FieldReport({ tx, items, start, send, onClose }: {
   const [qty, setQty] = useState(start === 'missing' ? 0 : 1);
   const [cost, setCost] = useState('');
   const [text, setText] = useState('');
+  // §134: how urgent a problem or a need is — asked every time, never assumed.
+  const [prio, setPrio] = useState<'' | 'urgent' | 'high' | 'low'>('');
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
   const reset = (k: Kind | null) => {
-    setKind(k); setDone(null); setCounts({}); setItemId(''); setQty(k === 'missing' ? 0 : 1); setCost(''); setText(''); setFiles([]); setErr('');
+    setKind(k); setDone(null); setCounts({}); setItemId(''); setQty(k === 'missing' ? 0 : 1); setCost(''); setText(''); setPrio(''); setFiles([]); setErr('');
   };
   const back = () => (start || !kind ? onClose?.() : reset(null));
   const byCat = CATS.map(c => [c, items.filter(i => (CATS.includes(i.category) ? i.category : 'other') === c)] as const).filter(([, l]) => l.length);
@@ -73,7 +75,7 @@ export function FieldReport({ tx, items, start, send, onClose }: {
   const picked = Object.entries(counts).filter(([, n]) => n > 0);
   const missing = kind === 'used' ? (picked.length ? '' : tx.supNeedAny)
     : kind === 'purchase' || kind === 'missing' ? (!itemId ? tx.supNeedItem : kind === 'purchase' && qty < 1 ? tx.supNeedQty : '')
-    : (!text.trim() ? tx.supNeedText : '');
+    : (!text.trim() ? tx.supNeedText : !prio ? tx.urgNeed : '');
 
   async function submit() {
     if (missing || busy) return;
@@ -83,7 +85,7 @@ export function FieldReport({ tx, items, start, send, onClose }: {
         ? await send({ action: 'supply', kind, lines: JSON.stringify(picked.map(([id, n]) => ({ itemId: id, qty: n }))) }, [])
         : kind === 'purchase' || kind === 'missing'
           ? await send({ action: 'supply', kind: kind!, itemId, qty: String(qty), ...(kind === 'purchase' && cost ? { cost } : {}) }, files)
-          : await send({ action: kind!, kind: kind!, text: text.trim() }, files);
+          : await send({ action: kind!, kind: kind!, text: text.trim(), priority: prio }, files);
       if (!r.ok) { setErr(r.message ?? tx.notSaved); return; }
       setDone({ task: kind !== 'used' && kind !== 'purchase' });
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
@@ -145,6 +147,14 @@ export function FieldReport({ tx, items, start, send, onClose }: {
         <textarea className="fr-text" rows={4} maxLength={300} value={text} onChange={e => setText(e.target.value)} />
         <p className="fr-tip">{tx.supSpeakTip}</p>
         {photo(tx.supPhotoBtn)}
+        <p className="fr-q">{tx.urgQ}</p>
+        <div className="fr-urg" role="radiogroup" aria-label={tx.urgQ}>
+          {(['urgent', 'high', 'low'] as const).map(p => (
+            <button key={p} type="button" role="radio" aria-checked={prio === p}
+                    className={`fr-btn fr-choice urg-${p}${prio === p ? ' on' : ''}`} onClick={() => setPrio(p)}>
+              {prio === p ? '◉' : '○'} {tx.urg[p]}</button>
+          ))}
+        </div>
       </>}
 
       <div className="fr-send">

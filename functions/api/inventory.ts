@@ -36,7 +36,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     if (b.action === 'move') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `inventory ${String(b.kind)}`);
       const r = await recordMove(sql, me, b, photos);
-      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId]));
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId], who.email));
     } else if (b.action === 'count') {
       const counts = Array.isArray(b.counts) ? b.counts as { itemId: unknown; qty: unknown }[] : [];
       const given = counts.filter(c => c.qty !== '' && c.qty != null);
@@ -46,7 +46,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; unitId: unknown; qty: unknown }[])
         .map(l => ({ itemId: String(l.itemId), unitId: l.unitId ? String(l.unitId) : null, qty: Number(l.qty) || 0 })) : [];
       const id = await createOrder(sql, who.email, lines);
-      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id]));
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.email));
       return Response.json({ ok: true, todoId: id, ...(await overview(sql)) });
     } else {
       return bad('Unknown action.');

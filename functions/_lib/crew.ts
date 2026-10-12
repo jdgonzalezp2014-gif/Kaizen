@@ -12,6 +12,7 @@ import type { Env } from './db.ts';
 import { loadOps, pushHostNotes, recordCleanings } from './ops.ts';
 import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { decrypt, encrypt } from './crypto.ts';
+import { tellCleanThread } from './clean-slack.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type CleanState, type Stage } from './clean-record.ts';
 import { activeUnits, esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, recordMove, recordUses } from './inventory.ts';
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
@@ -456,7 +457,7 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
       const r = body.action !== 'supply' ? await fieldTodo(sql, who2, { ...body, kind: body.action }, photos)
         : body.kind === 'used' ? (await recordUses(sql, who2, body), null)
         : (await recordMove(sql, who2, body, photos)).todoId;
-      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r]));
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r], me.name));
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       return refuse(400, 'bad_request', who?.lang === 'es' ? esMessage(m) : m);
@@ -511,8 +512,14 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     if (!(await myClean(key))) return notMine();
     const by = { name: me.name, source: 'cleaner' as const };
     try {
-      if (body.action === 'cleanPhoto') await addPhotos(sql, env.ENCRYPTION_KEY, key, String(body.stage) as Stage, files, by);
-      else await markClean(sql, key, String(body.kind) as 'done' | 'reopened', by);
+      if (body.action === 'cleanPhoto') {
+        const stage = String(body.stage) as Stage;
+        await addPhotos(sql, env.ENCRYPTION_KEY, key, stage, files, by);
+        waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'photos', stage }));
+      } else {
+        const kind = String(body.kind) as 'done' | 'reopened';
+        if (await markClean(sql, key, kind, by)) waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind }));
+      }
     } catch (e) { return refuse(400, 'bad_request', inLang(e)); }
     return Response.json({ ok: true, state: (await cleanStates(sql, [key]))[key] });
   }

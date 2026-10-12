@@ -8,6 +8,10 @@ import type { SqlFn } from './accounts.ts';
 import { getCredentials } from './accounts.ts';
 import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { mirrorOn, pushWork } from './hostaway-tasks.ts';
+import { notifyTask } from './slack.ts';
+import type { Priority } from '../../src/lib/todos.ts';
+
+const FIELD_PRIORITY = new Set(['urgent', 'high', 'low']);
 import { todayIn, addDays } from '../../src/lib/dates.ts';
 import { orderList, perClean, placeKey, stockLevels, toOrder, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
 
@@ -95,9 +99,10 @@ async function unitName(sql: SqlFn, unitId: string | null) {
   return u.name;
 }
 
-async function newTodo(sql: SqlFn, title: string, description: string | null, unitId: string | null, by: string, sub: string[] = []) {
+async function newTodo(sql: SqlFn, title: string, description: string | null, unitId: string | null, by: string, sub: string[] = [],
+                       priority: Priority = 'none') {
   const [t] = await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority)
-                        VALUES (1, ${title.slice(0, 300)}, ${description}, ${unitId ? [unitId] : []}, ${by}, 'task', 'pending', 'none')
+                        VALUES (1, ${title.slice(0, 300)}, ${description}, ${unitId ? [unitId] : []}, ${by}, 'task', 'pending', ${priority})
                         RETURNING id::text` as { id: string }[];
   await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
             VALUES (1, 'task', ${t!.id}, 'status', ${`To-do created by ${by}.`}, ${by})`;
@@ -137,7 +142,7 @@ export async function recordMove(sql: SqlFn, who: Who, b: Record<string, unknown
     todoId = await newTodo(sql, `Check stock: ${item.name} at ${place}`,
       `${who.name} found ${qty} ${item.measure}${qty === 1 ? '' : 's'}${said != null ? `; the record says ${said}` : ''}.${note ? `\nNote: ${note}` : ''}` +
       photos.map(p => `\nPhoto: ${p.url}`).join('') + `\nCount it in Operations → Inventory to set the record right.`,
-      unitId, who.email ?? who.name);
+      unitId, who.email ?? who.name, [], 'medium');
   }
   await sql`INSERT INTO inventory_moves (account_id, item_id, unit_id, kind, qty, cleaning_key, cost, note, photos, by_name, source, todo_id)
             VALUES (1, ${item.id}, ${unitId}, ${kind}, ${qty}, ${b.cleaningKey ? String(b.cleaningKey) : null}, ${cost}, ${note},
@@ -169,8 +174,10 @@ export async function fieldTodo(sql: SqlFn, who: Who, b: Record<string, unknown>
   if (!text) throw new Error('Say what it is.');
   const unitId = b.unitId ? String(b.unitId) : null;
   const place = unitId ? await unitName(sql, unitId) : null;
+  // §134: the reporter says how urgent (required on the form); urgent = before the next guest.
+  const priority = FIELD_PRIORITY.has(String(b.priority)) ? String(b.priority) as Priority : 'medium';
   return newTodo(sql, place ? `${what} at ${place}: ${text}` : `${what}: ${text}`,
-    `Reported by ${who.name}.${photos.map(p => `\nPhoto: ${p.url}`).join('')}`, unitId, who.email ?? who.name);
+    `Reported by ${who.name}.${photos.map(p => `\nPhoto: ${p.url}`).join('')}`, unitId, who.email ?? who.name, [], priority);
 }
 
 /** What to order, as one to-do with a line per item. */
@@ -210,10 +217,16 @@ export async function fieldPhotos(sql: SqlFn, encryptionKey: string, files: File
   return out;
 }
 
-/** After the response: to-dos made here to Hostaway, as any work. */
-export async function mirrorTodos(sql: SqlFn, encryptionKey: string, ids: (string | null)[]) {
+/**
+ * After the response: to-dos made here go where any work goes — announced in
+ * Slack's tasks channel ("A task is created", with its ▲ priority) and
+ * mirrored to Hostaway.
+ */
+export async function mirrorTodos(sql: SqlFn, encryptionKey: string, ids: (string | null)[], by = 'Kaizen') {
   const list = ids.filter((x): x is string => !!x);
-  if (!list.length || !(await mirrorOn(sql))) return;
+  if (!list.length) return;
+  for (const id of list) await notifyTask(sql, encryptionKey, id, 'created', by).catch(() => {});
+  if (!(await mirrorOn(sql))) return;
   const creds = await getCredentials(sql, encryptionKey);
   for (const id of list) await pushWork(sql, creds, id).catch(() => {});
 }

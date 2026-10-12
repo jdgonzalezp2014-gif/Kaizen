@@ -21,7 +21,9 @@ export const TOPICS: { key: Topic; label: string; what: string }[] = [
 export interface SlackConfig {
   /** Channel id per topic, and its name for display. */
   channels?: Partial<Record<Topic, { id: string; name: string }>>;
-  events?: { taskCreated?: boolean; taskAssigned?: boolean; taskClosed?: boolean; fromHostaway?: boolean; claimOpened?: boolean; claimChanged?: boolean };
+  events?: { taskCreated?: boolean; taskAssigned?: boolean; taskClosed?: boolean; fromHostaway?: boolean; claimOpened?: boolean; claimChanged?: boolean;
+             /** §134: one thread per day of cleans in the Reservations channel — photos and ✅ done as they arrive. Off until switched on. */
+             cleanThread?: boolean };
   /** New York hours for the reservations reminder; null = off. */
   digest?: { morning?: number | null; afternoon?: number | null };
   /** Where Kaizen is, for links back from Slack. */
@@ -67,7 +69,8 @@ export function suggestPeople(hostaway: { id: number; name: string; email: strin
 }
 
 export const DEFAULT_EVENTS: Required<NonNullable<SlackConfig['events']>> = {
-  taskCreated: true, taskAssigned: true, taskClosed: true, fromHostaway: true, claimOpened: true, claimChanged: true
+  taskCreated: true, taskAssigned: true, taskClosed: true, fromHostaway: true, claimOpened: true, claimChanged: true,
+  cleanThread: false
 };
 export const DEFAULT_DIGEST = { morning: 8, afternoon: 15 };
 export const eventsOf = (c: SlackConfig) => ({ ...DEFAULT_EVENTS, ...(c.events ?? {}) });
@@ -100,6 +103,33 @@ export function taskFacts(t: TaskLite): string {
           STATUS_WORD[t.status] ?? t.status].filter(Boolean).map(esc).join(' · ');
 }
 const what = (t: TaskLite) => t.kind === 'work_order' ? '🔧 Repair' : '☐ To-do';
+
+/* ── the cleans' daily thread (§134) ───────────────────────────────── */
+
+/** The day's message; everything about that day's cleans is a reply under it. */
+export function cleanDayMessage(dayText: string): { text: string; blocks: Block[] } {
+  return { text: `🧽 Cleans — ${dayText}`, blocks: [
+    section(`*🧽 Cleans — ${esc(dayText)}*`),
+    context('Photos before / after and ✅ done arrive in this thread as cleaners and their helpers send them.')
+  ] };
+}
+
+/**
+ * A clean's photos of one stage: ONE reply, updated as more arrive — five
+ * photos are one line that grows, not five messages.
+ */
+export function cleanPhotosMessage(p: { unit: string; stage: 'before' | 'after'; n: number; by: string[]; folderUrl: string | null }) {
+  const line = `📷 *${esc(p.unit)}* — ${p.stage === 'before' ? 'BEFORE' : 'AFTER'}: ${p.n} photo${p.n === 1 ? '' : 's'} · ${p.by.map(esc).join(', ')}` +
+    (p.folderUrl ? ` · <${p.folderUrl}|Open in Drive>` : '');
+  return { text: `📷 ${p.unit} — ${p.stage}: ${p.n} photo${p.n === 1 ? '' : 's'}`, blocks: [section(line)] };
+}
+
+/** Done, or reopened — a reply each time, so the thread keeps the story. */
+export function cleanMarkMessage(p: { unit: string; kind: 'done' | 'reopened'; by: string; time: string; before: number; after: number; folderUrl: string | null }) {
+  const head = p.kind === 'done' ? `✅ *${esc(p.unit)}* done` : `↩️ *${esc(p.unit)}* reopened`;
+  const facts = `📷 ${p.before} before · ${p.after} after` + (p.folderUrl ? ` · <${p.folderUrl}|Open in Drive>` : '');
+  return { text: `${p.kind === 'done' ? '✅' : '↩️'} ${p.unit} ${p.kind}`, blocks: [section(`${head} — ${esc(p.by)}, ${esc(p.time)}`), context(facts)] };
+}
 
 /** "Task created / assigned / completed / changed in Hostaway" — with the buttons to act on it. */
 /**
