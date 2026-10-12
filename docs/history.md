@@ -3626,4 +3626,7 @@ photo picker everywhere (camera — one shot, "take another" — or gallery, sev
 a clean has four steps, the second required (lines, or an explicit "I took nothing from storage"), and
 done is refused without it; a `taken` move lowers the storage and leaves the house's record alone, and
 the storage's order is forecast from what each house's cleans take (061).
+He could not see the reports under the steps: the helper page now opens with the clean as its header
+(unit, then the day small; "helping …" dropped as irrelevant) and two big tabs, "My clean" and "Report or
+ask"; the reports in his order — wrong, need, missing, bought.
 

@@ -24,7 +24,8 @@ import { PhotoPicker, shrink } from './PhotoPicker.tsx';
 
 // What was taken from the storage is not here: it is a required step of the clean (CleanSteps, §134).
 export type Kind = 'purchase' | 'missing' | 'problem' | 'request';
-export const KINDS: Kind[] = ['purchase', 'missing', 'problem', 'request'];
+// The owner's order: what is wrong first, then what is needed, missing, bought.
+export const KINDS: Kind[] = ['problem', 'request', 'missing', 'purchase'];
 const CATS = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'];
 export type Send = (fields: Record<string, string>, files: File[]) => Promise<{ ok: boolean; message?: string }>;
 

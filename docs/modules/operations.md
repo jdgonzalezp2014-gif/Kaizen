@@ -200,6 +200,9 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 - **A clean's 4 steps (§134):** 1 photos BEFORE · 2 🧴 what I took from storage (**required**: lines, or
   the explicit "I took nothing from storage" — `clean_records.supplies_at/by/none`) · 3 photos AFTER ·
   4 ✅ done. Done is refused until 2 and 3 are there. "What I took" is no longer in the reports menu.
+  The helper page (`/report`): the header IS the clean (unit, day small under it; EN/ES beside ☾), then two
+  big tabs "🧽 My clean" / "🙋 Report or ask" so both show without scrolling. Reports in the owner's
+  order: ⚠️ wrong · 🙋 need · ❓ missing · 🛒 bought (also in the cleaner's "Options…").
   One photo picker everywhere (`PhotoPicker.tsx`): "📷 Take a photo" (camera, one shot, "Take another")
   and "🖼️ Choose from the gallery" (several), thumbnails with ✕ — `multiple` alone hides the camera on
   many Android phones.

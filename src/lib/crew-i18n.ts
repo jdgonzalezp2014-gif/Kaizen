@@ -162,7 +162,7 @@ export const TX = {
     shareUntil: (d: string) => `It works until ${d}.`,
     shareWa: 'Send by WhatsApp', shareMore: 'Share…', shareCopy: 'Copy link', shareCopied: '✓ Copied',
     shareMsg: (unit: string, day: string, link: string) => `Kaizen — ${unit}, ${day}. Open this to tell the team what you took or a problem: ${link}`,
-    repFor: (team: string) => `Helping ${team}`, repName: 'What is your name?', repNameNote: 'So the team knows who it was. This phone remembers it.',
+    tabClean: '🧽 My clean', tabReport: '🙋 Report or ask', repName: 'What is your name?', repNameNote: 'So the team knows who it was. This phone remembers it.',
     repContinue: 'Continue', repChange: 'Change name', repBad: 'This link is incomplete — ask for it again.',
     // §134: the clean step by step — photos before, after, done.
     urgQ: 'How urgent is it?', urgNeed: 'Choose how urgent it is.',
@@ -245,7 +245,7 @@ export const TX = {
     shareUntil: (d: string) => `Funciona hasta el ${d}.`,
     shareWa: 'Enviar por WhatsApp', shareMore: 'Compartir…', shareCopy: 'Copiar enlace', shareCopied: '✓ Copiado',
     shareMsg: (unit: string, day: string, link: string) => `Kaizen — ${unit}, ${day}. Abre esto para avisarle al equipo qué tomaste o un problema: ${link}`,
-    repFor: (team: string) => `Ayudando a ${team}`, repName: '¿Cómo te llamas?', repNameNote: 'Para que el equipo sepa quién fue. Este teléfono lo recuerda.',
+    tabClean: '🧽 Mi limpieza', tabReport: '🙋 Avisar o pedir', repName: '¿Cómo te llamas?', repNameNote: 'Para que el equipo sepa quién fue. Este teléfono lo recuerda.',
     repContinue: 'Continuar', repChange: 'Cambiar nombre', repBad: 'Este enlace está incompleto — pídelo de nuevo.',
     urgQ: '¿Qué tan urgente es?', urgNeed: 'Elige qué tan urgente es.',
     urg: { urgent: '🔴 Urgente — antes del próximo huésped', high: '🟠 Pronto — en los próximos días', low: '⚪ Cuando se pueda' } as Record<string, string>,
