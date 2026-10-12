@@ -26,6 +26,7 @@ import { money2 } from '../lib/format.ts';
 import { addDays } from '../lib/dates.ts';
 import { FieldReport, KINDS, type Kind, type Send } from '../components/FieldReport.tsx';
 import { CleanSteps, type Result } from '../components/CleanSteps.tsx';
+import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import type { Cleaner } from '../lib/operations.ts';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -233,7 +234,7 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
   const team = mode === 'team';
   // §134: Options on each clean of the cleaner's own (today and ahead in Coming up; the last days in Cleans).
   const ctx: FieldCtx | undefined = report && shareLink && page.supplies && mode === 'cleaner'
-    ? { report, shareLink, supplies: page.supplies, today: page.today, reload } : undefined;
+    ? { report, shareLink, supplies: page.supplies, today: page.today, extraFrom: page.extraFrom, reload } : undefined;
   const aheadKeys = new Set(page.upcoming.rows.map(r => r.key));
   const optionsFrom = addDays(page.today, -3);
 
@@ -299,7 +300,7 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
 
 type ShareLink = (key: string) => Promise<{ ok: boolean; message?: string } & Partial<CleanLink>>;
 /** What a clean row needs to offer its Options — absent on the team's view. */
-interface FieldCtx { report: Send; shareLink: ShareLink; supplies: NonNullable<CrewPage['supplies']>; today: string; reload: () => void }
+interface FieldCtx { report: Send; shareLink: ShareLink; supplies: NonNullable<CrewPage['supplies']>; today: string; extraFrom: string; reload: () => void }
 
 /**
  * One "Options…" list on each of the cleaner's cleans (the owner: not a
@@ -308,18 +309,20 @@ interface FieldCtx { report: Send; shareLink: ShareLink; supplies: NonNullable<C
  */
 function CleanOptions({ cleanKey, unit, date, lang, ctx, fs }: { cleanKey: string; unit: string; date: string; lang: Lang; ctx: FieldCtx; fs?: CleanFieldState }) {
   const tx = TX[lang];
-  const [open, setOpen] = useState<Kind | 'share' | 'steps' | null>(null);
+  const [open, setOpen] = useState<Kind | 'share' | 'steps' | 'extra' | null>(null);
   const [changed, setChanged] = useState(false);
   const unitId = ctx.supplies.units.find(u => u.name === unit)?.id ?? '';
   // The clean's own steps first (photos, done), then what to tell the team, then the helper's link.
-  const choices = ['steps' as const, ...KINDS, 'share' as const];
+  // An extra only on a clean done (today or before) and recent enough — the server checks the same.
+  const extraOk = date <= ctx.today && date >= ctx.extraFrom;
+  const choices = ['steps' as const, ...KINDS, ...(extraOk ? ['extra' as const] : []), 'share' as const];
   const close = () => { setOpen(null); if (changed) { setChanged(false); ctx.reload(); } };
   return (
     <>
       <div className="clean-opts no-print">
-        <select value="" aria-label={tx.optLabel} onChange={e => setOpen((e.target.value || null) as Kind | 'share' | 'steps' | null)}>
+        <select value="" aria-label={tx.optLabel} onChange={e => setOpen((e.target.value || null) as Kind | 'share' | 'steps' | 'extra' | null)}>
           <option value="">{tx.optLabel}</option>
-          {choices.map(k => <option key={k} value={k}>{k === 'share' ? tx.optShare : k === 'steps' ? tx.optSteps : tx.supKind[k]}</option>)}
+          {choices.map(k => <option key={k} value={k}>{k === 'share' ? tx.optShare : k === 'steps' ? tx.optSteps : k === 'extra' ? tx.optExtra : tx.supKind[k]}</option>)}
         </select>
       </div>
       {open && (
@@ -333,6 +336,9 @@ function CleanOptions({ cleanKey, unit, date, lang, ctx, fs }: { cleanKey: strin
                           mark={kind => ctx.report({ action: 'cleanMark', key: cleanKey, kind }, []) as Promise<Result>} />
               <button className="fr-btn secondary" style={{ marginTop: 12 }} onClick={close}>{tx.supClose}</button>
             </>
+          : open === 'extra'
+            ? <ExtraPanel tx={tx} send={(f, files) => ctx.report({ action: 'addExtra', key: cleanKey, ...f }, files)}
+                          onClose={sent => { setOpen(null); if (sent) ctx.reload(); }} />
           : open === 'share'
             ? <SharePanel cleanKey={cleanKey} lang={lang} get={ctx.shareLink} onClose={() => setOpen(null)} />
             : <FieldReport key={open} tx={tx} items={ctx.supplies.items} start={open} onClose={() => setOpen(null)}
@@ -351,6 +357,55 @@ function FieldLine({ fs, lang }: { fs?: CleanFieldState; lang: Lang }) {
     <div className="sub-n clean-opts">
       {fs.folderUrl ? <a href={fs.folderUrl} target="_blank" rel="noreferrer">{tx.stateLine(fs.before, fs.after)}</a> : tx.stateLine(fs.before, fs.after)}
       {fs.done && <> · <b>{tx.stateDone(fs.done.by)}</b></>}
+    </div>
+  );
+}
+
+/**
+ * An extra on this clean, in the same big, one-screen form as the rest: the
+ * amount (number keypad), what it was for, the receipt with the same photo
+ * buttons. The team approves or denies it; only approved extras are paid.
+ */
+function ExtraPanel({ tx, send, onClose }: { tx: Tx; send: Send; onClose: (sent: boolean) => void }) {
+  const [amount, setAmount] = useState('');
+  const [text, setText] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [sent, setSent] = useState(false);
+  const n = Number(amount);
+  const missing = !(n > 0) || n > EXTRA_MAX_AMOUNT ? tx.extraNeedAmount(EXTRA_MAX_AMOUNT) : !text.trim() ? tx.extraNeedWhat : '';
+  if (sent) return (
+    <div className="fr fr-done" role="status">
+      <p className="fr-big">{tx.supDone}</p><p>{tx.extraSent}</p>
+      <button className="fr-btn" onClick={() => onClose(true)}>{tx.supClose}</button>
+    </div>
+  );
+  const go = async () => {
+    setBusy(true); setErr('');
+    try {
+      const r = await send({ amount: String(Math.round(n * 100) / 100), description: text.trim() }, await Promise.all(files.map(shrink)));
+      if (!r.ok) setErr(r.message ?? tx.notSaved); else setSent(true);
+    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="fr">
+      <button className="link fr-back" onClick={() => onClose(false)} disabled={busy}>{tx.supClose}</button>
+      <p className="fr-q">{tx.optExtra}</p>
+      <p className="fr-tip">{tx.extraNote}</p>
+      <p className="fr-q">{tx.extraAmount}</p>
+      <input className="fr-select" type="number" inputMode="decimal" min="0" step="0.01" value={amount} aria-label={tx.extraAmount}
+             onChange={e => setAmount(e.target.value)} />
+      <p className="fr-q">{tx.extraWhat}</p>
+      <textarea className="fr-text" rows={3} maxLength={300} value={text} onChange={e => setText(e.target.value)} />
+      <p className="fr-tip">{tx.supSpeakTip}</p>
+      <p className="fr-q">{tx.receiptOptional}</p>
+      <PhotoPicker tx={tx} files={files} onChange={setFiles} max={5} disabled={busy} />
+      <div className="fr-send">
+        <button className="fr-btn fr-go" disabled={busy || !!missing} onClick={() => void go()}>{busy ? tx.sending : tx.sendTeam}</button>
+        {missing && <p className="fr-missing">{missing}</p>}
+        {err && <p className="breach" role="alert">{err}</p>}
+      </div>
     </div>
   );
 }
@@ -641,7 +696,8 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
       <FieldLine fs={fs} lang={lang} />
       {ctx && <CleanOptions cleanKey={c.key} unit={c.unit} date={c.date} lang={lang} ctx={ctx} fs={fs} />}
       <div className="crew-actions no-print">
-        {mode === 'cleaner' && billed && c.date >= extraFrom && !adding &&
+        {/* Recent cleans have "Add an extra" in their Options (§134); older ones keep this link. */}
+        {mode === 'cleaner' && !ctx && billed && c.date >= extraFrom && !adding &&
           <button className="link tiny" onClick={() => setAdding(true)}>{tx.addExtra}</button>}
         {mode === 'team' && canEdit && c.date < today && !correcting &&
           <button className="link tiny" onClick={() => { setCorrecting(true); setDeep(c.deep); setAmount(c.price == null ? '' : String(c.price)); }}>✎ Correct</button>}

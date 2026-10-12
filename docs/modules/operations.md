@@ -203,6 +203,9 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   The helper page (`/report`): the header IS the clean (unit, day small under it; EN/ES beside ☾), then two
   big tabs "🧽 My clean" / "🙋 Report or ask" so both show without scrolling. Reports in the owner's
   order: ⚠️ wrong · 🙋 need · ❓ missing · 🛒 bought (also in the cleaner's "Options…").
+  The cleaner's "Options…" also has **💵 Add an extra** (clean today or before, within the extra window —
+  same `addExtra` as before, in the big form with the photo picker); the old "+ Add an extra" link stays
+  only on cleans older than the Options window.
   One photo picker everywhere (`PhotoPicker.tsx`): "📷 Take a photo" (camera, one shot, "Take another")
   and "🖼️ Choose from the gallery" (several), thumbnails with ✕ — `multiple` alone hides the camera on
   many Android phones.
