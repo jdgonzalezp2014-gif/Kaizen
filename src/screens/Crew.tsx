@@ -596,12 +596,12 @@ function Decline({ cleanKey, act, reload, lang }: { cleanKey: string; act: Act; 
 }
 
 /** Where a clean stands in the field: photos before/after (the Drive folder) and done — for the cleaner and the team. */
-function FieldLine({ fs, lang }: { fs?: CleanFieldState; lang: Lang }) {
+function FieldLine({ fs, lang, link = false }: { fs?: CleanFieldState; lang: Lang; /** The team's view: the Drive folder is theirs to open. */ link?: boolean }) {
   if (!fs || (!fs.before && !fs.after && !fs.done)) return null;
   const tx = TX[lang];
   return (
     <div className="sub-n clean-opts">
-      {fs.folderUrl ? <a href={fs.folderUrl} target="_blank" rel="noreferrer">{tx.stateLine(fs.before, fs.after)}</a> : tx.stateLine(fs.before, fs.after)}
+      {link && fs.folderUrl ? <a href={fs.folderUrl} target="_blank" rel="noreferrer">{tx.stateLine(fs.before, fs.after)}</a> : tx.stateLine(fs.before, fs.after)}
       {fs.done && <> · <b>{tx.stateDone(fs.done.by.replace(/^.*'s team: /, ''))}</b></>}
     </div>
   );
@@ -854,7 +854,7 @@ function UpcomingRow({ r, act, reload, tag, lang, ctx, fs }: { r: CrewUpcoming; 
         {!!r.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{r.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
       </div>
       <div className="n">{r.price == null ? tx.notPriced : money2(r.price)}</div>
-      <FieldLine fs={fs} lang={lang} />
+      <FieldLine fs={fs} lang={lang} link={!act && !ctx} />
       {(ctx || act) && (
         <div className="future-actions no-print">
           {ctx && (!sharing ? <button className="fr-btn secondary" onClick={() => setSharing(true)}>{tx.optShare}</button>
@@ -930,7 +930,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
           </div>
         ))}
       </div>
-      <FieldLine fs={fs} lang={lang} />
+      <FieldLine fs={fs} lang={lang} link={mode === 'team'} />
       {quick && <QuickActions q={quick} cleanKey={c.key} lang={lang} act={act} reload={reload} />}
       <div className="crew-actions no-print">
         {/* Recent cleans have their "Extra" tab in "Your cleans" (§134); older ones keep this link. */}

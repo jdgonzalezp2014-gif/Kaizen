@@ -75,7 +75,7 @@ export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState }
           <span className="fr-num">4</span><span>{busy ? tx.sending : tx.stepDone}</span></button>
         {needs && <p className="fr-missing">{needs}</p>}
       </>}
-      {st.folderUrl && <a className="fr-tip" href={st.folderUrl} target="_blank" rel="noreferrer">📁 {tx.stepFolder}</a>}
+      {/* No Drive link here: the folder is the team's — cleaners and helpers cannot open it (§134). */}
       {msg && <p className="breach" role="alert">{msg}</p>}
     </div>
   );
