@@ -29,8 +29,10 @@ export const KINDS: Kind[] = ['problem', 'request', 'missing', 'purchase'];
 const CATS = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'];
 export type Send = (fields: Record<string, string>, files: File[]) => Promise<{ ok: boolean; message?: string }>;
 
-export function FieldReport({ tx, items, start, send, onClose }: {
+export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: {
   tx: Tx; items: SupplyItem[];
+  /** Which reports the menu offers. The helper's page leaves out "I bought something" (§141). */
+  kinds?: Kind[];
   /** Open straight on one report (the cleaner chose it from Options); else the menu. */
   start?: Kind;
   /** The clean's fields (unit, key) are the caller's to add. */
@@ -68,7 +70,7 @@ export function FieldReport({ tx, items, start, send, onClose }: {
   if (!kind) return (
     <div className="fr">
       <p className="fr-q">{tx.supMenuQ}</p>
-      {KINDS.map(k => <button key={k} className="fr-btn fr-choice" onClick={() => reset(k)}>{tx.supKind[k]}</button>)}
+      {kinds.map(k => <button key={k} className="fr-btn fr-choice" onClick={() => reset(k)}>{tx.supKind[k]}</button>)}
       {onClose && <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>}
     </div>
   );

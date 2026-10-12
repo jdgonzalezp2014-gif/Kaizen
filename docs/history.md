@@ -3750,3 +3750,10 @@ the SOP panel. No new Access policy needed, no secrets in the bundle; the mock d
 explicitly fake ("🧪 Practice House"), buttons do not reach any server. The handyman practice
 has not been exposed publicly — add it under `/report/mock` if ever needed (same trick, `/report`
 already bypassed).
+
+## §141 — Helpers no longer report purchases (2026-10-12)
+
+To avoid problems (money spent by someone outside the roster, with no account behind the link), the helper's
+page drops "🛒 I bought something"; it still offers wrong / need / missing. `FieldReport` takes a `kinds`
+list (the helper passes it without `purchase`) and `/api/report-link` refuses a `purchase` even from an old
+open page. The cleaner's own page keeps it, and purchases still reach Costs through approval (§137).

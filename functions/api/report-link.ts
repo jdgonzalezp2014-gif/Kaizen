@@ -142,7 +142,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       await nothingTaken(sql, who, l.cleaning_key);
       tell({ kind: 'nothing' });
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: { kind: 'nothing' } }));
-    } else if (b.kind === 'purchase' || b.kind === 'missing') {
+    } else if (b.kind === 'purchase') {
+      // §141: money spent is the cleaner's to report, from their own page — a helper's link only says what is missing.
+      return bad(es ? 'Las compras las reporta la limpiadora desde su página.' : "Purchases are reported by the cleaner, from their own page.");
+    } else if (b.kind === 'missing') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
       const r = await recordMove(sql, who, b, photos);
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId], who.name));

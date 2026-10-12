@@ -164,7 +164,7 @@ key had no SOPs.
   answered); the row then reads "📨 Sent from the link by X" and ▶ Review opens the team's
   run, where Review & finish makes the work. Reopen from the link clears `sent_at`. Refused when expired,
   finished or cancelled. App.tsx reads `#i=` before `#t=`; the phone remembers which it opened last.
-- **Purchases reach Costs (§137):** a purchase from the field (cleaner, helper) needs its total — the
+- **Purchases reach Costs (§137):** a purchase from the field (the cleaner's page; §141: no longer the helper's link — the menu omits "I bought something" and `/api/report-link` refuses `purchase`) needs its total — the
   form and the server require it — and becomes a `field_expenses` row waiting for approval in
   Operations → Cleaners ("Purchases & charges waiting for approval": who, unit, amount, receipt; deny needs a reason);
   approved → an expense (Restock) on its unit. The team's purchase in Inventory → Record a move takes a
@@ -354,4 +354,4 @@ key had no SOPs.
 
 ## History
 
-§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140.
+§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140, §141.
