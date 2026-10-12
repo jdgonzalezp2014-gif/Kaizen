@@ -103,6 +103,9 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 - Operations → Crew: pick a cleaner → their page for the team (level, flag/correct/decide), or
   **👁 View as cleaner ↗** — a separate tab (`/#as-cleaner/<name>`, PreviewShell in App.tsx) with only the
   cleaner's page, loaded through `crewGet` (the cleaner's own server code: level stripped), buttons inert.
+- **One rule for what is ahead (crew page):** a clean after today reaches the cleaner — in Coming up,
+  Cleans and the calendar alike — only if Coming up shows it (published schedule, else hand-assigned).
+  The record holds the rule's picks for the board's window; unpublished, `loadCrewPage` drops them.
 - Crew page **calendar**: a month grid (past from the record: ✓ paid, ⚑ flagged, ○ not paid; ahead:
   only what "Coming up" shows, today counted as ahead), tap a day for detail; "Add my coming cleans to
   my phone calendar" downloads an .ics snapshot (not a live feed — a subscribed feed would need a public

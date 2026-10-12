@@ -216,10 +216,16 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
     }
   }
 
+  // One rule for what is ahead, everywhere on the page: a clean after today
+  // reaches the cleaner only if "Coming up" shows it — the whole schedule
+  // once published, else what a person assigned. The record holds the rule's
+  // picks for the coming days too; unpublished, they are not the cleaner's yet.
+  const ahead = new Set(upcoming.rows.map(r => r.key));
+  const shown = cleans.filter(x => x.date <= today || ahead.has(x.key));
   return {
     cleaner: { name: c.name, level: c.level, invoicePeriod: c.invoice_period, active: c.active },
-    today, periods, period, cleans, extras, extraFrom,
-    invoice: buildInvoice(c.name, period, cleans, extras, today),
+    today, periods, period, cleans: shown, extras: extras.filter(e => shown.some(x => x.key === e.key)), extraFrom,
+    invoice: buildInvoice(c.name, period, shown, extras, today),
     upcoming
   };
 }

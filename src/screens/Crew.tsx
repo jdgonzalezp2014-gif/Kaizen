@@ -278,19 +278,30 @@ const shortUnit = (u: string) => /\d{3,}$/.exec(u.trim())?.[0] ?? u.trim().split
  * are those.
  */
 function CrewCalendar({ page }: { page: CrewPage }) {
-  // Today's cleans are still ahead of the cleaner: shown as coming up, not as done.
-  const ahead = new Set(page.upcoming.rows.map(r => r.key));
+  // Each clean once, with the same status as the Cleans list: today and before from the record
+  // (✓ paid, ⚑ flagged, ○ not paid), after today as coming up — the server already sent only
+  // what this cleaner may see ahead.
+  const next = new Map(page.upcoming.rows.map(r => [r.key, r]));
+  const detail = (key: string) => {
+    const r = next.get(key);
+    return r ? `${r.manual ? 'manual clean' : `checkout ${r.time}`}${r.sameDay ? ` · next guest in${r.checkIn ? ` at ${r.checkIn}` : ''}` : ''}` : '';
+  };
   const items: CalItem[] = [
-    ...page.cleans.filter(c => c.date < page.today || (c.date === page.today && !ahead.has(c.key))).map(c => ({
-      date: c.date, unit: c.unit,
-      ...(c.voidReason ? { mark: '○', tone: 'off' as const, title: `not paid — ${c.voidReason}` }
-        : c.flagNote ? { mark: '⚑', tone: 'flag' as const, title: `flagged — ${c.flagNote}` }
+    ...page.cleans.map(c => {
+      const extra = detail(c.key);
+      if (c.date > page.today) {
+        return { date: c.date, unit: c.unit, mark: next.get(c.key)?.sameDay ? '⚡' : '•', tone: 'ahead' as const,
+                 title: `${extra ? `${extra} · ` : ''}${pay(c.price)}` };
+      }
+      const base = c.voidReason ? { mark: '○', tone: 'off' as const, title: `not paid — ${c.voidReason}` }
+        : c.flagNote ? { mark: '⚑', tone: 'flag' as const, title: `flagged — ${c.flagNote} · ${pay(c.price)}` }
         : c.assignment === 'assigned' ? { mark: '✓', tone: 'done' as const, title: `${pay(c.price)}${c.deep ? ' · deep' : ''}` }
-        : { mark: '○', tone: 'off' as const, title: 'not assigned to you any more' })
-    })),
-    ...page.upcoming.rows.filter(r => r.date >= page.today)
-      .map(r => ({ date: r.date, unit: r.unit, mark: r.sameDay ? '⚡' : '•', tone: 'ahead' as const,
-                   title: `${r.manual ? 'manual clean' : `checkout ${r.time}`}${r.sameDay ? ` · next guest in${r.checkIn ? ` at ${r.checkIn}` : ''}` : ''} · ${pay(r.price)}` }))
+        : { mark: '○', tone: 'off' as const, title: 'not assigned to you any more' };
+      return { date: c.date, unit: c.unit, ...base, title: `${extra ? `${extra} · ` : ''}${base.title}` };
+    }),
+    // Ahead and not in the record yet (beyond the board's window).
+    ...page.upcoming.rows.filter(r => !page.cleans.some(c => c.key === r.key))
+      .map(r => ({ date: r.date, unit: r.unit, mark: r.sameDay ? '⚡' : '•', tone: 'ahead' as const, title: `${detail(r.key)} · ${pay(r.price)}` }))
   ];
   const months = [...new Set([...items.map(i => i.date.slice(0, 7)), page.today.slice(0, 7)])].sort();
   const [month, setMonth] = useState(page.today.slice(0, 7));
