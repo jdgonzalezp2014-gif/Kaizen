@@ -6,6 +6,7 @@
 import { useEffect, useState } from 'react';
 import { getOpsSettings, getSlack, slackAction, type SlackState } from '../api.ts';
 import { DEFAULT_DIGEST, DEFAULT_EVENTS, DEFAULT_TASK_CHECK, TOPICS, type SlackConfig, type Topic } from '../lib/slack.ts';
+import { crewChannelsOf } from '../lib/crew-slack.ts';
 
 const EVENT_LABEL: Record<keyof typeof DEFAULT_EVENTS, string> = {
   taskCreated: 'A task is created', taskAssigned: 'A task is assigned', taskClosed: 'A task is completed, cancelled or reopened',
@@ -191,12 +192,26 @@ function Cleaners({ cfg, busy, run, onSaved }: {
   const [names, setNames] = useState<string[] | null>(null);
   const [emails, setEmails] = useState<Record<string, string>>({});
   const [preview, setPreview] = useState<{ name: string; lines: string[] } | null>(null);
+  const [cc, setCc] = useState(() => crewChannelsOf(cfg.crewChannels));
   useEffect(() => { void getOpsSettings().then(r => setNames(r.ok ? r.roster.filter(c => c.active).map(c => c.name) : [])).catch(() => setNames([])); }, []);
   return (
     <>
-      <h3>6 · Cleaners’ channels <span className="sub-n">— prepared: nothing is sent to them on a clock</span></h3>
-      <p className="note">Cleans change often and get moved by hand, so a cleaner’s channel only gets what someone sends with the button.
-        Create the channel (private, <code>#cleaning-name</code>) and invite them with the email they use in Slack.</p>
+      <h3>6 · Cleaners’ channels</h3>
+      <p className="note">One private channel per cleaner (<code>#cleaning-name</code>), invited with the email they use in Slack. Messages there
+        are in the cleaner’s language (English or Spanish, as on their page). Times are the team’s ({cfg.taskCheck?.tz ?? DEFAULT_TASK_CHECK.tz}).</p>
+      <div className="slack-events">
+        <label className="check"><input type="checkbox" checked={cc.reminders} onChange={e => setCc(p => ({ ...p, reminders: e.target.checked }))} />
+          {' '}Remind each cleaner: today’s cleans at <input type="time" value={cc.morning} onChange={e => setCc(p => ({ ...p, morning: e.target.value }))} />
+          {' '}and tomorrow’s at <input type="time" value={cc.evening} onChange={e => setCc(p => ({ ...p, evening: e.target.value }))} />
+          <span className="sub-n"> — only on days they have cleans, with the 4 steps recalled</span></label>
+        <label className="check"><input type="checkbox" checked={cc.helperNotices} onChange={e => setCc(p => ({ ...p, helperNotices: e.target.checked }))} />
+          {' '}Tell each cleaner what their helpers report from a clean’s link — photos, what they took from storage, done, problems and needs</label>
+      </div>
+      <div className="button-row">
+        <button className="small" disabled={busy} onClick={() => void run({ action: 'save', config: { ...cfg, crewChannels: cc } }, () => 'Cleaners’ channels saved.').then(onSaved)}>
+          Save</button>
+        <span className="note">Off until ticked and saved. Only cleaners with a channel below get anything.</span>
+      </div>
       {names === null ? <p className="note loading-dot">Reading the roster</p> : (
         <ul className="slack-cleaners">
           {names.map(n => {

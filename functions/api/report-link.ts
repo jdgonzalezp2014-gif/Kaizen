@@ -25,6 +25,8 @@ import { sha256 } from '../_lib/crew.ts';
 import { esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, nothingTaken, recordMove, recordUses } from '../_lib/inventory.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { tellCleanThread } from '../_lib/clean-slack.ts';
+import { tellCleaner } from '../_lib/crew-slack.ts';
+import type { HelperEvent } from '../../src/lib/crew-slack.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type Stage } from '../_lib/clean-record.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
@@ -76,25 +78,44 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     // The place is the link's, whatever the page sent.
     b = { ...b, unitId: l.unit_id, cleaningKey: l.cleaning_key };
     const who = { name: `${l.cleaner}'s team: ${reporter}`, source: 'link' as const };
+    // §134: the cleaner hears what their helper did, in their own channel (if they have one and it is on).
+    const tell = (e: { kind: HelperEvent['kind'] } & Record<string, unknown>, photosKey?: string) =>
+      waitUntil(tellCleaner(sql, env.ENCRYPTION_KEY, l.cleaner, { by: reporter, unit: l.unit_name, ...e } as HelperEvent, photosKey));
     if (b.kind === 'photo') {
       const stage = String(b.stage) as Stage;
       await addPhotos(sql, env.ENCRYPTION_KEY, l.cleaning_key, stage, files, { name: who.name, source: 'link' });
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'photos', stage }));
+      // One growing line per clean and stage; it names every helper who sent photos for it.
+      const helpers = (await sql`SELECT by_name FROM clean_photos WHERE account_id = 1 AND cleaning_key = ${l.cleaning_key} AND stage = ${stage}
+                                   AND source = 'link' GROUP BY by_name ORDER BY min(id)` as { by_name: string }[])
+        .map(r => r.by_name.replace(/^.*'s team: /, ''));
+      tell({ kind: 'photos', stage, n: helpers.length ? (await sql`SELECT count(*)::int AS n FROM clean_photos WHERE account_id = 1
+             AND cleaning_key = ${l.cleaning_key} AND stage = ${stage} AND source = 'link'` as { n: number }[])[0]!.n : 0,
+             by: helpers.join(', ') }, `photos:${l.cleaning_key}:${stage}`);
     } else if (b.kind === 'done' || b.kind === 'reopened') {
-      if (await markClean(sql, l.cleaning_key, b.kind, { name: who.name, source: 'link' }))
+      if (await markClean(sql, l.cleaning_key, b.kind, { name: who.name, source: 'link' })) {
         waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: b.kind }));
+        tell({ kind: b.kind });
+      }
     } else if (b.kind === 'problem' || b.kind === 'request') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
       const id = await fieldTodo(sql, who, b, photos);
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.name));
+      tell({ kind: 'report', what: String(b.kind), text: String(b.text ?? '').trim().slice(0, 300), priority: String(b.priority ?? '') || null });
     } else if (b.kind === 'taken' || b.kind === 'used') {
       await recordUses(sql, who, b);
+      const raw = typeof b.lines === 'string' ? JSON.parse(b.lines || '[]') : b.lines;
+      const items = await invItems(sql);
+      tell({ kind: 'taken', lines: (Array.isArray(raw) ? raw : []).filter((x: { qty?: unknown }) => Number(x.qty) > 0)
+        .map((x: { itemId?: unknown; qty?: unknown }) => ({ name: items.find(i => i.id === String(x.itemId))?.name ?? '?', qty: Number(x.qty) })) });
     } else if (b.kind === 'nothing') {
       await nothingTaken(sql, who, l.cleaning_key);
+      tell({ kind: 'nothing' });
     } else if (b.kind === 'purchase' || b.kind === 'missing') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
       const r = await recordMove(sql, who, b, photos);
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId], who.name));
+      tell({ kind: 'report', what: String(b.kind), text: `${r.item} × ${Number(b.qty) || 0}` });
     } else return bad('Unknown report.');
     return Response.json({ ok: true, state: (await cleanStates(sql, [l.cleaning_key]))[l.cleaning_key] });
   } catch (e) {

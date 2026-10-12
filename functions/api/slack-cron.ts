@@ -17,6 +17,8 @@ import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { digestFacts } from '../_lib/slack-digest.ts';
 import { DEFAULT_DIGEST, DEFAULT_TASK_CHECK, teamTz, digestMessage, dmTarget, dueDigests, dueTaskChecks, esc, helpUrlOf, localNow, taskCheckMessage } from '../../src/lib/slack.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
+import { remindCleaners } from '../_lib/crew-slack.ts';
+import { dueCrewReminders } from '../../src/lib/crew-slack.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 
 
@@ -48,6 +50,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const r = await postTo(s, 'tasks', taskCheckMessage(c.kind, await taskCheckFacts(sql, c.day, tz), helpUrlOf(s.config)));
       if (!r?.ok) await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;
       else out.push(`${c.kind} ${c.day}`);
+    }
+  }
+
+  // §134: each cleaner's cleans in their own channel — today's in the morning, tomorrow's in the evening.
+  {
+    const now = localNow(teamTz(s.config));
+    const due = dueCrewReminders(now, s.config.crewChannels);
+    if (due.length && Object.keys(s.config.cleaners ?? {}).length) {
+      const claim = async (key: string) => (await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${key}) ON CONFLICT DO NOTHING RETURNING key`).length > 0;
+      const release = async (key: string) => { await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`; };
+      // One pass per reminder and day: the board (Hostaway) is read once, not every 5 minutes of the
+      // window; a cleaner with no cleans gets nothing. A failure frees the pass to try again next run.
+      for (const d of due) {
+        const pass = `crewpass:${d.kind}:${d.day}`;
+        if (!(await claim(pass))) continue;
+        try {
+          const r = await remindCleaners(sql, s, await getCredentials(sql, env.ENCRYPTION_KEY), d.kind, d.day, claim, release);
+          out.push(...r.sent);
+          if (r.failed) await release(pass);
+        } catch (e) {
+          await release(pass);
+          out.push(`crew ${d.kind} failed: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
     }
   }
 

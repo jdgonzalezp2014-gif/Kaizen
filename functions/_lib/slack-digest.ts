@@ -60,11 +60,13 @@ export async function digestFacts(sql: SqlFn, creds: HostawayCredentials, key: s
 }
 
 /** A cleaner's next cleans, from the board (prepared, §99 — sent only by hand). */
-export async function cleanerSchedule(sql: SqlFn, creds: HostawayCredentials, name: string, days = 7) {
+export async function cleanerSchedule(sql: SqlFn, creds: HostawayCredentials, name: string | null, days = 7) {
   const account = await getAccount(sql);
   const s = await loadOps(sql, creds, { days, cleaningsCsvUrl: account?.cleaningsCsvUrl ?? null, refreshSheet: false });
-  return s.rows.filter(r => r.kind === 'out' && r.assignment === 'assigned' && (r.cleaner ?? '').toLowerCase() === name.toLowerCase())
-    .map(r => ({ date: r.date, time: r.time, unit: r.unit, beds: r.beds, deep: r.deep, sameDay: r.urgency === 'turnover', note: r.note || null }));
+  // name null: every assigned clean (§134, the cleaners' reminders read the board once for all).
+  return s.rows.filter(r => r.kind === 'out' && r.assignment === 'assigned' && (name === null || (r.cleaner ?? '').toLowerCase() === name.toLowerCase()))
+    .map(r => ({ date: r.date, time: r.time, unit: r.unit, beds: r.beds, deep: r.deep, sameDay: r.urgency === 'turnover', note: r.note || null,
+                 cleaner: r.cleaner ?? '' }));
 }
 
 /** A day's cleans from the board (§101): who, when, what kind — for the Cleans pop-up. */

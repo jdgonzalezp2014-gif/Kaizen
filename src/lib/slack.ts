@@ -37,6 +37,8 @@ export interface SlackConfig {
   taskCheck?: { tz?: string; checkin?: string | null; checkout?: string | null };
   /** The SOP "Kaizen in Slack" (§101): what /kaizen help shows, and where "How to use this" leads. */
   helpSopId?: string;
+  /** §134: the cleaners' channels — their cleans at 9 AM / 6 PM, and their helpers' reports. Off until switched on. */
+  crewChannels?: import('./crew-slack.ts').CrewChannels;
   /** Direct messages to people (§100). 'test' sends every one to `testUser` instead, saying who it was for. */
   dm?: { mode: 'off' | 'test' | 'on'; testUser?: string | null };
 }

@@ -61,7 +61,8 @@ export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState }
       <button className="fr-btn fr-choice fr-stepbtn" onClick={() => setStage('after')}>
         <span className="fr-num">3</span><span>{tx.stepAfter}<small>{tx.stepCount(st.after)}</small></span></button>
       {st.done ? <>
-        <p className="fr-done-line">{tx.doneBy(st.done.by, st.done.at.slice(11, 16))}</p>
+        {/* The helper's own name, not "<cleaner>'s team: <name>" — that is for the team's records. */}
+        <p className="fr-done-line">{tx.doneBy(st.done.by.replace(/^.*'s team: /, ''), st.done.at.slice(11, 16))}</p>
         {!asking ? <button className="fr-btn secondary" onClick={() => setAsking(true)}>{tx.reopen}</button> : (
           <div className="fr-confirm">
             <p>{tx.reopenAsk}</p>

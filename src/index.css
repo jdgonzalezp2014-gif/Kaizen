@@ -1886,6 +1886,8 @@ header.mini-head, header.mini-head:is(header) { display: flex; flex-direction: r
   color: var(--ink); border: 2px solid var(--line); }
 .report-tabs button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 .report-who { margin: 0 0 8px 4px; }
+.report-switch { display: block; font-size: 14px; color: var(--muted); margin: 0 0 10px; }
+.report-switch select { margin-top: 4px; font-weight: 700; color: var(--ink); }
 .mini-tools { display: flex; align-items: center; gap: 8px; }
 .mini-tools .chip { min-width: 44px; min-height: 40px; font-size: 14px; }
 .fr-stepbtn { gap: 12px; }

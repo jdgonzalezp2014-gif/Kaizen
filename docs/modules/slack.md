@@ -57,7 +57,15 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   before posting (ts NULL) so two photos at once make one message. Runs in waitUntil; a Slack error
   never fails the report. Field to-dos (problems, needs with priority, "Check stock") are announced
   like app-created work.
-- DMs to owners via People mapping; cleaner channels prepared, manual send only.
+- DMs to owners via People mapping.
+- **Cleaners' channels (§134)**, `crewChannels` (**off by default**; Settings → Slack → 6): in each
+  cleaner's own channel, in their language (`src/lib/crew-slack.ts`): **today's cleans at 09:00 and
+  tomorrow's at 18:00** (team time, Central; windows until 13:00 / 23:30), only on days they have
+  cleans, with the 4 steps recalled — the board is read once per pass (`crewpass:<kind>:<day>`, each
+  cleaner `crew:<kind>:<day>:<name>` in `slack_sent`); and **their helpers' reports** from a clean's link
+  (photos as one growing line per clean and stage naming each helper, what they took from storage,
+  done/reopened, problems/needs with urgency, missing/bought). The cleaner's own actions are not echoed.
+  "Send now" / "Preview" by hand still work.
 
 ## Slack API rules that bite
 
@@ -76,6 +84,10 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
 - `@Kaizen new`'s task thread is the mention's thread (no channel notice since §119).
 
 ## Open items
+
+- **Cleaners' channels built, off (§134).** No cleaner has a channel in production yet: Settings → Slack →
+  6 → their Slack email → Create channel, then tick the reminders / helper notices and Save. Tested on
+  the Neon branch with K&M's channel pointed at #kaizen-task.
 
 - **Cleans' thread built, off (§134).** Tested on the Neon branch with every channel pointed at
   #kaizen-task. To start: Settings → Slack → tick "Cleans: one thread a day" (posts to #kaizen-ops), then

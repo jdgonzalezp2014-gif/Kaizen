@@ -202,7 +202,10 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   4 ✅ done. Done is refused until 2 and 3 are there. "What I took" is no longer in the reports menu.
   The helper page (`/report`): the header IS the clean (unit, day small under it; EN/ES beside ☾), then two
   big tabs "🧽 My clean" / "🙋 Report or ask" so both show without scrolling. Reports in the owner's
-  order: ⚠️ wrong · 🙋 need · ❓ missing · 🛒 bought (also in the cleaner's "Options…").
+  order: ⚠️ wrong · 🙋 need · ❓ missing · 🛒 bought (also in the cleaner's "Options…"). A link is per clean,
+  not per person: several helpers use the same one, each with their name. A phone keeps every clean it
+  was sent while the link lasts (`localStorage.reportLinks`) and shows "Your cleans on this phone" to
+  switch when there is more than one.
   The cleaner's "Options…" also has **💵 Add an extra** (clean today or before, within the extra window —
   same `addExtra` as before, in the big form with the photo picker); the old "+ Add an extra" link stays
   only on cleans older than the Options window.

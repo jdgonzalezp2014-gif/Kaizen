@@ -166,7 +166,7 @@ export const TX = {
     extraNote: 'For work beyond the clean (an extra laundry load, a deep spot…). The team approves or denies it; only approved extras are paid, with this clean.',
     extraNeedAmount: (max: number) => `Write the amount (up to $${max}).`, extraNeedWhat: 'Say what it was for.',
     extraSent: 'The team will approve or deny it — you will see it on this clean.',
-    tabClean: '🧽 My clean', tabReport: '🙋 Report or ask', repName: 'What is your name?', repNameNote: 'So the team knows who it was. This phone remembers it.',
+    tabClean: '🧽 My clean', tabReport: '🙋 Report or ask', repSwitch: 'Your cleans on this phone', repName: 'What is your name?', repNameNote: 'So the team knows who it was. This phone remembers it.',
     repContinue: 'Continue', repChange: 'Change name', repBad: 'This link is incomplete — ask for it again.',
     // §134: the clean step by step — photos before, after, done.
     urgQ: 'How urgent is it?', urgNeed: 'Choose how urgent it is.',
@@ -253,7 +253,7 @@ export const TX = {
     extraNote: 'Para trabajo más allá de la limpieza (una carga extra de lavandería, una mancha profunda…). El equipo lo aprueba o lo rechaza; solo se pagan los extras aprobados, junto con esta limpieza.',
     extraNeedAmount: (max: number) => `Escribe el monto (hasta $${max}).`, extraNeedWhat: 'Di para qué fue.',
     extraSent: 'El equipo lo aprobará o rechazará — lo verás en esta limpieza.',
-    tabClean: '🧽 Mi limpieza', tabReport: '🙋 Avisar o pedir', repName: '¿Cómo te llamas?', repNameNote: 'Para que el equipo sepa quién fue. Este teléfono lo recuerda.',
+    tabClean: '🧽 Mi limpieza', tabReport: '🙋 Avisar o pedir', repSwitch: 'Tus limpiezas en este teléfono', repName: '¿Cómo te llamas?', repNameNote: 'Para que el equipo sepa quién fue. Este teléfono lo recuerda.',
     repContinue: 'Continuar', repChange: 'Cambiar nombre', repBad: 'Este enlace está incompleto — pídelo de nuevo.',
     urgQ: '¿Qué tan urgente es?', urgNeed: 'Elige qué tan urgente es.',
     urg: { urgent: '🔴 Urgente — antes del próximo huésped', high: '🟠 Pronto — en los próximos días', low: '⚪ Cuando se pueda' } as Record<string, string>,

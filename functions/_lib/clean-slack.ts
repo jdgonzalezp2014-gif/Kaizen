@@ -20,7 +20,7 @@ const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
  * (ts NULL), so a second caller at the same moment waits for the first's
  * message instead of posting its own.
  */
-async function once(sql: SqlFn, key: string, channel: string, post: () => Promise<string | null>): Promise<{ ts: string | null; made: boolean }> {
+export async function once(sql: SqlFn, key: string, channel: string, post: () => Promise<string | null>): Promise<{ ts: string | null; made: boolean }> {
   const took = await sql`INSERT INTO clean_slack_posts (account_id, key, channel) VALUES (1, ${key}, ${channel})
                          ON CONFLICT DO NOTHING RETURNING key`;
   if (took.length) {

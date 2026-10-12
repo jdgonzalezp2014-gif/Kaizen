@@ -3629,4 +3629,10 @@ the storage's order is forecast from what each house's cleans take (061).
 He could not see the reports under the steps: the helper page now opens with the clean as its header
 (unit, then the day small; "helping …" dropped as irrelevant) and two big tabs, "My clean" and "Report or
 ask"; the reports in his order — wrong, need, missing, bought.
+Then: each cleaner in their own Slack channel — tomorrow's cleans at 6 PM, today's at 9 AM, and what
+their helpers report or send. Built off by default (Settings → Slack → 6), in the cleaner's language,
+only on days with cleans, the board read once per pass; helpers' photos are one growing line per clean.
+He asked what happens when a cleaner sends one helper two cleans: each link opens its own clean, but the
+phone remembered only the last — now it keeps all of them and offers a switcher. And he reminded that
+several people share one link: yes — each report carries its sender's name.
 
