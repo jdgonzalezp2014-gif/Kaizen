@@ -99,6 +99,9 @@ export const ALL = '*';
  */
 export const CREW = 'crew';
 const CREW_ROUTES = [{ path: '/api/crew', methods: ['GET', 'POST'] }, { path: '/api/settings', methods: ['GET'] }];
+/** A handyman's own work orders (§137): only an email in the vendor directory earns it, like a cleaner's page. */
+export const VENDOR = 'vendor';
+const VENDOR_ROUTES = [{ path: '/api/vendor', methods: ['GET', 'POST'] }, { path: '/api/settings', methods: ['GET'] }];
 
 /**
  * Routes every signed-in member reaches: who they are and which tabs to
@@ -117,6 +120,7 @@ export function mayAccess(permissions: string[], pathname: string, method: strin
   const m = method.toUpperCase();
   const hit = (r: { path: string; methods: string[] }) => r.path === pathname && r.methods.includes(m);
   if (permissions.includes(CREW)) return CREW_ROUTES.some(hit);
+  if (permissions.includes(VENDOR)) return VENDOR_ROUTES.some(hit);
   if (ALWAYS.some(hit)) return true;
   return PERMISSIONS.some(p => permissions.includes(p.key) && p.routes.some(hit));
 }
@@ -129,6 +133,7 @@ export function mayAccess(permissions: string[], pathname: string, method: strin
 export function tabsFor(permissions: string[]): string[] {
   const all = permissions.includes(ALL);
   if (!all && permissions.includes(CREW)) return ['crew'];
+  if (!all && permissions.includes(VENDOR)) return ['vendor'];
   return ['home', ...PERMISSIONS.filter(p => p.tab && (all || permissions.includes(p.key))).map(p => p.tab!)];
 }
 

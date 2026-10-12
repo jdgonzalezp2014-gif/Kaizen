@@ -33,6 +33,7 @@ import { tellCleaner } from '../_lib/crew-slack.ts';
 import type { HelperEvent } from '../../src/lib/crew-slack.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type Stage } from '../_lib/clean-record.ts';
 import { inspectGet, inspectPost } from '../_lib/inspect-link.ts';
+import { workAct, workOfToken, workPage } from '../_lib/vendor-work.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
 
@@ -59,6 +60,12 @@ const gone = (ended = false) => Response.json({ ok: false, error: 'bad_link', me
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
   if (request.headers.has('X-Inspect-Token')) return inspectGet(sql, request);
+  // §137: a handyman's link for one work order — the same door, its own header.
+  if (request.headers.has('X-Work-Token')) {
+    const w = await workOfToken(sql, request);
+    if (w instanceof Response) return w;
+    return Response.json({ ok: true, vendor: w.vendor, page: await workPage(sql, w.id) }, { headers: { 'Cache-Control': 'no-store' } });
+  }
   const l = await linkOf(sql, request);
   if (l instanceof Response) return l;
   const items = (await invItems(sql)).filter(i => i.active).map(i => ({ id: i.id, name: i.name, measure: i.measure, category: i.category }));
@@ -72,6 +79,19 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const sql = db(env) as unknown as SqlFn;
   if (request.headers.has('X-Inspect-Token')) return inspectPost(sql, env.ENCRYPTION_KEY, request);
+  if (request.headers.has('X-Work-Token')) {
+    const w = await workOfToken(sql, request);
+    if (w instanceof Response) return w;
+    let b: Record<string, unknown> = {};
+    const files: File[] = [];
+    if ((request.headers.get('Content-Type') ?? '').startsWith('multipart/form-data')) {
+      const form = await request.formData();
+      for (const [k, x] of form.entries()) { if (k === 'file') { if (typeof x !== 'string') files.push(x); } else b[k] = x; }
+    } else b = await request.json().catch(() => ({})) as Record<string, unknown>;
+    try { await workAct(sql, env.ENCRYPTION_KEY, w.id, { name: w.vendor, source: 'link' }, b, files, waitUntil); }
+    catch (e) { return bad(e instanceof Error ? e.message : String(e)); }
+    return Response.json({ ok: true, page: await workPage(sql, w.id) });
+  }
   const l = await linkOf(sql, request);
   if (l instanceof Response) return l;
   const es = l.lang === 'es';

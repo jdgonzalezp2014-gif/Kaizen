@@ -71,9 +71,20 @@ export async function addFieldExpense(sql: SqlFn, e: {
 export async function decideFieldExpense(sql: SqlFn, id: string, status: 'approved' | 'denied', note: string | null, by: string) {
   const [f] = await sql`UPDATE field_expenses SET status = ${status}, decided_by = ${by}, decided_at = now(), decision_note = ${note}
                          WHERE account_id = 1 AND id = ${Number(id) || 0} AND status = 'pending'
-                         RETURNING id::text, unit_id, category, amount::float AS amount, description, by_name, cleaning_key` as
-    { id: string; unit_id: string | null; category: string; amount: number; description: string; by_name: string; cleaning_key: string | null }[];
+                         RETURNING id::text, unit_id, category, amount::float AS amount, description, by_name, cleaning_key, source, todo_id::text AS todo_id` as
+    { id: string; unit_id: string | null; category: string; amount: number; description: string; by_name: string; cleaning_key: string | null;
+      source: string; todo_id: string | null }[];
   if (!f) throw new Error('Only a pending one can be decided.');
+  // A handyman's charge is part of the repair: the approved ones ARE its cost, and the repair — once
+  // completed — is the one expense in Costs (settleRepair, by the caller). Never a second row here.
+  if (f.source === 'vendor' && f.todo_id) {
+    await sql`UPDATE todos SET cost_actual = (SELECT sum(amount) FROM field_expenses WHERE account_id = 1 AND todo_id = ${Number(f.todo_id)}
+                                                AND source = 'vendor' AND status = 'approved'), updated_at = now()
+               WHERE account_id = 1 AND id = ${Number(f.todo_id)}`;
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'task', ${f.todo_id}, 'change', ${`${status === 'approved' ? 'Approved' : 'Denied'}: $${f.amount.toFixed(2)} — ${f.description}${note ? ` · “${note}”` : ''}`.slice(0, 4000)}, ${by})`;
+    return f;
+  }
   if (status === 'approved') {
     const [u] = f.unit_id ? await sql`SELECT id FROM units WHERE account_id = 1 AND id = ${f.unit_id}` as { id: string }[] : [];
     await sql`INSERT INTO expenses (account_id, unit_id, shared, start_date, category, frequency, amount, label, notes, source, external_ref, created_by)

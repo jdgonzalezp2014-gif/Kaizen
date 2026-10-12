@@ -65,7 +65,8 @@ export const onRequest: PagesFunction<Env> = async (ctx) => {
     ]) as [{ allowed_emails: string[] | null }[], { permissions: string[] }];
     allowed = acc[0]?.allowed_emails ?? [];
     permissions = access.permissions;
-    cleaner = !!(access as { cleaner?: string }).cleaner;
+    // §137: a handyman's email in the vendor directory is the same deliberate act — their role opens only /api/vendor.
+    cleaner = !!(access as { cleaner?: string }).cleaner || !!(access as { vendor?: string }).vendor;
   } catch {
     // A database that is down must not become an open door. It also must
     // not become a lock-out with no explanation, so this says which it is.

@@ -1967,7 +1967,8 @@ function VendorSetup() {
     <div className="card">
       <h2>Vendors &amp; handymen</h2>
       <p className="note">Who does repairs and supplies, and how to reach them. A repair's vendor is picked from this list.
-        A vendor's own page (their repairs, like the cleaners' page) comes later; their email is kept for it.</p>
+        Each work order can go to its vendor by a link (📤 Send to vendor, no account); a vendor with an <b>email</b> here can also
+        sign in and see all their open work orders — add that email to the Cloudflare Access policy, as for cleaners (§137).</p>
       <table className="units compact">
         <thead><tr><th>Name</th><th>Trade</th><th>Phone</th><th>Email</th><th>Notes</th><th></th></tr></thead>
         <tbody>

@@ -3698,3 +3698,18 @@ approved extras by a nightly sync that follows the record (back-filled from Apri
 with a cost (not only work orders), the team's inventory purchases at once, and money paid in the field
 only after a person approves it (`field_expenses`, 065) — a field purchase must say what it cost.
 
+Handymen (066): the cleaner's page, for a repair. The team sets the day in the work order and, if the
+vendor has no account, taps "📤 Send to vendor" (WhatsApp / SMS / copy) — a `/report#w=` link that lasts
+until the day + 7 and dies if the vendor changes or the order closes. A vendor with an email in the
+directory signs in instead and sees all their open work orders (role `vendor`, like `cleaner`: checked
+in accessOf, skips the allow-list, one route). Or neither: the team runs the repair inside, as before.
+The page is five numbered steps, folded, each showing where it stands — accept the day, photos before,
+photos after, charges, done — plus a note; EN/ES. The owner's three decisions: the access shows **only on
+the day set** (and not once closed); **no preset price** — each charge (labor or materials, receipt
+attached) waits for approval, and the approved sum becomes the repair's `cost_actual`, which
+`settleRepair` turns into Costs › Repairs; **"can't" turns into a task** — the order goes back to pending
+and gets a high-priority "Reschedule — X can't on <day>: why" sub-task, and the link closes. Every step
+is an activity line on the work order and a reply in its Slack thread, so the team never asks. Tested on
+the Neon branch end to end: link → accept → photo → $120 labor → note → done → deny without a note
+refused → approve → cost_actual 120 → expense Repairs #73; "can't" → sub-task #75, link refused; another
+vendor's order refused through /api/vendor.

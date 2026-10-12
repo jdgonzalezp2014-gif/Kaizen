@@ -17,7 +17,7 @@ Hostaway client, sync, crypto, migrations.
   kept, paging, calendar writes verified by read-back), `sync.ts`.
 - Pure libs: `sops.ts` (FEATURES, markdown-ish parser), `dates.ts`, `format.ts`.
 - Scripts: `migrate.mjs`, `seed-sops.mjs` (idempotent by title), `screenshot.mjs`,
-  `set-credentials.mjs`, `sync-units.mjs`.
+  `set-credentials.mjs`, `sync-units.mjs`. `screenshot.mjs` takes `PAGE='/report#w=…'` with tab `-` for a field link.
 
 ## Tables
 
@@ -29,6 +29,8 @@ Hostaway client, sync, crypto, migrations.
 - Two gates: Access decides who reaches the app; `allowed_emails` decides who is ours.
   Exception (§122): an address on the cleaners roster gets role `cleaner` (only its own crew page),
   checked in accessOf BEFORE "no member row = admin", and skips the allow-list.
+  Same for handymen (§137): an active vendor's email → role `vendor` (permission VENDOR: `/api/vendor`,
+  `/api/settings` GET; tab `vendor` = their work orders, no header), checked after cleaners.
   SELF_AUTHENTICATING also lists `/api/crew-link` and `/api/report-link` (secret-link doors: the token is
   the only credential, they never trust identity headers). Cloudflare Access has a **Bypass app "Kaizen —
   public links"** (Bypass Everyone, live 2026-10-12) for `/report`, `/api/report-link`, `/crew`,
@@ -59,4 +61,4 @@ Hostaway client, sync, crypto, migrations.
 
 ## History
 
-§1–§3, §8, §10–§13, §20, §27–§29, §49, §51–§52, §55, §65, §67, §75, §80–§81, §91–§92, §96–§98.
+§1–§3, §8, §10–§13, §20, §27–§29, §49, §51–§52, §55, §65, §67, §75, §80–§81, §91–§92, §96–§98, §137.

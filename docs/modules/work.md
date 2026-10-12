@@ -13,13 +13,18 @@ Cleans are not tasks (operations module).
 - Server libs: `hostaway-tasks.ts` (mirror, pullAll, people), `repair-costs.ts` (settleRepair).
 - Pure libs: `src/lib/todos.ts` (sort, filters, tree, progress, auditCsv, nyParts),
   `hostaway-tasks.ts` (PRIORITY_NUMBER, mapping), `claims.ts` (categories, sources, caseHost).
+- Handymen (§137): `src/screens/Work.tsx` (WorkLinkPage, VendorHome, WorkCard), `VendorLink` in
+  `Todos.tsx`; API `vendor.ts` (signed-in handyman), `report-link.ts` (`X-Work-Token`), `todos.ts`
+  action `vendorLink`; server lib `vendor-work.ts` (workPage, workAct, workLinkFor, workOfToken);
+  charges go through `field-costs.ts` (operations module).
 
 ## Tables
 
 `todos` (kind, status, priority, assignee/supervisor user ids + names, unit_ids (one),
 scheduled_on/start_time, due_on/due_time, vendor, cost_estimate, cost_actual, resolution_note,
 parent_id, claim_id, reservation_id/label, charge_owner, hostaway_task_id, hostaway_state,
-hostaway_expense_id, deleted_at), `work_updates` (subject task|claim; kind `note` = comment,
+hostaway_expense_id, vendor_accepted_at/by, deleted_at), `work_links` (one secret link per work order:
+vendor, token_enc, token_hash, expires_on), `work_photos` (before/after, Drive url), `work_updates` (subject task|claim; kind `note` = comment,
 others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_users`,
 `expenses` rows with `source='repair'` — for a work order AND (§137) any to-do completed with a cost
 (category Repairs / Restock for "Buy…" / the title's category).
@@ -56,6 +61,19 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   can stand alone (late checkout) (§46, §77, §86).
 - Times in timelines and the done log are New York (§87).
 - Comments posted in Kaizen also go to the task's Slack thread (`commentToThread`, slack module).
+- **Handymen work like cleaners (§137).** Three ways, all valid: an account (their email in Operations →
+  Vendors, signed in through Access → role `vendor`, only `/api/vendor`: their work orders), a link
+  ("📤 Send to vendor" in an open work order → `/report#w=…` by WhatsApp/SMS, no account), or none
+  (the team runs the repair itself). The link needs a vendor and a day set; it lasts until the day + 7,
+  dies if the vendor changes, the order is closed or deleted. Steps: 1 accept the day / "can't" →
+  status back to pending, a high-priority sub-task "Reschedule — X can't on <day>: why" and the link
+  closes; 2–3 photos before/after (Drive, first before = in progress); 4 charges (labor / materials,
+  amount, what for, receipt); 5 done (resolution note); a note any time. Every step is a work_update
+  and a reply in the task's Slack thread; pushWork when the mirror is on.
+- **The access (codes, lockbox, Wi-Fi) shows only on the day set and while the order is open.**
+- **No preset prices.** A handyman's charge is a pending `field_expenses` row (source `vendor`);
+  approving it in Operations → Crew sets `cost_actual` = the sum of approved charges and runs
+  `settleRepair` → Costs › Repairs (once completed). Denying needs a note the handyman reads.
 
 ## Open items
 
@@ -64,7 +82,9 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   them; syncing would be a Hostaway write (pushWork each). #33's comment says the couch is not rescheduled.
 
 - Verify Hostaway's priority order in its UI.
+- §137: a vendor who signs in needs their email in the Cloudflare Access policy (the link needs nothing).
+  Vendors have no Slack channel and get no reminders yet; the team sends the link by hand.
 
 ## History
 
-§46, §76–§78, §82–§88, §93–§95, §103–§105, §120, §132.
+§46, §76–§78, §82–§88, §93–§95, §103–§105, §120, §132, §137.

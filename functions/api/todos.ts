@@ -36,6 +36,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { can } from '../_lib/roles.ts';
 import { mirrorOn, people, pullAll, pushWork } from '../_lib/hostaway-tasks.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
+import { workLinkFor } from '../_lib/vendor-work.ts';
 import { commentToThread, notifyTask, tellOwner, type TaskEvent } from '../_lib/slack.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
@@ -287,6 +288,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const id = String(b.id ?? '');
   if (!ID.test(id)) return bad('Which task?');
   // Undo of a removal (§82): the task, and the sub-tasks removed in the same instant.
+  // §137: the link for the vendor of a work order — a day and a vendor first.
+  if (b.action === 'vendorLink') {
+    try { return Response.json({ ok: true, ...(await workLinkFor(sql, env.ENCRYPTION_KEY, String(b.id ?? ''), new URL(request.url).origin)) }); }
+    catch (e) { return bad(e instanceof Error ? e.message : String(e)); }
+  }
+
   if (b.action === 'restore') {
     const gone = (await sql`SELECT title, deleted_at, claim_id FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NOT NULL`)[0] as
       { title: string; deleted_at: string | Date; claim_id: string | null } | undefined;

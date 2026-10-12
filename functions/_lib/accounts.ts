@@ -6,7 +6,7 @@
  * are stored encrypted; see crypto.ts for why the master key stays in
  * the environment.
  */
-import { CREW } from './roles.ts';
+import { VENDOR, CREW } from './roles.ts';
 import { decrypt, encrypt } from './crypto.ts';
 import type { HostawayCredentials } from './hostaway.ts';
 
@@ -132,6 +132,8 @@ export interface Access {
   role: string; permissions: string[];
   /** Set for a cleaner signing in to their own page (§122): whose page it is. */
   cleaner?: string;
+  /** Set for a handyman signing in (§137): the vendor whose work orders they see. */
+  vendor?: string;
 }
 
 /**
@@ -160,6 +162,11 @@ export async function accessOf(sql: SqlFn, who: { email: string; local: boolean 
     SELECT name FROM cleaners WHERE account_id = 1 AND lower(email) = ${who.email.trim().toLowerCase()} LIMIT 1
   ` as { name: string }[];
   if (crew.length) return { role: 'cleaner', permissions: [CREW], cleaner: crew[0]!.name };
+  // A handyman in the vendor directory (§137): their own work orders, nothing else — also before the admin default.
+  const vend = await sql`
+    SELECT name FROM vendors WHERE account_id = 1 AND active AND lower(email) = ${who.email.trim().toLowerCase()} LIMIT 1
+  ` as { name: string }[];
+  if (vend.length) return { role: 'vendor', permissions: [VENDOR], vendor: vend[0]!.name };
   return { role: 'admin', permissions: ['*'] };
 }
 

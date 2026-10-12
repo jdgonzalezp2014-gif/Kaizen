@@ -29,6 +29,8 @@ import { todayIn } from '../../src/lib/dates.ts';
 import { rateFor } from '../../src/lib/operations.ts';
 import { opsConfig } from '../_lib/ops.ts';
 import { decideFieldExpense, pendingFieldExpenses, syncCleaningCosts } from '../_lib/field-costs.ts';
+import { settleRepair } from '../_lib/repair-costs.ts';
+import { getCredentials } from '../_lib/accounts.ts';
 
 const TZ = 'America/New_York';
 
@@ -105,8 +107,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const status = body.status;
     if (status !== 'approved' && status !== 'denied') return refuse(400, 'bad_request', 'Approve or deny.');
     if (status === 'denied' && !note) return refuse(400, 'bad_request', 'Say why it is denied — whoever paid reads the note.');
-    try { await decideFieldExpense(sql, String(body.id ?? ''), status, note || null, who.email); }
+    let f: Awaited<ReturnType<typeof decideFieldExpense>>;
+    try { f = await decideFieldExpense(sql, String(body.id ?? ''), status, note || null, who.email); }
     catch (e) { return refuse(409, 'already_decided', e instanceof Error ? e.message : String(e)); }
+    // §137: a handyman's charge decided → the repair's cost follows, and its expense if it is completed.
+    if (f.todo_id) await settleRepair(sql, f.todo_id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY)).catch(() => {});
     return Response.json({ ok: true });
   }
 

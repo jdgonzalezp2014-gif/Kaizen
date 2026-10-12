@@ -158,14 +158,15 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
         )}
       </div>
       <div className="card">
-        <h2>Purchases waiting for approval <span className="chan-tag">{fieldPending.length}</span></h2>
-        <p className="note">Paid in the field with its receipt — by a cleaner, a cleaner’s helper, later a handyman. Approved, it goes to
-          Costs on its unit (and is owed back to whoever paid); denied, they read why. Nothing reaches Costs before a person approves it.</p>
+        <h2>Purchases & charges waiting for approval <span className="chan-tag">{fieldPending.length}</span></h2>
+        <p className="note">Paid in the field with its receipt — by a cleaner or a cleaner’s helper (🧹), or a handyman’s labor and
+          materials on a repair (🔧). Approved, a purchase goes to Costs on its unit (and is owed back to whoever paid); a handyman’s
+          charge becomes the repair’s cost and reaches Costs as Repairs. Denied, they read why. Nothing reaches Costs before a person approves it.</p>
         {!fieldPending.length ? <p className="note">None waiting.</p> : (
           <div className="crew-list">
             {fieldPending.map(f => (
               <div key={f.id} className="crew-row">
-                <div><b>{f.byName.replace(/^(.*)'s team: (.*)$/, '$2 ($1’s team)')}</b>{f.unit ? ` · ${f.unit}` : ''}
+                <div>{f.source === 'vendor' ? '🔧 ' : '🧹 '}<b>{f.byName.replace(/^(.*)'s team: (.*)$/, '$2 ($1’s team)')}</b>{f.unit ? ` · ${f.unit}` : ''}
                   <div className="sub-n">{f.category} · asked {f.at}</div></div>
                 <div><b>{money2(f.amount)}</b> — {f.description} <Files files={f.photos.map((p, i) => ({ id: String(i), ...p }))} />
                   {!f.photos.length && <span className="breach"> no receipt</span>}</div>

@@ -796,3 +796,37 @@ export const slackAction = (body: Record<string, unknown>) =>
   call<SlackState & { team?: string; bot?: string; channels?: { id: string; name: string; private: boolean; member: boolean }[];
                       missing?: number; channel?: { channelId: string; channelName: string };
                       message?: { text: string; blocks: { type: string; text?: { text: string } }[] } }>('/api/slack-settings', { method: 'POST', body: JSON.stringify(body) });
+
+/* ── handymen (§137) ─────────────────────────────────────────────── */
+
+/** One work order as its handyman sees it. */
+export interface WorkPage {
+  work: { id: string; title: string; description: string | null; unit: string | null; scheduledOn: string | null; startTime: string | null;
+          dueOn: string | null; status: string; vendor: string | null; accepted: { at: string; by: string | null } | null; resolution: string | null };
+  today: string; address: string | null;
+  /** How to get in — only on the day set. */
+  access: import('./lib/unit-access.ts').UnitAccess | null;
+  photos: { before: number; after: number };
+  charges: { id: string; amount: number; description: string; status: 'pending' | 'approved' | 'denied'; decisionNote: string | null }[];
+}
+type WorkAnswer = { ok: true; page: WorkPage } | Fail;
+async function workSend(url: string, headers: Record<string, string>, fields: Record<string, string>, files: File[]): Promise<WorkAnswer> {
+  const init: RequestInit = files.length
+    ? { method: 'POST', headers, body: (() => { const f = new FormData(); for (const [k, v] of Object.entries(fields)) f.append(k, v); for (const x of files) f.append('file', x); return f; })() }
+    : { method: 'POST', headers: { ...headers, 'Content-Type': 'application/json' }, body: JSON.stringify(fields) };
+  const res = await fetch(url, init);
+  return await res.json().catch(() => ({ ok: false, message: `HTTP ${res.status}` })) as WorkAnswer;
+}
+/** The link the team sends for one work order. */
+export const getWorkLink = (token: string) =>
+  call<({ ok: true; vendor: string; page: WorkPage }) | Fail>('/api/report-link', { headers: { 'X-Work-Token': token } });
+export const workLinkAct = (token: string, fields: Record<string, string>, files: File[]) =>
+  workSend('/api/report-link', { 'X-Work-Token': token }, fields, files);
+/** A handyman signed in: their work orders. */
+export const getVendorWork = () => call<({ ok: true; vendor: string; works: WorkPage[] }) | Fail>('/api/vendor');
+export const vendorAct = (todoId: string, fields: Record<string, string>, files: File[]) =>
+  workSend('/api/vendor', {}, { ...fields, todoId }, files);
+/** The team: the link for a work order's vendor. */
+export const vendorLink = (id: string) =>
+  call<({ ok: true; link: string; vendor: string; phone: string | null; title: string; unit: string | null; day: string; expires: string }) | Fail>(
+    '/api/todos', { method: 'POST', body: JSON.stringify({ action: 'vendorLink', id }) });

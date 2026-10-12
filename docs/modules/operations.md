@@ -154,7 +154,7 @@ key had no SOPs.
   finished or cancelled. App.tsx reads `#i=` before `#t=`; the phone remembers which it opened last.
 - **Purchases reach Costs (§137):** a purchase from the field (cleaner, helper) needs its total — the
   form and the server require it — and becomes a `field_expenses` row waiting for approval in
-  Operations → Crew ("Purchases waiting for approval": who, unit, amount, receipt; deny needs a reason);
+  Operations → Crew ("Purchases & charges waiting for approval": who, unit, amount, receipt; deny needs a reason);
   approved → an expense (Restock) on its unit. The team's purchase in Inventory → Record a move takes a
   cost and goes to Costs at once. Approved extras and every clean's pay are in Costs too (finance module).
 - **How cleaners get in (§136):** `src/lib/unit-access.ts` (pure, tested: `repoMatch`, `unitAccess`) +
@@ -170,7 +170,9 @@ key had no SOPs.
 - Scheduled inspections on a phone: each row starts with the unit, its day and inspector, and the buttons
   (▶ Start/Continue/Review · 🔗 Link · cancel) — they were in the last column, scrolled out of sight.
 - **Vendors (§133):** `vendors` directory (Setup → Vendors & handymen; switched off, never erased); the repair
-  form's Vendor field suggests them (free text kept). A vendor page is a later step (email kept for it).
+  form's Vendor field suggests them (free text kept). §137: the email is how a handyman signs in (role
+  `vendor`, their work orders only); without one, "📤 Send to vendor" in the work order gives a link
+  (work module). A handyman's charges wait in Crew → "Purchases & charges waiting for approval" (🔧).
 - **Carry (§131):** the record stores `prepares_for` (the next reservation when recorded). A rule-decided
   clean before guest X held by A: if a booking lands in between, the original checkout is decided again by
   the new guest, and A takes the new booking's checkout (the clean now before X) — `applyCarry`, before

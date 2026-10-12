@@ -9,6 +9,7 @@ import { Repository } from './screens/Repository.tsx';
 import { Home } from './screens/Home.tsx';
 import { CrewHome } from './screens/Crew.tsx';
 import { ReportPage } from './screens/Report.tsx';
+import { VendorHome, WorkLinkPage } from './screens/Work.tsx';
 import { InspectPage } from './screens/Inspect.tsx';
 import { Sops } from './screens/Sops.tsx';
 import { SopButton, SopPanel } from './components/Sops.tsx';
@@ -16,7 +17,7 @@ import { featureOf } from './lib/sops.ts';
 import { getUnits, getSettings, can, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 
-type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew';
+type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor';
 
 /**
  * A cleaner's secret link (§122): /crew#t=<token>. Read once, then taken
@@ -41,6 +42,18 @@ if (CREW_TOKEN) { try { sessionStorage.setItem('crewToken', CREW_TOKEN); } catch
  * helpers'. Read BEFORE the report token (which clears the address bar); the
  * phone remembers which of the two it opened last, for a home-screen icon.
  */
+/** A handyman's link for one work order (§137): /report#w=<token> — the same field door, kept on the phone too. */
+const WORK_TOKEN = (() => {
+  if (location.pathname !== '/report') return null;
+  const h = new URLSearchParams(location.hash.slice(1));
+  const w = h.get('w');
+  try {
+    if (w) { history.replaceState(null, '', '/report'); localStorage.setItem('workToken', w); localStorage.setItem('fieldLast', 'w'); return w; }
+    if (h.get('t') || h.get('i')) return null;
+    return localStorage.getItem('fieldLast') === 'w' ? localStorage.getItem('workToken') : null;
+  } catch { return w; }
+})();
+
 const INSPECT_TOKEN = (() => {
   if (location.pathname !== '/report') return null;
   const h = new URLSearchParams(location.hash.slice(1));
@@ -63,7 +76,8 @@ export function App() {
   // The link door has no sign-in: the page and nothing else.
   if (location.pathname === '/crew') return <CrewShell token={CREW_TOKEN} />;
   // The helpers' page has its own one-line header: the language sits beside day/night (§134).
-  if (location.pathname === '/report') return <main>{INSPECT_TOKEN ? <InspectPage token={INSPECT_TOKEN} /> : <ReportPage token={REPORT_TOKEN} />}</main>;
+  if (location.pathname === '/report') return <main>{WORK_TOKEN ? <WorkLinkPage token={WORK_TOKEN} />
+    : INSPECT_TOKEN ? <InspectPage token={INSPECT_TOKEN} /> : <ReportPage token={REPORT_TOKEN} />}</main>;
   // The team's "View as cleaner" (§122): a tab with that cleaner's page and nothing of the team's.
   const preview = /^#as-cleaner\/(.+)$/.exec(location.hash);
   if (preview) return <PreviewShell name={decodeURIComponent(preview[1]!)} />;
@@ -138,6 +152,8 @@ function TeamApp() {
         setPermissions(r.permissions ?? []);
         // A cleaner signed in (§122): their own page, and nothing else is asked for.
         if (tabs.length === 1 && tabs[0] === 'crew') { setTab('crew'); return; }
+        // §137: a handyman signed in — their work orders, nothing else.
+        if (tabs.length === 1 && tabs[0] === 'vendor') { setTab('vendor'); return; }
         // After the role is known: a cleaner's role cannot read the unit list.
         getUnits().then(u => setUnits(u.units ?? [])).catch(() => {});
         // A link to one cleaner's page, as they see it: #crew/<name> (§122).
@@ -171,7 +187,7 @@ function TeamApp() {
   }, []);
 
   // A cleaner signed in sees only their page, which has its own one-line top (§134).
-  const crewOnly = allowed?.length === 1 && allowed[0] === 'crew';
+  const crewOnly = allowed?.length === 1 && (allowed[0] === 'crew' || allowed[0] === 'vendor');
   return (
     <main>
       {!crewOnly && <header>
@@ -211,6 +227,7 @@ function TeamApp() {
       )}
       {tab === null && !loadError && <p className="note">Loading…</p>}
       {tab === 'crew'     && <CrewHome />}
+      {tab === 'vendor'   && <VendorHome />}
       {tab === 'units'    && <Units />}
       {tab === 'revenue'  && <Revenue />}
       {tab === 'home' && <Home permissions={permissions} onGo={to => {

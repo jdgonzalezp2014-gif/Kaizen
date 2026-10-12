@@ -8,6 +8,7 @@
  * width ≤ 720 emulates a phone (mobile, 2× pixels). `click` is a button's
  * text, or `css:<selector>` to click an element; several are joined by " >> ". Prints the page width and
  * anything wider than the viewport — the page width must equal the viewport.
+ * PAGE='/report#w=…' opens that path instead (a field link); then <Tab> is '-'.
  */
 import { spawn } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
@@ -24,9 +25,9 @@ const send = (method, params = {}) => new Promise(r => { const i = ++id; pend.se
 const ev = async x => (await send('Runtime.evaluate', { expression: x, awaitPromise: true, returnByValue: true })).result?.result?.value;
 const metrics = h => send('Emulation.setDeviceMetricsOverride', { width: W, height: h, deviceScaleFactor: phone ? 2 : 1, mobile: phone });
 await metrics(900);
-await send('Page.enable'); await send('Page.navigate', { url: 'http://127.0.0.1:8799/' });
+await send('Page.enable'); await send('Page.navigate', { url: `http://127.0.0.1:8799${process.env.PAGE ?? '/'}` });
 const clickText = async (sel, text) => { for (let i = 0; i < 60; i++) { if (await ev(`(()=>{const b=[...document.querySelectorAll(${JSON.stringify(sel)})].find(b=>b.textContent.trim().startsWith(${JSON.stringify(text)})); if(b){b.click();return true} return false})()`)) return true; await sleep(500); } return false; };
-await clickText('nav button', tab);
+if (tab !== '-') await clickText('nav button', tab);
 if (sub) await clickText('.subtabs button', sub);
 for (let i = 0; i < 90; i++) { await sleep(1000); if (!(await ev(`!!document.querySelector('.loading-dot, .loading')`))) break; }
 // Several clicks in a row: "css:.a >> Edit claim".

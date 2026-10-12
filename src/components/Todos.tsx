@@ -14,7 +14,7 @@
  * Everything is read from the server as it is now.
  */
 import { Modal } from './Modal.tsx';
-import { getVendors } from '../api.ts';
+import { vendorLink, getVendors } from '../api.ts';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
@@ -538,6 +538,43 @@ function PersonPick({ label, value, name, people, onChange }: {
 }
 
 /**
+ * The vendor's link for a work order (§137): no account — the handyman
+ * accepts the day (or can't: a "Reschedule" sub-task), sends photos before /
+ * after, charges and materials with receipts (waiting for approval) and marks
+ * it done. Uses the SAVED vendor and day.
+ */
+function VendorLink({ id }: { id: string }) {
+  const [l, setL] = useState<null | { link: string; vendor: string; phone: string | null; title: string; unit: string | null; day: string; expires: string }>(null);
+  const [msg, setMsg] = useState('');
+  const get = async () => {
+    setMsg('');
+    const r = await vendorLink(id).catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setMsg(r.message ?? 'Not made.'); return; }
+    setL(r);
+  };
+  if (!l) return (
+    <div className="button-row">
+      <button type="button" className="small secondary" onClick={() => void get()}>📤 Send to vendor</button>
+      <span className="note">A link for the vendor — no account. Save first if you changed the vendor or the day.</span>
+      {msg && <span className="breach">{msg}</span>}
+    </div>
+  );
+  const text = `Kaizen — ${l.unit ? `${l.unit}: ` : ''}${l.title} · ${l.day}. Open / Abre: ${l.link}`;
+  const digits = (l.phone ?? '').replace(/[^\d+]/g, '');
+  return (
+    <div className="vendor-link">
+      <p className="note">For <b>{l.vendor}</b> — the day {l.day}; the link works until {l.expires} or until the work order closes or goes to another vendor.</p>
+      <div className="button-row">
+        <a className="chip" href={`https://wa.me/${digits.replace(/^\+/, '')}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">💬 WhatsApp</a>
+        {digits && <a className="chip" href={`sms:${digits}?&body=${encodeURIComponent(text)}`}>✉ SMS</a>}
+        <button type="button" className="chip" onClick={() => void navigator.clipboard.writeText(text).then(() => setMsg('Copied.'), () => setMsg(l.link))}>📋 Copy</button>
+        {msg && <span className="note">{msg}</span>}
+      </div>
+    </div>
+  );
+}
+
+/**
  * Add (one line, "more" for the rest) or change a piece of work. `fixed`
  * is what a claim pre-sets: the claim itself, and its unit. The fields are
  * Hostaway's task, field for field (§94); the kind, vendor, estimate, claim
@@ -640,6 +677,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
               <input value={v.vendor ?? ''} placeholder="Plumber, handyman…" list="kaizen-vendors" onChange={e => set('vendor', e.target.value || null)} /></label>
             <VendorOptions />
             <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
+            {initial?.id && <VendorLink id={initial.id} />}
           </>}
           <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
           {wo && (

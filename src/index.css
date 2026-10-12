@@ -1990,3 +1990,10 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .decline-btn { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
   font-size: 12.5px; font-weight: 600; padding: 4px 10px; min-height: 30px; white-space: nowrap; }
 .crew-row > .decline-form, .clean-card > .decline-form { grid-column: 1 / -1; }
+/* §137 a handyman's work order: the cleaner's step style. */
+.work-card { display: flex; flex-direction: column; gap: 10px; }
+.work-card p { margin: 0; }
+.work-step { display: flex; flex-direction: column; gap: 8px; }
+.work-step-body { padding: 4px 2px 8px; }
+.work-note summary { cursor: pointer; padding: 6px 0; }
+.vendor-link { border: 1px dashed var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 6px; }
