@@ -404,6 +404,7 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onCl
 }) {
   const tx = TX[lang];
   const [tab, setTab] = useState<'clean' | 'report' | 'extra' | 'share'>(initialTab);
+  const [declining, setDeclining] = useState(false);
   const [fs, setFs] = useState<CleanFieldState | undefined>(page.field?.[a.key]);
   const unitId = ctx.supplies.units.find(u => u.name === a.unit)?.id ?? '';
   // An extra only on a clean done (today or before) and recent enough — the server checks the same.
@@ -414,13 +415,16 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onCl
   return (
     <div className={head ? 'clean-card' : 'clean-card bare'}>
       {head && <>
-        <p className="clean-card-title"><b>{dayLabel(lang, a.date)}</b></p>
+        <div className="clean-card-top">
+          <p className="clean-card-title"><b>{dayLabel(lang, a.date)}</b></p>
+          {a.ahead && act && !declining && <DeclineButton tx={tx} onClick={() => setDeclining(true)} />}
+        </div>
+        {declining && act && <DeclineForm cleanKey={a.key} act={act} reload={reload} lang={lang} onCancel={() => setDeclining(false)} />}
         <p className="clean-card-unit">🏠 {a.unit}{a.beds ? <span className="sub-n"> · {bedsWord(lang, a.beds)}</span> : null}
           {a.price != null && <span className="sub-n"> · {money2(a.price)}</span>}</p>
         <p className="note">{a.manual ? tx.manualClean(kindWord(lang, a.manual)) : a.time ? tx.checkout(a.time) : ''}
           {a.sameDay && <span className="ops-flag urgent">{a.checkIn ? tx.nextGuestAt(a.checkIn) : tx.nextGuestSameDay}</span>}
           {a.deep && <span className="ops-flag deep">{tx.deep}</span>}</p>
-        {a.ahead && act && <Decline cleanKey={a.key} act={act} reload={reload} lang={lang} />}
         {page.access?.[a.key] && <AccessBox tx={tx} a={page.access[a.key]!} />}
         {!!a.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{a.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
         <FieldLine fs={fs} lang={lang} />
@@ -580,10 +584,16 @@ function QuickActions({ q, cleanKey, lang, act, reload }: { q: Quick; cleanKey: 
   );
 }
 
-/** "Can't do it": the clean goes back to the team, unassigned — said with a reason, confirmed in place. */
-function Decline({ cleanKey, act, reload, lang }: { cleanKey: string; act: Act; reload: () => void; lang: Lang }) {
+/**
+ * "Can't do it" — top right of the clean (the owner: by the tabs it was in
+ * the way of everyday taps). The button opens the form below, full width:
+ * a reason, then the turn-down confirmed in place.
+ */
+const DeclineButton = ({ tx, onClick }: { tx: Tx; onClick: () => void }) =>
+  <button className="decline-btn" onClick={onClick}>✕ {tx.cantDoIt}</button>;
+
+function DeclineForm({ cleanKey, act, reload, lang, onCancel }: { cleanKey: string; act: Act; reload: () => void; lang: Lang; onCancel: () => void }) {
   const tx = TX[lang];
-  const [declining, setDeclining] = useState(false);
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
@@ -594,16 +604,22 @@ function Decline({ cleanKey, act, reload, lang }: { cleanKey: string; act: Act; 
     if (!res.ok) { setMsg(res.message ?? tx.notSaved); return; }
     reload();
   };
-  if (!declining) return <button className="link" onClick={() => setDeclining(true)}>{tx.cantDoIt}</button>;
   return (
-    <div className="crew-decide">
+    <div className="crew-decide decline-form">
       <input value={reason} maxLength={300} placeholder={tx.whyOptional} onChange={e => setReason(e.target.value)} />
       <button className="small" disabled={busy} onClick={() => void decline()}>{busy ? tx.sending : tx.declineBtn}</button>
-      <button className="small secondary" disabled={busy} onClick={() => setDeclining(false)}>{tx.keepIt}</button>
+      <button className="small secondary" disabled={busy} onClick={onCancel}>{tx.keepIt}</button>
       <span className="note">{tx.declineNote}</span>
       {msg && <span className="breach">{msg}</span>}
     </div>
   );
+}
+
+/** Both together, where there is no header to hold the button (a row's small buttons). */
+function Decline({ cleanKey, act, reload, lang }: { cleanKey: string; act: Act; reload: () => void; lang: Lang }) {
+  const [open, setOpen] = useState(false);
+  return open ? <DeclineForm cleanKey={cleanKey} act={act} reload={reload} lang={lang} onCancel={() => setOpen(false)} />
+    : <DeclineButton tx={TX[lang]} onClick={() => setOpen(true)} />;
 }
 
 /** Where a clean stands in the field: photos before/after (the Drive folder) and done — for the cleaner and the team. */
@@ -855,9 +871,11 @@ function UpcomingRow({ r, act, reload, tag, lang, ctx, fs, address }: { r: CrewU
   /** §136: where it is — the codes come on the day. */ address?: string }) {
   const tx = TX[lang];
   const [sharing, setSharing] = useState(false);
+  const [declining, setDeclining] = useState(false);
   return (
     <div className="crew-row">
-      <div><b>{dayLabel(lang, r.date)}</b> · {r.unit}{r.beds ? ` · ${bedsWord(lang, r.beds)}` : ''}
+      <div><div className="clean-card-top"><span><b>{dayLabel(lang, r.date)}</b> · {r.unit}{r.beds ? ` · ${bedsWord(lang, r.beds)}` : ''}</span>
+          {act && !declining && <DeclineButton tx={tx} onClick={() => setDeclining(true)} />}</div>
         {tag && <div className={tag.startsWith('○') ? 'sub-n' : 'breach'}>{tag}</div>}</div>
       <div>
         {r.manual ? tx.manualClean(kindWord(lang, r.manual)) : tx.checkout(r.time)}
@@ -867,12 +885,12 @@ function UpcomingRow({ r, act, reload, tag, lang, ctx, fs, address }: { r: CrewU
         {address && <div className="sub-n">📍 <a href={`https://maps.google.com/?q=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer">{address}</a></div>}
       </div>
       <div className="n">{r.price == null ? tx.notPriced : money2(r.price)}</div>
+      {declining && act && <DeclineForm cleanKey={r.key} act={act} reload={reload} lang={lang} onCancel={() => setDeclining(false)} />}
       <FieldLine fs={fs} lang={lang} link={!act && !ctx} />
-      {(ctx || act) && (
+      {ctx && (
         <div className="future-actions no-print">
-          {ctx && (!sharing ? <button className="fr-btn secondary" onClick={() => setSharing(true)}>{tx.optShare}</button>
-            : <SharePanel cleanKey={r.key} lang={lang} get={ctx.shareLink} onClose={() => setSharing(false)} />)}
-          {act && <Decline cleanKey={r.key} act={act} reload={reload} lang={lang} />}
+          {!sharing ? <button className="fr-btn secondary" onClick={() => setSharing(true)}>{tx.optShare}</button>
+            : <SharePanel cleanKey={r.key} lang={lang} get={ctx.shareLink} onClose={() => setSharing(false)} />}
         </div>
       )}
     </div>

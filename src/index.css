@@ -1985,3 +1985,8 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .access-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 .access-code { font-size: 18px; }
 .access-code b { letter-spacing: .06em; }
+/* "Can't do it" top right, small and apart from the everyday buttons; its form full width under the header. */
+.clean-card-top { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.decline-btn { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: 999px;
+  font-size: 12.5px; font-weight: 600; padding: 4px 10px; min-height: 30px; white-space: nowrap; }
+.crew-row > .decline-form, .clean-card > .decline-form { grid-column: 1 / -1; }
