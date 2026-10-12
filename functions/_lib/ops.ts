@@ -148,7 +148,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     }
   }
 
-  const [listings, reservations, inspections, overrideRows, noteRows, declineRows, cancelledRaw, midRows] = await Promise.all([
+  const [listings, reservations, inspections, overrideRows, noteRows, declineRows, cancelledRaw, midRows, carryRows] = await Promise.all([
     timed('listings', fetchListings(creds)),
     // One live question: every stay still in the building today or
     // arriving before the look-ahead ends. Stays that began months ago but
@@ -170,7 +170,11 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     // Mid-stay cleans (§79), which lighten a long stay's checkout under the levels rule (§125).
     sql`SELECT unit_id, checkout_on::text AS day FROM cleanings
          WHERE account_id = 1 AND kind = 'mid_stay' AND assignment = 'assigned' AND void_reason IS NULL
-           AND unit_id IS NOT NULL AND checkout_on >= ${today}::date - 60 AND checkout_on <= ${end}::date`
+           AND unit_id IS NOT NULL AND checkout_on >= ${today}::date - 60 AND checkout_on <= ${end}::date`,
+    // §131: who the rule gave the clean before each coming guest — kept if a booking lands in between.
+    sql`SELECT key, cleaner, prepares_for FROM cleanings
+         WHERE account_id = 1 AND prepares_for IS NOT NULL AND assignment = 'assigned' AND cleaner IS NOT NULL
+           AND void_reason IS NULL AND decided_by LIKE 'rule%' AND checkout_on >= ${today}::date`
   ]) as [Awaited<ReturnType<typeof fetchListings>>, Awaited<ReturnType<typeof fetchReservationsTouching>>,
          Awaited<ReturnType<typeof inspectionLog>>,
          { reservation_id: string; assignment: Override['assignment']; cleaner: string | null;
@@ -178,7 +182,8 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
          { reservation_id: string; kind: string; notes: string }[],
          { cleaning_key: string; cleaner: string; reason: string | null }[],
          Awaited<ReturnType<typeof fetchCancelledTouching>>,
-         { unit_id: string; day: string }[]];
+         { unit_id: string; day: string }[],
+         { key: string; cleaner: string; prepares_for: string }[]];
 
   const overrides = new Map<string, Override>(overrideRows.map(o => [o.reservation_id, {
     assignment: o.assignment, cleaner: o.cleaner, deep: o.deep,
@@ -207,6 +212,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     today, windowDays: days, listings: opsListings, reservations, roster: cfg.roster, rules: cfg.rules,
     overrides, notes, inspections: panel, sheet: sheetMap, assignRule: cfg.assignRule, declines,
     cancelled: cancelledRaw.map(r => ({ ...r, cancelledAt: utcToLocal(r.cancellationDate, OPS_TZ) })), midStays,
+    carry: new Map(carryRows.map(c => [c.prepares_for, { cleaner: c.cleaner, from: c.key }])),
     // With no inspection ever recorded here, "never inspected" would be a
     // claim about every unit made from no evidence (§63).
     inspectionLogRead: inspections.done.length + inspections.scheduled.length > 0
@@ -251,6 +257,7 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
   const outs = s.rows.filter(r => r.kind === 'out');
   const decidedBy = (r: BoardRow) => r.manual.cleaner ? `override:${s.overrideBy.get(r.resId) ?? 'someone'}`
     : r.cancelled ? 'cancelled after arrival — to confirm'
+    : r.carried ? `rule:carried from ${r.carried.from} — a booking came in between`
     : r.sameDayOf ? `rule: one clean per unit per day (${r.sameDayOf})` : s.assignRule === 'levels' ? 'rule:levels' : s.assignRule === 'stars' ? 'rule:stars' : 'rule';
   // §123: a stay cancelled after arrival is unpaid until a person settles it; a person's choice on the board settles it.
   const toConfirm = (r: BoardRow) => r.cancelled && !r.manual.cleaner
@@ -259,16 +266,16 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
   if (outs.length) {
     await sql`
       INSERT INTO cleanings (account_id, key, unit_id, unit_name, checkout_on, cleaner, assignment,
-                             guest, price, deep, urgency, checkout_time, beds, source, decided_by, needs_confirm, confirmed_by)
-      SELECT 1, k, u, n, d, c, a, g, p, dp, ug, tm, bd, 'kaizen', db, nc, cb
+                             guest, price, deep, urgency, checkout_time, beds, source, decided_by, needs_confirm, confirmed_by, prepares_for)
+      SELECT 1, k, u, n, d, c, a, g, p, dp, ug, tm, bd, 'kaizen', db, nc, cb, pf
         FROM unnest(${outs.map(r => r.resId)}::text[], ${outs.map(r => r.unitId)}::text[],
                     ${outs.map(r => r.unit)}::text[], ${outs.map(r => r.date)}::date[],
                     ${outs.map(r => r.cleaner)}::text[], ${outs.map(r => r.assignment === 'unknown' ? 'tbd' : r.assignment)}::text[],
                     ${outs.map(r => r.guest || null)}::text[], ${outs.map(r => r.price)}::numeric[],
                     ${outs.map(r => r.deep)}::boolean[], ${outs.map(r => (r.urgency && URGENCY_LABEL[r.urgency]) || null)}::text[],
                     ${outs.map(r => r.time)}::text[], ${outs.map(r => r.beds)}::smallint[], ${outs.map(decidedBy)}::text[],
-                    ${outs.map(toConfirm)}::text[], ${outs.map(settledBy)}::text[])
-             AS t(k, u, n, d, c, a, g, p, dp, ug, tm, bd, db, nc, cb)
+                    ${outs.map(toConfirm)}::text[], ${outs.map(settledBy)}::text[], ${outs.map(r => r.next?.resId ?? null)}::text[])
+             AS t(k, u, n, d, c, a, g, p, dp, ug, tm, bd, db, nc, cb, pf)
       ON CONFLICT (account_id, key) DO UPDATE SET
         unit_id = EXCLUDED.unit_id, unit_name = EXCLUDED.unit_name, checkout_on = EXCLUDED.checkout_on,
         cleaner = EXCLUDED.cleaner, assignment = EXCLUDED.assignment, guest = EXCLUDED.guest,
@@ -280,7 +287,7 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
         urgency = EXCLUDED.urgency,
         checkout_time = EXCLUDED.checkout_time, beds = EXCLUDED.beds, source = 'kaizen',
         decided_by = EXCLUDED.decided_by, void_reason = NULL, imported_at = now(),
-        needs_confirm = EXCLUDED.needs_confirm,
+        needs_confirm = EXCLUDED.needs_confirm, prepares_for = EXCLUDED.prepares_for,
         confirmed_by = COALESCE(EXCLUDED.confirmed_by, cleanings.confirmed_by),
         confirmed_at = CASE WHEN EXCLUDED.confirmed_by IS NOT NULL AND cleanings.confirmed_by IS NULL THEN now() ELSE cleanings.confirmed_at END
       WHERE cleanings.checkout_on >= ${s.today}::date`;

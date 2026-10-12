@@ -103,6 +103,11 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 - Operations → Crew: pick a cleaner → their page for the team (level, flag/correct/decide), or
   **👁 View as cleaner ↗** — a separate tab (`/#as-cleaner/<name>`, PreviewShell in App.tsx) with only the
   cleaner's page, loaded through `crewGet` (the cleaner's own server code: level stripped), buttons inert.
+- **Carry (§131):** the record stores `prepares_for` (the next reservation when recorded). A rule-decided
+  clean before guest X held by A: if a booking lands in between, the original checkout is decided again by
+  the new guest, and A takes the new booking's checkout (the clean now before X) — `applyCarry`, before
+  the star/level passes, `row.carried`, board "↪ kept from the … checkout", decided_by `rule:carried from …`.
+  A person's choice never moves; works only from the first record that has `prepares_for` (Oct 11 on).
 - **Cancelled before arrival (§130):** `voidCancelled` — void_reason "booking cancelled in Hostaway",
   assignment `not_needed`, cleaner/price NULL, decided_by "cancelled before arrival — it was X's". A booking
   that comes back is restored as TBD (unassigned). Migration 054 fixed the 8 rows that kept a cleaner.
@@ -159,8 +164,6 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   "Save and switch to levels". Fill **Irene's deep rates** first (blank → her deep cleans price at the
   ordinary rate and look cheapest). After the switch: delete the stars rule (requiredStars,
   pickByStars, assignByStars, StarDecision, `row.stars`, star bands in DEFAULT_RULES, `cleaners.stars`).
-  **Not built — waiting on the owner:** when a booking lands for a clean already given to someone,
-  that cleaner "takes the new reservation's checkout" (as if the stay before had been extended).
 - **Crew page built, not switched on (§122).** To start: set each cleaner's email (Setup → Crew
   pages); in Cloudflare Zero Trust add those emails to the Kaizen Access policy with One-time PIN
   on. Calendar stays off until the star schedule is checked; then turn it on and Confirm in

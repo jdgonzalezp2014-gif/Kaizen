@@ -40,14 +40,14 @@ finishing. A new decision worth the long form gets a `## §N` section in history
 ## Workflow
 
 ```
-npm test                 # node --test (~243)
+npm test                 # node --test (~245)
 npx tsc --noEmit
 npm run build
 npm run migrate          # db/migrations/NNN_*.sql, recorded in _migrations — BEFORE pushing
                          # (reads DATABASE_URL_UNPOOLED first: to migrate a Neon branch, override BOTH)
 git push origin master   # deploys
 ```
-- Migrations applied: 001–054. New ones are the next number.
+- Migrations applied: 001–055. New ones are the next number.
 - Local server (`$S` = scratch dir):
   `U=$(grep -h '^DATABASE_URL=' .env.local|head -1|cut -d= -f2-|tr -d '"'"'"); EK=$(grep -h '^ENCRYPTION_KEY=' .env.local .dev.vars|head -1|cut -d= -f2-|tr -d '"'"'"); nohup npx wrangler pages dev dist --port 8799 --binding "DATABASE_URL=$U" --binding "ENCRYPTION_KEY=$EK" --binding "ALLOW_UNAUTHENTICATED=true" > $S/wrangler.log 2>&1 &`
   Stop it with `ps -eo pid,args | grep "[w]rangler pages dev"` + kill (`pkill -f` kills its own shell).

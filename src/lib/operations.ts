@@ -181,6 +181,8 @@ export type Urgency = 'turnover' | 'same_guest' | 'no_next' | null;
 export type Tier = 'high' | 'mid' | 'low' | 'none';
 
 export interface NextStay {
+  /** The next reservation — the guest this clean prepares the unit for (§131). */
+  resId: string;
   arrival: DateStr;
   gapDays: number;
   /** Null past the value horizon: a booking a month out is not today's business. */
@@ -253,6 +255,13 @@ export interface BoardRow {
    * by the rule.
    */
   cancelled: string | null;
+  /**
+   * §131: the cleaner who had the clean before the next guest keeps it. A
+   * booking landed in between, so the clean before that guest is now this
+   * checkout — as if the stay before had been extended. `from` is the
+   * checkout they had.
+   */
+  carried: { cleaner: string; from: string; fromUnit: string; fromDate: DateStr } | null;
   cleaner: string | null;
   assignment: Assignment | 'unknown';
   price: number | null;
@@ -630,6 +639,11 @@ export function buildBoard(input: {
   cancelled?: OpsReservation[];
   /** Mid-stay cleans done or planned, by unit id (§125) — they lighten a long stay's checkout. */
   midStays?: Map<string, DateStr[]>;
+  /**
+   * §131: by the reservation a recorded clean prepares for, who the rule gave
+   * it to and which checkout it was — from the cleanings record.
+   */
+  carry?: Map<string, { cleaner: string; from: string }>;
 }): BoardRow[] {
   const { today, windowDays, listings, reservations, roster, rules, overrides, notes, inspections } = input;
   const end = addDays(today, windowDays);
@@ -666,7 +680,7 @@ export function buildBoard(input: {
       beds: l.bedrooms, guest: x.guestName ?? '', docName: x.docName || x.guestName || 'Guest', agreement: x.agreement ?? null, idVerified: !!x.idVerified, guests: x.guests ?? null, nights: x.nights,
       channel: x.channel, total: x.totalPaid, time: '', note: '',
       next: null, auto: { cleaner: null, tier: 'none', reason: '' }, stars: null, levels: null,
-      declined: input.declines?.get(x.reservationId) ?? [], cancelled: cx,
+      declined: input.declines?.get(x.reservationId) ?? [], cancelled: cx, carried: null,
       cleaner: null, assignment: 'unknown', price: null, deep: false, deepSuggested: false, urgency: null,
       manual: { cleaner: false, deep: false, time: false },
       inspection: { key: 'none', reason: '' }, sheet: null, inDailyFile: false, differs: [],
@@ -684,7 +698,7 @@ export function buildBoard(input: {
     const gapDays = nx ? daysBetween(x.departure, nx.arrival) : 0;
     const inHorizon = !!nx && gapDays <= rules.nextResValueHorizonDays;
     const next: NextStay | null = nx ? {
-      arrival: nx.arrival, gapDays,
+      resId: nx.reservationId, arrival: nx.arrival, gapDays,
       total: inHorizon ? nx.totalPaid : null,
       nightly: inHorizon && !isBlockStay(nx) && nx.nights > 0 ? nx.totalPaid / nx.nights : null,
       longVacancy: gapDays >= rules.longVacancyDays
@@ -725,6 +739,7 @@ export function buildBoard(input: {
   rows.sort((a, b) => a.date.localeCompare(b.date) ||
     (a.kind === b.kind ? 0 : a.kind === 'out' ? -1 : 1) || a.unit.localeCompare(b.unit));
   oneCleanPerUnitDay(rows, overrides);
+  applyCarry(rows, input.carry ?? new Map(), roster);
   assignByStars(rows, roster, rules, typical, byStars);
   assignByLevels(rows, roster, rules, input.midStays ?? new Map(), input.assignRule === 'levels', today);
   for (const r of rows) if (r.sheet) r.differs = sheetDiffers(r);
@@ -761,6 +776,38 @@ export function buildBoard(input: {
     row.preppedBy = prep?.cleaner ?? null;
   }
   return rows;
+}
+
+/* ── carrying a clean to the new checkout (§131) ──────────────────── */
+
+/**
+ * The owner's rule: A had the clean before a big booking; a cheap booking
+ * lands in the gap, so the original checkout now prepares for the cheap
+ * guest (and goes to whoever the rule picks for it) — and A keeps the clean
+ * before the big guest, which is now the new booking's checkout. As if the
+ * stay before had been extended.
+ *
+ * Only what the rule decided moves; a person's choice stays put. Applies
+ * when the recorded clean's next guest is no longer the next after it.
+ */
+export function applyCarry(rows: BoardRow[], carry: Map<string, { cleaner: string; from: string }>, roster: Cleaner[]): void {
+  if (!carry.size) return;
+  const outs = rows.filter(r => r.kind === 'out');
+  for (const r of outs) {
+    if (r.manual.cleaner || r.cancelled || r.sameDayOf || !r.next) continue;
+    const c = carry.get(r.next.resId);
+    if (!c || c.from === r.resId) continue;
+    const orig = outs.find(o => o.resId === c.from);
+    // The checkout they had still comes right before that guest: nothing came in between.
+    if (orig && orig.next?.resId === r.next.resId) continue;
+    if (!roster.some(x => x.name === c.cleaner && x.active)) continue;
+    r.carried = { cleaner: c.cleaner, from: c.from, fromUnit: orig?.unit ?? r.unit, fromDate: orig?.date ?? r.date };
+    r.assignment = 'assigned';
+    r.cleaner = c.cleaner;
+    r.price = rateFor(roster, c.cleaner, r.beds, r.deep);
+    r.auto = { cleaner: c.cleaner, tier: 'none',
+      reason: `${c.cleaner} had the clean before this guest (${orig ? `the ${orig.date} checkout` : 'an earlier checkout'}); a booking came in between, so they take this checkout — as if the stay before had been extended` };
+  }
 }
 
 /* ── the levels rule (§125) ───────────────────────────────────────── */
@@ -839,7 +886,7 @@ export function assignByLevels(rows: BoardRow[], roster: Cleaner[], rules: OpsRu
   }
   for (const day of days.values()) {
     const load = new Map<string, number>();
-    for (const r of day) if (r.manual.cleaner && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
+    for (const r of day) if ((r.manual.cleaner || r.carried) && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
     const need = day.map(r => {
       // The latest mid-stay inside the stay, before its checkout.
       const arrival = addDays(r.date, -r.nights);
@@ -852,11 +899,11 @@ export function assignByLevels(rows: BoardRow[], roster: Cleaner[], rules: OpsRu
       const pick = req.required ? pickByLevel(req.required, zoneOf(r.unit), r.beds, r.deep, roster, load, new Set(r.declined.map(d => d.cleaner)))
         : { cleaner: null, reason: daysBetween(today, r.date) <= 1 ? 'TBD — assign by hand now' : `TBD until a booking lands close enough, or assign by hand by ${addDays(r.date, -1)}` };
       r.levels = { required: req.required, why: req.why, waiting: req.waiting, ...pick };
-      if (apply && !r.cancelled) {
+      if (apply && !r.cancelled && !r.carried) {
         r.auto = { cleaner: pick.cleaner, tier: 'none',
           reason: `${req.required ? `${LEVEL_WORD[req.required]} level` : 'no level yet'} (${req.why}) — ${pick.reason}` };
       }
-      if (r.manual.cleaner || r.cancelled) continue;
+      if (r.manual.cleaner || r.cancelled || r.carried) continue;
       if (pick.cleaner) load.set(pick.cleaner, (load.get(pick.cleaner) ?? 0) + 1);
       if (!apply) continue;
       r.assignment = pick.cleaner ? 'assigned' : 'tbd';
@@ -898,7 +945,7 @@ export function assignByStars(rows: BoardRow[], roster: Cleaner[], rules: OpsRul
   for (const day of days.values()) {
     const load = new Map<string, number>();
     for (const r of day) {
-      if (r.manual.cleaner && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
+      if ((r.manual.cleaner || r.carried) && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
     }
     const need = day.map(r => ({ r, req: requiredStars(r.next?.nightly ?? null, typical.get(r.unitId) ?? null,
                                                        r.nights, r.urgency === 'turnover', rules) }));
@@ -907,10 +954,10 @@ export function assignByStars(rows: BoardRow[], roster: Cleaner[], rules: OpsRul
       const pick = pickByStars(req.stars, zoneOf(r.unit), r.beds, r.deep, roster, load,
                                new Set(r.declined.map(d => d.cleaner)));
       r.stars = { required: req.stars, why: req.why, ...pick };
-      if (apply && !r.cancelled) r.auto = { cleaner: pick.cleaner, tier: 'none', reason: `★${req.stars} needed (${req.why}) — ${pick.reason}` };
+      if (apply && !r.cancelled && !r.carried) r.auto = { cleaner: pick.cleaner, tier: 'none', reason: `★${req.stars} needed (${req.why}) — ${pick.reason}` };
       // A row a person decided is shown what the rule would say, and takes no slot for it;
       // a cancelled stay waits for a person (§123).
-      if (r.manual.cleaner || r.cancelled) continue;
+      if (r.manual.cleaner || r.cancelled || r.carried) continue;
       if (pick.cleaner) load.set(pick.cleaner, (load.get(pick.cleaner) ?? 0) + 1);
       if (!apply) continue;
       r.assignment = pick.cleaner ? 'assigned' : 'tbd';

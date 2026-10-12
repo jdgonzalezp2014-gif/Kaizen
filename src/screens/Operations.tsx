@@ -593,6 +593,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
             </span>
             {seen && <span title={`${r.cleaner} sees this on their crew page`}> 👁</span>}
             {r.manual.cleaner && <span className="sub-n"> · set by hand</span>}
+            {r.carried && <div className="sub-n" title={r.auto.reason}>↪ kept from the {short(r.carried.fromDate)} checkout — a booking came in between</div>}
             {/* "★4 · Veronica ★5 ✓": what the clean needs against what the cleaner has. */}
             {/* The level the clean needs, or why it waits (§125). */}
             {byLevels && r.levels && r.assignment !== 'not_needed' && !r.manual.cleaner && (

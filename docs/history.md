@@ -3529,3 +3529,13 @@ decided_by ("cancelled before arrival — it was Michelle's"). If the booking co
 unassigned. Eight rows in production were corrected (migration 054). One of them, P2-4308 on Oct 11, was in
 fact cancelled after arrival; the daily reconcile moves it to "confirm who cleaned", keeping whose it was.
 
+## §131 — A booking lands in the gap: the cleaner keeps the clean before the next guest (2026-10-11)
+
+The owner's case: a stay ends, a big booking arrives four days later, so the checkout goes to cleaner A.
+Then a cheap booking lands in the gap. The checkout now prepares for the cheap guest, so by its value it
+goes to B — "and A takes the new booking's checkout", as if the stay before had been extended. A keeps
+the clean that prepares for the big guest. The record now stores which reservation each clean prepares
+for; when that guest is no longer the next after the recorded checkout, the cleaner the rule had given it
+to is carried to the new booking's checkout, marked ↪ on the board. Only the rule's decisions move — a
+person's choice stays — and it starts with cleans recorded from now on.
+

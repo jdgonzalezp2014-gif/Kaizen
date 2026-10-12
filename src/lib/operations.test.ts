@@ -525,3 +525,41 @@ test('a cancel-and-rebook by the same guest is a change, not a cancellation; ano
   assert.equal(out(r, '67232727').cancelled, '2026-09-24 00:18');
   assert.equal(out(r, '67232727').date, '2026-09-24');       // cleaned before Jennifer arrives
 });
+
+/* ── carrying a clean to the new checkout (§131) ── */
+
+test('a cheap booking lands in the gap: its checkout keeps A, the original checkout goes to B by the new guest', () => {
+  // A = Irene (high level). B = Veronica, the cheaper one for a 2BR at standard level.
+  const roster = LV.map(c => c.name === 'Veronica' ? { ...c, rates: { 1: 50, 2: 70 } } : c);
+  const R1 = res('R1', '1', '2026-09-22', '2026-09-26', 400, 4);
+  const R3 = res('R3', '1', '2026-09-28', '2026-10-01', 900, 3);     // the big one, $300/night
+  // Before: the gap was empty — R1's checkout prepared for R3 and the rule gave it to Irene.
+  const before = buildBoard({ today: TODAY, windowDays: 10, listings: L, reservations: [R1, R3], roster, rules: RULES,
+    overrides: new Map(), notes: new Map(), inspections: [], assignRule: 'levels' });
+  assert.equal(out(before, 'R1').cleaner, 'Irene');
+  assert.equal(out(before, 'R1').next?.resId, 'R3');
+  // Now R2 lands in the gap, cheap. The record says: the clean before R3 was Irene's, at R1.
+  const R2 = res('R2', '1', '2026-09-26', '2026-09-28', 200, 2);
+  const carry = new Map([['R3', { cleaner: 'Irene', from: 'R1' }]]);
+  const after = buildBoard({ today: TODAY, windowDays: 10, listings: L, reservations: [R1, R2, R3], roster, rules: RULES,
+    overrides: new Map(), notes: new Map(), inspections: [], assignRule: 'levels', carry });
+  assert.equal(out(after, 'R1').cleaner, 'Veronica');               // by R2's value: standard, cheapest
+  assert.equal(out(after, 'R2').cleaner, 'Irene');                  // the clean before R3 stays Irene's
+  assert.deepEqual(out(after, 'R2').carried, { cleaner: 'Irene', from: 'R1', fromUnit: 'CL1250', fromDate: '2026-09-26' });
+  assert.match(out(after, 'R2').auto.reason, /as if the stay before had been extended/);
+});
+
+test('nothing in between, or a person\'s choice on the new checkout: no carry', () => {
+  const R1 = res('R1', '1', '2026-09-22', '2026-09-26', 400, 4);
+  const R3 = res('R3', '1', '2026-09-28', '2026-10-01', 900, 3);
+  const carry = new Map([['R3', { cleaner: 'Irene', from: 'R1' }]]);
+  const same = buildBoard({ today: TODAY, windowDays: 10, listings: L, reservations: [R1, R3], roster: LV, rules: RULES,
+    overrides: new Map(), notes: new Map(), inspections: [], assignRule: 'levels', carry });
+  assert.equal(out(same, 'R1').carried, null);
+  const R2 = res('R2', '1', '2026-09-26', '2026-09-28', 200, 2);
+  const ov = new Map<string, Override>([['R2', { assignment: 'assigned', cleaner: 'Karina and Marvin', deep: null, checkoutTime: null, checkinTime: null }]]);
+  const hand = buildBoard({ today: TODAY, windowDays: 10, listings: L, reservations: [R1, R2, R3], roster: LV, rules: RULES,
+    overrides: ov, notes: new Map(), inspections: [], assignRule: 'levels', carry });
+  assert.equal(out(hand, 'R2').cleaner, 'Karina and Marvin');
+  assert.equal(out(hand, 'R2').carried, null);
+});
