@@ -1709,7 +1709,10 @@ function Setup({ data, reload, section, onSection }: { data: OperationsResponse;
       {ruleCard('Assignment rules', RULE_LABELS.filter(([k]) => !k.startsWith('inspection')), false)}
       </>}
 
-      {section === 'crew' && <CrewSetup cfg={cfg} roster={roster} setRoster={setRoster} save={save} />}
+      {section === 'crew' && <>
+        <CrewSetup cfg={cfg} roster={roster} setRoster={setRoster} save={save} />
+        <AccessAudit rows={cfg.access ?? []} />
+      </>}
 
       {section === 'inspections' && <>
       {ruleCard('When inspections are due, and who inspects', RULE_LABELS.filter(([k]) => k.startsWith('inspection')), true)}
@@ -1727,6 +1730,46 @@ function Setup({ data, reload, section, onSection }: { data: OperationsResponse;
  * invoice runs, the fallback links, and whether cleaners see what is
  * coming — off until the schedule has been checked.
  */
+/**
+ * What cleaners get at each unit (§136): the address and Wi-Fi (Hostaway),
+ * the lock, the cleaner code and the lockbox (Repository → Units). Shown as
+ * there / missing — never the codes themselves.
+ */
+function AccessAudit({ rows }: { rows: NonNullable<OpsSettings['access']> }) {
+  const gaps = rows.filter(r => r.missing.length);
+  const mark = (ok: boolean, label = '') => ok ? <span className="ok-tag">✓{label && ` ${label}`}</span> : <span className="breach">▲ missing</span>;
+  return (
+    <div className="card">
+      <h2>How cleaners get in <span className={gaps.length ? 'chan-tag' : 'ok-tag'}>{gaps.length ? `${gaps.length} unit${gaps.length === 1 ? '' : 's'} to complete` : 'all complete'}</span></h2>
+      <p className="note">On a clean of the day, the cleaner (and the helper's link) sees the address, the lock, the code and the Wi-Fi.
+        Address and Wi-Fi come from Hostaway (refreshed by Settings → Sync listings); the lock type, the <b>Cleaner Code</b> and
+        the <b>Lockbox</b> from Repository → Units. A Hostaway door code is the guests' — used only until a cleaner code is set,
+        and the cleaner is told so. Admin and backup codes are never shown.</p>
+      <div className="grid-scroll">
+        <table className="units compact">
+          <thead><tr><th>Unit</th><th>Lock</th><th>Address</th><th>Cleaner code</th><th>Lockbox / fob</th><th>Wi-Fi</th><th>Repository</th></tr></thead>
+          <tbody>
+            {rows.map(r => (
+              <tr key={r.unit}>
+                <td><b>{r.unit}</b></td>
+                <td>{r.lockType ?? <span className="breach">▲ not set</span>}</td>
+                <td>{mark(r.has.address)}</td>
+                <td>{r.has.code === 'repository' ? <span className="ok-tag">✓</span>
+                  : r.has.code === 'hostaway' ? <span className="chan-tag" title="Hostaway's door code — the guests'">⚠ guests' code</span>
+                  : r.kind === 'fob' || r.kind === 'keys' ? <span className="sub-n">— not needed</span> : <span className="breach">▲ missing</span>}</td>
+                <td>{r.kind === 'fob' || r.kind === 'keys' ? mark(r.has.lockbox, r.has.fob ?? '') : <span className="sub-n">{r.has.fob ?? '—'}</span>}</td>
+                <td>{mark(r.has.wifi)}</td>
+                <td className="sub-n">{r.recordId ?? <span className="breach">▲ no record</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="note">Next (owner): a code of their own for each cleaner instead of one shared cleaner code per unit — see the operations open items.</p>
+    </div>
+  );
+}
+
 function CrewSetup({ cfg, roster, setRoster, save }: {
   cfg: OpsSettings; roster: Cleaner[]; setRoster: (f: (rs: Cleaner[]) => Cleaner[]) => void;
   save: (body: Record<string, unknown>, done: string) => Promise<void>;

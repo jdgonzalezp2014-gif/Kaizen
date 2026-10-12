@@ -61,7 +61,8 @@ export async function syncUnits(
     unitType: unitType(l.propertyTypeId, l.name),
     poolType: poolType(l.amenities),
     lat: l.lat,
-    lng: l.lng
+    lng: l.lng,
+    address: l.address, wifiName: l.wifiName, wifiPassword: l.wifiPassword, doorCode: l.doorCode
   }));
 
   // One statement per unit rather than a single multi-row upsert: the
@@ -78,10 +79,11 @@ export async function syncUnits(
     await sql`
       INSERT INTO units (account_id, id, name, active, special_status, parked, parked_checked_at,
                          bedrooms, bathrooms, capacity,
-                         unit_type, pool_type, lat, lng, synced_at)
+                         unit_type, pool_type, lat, lng, address, wifi_name, wifi_password, door_code, synced_at)
       VALUES (${accountId}, ${u.id}, ${u.name}, ${u.active}, ${u.specialStatus}, ${u.parked}, now(),
               ${u.bedrooms}, ${u.bathrooms},
-              ${u.capacity}, ${u.unitType}, ${u.poolType}, ${u.lat}, ${u.lng}, now())
+              ${u.capacity}, ${u.unitType}, ${u.poolType}, ${u.lat}, ${u.lng},
+              ${u.address}, ${u.wifiName}, ${u.wifiPassword}, ${u.doorCode}, now())
       ON CONFLICT (account_id, id) DO UPDATE SET
         name = EXCLUDED.name, active = EXCLUDED.active,
         special_status = EXCLUDED.special_status,
@@ -89,6 +91,8 @@ export async function syncUnits(
         bedrooms = EXCLUDED.bedrooms, bathrooms = EXCLUDED.bathrooms,
         capacity = EXCLUDED.capacity, unit_type = EXCLUDED.unit_type,
         pool_type = EXCLUDED.pool_type, lat = EXCLUDED.lat, lng = EXCLUDED.lng,
+        address = EXCLUDED.address, wifi_name = EXCLUDED.wifi_name, wifi_password = EXCLUDED.wifi_password,
+        door_code = EXCLUDED.door_code,
         synced_at = now()
     `;
   }

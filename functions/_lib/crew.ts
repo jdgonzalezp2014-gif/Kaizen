@@ -13,6 +13,8 @@ import { loadOps, pushHostNotes, recordCleanings } from './ops.ts';
 import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { decrypt, encrypt } from './crypto.ts';
 import { tellCleanThread } from './clean-slack.ts';
+import { accessByUnit } from './unit-access.ts';
+import type { UnitAccess } from '../../src/lib/unit-access.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type CleanState, type Stage } from './clean-record.ts';
 import { activeUnits, esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, nothingTaken, recordMove, recordUses } from './inventory.ts';
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
@@ -56,6 +58,10 @@ export interface CrewPage {
   help?: { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; lang: 'en' | 'es' }[];
   /** §134: each recent or coming clean's photos before/after and done — by key. */
   field?: Record<string, CleanState>;
+  /** §136: how to get in (address, lock, code, Wi-Fi) — only for the cleaner's cleans of TODAY, by key. */
+  access?: Record<string, UnitAccess>;
+  /** §136: the address of each coming clean (no codes ahead of the day), by key. */
+  addresses?: Record<string, string>;
   /** §134: the photos themselves (ids to ask for), by clean — shown on the cleaner's past cleans. */
   fieldPhotos?: Record<string, { id: string; stage: Stage }[]>;
   /** §134: what they can report — the supplies and the units. */
@@ -309,8 +315,20 @@ export async function crewGet(request: Request, env: Env, sql: SqlFn, me: CrewCa
     .map(h => ({ title: h.title, purpose: h.purpose, steps: h.steps, body: h.body, lang: h.es ? 'es' : 'en' }));
   const [items, units] = await Promise.all([invItems(sql), activeUnits(sql)]);
   page.supplies = { items: items.filter(i => i.active).map(i => ({ id: i.id, name: i.name, measure: i.measure, category: i.category })), units };
+  // §136: the codes for today's cleans only; ahead, just where to go.
+  const acc = await accessByUnit(sql);
+  const todays = [...page.upcoming.rows.filter(r => r.date === page.today), ...page.cleans.filter(c => c.date === page.today && !c.voidReason)];
+  page.access = Object.fromEntries(todays.flatMap(c => { const a = acc.get(c.unit); return a ? [[c.key, strip(a)]] : []; }));
+  page.addresses = Object.fromEntries(page.upcoming.rows.filter(r => r.date > page.today)
+    .flatMap(r => { const a = acc.get(r.unit)?.address; return a ? [[r.key, a]] : []; }));
   return Response.json({ ok: true, ...page });
 }
+
+/** What a cleaner is sent of a unit's access: never the team's bookkeeping (record ids, the unit id). */
+export const strip = (a: UnitAccess & { unitId?: string; recordId?: string | null }): UnitAccess => {
+  const { unitId: _u, recordId: _r, ...rest } = a;
+  return rest;
+};
 
 /** Each extra's evidence files, in place. */
 export async function attachFiles(sql: SqlFn, extras: { id: string; files?: CrewExtra['files'] }[]): Promise<void> {

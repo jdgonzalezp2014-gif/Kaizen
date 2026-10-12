@@ -379,6 +379,10 @@ export const cancelInspection = (id: string) =>
   call<{ ok: true } | Fail>(`/api/inspections?id=${id}`, { method: 'DELETE' });
 
 export interface OpsSettings {
+  /** §136: what cleaners get at each active unit — presence only, never a code. */
+  access?: { unit: string; recordId: string | null; lockType: string | null; kind: string | null;
+             missing: ('address' | 'access' | 'code' | 'lockbox' | 'wifi')[];
+             has: { address: boolean; code: 'repository' | 'hostaway' | null; lockbox: boolean; fob: string | null; wifi: boolean } }[];
   ok: true; mode: 'shadow' | 'live'; rules: OpsRules; defaults: OpsRules;
   extraInspectors: string[]; roster: Cleaner[]; guestDocUnits: string[];
   assignRule: AssignRule;
@@ -443,6 +447,9 @@ export interface CrewPage {
   supplies?: { items: SupplyItem[]; units: { id: string; name: string }[] };
   /** §134: each recent or coming clean's photos and done, by key. */
   field?: Record<string, CleanFieldState>;
+  /** §136: how to get in, for today's cleans only; the address of the coming ones. */
+  access?: Record<string, import('./lib/unit-access.ts').UnitAccess>;
+  addresses?: Record<string, string>;
   /** §134: the photos of those cleans (ids for crewPhoto), by key. */
   fieldPhotos?: Record<string, { id: string; stage: 'before' | 'after' }[]>;
   upcoming: {
@@ -504,6 +511,7 @@ export interface CleanFieldState {
 }
 export interface ReportTeam {
   team: string; lang: 'en' | 'es'; items: SupplyItem[]; clean: { unit: string; date: string; until: string }; state?: CleanFieldState;
+  /** §136: how to get in, while the link lasts. */ access?: import('./lib/unit-access.ts').UnitAccess | null;
 }
 export const getReportLink = (token: string) =>
   call<({ ok: true } & ReportTeam) | Fail>('/api/report-link', { headers: { 'X-Report-Token': token } });

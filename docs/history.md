@@ -3668,3 +3668,16 @@ and on a phone the scheduled list hid Start / Continue. The link page became the
 reviews and finishes); photos became optional in the rule, the server and every button; the scheduled
 rows put the unit and the buttons first.
 
+## §136 — The clean carries how to get in, and the Wi-Fi (2026-10-12)
+
+The owner: make sure every unit has its address, cleaning code, access type and — with a smart lock — the
+code, and give them to the cleaners with the clean (a code per cleaner later, for security). The data
+was split: the Repository's unit tables (the team's) had the lock types, cleaner codes and lockboxes —
+complete for the Cortland units and the houses but not for the Links apartments' Wi-Fi, and nothing for
+Bobcat — while Hostaway had the address and Wi-Fi of all 21 active listings (and a door code only for
+Bobcat, the guests'). So each comes from where it is complete: address and Wi-Fi synced from Hostaway
+into `units` (063), the lock, cleaner code and lockbox from the Repository, matched by name or unit
+number (the Links apartments are P2-… in Hostaway and LP-… in the Repository). The cleaner sees them on the
+clean of the day (folded until tapped), the helper on the clean's link; ahead, only the address; admin
+and backup codes never. Three units are left for the team to fill, listed in Setup → Crew pages.
+

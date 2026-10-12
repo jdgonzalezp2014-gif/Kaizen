@@ -24,7 +24,8 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
-import { sha256 } from '../_lib/crew.ts';
+import { sha256, strip } from '../_lib/crew.ts';
+import { accessByUnit } from '../_lib/unit-access.ts';
 import { esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, nothingTaken, recordMove, recordUses } from '../_lib/inventory.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { tellCleanThread } from '../_lib/clean-slack.ts';
@@ -63,7 +64,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const items = (await invItems(sql)).filter(i => i.active).map(i => ({ id: i.id, name: i.name, measure: i.measure, category: i.category }));
   return Response.json({ ok: true, team: l.cleaner, lang: l.lang, items,
                          clean: { unit: l.unit_name, date: l.clean_date, until: l.expires_on },
-                         state: (await cleanStates(sql, [l.cleaning_key]))[l.cleaning_key] });
+                         state: (await cleanStates(sql, [l.cleaning_key]))[l.cleaning_key],
+                         // §136: how to get in — only while this clean's link lasts (it closes 2 days after).
+                         access: (a => a ? strip(a) : null)((await accessByUnit(sql)).get(l.unit_name)) });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {

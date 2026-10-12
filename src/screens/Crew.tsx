@@ -28,6 +28,7 @@ import { FieldReport, KINDS, type Kind, type Send } from '../components/FieldRep
 import { CleanSteps, type Result } from '../components/CleanSteps.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { ThemeToggle } from '../components/ThemeToggle.tsx';
+import { AccessBox } from '../components/AccessBox.tsx';
 import type { Cleaner } from '../lib/operations.ts';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
@@ -420,6 +421,7 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onCl
           {a.sameDay && <span className="ops-flag urgent">{a.checkIn ? tx.nextGuestAt(a.checkIn) : tx.nextGuestSameDay}</span>}
           {a.deep && <span className="ops-flag deep">{tx.deep}</span>}</p>
         {a.ahead && act && <Decline cleanKey={a.key} act={act} reload={reload} lang={lang} />}
+        {page.access?.[a.key] && <AccessBox tx={tx} a={page.access[a.key]!} />}
         {!!a.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{a.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
         <FieldLine fs={fs} lang={lang} />
         {extras.map(e => <p key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>💵 +{money2(e.amount)} — {e.description} · {tx.extraWord[e.status]}</p>)}
@@ -834,7 +836,7 @@ function Upcoming({ page, act, reload, lang, ctx, afterToday = false }: { page: 
           <p className="note">{u.enabled ? tx.through(u.through ? day(u.through) : '—') : tx.autoNote(u.autoDays)}</p>
           {!u.rows.length ? <p className="note">{u.enabled ? tx.nothingThrough(u.through ? day(u.through) : tx.theNextDays) : tx.nothingNext(u.autoDays)}</p> : (
             <div className="crew-list">
-              {u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload} lang={lang} ctx={ctx} fs={page.field?.[r.key]}
+              {u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload} lang={lang} ctx={ctx} fs={page.field?.[r.key]} address={page.addresses?.[r.key]}
                 tag={(() => { const m = u.movements.find(x => x.key === r.key);
                               return !m ? null : m.kind === 'added' ? tx.tagNew : m.kind === 'moved' ? tx.tagMoved(day(m.from)) : m.kind === 'time' ? tx.tagTime : null; })()} />)}
             </div>
@@ -849,7 +851,8 @@ function Upcoming({ page, act, reload, lang, ctx, afterToday = false }: { page: 
  * One clean ahead. Nothing to report on it yet (the owner): the cleaner can
  * send the helper's link now, or turn it down — it goes back to the team.
  */
-function UpcomingRow({ r, act, reload, tag, lang, ctx, fs }: { r: CrewUpcoming; act?: Act; reload: () => void; tag?: string | null; lang: Lang; ctx?: FieldCtx; fs?: CleanFieldState }) {
+function UpcomingRow({ r, act, reload, tag, lang, ctx, fs, address }: { r: CrewUpcoming; act?: Act; reload: () => void; tag?: string | null; lang: Lang; ctx?: FieldCtx; fs?: CleanFieldState;
+  /** §136: where it is — the codes come on the day. */ address?: string }) {
   const tx = TX[lang];
   const [sharing, setSharing] = useState(false);
   return (
@@ -861,6 +864,7 @@ function UpcomingRow({ r, act, reload, tag, lang, ctx, fs }: { r: CrewUpcoming; 
         {r.sameDay && <span className="ops-flag urgent">{r.checkIn ? tx.nextGuestAt(r.checkIn) : tx.nextGuestSameDay}</span>}
         {r.deep && <span className="ops-flag deep">{tx.deep}</span>}
         {!!r.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{r.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
+        {address && <div className="sub-n">📍 <a href={`https://maps.google.com/?q=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer">{address}</a></div>}
       </div>
       <div className="n">{r.price == null ? tx.notPriced : money2(r.price)}</div>
       <FieldLine fs={fs} lang={lang} link={!act && !ctx} />

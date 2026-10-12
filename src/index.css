@@ -1978,3 +1978,10 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .setup-secs .chip { font-size: 13px; padding: 6px 12px; }
 .insp-sched-main { min-width: 150px; }
 .insp-sched-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-top: 6px; }
+/* §136 how to get in: folded until tapped, big codes when open. */
+.access-open { min-height: 48px; font-size: 15px; }
+.access-box { border: 2px solid var(--line); border-radius: 12px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+.access-box p { margin: 0; overflow-wrap: anywhere; }
+.access-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.access-code { font-size: 18px; }
+.access-code b { letter-spacing: .06em; }

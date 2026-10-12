@@ -17,6 +17,7 @@ import { getReportLink, sendFieldReport, type ReportTeam } from '../api.ts';
 import { FieldReport } from '../components/FieldReport.tsx';
 import { CleanSteps, type Result } from '../components/CleanSteps.tsx';
 import { ThemeToggle } from '../components/ThemeToggle.tsx';
+import { AccessBox } from '../components/AccessBox.tsx';
 import { LANGS, LANG_NAME, TX, dayLabel, isLang, type Lang } from '../lib/crew-i18n.ts';
 
 const get = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
@@ -108,6 +109,7 @@ export function ReportPage({ token: first }: { token: string | null }) {
         </div>
         <p className="fr-kind report-who">👤 {name} · <button className="link" onClick={() => setNamed(false)}>{tx.repChange}</button></p>
         {tab === 'clean' ? <div className="card">
+          {team.access && <div style={{ marginBottom: 12 }}><AccessBox tx={tx} a={team.access} /></div>}
           <CleanSteps tx={tx} items={team.items} state={team.state} onState={s => setTeam(t => t && { ...t, state: s })}
                       sendPhoto={(stage, f) => post({ kind: 'photo', stage }, [f]) as Promise<Result>}
                       taken={lines => post(lines ? { kind: 'taken', lines: JSON.stringify(lines) } : { kind: 'nothing' }, []) as Promise<Result>}

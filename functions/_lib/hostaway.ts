@@ -90,6 +90,11 @@ export interface HostawayListing {
   city: string;
   state: string;
   timeZone: string;
+  /** §136: what a cleaner needs to get in — the full address, the Wi-Fi, and the guests' door code (if Hostaway has one). */
+  address: string | null;
+  wifiName: string | null;
+  wifiPassword: string | null;
+  doorCode: string | null;
   /** Hostaway's publication flag: 'archived', 'draft', or null when live. */
   specialStatus: string | null;
   /**
@@ -340,6 +345,10 @@ export async function fetchListings(creds: HostawayCredentials, token?: string):
     city: String(l.city ?? '').trim(),
     state: String(l.state ?? '').trim(),
     timeZone: String(l.timeZoneName ?? '').trim(),
+    address: String(l.address ?? '').trim() || null,
+    wifiName: String(l.wifiUsername ?? '').trim() || null,
+    wifiPassword: String(l.wifiPassword ?? '').trim() || null,
+    doorCode: String(l.doorSecurityCode ?? '').trim() || null,
     amenities: Array.isArray(l.listingAmenities)
       ? l.listingAmenities.map((a: any) => String(a?.amenityName ?? a ?? '')).filter(Boolean)
       : [],

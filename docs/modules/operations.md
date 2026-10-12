@@ -152,6 +152,16 @@ key had no SOPs.
   answered); the row then reads "📨 Sent from the link by X" and ▶ Review opens the team's
   run, where Review & finish makes the work. Reopen from the link clears `sent_at`. Refused when expired,
   finished or cancelled. App.tsx reads `#i=` before `#t=`; the phone remembers which it opened last.
+- **How cleaners get in (§136):** `src/lib/unit-access.ts` (pure, tested: `repoMatch`, `unitAccess`) +
+  `functions/_lib/unit-access.ts` (`accessByUnit`). Address and Wi-Fi (and Hostaway's door code) come from
+  Hostaway into `units.address / wifi_name / wifi_password / door_code` (063) on every units sync (Settings →
+  Sync listings); the lock type, **Cleaner Code** (`cleaner_code`, or Houses' typo column `clener_code`),
+  Lockbox and Keys/Fobs from Repository → Units (Cortland_Legacy, The Links, Houses), matched by name, else
+  by unit number (P2-4308 = LP-4308), else a name inside the other. Codes go only to the cleaner's clean
+  of TODAY (crew GET `access`) and to that clean's helper link while it lasts; coming cleans get only the
+  address. Hostaway's door code is the guests' — shown only without a cleaner code, and said so. Admin and
+  backup codes never leave the server. Shown folded ("🔐 How to get in & Wi-Fi", `AccessBox.tsx`).
+  Setup → Crew pages → "How cleaners get in": per active unit, there / missing, never the codes.
 - Scheduled inspections on a phone: each row starts with the unit, its day and inspector, and the buttons
   (▶ Start/Continue/Review · 🔗 Link · cancel) — they were in the last column, scrolled out of sight.
 - **Vendors (§133):** `vendors` directory (Setup → Vendors & handymen; switched off, never erased); the repair
@@ -260,6 +270,16 @@ key had no SOPs.
 - **Cleans' daily thread in Slack (§134):** see the slack module (`functions/_lib/clean-slack.ts`).
 
 ## Open items
+
+- **Access for cleaners (§136), production 2026-10-12:** 18 of 21 active units complete. To fill in
+  Repository → Units: **Bobcat House** (record ROW-0009 empty: lock type and Cleaner Code — until then the
+  cleaner gets Hostaway's guest code, labelled so) and the **Lockbox** of **P2-4212** (LP-4212) and
+  **P2-4315** (LP-4315), which are entered with a fob.
+- **Later (owner): a code of their own for each cleaner** instead of one shared Cleaner Code per unit —
+  for security (revoke one person without changing everyone's code). Needs per-cleaner codes on the smart
+  locks (Schlage / Yale) and a place to keep them encrypted; the access box would then show the cleaner's own.
+- The helper link shows the codes while it is valid (until 2 days after the clean): anyone the link is
+  forwarded to sees them. The per-cleaner codes above are the fix.
 
 - **Inspector's link built (§135), test inspection P2-1304 on 2026-10-12.** Checklist items are English only
   (the page says so in ES) — a Spanish label per item in Setup is not built. Not built: a Slack notice when an

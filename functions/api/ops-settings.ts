@@ -25,6 +25,7 @@
  * exists to avoid — so the switch refuses without an explicit
  * confirmation that it has.
  */
+import { accessByUnit } from '../_lib/unit-access.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { pushWork } from '../_lib/hostaway-tasks.ts';
@@ -153,7 +154,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const units = await sql`SELECT name FROM units WHERE account_id = 1 AND active ORDER BY name` as { name: string }[];
   const zones: Record<string, string[]> = {};
   for (const u of units) (zones[zoneOf(u.name)] ??= []).push(u.name);
-  return Response.json({ ok: true, ...cfg, defaults: DEFAULT_RULES, counts, zones, hostawayTasks: await hostawayTasksState(sql) });
+  // §136: what cleaners get at each active unit — what is there and what is missing, never the codes.
+  const access = [...(await accessByUnit(sql, true)).entries()].map(([unit, a]) => ({
+    unit, recordId: a.recordId, lockType: a.lockType, kind: a.kind, missing: a.missing,
+    has: { address: !!a.address, code: a.codeFrom, lockbox: !!a.lockbox, fob: a.fob, wifi: !!a.wifiName }
+  }));
+  return Response.json({ ok: true, ...cfg, defaults: DEFAULT_RULES, counts, zones, access, hostawayTasks: await hostawayTasksState(sql) });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
