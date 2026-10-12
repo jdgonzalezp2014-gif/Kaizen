@@ -3635,4 +3635,8 @@ only on days with cleans, the board read once per pass; helpers' photos are one 
 He asked what happens when a cleaner sends one helper two cleans: each link opens its own clean, but the
 phone remembered only the last — now it keeps all of them and offers a switcher. And he reminded that
 several people share one link: yes — each report carries its sender's name.
+The cleaner's page was then laid out his way: their own cleans on top, each with the helper's tabs (my
+clean, report or ask) plus the extra and the helper's link; the rest — coming up, calendar, cleans and
+pay, help — as sections below, one at a time; future cleans only share the link or say "can't do it".
+The "Options…" list per clean is gone.
 
