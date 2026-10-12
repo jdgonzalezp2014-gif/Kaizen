@@ -51,24 +51,24 @@ export async function opsConfig(sql: SqlFn): Promise<{
   const [acc, roster] = await Promise.all([
     sql`SELECT ops_mode, ops_rules, extra_inspectors, guest_docs_units, assign_rule, crew_calendar, crew_calendar_days
           FROM accounts WHERE id = 1`,
-    sql`SELECT name, tier, position, rates, deep_rates, active, stars, zones, max_per_day, email, invoice_period,
+    sql`SELECT name, tier, position, rates, deep_rates, active, stars, level, zones, max_per_day, email, invoice_period,
                link_token_hash IS NOT NULL AS has_link FROM cleaners
          WHERE account_id = 1 ORDER BY tier, position, name`
   ]) as [{ ops_mode: OpsMode; ops_rules: Record<string, unknown>; extra_inspectors: string[]; guest_docs_units: string[];
            assign_rule: string; crew_calendar: boolean; crew_calendar_days: number }[],
          { name: string; tier: Cleaner['tier']; position: number; rates: Record<string, number | null>;
-           deep_rates: Record<string, number | null>; active: boolean; stars: number; zones: string[];
+           deep_rates: Record<string, number | null>; active: boolean; stars: number; level: Cleaner['level']; zones: string[];
            max_per_day: number | null; email: string | null; invoice_period: 'weekly' | 'monthly'; has_link: boolean }[]];
   return {
     mode: acc[0]?.ops_mode === 'live' ? 'live' : 'shadow',
     rules: withDefaults(acc[0]?.ops_rules),
     extraInspectors: acc[0]?.extra_inspectors ?? [],
     guestDocUnits: acc[0]?.guest_docs_units ?? [],
-    assignRule: acc[0]?.assign_rule === 'stars' ? 'stars' : 'tiers',
+    assignRule: acc[0]?.assign_rule === 'levels' ? 'levels' : acc[0]?.assign_rule === 'stars' ? 'stars' : 'tiers',
     crewCalendar: !!acc[0]?.crew_calendar, crewCalendarDays: Number(acc[0]?.crew_calendar_days) || 14,
     roster: roster.map(c => ({ name: c.name, tier: c.tier, position: c.position,
       rates: c.rates ?? {}, deepRates: c.deep_rates ?? {}, active: c.active,
-      stars: Number(c.stars) || 1, zones: c.zones ?? [], maxPerDay: c.max_per_day == null ? null : Number(c.max_per_day),
+      stars: Number(c.stars) || 1, level: c.level ?? 'standard', zones: c.zones ?? [], maxPerDay: c.max_per_day == null ? null : Number(c.max_per_day),
       email: c.email, invoicePeriod: c.invoice_period, hasLink: c.has_link }))
   };
 }
@@ -145,7 +145,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     }
   }
 
-  const [listings, reservations, inspections, overrideRows, noteRows, declineRows, cancelledRaw] = await Promise.all([
+  const [listings, reservations, inspections, overrideRows, noteRows, declineRows, cancelledRaw, midRows] = await Promise.all([
     timed('listings', fetchListings(creds)),
     // One live question: every stay still in the building today or
     // arriving before the look-ahead ends. Stays that began months ago but
@@ -163,20 +163,27 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     sql`SELECT cleaning_key, cleaner, reason FROM crew_declines
          WHERE account_id = 1 AND clean_on >= ${today}::date ORDER BY id`,
     // Bookings cancelled while the guest may have been in (§123): their clean waits for a person.
-    timed('cancelled', fetchCancelledTouching(creds, today, end))
+    timed('cancelled', fetchCancelledTouching(creds, today, end)),
+    // Mid-stay cleans (§79), which lighten a long stay's checkout under the levels rule (§125).
+    sql`SELECT unit_id, checkout_on::text AS day FROM cleanings
+         WHERE account_id = 1 AND kind = 'mid_stay' AND assignment = 'assigned' AND void_reason IS NULL
+           AND unit_id IS NOT NULL AND checkout_on >= ${today}::date - 60 AND checkout_on <= ${end}::date`
   ]) as [Awaited<ReturnType<typeof fetchListings>>, Awaited<ReturnType<typeof fetchReservationsTouching>>,
          Awaited<ReturnType<typeof inspectionLog>>,
          { reservation_id: string; assignment: Override['assignment']; cleaner: string | null;
            deep: boolean | null; checkout_time: string | null; checkin_time: string | null; updated_by: string }[],
          { reservation_id: string; kind: string; notes: string }[],
          { cleaning_key: string; cleaner: string; reason: string | null }[],
-         Awaited<ReturnType<typeof fetchCancelledTouching>>];
+         Awaited<ReturnType<typeof fetchCancelledTouching>>,
+         { unit_id: string; day: string }[]];
 
   const overrides = new Map<string, Override>(overrideRows.map(o => [o.reservation_id, {
     assignment: o.assignment, cleaner: o.cleaner, deep: o.deep,
     checkoutTime: o.checkout_time, checkinTime: o.checkin_time }]));
   const notes = new Map(noteRows.map(n => [`${n.reservation_id}|${n.kind}`, n.notes]));
   const overrideBy = new Map(overrideRows.map(o => [o.reservation_id, o.updated_by]));
+  const midStays = new Map<string, string[]>();
+  for (const m of midRows) midStays.set(m.unit_id, [...(midStays.get(m.unit_id) ?? []), m.day]);
   const declines = new Map<string, { cleaner: string; reason: string | null }[]>();
   for (const d of declineRows) declines.set(d.cleaning_key, [...(declines.get(d.cleaning_key) ?? []), { cleaner: d.cleaner, reason: d.reason }]);
 
@@ -196,7 +203,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
   const boardInput: Parameters<typeof buildBoard>[0] = {
     today, windowDays: days, listings: opsListings, reservations, roster: cfg.roster, rules: cfg.rules,
     overrides, notes, inspections: panel, sheet: sheetMap, assignRule: cfg.assignRule, declines,
-    cancelled: cancelledRaw.map(r => ({ ...r, cancelledAt: utcToLocal(r.cancellationDate, OPS_TZ) })),
+    cancelled: cancelledRaw.map(r => ({ ...r, cancelledAt: utcToLocal(r.cancellationDate, OPS_TZ) })), midStays,
     // With no inspection ever recorded here, "never inspected" would be a
     // claim about every unit made from no evidence (§63).
     inspectionLogRead: inspections.done.length + inspections.scheduled.length > 0
@@ -205,7 +212,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
   timings.total = Date.now() - started;
 
   return { mode: cfg.mode, today, end, days, rules: cfg.rules, roster: cfg.roster, assignRule: cfg.assignRule, boardInput,
-           extraInspectors: cfg.extraInspectors, guestDocUnits: cfg.guestDocUnits, rows, summary: summarize(rows, cfg.roster), panel,
+           extraInspectors: cfg.extraInspectors, guestDocUnits: cfg.guestDocUnits, rows, summary: summarize(rows), panel,
            inspections, reservations, sheet, timings, lookaheadTo: addDays(end, NEXT_STAY_LOOKAHEAD), overrideBy };
 }
 
@@ -232,7 +239,7 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
   const outs = s.rows.filter(r => r.kind === 'out');
   const decidedBy = (r: BoardRow) => r.manual.cleaner ? `override:${s.overrideBy.get(r.resId) ?? 'someone'}`
     : r.cancelled ? 'cancelled after arrival — to confirm'
-    : r.sameDayOf ? `rule: one clean per unit per day (${r.sameDayOf})` : s.assignRule === 'stars' ? 'rule:stars' : 'rule';
+    : r.sameDayOf ? `rule: one clean per unit per day (${r.sameDayOf})` : s.assignRule === 'levels' ? 'rule:levels' : s.assignRule === 'stars' ? 'rule:stars' : 'rule';
   // §123: a stay cancelled after arrival is unpaid until a person settles it; a person's choice on the board settles it.
   const toConfirm = (r: BoardRow) => r.cancelled && !r.manual.cleaner
     ? `Cancelled ${r.cancelled} (New York), on or after the arrival — was the unit used, and who cleaned it?` : null;

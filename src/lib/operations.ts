@@ -77,14 +77,20 @@ export interface Cleaner {
   zones: string[];
   /** Cleans a day at most; null is no limit. */
   maxPerDay: number | null;
+  /** The levels rule (§125): high, standard, or manual (never picked by a rule). */
+  level?: Level;
   /** The crew page (§122): the address they sign in with, how their invoice runs, whether a secret link exists. */
   email?: string | null;
   invoicePeriod?: 'weekly' | 'monthly';
   hasLink?: boolean;
 }
 
-/** Which rule decides who cleans (§121). Tiers until the owner switches. */
-export type AssignRule = 'tiers' | 'stars';
+/** Which rule decides who cleans (§121, §125). */
+export type AssignRule = 'tiers' | 'stars' | 'levels';
+
+/** A cleaner's level (§125). `manual` is only ever assigned by a person — emergencies, mid-stays. */
+export type Level = 'high' | 'standard' | 'manual';
+export const LEVELS: Level[] = ['high', 'standard', 'manual'];
 
 export interface OpsInspection { date: DateStr; unit: string; by: string; result: string; notes: string }
 
@@ -108,6 +114,14 @@ export interface OpsRules {
   starStayPlus2Nights: number;
   /** Required when there is no price to go by at all. */
   starDefault: number;
+  /** Levels (§125): the next guest's nightly price from which a clean needs the high level. */
+  levelHighFromNightly: number;
+  /** A stay this long needs the high level unless a mid-stay clean came recently. */
+  levelLongStayNights: number;
+  /** "Recently": a mid-stay clean this many days or fewer before the checkout. */
+  levelMidStayDays: number;
+  /** Assign only when the next guest checks in fewer than this many days after the checkout; else TBD. */
+  levelNextWithinDays: number;
 }
 
 /** The sheet's compiled-in defaults (`00 Config`), for a key nobody has set. */
@@ -127,7 +141,11 @@ export const DEFAULT_RULES: OpsRules = {
   starBand5From: 300,
   starStayPlus1Nights: 7,
   starStayPlus2Nights: 20,
-  starDefault: 2
+  starDefault: 2,
+  levelHighFromNightly: 200,
+  levelLongStayNights: 10,
+  levelMidStayDays: 5,
+  levelNextWithinDays: 4
 };
 
 /** Stored rules over the defaults. A missing or non-numeric key never reads as zero. */
@@ -168,6 +186,17 @@ export interface NextStay {
   longVacancy: boolean;
 }
 
+/** What the levels rule says about one clean (§125) — shown even while another rule decides, to compare. */
+export interface LevelDecision {
+  /** Null: nothing to go by yet — TBD until a booking lands close enough, or a person assigns it. */
+  required: 'high' | 'standard' | null;
+  why: string;
+  cleaner: string | null;
+  reason: string;
+  /** TBD waiting for a booking within the window. */
+  waiting: boolean;
+}
+
 /** What the star rule says about one clean — shown even while tiers decide, to compare. */
 export interface StarDecision {
   required: number;
@@ -205,6 +234,8 @@ export interface BoardRow {
   auto: { cleaner: string | null; tier: Tier; reason: string };
   /** The star rule's answer (§121), whichever rule is in charge; null when no clean is needed. */
   stars: StarDecision | null;
+  /** The levels rule's answer (§125), whichever rule is in charge; null when no clean is needed. */
+  levels: LevelDecision | null;
   /** Cleaners who turned this clean down on their page (§122), latest last. */
   declined: { cleaner: string; reason: string | null }[];
   /**
@@ -562,6 +593,8 @@ export function buildBoard(input: {
   declines?: Map<string, { cleaner: string; reason: string | null }[]>;
   /** Cancelled bookings, each with `cancelledAt` (§123); those cancelled on or after arrival get a clean to confirm. */
   cancelled?: OpsReservation[];
+  /** Mid-stay cleans done or planned, by unit id (§125) — they lighten a long stay's checkout. */
+  midStays?: Map<string, DateStr[]>;
 }): BoardRow[] {
   const { today, windowDays, listings, reservations, roster, rules, overrides, notes, inspections } = input;
   const end = addDays(today, windowDays);
@@ -595,7 +628,7 @@ export function buildBoard(input: {
       date: x.arrival, kind: 'in', resId: x.reservationId, unitId: l.id, unit: l.name,
       beds: l.bedrooms, guest: x.guestName ?? '', docName: x.docName || x.guestName || 'Guest', agreement: x.agreement ?? null, idVerified: !!x.idVerified, guests: x.guests ?? null, nights: x.nights,
       channel: x.channel, total: x.totalPaid, time: '', note: '',
-      next: null, auto: { cleaner: null, tier: 'none', reason: '' }, stars: null,
+      next: null, auto: { cleaner: null, tier: 'none', reason: '' }, stars: null, levels: null,
       declined: input.declines?.get(x.reservationId) ?? [], cancelled: cx,
       cleaner: null, assignment: 'unknown', price: null, deep: false, urgency: null,
       manual: { cleaner: false, deep: false, time: false },
@@ -654,6 +687,7 @@ export function buildBoard(input: {
     (a.kind === b.kind ? 0 : a.kind === 'out' ? -1 : 1) || a.unit.localeCompare(b.unit));
   oneCleanPerUnitDay(rows, overrides);
   assignByStars(rows, roster, rules, typical, byStars);
+  assignByLevels(rows, roster, rules, input.midStays ?? new Map(), input.assignRule === 'levels', today);
   for (const r of rows) if (r.sheet) r.differs = sheetDiffers(r);
 
   // Inspections, the sheet's way: in date order, so the monthly flag
@@ -688,6 +722,109 @@ export function buildBoard(input: {
     row.preppedBy = prep?.cleaner ?? null;
   }
   return rows;
+}
+
+/* ── the levels rule (§125) ───────────────────────────────────────── */
+
+export const levelOf = (c: Cleaner | undefined): Level => c?.level && LEVELS.includes(c.level) ? c.level : 'standard';
+const LEVEL_WORD: Record<'high' | 'standard', string> = { high: 'high', standard: 'standard' };
+
+/**
+ * The level one clean needs. A long stay leaves a lot behind unless a
+ * mid-stay clean came in its last days: high. Otherwise the next guest
+ * decides — but only one checking in soon: further out, or nothing
+ * booked, the clean stays TBD (a one-night guest a week away is not worth
+ * the best cleaner now), until a booking lands close enough or a person
+ * assigns it.
+ */
+export function requiredLevel(
+  stayNights: number, midStayDaysBefore: number | null,
+  next: { gapDays: number; nightly: number | null } | null, r: OpsRules
+): { required: 'high' | 'standard' | null; why: string; waiting: boolean } {
+  const recentMid = midStayDaysBefore !== null && midStayDaysBefore <= r.levelMidStayDays;
+  if (stayNights >= r.levelLongStayNights && !recentMid) {
+    return { required: 'high', waiting: false,
+      why: `${stayNights}-night stay with no mid-stay clean in its last ${r.levelMidStayDays} days` };
+  }
+  const longNote = stayNights >= r.levelLongStayNights ? ` (${stayNights}-night stay, mid-stay clean ${midStayDaysBefore} days before)` : '';
+  if (!next || next.gapDays >= r.levelNextWithinDays) {
+    return { required: null, waiting: true, why: (next
+      ? `next guest checks in ${next.gapDays} days later — only a check-in within ${r.levelNextWithinDays - 1} days is assigned`
+      : 'nothing booked next') + longNote };
+  }
+  if (next.nightly == null) return { required: 'standard', waiting: false, why: `next is a block with no price${longNote}` };
+  const high = next.nightly >= r.levelHighFromNightly;
+  return { required: high ? 'high' : 'standard', waiting: false,
+    why: `next guest $${Math.round(next.nightly)}/night ${high ? '≥' : '<'} $${r.levelHighFromNightly}${longNote}` };
+}
+
+/**
+ * Who cleans, by level: active, not manual-only, the level or above,
+ * covering the zone, under their max that day, not having declined it →
+ * the cheapest for this clean (unpriced last); a tie goes to whoever has
+ * fewer cleans that day. Nobody → TBD: a person decides.
+ */
+export function pickByLevel(
+  required: 'high' | 'standard', zone: string, beds: number | null, deep: boolean,
+  roster: Cleaner[], load: Map<string, number>, declined: Set<string> = new Set()
+): { cleaner: string | null; reason: string } {
+  const cost = (c: Cleaner) => rateFor(roster, c.name, beds, deep) ?? Infinity;
+  const count = (c: Cleaner) => load.get(c.name) ?? 0;
+  const fit = roster.filter(c => c.active && !declined.has(c.name) && levelOf(c) !== 'manual' &&
+                                 (required === 'standard' || levelOf(c) === 'high'));
+  const inZone = fit.filter(c => covers(c, zone));
+  const free = inZone.filter(c => c.maxPerDay == null || count(c) < c.maxPerDay)
+    .sort((a, b) => cost(a) - cost(b) || count(a) - count(b) || a.position - b.position || a.name.localeCompare(b.name));
+  const c = free[0];
+  if (c) {
+    const price = Number.isFinite(cost(c)) ? `$${cost(c)}` : 'not priced';
+    return { cleaner: c.name, reason: free.length === 1 ? `${c.name} is the only ${LEVEL_WORD[required]}-level cleaner free (${price})`
+      : `${c.name} is the cheapest of ${free.length} free at ${LEVEL_WORD[required]} level or above (${price})` };
+  }
+  return { cleaner: null, reason: !fit.length ? `nobody at ${LEVEL_WORD[required]} level or above` : !inZone.length ? `nobody at that level covers ${zone}`
+    : `everyone at that level who covers ${zone} is at their max that day — assign by hand` };
+}
+
+/**
+ * The levels rule over the board's departures, one day at a time, the
+ * high-level cleans first so they get the high-level cleaners' slots.
+ * A person's choice takes its slot first. A cancelled stay (§123) and a
+ * clean waiting for a booking are never assigned by the rule.
+ */
+export function assignByLevels(rows: BoardRow[], roster: Cleaner[], rules: OpsRules,
+                               midStays: Map<string, DateStr[]>, apply: boolean, today: DateStr): void {
+  const days = new Map<string, BoardRow[]>();
+  for (const r of rows) {
+    if (r.kind !== 'out' || (r.sameDayOf && !r.manual.cleaner)) continue;
+    days.set(r.date, [...(days.get(r.date) ?? []), r]);
+  }
+  for (const day of days.values()) {
+    const load = new Map<string, number>();
+    for (const r of day) if (r.manual.cleaner && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
+    const need = day.map(r => {
+      // The latest mid-stay inside the stay, before its checkout.
+      const arrival = addDays(r.date, -r.nights);
+      const mid = (midStays.get(r.unitId) ?? []).filter(d => d >= arrival && d < r.date).sort().pop();
+      return { r, req: requiredLevel(r.nights, mid ? daysBetween(mid, r.date) : null, r.next, rules) };
+    });
+    const rank = (x: typeof need[number]) => x.req.required === 'high' ? 0 : x.req.required === 'standard' ? 1 : 2;
+    need.sort((a, b) => rank(a) - rank(b));
+    for (const { r, req } of need) {
+      const pick = req.required ? pickByLevel(req.required, zoneOf(r.unit), r.beds, r.deep, roster, load, new Set(r.declined.map(d => d.cleaner)))
+        : { cleaner: null, reason: daysBetween(today, r.date) <= 1 ? 'TBD — assign by hand now' : `TBD until a booking lands close enough, or assign by hand by ${addDays(r.date, -1)}` };
+      r.levels = { required: req.required, why: req.why, waiting: req.waiting, ...pick };
+      if (apply && !r.cancelled) {
+        r.auto = { cleaner: pick.cleaner, tier: 'none',
+          reason: `${req.required ? `${LEVEL_WORD[req.required]} level` : 'no level yet'} (${req.why}) — ${pick.reason}` };
+      }
+      if (r.manual.cleaner || r.cancelled) continue;
+      if (pick.cleaner) load.set(pick.cleaner, (load.get(pick.cleaner) ?? 0) + 1);
+      if (!apply) continue;
+      r.assignment = pick.cleaner ? 'assigned' : 'tbd';
+      r.cleaner = pick.cleaner;
+      r.price = pick.cleaner ? rateFor(roster, pick.cleaner, r.beds, r.deep) : null;
+    }
+  }
 }
 
 /** Shadow mode: the fields where the daily file decided differently. */
@@ -788,8 +925,6 @@ export interface BoardSummary {
   inspections: number;
   unassigned: number;
   unpriced: number;
-  /** Cleans whose cleaner has fewer stars than the clean requires (§121), by hand or not. */
-  belowStars: number;
   /** Shadow mode: checkouts the daily file has not seen, and ones it decided differently. */
   notInDailyFile: number;
   differing: number;
@@ -798,9 +933,7 @@ export interface BoardSummary {
   pipeline: number;
 }
 
-/** The roster is what tells a cleaner's stars; without it nothing is counted below. */
-export function summarize(rows: BoardRow[], roster: Cleaner[] = []): BoardSummary {
-  const stars = new Map(roster.map(c => [c.name, starsOf(c)]));
+export function summarize(rows: BoardRow[]): BoardSummary {
   const outs = rows.filter(r => r.kind === 'out');
   const cleans = outs.filter(r => r.assignment !== 'not_needed');
   return {
@@ -811,20 +944,12 @@ export function summarize(rows: BoardRow[], roster: Cleaner[] = []): BoardSummar
     inspections: outs.filter(r => r.inspection.key === 'req' || r.inspection.key === 'due').length,
     unassigned: cleans.filter(r => r.assignment === 'tbd').length,
     unpriced: cleans.filter(r => r.assignment === 'assigned' && r.price == null).length,
-    belowStars: cleans.filter(r => belowStars(r, stars)).length,
     notInDailyFile: outs.filter(r => !r.inDailyFile).length,
     differing: outs.filter(r => r.differs.length > 0).length,
     cleaningCost: cleans.reduce((a, r) => a + (r.price ?? 0), 0),
     arriving: rows.filter(r => r.kind === 'in').reduce((a, r) => a + r.total, 0),
     pipeline: outs.reduce((a, r) => a + (r.next?.total ?? 0), 0)
   };
-}
-
-/** The assigned cleaner has fewer stars than this clean requires. */
-export function belowStars(r: BoardRow, stars: Map<string, number>): boolean {
-  if (r.kind !== 'out' || r.assignment !== 'assigned' || !r.cleaner || !r.stars) return false;
-  const has = stars.get(r.cleaner);
-  return has !== undefined && has < r.stars.required;
 }
 
 /* ── the Host Note in Hostaway ────────────────────────────────────── */

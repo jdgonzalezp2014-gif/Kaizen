@@ -3453,3 +3453,22 @@ before answering, so a flag ahead has its row; a clean that moves keeps its key 
 stay in Operations → Crew. Not tested by flagging a real clean (cleaners can read flags); the
 flag route is §122's, unchanged.
 
+## §125 — Levels replace stars (2026-10-11, built, not switched on)
+
+The owner was not convinced by ★1–5: "all of them are very good — price can decide; Karina & Marvin and
+Irene give something more; Veronica is a step below; Michelle is for emergencies and mid-stays, by
+hand". So three levels, not five stars, and his rule: a stay of 10+ nights with no mid-stay clean in
+its last 5 days needs the high level; otherwise the next guest's value decides, but only for a check-in
+less than 4 days away — further out, or nothing booked, the clean stays TBD ("not worth a top cleaner
+for a one-night guest a week away") until a booking lands close enough, or a person assigns it the day
+before. Nobody free at the level → TBD, not someone below; the "below stars" flag is removed. Mid-stays
+count only if registered in Kaizen — "asumimos el riesgo, DEBE ESTAR". Max per day: K&M 3, Irene 3,
+Veronica 2 (proposed in Setup, not written). Irene is the default for a 2BR high clean simply because
+she is cheapest there.
+
+First read-only preview on production (Oct 11–21, 29 cleans, his capacities): 10 change cleaner, 7 go
+TBD waiting, pay $3,220 → $2,330 — but most of that drop is the 7 waiting cleans not being counted, not
+savings. Irene's deep card is blank, so her deep cleans price at her ordinary rate ($80 vs K&M's $140)
+and the rule picks her for deep high cleans. Not built yet: his "the cleaner who already had it takes
+the new reservation's checkout" — asked to confirm with an example.
+

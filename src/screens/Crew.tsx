@@ -238,7 +238,7 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload }
     <div className="crew">
       <div className="card no-print">
         <h2>{team ? page.cleaner.name : `Hi, ${page.cleaner.name}`}
-          {team && page.cleaner.stars != null && <span className="chan-tag" title="Only the team sees this">★{page.cleaner.stars}</span>}
+          {team && page.cleaner.level && <span className="chan-tag" title="Only the team sees this">{page.cleaner.level} level</span>}
           {!page.cleaner.active && <span className="chan-tag">inactive</span>}</h2>
         <label>Invoice period ({page.cleaner.invoicePeriod === 'weekly' ? 'weekly, Saturday to Friday, paid Saturday' : 'monthly, paid in the first days of the next month'})
           <select value={period.from} onChange={e => onPeriod(e.target.value)}>

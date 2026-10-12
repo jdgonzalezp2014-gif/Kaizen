@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assign, blockForReservation, cancelledClean, pickByStars, utcToLocal, requiredStars, typicalNightly, zoneOf, buildBoard, eligibleInspectors, inspectionPanel, inspectionTier,
+  assign, blockForReservation, cancelledClean, pickByStars, requiredLevel, utcToLocal, requiredStars, typicalNightly, zoneOf, buildBoard, eligibleInspectors, inspectionPanel, inspectionTier,
   mergeHostNote, proposeInspections, rateFor, sameGuest, summarize, withDefaults,
   type Cleaner, type OpsCleaning, type OpsListing, type OpsReservation, type OpsRules, type Override
 } from './operations.ts';
@@ -384,14 +384,6 @@ test('under the tiers the star answer rides along, deciding nothing', () => {
                     { assignRule: 'tiers' });
   assert.equal(out(r, 'a').cleaner, 'Karina and Marvin');   // $300 next ≥ the $250 high line
   assert.equal(out(r, 'a').stars?.cleaner, 'Michelle');     // $100/night is ★2
-  assert.equal(summarize(r, ROSTER).belowStars, 0);
-});
-
-test('below stars is counted, by hand or not', () => {
-  const ov = new Map<string, Override>([['a', { assignment: 'assigned', cleaner: 'Michelle', deep: null, checkoutTime: null, checkinTime: null }]]);
-  const r = boardBy([res('a', '1', '2026-09-20', '2026-09-26'), res('b', '1', '2026-09-27', '2026-09-30', 900)], { overrides: ov });
-  assert.equal(out(r, 'a').stars?.required, 5);
-  assert.equal(summarize(r, ROSTER).belowStars, 1);
 });
 
 test('the second departure the same day carries no clean and no stars', () => {
@@ -447,4 +439,66 @@ test('a booking cancelled after arrival is a TBD clean for a person, never assig
     overrides: ov, notes: new Map(), inspections: [], assignRule: 'stars', cancelled });
   assert.equal(out(r, 'c').cleaner, 'Michelle');
   assert.equal(out(r, 'c').price, 55);
+});
+
+/* ── levels (§125) ── */
+
+const LV: Cleaner[] = [
+  { name: 'Karina and Marvin', tier: 'high', position: 0, active: true, rates: { 1: 70, 2: 90 }, deepRates: {},
+    stars: 5, zones: [], maxPerDay: 3, level: 'high' },
+  { name: 'Irene', tier: 'mid', position: 1, active: true, rates: { 1: 65, 2: 80 }, deepRates: {},
+    stars: 4, zones: [], maxPerDay: 3, level: 'high' },
+  { name: 'Veronica', tier: 'low', position: 2, active: true, rates: { 1: 50, 2: 90 }, deepRates: {},
+    stars: 2, zones: [], maxPerDay: 2, level: 'standard' },
+  { name: 'Michelle', tier: 'low', position: 3, active: true, rates: { 1: 35, 2: 55 }, deepRates: {},
+    stars: 1, zones: [], maxPerDay: 2, level: 'manual' }
+];
+const lv = (reservations: OpsReservation[], opts: { roster?: Cleaner[]; midStays?: Map<string, string[]>; overrides?: Map<string, Override> } = {}) =>
+  buildBoard({ today: TODAY, windowDays: 10, listings: L, reservations, roster: opts.roster ?? LV, rules: RULES,
+    overrides: opts.overrides ?? new Map(), notes: new Map(), inspections: [], assignRule: 'levels', midStays: opts.midStays });
+
+test('levels: a long stay with no recent mid-stay is high; a recent mid-stay lets the next guest decide', () => {
+  assert.equal(requiredLevel(12, null, { gapDays: 1, nightly: 90 }, RULES).required, 'high');
+  assert.equal(requiredLevel(12, 6, { gapDays: 1, nightly: 90 }, RULES).required, 'high');       // mid-stay too long ago
+  assert.equal(requiredLevel(12, 5, { gapDays: 1, nightly: 90 }, RULES).required, 'standard');   // within 5 days
+  assert.equal(requiredLevel(9, null, { gapDays: 1, nightly: 250 }, RULES).required, 'high');
+  assert.equal(requiredLevel(9, null, { gapDays: 1, nightly: 199 }, RULES).required, 'standard');
+});
+
+test('levels: nothing booked, or the next check-in 4+ days away, stays TBD waiting', () => {
+  assert.deepEqual([requiredLevel(3, null, null, RULES).required, requiredLevel(3, null, null, RULES).waiting], [null, true]);
+  assert.equal(requiredLevel(3, null, { gapDays: 4, nightly: 400 }, RULES).required, null);
+  assert.equal(requiredLevel(3, null, { gapDays: 3, nightly: 90 }, RULES).required, 'standard');
+  // A long stay without a mid-stay needs high whatever comes next — even nothing.
+  assert.equal(requiredLevel(14, null, null, RULES).required, 'high');
+});
+
+test('levels: Irene is the default for a 2BR high clean (cheapest of the high level); Michelle is never picked', () => {
+  const r = lv([res('a', '1', '2026-09-20', '2026-09-26'), res('b', '1', '2026-09-27', '2026-09-30', 900)]);
+  assert.equal(out(r, 'a').levels?.required, 'high');
+  assert.equal(out(r, 'a').cleaner, 'Irene');
+  assert.equal(out(r, 'a').price, 80);
+  const std = lv([res('a', '2', '2026-09-20', '2026-09-26'), res('b', '2', '2026-09-27', '2026-09-30', 300)]);
+  assert.equal(out(std, 'a').levels?.required, 'standard');
+  assert.equal(out(std, 'a').cleaner, 'Veronica');                // $50 1BR; Michelle's $35 is manual-only
+});
+
+test('levels: waiting cleans are TBD and take no slot; nobody free at the level is TBD, not someone below', () => {
+  const r = lv([res('a', '1', '2026-09-20', '2026-09-26')]);
+  assert.equal(out(r, 'a').assignment, 'tbd');
+  assert.equal(out(r, 'a').levels?.waiting, true);
+  const busy = LV.map(c => c.level === 'high' ? { ...c, maxPerDay: 1 } : c);
+  const two = lv([res('a', '1', '2026-09-20', '2026-09-26'), res('b', '1', '2026-09-27', '2026-09-30', 900),
+                  res('c', '2', '2026-09-20', '2026-09-26'), res('d', '2', '2026-09-27', '2026-09-30', 900),
+                  res('e', '3', '2026-09-20', '2026-09-26'), res('f', '3', '2026-09-27', '2026-09-30', 900)], { roster: busy });
+  const cleaners = ['a', 'c', 'e'].map(k => out(two, k).cleaner);
+  assert.equal(cleaners.filter(x => x === null).length, 1);       // two high cleaners, three high cleans
+  assert.ok(!cleaners.includes('Veronica'));
+});
+
+test('levels: a mid-stay clean in the stay\'s last 5 days lightens a long stay', () => {
+  const stays = [res('a', '2', '2026-09-12', '2026-09-26', 1400, 14), res('b', '2', '2026-09-27', '2026-09-30', 300)];
+  assert.equal(out(lv(stays), 'a').levels?.required, 'high');
+  assert.equal(out(lv(stays, { midStays: new Map([['2', ['2026-09-22']]]) }), 'a').levels?.required, 'standard');
+  assert.equal(out(lv(stays, { midStays: new Map([['2', ['2026-09-18']]]) }), 'a').levels?.required, 'high');
 });

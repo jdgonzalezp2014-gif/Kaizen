@@ -12,7 +12,7 @@ import type { Env } from './db.ts';
 import { loadOps, pushHostNotes, recordCleanings } from './ops.ts';
 import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
-import { starsOf } from '../../src/lib/operations.ts';
+import type { Level } from '../../src/lib/operations.ts';
 import {
   buildInvoice, periodOf, recentPeriods, scheduleMovements, EXTRA_MAX_AGE_DAYS, EXTRA_MAX_AMOUNT,
   type CrewClean, type CrewExtra, type Fate, type InvoicePeriod, type Movement, type Period, type ScheduleItem
@@ -35,8 +35,8 @@ export interface CrewUpcoming {
 }
 
 export interface CrewPage {
-  /** `stars` only for the team: a cleaner is never shown their own rating. */
-  cleaner: { name: string; stars?: number; invoicePeriod: InvoicePeriod; active: boolean };
+  /** `level` only for the team: a cleaner is never shown their own rating. */
+  cleaner: { name: string; level?: Level; invoicePeriod: InvoicePeriod; active: boolean };
   today: DateStr;
   periods: Period[];
   period: Period;
@@ -127,8 +127,8 @@ export async function confirmSchedule(sql: SqlFn, encryptionKey: string, by: str
 }
 
 export async function findCleaner(sql: SqlFn, name: string) {
-  const [c] = await sql`SELECT name, stars, invoice_period, active FROM cleaners WHERE account_id = 1 AND name = ${name}` as
-    { name: string; stars: number; invoice_period: InvoicePeriod; active: boolean }[];
+  const [c] = await sql`SELECT name, level, invoice_period, active FROM cleaners WHERE account_id = 1 AND name = ${name}` as
+    { name: string; level: Level; invoice_period: InvoicePeriod; active: boolean }[];
   return c ?? null;
 }
 
@@ -217,7 +217,7 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
   }
 
   return {
-    cleaner: { name: c.name, stars: starsOf({ stars: c.stars } as never), invoicePeriod: c.invoice_period, active: c.active },
+    cleaner: { name: c.name, level: c.level, invoicePeriod: c.invoice_period, active: c.active },
     today, periods, period, cleans, extras, extraFrom,
     invoice: buildInvoice(c.name, period, cleans, extras, today),
     upcoming
@@ -234,7 +234,7 @@ export async function crewGet(request: Request, env: Env, sql: SqlFn, me: CrewCa
   const page = await loadCrewPage(sql, env.ENCRYPTION_KEY, me.name, new URL(request.url).searchParams.get('period'));
   if (!page) return refuse(404, 'not_on_roster', 'You are not on the roster any more.');
   // Their rating is the team's business — not sent, not just not drawn.
-  delete page.cleaner.stars;
+  delete page.cleaner.level;
   return Response.json({ ok: true, ...page });
 }
 

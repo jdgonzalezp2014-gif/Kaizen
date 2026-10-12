@@ -393,12 +393,14 @@ export interface CutoverPreview {
   inspectors: string[]; inspections: { done: number; scheduled: number }; notes: number;
   problems: string[];
 }
-/** The board under a proposed roster and rules, by stars, against the board as it is (§121). */
+/** The board under a proposed roster and rules, by levels (or stars), against the board as it is (§121, §125). */
 export interface AssignPreview {
-  from: string; to: string; rule: AssignRule; cleans: number; changed: number;
-  changes: { date: string; unit: string; resId: string; required: number | null; now: string | null; then: string | null;
+  from: string; to: string; rule: AssignRule; proposedRule: AssignRule; cleans: number; changed: number;
+  /** Cleans left TBD waiting for a booking under the proposal (§125). */
+  waiting?: number;
+  changes: { date: string; unit: string; resId: string; required: number | string | null; now: string | null; then: string | null;
              priceNow: number | null; priceThen: number | null; below: boolean; manual: boolean }[];
-  below: { now: number; then: number }; unassigned: { now: number; then: number };
+  unassigned: { now: number; then: number };
   cost: { now: number; then: number }; unpriced: { now: number; then: number };
 }
 export const previewAssign = (roster: Cleaner[], rules: Record<string, unknown>) =>
@@ -419,8 +421,8 @@ export interface CrewUpcoming {
   sameDay: boolean; checkIn: string | null; price: number | null; manual: string | null;
 }
 export interface CrewPage {
-  /** `stars` only reaches the team's view (§122): cleaners are not shown their rating. */
-  cleaner: { name: string; stars?: number; invoicePeriod: InvoicePeriod; active: boolean };
+  /** `level` only reaches the team's view (§122): cleaners are not shown their rating. */
+  cleaner: { name: string; level?: 'high' | 'standard' | 'manual'; invoicePeriod: InvoicePeriod; active: boolean };
   today: string; periods: Period[]; period: Period;
   cleans: CrewClean[]; extras: CrewExtra[]; invoice: Invoice; extraFrom: string;
   upcoming: {

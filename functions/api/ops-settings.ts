@@ -7,7 +7,7 @@
  *   POST { assignRule: 'tiers' | 'stars' }     which rule decides who cleans (§121)
  *   POST { crewCalendar: bool, crewCalendarDays }  cleaners see what is coming (§122)
  *   POST { action: 'crewLink', name, revoke? }  a cleaner's secret link: made (shown once) or revoked
- *   POST { action: 'previewAssign', roster, rules }
+ *   POST { action: 'previewAssign', roster, rules, rule? }   (rule: 'levels' by default, or 'stars')
  *                                              the board under these, by stars, against
  *                                              the board as it is — nothing saved
  *   POST { extraInspectors: [...] }
@@ -35,7 +35,7 @@ import {
   fetchPublishedCsv, isoDay, parseDailySettings, parseInspectionLog, parseNotesLog
 } from '../_lib/daily.ts';
 import {
-  BEDROOM_SIZES, DEFAULT_RULES, buildBoard, summarize, withDefaults, zoneOf,
+  BEDROOM_SIZES, DEFAULT_RULES, LEVELS, buildBoard, summarize, withDefaults, zoneOf,
   type Cleaner, type OpsRules
 } from '../../src/lib/operations.ts';
 import { todayIn } from '../../src/lib/dates.ts';
@@ -74,8 +74,10 @@ function parseRoster(raw: Record<string, any>[]): Cleaner[] {
     if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw new Error(`${name}: "${email}" is not an email address.`);
     if (email && rows.some(r => r.email === email)) throw new Error(`${email} is on the roster twice.`);
     const invoicePeriod = c.invoicePeriod === 'weekly' ? 'weekly' : 'monthly';
+    const level = c.level == null || c.level === '' ? (stars >= 4 ? 'high' : stars <= 1 ? 'manual' : 'standard') : c.level;
+    if (!LEVELS.includes(level)) throw new Error(`${name}: level is high, standard or manual.`);
     rows.push({ name, tier: c.tier, position: Number(c.position ?? i) || 0, rates: card(c.rates),
-                deepRates: card(c.deepRates), active: c.active !== false, stars, zones, maxPerDay: max, email, invoicePeriod });
+                deepRates: card(c.deepRates), active: c.active !== false, stars, level, zones, maxPerDay: max, email, invoicePeriod });
   }
   return rows;
 }
@@ -96,6 +98,8 @@ function parseRules(raw: Record<string, unknown>): Record<string, number> {
   }
   if (r.starStayPlus1Nights >= r.starStayPlus2Nights) throw new Error('The +1 stay length has to be shorter than the +2 one.');
   if (!Number.isInteger(r.starDefault) || r.starDefault < 1 || r.starDefault > 5) throw new Error('Stars with no price to go by are 1 to 5.');
+  if (!(r.levelNextWithinDays >= 1)) throw new Error('The next check-in window is at least 1 day.');
+  if (!(r.levelLongStayNights >= 1)) throw new Error('A long stay is at least 1 night.');
   return clean;
 }
 
@@ -111,21 +115,23 @@ async function previewAssign(sql: SqlFn, env: Env, body: Record<string, any>): P
   const account = await getAccount(sql);
   const s = await loadOps(sql, await getCredentials(sql, env.ENCRYPTION_KEY), { cleaningsCsvUrl: account?.cleaningsCsvUrl });
   const proposed = { roster: roster ?? s.roster, rules: rules ?? s.rules };
-  const after = buildBoard({ ...s.boardInput, ...proposed, assignRule: 'stars' });
+  const rule = body.rule === 'stars' ? 'stars' : 'levels';
+  const after = buildBoard({ ...s.boardInput, ...proposed, assignRule: rule });
   const before = new Map(s.rows.filter(r => r.kind === 'out').map(r => [r.resId, r]));
   const label = (r: { assignment: string; cleaner: string | null }) =>
     r.assignment === 'assigned' ? r.cleaner : r.assignment === 'not_needed' ? 'no clean needed' : 'unassigned';
   const changes = after.filter(r => r.kind === 'out').flatMap(r => {
     const b = before.get(r.resId);
     if (!b || (b.assignment === r.assignment && b.cleaner === r.cleaner)) return [];
-    return [{ date: r.date, unit: r.unit, resId: r.resId, required: r.stars?.required ?? null,
+    return [{ date: r.date, unit: r.unit, resId: r.resId,
+              required: rule === 'levels' ? (r.levels?.required ?? (r.levels?.waiting ? 'waiting' : null)) : (r.stars?.required ?? null),
               now: label(b), then: label(r), priceNow: b.price, priceThen: r.price,
-              below: !!r.stars?.below, manual: r.manual.cleaner }];
+              below: rule === 'stars' && !!r.stars?.below, manual: r.manual.cleaner }];
   });
-  const a = summarize(after, proposed.roster), b = summarize(s.rows, s.roster);
+  const a = summarize(after), b = summarize(s.rows);
   return Response.json({ ok: true, preview: {
-    from: s.today, to: s.end, rule: s.assignRule, cleans: a.cleanings, changed: changes.length, changes,
-    below: { now: b.belowStars, then: a.belowStars },
+    from: s.today, to: s.end, rule: s.assignRule, proposedRule: rule, cleans: a.cleanings, changed: changes.length, changes,
+    waiting: after.filter(r => r.kind === 'out' && r.levels?.waiting && !r.manual.cleaner && r.assignment === 'tbd').length,
     unassigned: { now: b.unassigned, then: a.unassigned },
     cost: { now: b.cleaningCost, then: a.cleaningCost },
     unpriced: { now: b.unpriced, then: a.unpriced }
@@ -173,10 +179,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         { name: string; link_token_hash: string }[]).map(r => [r.name, r.link_token_hash]));
       await sql`DELETE FROM cleaners WHERE account_id = 1`;
       for (const r of rows) {
-        await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates, active, stars, zones, max_per_day,
+        await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates, active, stars, level, zones, max_per_day,
                                         email, invoice_period, link_token_hash)
                   VALUES (1, ${r.name}, ${r.tier}, ${r.position}, ${JSON.stringify(r.rates)}::jsonb,
-                          ${JSON.stringify(r.deepRates)}::jsonb, ${r.active}, ${r.stars}, ${r.zones}, ${r.maxPerDay},
+                          ${JSON.stringify(r.deepRates)}::jsonb, ${r.active}, ${r.stars}, ${r.level ?? 'standard'}, ${r.zones}, ${r.maxPerDay},
                           ${r.email ?? null}, ${r.invoicePeriod ?? 'monthly'}, ${links.get(r.name) ?? null})`;
       }
     }
@@ -203,8 +209,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return Response.json({ ok: true, link: token ? `${new URL(request.url).origin}/crew#t=${token}` : null });
     }
 
-    if (body.assignRule === 'tiers' || body.assignRule === 'stars') {
-      if (body.assignRule === 'stars' && !(await opsConfig(sql)).roster.some(c => c.active)) {
+    if (body.assignRule === 'tiers' || body.assignRule === 'stars' || body.assignRule === 'levels') {
+      if (body.assignRule !== 'tiers' && !(await opsConfig(sql)).roster.some(c => c.active)) {
         return bad('The roster is empty — nobody could be assigned.');
       }
       await sql`UPDATE accounts SET assign_rule = ${body.assignRule} WHERE id = 1`;

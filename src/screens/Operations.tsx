@@ -30,7 +30,7 @@ import {
 } from '../api.ts';
 import {
   BEDROOM_SIZES, DEFAULT_CHECKIN_TIME, DEFAULT_CHECKOUT_TIME, INSPECTION_RESULTS,
-  HOUSES_ZONE, belowStars, eligibleInspectors, rateFor, starsOf, summarize, withDefaults,
+  HOUSES_ZONE, LEVELS, eligibleInspectors, levelOf, rateFor, summarize, withDefaults,
   type BoardRow, type Cleaner, type InspectionTier, type OpsRules
 } from '../lib/operations.ts';
 import { money, money2 } from '../lib/format.ts';
@@ -146,7 +146,7 @@ export function Operations({ permissions, initialView, onView }: {
     setData(d => {
       if (!d) return d;
       const rows = d.rows.map(r => r.resId === resId && r.kind === kind ? f(r) : r);
-      return { ...d, rows, summary: summarize(rows, d.roster) };
+      return { ...d, rows, summary: summarize(rows) };
     });
 
   const views: [View, string][] = [
@@ -262,15 +262,15 @@ function MovementsRange({ range, today, onChange }: { range: Range; today: strin
 type Filter = 'all' | 'out' | 'in' | 'attention' | 'differs';
 
 /** Everything on a departure that someone has to act on. */
-function needsAttention(r: BoardRow, stars: Map<string, number>): boolean {
+function needsAttention(r: BoardRow, today: string): boolean {
   if (r.kind !== 'out') return false;
-  return r.assignment === 'tbd' || (r.assignment === 'assigned' && r.price == null) || belowStars(r, stars) ||
+  // A clean waiting for a booking (§125) is not the team's problem until the day before.
+  const waiting = r.assignment === 'tbd' && !r.manual.cleaner && r.levels?.waiting && r.date > addDays(today, 1);
+  return (r.assignment === 'tbd' && !waiting) || (r.assignment === 'assigned' && r.price == null) ||
     r.inspection.key === 'req' || r.inspection.key === 'due' || r.urgency === 'turnover';
 }
 
-/** A cleaner's stars by name, from the roster. */
-const starMap = (roster: Cleaner[]) => new Map(roster.map(c => [c.name, starsOf(c)]));
-const starText = (n: number) => `★${n}`;
+const LEVEL_LABEL: Record<string, string> = { high: 'high level', standard: 'standard', manual: 'manual only' };
 
 function Board({ data, range, patch, reload }: {
   data: OperationsResponse; range: Range;
@@ -287,10 +287,9 @@ function Board({ data, range, patch, reload }: {
   const [filter, setFilter] = useState<Filter>('all');
   const [q, setQ] = useState('');
   const [open, setOpen] = useState<string | null>(null);
-  const stars = useMemo(() => starMap(data.roster), [data.roster]);
   // The live rows inside the chosen dates; the figures above the table count these.
   const live = useMemo(() => data.rows.filter(r => r.date >= range.from && r.date <= range.to), [data.rows, range]);
-  const s = useMemo(() => summarize(live, data.roster), [live, data.roster]);
+  const s = useMemo(() => summarize(live), [live]);
 
   // Flags by hand (§124), by record key — kept here so a flag shows at once.
   const [flags, setFlags] = useState<Record<string, string>>({});
@@ -363,10 +362,10 @@ function Board({ data, range, patch, reload }: {
   const rows = useMemo(() => {
     const needle = q.trim().toLowerCase();
     return live.filter(r =>
-      (filter === 'all' || (filter === 'attention' ? needsAttention(r, stars)
+      (filter === 'all' || (filter === 'attention' ? needsAttention(r, data.today)
         : filter === 'differs' ? r.differs.length > 0 : r.kind === filter)) &&
       (!needle || `${r.unit} ${r.guest} ${r.cleaner ?? ''}`.toLowerCase().includes(needle)));
-  }, [live, filter, q, stars]);
+  }, [live, filter, q]);
 
   const days = useMemo(() => {
     // Not past what is loaded: a longer window shows once its load arrives.
@@ -378,7 +377,7 @@ function Board({ data, range, patch, reload }: {
 
   const filters: [Filter, string][] = [
     ['all', 'Everything'], ['out', 'Departures'], ['in', 'Arrivals'],
-    ['attention', `Needs attention ${live.filter(r => needsAttention(r, stars)).length}`],
+    ['attention', `Needs attention ${live.filter(r => needsAttention(r, data.today)).length}`],
     ...(data.mode === 'shadow' ? [['differs', `Differs from the sheet ${s.differing}`] as [Filter, string]] : [])
   ];
 
@@ -390,7 +389,6 @@ function Board({ data, range, patch, reload }: {
         <div><dt>Cleans</dt><dd>{s.cleanings}<small>{s.departures - s.cleanings} not needed</small></dd></div>
         <div><dt>Same-day turnovers</dt><dd>{s.turnovers}</dd></div>
         <div><dt>Inspections due</dt><dd>{s.inspections}</dd></div>
-        {s.belowStars > 0 && <div><dt>Below stars</dt><dd className="breach">▲ {s.belowStars}<small>cleaner has fewer ★ than needed</small></dd></div>}
         <div><dt>Cleaner pay</dt><dd>{money(s.cleaningCost)}
           {s.unpriced > 0 && <small>+{s.unpriced} not priced</small>}</dd></div>
         {data.showMoney && <div><dt>Arriving</dt><dd>{money(s.arriving)}</dd></div>}
@@ -495,7 +493,7 @@ function Board({ data, range, patch, reload }: {
                   return (
                     <Fragment key={key}>
                       <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'} through={short(data.lookaheadTo)}
-                                 stars={stars} byStars={data.assignRule === 'stars'}
+                                 byLevels={data.assignRule === 'levels'} today={data.today}
                                  docs={canDocs && r.kind === 'in' && docUnits.has(r.unitId) ? docs[r.resId] ?? null : undefined}
                                  todos={todosBy.get(r.unitId)} flag={r.kind === 'out' ? flags[r.resId] : undefined}
                                  open={open === key} onToggle={() => {
@@ -527,12 +525,12 @@ function Board({ data, range, patch, reload }: {
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, stars, byStars, flag }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, today, flag }: {
   r: BoardRow; showMoney: boolean; shadow: boolean; open: boolean; onToggle: () => void;
   /** Flagged by hand (§124): the note the cleaner reads. */
   flag?: string;
-  /** Each cleaner's stars, and whether stars decide (§121) or ride along beside the tiers. */
-  stars: Map<string, number>; byStars: boolean;
+  /** Whether the levels rule decides (§125), or rides along beside the rule in charge. */
+  byLevels: boolean; today: string;
   /** An arrival's filed documents: undefined = not shown to this role, null = still reading. */
   docs?: StayDocs | null;
   /** Open to-dos about this unit. */
@@ -574,16 +572,14 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
             </span>
             {r.manual.cleaner && <span className="sub-n"> · set by hand</span>}
             {/* "★4 · Veronica ★5 ✓": what the clean needs against what the cleaner has. */}
-            {r.stars && r.assignment !== 'not_needed' && (() => {
-              const has = r.assignment === 'assigned' && r.cleaner ? stars.get(r.cleaner) : undefined;
-              const below = belowStars(r, stars);
-              return <div className={below ? 'breach' : 'sub-n'} title={r.stars.why}>
-                needs {starText(r.stars.required)}
-                {has !== undefined && <> · has {starText(has)} {below ? '▲ below required stars' : '✓'}</>}
-              </div>;
-            })()}
-            {!byStars && r.stars && r.assignment !== 'not_needed' && r.stars.cleaner !== r.cleaner && (
-              <div className="ops-diff" title={r.stars.reason}>by stars: {r.stars.cleaner ?? 'unassigned'}</div>
+            {/* The level the clean needs, or why it waits (§125). */}
+            {byLevels && r.levels && r.assignment !== 'not_needed' && !r.manual.cleaner && (
+              r.levels.required ? <div className="sub-n" title={r.levels.why}>{LEVEL_LABEL[r.levels.required]}</div>
+              : r.date <= addDays(today, 1) ? <div className="breach" title={r.levels.why}>▲ assign by hand — {r.levels.why}</div>
+              : <div className="sub-n" title={r.levels.why}>○ waiting for a booking — TBD until {short(addDays(r.date, -1))}</div>
+            )}
+            {!byLevels && r.levels && r.assignment !== 'not_needed' && r.levels.cleaner !== r.cleaner && (
+              <div className="ops-diff" title={`${r.levels.why} — ${r.levels.reason}`}>by levels: {r.levels.cleaner ?? (r.levels.waiting ? 'TBD (waiting)' : 'TBD')}</div>
             )}
             {r.sameDayOf && !r.manual.cleaner && <div className="sub-n">another stay leaves today — one clean</div>}
             {r.declined.length > 0 && (
@@ -755,9 +751,9 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag }:
         <div className="ops-editor-why">
           <b>The rule says {r.auto.cleaner ?? 'nobody'}</b> — {r.auto.reason}.
           {r.sheet && <> The daily file has <b>{sheetText(r.sheet)}</b>{r.sheet.price != null ? ` at ${money2(r.sheet.price)}` : ''}.</>}
-          {data.assignRule !== 'stars' && r.stars && (
-            <div>By stars (not deciding yet): <b>{r.stars.cleaner ?? 'nobody'}</b> — {starText(r.stars.required)} needed
-              ({r.stars.why}) — {r.stars.reason}.</div>
+          {data.assignRule !== 'levels' && r.levels && (
+            <div>By levels (not deciding yet): <b>{r.levels.cleaner ?? 'TBD'}</b> — {r.levels.required ? LEVEL_LABEL[r.levels.required] : 'no level yet'}
+              ({r.levels.why}) — {r.levels.reason}.</div>
           )}
         </div>
       )}
@@ -771,8 +767,7 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag }:
                 : { assignment: v as 'tbd' | 'not_needed' });
             }}>
               <option value="__rule">By the rule{r.auto.cleaner ? ` (${r.auto.cleaner})` : ''}</option>
-              {active.map(c => <option key={c.name} value={`c:${c.name}`}>{c.name} — {starText(starsOf(c))}
-                {r.stars && starsOf(c) < r.stars.required ? ' (below)' : ''}</option>)}
+              {active.map(c => <option key={c.name} value={`c:${c.name}`}>{c.name} — {LEVEL_LABEL[levelOf(c)]}</option>)}
               <option value="tbd">Unassigned (TBD)</option>
               <option value="not_needed">No clean needed</option>
             </select>
@@ -991,7 +986,7 @@ function ManualCleanForm({ data, initial, onDone, onCancel }: {
         <label>Cleaner
           <select value={cleaner} onChange={e => setCleaner(e.target.value)}>
             <option value="">Not assigned yet</option>
-            {active.map(c => <option key={c.name} value={c.name}>{c.name} — {starText(starsOf(c))}</option>)}
+            {active.map(c => <option key={c.name} value={c.name}>{c.name} — {LEVEL_LABEL[levelOf(c)]}</option>)}
           </select></label>
         <label className="check"><input type="checkbox" checked={deep} onChange={e => setDeep(e.target.checked)} /> Deep clean</label>
       </div>
@@ -1338,14 +1333,14 @@ function RateTable({ roster }: { roster: Cleaner[] }) {
   const cell = (v: number | null | undefined) => v == null ? <span className="note">—</span> : money(v);
   return (
     <table className="units compact">
-      <thead><tr><th>Cleaner</th><th>Stars</th><th>Zones</th><th className="n">Max a day</th>
+      <thead><tr><th>Cleaner</th><th>Level</th><th>Zones</th><th className="n">Max a day</th>
         {BEDROOM_SIZES.map(b => <th key={b} className="n">{b}BR</th>)}
         {BEDROOM_SIZES.map(b => <th key={`d${b}`} className="n">Deep {b}BR</th>)}</tr></thead>
       <tbody>
         {roster.map(c => (
           <tr key={c.name} className={c.active ? undefined : 'muted-row'}>
             <td><b>{c.name}</b>{!c.active && <span className="sub-n"> inactive</span>}</td>
-            <td>{starText(starsOf(c))}</td><td>{c.zones.length ? c.zones.join(', ') : 'all'}</td>
+            <td>{LEVEL_LABEL[levelOf(c)]}</td><td>{c.zones.length ? c.zones.join(', ') : 'all'}</td>
             <td className="n">{c.maxPerDay ?? <span className="note">no limit</span>}</td>
             {BEDROOM_SIZES.map(b => <td key={b} className="n">{cell(c.rates[b])}</td>)}
             {/* A blank deep rate falls back to the ordinary one — shown as such. */}
@@ -1364,11 +1359,11 @@ function Rates({ data }: { data: OperationsResponse }) {
     <>
       {data.roster.length ? <RateTable roster={data.roster} /> : <p className="note">No roster yet.</p>}
       <div className="group">
-        <h3>How a cleaner is chosen {data.assignRule === 'stars' ? '— by stars' : '— by tier (stars shown beside, not deciding yet)'}</h3>
-        <StarRules rules={st} />
+        <h3>How a cleaner is chosen {data.assignRule === 'levels' ? '— by levels' : `— by ${data.assignRule} (levels shown beside, not deciding yet)`}</h3>
+        <LevelRules rules={st} />
       </div>
       <div className="group">
-        <h3>The tier rule {data.assignRule === 'stars' ? '(no longer deciding)' : '(deciding now)'}</h3>
+        <h3>The tier rule {data.assignRule === 'tiers' ? '(deciding now)' : '(not deciding)'}</h3>
         <ul className="note">
           <li>Outgoing stay of <b>{st.longStayPromoteNights}+ nights</b> → high tier, whatever comes next.</li>
           <li>Next booking within <b>{st.nextResValueHorizonDays} days</b> worth <b>{money(st.cleanerHighThreshold)}+</b> → high tier;
@@ -1381,18 +1376,18 @@ function Rates({ data }: { data: OperationsResponse }) {
   );
 }
 
-/** The star rule in words, from the saved (or proposed) numbers. */
-function StarRules({ rules: r }: { rules: OpsRules }) {
+/** The levels rule in words, from the saved (or proposed) numbers (§125). */
+function LevelRules({ rules: r }: { rules: OpsRules }) {
   return (
     <ul className="note">
-      <li>Each clean needs stars from the <b>next guest's price per night</b>: under {money(r.starBand2From)} ★1 ·
-        {' '}{money(r.starBand2From)}+ ★2 · {money(r.starBand3From)}+ ★3 · {money(r.starBand4From)}+ ★4 · {money(r.starBand5From)}+ ★5.
-        Nothing booked within {r.nextResValueHorizonDays} days → the unit's usual price per night; no price at all → ★{r.starDefault}.</li>
-      <li>The stay leaving adds <b>+1</b> from {r.starStayPlus1Nights} nights and <b>+2</b> from {r.starStayPlus2Nights}; a
-        <b> same-day turnover</b> adds +1. Never more than ★5.</li>
-      <li>Picked: active, covers the unit's zone, under their max that day, with enough stars → the <b>cheapest</b> for the
-        unit's size; a tie goes to whoever has fewer cleans that day. Nobody with enough stars → the one with the most,
-        marked ▲ below required stars. A choice made by hand always wins and uses up one of that cleaner's slots.</li>
+      <li>A stay of <b>{r.levelLongStayNights}+ nights</b> with no mid-stay clean in its last {r.levelMidStayDays} days → <b>high level</b>.</li>
+      <li>Otherwise the <b>next guest</b> decides — only one checking in fewer than {r.levelNextWithinDays} days after the checkout:
+        {' '}{money(r.levelHighFromNightly)}+/night → high level; less → standard.</li>
+      <li>Nothing booked, or the next check-in {r.levelNextWithinDays}+ days away → <b>TBD</b>, waiting for a booking; the day before,
+        it asks to be assigned by hand.</li>
+      <li>Picked: active, not manual-only, the level or above, covers the zone, under their max that day → the <b>cheapest</b> for
+        the unit's size; a tie goes to whoever has fewer cleans that day. Nobody → TBD. High-level cleans are filled first.
+        A choice made by hand always wins and uses one of that cleaner's slots.</li>
       <li>Zones: an apartment's building (CL, P2), or Houses. A cleaner with no zone ticked covers all of them.</li>
     </ul>
   );
@@ -1546,14 +1541,14 @@ function Setup({ data, reload }: { data: OperationsResponse; reload: () => void 
         </div>
         <div className="button-row">
           <button className="secondary" onClick={() => setRoster(rs => [...rs, { name: '', tier: 'mid', position: rs.length, rates: {}, deepRates: {}, active: true,
-                                                                                 stars: 3, zones: [], maxPerDay: null }])}>Add cleaner</button>
+                                                                                 stars: 3, level: 'standard', zones: [], maxPerDay: null }])}>Add cleaner</button>
           <button onClick={() => void save({ roster }, 'Roster saved.')}>Save roster</button>
         </div>
         <p className="note">Renaming someone is removing them and adding a new person — stays set to the old name by hand
           would read as off the roster. Mark them inactive instead and add the new name.</p>
       </div>
 
-      <StarSetup cfg={cfg} roster={roster} setRoster={setRoster} rules={rules} setRules={setRules} save={save} />
+      <LevelSetup cfg={cfg} roster={roster} setRoster={setRoster} rules={rules} setRules={setRules} save={save} />
       <CrewSetup cfg={cfg} roster={roster} setRoster={setRoster} save={save} />
 
       <div className="card">
@@ -1665,21 +1660,19 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
   );
 }
 
-const STAR_RULES: [keyof OpsRules, string][] = [
-  ['starBand2From', '★2 from ($/night)'], ['starBand3From', '★3 from ($/night)'],
-  ['starBand4From', '★4 from ($/night)'], ['starBand5From', '★5 from ($/night)'],
-  ['starStayPlus1Nights', '+1 star from (nights)'], ['starStayPlus2Nights', '+2 stars from (nights)'],
-  ['starDefault', 'No price to go by (★)']
+const LEVEL_RULES: [keyof OpsRules, string][] = [
+  ['levelHighFromNightly', 'High level from ($/night, next guest)'], ['levelLongStayNights', 'Long stay from (nights)'],
+  ['levelMidStayDays', 'Mid-stay counts if within (days before checkout)'], ['levelNextWithinDays', 'Assign only if next check-in is under (days)']
 ];
 
 /**
- * Assignment by stars (§121): each cleaner's stars, zones and daily max,
- * the price bands, and the switch — all behind a preview. Nothing here
+ * Assignment by levels (§125): each cleaner's level, zones and daily max,
+ * the rule's numbers, and the switch — all behind a preview. Nothing
  * saves until the board under the proposal has been seen against the
- * board as it is: how many cleans change hands, fall below their stars,
- * and what it costs.
+ * board as it is: how many cleans change hands, how many wait, and what
+ * it costs.
  */
-function StarSetup({ cfg, roster, setRoster, rules, setRules, save }: {
+function LevelSetup({ cfg, roster, setRoster, rules, setRules, save }: {
   cfg: OpsSettings; roster: Cleaner[]; setRoster: (f: (rs: Cleaner[]) => Cleaner[]) => void;
   rules: Record<string, string>; setRules: (f: (r: Record<string, string>) => Record<string, string>) => void;
   save: (body: Record<string, unknown>, done: string) => Promise<void>;
@@ -1693,7 +1686,7 @@ function StarSetup({ cfg, roster, setRoster, rules, setRules, save }: {
   const zones = [...new Set([...Object.keys(cfg.zones ?? {}), ...roster.flatMap(c => c.zones)])]
     .sort((a, b) => Number(a === HOUSES_ZONE) - Number(b === HOUSES_ZONE) || a.localeCompare(b));
   const set = (i: number, patch: Partial<Cleaner>) => setRoster(rs => rs.map((c, j) => j === i ? { ...c, ...patch } : c));
-  const stars = cfg.assignRule === 'stars';
+  const deciding = cfg.assignRule === 'levels';
 
   const run = async () => {
     setBusy(true); setErr('');
@@ -1707,23 +1700,23 @@ function StarSetup({ cfg, roster, setRoster, rules, setRules, save }: {
 
   return (
     <div className="card">
-      <h2>Who cleans: by stars <span className={stars ? 'ok-tag' : 'chan-tag'}>{stars ? 'deciding' : 'shown beside the tiers'}</span></h2>
+      <h2>Who cleans: by levels <span className={deciding ? 'ok-tag' : 'chan-tag'}>{deciding ? 'deciding' : `${cfg.assignRule} decides now`}</span></h2>
       <p className="note">
-        {stars ? 'Stars decide who cleans each turnover.'
-          : 'The tiers still decide. The board shows what the stars would pick beside each clean ("by stars: …"); switch once they have been watched for a week.'}
+        {deciding ? 'Levels decide who cleans each turnover.'
+          : `The ${cfg.assignRule} rule still decides. The board shows what levels would pick beside each clean ("by levels: …").`}
         {' '}Host Notes change only where the cleaner changes.
       </p>
-      <StarRules rules={withDefaults(rules)} />
+      <LevelRules rules={withDefaults(rules)} />
 
       <div className="grid-scroll">
         <table className="units compact roster-edit">
-          <thead><tr><th>Cleaner</th><th>Stars</th><th>Zones covered</th><th>Max cleans a day</th></tr></thead>
+          <thead><tr><th>Cleaner</th><th>Level</th><th>Zones covered</th><th>Max cleans a day</th></tr></thead>
           <tbody>
             {roster.map((c, i) => (
               <tr key={i} className={c.active ? undefined : 'muted-row'}>
                 <td><b>{c.name || '—'}</b>{!c.active && <span className="sub-n"> inactive</span>}</td>
-                <td><select value={starsOf(c)} onChange={e => set(i, { stars: Number(e.target.value) })}>
-                  {[1, 2, 3, 4, 5].map(n => <option key={n} value={n}>{starText(n)}</option>)}</select></td>
+                <td><select value={levelOf(c)} onChange={e => set(i, { level: e.target.value as Cleaner['level'] })}>
+                  {LEVELS.map(l => <option key={l} value={l}>{LEVEL_LABEL[l]}</option>)}</select></td>
                 <td>
                   {zones.map(z => (
                     <label key={z} className="check inline" title={(cfg.zones?.[z] ?? []).join(', ')}>
@@ -1742,7 +1735,7 @@ function StarSetup({ cfg, roster, setRoster, rules, setRules, save }: {
       </div>
 
       <div className="row">
-        {STAR_RULES.map(([k, label]) => (
+        {LEVEL_RULES.map(([k, label]) => (
           <label key={k}>{label}
             <input value={rules[k] ?? ''} placeholder={String(cfg.defaults[k])}
                    onChange={e => setRules(r => ({ ...r, [k]: e.target.value }))} /></label>
@@ -1752,41 +1745,39 @@ function StarSetup({ cfg, roster, setRoster, rules, setRules, save }: {
       {err && <p className="banner error">{err}</p>}
       <div className="button-row">
         <button className="secondary" disabled={busy} onClick={() => void run()}>{busy ? 'Building the board…' : 'Preview'}</button>
-        <button disabled={!fresh || busy} onClick={() => void save({ roster, rules }, 'Stars, zones and bands saved.')}>Save</button>
-        {!stars && <button disabled={!fresh || busy} onClick={() => void save({ roster, rules, assignRule: 'stars' }, 'Stars now decide who cleans.')}>Save and switch to stars</button>}
-        {stars && <button className="secondary" disabled={busy} onClick={() => void save({ assignRule: 'tiers' }, 'The tiers decide again.')}>Back to tiers</button>}
+        <button disabled={!fresh || busy} onClick={() => void save({ roster, rules }, 'Levels, zones and limits saved.')}>Save</button>
+        {!deciding && <button disabled={!fresh || busy} onClick={() => void save({ roster, rules, assignRule: 'levels' }, 'Levels now decide who cleans.')}>Save and switch to levels</button>}
         {!fresh && <span className="note">{preview ? 'Changed since the preview — preview again to save.' : 'Preview first: saving needs the board seen under the change.'}</span>}
       </div>
 
       {preview && (
         <div className={fresh ? undefined : 'is-stale'}>
-          <p className="note">
-            {short(preview.from)} → {short(preview.to)}, {preview.cleans} cleans, stars against what decides now ({preview.rule}):
-          </p>
+          <p className="note">{short(preview.from)} → {short(preview.to)}, {preview.cleans} cleans, levels against what decides now ({preview.rule}):</p>
           <dl className="strip">
             <div><dt>Change cleaner</dt><dd>{preview.changed}</dd></div>
-            <div><dt>Below stars</dt><dd>{delta(preview.below.now, preview.below.then)}</dd></div>
+            <div><dt>Waiting for a booking</dt><dd>{preview.waiting ?? 0}</dd></div>
             <div><dt>Unassigned</dt><dd>{delta(preview.unassigned.now, preview.unassigned.then)}</dd></div>
             <div><dt>Cleaner pay</dt><dd>{delta(preview.cost.now, preview.cost.then, money)}
               {(preview.unpriced.now || preview.unpriced.then) ? <small>not priced: {preview.unpriced.now} → {preview.unpriced.then}</small> : null}</dd></div>
           </dl>
           {preview.changes.length > 0 && (
             <table className="units compact">
-              <thead><tr><th>Day</th><th>Unit</th><th>Needs</th><th>Now</th><th>By stars</th><th className="n">Pays</th></tr></thead>
+              <thead><tr><th>Day</th><th>Unit</th><th>Needs</th><th>Now</th><th>By levels</th><th className="n">Pays</th></tr></thead>
               <tbody>
                 {preview.changes.map(c => (
                   <tr key={c.resId}>
                     <td>{short(c.date)}</td><td>{c.unit}</td>
-                    <td>{c.required ? starText(c.required) : '—'}</td>
+                    <td>{c.required === 'waiting' ? '○ waiting' : c.required ? LEVEL_LABEL[String(c.required)] ?? c.required : '—'}</td>
                     <td>{c.now ?? '—'}</td>
-                    <td className={c.below ? 'breach' : undefined}>{c.then ?? '—'}{c.below ? ' ▲ below required stars' : ''}</td>
+                    <td>{c.then ?? '—'}</td>
                     <td className="n">{c.priceNow == null ? '—' : money2(c.priceNow)} → {c.priceThen == null ? '—' : money2(c.priceThen)}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           )}
-          <p className="note">Stays set by hand keep their cleaner either way. Only the board's window is compared.</p>
+          <p className="note">Stays set by hand keep their cleaner either way. "Unassigned" counts the cleans waiting for a booking —
+            they are not the team's problem until the day before. Only the board's window is compared.</p>
         </div>
       )}
     </div>

@@ -40,7 +40,16 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   "Today" is New York's (§63, §64).
 - Live rules: next-booking horizon 10 days, long vacancy 7 days. The team assigns
   P2 → Veronica, CL → Michelle by hand (overrides), not by the tier rule (§65) — zones replace that.
-- Stars (§121): required = band of the next guest's **price per night** (inside the horizon; else
+- **Levels (§125)**, replacing stars once switched: `cleaners.level` high (K&M, Irene) / standard
+  (Veronica) / manual (Michelle — never picked by a rule). Needs high: a stay ≥ `levelLongStayNights`
+  (10) with no mid-stay clean (`kind = 'mid_stay'`, MAN- rows) in its last `levelMidStayDays` (5) days;
+  else the next guest decides if they check in < `levelNextWithinDays` (4) days after: ≥
+  `levelHighFromNightly` ($200/night) high, else standard (a priceless block → standard). Else **TBD
+  waiting** — not in "Needs attention" until the day before, then "▲ assign by hand". Pick: level or
+  above, not manual, zone, under max, not declined → cheapest → fewer cleans that day; high cleans
+  first; nobody → TBD (no "below" fallback, no flag). Mid-stays must be registered in Kaizen ("+ Mid-stay
+  clean") or a long stay reads as high (owner accepts the risk). The "below stars" flag is gone.
+- Stars (§121, retiring): required = band of the next guest's **price per night** (inside the horizon; else
   the unit's median nightly over loaded stays; else `starDefault`) + stay length (+1 ≥7, +2 ≥20)
   + 1 same-day turnover, cap ★5. Pick per day, most demanding first: active, covers zone, under
   max, stars ≥ required → cheapest (unpriced last) → fewer cleans that day → more stars. None →
@@ -105,11 +114,13 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
   K&M ★5 — 12 of 27 cleans read "below" on 2026-10-11, mostly Veronica's hand-set P2 cleans),
   watches a week, then Setup → Preview → **Save and switch to stars**. After the switch: drop
   the tier rule (`assign`, `primaryFor`, `cleaners.tier/position`, tier rules) once nothing reads it.
-- **Star rule under review (2026-10-11).** The owner is not convinced by ★1–5 and proposed (not
-  built — he said "no hagas nada"): a long stay without a mid-stay in the last 5 days → ★4 fixed;
-  otherwise by the next booking's value; nothing booked → TBD, assigned only once a booking lands
-  within 4 days, flagged when it does; K&M = Irene (cheapest wins), Veronica one level below,
-  Michelle manual only; drop the "below stars" flag. Open questions in the session reply.
+- **Levels built, not switched on (§125).** `assign_rule` is still `stars` in production. To switch:
+  Setup → "Who cleans: by levels" → set max/day (owner: K&M 3, Irene 3, Veronica 2) → Preview →
+  "Save and switch to levels". Fill **Irene's deep rates** first (blank → her deep cleans price at the
+  ordinary rate and look cheapest). After the switch: delete the stars rule (requiredStars,
+  pickByStars, assignByStars, StarDecision, `row.stars`, star bands in DEFAULT_RULES, `cleaners.stars`).
+  **Not built — waiting on the owner:** when a booking lands for a clean already given to someone,
+  that cleaner "takes the new reservation's checkout" (as if the stay before had been extended).
 - **Crew page built, not switched on (§122).** To start: set each cleaner's email (Setup → Crew
   pages); in Cloudflare Zero Trust add those emails to the Kaizen Access policy with One-time PIN
   on. Calendar stays off until the star schedule is checked; then turn it on and Confirm in
