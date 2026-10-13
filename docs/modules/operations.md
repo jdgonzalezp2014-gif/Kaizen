@@ -173,7 +173,7 @@ key had no SOPs.
 - **How cleaners get in (§136):** `src/lib/unit-access.ts` (pure, tested: `repoMatch`, `unitAccess`) +
   `functions/_lib/unit-access.ts` (`accessByUnit`). Address and Wi-Fi (and Hostaway's door code) come from
   Hostaway into `units.address / wifi_name / wifi_password / door_code` (063) on every units sync (Settings →
-  Sync listings); the lock type, **Cleaner Code** (`cleaner_code`, or Houses' typo column `clener_code`),
+  Sync listings); the lock type, **Cleaner Code** (`cleaner_code`; the Houses typo column `clener_code` is gone, §147),
   Lockbox and Keys/Fobs from Repository → Units (Cortland_Legacy, The Links, Houses), matched by name, else
   by unit number (P2-4308 = LP-4308), else a name inside the other. Codes go only to the cleaner's clean
   of TODAY (crew GET `access`) and to that clean's helper link while it lasts; coming cleans get only the
@@ -362,4 +362,4 @@ key had no SOPs.
 
 ## History
 
-§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140, §141, §142.
+§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140, §141, §142, §147.

@@ -62,10 +62,18 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   login are marked "To review" in Company tools.
 - The Units section also has a **STR Log ins** table — not part of this reorganization.
 
-- Units tables hold door codes / Wi-Fi as plain columns; only Login → Tools → password is a
-  secret. Fix = new secret column + copy + remove old (owner's call) (§66).
+- **Units access/parking block (§147):** the three Units tables share one block, same keys, types
+  and order after Type: `lock_type` (select: Schlage Smart Lock / Yale Smart Lock / Access Fob / Keys /
+  None) · `keys_fobs` (Access Fob / None) · `cleaner_code` · `lockbox` · `closet_code` (houses: the
+  supply closet in the house) · `storage` (ref → `name` of the same table: apartments point to the
+  building's shared Storage row, which holds its own lockbox) · `admin_code` 🔒 · `backup_code` 🔒 ·
+  `parking` ("Parking notes") · `parking_free_street` · `parking_extra_price` ($/night, covered) ·
+  `fob_replacement_fee` · and `lease_notes` after Status. Blank where it does not apply; the team
+  fills it. Cleaners get only cleaner code, lockbox, fob (unit-access.ts); admin/backup are secrets.
+  `closet_code` and `storage` are not sent to cleaners yet (next: supplies instructions).
+- Units tables still hold Wi-Fi and the account `password` columns as plain text (§66).
 - The old Apps Script link/key in Settings can be cleared now the import is confirmed.
 
 ## History
 
-§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138.
+§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147.

@@ -65,7 +65,7 @@ export function unitAccess(u: UnitRow, rec: RepoRow | null): UnitAccess {
   const address = text(u.address) ?? text(v.location);
   const lockType = text(v.lock_type);
   const kind = kindOf(lockType);
-  const teamCode = text(v.cleaner_code) ?? text(v.clener_code);
+  const teamCode = text(v.cleaner_code);
   const code = teamCode ?? text(u.doorCode);
   const lockbox = text(v.lockbox);
   const fob = text(v.keys_fobs);

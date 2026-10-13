@@ -3831,3 +3831,21 @@ copy and the finish screen's summary now say "1 work order" / "1 work order for 
 pure in-browser mock (`src/screens/Practice.tsx`) and does not reach `/api/inspection-run`, so this went
 in on the pure-function tests, tsc and build, plus the established confidence of mirroring the purchases
 code path exactly; worth a real multi-repair inspection before trusting it on a unit that matters.
+
+## §147 — One access/parking structure for every unit (2026-10-13)
+
+The owner wanted every unit's rules and access in the same fields, blanks allowed ("los llenamos"), so an
+AI can read and keep them later. The three Units tables (Cortland_Legacy, Houses, The Links) had the same
+columns with different types (codes as number lost leading zeros), a `closet` column used three ways
+(a code in houses, lease notes in Cortland, empty in P2) and a typo duplicate `clener_code`. Done by a
+one-off script (backup of columns + records taken first; one `repo_audit` row per table, codes never
+logged): the block in repository.md. Decisions: closet ≠ storage — a house has its supply closet inside
+(`closet_code`), an apartment uses the building's shared storage, already a row of its own table, so
+`storage` is a reference to that row, not a copied code. `admin_code` / `backup_code` became secrets in
+place (47 values encrypted; P2's admin_code "fob" was a label, dropped). Cortland's closet text moved to
+`lease_notes`. Prefilled from what the owner stated: P2 apartments street parking free, covered parking
+$25/night, lost fob $200 (the P2 fob costs more to replace — kept apart from the $600 of Cortland/Houses,
+prefilled on the 12 active listings whose house rules say so). P2 parking goes in the Hostaway
+description, not house rules; early check-in/late check-out ($20/hour, only after payment confirmed
+through the Resolution Center, else 4 PM / 10 AM) goes in house rules — the P2 parking text was appended to the 8
+P2 listings' `description` (read back, before/after in `listing_text_changes`); house rules not yet written. Audit with the gaps: `../access-rules-amenities-report.md`.
