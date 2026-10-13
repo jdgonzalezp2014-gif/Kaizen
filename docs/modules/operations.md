@@ -294,7 +294,8 @@ key had no SOPs.
   is `clean_group = 'inspection'`, an order processed as a purchase (closing it unbought asks first, like a cleaner's
   request). Every purchase form asks **Paid by**: Kaizen (company card) or someone — a name (`inventory_purchases.paid_by`);
   then it is on Costs → One-off → **💵 To pay back** (by person, with receipts) until "✓ Paid back" (`paid_back_at/by`).
-  A cleaner's approved "I bought something" is paid by them, so it lands there too.
+  NOT a cleaner's approved "I bought something" (owner: she charges it as an extra on her invoice — listing it would
+  pay it twice); Paid by is for whoever does the inventory.
 - **A to-do carries its purchase (§150, owner):** any open top-level to-do (Operations → To-do) has "+ 🛒 purchase"
   (`TaskPurchase`, Inventory.tsx): its order filled in if it has one, else 🔍 to the unit's place; "🧾 Record the
   purchase" (stock + Restock expense + receipt, `recordPurchase` with `todoId` — no order needed first) and "✓ and close

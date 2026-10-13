@@ -83,8 +83,9 @@ export async function decideFieldExpense(sql: SqlFn, id: string, status: 'approv
   if (status === 'approved' && p.source !== 'vendor') {
     if (!Array.isArray(lines) || !lines.length) throw new Error('Record what was bought in the inventory first: the items and where each went.');
     // Checked and saved first: a wrong line leaves it pending, never approved without its purchase.
-    // Paid with the cleaner's own money: on "To pay back" until someone pays it.
-    await recordPurchase(sql, by, { lines, total: p.amount, paidBy: p.by_name, note: p.description.slice(0, 500) }, p.photos ?? [], id);
+    // Not on "To pay back" (owner, §150): a cleaner charges what she bought as an extra on her invoice — listing it
+    // here too would pay it twice. "Paid by" is for whoever does the inventory.
+    await recordPurchase(sql, by, { lines, total: p.amount, note: `Bought by ${p.by_name} — ${p.description}`.slice(0, 500) }, p.photos ?? [], id);
   }
   const [f] = await sql`UPDATE field_expenses SET status = ${status}, decided_by = ${by}, decided_at = now(), decision_note = ${note}
                          WHERE account_id = 1 AND id = ${Number(id) || 0} AND status = 'pending'
