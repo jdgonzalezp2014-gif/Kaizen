@@ -264,7 +264,7 @@ const blankState = (): CleanFieldState => ({ before: 0, after: 0, folderUrl: nul
 function fieldStep(s: CleanFieldState, f: Record<string, string>, by: string): CleanFieldState {
   const kind = f.kind ?? f.action;
   if (kind === 'photo' || kind === 'cleanPhoto') { if (f.stage === 'after') s.after++; else s.before++; }
-  else if (kind === 'taken' || kind === 'nothing' || kind === 'cleanTaken') {
+  else if (kind === 'taken' || kind === 'nothing' || kind === 'cleanTaken' || kind === 'cleanNothing') {
     const lines = f.lines ? (JSON.parse(f.lines) as unknown[]).length : 0;
     s.supplies = { lines, none: !lines };
   } else if (kind === 'done' || (kind === 'cleanMark' && f.kind === 'done')) s.done = { by, at: NOW() };
@@ -325,7 +325,7 @@ function crewPractice(): PracticeCrew {
         reInvoice();
         return { ok: true };
       }
-      if (f.action === 'cleanPhoto' || f.action === 'cleanTaken' || f.action === 'cleanMark') {
+      if (f.action === 'cleanPhoto' || f.action === 'cleanTaken' || f.action === 'cleanNothing' || f.action === 'cleanMark') {
         const s = fieldStep(stateOf(key), f, 'Practice cleaner');
         if (f.action === 'cleanPhoto' && files[0]) {
           const id = `p${photos.size + 1}`;
