@@ -39,7 +39,7 @@ export async function activeUnits(sql: SqlFn) {
  */
 export async function overview(sql: SqlFn) {
   const today = todayIn(TZ);
-  const [items, sp, units, moveRows, aheadCleans, minRows, answeredRows] = await Promise.all([
+  const [items, sp, units, moveRows, aheadCleans, minRows, hiddenRows, answeredRows] = await Promise.all([
     invItems(sql), supplyPlaces(sql), activeUnits(sql),
     sql`SELECT item_id::text AS "itemId", place, unit_id AS "unitId", kind, qty::float AS qty, cleaning_key AS "cleaningKey",
                to_char(created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI:SS') AS at, by_name AS "byName", source
@@ -47,11 +47,14 @@ export async function overview(sql: SqlFn) {
     sql`SELECT unit_id, count(*)::int AS n FROM cleanings WHERE account_id = 1 AND void_reason IS NULL AND assignment <> 'not_needed'
            AND checkout_on > ${today}::date AND checkout_on <= ${addDays(today, AHEAD_DAYS)}::date GROUP BY unit_id`,
     sql`SELECT item_id::text AS "itemId", place, min_qty::float AS min FROM inventory_place_mins WHERE account_id = 1`,
+    sql`SELECT item_id::text AS "itemId", place FROM inventory_place_hidden WHERE account_id = 1`,
     // The cleans that said what they took (lines or "nothing"): the average per clean is over these.
     sql`SELECT unit_id, cleaning_key FROM clean_records WHERE account_id = 1 AND supplies_at IS NOT NULL AND unit_id IS NOT NULL
            AND clean_date >= ${addDays(today, -WINDOW_DAYS)}::date`
   ]) as [InvItem[], Awaited<ReturnType<typeof supplyPlaces>>, { id: string; name: string }[], Move[], { unit_id: string; n: number }[],
-         { itemId: string; place: string; min: number }[], { unit_id: string; cleaning_key: string }[]];
+         { itemId: string; place: string; min: number }[], { itemId: string; place: string }[], { unit_id: string; cleaning_key: string }[]];
+  // §150: what a place does not keep leaves its list, its needs and its orders.
+  const hidden = new Set(hiddenRows.map(h => `${h.itemId}|${h.place}`));
   const answered = new Map<string, string[]>();
   for (const r of answeredRows) answered.set(r.unit_id, [...answered.get(r.unit_id) ?? [], r.cleaning_key]);
   const levels = stockLevels(moveRows);
@@ -77,7 +80,8 @@ export async function overview(sql: SqlFn) {
   const places = rows.map(p => ({
     place: p.key, name: p.name, self: p.self,
     units: p.units.map(u => ({ ...u, cleansAhead: ahead.get(u.id) ?? 0 })),
-    items: active.map(i => {
+    hidden: active.filter(i => hidden.has(`${i.id}|${p.key}`)).map(i => i.id),
+    items: active.filter(i => !hidden.has(`${i.id}|${p.key}`)).map(i => {
       const l = levels.get(`${i.id}|${placeKey(p.key)}`);
       const own = p.key ? mins.get(`${i.id}|${p.key}`) : undefined;
       const min = own ?? i.reorderAt;
@@ -376,6 +380,31 @@ export async function createOrder(sql: SqlFn, by: string, lines: { itemId: strin
   // The lines as data: the purchase that executes this order starts from them.
   await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(id)}, ${JSON.stringify(data)}::jsonb, ${by})`;
   return { id, fresh: true };
+}
+
+/** "Not kept here" (§150): an item off a place's list — or back on it. */
+export async function hideItem(sql: SqlFn, by: string, place: unknown, itemId: unknown, hide: boolean) {
+  const p = (await supplyPlaces(sql)).places.find(x => x.key === String(place ?? ''));
+  if (!p) throw new Error('Which place?');
+  if (hide) await sql`INSERT INTO inventory_place_hidden (account_id, place, item_id, hidden_by) VALUES (1, ${p.key}, ${Number(itemId)}, ${by})
+                      ON CONFLICT DO NOTHING`;
+  else await sql`DELETE FROM inventory_place_hidden WHERE account_id = 1 AND place = ${p.key} AND item_id = ${Number(itemId)}`;
+}
+
+/** A new supply added on the spot (§150, owner: onsite, like the inspection). */
+export async function newItem(sql: SqlFn, b: Record<string, unknown>) {
+  const name = String(b.name ?? '').trim().slice(0, 120);
+  const measure = String(b.measure ?? 'unit').trim().slice(0, 20) || 'unit';
+  const category = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'].includes(String(b.category)) ? String(b.category) : 'other';
+  if (!name) throw new Error('An item needs a name.');
+  const [had] = await sql`SELECT id::text, active FROM inventory_items WHERE account_id = 1 AND lower(name) = lower(${name})` as { id: string; active: boolean }[];
+  if (had) {
+    // Switched off once: switched back on rather than refused.
+    if (!had.active) await sql`UPDATE inventory_items SET active = true, updated_at = now() WHERE id = ${Number(had.id)}`;
+    return had.id;
+  }
+  const [r] = await sql`INSERT INTO inventory_items (account_id, name, category, measure) VALUES (1, ${name}, ${category}, ${measure}) RETURNING id::text` as { id: string }[];
+  return r!.id;
 }
 
 /** The order being written, saved as a draft (§150): no to-do until it is created. Empty lines = discard. */

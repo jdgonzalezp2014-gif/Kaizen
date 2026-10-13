@@ -396,6 +396,7 @@ function inventoryPractice(): InvTransport {
   ];
   const mins = new Map<string, number>();
   let draft: Inventory['draft'] = null;
+  const hidden = new Set<string>([`s5|${S200}`]);
   const orders: Inventory['orders'] = [];
   const fieldTodos: Inventory['fieldTodos'] = [
     { id: 'pt1', title: `Supplies requested — clean of ${LOFT} on ${addDays(today, -1)}`, group: 'request' },
@@ -406,7 +407,8 @@ function inventoryPractice(): InvTransport {
     const levels = stockLevels(moves);
     return { ok: true, items: clone(items), aheadDays: 14, windowDays: 60, unassigned: [], orders: clone(orders), fieldTodos: clone(fieldTodos),
       draft: clone(draft), lowStockTasks: false,
-      places: places.map(p => ({ ...clone(p), items: items.map(i => {
+      places: places.map(p => ({ ...clone(p), hidden: items.filter(i => hidden.has(`${i.id}|${p.place}`)).map(i => i.id),
+        items: items.filter(i => !hidden.has(`${i.id}|${p.place}`)).map(i => {
         const l = levels.get(`${i.id}|${p.place}`);
         const need = p.units.reduce((a, u) => a + (i.perClean ?? 0) * u.cleansAhead, 0);
         const own = mins.get(`${i.id}|${p.place}`);
@@ -430,6 +432,17 @@ function inventoryPractice(): InvTransport {
       if (!String(b.note ?? '').trim()) return fail('Say why it is corrected.');
       for (const a of (b.adjusts as { itemId: string; qty: number }[]))
         moves.push({ ...mv('adjust', a.itemId, place, Number(a.qty), today), note: String(b.note) });
+    } else if (b.action === 'hide') {
+      const k = `${b.itemId}|${place}`;
+      if (b.hide !== false) hidden.add(k); else hidden.delete(k);
+    } else if (b.action === 'newItem') {
+      const name = String(b.name ?? '').trim();
+      if (!name) return fail('An item needs a name.');
+      const had = items.find(i => i.name.toLowerCase() === name.toLowerCase());
+      if (had) return { ...view(), itemId: had.id };
+      const id = `s${items.length + 1}`;
+      items.push({ id, name, category: String(b.category ?? 'other'), measure: String(b.measure ?? 'unit') || 'unit', perClean: null, reorderAt: null, active: true });
+      return { ...view(), itemId: id };
     } else if (b.action === 'draft') {
       const lines = (b.lines as { itemId: string; place: string; qty: number }[]).filter(l => l.qty > 0);
       draft = lines.length ? { lines, forTodo: b.forTodo ? String(b.forTodo) : null, savedBy: 'You (practice)', savedAt: `${today} ${new Date().toTimeString().slice(0, 5)}` } : null;

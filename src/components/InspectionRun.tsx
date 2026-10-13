@@ -504,8 +504,8 @@ function FindingCard({ c, title, onSave, onPhotos }: {
   );
 }
 
-/** Full screen on a phone, a centred panel on a desk. */
-function Sheet({ title, sub, onClose, closeLabel = '✕', children }: {
+/** Full screen on a phone, a centred panel on a desk. (Also the inventory's onsite count, §150.) */
+export function Sheet({ title, sub, onClose, closeLabel = '✕', children }: {
   title: string; sub?: string; onClose?: () => void; closeLabel?: string; children: ReactNode;
 }) {
   useEffect(() => {

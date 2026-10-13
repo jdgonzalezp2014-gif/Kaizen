@@ -494,7 +494,8 @@ export interface InvLevel {
   need: number; min: number | null; minOwn: boolean; toOrder: number;
 }
 /** A place (§150): a Repository record `table/ROW-id` — a storage or a house's closet; null = moves of units with no place. */
-export interface InvPlace { place: string | null; name: string; self: boolean; units: { id: string; name: string; recordId: string | null; cleansAhead: number }[]; items: InvLevel[] }
+export interface InvPlace { place: string | null; name: string; self: boolean; units: { id: string; name: string; recordId: string | null; cleansAhead: number }[]; items: InvLevel[];
+  /** §150: items "not kept here". */ hidden: string[] }
 export interface InvMove {
   id: string; item: string; place: string | null; unit: string | null; kind: 'count' | 'used' | 'purchase' | 'adjust' | 'missing' | 'taken'; qty: number;
   note: string | null; byName: string; source: 'team' | 'cleaner' | 'link'; photos: { name: string; url: string }[]; at: string;
@@ -514,7 +515,7 @@ export interface Inventory {
 }
 export const getInventory = () => call<({ ok: true } & Inventory) | Fail>('/api/inventory');
 export const inventoryAction = (body: Record<string, unknown>) =>
-  call<({ ok: true; todoId?: string } & Inventory) | Fail>('/api/inventory', { method: 'POST', body: JSON.stringify(body) });
+  call<({ ok: true; todoId?: string; itemId?: string } & Inventory) | Fail>('/api/inventory', { method: 'POST', body: JSON.stringify(body) });
 /** A purchase with its receipt (multipart, §150). */
 export const inventoryUpload = (form: FormData) =>
   fetch('/api/inventory', { method: 'POST', body: form }).then(r => r.json() as Promise<({ ok: true } & Inventory) | Fail>);

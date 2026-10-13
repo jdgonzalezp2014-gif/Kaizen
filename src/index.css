@@ -2054,3 +2054,13 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .map-zone.warn { border-color: #e8a33d; }
 .map-zone-head { margin-bottom: 6px; }
 .map-zone .chip { cursor: grab; }
+/* §150: counting a place onsite — big rows, big − / +, search on top. */
+.onsite-top { position: sticky; top: 0; z-index: 2; background: var(--bg); padding: 4px 0 8px; display: grid; gap: 4px; }
+.onsite-top input { min-height: 44px; font-size: 16px; }
+.onsite-row { display: grid; grid-template-columns: 1fr auto; gap: 6px 12px; align-items: center; border-top: 1px solid var(--line); padding: 10px 0; }
+.onsite-row.done .onsite-name b::before { content: '✓ '; }
+.onsite-more { grid-column: 1 / -1; display: flex; gap: 14px; }
+.onsite-step { display: inline-flex; align-items: center; gap: 6px; }
+.onsite-step button { min-width: 48px; min-height: 48px; font-size: 22px; line-height: 1; }
+.onsite-step input { width: 72px; min-height: 48px; text-align: center; font-size: 18px; }
+.onsite-add { display: grid; gap: 8px; border: 1px dashed var(--line); border-radius: 10px; padding: 10px; }

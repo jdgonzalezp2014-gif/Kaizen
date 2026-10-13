@@ -6,6 +6,8 @@
  *   POST { action: 'mins', place, mins: [{ itemId, qty }] }             the minimum to keep there ('' = the item's)
  *   POST { action: 'adjusts', place, note, adjusts: [{ itemId, qty }] } corrections (+/−) to the record, with why
  *   POST { action: 'draft', lines, forTodo? }                           the order kept as a draft (no lines = discard)
+ *   POST { action: 'hide', place, itemId, hide }                        "not kept here" (or back)
+ *   POST { action: 'newItem', name, measure?, category? }               a supply added on the spot
  * A count, a correction or a take may leave a place below its minimum → "Low stock" to-do, if Setup has it on.
  *   POST { action: 'order', lines: [{ itemId, place, qty }], forTodo? }  the ORDER: ONE to-do (or onto a field to-do), a line per item
  *   POST { action: 'purchase', lines, total, todoId?, note? } + receipt  what was BOUGHT: stock per place + one Restock expense
@@ -16,7 +18,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, fieldPhotos, lowStock, mirrorTodos, overview, recordMove, recordPurchase, saveDraft, setMins } from '../_lib/inventory.ts';
+import { createOrder, fieldPhotos, hideItem, lowStock, mirrorTodos, newItem, overview, recordMove, recordPurchase, saveDraft, setMins } from '../_lib/inventory.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -53,6 +55,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       if (!String(b.note ?? '').trim()) return bad('Say why it is corrected.');
       for (const a of list) await recordMove(sql, me, { kind: 'adjust', itemId: a.itemId, place: b.place, qty: a.qty, note: b.note });
       waitUntil(lowStock(sql, [String(b.place ?? '')]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
+    } else if (b.action === 'hide') {
+      await hideItem(sql, who.email, b.place, b.itemId, b.hide !== false);
+    } else if (b.action === 'newItem') {
+      const id = await newItem(sql, b);
+      return Response.json({ ok: true, itemId: id, ...(await overview(sql)) });
     } else if (b.action === 'draft') {
       // §150: the order kept as a draft — no to-do until it is created; no lines = discard it.
       const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])

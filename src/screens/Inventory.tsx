@@ -13,6 +13,7 @@
 import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getInventory, inventoryAction, inventoryItemAction, inventoryUpload, type InvItemRow, type InvPlace, type Inventory } from '../api.ts';
 import { CATEGORIES, reconcile } from '../lib/inventory.ts';
+import { Sheet } from '../components/InspectionRun.tsx';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2026-10-12 …" → "Oct 12". */
@@ -31,7 +32,7 @@ export const repoHref = (recordId: string) => `/?repo=${encodeURIComponent(recor
  * How the view talks to the server — the real API, or Practice's (§139, §150:
  * the team trains on the same screen with example data, nothing leaves the browser).
  */
-type InvResult = ({ ok: true; todoId?: string } & Inventory) | { ok: false; message?: string };
+type InvResult = ({ ok: true; todoId?: string; itemId?: string } & Inventory) | { ok: false; message?: string };
 export interface InvTransport {
   get: () => Promise<InvResult>; act: (body: Record<string, unknown>) => Promise<InvResult>; upload: (form: FormData) => Promise<InvResult>;
 }
@@ -90,7 +91,9 @@ function InventoryBody({ canEdit }: { canEdit: boolean }) {
 function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace; canEdit: boolean; onSaved: (i: Inventory) => void }) {
   const api = useContext(InvApi);
   const items = inv.items.filter(i => i.active);
-  const [mode, setMode] = useState<'view' | 'count' | 'mins'>('view');
+  const [mode, setMode] = useState<'view' | 'mins'>('view');
+  // §150, owner: counting is done onsite, on a phone — a sheet like the inspection's.
+  const [onsite, setOnsite] = useState(false);
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -109,12 +112,12 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
       onSaved(r); setMsg(done); return true;
     } catch (e) { setMsg(String(e)); return false; } finally { setBusy(false); }
   };
-  const given = Object.entries(counts).filter(([, v]) => v !== '');
   const changedMins = Object.entries(counts);
   const ahead = p.units.reduce((a, u) => a + u.cleansAhead, 0);
   const edit = canEdit && !!p.place;
   return (
     <div className="card">
+      {onsite && <OnsiteCount inv={inv} p={p} onSaved={onSaved} onClose={() => setOnsite(false)} />}
       <h2>{placeTitle(p)}</h2>
       <p className="note">
         {!p.place ? <>▲ What cleaners took for units that had no place at the time. Give those units a place in the Repository; these
@@ -128,13 +131,11 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
         <table className="units compact">
           <thead><tr><th>Item</th><th className="n">On record</th><th>Counted</th><th className="n">Per clean</th>
             <th className="n">Cleans take ({inv.aheadDays} d)</th><th className="n">Keep at least</th><th className="n">To order</th>
-            {mode === 'count' && <><th className="n">Counted now</th><th className="n">Gap</th></>}
             {mode === 'mins' && <th className="n">New minimum</th>}</tr></thead>
           <tbody>
             {items.map(i => {
               const l = levelOf(i.id);
               const c = counts[i.id] ?? '';
-              const gap = mode === 'count' && c !== '' ? reconcile(l?.qty ?? null, Number(c)).gap : null;
               return (
                 <tr key={i.id}>
                   <td><b>{i.name}</b> <span className="sub-n">{i.measure}</span>
@@ -152,11 +153,6 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
                   <td className="n">{l?.need ? l.need : '—'}</td>
                   <td className="n">{fmt(l?.min)}{l?.min != null && <span className="sub-n">{l.minOwn ? ' here' : ' item'}</span>}</td>
                   <td className="n">{l?.toOrder ? <b>{l.toOrder}</b> : '—'}</td>
-                  {mode === 'count' && <>
-                    <td className="n"><input className="inv-qty" type="number" inputMode="decimal" min="0" step="any" value={c}
-                                             onChange={e => setCounts(m => ({ ...m, [i.id]: e.target.value }))} /></td>
-                    <td className="n">{gap == null ? (c !== '' ? 'first count' : '') : gap === 0 ? '✓ 0' : <span className="breach">{gap > 0 ? `+${gap}` : gap}</span>}</td>
-                  </>}
                   {mode === 'mins' && <td className="n"><input className="inv-qty" type="number" inputMode="decimal" min="0" step="any"
                     value={counts[i.id] ?? (l?.minOwn ? String(l.min) : '')} placeholder={fmt(i.reorderAt)}
                     onChange={e => setCounts(m => ({ ...m, [i.id]: e.target.value }))} /></td>}
@@ -177,15 +173,8 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
             <button className="secondary" onClick={() => { setFix({}); setWhy(''); }}>Undo</button>
           </>}
           {mode === 'view' && !fixes.length && <>
-            <button onClick={() => { setMode('count'); setCounts({}); setMsg(''); }}>▣ Count {placeTitle(p)}</button>
+            <button onClick={() => { setOnsite(true); setMsg(''); }}>📱 Count {placeTitle(p)}</button>
             <button className="secondary" onClick={() => { setMode('mins'); setCounts({}); setMsg(''); }}>✎ Minimums here</button>
-          </>}
-          {mode === 'count' && <>
-            <button disabled={busy || !given.length}
-                    onClick={async () => { if (await send({ action: 'count', place: p.place, counts: given.map(([itemId, qty]) => ({ itemId, qty })) },
-                                                      `Counted ${given.length} item${given.length === 1 ? '' : 's'}.`)) { setMode('view'); setCounts({}); } }}>
-              Save the count ({given.length})</button>
-            <span className="note">Only the items you fill in are counted; the rest keep their record.</span>
           </>}
           {mode === 'mins' && <>
             <button disabled={busy || !changedMins.length}
@@ -200,6 +189,97 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
       {edit && mode === 'view' && <p className="note">− / + on “On record” corrects it (say why); a full count replaces it. What was bought
         goes in 🧾 Record a purchase (below), with its cost.</p>}
     </div>
+  );
+}
+
+/**
+ * Counting a place ONSITE (§150, owner: "practical for someone onsite, like
+ * the inspection"): a full-screen sheet on a phone — 🔍 and the progress stay
+ * on top; each item a card with − [n] + (typing works too) starting from the
+ * record, "= as recorded" to confirm it untouched; only what was counted or
+ * confirmed is saved. "+ Add an item here" creates a supply on the spot;
+ * "🙈 Not kept here" takes one off this place (shown again from the foot).
+ */
+function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace; onSaved: (i: Inventory) => void; onClose: () => void }) {
+  const api = useContext(InvApi);
+  const [counts, setCounts] = useState<Record<string, number>>({});
+  const [q, setQ] = useState('');
+  const [adding, setAdding] = useState<{ name: string; measure: string; category: string } | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const levelOf = (id: string) => p.items.find(l => l.itemId === id);
+  const shown = p.items.map(l => inv.items.find(i => i.id === l.itemId)!).filter(Boolean);
+  const list = q.trim() ? shown.filter(i => i.name.toLowerCase().includes(q.trim().toLowerCase())) : shown;
+  const done = Object.keys(counts).length;
+  const act = async (body: Record<string, unknown>) => {
+    setBusy(true); setMsg('');
+    try { const r = await api.act(body); if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return null; } onSaved(r); return r; }
+    catch (e) { setMsg(String(e)); return null; } finally { setBusy(false); }
+  };
+  const set = (id: string, n: number) => setCounts(c => ({ ...c, [id]: Math.max(0, Math.min(99999, n)) }));
+  const save = async () => {
+    const r = await act({ action: 'count', place: p.place, counts: Object.entries(counts).map(([itemId, qty]) => ({ itemId, qty })) });
+    if (r) onClose();
+  };
+  return (
+    <Sheet title={`Count · ${placeTitle(p)}`} sub={`${done} of ${shown.length} counted`} onClose={onClose}>
+      <div className="insp-body">
+        <div className="onsite-top">
+          <input value={q} placeholder="🔍 Find an item…" onChange={e => setQ(e.target.value)} />
+          <span className="sub-n">Count what is really here. Untouched items keep their record.</span>
+        </div>
+        {list.map(i => {
+          const l = levelOf(i.id);
+          const n = counts[i.id];
+          const touched = n !== undefined;
+          const val = touched ? n : (l?.qty ?? 0);
+          const gap = touched && l?.qty != null ? reconcile(l.qty, n!).gap : null;
+          return (
+            <div key={i.id} className={`onsite-row${touched ? ' done' : ''}`}>
+              <div className="onsite-name"><b>{i.name}</b> <span className="sub-n">{i.measure}</span>
+                <div className="sub-n">{l?.countedAt ? `record ${fmt(l.qty)} · counted ${short(l.countedAt)}` : 'never counted'}
+                  {touched && <> · <b>{gap == null ? '✓ first count' : gap === 0 ? '✓ same' : `${gap > 0 ? '+' : ''}${gap}`}</b></>}</div>
+                {l?.missingSince && <div className="breach">⚠ reported not there {short(l.missingSince)}</div>}</div>
+              <div className="onsite-step">
+                <button type="button" aria-label={`One less ${i.name}`} disabled={busy || val <= 0} onClick={() => set(i.id, val - 1)}>−</button>
+                <input type="number" inputMode="numeric" min="0" aria-label={`How many ${i.name}`} value={touched ? String(n) : ''}
+                       placeholder={l?.qty != null ? fmt(l.qty) : '0'} onChange={e => e.target.value === '' ? setCounts(c => { const x = { ...c }; delete x[i.id]; return x; }) : set(i.id, Number(e.target.value))} />
+                <button type="button" aria-label={`One more ${i.name}`} disabled={busy} onClick={() => set(i.id, val + 1)}>+</button>
+              </div>
+              <div className="onsite-more">
+                {!touched && l?.qty != null && <button type="button" className="link tiny" onClick={() => set(i.id, l.qty!)}>= as recorded</button>}
+                <button type="button" className="link tiny" disabled={busy} onClick={() => void act({ action: 'hide', place: p.place, itemId: i.id, hide: true })}>🙈 Not kept here</button>
+              </div>
+            </div>
+          );
+        })}
+        {q.trim() && !list.length && <p className="note">Nothing here matches “{q.trim()}” — add it below.</p>}
+        {!adding ? <button className="secondary" onClick={() => setAdding({ name: q.trim(), measure: 'unit', category: 'other' })}>+ Add an item here</button> : (
+          <div className="onsite-add">
+            <label>Name<input autoFocus value={adding.name} maxLength={120} onChange={e => setAdding(a => a && { ...a, name: e.target.value })} /></label>
+            <label>Counted in<input value={adding.measure} maxLength={20} placeholder="roll, bottle, pod…" onChange={e => setAdding(a => a && { ...a, measure: e.target.value })} /></label>
+            <label>Category<select value={adding.category} onChange={e => setAdding(a => a && { ...a, category: e.target.value })}>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+            <div className="button-row">
+              <button disabled={busy || !adding.name.trim()} onClick={async () => {
+                const r = await act({ action: 'newItem', ...adding });
+                if (r?.itemId) { setAdding(null); setQ(''); set(r.itemId, 0); }
+              }}>Add it</button>
+              <button className="secondary" onClick={() => setAdding(null)}>Cancel</button>
+            </div>
+          </div>)}
+        {p.hidden.length > 0 && <p className="sub-n">Not kept here: {p.hidden.map((id, k) => {
+          const i = inv.items.find(x => x.id === id);
+          return <Fragment key={id}>{k ? ' · ' : ''}<button type="button" className="link tiny" disabled={busy}
+            onClick={() => void act({ action: 'hide', place: p.place, itemId: id, hide: false })}>↺ {i?.name ?? id}</button></Fragment>;
+        })}</p>}
+        {msg && <p className="breach" role="alert">{msg}</p>}
+      </div>
+      <div className="insp-foot">
+        <span className="note">{done ? `${done} counted — saving replaces their record` : 'Nothing counted yet'}</span>
+        <button disabled={busy || !done} onClick={() => void save()}>{busy ? 'Saving…' : `Save the count (${done})`}</button>
+      </div>
+    </Sheet>
   );
 }
 
