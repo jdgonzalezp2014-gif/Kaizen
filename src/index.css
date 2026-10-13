@@ -2069,3 +2069,4 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .onsite-step button { min-width: 48px; min-height: 48px; font-size: 22px; line-height: 1; }
 .onsite-step input { width: 72px; min-height: 48px; text-align: center; font-size: 18px; }
 .onsite-add { display: grid; gap: 8px; border: 1px dashed var(--line); border-radius: 10px; padding: 10px; }
+.todo-prog-btn { background: transparent; cursor: pointer; font: inherit; font-size: 11px; }

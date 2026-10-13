@@ -96,3 +96,5 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 - **+ 🛒 purchase on a to-do (§150, operations module):** an open top-level to-do can record what was bought for it
   (inventory stock per place + one Restock expense) and close, or save its order as sub-tasks — `TaskPurchase` from
   `src/screens/Inventory.tsx`, beside "+ sub-task / + 🔧 work order" in `TodoRow`.
+- **Sub-tasks folded in the list (§150, owner):** under a task they no longer show open; "▸ ☑ n/m" on its row
+  opens them (`kidsShown` in `TodoRow`). Open the task for the full sub-task section, as before.

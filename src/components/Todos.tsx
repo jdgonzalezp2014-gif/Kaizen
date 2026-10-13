@@ -343,6 +343,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
   const [subsOpen, setSubsOpen] = useState(() => (kids.get(t.id) ?? []).some(k => !isClosed(k.status)));
   const [lineDel, setLineDel] = useState(false);
   const [openSub, setOpenSub] = useState<string | null>(null);
+  const [kidsShown, setKidsShown] = useState(false);
   const [msg, setMsg] = useState('');
   const closed = isClosed(t.status);
   const due = closed ? 'none' : dueOf(t, today);
@@ -383,8 +384,11 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
           <button className="todo-title" onClick={onOpen} title="Open it">{t.title}</button>
           <button type="button" className="todo-pencil" title="Rename" aria-label={`Rename ${t.title}`} onClick={() => { setName(t.title); setRenaming(true); }}>✎</button>
         </>}
-        {prog.total > 0 && <span className={`todo-prog ${prog.done === prog.total ? 'all' : ''}`} title="Sub-tasks done">
-          ☑ {prog.done}/{prog.total}</span>}
+        {prog.total > 0 && (!flat && !open && !compact && mine.some(k => !isClosed(k.status))
+          ? <button type="button" className={`todo-prog todo-prog-btn ${prog.done === prog.total ? 'all' : ''}`} aria-expanded={kidsShown}
+                    title={kidsShown ? 'Hide the sub-tasks' : 'Show the sub-tasks'} onClick={() => setKidsShown(v => !v)}>
+              {kidsShown ? '▾' : '▸'} ☑ {prog.done}/{prog.total}</button>
+          : <span className={`todo-prog ${prog.done === prog.total ? 'all' : ''}`} title="Sub-tasks done">☑ {prog.done}/{prog.total}</span>)}
         {t.priority !== 'none' && !closed && <span className={`todo-prio ${t.priority}`}>{PRIORITY_LABEL[t.priority]}</span>}
         {(t.status === 'confirmed' || t.status === 'in_progress' || t.status === 'cancelled') &&
           <span className={`todo-status s-${t.status}`}>{STATUS_LABEL[t.status]}</span>}
@@ -433,8 +437,9 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
         </div>
       )}
       {t.description && !open && <div className="todo-desc" title={t.description}>{t.description}</div>}
-      {/* Sub-tasks sit under their task when the list is not filtered (§78). */}
-      {!flat && !open && !compact && mine.some(k => !isClosed(k.status)) && (
+      {/* Sub-tasks sit under their task when the list is not filtered (§78) — folded until asked (owner, §150:
+          a clean's five reports open under it were noise); ▸ ☑ n/m on the row shows them. */}
+      {!flat && !open && !compact && kidsShown && mine.some(k => !isClosed(k.status)) && (
         <ul className="todo-list todo-kids">
           {mine.filter(k => !isClosed(k.status)).map(k => (
             <TodoRow key={k.id} {...props} t={k} open={openSub === k.id} onOpen={() => setOpenSub(openSub === k.id ? null : k.id)} />
