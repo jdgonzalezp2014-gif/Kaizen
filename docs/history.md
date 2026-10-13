@@ -3799,3 +3799,16 @@ sits right under the buttons and goes through the same `/api/todos` action `note
 on its first use, so the button said nothing the box below it does not. `card_start` dropped from
 `taskCard` and its now-unreachable handler in `/api/slack` removed. Left alone: the ⋯ menu of
 `/kaizen tasks` and the "Manage" pop-up, where there is no comment box on screen to do the job instead.
+
+## §145 — Stale buttons scrubbed off the 30 already-sent task messages (2026-10-13)
+
+The other half of §143–144: the buttons were gone from new messages, but the ones already sitting in
+#kaizen-ops still showed the old ▶ Start / Kaizen ↗ — harmless (Start still worked, Kaizen ↗ was already
+a no-op) but visual clutter, same complaint that started this. Doing it right needed reading each
+message's live blocks first, so only the dead buttons left and nothing else about the message changed —
+the bot had no scope to read a channel's history at all (§136's note, now wrong). The owner added
+`channels:history` to the Slack app and reinstalled it; a one-off script (`conversations.history` on
+each `slack_threads` row for `subject = 'task'`, `chat.update` with `task_start` / `open_kaizen` filtered
+out of the actions block, same text and everything else untouched) ran once against the 38 on record:
+30 updated, 7 already clean, 1 gone (deleted or too old for the API). Script deleted after. Reading a
+thread's replies (`conversations.replies`) is a different call this was never meant to enable.

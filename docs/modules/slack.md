@@ -30,7 +30,8 @@ dm {mode test|on|off, testUser}, helpSopId '8', appUrl), `slack_sent` (dedup key
 
 Workspace "Kaizen"; bot U0C5NJS538B; Juan U0C5CQSSVQV. All topics → **#kaizen-ops**
 (C0C72JDKZ53, the team). **#kaizen-task** (C0C5NL9H5UK, private) = tests. Manifest reinstalled
-with im:write, app_mentions:read, reactions:write and the `app_mention` event. DM mode `test`.
+with im:write, app_mentions:read, reactions:write, **channels:history (§144)** and the
+`app_mention` event. DM mode `test`.
 
 ## What it does
 
@@ -107,7 +108,8 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   the Neon branch with K&M's channel pointed at #kaizen-task.
 
 - **Cleans' thread on (§136).** Still to do: add it to SOP 8 "Kaizen in Slack" (the owner's to approve —
-  a step was proposed). The bot has no `*:history` scope (it cannot read threads; not needed).
+  a step was proposed). The bot gained `channels:history` in §144 (to prune stale buttons off old
+  messages, public channels only) — nothing today reads a thread with it; still not needed.
 
 - Clock moved to Cloudflare (2026-10-07) after GitHub sent the 8 AM at 12:19 PM and missed a
   check-out. Verified: runs every 5 min, 200, sends only what is due. Wrangler is logged in as
