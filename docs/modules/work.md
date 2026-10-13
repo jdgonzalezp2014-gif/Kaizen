@@ -92,3 +92,7 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 ## History
 
 §46, §76–§78, §82–§88, §93–§95, §103–§105, §120, §132, §137.
+
+- **+ 🛒 purchase on a to-do (§150, operations module):** an open top-level to-do can record what was bought for it
+  (inventory stock per place + one Restock expense) and close, or save its order as sub-tasks — `TaskPurchase` from
+  `src/screens/Inventory.tsx`, beside "+ sub-task / + 🔧 work order" in `TodoRow`.

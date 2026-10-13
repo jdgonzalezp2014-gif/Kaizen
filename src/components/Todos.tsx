@@ -14,6 +14,7 @@
  * Everything is read from the server as it is now.
  */
 import { Modal } from './Modal.tsx';
+import { TaskPurchase } from '../screens/Inventory.tsx';
 import { vendorLink, getVendors } from '../api.ts';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
@@ -144,7 +145,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     return m;
   }, [todos]);
   const ctx = { today, names, units, claims, claimNames, act, inClaim: !!claim, kids, byId, flat: filtering,
-                canClaims: showClaims, onClaimsChanged: () => void loadClaims(), compact };
+                canClaims: showClaims, onClaimsChanged: () => void loadClaims(), reload: () => void loadTodos(), compact };
 
   // The counts Home's card shows, folded or not.
   useEffect(() => {
@@ -325,15 +326,19 @@ type RowCtx = {
   flat: boolean;
   /** May register a to-do as a claim. */
   canClaims: boolean; onClaimsChanged: () => void;
+  /** Read the list again (§150: a purchase made from a to-do adds its sub-tasks). */
+  reload: () => void;
   /** Home: sub-tasks are summed up (☑ 1/3), not listed. */
   compact?: boolean;
 };
 
 function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void }) {
-  const { t, today, names, units, claims, claimNames, open, onOpen, act, inClaim, kids, byId, flat, canClaims, onClaimsChanged, compact } = props;
+  const { t, today, names, units, claims, claimNames, open, onOpen, act, inClaim, kids, byId, flat, canClaims, onClaimsChanged, reload, compact } = props;
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
   const [addingSub, setAddingSub] = useState<null | TaskKind>(null);
+  // §150: the to-do's own purchase — its order, or what was bought (stock + Costs), then closed.
+  const [buying, setBuying] = useState(false);
   // §104: sub-tasks open while some are still to do; folded once all are done.
   const [subsOpen, setSubsOpen] = useState(() => (kids.get(t.id) ?? []).some(k => !isClosed(k.status)));
   const [lineDel, setLineDel] = useState(false);
@@ -458,10 +463,14 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
                                                         onOpen={() => setOpenSub(openSub === k.id ? null : k.id)} />)}
                               </ul>
                             )}
-                            {!addingSub ? (
+                            {buying ? (
+                              <TaskPurchase todoId={t.id} unitIds={t.unitIds} onClose={() => setBuying(false)}
+                                            onBought={async closeIt => { setBuying(false); if (closeIt && !closed) await tick(); else reload(); }} />
+                            ) : !addingSub ? (
                               <div className="todo-add-buttons">
                                 <button className="link tiny" onClick={() => setAddingSub('task')}>+ sub-task</button>
                                 <button className="link tiny" onClick={() => setAddingSub('work_order')}>+ 🔧 work order</button>
+                                {!closed && <button className="link tiny" onClick={() => setBuying(true)}>+ 🛒 purchase</button>}
                               </div>
                             ) : (
                               <TodoForm key={addingSub} units={units} claims={claims} canClaims={false} submitLabel="Add" startKind={addingSub}

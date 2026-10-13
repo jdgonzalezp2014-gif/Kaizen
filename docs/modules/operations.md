@@ -284,6 +284,10 @@ key had no SOPs.
 - **Practice → 📦 Inventory** (`/#practice/inventory`, the SOP panel on Inventory): the real screen over an
   in-browser transport (`InvTransport`, `inventoryPractice` in Practice.tsx) — two storages and a house closet,
   counts, a "not found", a field request and a problem to attach an order to; nothing leaves the browser.
+- **A to-do carries its purchase (§150, owner):** any open top-level to-do (Operations → To-do) has "+ 🛒 purchase"
+  (`TaskPurchase`, Inventory.tsx): its order filled in if it has one, else 🔍 to the unit's place; "🧾 Record the
+  purchase" (stock + Restock expense + receipt, `recordPurchase` with `todoId` — no order needed first) and "✓ and close
+  this to-do"; or "Save as this to-do's order" (sub-tasks).
 - **Cleaners speak, the team records (§150).** "I bought something" = their words + total + receipt → a pending
   field expense, no stock; approved ONLY via "✓ Approve — record in inventory" (items, places) in Operations →
   Cleaners → `recordPurchase`. A clean's reports are THREE kinds of to-do (070 `todos.clean_key/clean_group`):

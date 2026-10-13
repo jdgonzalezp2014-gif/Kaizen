@@ -661,6 +661,74 @@ function LowStockSetting({ inv, onChanged }: { inv: Inventory; onChanged: () => 
 }
 
 /**
+ * A to-do's own purchase (§150, owner: "the tasks should carry the purchase,
+ * to record what was brought into the inventory and Costs, and close the
+ * cleaner's request"): from the to-do, its order (filled in if it has one) —
+ * saved as its order to buy later, or recorded as bought (stock + one Restock
+ * expense, receipt) and the to-do closed.
+ */
+export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
+  todoId: string; unitIds: string[]; onClose: () => void; onBought: (closeIt: boolean) => void;
+}) {
+  const [inv, setInv] = useState<Inventory | null>(null);
+  const [lines, setLines] = useState<Lines>(new Map());
+  const [total, setTotal] = useState('');
+  const [note, setNote] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [closeIt, setCloseIt] = useState(true);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  useEffect(() => { void getInventory().then(r => {
+    if (!r.ok) { setMsg(r.message ?? 'Could not load the inventory.'); return; }
+    setInv(r);
+    const o = r.orders.find(x => x.todoId === todoId);
+    if (o) setLines(linesOf(o.lines));
+  }); }, [todoId]);
+  if (!inv) return <p className={msg ? 'breach' : 'note loading-dot'}>{msg || 'Loading the supplies…'}</p>;
+  const out = flat(lines);
+  const home = inv.places.find(p => p.units.some(u => unitIds.includes(u.id)))?.place ?? null;
+  const hadOrder = inv.orders.some(o => o.todoId === todoId);
+  const order = async () => {
+    setBusy(true); setMsg('');
+    try { const r = await inventoryAction({ action: 'order', lines: out, forTodo: todoId }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { setMsg('✓ Saved as this to-do’s order (its sub-tasks).'); onBought(false); } }
+    catch (e) { setMsg(String(e)); } finally { setBusy(false); }
+  };
+  const bought = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const f = new FormData();
+      f.append('action', 'purchase'); f.append('lines', JSON.stringify(out)); f.append('total', total); f.append('note', note); f.append('todoId', todoId);
+      for (const x of files) f.append('file', x);
+      const r = await inventoryUpload(f);
+      if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
+      onBought(closeIt);
+    } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="card task-buy">
+      <h3>🛒 Purchase for this to-do</h3>
+      <p className="note">{hadOrder ? 'Its order comes filled in.' : 'Add what is to buy with 🔍.'} Bought? Record it — it goes into the stock of each
+        place and into Costs (Restock) with the receipt. Not yet? Save it as this to-do’s order.</p>
+      <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={home} />
+      <div className="row">
+        <label>Total paid ($)<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} /></label>
+        <label>Note<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => setNote(e.target.value)} /></label>
+        <label className="chip">📎 {files.length ? `${files.length} file${files.length === 1 ? '' : 's'}` : 'Receipt'}
+          <input type="file" accept="image/*,application/pdf" multiple hidden onChange={e => setFiles([...(e.target.files ?? [])].slice(0, 5))} /></label>
+      </div>
+      <label className="check"><input type="checkbox" checked={closeIt} onChange={e => setCloseIt(e.target.checked)} /> ✓ and close this to-do</label>
+      <div className="button-row">
+        <button disabled={busy || !out.length || !(Number(total) > 0)} onClick={() => void bought()}>{busy ? 'Saving…' : '🧾 Record the purchase'}</button>
+        <button className="secondary" disabled={busy || !out.length} onClick={() => void order()}>Save as this to-do’s order</button>
+        <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
+        {!(Number(total) > 0) && out.length > 0 && <span className="note">The total paid is needed to record it.</span>}
+      </div>
+      {msg && <p className={msg.startsWith('✓') ? 'note' : 'breach'} role="status">{msg}</p>}
+    </div>
+  );
+}
+
+/**
  * A cleaner's "I bought something" approved by recording it (§150, owner):
  * they said it in their own words; the team says which items and where each
  * went — new lines start at the place of the unit it was for.

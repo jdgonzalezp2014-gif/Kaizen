@@ -529,9 +529,10 @@ export async function recordPurchase(sql: SqlFn, by: string, b: Record<string, u
     return { ...l, item, place };
   });
   const todoId = b.todoId ? Number(b.todoId) : null;
+  // §150: any open to-do can carry its purchase (a cleaner's request, a problem…), with or without an order first.
   if (todoId) {
-    const [o] = await sql`SELECT 1 FROM inventory_orders WHERE account_id = 1 AND todo_id = ${todoId}`;
-    if (!o) throw new Error('Which order?');
+    const [o] = await sql`SELECT 1 FROM todos WHERE account_id = 1 AND id = ${todoId}`;
+    if (!o) throw new Error('Which to-do?');
   }
   const note = String(b.note ?? '').trim().slice(0, 500) || null;
   const [pu] = await sql`INSERT INTO inventory_purchases (account_id, todo_id, total, note, photos, by_name, field_expense_id)
