@@ -448,10 +448,12 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
             <input value={why} maxLength={300} placeholder="e.g. there was enough in the closet; already bought by …" onChange={e => setWhy(e.target.value)} /></label>
           <div className="button-row">
             <button className="danger" disabled={busy || !why.trim()} onClick={async () => {
-              const how = dismiss;
-              await act({ action: 'note', id: t.id, body: `Closed without buying: ${why.trim()}` });
-              setDismiss(null); setWhy('');
-              if (how === 'done') await doTick(); else await doCancel();
+              const how = dismiss, reason = why.trim();
+              setDismiss(null); setWhy(''); setBusy(true);
+              // The server keeps the reason on the to-do (§150) — and refuses the close without one.
+              await act(how === 'done' ? { action: 'done', id: t.id, done: true, closeReason: reason }
+                                       : { action: 'update', id: t.id, status: 'cancelled', closeReason: reason });
+              setBusy(false);
             }}>{dismiss === 'done' ? 'Mark done without buying' : 'Cancel the request'}</button>
           </div>
         </Modal>

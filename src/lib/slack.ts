@@ -945,3 +945,19 @@ export function trackedReply(t: { id: string; title: string; kind: string; unit?
   };
 }
 
+/**
+ * Closing an ORDER with nothing bought (§150, owner): a cleaner's or an
+ * inspection's request closed from Slack asks why — or sends to Kaizen to
+ * record the purchase. The reason is kept on the to-do.
+ */
+export function unboughtModal(t: { id: string; title: string }, verb: 'complete' | 'cancel', appUrl?: string | null): Block {
+  return {
+    type: 'modal', callback_id: 'task_unbought', private_metadata: JSON.stringify({ id: t.id, verb }),
+    title: plain('Nothing bought'), submit: plain(verb === 'complete' ? 'Close without buying' : 'Cancel the request'), close: plain('Keep it open'),
+    blocks: [
+      section(`*${t.title}*\nThis is a request to buy, and no purchase is recorded for it. Closing it now says the request was dismissed.`),
+      ...(appUrl ? [{ type: 'actions', elements: [{ type: 'button', text: plain('🛒 Record the purchase in Kaizen'), url: appUrl, action_id: 'open_kaizen', style: 'primary' }] }] : []),
+      input('why', 'Or close it without buying — why?', { ...text(null, true), placeholder: plain('e.g. there was enough in the closet') }, false)
+    ]
+  };
+}

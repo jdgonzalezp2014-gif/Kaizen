@@ -122,3 +122,6 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 ## History
 
 §99–§102, §107–§117, §119, §134.
+- **Orders closed unbought (§150, operations):** ✓ Complete on a cleaner's or an inspection's request with no purchase
+  recorded opens `unboughtModal` (callback `task_unbought`; views.open from a message, views.push inside the Tasks
+  pop-up): a link to record the purchase in Kaizen, or a required reason → `/api/todos` done with `closeReason`.

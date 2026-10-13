@@ -22,7 +22,7 @@ import * as claims from './claims.ts';
 import * as expenses from './expenses.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
-  parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
+  parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, unboughtModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
   costModal, costFromWords, readCostForm, teamTz, localNow, parseMention, newButtons, mentionHelpBlocks, sectionButtons, claimCard, commentsBlocks, guessUnit, quickTitle, trackedReply,
   type ClaimLite, type Opt, type TaskCard, type TaskForm, type TaskLite
 } from '../../src/lib/slack.ts';
@@ -566,6 +566,8 @@ class Kaizen {
       // channel must not also get a separate "completed / started / reopened" post — it showed twice (2026-10-07).
       const onTasksMessage = inChannel && p.container?.channel_id === this.s.config.channels?.tasks?.id;
       const r = await this.todo(onTasksMessage && body.action !== 'delete' && body.action !== 'restore' ? { ...body, via: 'slack-message' } : body);
+      // §150: an order closed with nothing bought asks why, on top of the pop-up.
+      if (r.error === 'unbought' && t) { await this.pushForm(p.trigger_id, unboughtModal(t, 'complete', this.s.config.appUrl) as Record<string, unknown>, { id: tid, verb: 'complete' }); return ack(); }
       const word = verb === 'complete' ? 'Completed' : verb === 'start' ? 'Started' : verb === 'restore' ? 'Restored' : '';
       await this.refreshTasks(viewId, r.ok ? (word ? `✓ ${word}: ${t?.title ?? ''}` : undefined) : `⚠ ${r.message ?? 'Not saved.'}`,
                               r.ok && verb === 'remove' && t ? { id: tid, title: t.title } : undefined);
@@ -688,6 +690,11 @@ class Kaizen {
         : taskVerb === 'restore' ? { action: 'restore', id: taskId } : null;
       if (!body) return ack();
       const r = await this.todo(body);
+      // §150: an order closed with nothing bought asks why — or sends to Kaizen to record the purchase.
+      if (r.error === 'unbought') {
+        const lite = await taskLite(this.sql, taskId);
+        if (lite) { await this.open(p.trigger_id, unboughtModal(lite, 'complete', this.s.config.appUrl)); return ack(); }
+      }
       if (!r.ok) { await this.reply(url, { response_type: 'ephemeral', replace_original: false, text: r.message ?? 'Not saved.' }); return ack(); }
       const t = await taskLite(this.sql, taskId);
       if (inChannel && t) {
@@ -745,6 +752,14 @@ class Kaizen {
       if (!r.ok) return json({ response_action: 'errors', errors: { update: r.message ?? 'Not saved.' } });
       const c = await this.card(String(meta.id));
       return c ? json({ response_action: 'update', view: taskCard(c, '✓ Comment added') }) : json({ response_action: 'clear' });
+    }
+    if (view.callback_id === 'task_unbought') {
+      const m = meta as { id: string; verb?: string };
+      const closeReason = String(state.why?.v?.value ?? '').trim();
+      if (!closeReason) return json({ response_action: 'errors', errors: { why: 'Say why it is closed without buying.' } });
+      const r = await this.todo(m.verb === 'cancel' ? { action: 'update', id: m.id, status: 'cancelled', closeReason } : { action: 'done', id: m.id, done: true, closeReason });
+      if (!r.ok) return json({ response_action: 'errors', errors: { why: r.message ?? 'Not saved.' } });
+      return json({ response_action: 'clear' });
     }
     if (view.callback_id === 'cost_save') {
       // §117: Costs → One-offs, as this member; the form stays open on an error, says what was saved on success.

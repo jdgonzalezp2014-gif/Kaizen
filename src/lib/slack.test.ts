@@ -386,3 +386,14 @@ test('the cleans thread keeps everything (§136): photos, storage, reports, extr
   assert.match(t({ kind: 'extra', amount: 25, description: 'Laundry' }), /extra \+\$25\.00 — Laundry/);
   assert.match(t({ kind: 'declined', reason: 'Sick' }), /can’t do it — “Sick”/);
 });
+
+test('closing an order with nothing bought asks why, with a way to record the purchase (§150)', async () => {
+  const { unboughtModal } = await import('./slack.ts');
+  const m = unboughtModal({ id: '64', title: 'Supplies requested — clean of Preston Vineyard' }, 'complete', 'https://kaizen.example') as Record<string, any>;
+  assert.equal(m.callback_id, 'task_unbought');
+  assert.deepEqual(JSON.parse(m.private_metadata), { id: '64', verb: 'complete' });
+  const why = m.blocks.find((b: any) => b.block_id === 'why');
+  assert.equal(why.optional, false);
+  assert.match(JSON.stringify(m.blocks), /Record the purchase in Kaizen/);
+  assert.doesNotMatch(JSON.stringify(unboughtModal({ id: '1', title: 'x' }, 'cancel').blocks), /Record the purchase/);
+});

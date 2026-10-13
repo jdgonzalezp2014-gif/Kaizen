@@ -317,7 +317,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const before = (await sql`SELECT title, status, priority, assignee, supervisor, due_on::text AS due_on, claim_id, vendor,
                                    to_char(start_time, 'HH24:MI') AS start_time, to_char(due_time, 'HH24:MI') AS due_time, resolution_note, charge_owner,
                                    scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids, description,
-                                   reservation_id, reservation_label
+                                   reservation_id, reservation_label, parent_id, clean_group
                               FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`)[0] as Record<string, any> | undefined;
   if (!before) return Response.json({ ok: false, message: 'That task is gone — someone removed it.' }, { status: 404 });
   const scope = b.claimScope ? String(b.claimScope) : undefined;
@@ -386,6 +386,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   if (unitIds && unitIds.length > 1) return bad('A task is on one listing — add another task for the next one.');
 
   const closedNow = status !== undefined && CLOSED.includes(status);
+  // §150, owner: a cleaner's or an inspection's request is an ORDER; closing it with nothing bought reads as dismissing
+  // it — refused without a reason, from any door (Kaizen, Slack), and the reason is kept on the to-do.
+  if (closedNow && !CLOSED.includes(before.status) && !before.parent_id && (before.clean_group === 'request' || before.clean_group === 'inspection')) {
+    const [pu] = await sql`SELECT count(*)::int AS n FROM inventory_purchases WHERE account_id = 1 AND todo_id = ${id}` as { n: number }[];
+    const reason = String(b.closeReason ?? '').trim().slice(0, 300);
+    if (!pu!.n && !reason) return Response.json({ ok: false, error: 'unbought',
+      message: 'Nothing was bought for this request — record the purchase, or say why it is closed.' }, { status: 409 });
+    if (!pu!.n) await note(sql, 'task', id, 'note', `Closed without buying: ${reason}`, who.email);
+  }
   await sql`UPDATE todos SET
       title         = COALESCE(${f.title ?? null}, title),
       unit_ids      = COALESCE(${unitIds ?? null}::text[], unit_ids),

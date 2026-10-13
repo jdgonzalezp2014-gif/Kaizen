@@ -288,7 +288,10 @@ key had no SOPs.
   editable, more lines can come; the PURCHASE executes it. Closing (✓ Done or Cancel) a cleaner's supplies request
   (`clean_group = 'request'`) with no purchase recorded for it opens a pop-up — it reads as dismissing the request:
   🛒 Record the purchase · Keep it open · or close it with a required reason, posted on the to-do. The to-do list
-  carries `cleanGroup` and `purchases` for it. The four older "Request at …" to-dos from Irene (#55, #56, #62, #63) were
+  carries `cleanGroup` and `purchases` for it. **The server enforces it** (`/api/todos`: closing a `request` or
+  `inspection` to-do with no purchase → 409 `unbought` unless `closeReason`, which is kept as a note) — so Slack's
+  ✓ Complete on one opens "Nothing bought" (`unboughtModal`: 🛒 Record the purchase in Kaizen, or a required why).
+  Only these order to-dos; every other task closes as before. The four older "Request at …" to-dos from Irene (#55, #56, #62, #63) were
   tagged `request` on 2026-10-13.
 - **Inspection orders and who paid (§150, owner, 074):** the inspector only requests — the inspection's purchase to-do
   is `clean_group = 'inspection'`, an order processed as a purchase (closing it unbought asks first, like a cleaner's
