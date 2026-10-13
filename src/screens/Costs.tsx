@@ -9,7 +9,7 @@
  * shared that gets divided across the active ones.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { getInventory, type Inventory } from '../api.ts';
+import { getInventory, inventoryAction, type Inventory } from '../api.ts';
 import {
   getFixed, getVariable, postExpense, deleteExpense,
   type FixedLine, type VariableExpense, type UnitRow
@@ -410,17 +410,35 @@ function Variable({ units }: { units: UnitRow[] }) {
 function OpenOrders() {
   const [inv, setInv] = useState<Inventory | null>(null);
   useEffect(() => { void getInventory().then(r => { if (r.ok) setInv(r); }).catch(() => {}); }, []);
+  const [msg, setMsg] = useState('');
   if (!inv) return null;
   const waiting = inv.orders.filter(o => !o.purchases);
-  if (!inv.draft && !waiting.length) return null;
+  if (!inv.draft && !waiting.length && !inv.toPayBack.length) return null;
+  const owed = inv.toPayBack.reduce((m, p) => m.set(p.paidBy, (m.get(p.paidBy) ?? 0) + p.total), new Map<string, number>());
+  const paid = async (id: string) => {
+    setMsg('');
+    const r = await inventoryAction({ action: 'paidBack', id }).catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) setMsg(r.message ?? 'Not saved.'); else setInv(r);
+  };
   const n = (ls: { qty: number }[]) => `${ls.length} line${ls.length === 1 ? '' : 's'}`;
   return (
     <div className="card costs-orders">
-      <b>🛒 Orders not bought yet</b>
-      <ul>
-        {inv.draft && <li>📝 Draft order — {n(inv.draft.lines)}, saved {inv.draft.savedAt} by {inv.draft.savedBy.split('@')[0]} · Operations → Inventory → To order</li>}
-        {waiting.map(o => <li key={o.todoId}>{o.at} · {o.title} — {n(o.lines)} · Operations → To-do → + 🛒 purchase</li>)}
-      </ul>
+      {(inv.draft || waiting.length > 0) && <>
+        <b>🛒 Orders not bought yet</b>
+        <ul>
+          {inv.draft && <li>📝 Draft order — {n(inv.draft.lines)}, saved {inv.draft.savedAt} by {inv.draft.savedBy.split('@')[0]} · Operations → Inventory → To order</li>}
+          {waiting.map(o => <li key={o.todoId}>{o.at} · {o.title} — {n(o.lines)} · Operations → To-do → + 🛒 purchase</li>)}
+        </ul>
+      </>}
+      {inv.toPayBack.length > 0 && <>
+        <b>💵 To pay back</b> <span className="muted">— bought with their own money: {[...owed].map(([who, sum]) => `${who} ${money(sum)}`).join(' · ')}</span>
+        <ul>
+          {inv.toPayBack.map(p => <li key={p.id}>{p.at} · <b>{p.paidBy}</b> · {money(p.total)}{p.todo ? ` · ${p.todo}` : ''}{p.note ? ` — ${p.note}` : ''}
+            {p.photos.map((f, i) => <a key={i} href={f.url} target="_blank" rel="noreferrer"> 📎</a>)}
+            {' '}<button className="link" onClick={() => void paid(p.id)}>✓ Paid back</button></li>)}
+        </ul>
+        {msg && <p className="breach">{msg}</p>}
+      </>}
     </div>
   );
 }

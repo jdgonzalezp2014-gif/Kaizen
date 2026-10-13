@@ -106,7 +106,7 @@ export async function overview(sql: SqlFn) {
     { lines: { itemId: string; place: string; qty: number }[]; forTodo: string | null; savedBy: string; savedAt: string }[];
   const [acc] = await sql`SELECT inventory_low_stock_tasks AS low FROM accounts WHERE id = 1` as { low: boolean }[];
   return { items, places, unassigned, recent, orders: await openOrders(sql), fieldTodos: await fieldTodos(sql),
-           draft: draft ?? null, lowStockTasks: !!acc?.low, aheadDays: AHEAD_DAYS, windowDays: WINDOW_DAYS };
+           draft: draft ?? null, lowStockTasks: !!acc?.low, toPayBack: await toPayBack(sql), aheadDays: AHEAD_DAYS, windowDays: WINDOW_DAYS };
 }
 
 /** The messages a field reporter can get, in Spanish (§129: the crew page and the report link speak the cleaner's language). */
@@ -514,6 +514,22 @@ export async function lowStock(sql: SqlFn, places: (string | null)[]): Promise<s
   return made;
 }
 
+/** Purchases someone paid with their own money and is not paid back yet (§150) — newest first. */
+export async function toPayBack(sql: SqlFn) {
+  return await sql`SELECT p.id::text, p.paid_by AS "paidBy", p.total::float AS total, p.note, t.title AS "todo",
+                          to_char(p.created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS at, p.photos
+                     FROM inventory_purchases p LEFT JOIN todos t ON t.id = p.todo_id
+                    WHERE p.account_id = 1 AND p.paid_by IS NOT NULL AND p.paid_back_at IS NULL ORDER BY p.created_at DESC` as
+    { id: string; paidBy: string; total: number; note: string | null; todo: string | null; at: string; photos: { name: string; url: string }[] }[];
+}
+
+/** Paid back (§150): marked with who and when — it leaves the list. */
+export async function paidBack(sql: SqlFn, by: string, id: unknown) {
+  const r = await sql`UPDATE inventory_purchases SET paid_back_at = now(), paid_back_by = ${by}
+                       WHERE account_id = 1 AND id = ${Number(id) || 0} AND paid_by IS NOT NULL AND paid_back_at IS NULL RETURNING id` as unknown[];
+  if (!r.length) throw new Error('Already paid back, or not found.');
+}
+
 /** The field's open to-dos (§150) — what a purchase order can be attached to. */
 export async function fieldTodos(sql: SqlFn) {
   return await sql`SELECT id::text, title, clean_group AS "group" FROM todos WHERE account_id = 1 AND clean_key IS NOT NULL AND parent_id IS NULL
@@ -561,8 +577,10 @@ export async function recordPurchase(sql: SqlFn, by: string, b: Record<string, u
     if (!o) throw new Error('Which to-do?');
   }
   const note = String(b.note ?? '').trim().slice(0, 500) || null;
-  const [pu] = await sql`INSERT INTO inventory_purchases (account_id, todo_id, total, note, photos, by_name, field_expense_id)
-                         VALUES (1, ${todoId}, ${total}, ${note}, ${JSON.stringify(photos)}::jsonb, ${by}, ${fieldExpenseId ? Number(fieldExpenseId) : null})
+  // §150, owner: who paid — blank = the company; a name = brought with their own money, to be paid back.
+  const paidBy = String(b.paidBy ?? '').trim().slice(0, 120) || null;
+  const [pu] = await sql`INSERT INTO inventory_purchases (account_id, todo_id, total, note, photos, by_name, field_expense_id, paid_by)
+                         VALUES (1, ${todoId}, ${total}, ${note}, ${JSON.stringify(photos)}::jsonb, ${by}, ${fieldExpenseId ? Number(fieldExpenseId) : null}, ${paidBy})
                          RETURNING id::text` as { id: string }[];
   for (const l of named) await sql`INSERT INTO inventory_moves (account_id, item_id, place, kind, qty, note, by_name, source, purchase_id)
                                    VALUES (1, ${Number(l.itemId)}, ${l.place.key}, 'purchase', ${l.qty}, ${note}, ${by}, 'team', ${Number(pu!.id)})`;
@@ -572,7 +590,7 @@ export async function recordPurchase(sql: SqlFn, by: string, b: Record<string, u
   const unit = only?.self && only.units.length === 1 ? only.units[0]!.id : null;
   await sql`INSERT INTO expenses (account_id, unit_id, shared, start_date, category, frequency, amount, label, notes, source, external_ref, created_by)
             VALUES (1, ${unit}, ${!unit}, ${todayIn(TZ)}, 'Restock', 'One-time', ${total}, ${what.title.replace(/^Buy supplies/, 'Supplies bought').slice(0, 120)},
-                    ${[...what.items.map(i => i.replace(/^Buy: /, '')), ...photos.map(p => `Receipt: ${p.url}`)].join('\n')}, 'inventory', ${`purchase-${pu!.id}`}, ${by})
+                    ${[...(paidBy ? [`Paid by ${paidBy} — to pay back`] : []), ...what.items.map(i => i.replace(/^Buy: /, '')), ...photos.map(p => `Receipt: ${p.url}`)].join('\n')}, 'inventory', ${`purchase-${pu!.id}`}, ${by})
             ON CONFLICT (source, external_ref) WHERE external_ref IS NOT NULL DO NOTHING`;
   if (todoId) await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
                         VALUES (1, 'task', ${String(todoId)}, 'note', ${`Bought ($${total.toFixed(2)}):\n${what.items.map(i => i.replace(/^Buy: /, '• ')).join('\n')}`}, ${by})`;

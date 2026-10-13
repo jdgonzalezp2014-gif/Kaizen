@@ -384,6 +384,8 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
                 VALUES (1, ${item}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
     }
     await sql`UPDATE inspection_checks SET todo_id = ${Number(t!.id)} WHERE account_id = 1 AND id = ANY(${buys.map(c => Number(c.id))}::bigint[])`;
+    // §150: the inspector only requests — an order of its own kind, processed as a purchase (closing it unbought asks first).
+    await sql`UPDATE todos SET clean_group = 'inspection' WHERE account_id = 1 AND id = ${Number(t!.id)}`;
     // §150: the supplies chosen from the list make it an order filled in — to the unit's place — that
     // Inventory → 🧾 Record a purchase starts from. Free-text lines stay on the to-do only.
     const supplies = await sql`SELECT supply_id::text AS "itemId", supply_qty::float AS qty FROM inspection_checks

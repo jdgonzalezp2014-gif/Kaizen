@@ -518,6 +518,7 @@ function PurchaseForm({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory
   const [todoId, setTodoId] = useState('');
   const [lines, setLines] = useState<Lines>(new Map());
   const [total, setTotal] = useState('');
+  const [paidBy, setPaidBy] = useState('');
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [msg, setMsg] = useState('');
@@ -534,12 +535,13 @@ function PurchaseForm({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory
     try {
       const f = new FormData();
       f.append('action', 'purchase'); f.append('lines', JSON.stringify(out)); f.append('total', total); f.append('note', note);
+      f.append('paidBy', paidBy);
       if (todoId) f.append('todoId', todoId);
       for (const x of files) f.append('file', x);
       const r = await api.upload(f);
       if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
       onSaved(r); setMsg('✓ Purchase recorded: in the stock and in Costs (Restock).');
-      setTodoId(''); setLines(new Map()); setTotal(''); setNote(''); setFiles([]);
+      setTodoId(''); setLines(new Map()); setTotal(''); setNote(''); setFiles([]); setPaidBy('');
     } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
   };
   return (
@@ -555,6 +557,7 @@ function PurchaseForm({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory
       <ItemLines inv={inv} value={lines} onChange={setLines} canEdit onInv={onSaved} />
       <div className="row">
         <label>Total paid ($)<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} /></label>
+        <PaidBy value={paidBy} onChange={setPaidBy} />
         <label>Note<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => setNote(e.target.value)} /></label>
         <label className="chip">📎 {files.length ? `${files.length} file${files.length === 1 ? '' : 's'}` : 'Receipt'}
           <input type="file" accept="image/*,application/pdf" multiple hidden onChange={e => setFiles([...(e.target.files ?? [])].slice(0, 5))} /></label>
@@ -686,6 +689,22 @@ function LowStockSetting({ inv, onChanged }: { inv: Inventory; onChanged: () => 
 }
 
 /**
+ * Who paid (§150, owner: someone may bring the things with their own money —
+ * "it will serve to give the money back"): blank = the company; a name puts
+ * the purchase on Costs → 💵 To pay back until it is marked paid.
+ */
+function PaidBy({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [own, setOwn] = useState(!!value);
+  return (
+    <label>Paid by
+      <select value={own ? 'person' : 'company'} onChange={e => { const p = e.target.value === 'person'; setOwn(p); if (!p) onChange(''); }}>
+        <option value="company">Kaizen (company card)</option><option value="person">Someone — to pay back</option></select>
+      {own && <input value={value} maxLength={120} placeholder="Who? e.g. Irene, the inspector" onChange={e => onChange(e.target.value)} />}
+    </label>
+  );
+}
+
+/**
  * A to-do's own purchase (§150, owner: "the tasks should carry the purchase,
  * to record what was brought into the inventory and Costs, and close the
  * cleaner's request"): from the to-do, its order (filled in if it has one) —
@@ -701,6 +720,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
   const [note, setNote] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [closeIt, setCloseIt] = useState(true);
+  const [paidBy, setPaidBy] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   useEffect(() => { void getInventory().then(r => {
@@ -724,6 +744,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
     try {
       const f = new FormData();
       f.append('action', 'purchase'); f.append('lines', JSON.stringify(out)); f.append('total', total); f.append('note', note); f.append('todoId', todoId);
+      f.append('paidBy', paidBy);
       for (const x of files) f.append('file', x);
       const r = await inventoryUpload(f);
       if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
@@ -738,6 +759,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
       <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={home} onInv={setInv} />
       <div className="row">
         <label>Total paid ($)<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} /></label>
+        <PaidBy value={paidBy} onChange={setPaidBy} />
         <label>Note<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => setNote(e.target.value)} /></label>
         <label className="chip">📎 {files.length ? `${files.length} file${files.length === 1 ? '' : 's'}` : 'Receipt'}
           <input type="file" accept="image/*,application/pdf" multiple hidden onChange={e => setFiles([...(e.target.files ?? [])].slice(0, 5))} /></label>

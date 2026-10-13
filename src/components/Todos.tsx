@@ -356,7 +356,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
   // §150, owner: closing a cleaner's supplies request with nothing bought for it reads as dismissing it — asked first.
   const [dismiss, setDismiss] = useState<null | 'done' | 'cancel'>(null);
   const [why, setWhy] = useState('');
-  const unbought = !closed && !t.parentId && t.cleanGroup === 'request' && !t.purchases;
+  const unbought = !closed && !t.parentId && (t.cleanGroup === 'request' || t.cleanGroup === 'inspection') && !t.purchases;
+  const asker = t.cleanGroup === 'inspection' ? 'an inspector' : 'a cleaner';
   const tick = async () => { if (unbought) setDismiss('done'); else await doTick(); };
   const cancel = async () => { if (unbought) setDismiss('cancel'); else await doCancel(); };
   const [renaming, setRenaming] = useState(false);
@@ -436,8 +437,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
         )}
       </div>
       {dismiss && (
-        <Modal title="Close a cleaner’s request with nothing bought?" onClose={() => { setDismiss(null); setWhy(''); }}>
-          <p>This is what a cleaner asked for on a clean, and no purchase is recorded for it. Closing it now reads as
+        <Modal title={`Close ${asker === 'a cleaner' ? 'a cleaner’s' : 'an inspection’s'} request with nothing bought?`} onClose={() => { setDismiss(null); setWhy(''); }}>
+          <p>This is what {asker} asked to buy, and no purchase is recorded for it. Closing it now reads as
             <b> the request was dismissed</b>.</p>
           <div className="button-row">
             <button onClick={() => { setDismiss(null); if (!open) onOpen(); setSubsOpen(true); setBuying(true); }}>🛒 Record the purchase</button>

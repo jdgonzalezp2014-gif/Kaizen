@@ -396,6 +396,7 @@ function inventoryPractice(): InvTransport {
   ];
   const mins = new Map<string, number>();
   let draft: Inventory['draft'] = null;
+  const payBack: Inventory['toPayBack'] = [];
   const hidden = new Set<string>([`s5|${S200}`]);
   const orders: Inventory['orders'] = [];
   const fieldTodos: Inventory['fieldTodos'] = [
@@ -406,7 +407,7 @@ function inventoryPractice(): InvTransport {
   const view = (): { ok: true } & Inventory => {
     const levels = stockLevels(moves);
     return { ok: true, items: clone(items), aheadDays: 14, windowDays: 60, unassigned: [], orders: clone(orders), fieldTodos: clone(fieldTodos),
-      draft: clone(draft), lowStockTasks: false,
+      draft: clone(draft), lowStockTasks: false, toPayBack: clone(payBack),
       places: places.map(p => ({ ...clone(p), hidden: items.filter(i => hidden.has(`${i.id}|${p.place}`)).map(i => i.id),
         items: items.filter(i => i.active && !hidden.has(`${i.id}|${p.place}`)).map(i => {
         const l = levels.get(`${i.id}|${p.place}`);
@@ -474,6 +475,8 @@ function inventoryPractice(): InvTransport {
       const lines = JSON.parse(String(f.get('lines') ?? '[]')) as { itemId: string; place: string; qty: number }[];
       if (!(Number(f.get('total')) > 0)) return fail('Write the total you paid.');
       for (const l of lines) moves.push({ ...mv('purchase', l.itemId, l.place, l.qty, today), note: String(f.get('note') ?? '') || undefined });
+      const paidBy = String(f.get('paidBy') ?? '').trim();
+      if (paidBy) payBack.unshift({ id: String(payBack.length + 1), paidBy, total: Number(f.get('total')), note: String(f.get('note') ?? '') || null, todo: null, at: today, photos: [] });
       const o = orders.find(x => x.todoId === f.get('todoId'));
       if (o) o.purchases++;
       return view();

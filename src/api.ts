@@ -512,6 +512,8 @@ export interface Inventory {
   draft: { lines: { itemId: string; place: string; qty: number }[]; forTodo: string | null; savedBy: string; savedAt: string } | null;
   /** Setup → Inventory: a "Low stock at <place>" to-do on its own. */
   lowStockTasks: boolean;
+  /** §150: purchases someone paid with their own money, not paid back yet. */
+  toPayBack: { id: string; paidBy: string; total: number; note: string | null; todo: string | null; at: string; photos: { name: string; url: string }[] }[];
 }
 export const getInventory = () => call<({ ok: true } & Inventory) | Fail>('/api/inventory');
 export const inventoryAction = (body: Record<string, unknown>) =>

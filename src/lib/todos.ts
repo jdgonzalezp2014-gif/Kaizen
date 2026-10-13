@@ -27,7 +27,7 @@ export interface Todo {
   /** §95: a repair's cost also charged to the owner (an expense in Hostaway), and that expense. */
   chargeOwner?: boolean; hostawayExpenseId?: string | null;
   /** §150: a cleaner's report group (problem / request / bought) and how many purchases were recorded for it. */
-  cleanGroup?: 'problem' | 'request' | 'bought' | null; purchases?: number;
+  cleanGroup?: 'problem' | 'request' | 'bought' | 'inspection' | null; purchases?: number;
   /** The claim this work resolves, if any. */
   claimId: string | null;
   /** Start from (any work); a repair's vendor, and what it costs. */
