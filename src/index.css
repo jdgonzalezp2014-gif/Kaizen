@@ -2041,3 +2041,7 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .fr-out { margin: 10px 0 4px; }
 .fr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
 .fr-chips .chip { min-height: 40px; font-size: 14px; padding: 6px 12px; }
+.fr-sticky { position: sticky; top: 0; z-index: 3; background: var(--bg); display: flex; flex-wrap: wrap; justify-content: space-between;
+  align-items: center; gap: 6px 12px; padding: 10px 0; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
+.fr-more { position: sticky; bottom: 10px; z-index: 3; width: fit-content; margin: 6px auto; padding: 6px 14px; border-radius: 999px;
+  background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 600; pointer-events: none; }

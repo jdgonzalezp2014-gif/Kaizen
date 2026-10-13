@@ -16,7 +16,7 @@
  *  - photos go one at a time, made smaller on the phone first (fast on weak
  *    signal), with "Sending 2 of 5…"; a failure keeps what is left to retry.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import type { CleanFieldState as StepState, SupplyItem } from '../api.ts';
 import { SupplyCounter } from './FieldReport.tsx';
 import type { Tx } from '../lib/crew-i18n.ts';
@@ -99,6 +99,8 @@ export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState, 
  * until needed: tap the items NOT found — each a chip that says ✓ when chosen —
  * and they go with the answer: marked ⚠ at the place (never zeroed: maybe they
  * did not see it) and requested at once. The team checks or buys.
+ * That button stays on top while scrolling (owner: it must be seen), and
+ * "↓ there are more" shows until the end of the list is in view (the list is long).
  */
 function TakenStep({ tx, items, send, from, code, onDone, onBack }: {
   tx: Tx; items: SupplyItem[]; send: Taken; from: string; code: string | null; onDone: (s?: StepState) => void; onBack: () => void;
@@ -108,6 +110,15 @@ function TakenStep({ tx, items, send, from, code, onDone, onBack }: {
   const [out, setOut] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  const end = useRef<HTMLDivElement>(null);
+  const [atEnd, setAtEnd] = useState(false);
+  useEffect(() => {
+    const el = end.current;
+    if (!el || typeof IntersectionObserver === 'undefined') { setAtEnd(true); return; }
+    const o = new IntersectionObserver(([e]) => setAtEnd(!!e?.isIntersecting));
+    o.observe(el);
+    return () => o.disconnect();
+  }, []);
   const picked = Object.entries(counts).filter(([, n]) => n > 0);
   const go = async (lines: { itemId: string; qty: number }[] | null) => {
     setBusy(true); setErr('');
@@ -119,18 +130,22 @@ function TakenStep({ tx, items, send, from, code, onDone, onBack }: {
       <button className="link fr-back" onClick={onBack} disabled={busy}>{tx.supBack}</button>
       <p className="fr-q">{tx.stepTaken(from)}</p>
       <p className="fr-tip">{tx.takenQ(from)}{code && <><br /><b>{tx.placeCode(code)}</b></>}</p>
-      <SupplyCounter tx={tx} items={items} counts={counts} onCounts={setCounts} />
-      <div className="fr-out">
-        {!outOpen ? <button type="button" className="link" disabled={busy} onClick={() => setOutOpen(true)}>{tx.outBtn(from)}</button> : <>
-          <p className="fr-tip">{tx.outQ(from)}</p>
-          <div className="fr-chips">{items.map(i => {
-            const on = out.includes(i.id);
-            return <button key={i.id} type="button" className={`chip${on ? ' active' : ''}`} aria-pressed={on} disabled={busy}
-                           onClick={() => setOut(o => on ? o.filter(x => x !== i.id) : [...o, i.id])}>{on ? '✓ ' : ''}{i.name}</button>;
-          })}</div>
-        </>}
-        {out.length > 0 && <p className="fr-tip"><b>{tx.outCount(out.length)}</b></p>}
+      <div className="fr-sticky">
+        <button type="button" className="link" aria-expanded={outOpen} disabled={busy} onClick={() => setOutOpen(o => !o)}>
+          {outOpen ? tx.outClose : tx.outBtn(from)}</button>
+        {out.length > 0 && <b role="status">{tx.outCount(out.length)}</b>}
       </div>
+      {outOpen && <div className="fr-out">
+        <p className="fr-tip">{tx.outQ(from)}</p>
+        <div className="fr-chips">{items.map(i => {
+          const on = out.includes(i.id);
+          return <button key={i.id} type="button" className={`chip${on ? ' active' : ''}`} aria-pressed={on} disabled={busy}
+                         onClick={() => setOut(o => on ? o.filter(x => x !== i.id) : [...o, i.id])}>{on ? '✓ ' : ''}{i.name}</button>;
+        })}</div>
+      </div>}
+      <SupplyCounter tx={tx} items={items} counts={counts} onCounts={setCounts} />
+      <div ref={end} />
+      {!atEnd && <div className="fr-more" aria-hidden="true">{tx.moreBelow}</div>}
       <div className="fr-send">
         <button className="fr-btn fr-go" disabled={busy || !picked.length}
                 onClick={() => void go(picked.map(([itemId, qty]) => ({ itemId, qty })))}>

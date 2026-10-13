@@ -264,7 +264,8 @@ key had no SOPs.
   ⚠️ each problem its own · 🧴 "Supplies requested — clean of <unit> on <date>" (one per clean, a sub-task per
   request) · 🛒 "Bought on the clean of …" (one per clean). Any of them can carry a purchase order (To order →
   "For" the to-do: the lines become its sub-tasks, `inventory_orders` keyed by it).
-- **"No hay" in step 2 (§150, owner):** "❗ Something not there?" (folded, one line) opens chips of the supplies; the
+- **"No hay" in step 2 (§150, owner):** "❗ Something not there?" (one line, sticky at the TOP of step 2 so it is seen;
+  "↓ Slide down — there are more" floats until the list's end is in view) opens chips of the supplies; the
   ones NOT found go with the step-2 answer (`out`, `ranOut`): a `missing` move at the place — ⚠, NEVER zero (they
   may not have seen it; the record may be wrong) — and one high sub-task on the clean's supplies request. The team
   checks the stock and/or orders.
