@@ -72,8 +72,27 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   fills it. Cleaners get only cleaner code, lockbox, fob (unit-access.ts); admin/backup are secrets.
   `closet_code` and `storage` are not sent to cleaners yet (next: supplies instructions).
 - Units tables still hold Wi-Fi and the account `password` columns as plain text (§66).
+- **§148 filled:** Wi-Fi + `internet_account` (AT&T account #, after the Wi-Fi password) from the owner's
+  list; `storage` = CORTLAND STORAGE S13 on every Cortland apartment (houses: blank, by design);
+  `manager_contact` / `landlord_contact` (POC, after Maintenance #) for Napa Valley, Amber Valley,
+  Timbercrest, Quest, Concord. Houses do not need the building block (floor, bldg, building link, lease
+  portal) — their POC is the manager or landlord.
+
+## Open items — Units data (owner, 2026-10-13; first two first)
+
+1. **Admin / backup codes:** admin missing on Bobcat, Napa Valley, Timber Crest and the 8 P2; backup
+   missing on every house and every P2. Amber Valley's admin "551" was probably "0551" (number column).
+2. **Contracts (low):** lease, move-out date, leasing office hours, renewals, autopay, utilities,
+   maintenance # — empty on most units.
+3. **P2 storage:** which Storage row (S2101 / S1105 / S4116, "Back up fobs") each LP unit uses — pending.
+4. **Closet codes (houses):** confirm Preston Vineyard / Napa Valley / Amber Valley, fill the rest.
+5. **POC:** Preston Vineyard and Bobcat have none.
+6. **Hostaway Wi-Fi ≠ the owner's list** (guest-facing, not changed): CL2260, Preston Vineyard, Napa
+   Valley (Hostaway "InternetConnection"), P2-4315 (Hostaway shows "4212wifi"), P2-4212 (case only).
+   No Wi-Fi in the list for P2-1201, 1406, 4304, 4308, 4323 (Hostaway has it).
+7. **Parking and lost key/fob fee per house** — no rush.
 - The old Apps Script link/key in Settings can be cleared now the import is confirmed.
 
 ## History
 
-§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147.
+§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147, §148.

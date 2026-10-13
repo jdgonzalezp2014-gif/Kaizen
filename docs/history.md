@@ -3852,3 +3852,14 @@ P2 listings' `description` (read back, before/after in `listing_text_changes`); 
 got the Resolution Center sentence after the late check-out item, Bobcat and the 8 P2 got the full clause
 (4:00 PM / 10:00 AM, no Sunday line); P2's lost fob went $110 → $200. Read back, before/after in
 `listing_text_changes`. The 12 older clauses still say check-in is 5:00 PM on Sundays (left as written). Audit with the gaps: `../access-rules-amenities-report.md`.
+
+## §148 — Units filled from the owner: Wi-Fi with account #, Cortland storage, house POCs (2026-10-13)
+
+The owner pasted the Wi-Fi list (AT&T account #, network, password) and the contacts of the house managers
+and landlords. Cortland's `wifi_network` / `password_2` held junk from the Monday import (dates; the password
+column was typed number) — replaced, `password_2` made text. New text columns in the three Units tables:
+`internet_account`, `manager_contact`, `landlord_contact` (houses have a manager or an absent landlord instead
+of a leasing office: "dejar el número y contactarlos", the POC). Cortland has ONE storage (S13) → every
+apartment row points to it; houses' storage stays blank; P2 pending. The list disagrees with Hostaway's
+Wi-Fi on 5 listings (repository.md open items) — Hostaway is what guests and cleaners get first, so it
+needs the owner's word before it is changed. One-off script, backup first, audit row per record.
