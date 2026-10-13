@@ -114,7 +114,9 @@ test('the task card: facts, buttons, sub-tasks, latest updates, a box to add one
   const s = JSON.stringify(v.blocks);
   assert.equal(v.title.text, 'Repair');
   assert.equal(v.callback_id, 'task_card');
-  for (const k of ['card_complete', 'card_start', 'card_take', 'card_edit', 'Sub-tasks', '1/2', 'Vendor booked', '~$120.00 estimated', '✓ Started', '"block_id":"update"']) assert.ok(s.includes(k), k);
+  for (const k of ['card_complete', 'card_take', 'card_edit', 'Sub-tasks', '1/2', 'Vendor booked', '~$120.00 estimated', '✓ Started', '"block_id":"update"']) assert.ok(s.includes(k), k);
+  // §143: Start dropped from the card too — the comment box right below it starts the work.
+  assert.doesNotMatch(s, /card_start/);
 });
 
 

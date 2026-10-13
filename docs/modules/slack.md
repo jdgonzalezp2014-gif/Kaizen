@@ -51,8 +51,9 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
 - Task card and claim card (comments, Add comment with focus). Kaizen comments → thread.
 - **A task message carries two buttons (§143)**: ✓ Complete and 💬 Comment (↺ Reopen when closed).
   ▶ Start went because the first comment now starts the work by itself (work module, §143), and
-  "Kaizen ↗" because it opened the app's front door, not the task. ▶ Start still exists where it is
-  a deliberate choice: the task pop-up (`card_start`) and the ⋯ menu of `/kaizen tasks` (`start:`).
+  "Kaizen ↗" because it opened the app's front door, not the task. The task pop-up (`taskCard`)
+  dropped ▶ Start too — its own comment box is the same door. ▶ Start still exists in the ⋯ menu of
+  `/kaizen tasks` and the "Manage" pop-up (`start:` / `task_start`), where no comment box is on screen.
 - **Cleans' daily thread (§134, §136)**, event `cleanThread` (**ON since 2026-10-12** → #kaizen-ops): the
   clock posts the day's message at the morning reminder's hour (team time, until 20:00; `slack_sent`
   `cleanday:<date>`) with EVERY clean of the day — board checkouts + manual MAN- cleans, cleaner or

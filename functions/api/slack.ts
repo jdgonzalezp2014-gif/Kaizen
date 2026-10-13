@@ -611,7 +611,6 @@ class Kaizen {
       let body: Record<string, unknown> | null = null, note = '';
       if (id === 'card_complete') { body = { action: 'done', id: value, done: true }; note = '✓ Completed'; }
       if (id === 'card_reopen') { body = { action: 'done', id: value, done: false }; note = '↺ Reopened'; }
-      if (id === 'card_start') { body = { action: 'update', id: value, status: 'in_progress' }; note = '▶ Started'; }
       if (id === 'card_take') {
         const mine = hostawayUserOf(this.s.config, this.slackUser);
         if (!mine) { await this.refreshCard(viewId, value, '⚠ You are not linked to a Hostaway user yet (Settings → Slack → People), so Kaizen cannot make you the owner.'); return ack(); }

@@ -565,10 +565,9 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
       ...(t.description ? [section(esc(t.description).slice(0, 2900))] : []),
       ...(closed && t.resolutionNote ? [context(`Resolution: ${esc(t.resolutionNote)}`)] : []),
       { type: 'actions', elements: [
-        ...(closed ? [button('↺ Reopen', 'card_reopen', t.id)] : [
-          button('✓ Complete', 'card_complete', t.id, 'primary'),
-          ...(t.status !== 'in_progress' ? [button('▶ Start', 'card_start', t.id)] : [])
-        ]),
+        // §143: Start dropped from here too — the comment box right below is the same
+        // door /api/todos starts the work through, so pressing it first said nothing twice.
+        ...(closed ? [button('↺ Reopen', 'card_reopen', t.id)] : [button('✓ Complete', 'card_complete', t.id, 'primary')]),
         button('🙋 Take it', 'card_take', t.id),
         button('✎ Edit', 'card_edit', t.id)
       ] },

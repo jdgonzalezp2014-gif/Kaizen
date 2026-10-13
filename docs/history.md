@@ -3789,3 +3789,13 @@ The field already worked this way: a vendor's first "before" photo starts the or
 `appUrl`. ▶ Start stays where pressing it is a deliberate choice rather than clutter in the channel:
 the task pop-up (`card_start`) and the ⋯ menu of `/kaizen tasks`. A field change (a due date, an owner)
 deliberately does **not** start the work — assigning is not beginning.
+
+## §144 — Start off the task card too (2026-10-13)
+
+A follow-up to §143: the owner, once "ya sirve" (the comment pop-up problem was something else, not
+this), asked to drop ▶ Start from the task pop-up as well — same reasoning, narrower this time (he
+chose only the card, not the `/kaizen tasks` menu or the "Manage" pop-up). The card's own comment box
+sits right under the buttons and goes through the same `/api/todos` action `note` that starts the work
+on its first use, so the button said nothing the box below it does not. `card_start` dropped from
+`taskCard` and its now-unreachable handler in `/api/slack` removed. Left alone: the ⋯ menu of
+`/kaizen tasks` and the "Manage" pop-up, where there is no comment box on screen to do the job instead.
