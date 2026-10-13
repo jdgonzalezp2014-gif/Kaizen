@@ -347,9 +347,14 @@ type Part = { place: string; qty: string };
 type Lines = Map<string, Part[]>;
 const flat = (m: Lines) => [...m].flatMap(([itemId, parts]) => parts.map(p => ({ itemId, place: p.place, qty: Math.ceil(Number(p.qty) || 0) })))
   .filter(l => l.qty > 0 && l.place);
-function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace }: {
+function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv }: {
   inv: Inventory; value: Lines; onChange: (m: Lines) => void; hints?: Lines; canEdit: boolean; defaultPlace?: string | null;
+  /** §150, owner: a supply not on the list is added from the 🔍 — the caller takes the new inventory. */
+  onInv?: (i: Inventory) => void;
 }) {
+  const api = useContext(InvApi);
+  const [creating, setCreating] = useState(false);
+  const [err, setErr] = useState('');
   const places = inv.places.filter(p => p.place);
   const [q, setQ] = useState('');
   const item = (id: string) => inv.items.find(i => i.id === id);
@@ -370,6 +375,19 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace }: {
     set(id, [...parts.slice(0, k), { ...p, qty: n ? String(n - half) : p.qty }, { place: other, qty: n ? String(half) : '' }, ...parts.slice(k + 1)]);
   };
   const found = q.trim() ? inv.items.filter(i => i.active && !value.has(i.id) && i.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8) : [];
+  // Not on the list (no exact name): one tap adds it — "unit", "other"; corrected later in ✎ Edit settings.
+  const exact = inv.items.some(i => i.active && i.name.toLowerCase() === q.trim().toLowerCase());
+  const create = async () => {
+    const name = q.trim();
+    setCreating(true); setErr('');
+    try {
+      const r = await api.act({ action: 'newItem', name, measure: 'unit', category: 'other', place: busiest || undefined });
+      if (!r.ok || !r.itemId) { setErr(r.ok ? 'Not added.' : r.message ?? 'Not added.'); return; }
+      onInv?.(r);
+      onChange(new Map(value).set(r.itemId, [{ place: busiest, qty: '' }]));
+      setQ('');
+    } catch (e) { setErr(String(e)); } finally { setCreating(false); }
+  };
   return <>
     {canEdit && places.length > 1 && <label>Everything goes to
       <select value={allTo} onChange={e => sendAll(e.target.value)}>
@@ -379,7 +397,12 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace }: {
       <input value={q} placeholder="Search the supplies list…" onChange={e => setQ(e.target.value)} /></label>}
     {found.length > 0 && <div className="button-row">{found.map(i => (
       <button key={i.id} className="secondary" onClick={() => { set(i.id, [{ place: busiest, qty: '' }]); setQ(''); }}>+ {i.name}</button>))}</div>}
-    {q.trim() && !found.length && <p className="note">No other item matches “{q.trim()}”.</p>}
+    {canEdit && q.trim() && !exact && onInv && <div className="button-row">
+      {!found.length && <span className="note">“{q.trim()}” is not on the supplies list.</span>}
+      <button className="secondary" disabled={creating} onClick={() => void create()}>{creating ? 'Adding…' : `+ Add “${q.trim()}” as a new item`}</button>
+      {err && <span className="breach">{err}</span>}
+    </div>}
+    {q.trim() && !found.length && (exact || !onInv) && <p className="note">No other item matches “{q.trim()}”.</p>}
     {value.size > 0 && (
       <div className="grid-scroll">
         <table className="units compact">
@@ -433,7 +456,9 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
   // §150: a saved draft comes back as it was left; else the suggestion.
   const start = () => inv.draft ? linesOf(inv.draft.lines) : new Map(suggested);
   const [order, setOrder] = useState<Lines>(start);
-  useEffect(() => { setOrder(start()); setForTodo(inv.draft?.forTodo ?? ''); }, [suggested, inv.draft?.savedAt]);
+  // Only a new suggestion or draft starts it over — not every reload (adding a new item from the 🔍 reloads).
+  const sugKey = JSON.stringify([...suggested]);
+  useEffect(() => { setOrder(start()); setForTodo(inv.draft?.forTodo ?? ''); }, [sugKey, inv.draft?.savedAt]);
   // §150: an order can belong to a to-do from the field — a clean's supplies request, a problem.
   const [forTodo, setForTodo] = useState(inv.draft?.forTodo ?? '');
   const [msg, setMsg] = useState('');
@@ -451,7 +476,7 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
       {uncounted.length > 0 && <p className="note">▲ Count first (nothing is suggested for them until then): {uncounted.map(placeTitle).join(', ')}.</p>}
       {inv.draft && <p className="note">📝 <b>Draft</b> saved {inv.draft.savedAt} by {inv.draft.savedBy} — it becomes a to-do only when you create the order.</p>}
       {!order.size && <p className="note">Nothing to order from what has been counted. Add an item with 🔍 to order it anyway.</p>}
-      <ItemLines inv={inv} value={order} onChange={setOrder} hints={suggested} canEdit={canEdit} />
+      <ItemLines inv={inv} value={order} onChange={setOrder} hints={suggested} canEdit={canEdit} onInv={onSaved} />
       {canEdit && order.size > 0 && inv.fieldTodos.length > 0 && <label>For
         <select value={forTodo} onChange={e => setForTodo(e.target.value)}>
           <option value="">a new order to-do</option>
@@ -527,7 +552,7 @@ function PurchaseForm({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory
           <option value="">— none (a purchase on its own)</option>
           {inv.orders.map(o => <option key={o.todoId} value={o.todoId}>{o.at} · {o.title}{o.purchases ? ` · ${o.purchases} purchase${o.purchases === 1 ? '' : 's'} so far` : ''}</option>)}
         </select></label>
-      <ItemLines inv={inv} value={lines} onChange={setLines} canEdit />
+      <ItemLines inv={inv} value={lines} onChange={setLines} canEdit onInv={onSaved} />
       <div className="row">
         <label>Total paid ($)<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} /></label>
         <label>Note<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => setNote(e.target.value)} /></label>
@@ -709,7 +734,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
       <h3>🛒 Purchase for this to-do</h3>
       <p className="note">{hadOrder ? 'Its order comes filled in.' : 'Add what is to buy with 🔍.'} Bought? Record it — it goes into the stock of each
         place and into Costs (Restock) with the receipt. Not yet? Save it as this to-do’s order.</p>
-      <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={home} />
+      <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={home} onInv={setInv} />
       <div className="row">
         <label>Total paid ($)<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} /></label>
         <label>Note<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => setNote(e.target.value)} /></label>
@@ -747,7 +772,7 @@ export function FieldPurchaseLines({ unitId, said, onSave, onCancel }: {
     <div className="card">
       <p className="note">They wrote: <b>“{said.replace(/^Bought: /, '')}”</b>. Record it in the inventory to approve it — the items and
         where each went. That purchase adds to the stock and goes to Costs (Restock) with their receipt.</p>
-      <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={home} />
+      <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={home} onInv={setInv} />
       <div className="button-row">
         <button className="small" disabled={busy || !out.length} onClick={async () => { setBusy(true); try { await onSave(out); } finally { setBusy(false); } }}>
           {busy ? 'Saving…' : '✓ Approve and record'}</button>

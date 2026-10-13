@@ -274,7 +274,7 @@ key had no SOPs.
   into the draft order.
 - **Order ≠ purchase (§150, owner).** The ORDER = a shopping to-do, a line per ITEM and where it goes ("Everything
   goes to" one place by default; ⑂ on a part splits half to another place, again for a sub-split; 🔍 adds any
-  item), lines kept in `inventory_orders`. The PURCHASE = Inventory → 🧾 Record a
+  item — not on the list → "+ Add “…” as a new item", created on the spot), lines kept in `inventory_orders`. The PURCHASE = Inventory → 🧾 Record a
   purchase (from an open order, filled in, or from scratch; total + receipt) → a `purchase` move per line and
   place + ONE Restock expense (`purchase-<id>`) + a note on the order; the team closes the order. The only way
   stock goes up from buying. The inspector's 🛒 Purchase has the same 🔍 (supply + how many) → the inspection's
