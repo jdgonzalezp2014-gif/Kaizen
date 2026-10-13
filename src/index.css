@@ -2047,3 +2047,10 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
   background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 600; pointer-events: none; }
 .inv-adj { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .inv-adj button { min-width: 30px; min-height: 30px; padding: 0 8px; font-size: 16px; line-height: 1; }
+/* §150: Setup → Inventory's map — drop zones for units. */
+.map-zones { display: grid; gap: 8px; }
+.map-zone { border: 1px dashed var(--line); border-radius: 10px; padding: 8px 10px; }
+.map-zone.over { border-style: solid; border-color: var(--ink); }
+.map-zone.warn { border-color: #e8a33d; }
+.map-zone-head { margin-bottom: 6px; }
+.map-zone .chip { cursor: grab; }

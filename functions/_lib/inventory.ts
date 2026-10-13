@@ -97,7 +97,12 @@ export async function overview(sql: SqlFn) {
      WHERE m.account_id = 1 ORDER BY m.id DESC LIMIT 100` as { place: string | null }[])
     .map(m => ({ ...m, place: m.place ? sp.names.get(m.place) ?? m.place : null }));
   const unassigned = sp.unassigned.map(u => ({ ...u, cleansAhead: ahead.get(u.id) ?? 0 }));
-  return { items, places, unassigned, recent, orders: await openOrders(sql), fieldTodos: await fieldTodos(sql), aheadDays: AHEAD_DAYS, windowDays: WINDOW_DAYS };
+  const [draft] = await sql`SELECT lines, for_todo::text AS "forTodo", saved_by AS "savedBy",
+                                    to_char(saved_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS "savedAt" FROM inventory_order_drafts WHERE account_id = 1` as
+    { lines: { itemId: string; place: string; qty: number }[]; forTodo: string | null; savedBy: string; savedAt: string }[];
+  const [acc] = await sql`SELECT inventory_low_stock_tasks AS low FROM accounts WHERE id = 1` as { low: boolean }[];
+  return { items, places, unassigned, recent, orders: await openOrders(sql), fieldTodos: await fieldTodos(sql),
+           draft: draft ?? null, lowStockTasks: !!acc?.low, aheadDays: AHEAD_DAYS, windowDays: WINDOW_DAYS };
 }
 
 /** The messages a field reporter can get, in Spanish (§129: the crew page and the report link speak the cleaner's language). */
@@ -282,9 +287,11 @@ export async function recordUses(sql: SqlFn, who: Who, b: Record<string, unknown
   if (lines.some(l => !Number.isFinite(l.qty) || l.qty > 10000)) throw new Error('How many?');
   const places = await supplyPlaces(sql);
   for (const l of lines) await recordMove(sql, who, { ...b, kind: 'taken', itemId: l.itemId, qty: l.qty, place: undefined }, [], places);
+
   if (b.cleaningKey) await sql`UPDATE clean_records SET supplies_at = now(), supplies_by = ${who.name}, supplies_none = false
                                WHERE account_id = 1 AND cleaning_key = ${String(b.cleaningKey)}`;
-  return lines.length;
+  // §150: the place it came out of — the caller checks it for low stock after the response.
+  return { n: lines.length, place: b.unitId ? places.byUnit.get(String(b.unitId))?.key ?? null : null };
 }
 
 /** "Nothing from the storage" — said, not skipped: the step is answered. */
@@ -361,12 +368,65 @@ export async function createOrder(sql: SqlFn, by: string, lines: { itemId: strin
               VALUES (1, 'task', ${t.id}, 'change', ${`Purchase order added:\n${list.items.map(i => i.replace(/^Buy: /, '• ')).join('\n')}`}, ${by})`;
     await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(data)}::jsonb, ${by})
               ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = inventory_orders.lines || EXCLUDED.lines`;
+    await sql`DELETE FROM inventory_order_drafts WHERE account_id = 1`;
     return { id: t.id, fresh: false };
   }
+  await sql`DELETE FROM inventory_order_drafts WHERE account_id = 1`;
   const id = await newTodo(sql, list.title, `From Operations → Inventory, ${todayIn(TZ)}. When it is bought: Inventory → 🧾 Record a purchase.`, null, by, list.items);
   // The lines as data: the purchase that executes this order starts from them.
   await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(id)}, ${JSON.stringify(data)}::jsonb, ${by})`;
   return { id, fresh: true };
+}
+
+/** The order being written, saved as a draft (§150): no to-do until it is created. Empty lines = discard. */
+export async function saveDraft(sql: SqlFn, by: string, lines: { itemId: string; place: string; qty: number }[], forTodo: string | null) {
+  const keep = lines.filter(l => l.qty > 0 && l.place);
+  if (!keep.length) { await sql`DELETE FROM inventory_order_drafts WHERE account_id = 1`; return; }
+  await sql`INSERT INTO inventory_order_drafts (account_id, lines, for_todo, saved_by) VALUES (1, ${JSON.stringify(keep)}::jsonb, ${forTodo ? Number(forTodo) : null}, ${by})
+            ON CONFLICT (account_id) DO UPDATE SET lines = EXCLUDED.lines, for_todo = EXCLUDED.for_todo, saved_by = EXCLUDED.saved_by, saved_at = now()`;
+}
+
+/**
+ * Low stock → a to-do on its own (§150, owner; switched in Setup → Inventory).
+ * For each of the given places that has been counted, the items now below
+ * their minimum: one open "Low stock at <place>" to-do per place, a sub-task
+ * per item (never twice while it is open), and its order filled in — what
+ * "To order" would suggest — so Record a purchase can start from it.
+ * Returns the to-dos made (to announce and mirror).
+ */
+export async function lowStock(sql: SqlFn, places: (string | null)[]): Promise<string[]> {
+  const keys = [...new Set(places.filter((p): p is string => !!p))];
+  if (!keys.length) return [];
+  const [acc] = await sql`SELECT inventory_low_stock_tasks AS low FROM accounts WHERE id = 1` as { low: boolean }[];
+  if (!acc?.low) return [];
+  const inv = await overview(sql);
+  const made: string[] = [];
+  for (const key of keys) {
+    const p = inv.places.find(x => x.place === key);
+    if (!p) continue;
+    const low = p.items.filter(l => l.countedAt && l.qty !== null && l.min !== null && l.qty < l.min);
+    if (!low.length) continue;
+    const name = p.self ? `${p.name} closet` : p.name;
+    let [t] = await sql`SELECT id::text FROM todos WHERE account_id = 1 AND low_stock_place = ${key} AND parent_id IS NULL
+                          AND status NOT IN ('completed', 'cancelled') ORDER BY id DESC LIMIT 1` as { id: string }[];
+    const listed = t ? new Set((await sql`SELECT title FROM todos WHERE account_id = 1 AND parent_id = ${Number(t.id)}` as { title: string }[]).map(r => r.title)) : new Set<string>();
+    const item = (id: string) => inv.items.find(i => i.id === id)!;
+    const fresh = low.filter(l => ![...listed].some(x => x.startsWith(`Low: ${item(l.itemId).name} —`)));
+    if (!fresh.length) continue;
+    if (!t) {
+      const id = await newTodo(sql, `Low stock at ${name}`, `Below the minimum to keep — counted places only. Buy it: Inventory → 🧾 Record a purchase, ` +
+        `starting from this order. Switch these to-dos off in Setup → Inventory.`, p.units.length === 1 && p.self ? p.units[0]!.id : null, 'Kaizen', [], 'high');
+      await sql`UPDATE todos SET low_stock_place = ${key} WHERE account_id = 1 AND id = ${Number(id)}`;
+      t = { id };
+      made.push(id);
+    }
+    for (const l of fresh) await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id)
+      VALUES (1, ${`Low: ${item(l.itemId).name} — ${l.qty} left, keep ${l.min}${l.toOrder ? `; buy ${l.toOrder}` : ''}`.slice(0, 300)}, '{}', 'Kaizen', 'task', 'pending', 'high', ${Number(t.id)})`;
+    const lines = fresh.filter(l => l.toOrder > 0).map(l => ({ itemId: l.itemId, place: key, qty: l.toOrder }));
+    if (lines.length) await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(lines)}::jsonb, 'Kaizen')
+                                ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = inventory_orders.lines || EXCLUDED.lines`;
+  }
+  return made;
 }
 
 /** The field's open to-dos (§150) — what a purchase order can be attached to. */

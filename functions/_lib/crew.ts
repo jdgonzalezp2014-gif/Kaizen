@@ -16,7 +16,7 @@ import { tellCleanThread } from './clean-slack.ts';
 import { accessByUnit } from './unit-access.ts';
 import type { UnitAccess } from '../../src/lib/unit-access.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type CleanState, type Stage } from './clean-record.ts';
-import { activeUnits, esMessage, fieldPhotos, fieldPurchase, fieldTodo, invItems, ranOut, mirrorTodos, nothingTaken, recordMove, recordUses } from './inventory.ts';
+import { activeUnits, esMessage, fieldPhotos, fieldPurchase, fieldTodo, invItems, lowStock, ranOut, mirrorTodos, nothingTaken, recordMove, recordUses } from './inventory.ts';
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
 import type { Level } from '../../src/lib/operations.ts';
 import {
@@ -513,7 +513,10 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
       const what = String(body.action === 'supply' ? body.kind : body.action);
       let r: string | null = null, fresh = true, text = String(body.text ?? '').trim().slice(0, 300);
       if (body.action !== 'supply') ({ todoId: r, fresh } = await fieldTodo(sql, who2, { ...body, kind: body.action }, photos));
-      else if (body.kind === 'used') await recordUses(sql, who2, body);
+      else if (body.kind === 'used') {
+        const used = await recordUses(sql, who2, body);
+        waitUntil(lowStock(sql, [used.place]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, 'Kaizen')).catch(() => {}));
+      }
       // §150: what they bought, in their own words — the team records it in Inventory when approving it.
       else if (body.kind === 'purchase') ({ todoId: r, fresh } = await fieldPurchase(sql, who2, body, photos));
       else {
@@ -589,7 +592,9 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
         const out = await ranOut(sql, inv, key, u?.unit_id ?? null, body.out);
         if (out) waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [out.todoId], me.name, out.fresh));
         if (body.action === 'cleanTaken') {
-          await recordUses(sql, inv, { lines: body.lines, cleaningKey: key, unitId: u?.unit_id ?? null });
+          const used = await recordUses(sql, inv, { lines: body.lines, cleaningKey: key, unitId: u?.unit_id ?? null });
+          // §150: below the minimum → a "Low stock" to-do, when Setup has it on.
+          waitUntil(lowStock(sql, [used.place]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, 'Kaizen')).catch(() => {}));
           waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'taken', lines: await namedLines(sql, body.lines) } }));
         } else {
           await nothingTaken(sql, inv, key);

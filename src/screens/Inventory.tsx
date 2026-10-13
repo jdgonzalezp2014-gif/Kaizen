@@ -297,10 +297,12 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
   const api = useContext(InvApi);
   const suggested = useMemo(() => linesOf(inv.places.filter(p => p.place).flatMap(p => p.items.filter(l => l.toOrder > 0)
     .map(l => ({ itemId: l.itemId, place: p.place!, qty: l.toOrder })))), [inv]);
-  const [order, setOrder] = useState<Lines>(() => new Map(suggested));
-  useEffect(() => setOrder(new Map(suggested)), [suggested]);
+  // §150: a saved draft comes back as it was left; else the suggestion.
+  const start = () => inv.draft ? linesOf(inv.draft.lines) : new Map(suggested);
+  const [order, setOrder] = useState<Lines>(start);
+  useEffect(() => { setOrder(start()); setForTodo(inv.draft?.forTodo ?? ''); }, [suggested, inv.draft?.savedAt]);
   // §150: an order can belong to a to-do from the field — a clean's supplies request, a problem.
-  const [forTodo, setForTodo] = useState('');
+  const [forTodo, setForTodo] = useState(inv.draft?.forTodo ?? '');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const lines = flat(order);
@@ -314,6 +316,7 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
         in the next {inv.aheadDays} days, plus its minimum, minus what it holds — places never counted are not guessed at. The stock
         changes only when the purchase is recorded (🧾 below).</p>
       {uncounted.length > 0 && <p className="note">▲ Count first (nothing is suggested for them until then): {uncounted.map(placeTitle).join(', ')}.</p>}
+      {inv.draft && <p className="note">📝 <b>Draft</b> saved {inv.draft.savedAt} by {inv.draft.savedBy} — it becomes a to-do only when you create the order.</p>}
       {!order.size && <p className="note">Nothing to order from what has been counted. Add an item with 🔍 to order it anyway.</p>}
       <ItemLines inv={inv} value={order} onChange={setOrder} hints={suggested} canEdit={canEdit} />
       {canEdit && order.size > 0 && inv.fieldTodos.length > 0 && <label>For
@@ -330,6 +333,16 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
             else { onSaved(r); setMsg(forTodo ? '✓ Order added to that to-do.' : '✓ Order created — a to-do in Operations → To-do.'); setForTodo(''); }
           } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
         }}>{forTodo ? 'Add the order to that to-do' : 'Create the order'} ({nItems} item{nItems === 1 ? '' : 's'})</button>
+        <button className="secondary" disabled={busy || !lines.length} onClick={async () => {
+          setBusy(true); setMsg('');
+          try { const r = await api.act({ action: 'draft', lines, forTodo: forTodo || undefined }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { onSaved(r); setMsg('📝 Draft saved.'); } }
+          catch (e) { setMsg(String(e)); } finally { setBusy(false); }
+        }}>💾 Save draft</button>
+        {inv.draft && <button className="secondary" disabled={busy} onClick={async () => {
+          setBusy(true); setMsg('');
+          try { const r = await api.act({ action: 'draft', lines: [] }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { onSaved(r); setMsg('Draft discarded.'); } }
+          catch (e) { setMsg(String(e)); } finally { setBusy(false); }
+        }}>Discard draft</button>}
         {suggested.size > 0 && <button className="secondary" onClick={() => setOrder(new Map(suggested))}>Back to the suggestion</button>}
         {msg && <span className="note">{msg}</span>}
       </div>}
@@ -426,34 +439,90 @@ function RecentMoves({ inv }: { inv: Inventory }) {
 }
 
 /**
- * Setup → Inventory: which place each unit draws from (§150). Read from the
- * Repository's `storage` column — the one source; changed there, so each
- * unit links to its record.
+ * Setup → Inventory: which place each unit draws from (§150) — and where it
+ * is changed: drag a unit to another place (or tap it → "Move to", which works
+ * on a phone), to its own closet, or to Not assigned. Each move is written to
+ * the Repository's `storage` column — still the one source — and audited.
+ * Past moves stay where they happened.
  */
-function PlacesMap({ inv }: { inv: Inventory }) {
-  const rec = (u: { name: string; recordId: string | null }) =>
-    u.recordId ? <a href={repoHref(u.recordId)} target="_blank" rel="noreferrer">{u.name}</a> : <span>{u.name} <span className="sub-n">(no Repository record)</span></span>;
-  const storages = inv.places.filter(p => p.place && !p.self);
-  const closets = inv.places.filter(p => p.self);
+function PlacesMap({ inv, onChanged }: { inv: Inventory; onChanged: () => void }) {
+  type U = { id: string; name: string; recordId: string | null };
+  const [drag, setDrag] = useState<string | null>(null);
+  const [over, setOver] = useState<string | null>(null);
+  const [pick, setPick] = useState<(U & { from: string }) | null>(null);
+  const [to, setTo] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const zones: { key: string; title: string; hint?: string; units: U[] }[] = [
+    ...inv.places.filter(p => p.place && !p.self).map(p => ({ key: p.place!, title: p.name, units: p.units })),
+    { key: 'self', title: '🏠 Own closet (self storage)', hint: 'the unit keeps its supplies in its own closet', units: inv.places.filter(p => p.self).flatMap(p => p.units) },
+    { key: '', title: '▲ Not assigned', hint: 'what its cleaners take is recorded with no place', units: inv.unassigned }
+  ];
+  const nameOf = (key: string) => zones.find(z => z.key === key)?.title ?? key;
+  const move = async (u: U, from: string, dest: string) => {
+    if (from === dest) return;
+    setBusy(true); setMsg('');
+    try {
+      const r = await inventoryItemAction({ action: 'assign', unitId: u.id, to: dest });
+      if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
+      setMsg(`✓ ${u.name} → ${nameOf(dest)} (saved in the Repository).`); setPick(null); onChanged();
+    } catch (e) { setMsg(String(e)); } finally { setBusy(false); setDrag(null); setOver(null); }
+  };
   return (
     <div className="card">
       <h2>Places &amp; who draws from them</h2>
-      <p className="note">A unit's supplies come from the place its Repository record names in <b>Storage</b>: a Storage row
-        (e.g. S1105), or the house's own name = its own closet. Click a unit to change it there; past moves stay where they happened.
-        A new storage = a new record with Property type “Storage” in a Units table.</p>
-      {inv.unassigned.length > 0 && <p className="breach">▲ No place ({inv.unassigned.length}): {inv.unassigned.map((u, i) =>
-        <Fragment key={u.id}>{i ? ', ' : ''}{rec(u)}</Fragment>)} — what their cleaners take is recorded with no place until this is set.</p>}
-      <div className="grid-scroll">
-        <table className="units compact">
-          <thead><tr><th>Place</th><th>Units</th></tr></thead>
-          <tbody>
-            {storages.map(p => <tr key={p.place}><td><b>{p.name}</b></td>
-              <td>{p.units.length ? p.units.map((u, i) => <Fragment key={u.id}>{i ? ', ' : ''}{rec(u)}</Fragment>) : <span className="sub-n">none now</span>}</td></tr>)}
-            {closets.map(p => <tr key={p.place}><td>{p.name} <span className="sub-n">closet</span></td>
-              <td>{p.units.map((u, i) => <Fragment key={u.id}>{i ? ', ' : ''}{rec(u)}</Fragment>)}</td></tr>)}
-          </tbody>
-        </table>
+      <p className="note">A unit's supplies come from the place its Repository record names in <b>Storage</b>. Drag a unit to another
+        place — or tap it and choose — and Kaizen writes it there; past moves stay where they happened. A new storage = a new record with
+        Property type “Storage” in a Units table.</p>
+      <div className="map-zones">
+        {zones.map(z => (
+          <div key={z.key || 'none'} className={`map-zone${over === z.key ? ' over' : ''}${z.key === '' && z.units.length ? ' warn' : ''}`}
+               onDragOver={e => { if (drag) { e.preventDefault(); setOver(z.key); } }} onDragLeave={() => setOver(o => o === z.key ? null : o)}
+               onDrop={e => { e.preventDefault(); const from = zones.find(x => x.units.some(u => u.id === drag)); const u = from?.units.find(x => x.id === drag);
+                              if (u && from) void move(u, from.key, z.key); }}>
+            <div className="map-zone-head"><b>{z.title}</b> <span className="sub-n">{z.units.length} unit{z.units.length === 1 ? '' : 's'}{z.hint ? ` · ${z.hint}` : ''}</span></div>
+            <div className="fr-chips">
+              {z.units.map(u => (
+                <button key={u.id} type="button" className={`chip${pick?.id === u.id ? ' active' : ''}`} draggable={!busy}
+                        onDragStart={() => setDrag(u.id)} onDragEnd={() => { setDrag(null); setOver(null); }}
+                        onClick={() => { setPick({ ...u, from: z.key }); setTo(z.key); setMsg(''); }}>⠿ {u.name}</button>))}
+              {!z.units.length && <span className="sub-n">{drag ? 'drop here' : 'none now'}</span>}
+            </div>
+          </div>
+        ))}
       </div>
+      {pick && (
+        <div className="button-row">
+          <label>Move <b>{pick.name}</b> to
+            <select value={to} onChange={e => setTo(e.target.value)}>
+              {zones.map(z => <option key={z.key || 'none'} value={z.key}>{z.title}</option>)}</select></label>
+          <button disabled={busy || to === pick.from} onClick={() => void move(pick, pick.from, to)}>{busy ? 'Saving…' : 'Move'}</button>
+          {pick.recordId && <a href={repoHref(pick.recordId)} target="_blank" rel="noreferrer">Open in Repository</a>}
+          <button className="secondary" onClick={() => setPick(null)}>Cancel</button>
+        </div>
+      )}
+      {msg && <p className={msg.startsWith('✓') ? 'note' : 'breach'} role="status">{msg}</p>}
+    </div>
+  );
+}
+
+/** Setup → Inventory: a "Low stock at <place>" to-do on its own (§150, owner) — off until the places are counted. */
+function LowStockSetting({ inv, onChanged }: { inv: Inventory; onChanged: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  return (
+    <div className="card">
+      <h2>Low stock to-dos</h2>
+      <label className="check"><input type="checkbox" checked={inv.lowStockTasks} disabled={busy} onChange={async e => {
+        setBusy(true); setMsg('');
+        const r = await inventoryItemAction({ action: 'lowStock', on: e.target.checked }).catch(x => ({ ok: false as const, message: String(x) }));
+        setBusy(false);
+        if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onChanged();
+      }} /> {inv.lowStockTasks ? '✓ On' : '○ Off'} — create a to-do when a counted place falls below an item's minimum</label>
+      <p className="note">One open “Low stock at S1105” to-do per place, a sub-task per item (never twice while it is open), with its order
+        filled in — so 🧾 Record a purchase starts from it. Checked after every count, correction and take. Places never counted never
+        trigger it.</p>
+      {msg && <p className="breach">{msg}</p>}
     </div>
   );
 }
@@ -493,7 +562,7 @@ export function InventorySetup() {
   const load = () => void getInventory().then(r => { if (r.ok) setInv(r); });
   useEffect(load, []);
   if (!inv) return <div className="card"><h2>Supplies list</h2><p className="note loading-dot">Loading…</p></div>;
-  return <><PlacesMap inv={inv} /><Catalog items={inv.items} onSaved={load} /></>;
+  return <><PlacesMap inv={inv} onChanged={load} /><LowStockSetting inv={inv} onChanged={load} /><Catalog items={inv.items} onSaved={load} /></>;
 }
 
 /** The supplies the team keeps track of. Switching one off keeps its history. */

@@ -395,6 +395,7 @@ function inventoryPractice(): InvTransport {
     mv('count', 's1', HOUSE, 6, addDays(today, -5)), mv('missing', 's6', HOUSE, 0, addDays(today, -1), 'practice', 'Practice cleaner')
   ];
   const mins = new Map<string, number>();
+  let draft: Inventory['draft'] = null;
   const orders: Inventory['orders'] = [];
   const fieldTodos: Inventory['fieldTodos'] = [
     { id: 'pt1', title: `Supplies requested — clean of ${LOFT} on ${addDays(today, -1)}`, group: 'request' },
@@ -404,6 +405,7 @@ function inventoryPractice(): InvTransport {
   const view = (): { ok: true } & Inventory => {
     const levels = stockLevels(moves);
     return { ok: true, items: clone(items), aheadDays: 14, windowDays: 60, unassigned: [], orders: clone(orders), fieldTodos: clone(fieldTodos),
+      draft: clone(draft), lowStockTasks: false,
       places: places.map(p => ({ ...clone(p), items: items.map(i => {
         const l = levels.get(`${i.id}|${p.place}`);
         const need = p.units.reduce((a, u) => a + (i.perClean ?? 0) * u.cleansAhead, 0);
@@ -428,7 +430,11 @@ function inventoryPractice(): InvTransport {
       if (!String(b.note ?? '').trim()) return fail('Say why it is corrected.');
       for (const a of (b.adjusts as { itemId: string; qty: number }[]))
         moves.push({ ...mv('adjust', a.itemId, place, Number(a.qty), today), note: String(b.note) });
+    } else if (b.action === 'draft') {
+      const lines = (b.lines as { itemId: string; place: string; qty: number }[]).filter(l => l.qty > 0);
+      draft = lines.length ? { lines, forTodo: b.forTodo ? String(b.forTodo) : null, savedBy: 'You (practice)', savedAt: `${today} ${new Date().toTimeString().slice(0, 5)}` } : null;
     } else if (b.action === 'order') {
+      draft = null;
       const lines = b.lines as { itemId: string; place: string; qty: number }[];
       const list = orderList(lines.map(l => ({ item: items.find(i => i.id === l.itemId)!, place: nameOf(l.place), qty: l.qty })));
       if (!list) return fail('Nothing to order.');

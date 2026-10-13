@@ -252,6 +252,15 @@ key had no SOPs.
   ("nothing" included), per unit wherever it took from; the item's estimate until 3. **To order per place** =
   Σ its units now (per clean × cleans in 14 d) + its minimum (`inventory_place_mins`, else the item's) − its
   stock, only once counted (never-counted is not guessed — 273 lines on the first test).
+- **Drafts and low stock (§150, owner, 072):** "💾 Save draft" keeps the order being written (`inventory_order_drafts`,
+  one per account; comes back as left, "Discard draft"; creating the order clears it). Setup → Inventory → **Low stock
+  to-dos** (`accounts.inventory_low_stock_tasks`, OFF by default): after a count, a correction or a take, a counted
+  place below an item's minimum gets ONE open "Low stock at <place>" to-do (`todos.low_stock_place`), a sub-task per
+  item never twice while open, its order filled in (`lowStock`).
+- **The places map is editable (§150, owner):** Setup → Inventory → drag a unit (or tap → Move to) between storages,
+  🏠 Own closet (self storage) and ▲ Not assigned → `inventory-items` action `assign` writes the Repository's
+  `storage` (the one source; audited by field name). Cross-table storages are allowed here (the Repository's
+  own ref picker still offers only the same table).
 - **Corrections (§150, owner):** "On record" has − / + per item (staged; Save corrections needs why → `adjust`
   moves, API `adjusts`) — for what comes from outside or is lost; a count still replaces the record. The team's
   old "Record a move" form (used / adjust) is gone.

@@ -3,6 +3,10 @@
  *
  *   POST { action: 'save', id?, name, category, measure, perClean?, reorderAt?, active? }
  *   POST { action: 'delete', id }        switched off, never erased: the moves name it
+ *   POST { action: 'lowStock', on }      §150: a "Low stock at <place>" to-do on its own, or not
+ *   POST { action: 'assign', unitId, to } §150: where a unit draws supplies — a place key, 'self' (its own
+ *                                         closet) or '' (not assigned): written to the Repository's
+ *                                         `storage` column, the one source, audited by field name
  *
  * `operations.setup` (roles.ts). Read with /api/inventory.
  */
@@ -10,6 +14,8 @@ import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { invItems } from '../_lib/inventory.ts';
+import { supplyPlaces } from '../_lib/unit-access.ts';
+import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
 import { CATEGORIES } from '../../src/lib/inventory.ts';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -35,6 +41,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     } catch { return bad(`There is already an item called "${name}".`); }
   } else if (b.action === 'delete') {
     await sql`UPDATE inventory_items SET active = false, updated_at = now() WHERE account_id = 1 AND id = ${Number(b.id)}`;
+  } else if (b.action === 'assign') {
+    const [u] = await sql`SELECT name FROM units WHERE account_id = 1 AND id = ${String(b.unitId ?? '')}` as { name: string }[];
+    if (!u) return bad('Which unit?');
+    const recs = await sql`SELECT r.id, r.table_key AS "table", r.vals FROM repo_records r
+                             JOIN repo_tables t ON t.account_id = r.account_id AND t.key = r.table_key
+                            WHERE r.account_id = 1 AND t.section_key = 'units' AND t.archived_at IS NULL AND r.archived_at IS NULL` as RepoRow[];
+    const rec = repoMatch(u.name, recs);
+    if (!rec) return bad(`${u.name} has no record in Repository → Units — add it there first.`);
+    const to = String(b.to ?? '');
+    let value = '';
+    if (to === 'self') value = String(rec.vals.name ?? '').trim();
+    else if (to) {
+      const p = (await supplyPlaces(sql)).places.find(x => x.key === to);
+      if (!p) return bad('Which place?');
+      value = p.name;
+    }
+    await sql`UPDATE repo_records SET vals = jsonb_set(vals, '{storage}', to_jsonb(${value}::text)), updated_at = now(), updated_by = ${who.email}
+               WHERE account_id = 1 AND table_key = ${rec.table} AND id = ${rec.id}`;
+    // Audited by field name, as every Repository edit (§72): who, which record, which field.
+    await sql`INSERT INTO repo_audit (account_id, actor, action, table_key, row_id, detail)
+              VALUES (1, ${who.email}, 'records.update', ${rec.table}, ${rec.id}, 'storage (supplies place, from Setup → Inventory, §150)')`;
+    return Response.json({ ok: true, items: await invItems(sql) });
+  } else if (b.action === 'lowStock') {
+    await sql`UPDATE accounts SET inventory_low_stock_tasks = ${b.on === true} WHERE id = 1`;
   } else return bad('Unknown action.');
   return Response.json({ ok: true, items: await invItems(sql) });
 };

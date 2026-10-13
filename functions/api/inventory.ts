@@ -5,6 +5,8 @@
  *   POST { action: 'count', place, counts: [{ itemId, qty }] }          a count of a place — reconciles it
  *   POST { action: 'mins', place, mins: [{ itemId, qty }] }             the minimum to keep there ('' = the item's)
  *   POST { action: 'adjusts', place, note, adjusts: [{ itemId, qty }] } corrections (+/−) to the record, with why
+ *   POST { action: 'draft', lines, forTodo? }                           the order kept as a draft (no lines = discard)
+ * A count, a correction or a take may leave a place below its minimum → "Low stock" to-do, if Setup has it on.
  *   POST { action: 'order', lines: [{ itemId, place, qty }], forTodo? }  the ORDER: ONE to-do (or onto a field to-do), a line per item
  *   POST { action: 'purchase', lines, total, todoId?, note? } + receipt  what was BOUGHT: stock per place + one Restock expense
  *
@@ -14,7 +16,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, fieldPhotos, mirrorTodos, overview, recordMove, recordPurchase, setMins } from '../_lib/inventory.ts';
+import { createOrder, fieldPhotos, lowStock, mirrorTodos, overview, recordMove, recordPurchase, saveDraft, setMins } from '../_lib/inventory.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -40,6 +42,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const given = counts.filter(c => c.qty !== '' && c.qty != null);
       if (!given.length) return bad('Count at least one item.');
       for (const c of given) await recordMove(sql, me, { kind: 'count', itemId: c.itemId, place: b.place, qty: c.qty, note: b.note });
+      waitUntil(lowStock(sql, [String(b.place ?? '')]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
     } else if (b.action === 'purchase') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, 'inventory purchase');
       await recordPurchase(sql, who.email, b, photos);
@@ -49,6 +52,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       if (!list.length) return bad('Nothing to correct.');
       if (!String(b.note ?? '').trim()) return bad('Say why it is corrected.');
       for (const a of list) await recordMove(sql, me, { kind: 'adjust', itemId: a.itemId, place: b.place, qty: a.qty, note: b.note });
+      waitUntil(lowStock(sql, [String(b.place ?? '')]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
+    } else if (b.action === 'draft') {
+      // §150: the order kept as a draft — no to-do until it is created; no lines = discard it.
+      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
+        .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0 })) : [];
+      await saveDraft(sql, who.email, lines, b.forTodo ? String(b.forTodo) : null);
     } else if (b.action === 'mins') {
       await setMins(sql, who.email, b.place, Array.isArray(b.mins) ? b.mins as { itemId: unknown; qty: unknown }[] : []);
     } else if (b.action === 'order') {

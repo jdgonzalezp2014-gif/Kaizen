@@ -507,6 +507,10 @@ export interface Inventory {
   orders: { todoId: string; title: string; lines: { itemId: string; place: string; qty: number }[]; at: string; purchases: number }[];
   /** The field's open to-dos (a clean's supplies request, a problem) an order can be attached to (§150). */
   fieldTodos: { id: string; title: string; group: 'problem' | 'request' }[];
+  /** The order kept as a draft (§150), if any. */
+  draft: { lines: { itemId: string; place: string; qty: number }[]; forTodo: string | null; savedBy: string; savedAt: string } | null;
+  /** Setup → Inventory: a "Low stock at <place>" to-do on its own. */
+  lowStockTasks: boolean;
 }
 export const getInventory = () => call<({ ok: true } & Inventory) | Fail>('/api/inventory');
 export const inventoryAction = (body: Record<string, unknown>) =>
