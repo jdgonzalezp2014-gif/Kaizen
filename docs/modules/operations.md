@@ -44,7 +44,7 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 `cleanings.flag_note/flagged_by/at`, `cleaning_extras` (+ `cleaning_extra_files`), `crew_declines`,
 `crew_schedule_confirms` (snapshot jsonb), `accounts.ops_rules` / `ops_mode`, `stay_notes`, `inspections`,
 `extra_inspectors`, `host_note_pushes`, `inventory_items`, `inventory_moves` (057; kind `taken` 061; `place` 068, `purchase_id` 069),
-`inventory_place_mins` (068), `inventory_orders`, `inventory_purchases` (069), `todos.clean_key`, `inspection_checks.supply_id/qty` (069),
+`inventory_place_mins` (068), `inventory_orders`, `inventory_purchases` (069), `todos.clean_key` (069) + `clean_group` (070), `inspection_checks.supply_id/qty` (069),
 `accounts.field_reports_folder`, `clean_links` (058), `clean_records` (+ `supplies_at/by/none` 061) / `clean_photos` /
 `clean_marks`, `accounts.clean_photos_folder` (059), `clean_slack_posts` (060). (057's `cleaners.report_token_*`
 were dropped in 058.)
@@ -260,8 +260,14 @@ key had no SOPs.
   to-do is an order filled in, to the unit's place.
 - **Cleaners speak, the team records (§150).** "I bought something" = their words + total + receipt → a pending
   field expense, no stock; approved ONLY via "✓ Approve — record in inventory" (items, places) in Operations →
-  Cleaners → `recordPurchase`. A clean's reports (need, missing, bought) = ONE to-do "From the clean of <unit> on
-  <date>" (`todos.clean_key`), a sub-task each, the most urgent priority; "something is wrong" stays its own.
+  Cleaners → `recordPurchase`. A clean's reports are THREE kinds of to-do (070 `todos.clean_key/clean_group`):
+  ⚠️ each problem its own · 🧴 "Supplies requested — clean of <unit> on <date>" (one per clean, a sub-task per
+  request) · 🛒 "Bought on the clean of …" (one per clean). Any of them can carry a purchase order (To order →
+  "For" the to-do: the lines become its sub-tasks, `inventory_orders` keyed by it).
+- **"No hay" in step 2 (§150, owner):** "❗ Something not there?" (folded, one line) opens chips of the supplies; the
+  ones NOT found go with the step-2 answer (`out`, `ranOut`): a `missing` move at the place — ⚠, NEVER zero (they
+  may not have seen it; the record may be wrong) — and one high sub-task on the clean's supplies request. The team
+  checks the stock and/or orders.
 - **Per clean, not per team (§134, owner):** everything a cleaner does is on one clean (see "The cleaner's
   page" below), and the helper's link too. The helper link (`clean_links`, token encrypted to be
   shared again, `/report#t=…`) is for THAT clean: unit and key come from the link, never the page; it

@@ -2036,3 +2036,8 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .hc-ok { color: var(--green); font-weight: 600; font-size: 13px; }
 .hc-warn { color: var(--amber); font-weight: 600; font-size: 13px; }
 .hc-gap { color: var(--muted); font-weight: 600; font-size: 13px; }
+
+/* §150: "no hay" in step 2 — folded until needed; chips that say ✓ when chosen. */
+.fr-out { margin: 10px 0 4px; }
+.fr-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fr-chips .chip { min-height: 40px; font-size: 14px; padding: 6px 12px; }

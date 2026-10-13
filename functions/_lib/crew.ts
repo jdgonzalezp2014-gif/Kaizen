@@ -16,7 +16,7 @@ import { tellCleanThread } from './clean-slack.ts';
 import { accessByUnit } from './unit-access.ts';
 import type { UnitAccess } from '../../src/lib/unit-access.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type CleanState, type Stage } from './clean-record.ts';
-import { activeUnits, esMessage, fieldPhotos, fieldPurchase, fieldTodo, invItems, mirrorTodos, nothingTaken, recordMove, recordUses } from './inventory.ts';
+import { activeUnits, esMessage, fieldPhotos, fieldPurchase, fieldTodo, invItems, ranOut, mirrorTodos, nothingTaken, recordMove, recordUses } from './inventory.ts';
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
 import type { Level } from '../../src/lib/operations.ts';
 import {
@@ -585,6 +585,9 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
       if (body.action === 'cleanTaken' || body.action === 'cleanNothing') {
         const [u] = await sql`SELECT unit_id FROM clean_records WHERE account_id = 1 AND cleaning_key = ${key}` as { unit_id: string | null }[];
         const inv = { name: me.name, source: 'cleaner' as const };
+        // §150: "none left" of something — marked ⚠ at the place and requested at once.
+        const out = await ranOut(sql, inv, key, u?.unit_id ?? null, body.out);
+        if (out) waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [out.todoId], me.name, out.fresh));
         if (body.action === 'cleanTaken') {
           await recordUses(sql, inv, { lines: body.lines, cleaningKey: key, unitId: u?.unit_id ?? null });
           waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'taken', lines: await namedLines(sql, body.lines) } }));

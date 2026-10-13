@@ -261,6 +261,8 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
     .map(l => ({ itemId: l.itemId, place: p.place!, qty: l.toOrder })))), [inv]);
   const [order, setOrder] = useState<Lines>(() => new Map(suggested));
   useEffect(() => setOrder(new Map(suggested)), [suggested]);
+  // §150: an order can belong to a to-do from the field — a clean's supplies request, a problem.
+  const [forTodo, setForTodo] = useState('');
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const lines = flat(order);
@@ -276,14 +278,20 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
       {uncounted.length > 0 && <p className="note">▲ Count first (nothing is suggested for them until then): {uncounted.map(placeTitle).join(', ')}.</p>}
       {!order.size && <p className="note">Nothing to order from what has been counted. Add an item with 🔍 to order it anyway.</p>}
       <ItemLines inv={inv} value={order} onChange={setOrder} hints={suggested} canEdit={canEdit} />
+      {canEdit && order.size > 0 && inv.fieldTodos.length > 0 && <label>For
+        <select value={forTodo} onChange={e => setForTodo(e.target.value)}>
+          <option value="">a new order to-do</option>
+          {inv.fieldTodos.map(t => <option key={t.id} value={t.id}>{t.group === 'problem' ? '⚠️' : '🧴'} {t.title}</option>)}
+        </select></label>}
       {canEdit && order.size > 0 && <div className="button-row">
         <button disabled={busy || !lines.length} onClick={async () => {
           setBusy(true); setMsg('');
           try {
-            const r = await inventoryAction({ action: 'order', lines });
-            if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { onSaved(r); setMsg('✓ Order created — a to-do in Operations → To-do.'); }
+            const r = await inventoryAction({ action: 'order', lines, forTodo: forTodo || undefined });
+            if (!r.ok) setMsg(r.message ?? 'Not saved.');
+            else { onSaved(r); setMsg(forTodo ? '✓ Order added to that to-do.' : '✓ Order created — a to-do in Operations → To-do.'); setForTodo(''); }
           } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
-        }}>Create the order ({nItems} item{nItems === 1 ? '' : 's'})</button>
+        }}>{forTodo ? 'Add the order to that to-do' : 'Create the order'} ({nItems} item{nItems === 1 ? '' : 's'})</button>
         {suggested.size > 0 && <button className="secondary" onClick={() => setOrder(new Map(suggested))}>Back to the suggestion</button>}
         {msg && <span className="note">{msg}</span>}
       </div>}

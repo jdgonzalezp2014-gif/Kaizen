@@ -97,7 +97,7 @@ export async function overview(sql: SqlFn) {
      WHERE m.account_id = 1 ORDER BY m.id DESC LIMIT 100` as { place: string | null }[])
     .map(m => ({ ...m, place: m.place ? sp.names.get(m.place) ?? m.place : null }));
   const unassigned = sp.unassigned.map(u => ({ ...u, cleansAhead: ahead.get(u.id) ?? 0 }));
-  return { items, places, unassigned, recent, orders: await openOrders(sql), aheadDays: AHEAD_DAYS, windowDays: WINDOW_DAYS };
+  return { items, places, unassigned, recent, orders: await openOrders(sql), fieldTodos: await fieldTodos(sql), aheadDays: AHEAD_DAYS, windowDays: WINDOW_DAYS };
 }
 
 /** The messages a field reporter can get, in Spanish (§129: the crew page and the report link speak the cleaner's language). */
@@ -168,25 +168,28 @@ async function newTodo(sql: SqlFn, title: string, description: string | null, un
 
 const RANK: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, urgent: 4 };
 /**
- * What a cleaner reports on one clean — a need, something missing, something
- * bought — is ONE to-do for that clean, each report a sub-task (§150, owner):
- * the team sees a clean's asks together. The to-do takes the most urgent
- * priority of its sub-tasks. `fresh`: the to-do was just made (announce it);
- * else a sub-task was added to the open one. Null when the clean is unknown.
+ * A clean's reports are three kinds of to-do (§150, owner): what is wrong
+ * (each its own), the supplies requested and what was bought — one to-do per
+ * clean for each of these two, every report a sub-task, the to-do taking the
+ * most urgent priority. Each can carry its own purchase order. `fresh`: the
+ * to-do was just made (announce it); else a sub-task was added to the open
+ * one. Null when the clean is unknown.
  */
-async function cleanTodo(sql: SqlFn, who: Who, cleaningKey: unknown, title: string, description: string | null, priority: Priority) {
+async function cleanTodo(sql: SqlFn, who: Who, cleaningKey: unknown, group: 'request' | 'bought', title: string, description: string | null,
+                         priority: Priority) {
   if (!cleaningKey) return null;
   const [c] = await sql`SELECT unit_id, unit_name, clean_date::text AS date FROM clean_records WHERE account_id = 1 AND cleaning_key = ${String(cleaningKey)}` as
     { unit_id: string | null; unit_name: string; date: string }[];
   if (!c) return null;
   const by = who.email ?? who.name;
-  let [t] = await sql`SELECT id::text, priority FROM todos WHERE account_id = 1 AND clean_key = ${String(cleaningKey)} AND parent_id IS NULL
-                         AND status NOT IN ('completed', 'cancelled') ORDER BY id DESC LIMIT 1` as { id: string; priority: string }[];
+  let [t] = await sql`SELECT id::text, priority FROM todos WHERE account_id = 1 AND clean_key = ${String(cleaningKey)} AND clean_group = ${group}
+                         AND parent_id IS NULL AND status NOT IN ('completed', 'cancelled') ORDER BY id DESC LIMIT 1` as { id: string; priority: string }[];
   const fresh = !t;
   if (!t) {
-    const id = await newTodo(sql, `From the clean of ${c.unit_name} on ${c.date}`, `What ${who.name} reported on this clean — each one is a sub-task.`,
-                             c.unit_id, by, [], priority);
-    await sql`UPDATE todos SET clean_key = ${String(cleaningKey)} WHERE account_id = 1 AND id = ${Number(id)}`;
+    const head = group === 'request' ? `Supplies requested — clean of ${c.unit_name} on ${c.date}` : `Bought on the clean of ${c.unit_name} on ${c.date}`;
+    const id = await newTodo(sql, head, `What ${who.name} reported on this clean — each one is a sub-task.` +
+      (group === 'request' ? ' To buy it: Operations → Inventory → To order → “for this to-do”.' : ''), c.unit_id, by, [], priority);
+    await sql`UPDATE todos SET clean_key = ${String(cleaningKey)}, clean_group = ${group} WHERE account_id = 1 AND id = ${Number(id)}`;
     t = { id, priority };
   }
   await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, parent_id)
@@ -195,6 +198,29 @@ async function cleanTodo(sql: SqlFn, who: Who, cleaningKey: unknown, title: stri
   if (!fresh) await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
                         VALUES (1, 'task', ${t.id}, 'change', ${`${who.name} added: ${title}`.slice(0, 4000)}, ${by})`;
   return { todoId: t.id, fresh };
+}
+
+/**
+ * "No hay" from step 2 (§150, owner): what a cleaner did NOT find in the
+ * unit's place. Never zeroes the stock — they may just not have seen it, and
+ * the record may be wrong: each item is marked ⚠ there (a `missing` move, a
+ * count is due) and requested at once, one sub-task of the clean's request.
+ * The team decides: check the stock, buy, or both.
+ */
+export async function ranOut(sql: SqlFn, who: Who, cleaningKey: string, unitId: string | null, raw: unknown) {
+  const list = typeof raw === 'string' ? JSON.parse(raw || '[]') : raw;
+  const ids = [...new Set((Array.isArray(list) ? list : []).map(x => String(x)))];
+  if (!ids.length) return null;
+  const items = (await invItems(sql)).filter(i => i.active && ids.includes(i.id));
+  if (!items.length) return null;
+  const sp = await supplyPlaces(sql);
+  const at = placeOf(sp, who, unitId, unitId ? await unitName(sql, unitId) : null, null);
+  for (const i of items) await sql`INSERT INTO inventory_moves (account_id, item_id, place, unit_id, kind, qty, cleaning_key, by_name, source)
+                                   VALUES (1, ${Number(i.id)}, ${at.key}, ${unitId}, 'missing', 0, ${cleaningKey}, ${who.name}, ${who.source})`;
+  return cleanTodo(sql, who, cleaningKey, 'request',
+    `Supplies requested: not found at ${at.name} — ${items.map(i => i.name).join(', ')}`,
+    `${who.name} did not find these at ${at.name}. Check the stock (count it in Operations → Inventory — they may not have seen it, ` +
+    `or the record may be wrong) and/or order them.`, 'high');
 }
 
 /**
@@ -230,7 +256,7 @@ export async function recordMove(sql: SqlFn, who: Who, b: Record<string, unknown
     const description = `${who.name} found ${qty} ${item.measure}${qty === 1 ? '' : 's'}${said != null ? `; the record says ${said}` : ''}.${note ? `\nNote: ${note}` : ''}` +
       photos.map(p => `\nPhoto: ${p.url}`).join('') + `\nCount it in Operations → Inventory to set the record right.`;
     // §150: from a clean, a sub-task of that clean's to-do; from the team, its own.
-    const ct = who.source !== 'team' ? await cleanTodo(sql, who, b.cleaningKey, title, description, 'medium') : null;
+    const ct = who.source !== 'team' ? await cleanTodo(sql, who, b.cleaningKey, 'request', title, description, 'medium') : null;
     if (ct) ({ todoId, fresh } = ct);
     else todoId = await newTodo(sql, title, description, unitId, who.email ?? who.name, [], 'medium');
   }
@@ -280,10 +306,13 @@ export async function fieldTodo(sql: SqlFn, who: Who, b: Record<string, unknown>
   const description = `Reported by ${who.name}.${photos.map(p => `\nPhoto: ${p.url}`).join('')}`;
   // §150: a need joins its clean's to-do as a sub-task; "something is wrong" is always its own to-do.
   if (b.kind === 'request') {
-    const ct = await cleanTodo(sql, who, b.cleaningKey, `${what}: ${text}`, description, priority);
+    const ct = await cleanTodo(sql, who, b.cleaningKey, 'request', `${what}: ${text}`, description, priority);
     if (ct) return ct;
   }
-  return { todoId: await newTodo(sql, place ? `${what} at ${place}: ${text}` : `${what}: ${text}`, description, unitId, who.email ?? who.name, [], priority), fresh: true };
+  const id = await newTodo(sql, place ? `${what} at ${place}: ${text}` : `${what}: ${text}`, description, unitId, who.email ?? who.name, [], priority);
+  // Each problem is its own to-do; marked with its clean so a purchase order can be attached to it.
+  if (b.kind !== 'request' && b.cleaningKey) await sql`UPDATE todos SET clean_key = ${String(b.cleaningKey)}, clean_group = 'problem' WHERE account_id = 1 AND id = ${Number(id)}`;
+  return { todoId: id, fresh: true };
 }
 
 /**
@@ -304,12 +333,12 @@ export async function fieldPurchase(sql: SqlFn, who: Who, b: Record<string, unkn
   const title = `Bought by ${who.name}: ${text} — $${cost.toFixed(2)}`;
   const description = `Approve it in Operations → Cleaners: record what was bought in Inventory (items and where each went).` +
     photos.map(p => `\nReceipt: ${p.url}`).join('');
-  const ct = await cleanTodo(sql, who, b.cleaningKey, title, description, 'medium');
+  const ct = await cleanTodo(sql, who, b.cleaningKey, 'bought', title, description, 'medium');
   return { fieldExpense: id, todoId: ct?.todoId ?? null, fresh: ct?.fresh ?? false };
 }
 
 /** What to order, as one to-do with a line per item and the place it goes to. */
-export async function createOrder(sql: SqlFn, by: string, lines: { itemId: string; place: string; qty: number }[]) {
+export async function createOrder(sql: SqlFn, by: string, lines: { itemId: string; place: string; qty: number }[], forTodo: string | null = null) {
   const [items, sp] = await Promise.all([invItems(sql), supplyPlaces(sql)]);
   const named = lines.filter(l => l.qty > 0).flatMap(l => {
     const item = items.find(i => i.id === String(l.itemId));
@@ -319,11 +348,32 @@ export async function createOrder(sql: SqlFn, by: string, lines: { itemId: strin
   });
   const list = orderList(named);
   if (!list) throw new Error('Nothing to order.');
+  const data = lines.filter(l => l.qty > 0).map(l => ({ itemId: String(l.itemId), place: l.place, qty: Math.ceil(l.qty) }));
+  // §150: an order can belong to a to-do from the field (a request, a problem) — its lines become that
+  // to-do's sub-tasks, and a second order on it adds to the first. Else it is a to-do of its own.
+  if (forTodo) {
+    const [t] = await sql`SELECT id::text, unit_ids FROM todos WHERE account_id = 1 AND id = ${Number(forTodo)} AND parent_id IS NULL
+                            AND status NOT IN ('completed', 'cancelled')` as { id: string; unit_ids: string[] }[];
+    if (!t) throw new Error('That to-do is closed or gone.');
+    for (const item of list.items) await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id)
+                                             VALUES (1, ${item.slice(0, 300)}, ${t.unit_ids}, ${by}, 'task', 'pending', 'none', ${Number(t.id)})`;
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'task', ${t.id}, 'change', ${`Purchase order added:\n${list.items.map(i => i.replace(/^Buy: /, '• ')).join('\n')}`}, ${by})`;
+    await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(data)}::jsonb, ${by})
+              ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = inventory_orders.lines || EXCLUDED.lines`;
+    return { id: t.id, fresh: false };
+  }
   const id = await newTodo(sql, list.title, `From Operations → Inventory, ${todayIn(TZ)}. When it is bought: Inventory → 🧾 Record a purchase.`, null, by, list.items);
   // The lines as data: the purchase that executes this order starts from them.
-  await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by)
-            VALUES (1, ${Number(id)}, ${JSON.stringify(lines.filter(l => l.qty > 0).map(l => ({ itemId: String(l.itemId), place: l.place, qty: Math.ceil(l.qty) })))}::jsonb, ${by})`;
-  return id;
+  await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(id)}, ${JSON.stringify(data)}::jsonb, ${by})`;
+  return { id, fresh: true };
+}
+
+/** The field's open to-dos (§150) — what a purchase order can be attached to. */
+export async function fieldTodos(sql: SqlFn) {
+  return await sql`SELECT id::text, title, clean_group AS "group" FROM todos WHERE account_id = 1 AND clean_key IS NOT NULL AND parent_id IS NULL
+                      AND clean_group IN ('problem', 'request') AND status NOT IN ('completed', 'cancelled') ORDER BY id DESC LIMIT 60` as
+    { id: string; title: string; group: 'problem' | 'request' }[];
 }
 
 /** The orders not yet closed, with their lines — what a purchase can start from. */

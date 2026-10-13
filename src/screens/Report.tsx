@@ -116,7 +116,8 @@ export function ReportPage({ token: first, practice }: { token: string | null; p
           {team.access && <div style={{ marginBottom: 12 }}><AccessBox tx={tx} a={team.access} /></div>}
           <CleanSteps tx={tx} items={team.items} state={team.state} onState={s => setTeam(t => t && { ...t, state: s })} place={team.access?.supplies ?? null}
                       sendPhoto={(stage, f) => post({ kind: 'photo', stage }, [f]) as Promise<Result>}
-                      taken={lines => post(lines ? { kind: 'taken', lines: JSON.stringify(lines) } : { kind: 'nothing' }, []) as Promise<Result>}
+                      taken={(lines, out) => post(lines ? { kind: 'taken', lines: JSON.stringify(lines), out: JSON.stringify(out) }
+                                                        : { kind: 'nothing', out: JSON.stringify(out) }, []) as Promise<Result>}
                       mark={kind => post({ kind }, []) as Promise<Result>} />
         </div> : <div className="card">
           <FieldReport tx={tx} items={team.items} send={post} kinds={KINDS.filter(k => k !== 'purchase')} />

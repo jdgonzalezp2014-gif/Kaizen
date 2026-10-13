@@ -489,8 +489,8 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onCl
         {tab === 'clean' && <CleanSteps tx={tx} items={ctx.supplies.items} state={fs} onState={setFs}
           place={page.access?.[a.key]?.supplies ?? page.places?.[a.key] ?? null}
           sendPhoto={(stage, f) => ctx.report({ action: 'cleanPhoto', key: a.key, stage }, [f]) as Promise<Result>}
-          taken={lines => ctx.report(lines ? { action: 'cleanTaken', key: a.key, lines: JSON.stringify(lines) }
-                                           : { action: 'cleanNothing', key: a.key }, []) as Promise<Result>}
+          taken={(lines, out) => ctx.report(lines ? { action: 'cleanTaken', key: a.key, lines: JSON.stringify(lines), out: JSON.stringify(out) }
+                                           : { action: 'cleanNothing', key: a.key, out: JSON.stringify(out) }, []) as Promise<Result>}
           mark={kind => ctx.report({ action: 'cleanMark', key: a.key, kind }, []) as Promise<Result>} />}
         {tab === 'report' && <FieldReport tx={tx} items={ctx.supplies.items}
           send={(f, files) => ctx.report({ ...f, cleaningKey: a.key, unitId }, files)} />}

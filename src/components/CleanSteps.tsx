@@ -26,8 +26,8 @@ import { PhotoPicker, shrink } from './PhotoPicker.tsx';
 export type Result = { ok: boolean; message?: string; state?: StepState };
 export type SendPhoto = (stage: 'before' | 'after', file: File) => Promise<Result>;
 export type Mark = (kind: 'done' | 'reopened') => Promise<Result>;
-/** What was taken from the storage: lines, or null = nothing. */
-export type Taken = (lines: { itemId: string; qty: number }[] | null) => Promise<Result>;
+/** What was taken from the place: lines, or null = nothing; `out` = what was NOT found there ("no hay", §150). */
+export type Taken = (lines: { itemId: string; qty: number }[] | null, out: string[]) => Promise<Result>;
 
 const EMPTY: StepState = { before: 0, after: 0, folderUrl: null, done: null, supplies: null };
 
@@ -95,17 +95,23 @@ export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState, 
  * already in the house does not count. "I took nothing" is a button of its
  * own, so the answer is always said, never skipped. Adding more later (a
  * second helper, something forgotten) adds to what was sent.
+ * "No hay" (§150, owner) is folded behind one small button so it takes no room
+ * until needed: tap the items NOT found — each a chip that says ✓ when chosen —
+ * and they go with the answer: marked ⚠ at the place (never zeroed: maybe they
+ * did not see it) and requested at once. The team checks or buys.
  */
 function TakenStep({ tx, items, send, from, code, onDone, onBack }: {
   tx: Tx; items: SupplyItem[]; send: Taken; from: string; code: string | null; onDone: (s?: StepState) => void; onBack: () => void;
 }) {
   const [counts, setCounts] = useState<Record<string, number>>({});
+  const [outOpen, setOutOpen] = useState(false);
+  const [out, setOut] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   const picked = Object.entries(counts).filter(([, n]) => n > 0);
   const go = async (lines: { itemId: string; qty: number }[] | null) => {
     setBusy(true); setErr('');
-    try { const r = await send(lines); if (!r.ok) setErr(r.message ?? tx.notSaved); else onDone(r.state); }
+    try { const r = await send(lines, out); if (!r.ok) setErr(r.message ?? tx.notSaved); else onDone(r.state); }
     catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   };
   return (
@@ -114,6 +120,17 @@ function TakenStep({ tx, items, send, from, code, onDone, onBack }: {
       <p className="fr-q">{tx.stepTaken(from)}</p>
       <p className="fr-tip">{tx.takenQ(from)}{code && <><br /><b>{tx.placeCode(code)}</b></>}</p>
       <SupplyCounter tx={tx} items={items} counts={counts} onCounts={setCounts} />
+      <div className="fr-out">
+        {!outOpen ? <button type="button" className="link" disabled={busy} onClick={() => setOutOpen(true)}>{tx.outBtn(from)}</button> : <>
+          <p className="fr-tip">{tx.outQ(from)}</p>
+          <div className="fr-chips">{items.map(i => {
+            const on = out.includes(i.id);
+            return <button key={i.id} type="button" className={`chip${on ? ' active' : ''}`} aria-pressed={on} disabled={busy}
+                           onClick={() => setOut(o => on ? o.filter(x => x !== i.id) : [...o, i.id])}>{on ? '✓ ' : ''}{i.name}</button>;
+          })}</div>
+        </>}
+        {out.length > 0 && <p className="fr-tip"><b>{tx.outCount(out.length)}</b></p>}
+      </div>
       <div className="fr-send">
         <button className="fr-btn fr-go" disabled={busy || !picked.length}
                 onClick={() => void go(picked.map(([itemId, qty]) => ({ itemId, qty })))}>

@@ -5,7 +5,7 @@
  *   POST { action: 'move', kind, itemId, place, qty, note?, cost? }     (multipart with photos too)
  *   POST { action: 'count', place, counts: [{ itemId, qty }] }          a count of a place — reconciles it
  *   POST { action: 'mins', place, mins: [{ itemId, qty }] }             the minimum to keep there ('' = the item's)
- *   POST { action: 'order', lines: [{ itemId, place, qty }] }           the ORDER: ONE to-do, a line per item and its places
+ *   POST { action: 'order', lines: [{ itemId, place, qty }], forTodo? }  the ORDER: ONE to-do (or onto a field to-do), a line per item
  *   POST { action: 'purchase', lines, total, todoId?, note? } + receipt  what was BOUGHT: stock per place + one Restock expense
  *
  * GET with `operations`, POST with `operations.edit` (roles.ts). To-dos made
@@ -52,9 +52,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     } else if (b.action === 'order') {
       const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
         .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0 })) : [];
-      const id = await createOrder(sql, who.email, lines);
-      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.email));
-      return Response.json({ ok: true, todoId: id, ...(await overview(sql)) });
+      const o = await createOrder(sql, who.email, lines, b.forTodo ? String(b.forTodo) : null);
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [o.id], who.email, o.fresh));
+      return Response.json({ ok: true, todoId: o.id, ...(await overview(sql)) });
     } else {
       return bad('Unknown action.');
     }

@@ -26,7 +26,7 @@ import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { namedLines, sha256, strip } from '../_lib/crew.ts';
 import { accessByUnit } from '../_lib/unit-access.ts';
-import { esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, nothingTaken, recordMove, recordUses } from '../_lib/inventory.ts';
+import { esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, nothingTaken, ranOut, recordMove, recordUses } from '../_lib/inventory.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { tellCleanThread } from '../_lib/clean-slack.ts';
 import { tellCleaner } from '../_lib/crew-slack.ts';
@@ -134,11 +134,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         kind: 'report', what: b.kind, text: String(b.text ?? '').trim().slice(0, 300), priority: String(b.priority ?? '') || null, todoId: id } }));
       tell({ kind: 'report', what: String(b.kind), text: String(b.text ?? '').trim().slice(0, 300), priority: String(b.priority ?? '') || null });
     } else if (b.kind === 'taken' || b.kind === 'used') {
+      const out = await ranOut(sql, who, l.cleaning_key, l.unit_id, b.out);
+      if (out) waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [out.todoId], who.name, out.fresh));
       await recordUses(sql, who, b);
       const lines = await namedLines(sql, b.lines);
       tell({ kind: 'taken', lines });
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: { kind: 'taken', lines } }));
     } else if (b.kind === 'nothing') {
+      const out = await ranOut(sql, who, l.cleaning_key, l.unit_id, b.out);
+      if (out) waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [out.todoId], who.name, out.fresh));
       await nothingTaken(sql, who, l.cleaning_key);
       tell({ kind: 'nothing' });
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: { kind: 'nothing' } }));

@@ -3938,3 +3938,9 @@ Same day, the owner on the field menu: "Something is missing" and "I need someth
 merged into **🧴 Request supplies** (their own words + urgency; a sub-task of the clean's to-do, titled
 "Supplies requested: …"). The menu: ⚠️ Something is wrong (broken, damaged) first, then 🧴 Request supplies,
 then 🛒 I bought something. The field no longer sends `missing` (the server still reads it for old rows).
+
+Then (owner): the three are different things, so THREE to-dos per clean, not one — each problem its own, one
+"Supplies requested" and one "Bought" per clean (070 `clean_group`), and each can carry its purchase order
+(To order → "For" a field to-do). And "no hay": in step 2, a folded "❗ Something not there?" with chips —
+what was not found is marked ⚠ at the place (never zeroed: they may not have seen it, the record may be wrong)
+and requested at once; the team validates the stock and/or orders.
