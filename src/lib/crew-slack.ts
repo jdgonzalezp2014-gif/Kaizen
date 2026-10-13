@@ -45,7 +45,7 @@ const W = {
     open: 'Open my page',
     stage: { before: 'BEFORE', after: 'AFTER' }, photos: (n: number) => `${n} photo${n === 1 ? '' : 's'}`,
     took: 'took from storage:', nothing: 'took nothing from storage', done: 'marked it ✅ done', reopened: 'reopened it ↩️',
-    what: { problem: '⚠️ Something is wrong', request: '🙋 Needs something', missing: '❓ Something is missing', purchase: '🛒 Bought' } as Record<string, string>,
+    what: { problem: '⚠️ Something is wrong', request: '🧴 Requests supplies', missing: '❓ Something is missing', purchase: '🛒 Bought' } as Record<string, string>,
     urg: { urgent: '🔴 urgent', high: '🟠 soon', low: '⚪ when possible' } as Record<string, string>
   },
   es: {
@@ -55,7 +55,7 @@ const W = {
     open: 'Abrir mi página',
     stage: { before: 'ANTES', after: 'DESPUÉS' }, photos: (n: number) => `${n} ${n === 1 ? 'foto' : 'fotos'}`,
     took: 'tomó del storage:', nothing: 'no tomó nada del storage', done: 'la marcó ✅ completada', reopened: 'la reabrió ↩️',
-    what: { problem: '⚠️ Algo está mal', request: '🙋 Necesita algo', missing: '❓ Falta algo', purchase: '🛒 Compró' } as Record<string, string>,
+    what: { problem: '⚠️ Algo está mal', request: '🧴 Pide insumos', missing: '❓ Falta algo', purchase: '🛒 Compró' } as Record<string, string>,
     urg: { urgent: '🔴 urgente', high: '🟠 pronto', low: '⚪ cuando se pueda' } as Record<string, string>
   }
 };

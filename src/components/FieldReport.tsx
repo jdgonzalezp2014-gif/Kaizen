@@ -1,7 +1,7 @@
 /**
  * Reports from the field for ONE clean (§134) — the cleaner's Options on a
  * clean, and the link they send to whoever helps them (/report, no account).
- * What was taken, bought, is missing, is wrong, or is needed. The server
+ * What is wrong, what supplies are needed, what was bought. The server
  * decides what each becomes: a move in the inventory, and a to-do when
  * someone has to act.
  *
@@ -9,9 +9,9 @@
  * mayores"), mistake-proof by design:
  *  - one question per screen, and the clean always fixed by where it was
  *    opened — nobody chooses a unit or a day, so nobody picks the wrong one;
- *  - choices to tap, not things to type: + / − instead of a keyboard, a list
- *    of the supplies, the camera for a receipt; typing only for a problem,
- *    with the keyboard's microphone suggested;
+ *  - their own words for what is wrong, needed or bought (§150, owner: one
+ *    "Request supplies" instead of "missing" and "need" — the two confused),
+ *    with the keyboard's microphone suggested; the camera for a receipt;
  *  - big targets, an icon AND a word on each, the Send button saying what is
  *    still missing instead of just going grey;
  *  - one tap sends everything (all lines or none), a second tap cannot send
@@ -23,9 +23,9 @@ import type { Tx } from '../lib/crew-i18n.ts';
 import { PhotoPicker, shrink } from './PhotoPicker.tsx';
 
 // What was taken from the storage is not here: it is a required step of the clean (CleanSteps, §134).
-export type Kind = 'purchase' | 'missing' | 'problem' | 'request';
-// The owner's order: what is wrong first, then what is needed, missing, bought.
-export const KINDS: Kind[] = ['problem', 'request', 'missing', 'purchase'];
+export type Kind = 'purchase' | 'problem' | 'request';
+// The owner's order: what is wrong first, then the supplies needed, then what was bought.
+export const KINDS: Kind[] = ['problem', 'request', 'purchase'];
 const CATS = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'];
 export type Send = (fields: Record<string, string>, files: File[]) => Promise<{ ok: boolean; message?: string }>;
 
@@ -42,8 +42,6 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
 }) {
   const [kind, setKind] = useState<Kind | null>(start ?? null);
   const [done, setDone] = useState<null | { task: boolean }>(null);
-  const [itemId, setItemId] = useState('');
-  const [qty, setQty] = useState(start === 'missing' ? 0 : 1);
   const [cost, setCost] = useState('');
   const [text, setText] = useState('');
   // §134: how urgent a problem or a need is — asked every time, never assumed.
@@ -53,10 +51,9 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
   const [err, setErr] = useState('');
 
   const reset = (k: Kind | null) => {
-    setKind(k); setDone(null); setItemId(''); setQty(k === 'missing' ? 0 : 1); setCost(''); setText(''); setPrio(''); setFiles([]); setErr('');
+    setKind(k); setDone(null); setCost(''); setText(''); setPrio(''); setFiles([]); setErr('');
   };
   const back = () => (start || !kind ? onClose?.() : reset(null));
-  const byCat = CATS.map(c => [c, items.filter(i => (CATS.includes(i.category) ? i.category : 'other') === c)] as const).filter(([, l]) => l.length);
 
   if (done) return (
     <div className="fr fr-done" role="status">
@@ -79,7 +76,6 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
   // §137: a purchase reaches Costs only with what it cost — so the total is required (the team approves it).
   // §150: what they bought is said in their own words; the team records it in Inventory when approving it.
   const missing = kind === 'purchase' ? (!text.trim() ? tx.supNeedText : !(Number(cost) > 0) ? tx.supNeedCost : '')
-    : kind === 'missing' ? (!itemId ? tx.supNeedItem : '')
     : (!text.trim() ? tx.supNeedText : !prio ? tx.urgNeed : '');
 
   async function submit() {
@@ -88,8 +84,6 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
     try {
       const r = kind === 'purchase'
           ? await send({ action: 'supply', kind: 'purchase', text: text.trim(), cost }, await Promise.all(files.map(shrink)))
-          : kind === 'missing'
-          ? await send({ action: 'supply', kind: 'missing', itemId, qty: String(qty) }, await Promise.all(files.map(shrink)))
           : await send({ action: kind!, kind: kind!, text: text.trim(), priority: prio }, await Promise.all(files.map(shrink)));
       if (!r.ok) { setErr(r.message ?? tx.notSaved); return; }
       setDone({ task: true });
@@ -101,25 +95,11 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
     <p className="fr-q">{label}</p>
     <PhotoPicker tx={tx} files={files} onChange={setFiles} max={5} disabled={busy} />
   </>;
-  const itemPick = (
-    <select className="fr-select" value={itemId} onChange={e => setItemId(e.target.value)}>
-      <option value="">{tx.supPickItem}</option>
-      {byCat.map(([c, list]) => <optgroup key={c} label={tx.supCat[c] ?? c}>
-        {list.map(i => <option key={i.id} value={i.id}>{i.name} ({i.measure})</option>)}</optgroup>)}
-    </select>
-  );
 
   return (
     <div className="fr">
       <button className="link fr-back" onClick={back}>{start ? tx.supClose : tx.supBack}</button>
       <p className="fr-kind">{tx.supKind[kind]}</p>
-
-      {kind === 'missing' && <>
-        <p className="fr-q">{tx.supMissQ}</p>
-        {itemPick}
-        <p className="fr-q">{tx.supFound}</p>
-        <Stepper n={qty} min={0} onStep={d => setQty(q => Math.max(0, Math.min(999, q + d)))} />
-      </>}
 
       {kind === 'purchase' && <>
         <p className="fr-q">{tx.supBuyQ}</p>

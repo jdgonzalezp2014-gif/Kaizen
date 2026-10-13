@@ -291,7 +291,8 @@ key had no SOPs.
   4 ✅ done. Done is refused until 2 and 3 are there. "What I took" is no longer in the reports menu.
   The helper page (`/report`): the header IS the clean (unit, day small under it; EN/ES beside ☾), then two
   big tabs "🧽 My clean" / "🙋 Report or ask" so both show without scrolling. Reports in the owner's
-  order: ⚠️ wrong · 🙋 need · ❓ missing · 🛒 bought (the same in the cleaner's "Report or ask"). A link is per clean,
+  order: ⚠️ something is wrong (broken, damaged) · 🧴 request supplies (their words; "missing" and "need" were one
+  thing to them, merged §150) · 🛒 bought (the same in the cleaner's "Report or ask"). A link is per clean,
   not per person: several helpers use the same one, each with their name. A phone keeps every clean it
   was sent while the link lasts (`localStorage.reportLinks`) and shows "Your cleans on this phone" to
   switch when there is more than one.

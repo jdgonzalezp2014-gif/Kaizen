@@ -270,7 +270,7 @@ export async function nothingTaken(sql: SqlFn, who: Who, cleaningKey: string) {
 
 /** A problem or a request from the field: a to-do for the team. */
 export async function fieldTodo(sql: SqlFn, who: Who, b: Record<string, unknown>, photos: { name: string; url: string }[] = []) {
-  const what = b.kind === 'request' ? 'Request' : 'Problem';
+  const what = b.kind === 'request' ? 'Supplies requested' : 'Problem';
   const text = String(b.text ?? '').trim().slice(0, 300);
   if (!text) throw new Error('Say what it is.');
   const unitId = b.unitId ? String(b.unitId) : null;

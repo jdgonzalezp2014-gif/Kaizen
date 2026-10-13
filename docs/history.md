@@ -3933,3 +3933,8 @@ stays its own to-do.
 to Hostaway (task 16400930) and announced in Slack, because a branch copies the account's credentials.
 Lesson: pass a branch's URL with `node --env-file=<branch file>`, and switch the branch's
 `hostaway_tasks` off and its Slack token to NULL before testing anything that makes to-dos.
+
+Same day, the owner on the field menu: "Something is missing" and "I need something" confused cleaners —
+merged into **🧴 Request supplies** (their own words + urgency; a sub-task of the clean's to-do, titled
+"Supplies requested: …"). The menu: ⚠️ Something is wrong (broken, damaged) first, then 🧴 Request supplies,
+then 🛒 I bought something. The field no longer sends `missing` (the server still reads it for old rows).

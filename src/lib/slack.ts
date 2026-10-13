@@ -137,7 +137,7 @@ export type CleanEvent =
   | { kind: 'report'; what: 'problem' | 'request' | 'missing' | 'purchase'; text: string; priority?: string | null; todoId?: string | null }
   | { kind: 'extra'; amount: number; description: string }
   | { kind: 'declined'; reason: string | null };
-const REPORT_WORD: Record<string, string> = { problem: '⚠️ Something is wrong', request: '🙋 Needs something', missing: '❓ Something is missing', purchase: '🛒 Bought' };
+const REPORT_WORD: Record<string, string> = { problem: '⚠️ Something is wrong', request: '🧴 Requests supplies', missing: '❓ Something is missing', purchase: '🛒 Bought' };
 const URG_WORD: Record<string, string> = { urgent: '🔴 urgent', high: '🟠 soon', low: '⚪ when possible', medium: 'medium' };
 export function cleanEventMessage(unit: string, by: string, time: string, e: CleanEvent): { text: string; blocks: Block[] } {
   const who = `${esc(fieldWho(by))} · *${esc(unit)}*`;
