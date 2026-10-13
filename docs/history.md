@@ -3848,4 +3848,7 @@ $25/night, lost fob $200 (the P2 fob costs more to replace — kept apart from t
 prefilled on the 12 active listings whose house rules say so). P2 parking goes in the Hostaway
 description, not house rules; early check-in/late check-out ($20/hour, only after payment confirmed
 through the Resolution Center, else 4 PM / 10 AM) goes in house rules — the P2 parking text was appended to the 8
-P2 listings' `description` (read back, before/after in `listing_text_changes`); house rules not yet written. Audit with the gaps: `../access-rules-amenities-report.md`.
+P2 listings' `description` (read back, before/after in `listing_text_changes`); house rules: the early check-in / late check-out clause is in all 21 active listings — the 12 that had it
+got the Resolution Center sentence after the late check-out item, Bobcat and the 8 P2 got the full clause
+(4:00 PM / 10:00 AM, no Sunday line); P2's lost fob went $110 → $200. Read back, before/after in
+`listing_text_changes`. The 12 older clauses still say check-in is 5:00 PM on Sundays (left as written). Audit with the gaps: `../access-rules-amenities-report.md`.
