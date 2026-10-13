@@ -3944,3 +3944,6 @@ Then (owner): the three are different things, so THREE to-dos per clean, not one
 (To order → "For" a field to-do). And "no hay": in step 2, a folded "❗ Something not there?" with chips —
 what was not found is marked ⚠ at the place (never zeroed: they may not have seen it, the record may be wrong)
 and requested at once; the team validates the stock and/or orders.
+
+Then: checklist items bought on failure carry a preset supply (071) so the inspector only says how many;
+and Practice gained 📦 Inventory — the real Inventory screen over an in-browser transport, for the team.

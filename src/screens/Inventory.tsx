@@ -10,7 +10,7 @@
  * its last count — so every place says when it was counted, and a "not there"
  * report asks for a count instead of changing the number on one person's word.
  */
-import { Fragment, useEffect, useMemo, useState } from 'react';
+import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getInventory, inventoryAction, inventoryItemAction, inventoryUpload, type InvItemRow, type InvPlace, type Inventory } from '../api.ts';
 import { CATEGORIES, reconcile } from '../lib/inventory.ts';
 
@@ -27,11 +27,27 @@ const pk = (place: string | null) => place ?? '';
 /** The Repository record that holds the assignment: the link opens it (§150). */
 export const repoHref = (recordId: string) => `/?repo=${encodeURIComponent(recordId)}`;
 
-export function InventoryView({ canEdit }: { canEdit: boolean }) {
+/**
+ * How the view talks to the server — the real API, or Practice's (§139, §150:
+ * the team trains on the same screen with example data, nothing leaves the browser).
+ */
+type InvResult = ({ ok: true; todoId?: string } & Inventory) | { ok: false; message?: string };
+export interface InvTransport {
+  get: () => Promise<InvResult>; act: (body: Record<string, unknown>) => Promise<InvResult>; upload: (form: FormData) => Promise<InvResult>;
+}
+const REAL: InvTransport = { get: getInventory, act: inventoryAction, upload: inventoryUpload } as InvTransport;
+const InvApi = createContext<InvTransport>(REAL);
+
+export function InventoryView({ canEdit, api = REAL }: { canEdit: boolean; api?: InvTransport }) {
+  return <InvApi.Provider value={api}><InventoryBody canEdit={canEdit} /></InvApi.Provider>;
+}
+
+function InventoryBody({ canEdit }: { canEdit: boolean }) {
+  const api = useContext(InvApi);
   const [inv, setInv] = useState<Inventory | null>(null);
   const [err, setErr] = useState('');
   const [place, setPlace] = useState<string | null>(null);
-  const load = () => getInventory().then(r => { if (r.ok) { setInv(r); setErr(''); } else setErr(r.message ?? 'Could not load.'); })
+  const load = () => api.get().then(r => { if (r.ok) { setInv(r); setErr(''); } else setErr(r.message ?? 'Could not load.'); })
     .catch(e => setErr(String(e)));
   useEffect(() => { void load(); }, []);
   if (err) return <p className="banner error">{err}</p>;
@@ -72,6 +88,7 @@ export function InventoryView({ canEdit }: { canEdit: boolean }) {
 
 /** One place: what the record says, what its units' cleans take, a count against it, its minimums and a quick move. */
 function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace; canEdit: boolean; onSaved: (i: Inventory) => void }) {
+  const api = useContext(InvApi);
   const items = inv.items.filter(i => i.active);
   const [mode, setMode] = useState<'view' | 'count' | 'mins'>('view');
   const [counts, setCounts] = useState<Record<string, string>>({});
@@ -82,7 +99,7 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
   const send = async (body: Record<string, unknown>, done: string) => {
     setBusy(true); setMsg('');
     try {
-      const r = await inventoryAction(body);
+      const r = await api.act(body);
       if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return false; }
       onSaved(r); setMsg(done); return true;
     } catch (e) { setMsg(String(e)); return false; } finally { setBusy(false); }
@@ -257,6 +274,7 @@ const linesOf = (ls: { itemId: string; place: string; qty: number }[]): Lines =>
  * Nothing changes the stock until the purchase is recorded.
  */
 function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean; onSaved: (i: Inventory) => void }) {
+  const api = useContext(InvApi);
   const suggested = useMemo(() => linesOf(inv.places.filter(p => p.place).flatMap(p => p.items.filter(l => l.toOrder > 0)
     .map(l => ({ itemId: l.itemId, place: p.place!, qty: l.toOrder })))), [inv]);
   const [order, setOrder] = useState<Lines>(() => new Map(suggested));
@@ -287,7 +305,7 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
         <button disabled={busy || !lines.length} onClick={async () => {
           setBusy(true); setMsg('');
           try {
-            const r = await inventoryAction({ action: 'order', lines, forTodo: forTodo || undefined });
+            const r = await api.act({ action: 'order', lines, forTodo: forTodo || undefined });
             if (!r.ok) setMsg(r.message ?? 'Not saved.');
             else { onSaved(r); setMsg(forTodo ? '✓ Order added to that to-do.' : '✓ Order created — a to-do in Operations → To-do.'); setForTodo(''); }
           } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
@@ -305,6 +323,7 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
  * each place's stock and reaches Costs (Restock) with the receipt.
  */
 function PurchaseForm({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory) => void }) {
+  const api = useContext(InvApi);
   const [todoId, setTodoId] = useState('');
   const [lines, setLines] = useState<Lines>(new Map());
   const [total, setTotal] = useState('');
@@ -326,7 +345,7 @@ function PurchaseForm({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory
       f.append('action', 'purchase'); f.append('lines', JSON.stringify(out)); f.append('total', total); f.append('note', note);
       if (todoId) f.append('todoId', todoId);
       for (const x of files) f.append('file', x);
-      const r = await inventoryUpload(f);
+      const r = await api.upload(f);
       if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
       onSaved(r); setMsg('✓ Purchase recorded: in the stock and in Costs (Restock).');
       setTodoId(''); setLines(new Map()); setTotal(''); setNote(''); setFiles([]);

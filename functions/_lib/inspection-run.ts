@@ -31,12 +31,12 @@ const RESULTS = new Set(['ok', 'attention', 'na']);
 const OUTCOMES = new Set(['repair', 'purchase', 'clean_next', 'clean_new', 'none']);
 
 export async function templateItems(sql: SqlFn): Promise<InspectionItem[]> {
-  const rows = await sql`SELECT id::text, area, label, default_outcome, applies_to, unit_ids, position, active FROM inspection_items
+  const rows = await sql`SELECT id::text, area, label, default_outcome, applies_to, unit_ids, position, active, supply_id::text FROM inspection_items
                           WHERE account_id = 1 ORDER BY area, position, id` as
     { id: string; area: Area; label: string; default_outcome: InspectionItem['defaultOutcome']; applies_to: InspectionItem['appliesTo'];
-      unit_ids: string[] | null; position: number; active: boolean }[];
+      unit_ids: string[] | null; position: number; active: boolean; supply_id: string | null }[];
   return rows.map(r => ({ id: r.id, area: r.area, label: r.label, defaultOutcome: r.default_outcome, appliesTo: r.applies_to,
-                          unitIds: r.unit_ids ?? [], position: r.position, active: r.active }));
+                          unitIds: r.unit_ids ?? [], position: r.position, active: r.active, supplyId: r.supply_id }));
 }
 
 /** The areas, in walking order — the team's own included (§138); switched-off ones too (the setup shows them). */
@@ -52,14 +52,17 @@ async function unitShape(sql: SqlFn, ins: { unit_id: string | null; bedrooms: nu
   return { id: ins.unit_id ?? '', type, bedrooms: ins.bedrooms, bathrooms: ins.bathrooms };
 }
 
-type CheckRow = Check & { id: string; todoId: string | null; cleanTaskId: string | null };
+type CheckRow = Check & { id: string; todoId: string | null; cleanTaskId: string | null; supplyId: string | null; supplyQty: number | null };
 async function checksOf(sql: SqlFn, inspectionId: string): Promise<CheckRow[]> {
-  const rows = await sql`SELECT id::text, item_id::text, area, area_n, label, result, note, photos, outcome, todo_id::text, clean_task_id::text
+  const rows = await sql`SELECT id::text, item_id::text, area, area_n, label, result, note, photos, outcome, todo_id::text, clean_task_id::text,
+                                supply_id::text, supply_qty::float
                            FROM inspection_checks WHERE account_id = 1 AND inspection_id = ${Number(inspectionId)} ORDER BY id` as
     { id: string; item_id: string | null; area: Area; area_n: number; label: string; result: CheckResult | null; note: string | null;
-      photos: { name: string; url: string }[]; outcome: Outcome | null; todo_id: string | null; clean_task_id: string | null }[];
+      photos: { name: string; url: string }[]; outcome: Outcome | null; todo_id: string | null; clean_task_id: string | null;
+      supply_id: string | null; supply_qty: number | null }[];
   return rows.map(r => ({ id: r.id, itemId: r.item_id, area: r.area, n: r.area_n, label: r.label, result: r.result, note: r.note,
-                          photos: r.photos ?? [], outcome: r.outcome, todoId: r.todo_id, cleanTaskId: r.clean_task_id } as CheckRow));
+                          photos: r.photos ?? [], outcome: r.outcome, todoId: r.todo_id, cleanTaskId: r.clean_task_id,
+                          supplyId: r.supply_id, supplyQty: r.supply_qty } as CheckRow));
 }
 
 async function inspectionRow(sql: SqlFn, id: string) {
@@ -238,6 +241,27 @@ export async function addFinding(sql: SqlFn, who: string, b: Record<string, unkn
   return c!.id;
 }
 
+/**
+ * What to buy for a finding to be bought (§150): a supply and how many — the
+ * checklist item's preset, or one picked with 🔍. Blank clears it (free text).
+ * The inspection's order then comes filled in, to the unit's place.
+ */
+export async function checkSupply(sql: SqlFn, who: string, b: Record<string, unknown>) {
+  const id = String(b.inspectionId ?? '');
+  await openRun(sql, id);
+  let supplyId: number | null = null, qty: number | null = null;
+  if (b.supplyId) {
+    const [s] = await sql`SELECT id FROM inventory_items WHERE account_id = 1 AND id = ${Number(b.supplyId)} AND active` as { id: number }[];
+    if (!s) throw new Error('Which item?');
+    qty = Math.ceil(Number(b.supplyQty) || 0);
+    if (qty < 1 || qty > 10000) throw new Error('How many?');
+    supplyId = s.id;
+  }
+  const r = await sql`UPDATE inspection_checks SET supply_id = ${supplyId}, supply_qty = ${qty}, updated_by = ${who}, updated_at = now()
+                       WHERE account_id = 1 AND inspection_id = ${Number(id)} AND id = ${Number(b.checkId)} RETURNING id` as unknown[];
+  if (!r.length) throw new Error('That finding is gone.');
+}
+
 export async function removeFinding(sql: SqlFn, b: Record<string, unknown>) {
   const id = String(b.inspectionId ?? '');
   await openRun(sql, id);
@@ -343,7 +367,11 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
 
   // Purchases: ONE to-do for all of them, an item per sub-task to tick off as it is bought.
   const buys = checks.filter(x => x.result === 'attention' && x.outcome === 'purchase' && !x.todoId);
-  const list = purchaseList(buys, { unit: ins.unit_name, date: ins.date, inspector }, title);
+  // §150: a supply and how many read on the to-do too ("Toilet paper × 4 — note").
+  const names = new Map((await invItems(sql)).map(i => [i.id, i.name]));
+  const shown = buys.map(c => c.supplyId && c.supplyQty && !c.label.startsWith(`${names.get(c.supplyId)} ×`)
+    ? { ...c, note: [`${names.get(c.supplyId) ?? 'supply'} × ${c.supplyQty}`, c.note].filter(Boolean).join(' — ') } : c);
+  const list = purchaseList(shown, { unit: ins.unit_name, date: ins.date, inspector }, title);
   if (list) {
     const [t] = await sql`
       INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, inspection_id)

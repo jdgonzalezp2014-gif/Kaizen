@@ -1883,7 +1883,7 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
 function ChecklistSetup() {
   const [data, setData] = useState<ChecklistSetupData | null>(null);
   const [msg, setMsg] = useState('');
-  const blankItem = { area: 'kitchen', label: '', defaultOutcome: 'repair', appliesTo: 'all' as AppliesTo, unitIds: [] as string[] };
+  const blankItem = { area: 'kitchen', label: '', defaultOutcome: 'repair', appliesTo: 'all' as AppliesTo, unitIds: [] as string[], supplyId: '' };
   const [draft, setDraft] = useState(blankItem);
   const [editing, setEditing] = useState<string | null>(null);
   const [edit, setEdit] = useState(blankItem);
@@ -1904,7 +1904,9 @@ function ChecklistSetup() {
   const where = (i: InspectionItem) => i.appliesTo === 'house' ? '🏠 houses' : i.appliesTo === 'apartment' ? '🏢 apartments'
     : i.appliesTo === 'units' ? `📍 ${i.unitIds.map(name).join(', ')}` : 'all units';
   const houses = units.filter(u => u.type === 'house'), flats = units.filter(u => u.type === 'apartment'), untyped = units.filter(u => !u.type);
-  const itemBody = (v: typeof blankItem) => ({ area: v.area, label: v.label, defaultOutcome: v.defaultOutcome, appliesTo: v.appliesTo, unitIds: v.unitIds });
+  const itemBody = (v: typeof blankItem) => ({ area: v.area, label: v.label, defaultOutcome: v.defaultOutcome, appliesTo: v.appliesTo, unitIds: v.unitIds,
+                                               supplyId: v.defaultOutcome === 'purchase' ? v.supplyId || null : null });
+  const supplyName = (id?: string | null) => id ? data.supplies.find(x => x.id === id)?.name ?? null : null;
   const ready = (v: typeof blankItem) => !!v.label.trim() && (v.appliesTo !== 'units' || v.unitIds.length > 0);
   return (
     <div className="card">
@@ -1942,7 +1944,7 @@ function ChecklistSetup() {
             <table className="units compact checklist-tbl"><tbody>
               {list.map(i => editing === i.id ? (
                 <tr key={i.id}><td colSpan={4}>
-                  <ItemFields v={edit} set={setEdit} areas={areas} units={units} OUT={OUT} />
+                  <ItemFields v={edit} set={setEdit} areas={areas} units={units} OUT={OUT} supplies={data.supplies} />
                   <div className="button-row">
                     <button className="small" disabled={!ready(edit)} onClick={async () => {
                       if (await send({ action: 'save', id: i.id, ...itemBody(edit), active: i.active }, 'Saved.')) setEditing(null);
@@ -1953,15 +1955,15 @@ function ChecklistSetup() {
               ) : (
                 <tr key={i.id} className={i.active ? undefined : 'muted-row'}>
                   <td>{i.label}{!i.active && <span className="sub-n"> · off</span>}</td>
-                  <td className="sub-n">{OUT[i.defaultOutcome]}</td>
+                  <td className="sub-n">{OUT[i.defaultOutcome]}{supplyName(i.supplyId) && <> · {supplyName(i.supplyId)}</>}</td>
                   <td className="sub-n">{where(i)}</td>
                   <td className="n">
                     <button className="link tiny" title="Up" onClick={() => void send({ action: 'move', id: i.id, dir: -1 })}>↑</button>
                     <button className="link tiny" title="Down" onClick={() => void send({ action: 'move', id: i.id, dir: 1 })}>↓</button>{' '}
-                    <button className="link tiny" onClick={() => { setEditing(i.id); setEdit({ area: i.area, label: i.label, defaultOutcome: i.defaultOutcome, appliesTo: i.appliesTo, unitIds: i.unitIds }); }}>edit</button>{' '}
+                    <button className="link tiny" onClick={() => { setEditing(i.id); setEdit({ area: i.area, label: i.label, defaultOutcome: i.defaultOutcome, appliesTo: i.appliesTo, unitIds: i.unitIds, supplyId: i.supplyId ?? '' }); }}>edit</button>{' '}
                     {i.active
                       ? <button className="link tiny danger" onClick={() => void send({ action: 'delete', id: i.id }, 'Removed.')}>remove</button>
-                      : <button className="link tiny" onClick={() => void send({ action: 'save', id: i.id, area: i.area, label: i.label, defaultOutcome: i.defaultOutcome, appliesTo: i.appliesTo, unitIds: i.unitIds, active: true }, 'Back on.')}>turn on</button>}
+                      : <button className="link tiny" onClick={() => void send({ action: 'save', id: i.id, area: i.area, label: i.label, defaultOutcome: i.defaultOutcome, appliesTo: i.appliesTo, unitIds: i.unitIds, supplyId: i.supplyId, active: true }, 'Back on.')}>turn on</button>}
                   </td>
                 </tr>
               ))}
@@ -1976,7 +1978,7 @@ function ChecklistSetup() {
         <div className="button-row"><button disabled={!newArea.trim()} onClick={async () => { if (await send({ action: 'areaSave', label: newArea }, 'Area added — at the end of the walk; move it with ↑.')) setNewArea(''); }}>Add area</button></div>
       </div>
       <h3>Add an item</h3>
-      <ItemFields v={draft} set={setDraft} areas={areas} units={units} OUT={OUT} />
+      <ItemFields v={draft} set={setDraft} areas={areas} units={units} OUT={OUT} supplies={data.supplies} />
       <div className="button-row">
         <button disabled={!ready(draft)} onClick={async () => {
           if (await send({ action: 'save', ...itemBody(draft) }, 'Added.')) setDraft(d => ({ ...d, label: '' }));
@@ -1989,9 +1991,10 @@ function ChecklistSetup() {
 }
 
 /** One item's fields: area, what to check, what a failure becomes, and where it applies. */
-function ItemFields({ v, set, areas, units, OUT }: {
-  v: { area: string; label: string; defaultOutcome: string; appliesTo: AppliesTo; unitIds: string[] };
+function ItemFields({ v, set, areas, units, OUT, supplies }: {
+  v: { area: string; label: string; defaultOutcome: string; appliesTo: AppliesTo; unitIds: string[]; supplyId: string };
   set: (f: (p: typeof v) => typeof v) => void; areas: AreaDef[]; units: ChecklistSetupData['units']; OUT: Record<string, string>;
+  supplies: ChecklistSetupData['supplies'];
 }) {
   const WHERE: Record<AppliesTo, string> = { all: 'All units', house: '🏠 Houses only', apartment: '🏢 Apartments only', units: '📍 Some units…' };
   const toggle = (id: string) => set(p => ({ ...p, unitIds: p.unitIds.includes(id) ? p.unitIds.filter(x => x !== id) : [...p.unitIds, id] }));
@@ -2002,6 +2005,10 @@ function ItemFields({ v, set, areas, units, OUT }: {
       <label>Check<input value={v.label} maxLength={200} placeholder="e.g. Hair dryer works" onChange={e => set(p => ({ ...p, label: e.target.value }))} /></label>
       <label>If it fails<select value={v.defaultOutcome} onChange={e => set(p => ({ ...p, defaultOutcome: e.target.value }))}>
         {Object.entries(OUT).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
+      {/* §150: a purchase item can preset its supply — the inspector then only says how many. */}
+      {v.defaultOutcome === 'purchase' && <label>Supply to buy<select value={v.supplyId} onChange={e => set(p => ({ ...p, supplyId: e.target.value }))}>
+        <option value="">— the inspector picks (🔍)</option>
+        {supplies.map(x => <option key={x.id} value={x.id}>{x.name} ({x.measure})</option>)}</select></label>}
       <label>Applies to<select value={v.appliesTo} onChange={e => set(p => ({ ...p, appliesTo: e.target.value as AppliesTo }))}>
         {APPLIES.map(k => <option key={k} value={k}>{WHERE[k]}</option>)}</select></label>
     </div>

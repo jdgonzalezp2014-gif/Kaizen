@@ -18,7 +18,7 @@ import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { linkFor } from '../_lib/inspect-link.ts';
-import { addFinding, addPhotos, allOk, finishRun, loadRun, pushMade, removeFinding, saveCheck, startRun } from '../_lib/inspection-run.ts';
+import { addFinding, addPhotos, allOk, checkSupply, finishRun, loadRun, pushMade, removeFinding, saveCheck, startRun } from '../_lib/inspection-run.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -48,6 +48,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       case 'check': return Response.json({ ok: true, checkId: await saveCheck(sql, who.email, b) });
       case 'allOk': return Response.json({ ok: true, added: await allOk(sql, who.email, b) });
       case 'add': return Response.json({ ok: true, checkId: await addFinding(sql, who.email, b) });
+      case 'supply': await checkSupply(sql, who.email, b); return Response.json({ ok: true });
       case 'remove': await removeFinding(sql, b); return Response.json({ ok: true });
       case 'link': return Response.json({ ok: true, ...(await linkFor(sql, env.ENCRYPTION_KEY, String(b.inspectionId ?? ''), new URL(request.url).origin)) });
       case 'finish': {

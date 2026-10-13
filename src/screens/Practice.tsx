@@ -7,10 +7,12 @@
  * Opened from the SOP panel on Inspections and Cleaners (`/#practice/<which>`).
  */
 import { useMemo, useState } from 'react';
-import type { CleanFieldState, CrewPage, CrewUpcoming, InspectionRunData, ReportTeam, RunCheck, SupplyItem, WorkPage } from '../api.ts';
+import type { CleanFieldState, CrewPage, CrewUpcoming, InspectionRunData, InvItemRow, Inventory, ReportTeam, RunCheck, SupplyItem, WorkPage } from '../api.ts';
 import { InspectionRun, type RunTransport } from '../components/InspectionRun.tsx';
 import { CrewHome, type PracticeCrew } from './Crew.tsx';
 import { ReportPage } from './Report.tsx';
+import { InventoryView, type InvTransport } from './Inventory.tsx';
+import { orderList, stockLevels, toOrder, type Move } from '../lib/inventory.ts';
 import { VendorHome, WorkLinkPage } from './Work.tsx';
 import {
   AREAS, areaTitle, checklistFor, overallResult, purchaseList, readyToFinish, roomsOf, suggestedOutcome, workFor,
@@ -21,18 +23,20 @@ import { addDays, todayIn } from '../lib/dates.ts';
 import type { UnitAccess } from '../lib/unit-access.ts';
 import type { Lang } from '../lib/crew-i18n.ts';
 
-export type PracticeWhich = 'inspection' | 'work-link' | 'vendor' | 'cleaner' | 'helper';
+export type PracticeWhich = 'inspection' | 'work-link' | 'vendor' | 'cleaner' | 'helper' | 'inventory';
 export const PRACTICE: Record<PracticeWhich, { en: string; es: string }> = {
   inspection: { en: '🔍 An inspection', es: '🔍 Una inspección' },
   'work-link': { en: '🔧 A repair — handyman with a link (no account)', es: '🔧 Una reparación — handyman con link (sin cuenta)' },
   vendor: { en: '🔧 A repair — handyman signed in (account)', es: '🔧 Una reparación — handyman con cuenta' },
   cleaner: { en: '🧹 The cleaner’s page', es: '🧹 La página del cleaner' },
-  helper: { en: '🧽 A helper’s link (sub cleaner)', es: '🧽 El link de un ayudante (sub cleaner)' }
+  helper: { en: '🧽 A helper’s link (sub cleaner)', es: '🧽 El link de un ayudante (sub cleaner)' },
+  inventory: { en: '📦 Inventory — count, order, record a purchase', es: '📦 Inventario — contar, pedir, registrar una compra' }
 };
 /** Which practices the SOP panel offers on each screen. */
 export const PRACTICE_FOR: Record<string, PracticeWhich[]> = {
   'operations.inspections': ['inspection', 'work-link', 'vendor'],
   'operations.crew': ['cleaner', 'helper'],
+  'operations.inventory': ['inventory'],
   'operations.calendar': ['cleaner', 'helper']
 };
 export const isPractice = (s: string): s is PracticeWhich => s in PRACTICE;
@@ -82,6 +86,7 @@ const ITEMS: [Area, DefaultOutcome, string, string][] = [
   ['bedroom', 'purchase', 'Sheets clean, no stains or tears', 'Sábanas limpias, sin manchas ni rotos'],
   ['bedroom', 'repair', 'Lamps, outlets and blinds work', 'Lámparas, enchufes y persianas funcionan'],
   ['bathroom', 'purchase', 'Towels complete and clean', 'Toallas completas y limpias'],
+  ['bathroom', 'purchase', 'Toilet paper stocked', 'Papel higiénico surtido'],
   ['bathroom', 'clean', 'Toilet, shower and sink clean', 'Inodoro, ducha y lavamanos limpios'],
   ['bathroom', 'repair', 'Hot water and good pressure', 'Agua caliente y buena presión'],
   ['exterior', 'clean', 'Patio clean, furniture in place', 'Patio limpio, muebles en su lugar'],
@@ -91,7 +96,9 @@ const ITEMS: [Area, DefaultOutcome, string, string][] = [
 function inspectionTransport(lang: Lang): RunTransport {
   const today = todayIn(TZ);
   const items: InspectionItem[] = ITEMS.map(([area, out, en, es], i) => ({
-    id: String(i + 1), area, label: lang === 'es' ? es : en, defaultOutcome: out, appliesTo: 'all', unitIds: [], position: i, active: true
+    id: String(i + 1), area, label: lang === 'es' ? es : en, defaultOutcome: out, appliesTo: 'all', unitIds: [], position: i, active: true,
+    // §150: a purchase item with its supply preset — the inspector only says how many.
+    supplyId: en === 'Toilet paper stocked' ? 's1' : null
   }));
   const areas: AreaDef[] = [...AREAS, { key: 'pool', label: 'Pool & hot tub', perRoom: false }]
     .map((a, i) => ({ ...a, label: lang === 'es' ? AREA_ES[a.key] ?? a.label : a.label, position: i + 1, active: true }));
@@ -147,6 +154,11 @@ function inspectionTransport(lang: Lang): RunTransport {
         return r({ checkId: c.id });
       }
       if (b.action === 'remove') { checks = checks.filter(c => c.id !== String(b.checkId)); return r({}); }
+      if (b.action === 'supply') {
+        const c = checks.find(x => x.id === String(b.checkId));
+        if (c) { c.supplyId = b.supplyId ? String(b.supplyId) : null; c.supplyQty = b.supplyId ? Math.ceil(Number(b.supplyQty) || 1) : null; }
+        return r({});
+      }
       if (b.action === 'finish') {
         const ready = readyToFinish(checks);
         if (!ready.ok) return { ok: false as const, message: `Choose what ${ready.undecided.length} finding(s) become.` };
@@ -354,11 +366,99 @@ function helperPractice(): { team: ReportTeam; post: (f: Record<string, string>,
   };
 }
 
+/* ── the team's inventory (§150) ─────────────────────────────────── */
+
+/**
+ * Operations → Inventory with example places — two storages and a house's
+ * closet — some counted, a "not found" report, a field request and a problem
+ * to attach an order to. Counting, minimums, orders (split by place) and
+ * purchases all work, on the same pure rules as the real one.
+ */
+function inventoryPractice(): InvTransport {
+  const today = todayIn(TZ);
+  const items: InvItemRow[] = SUPPLIES.map((x, i) => ({ ...x, category: x.category.toLowerCase(), measure: x.measure.replace(/s$/, ''),
+    perClean: [2, 1, 3, 0.25, 1, 6][i] ?? 1, reorderAt: [12, 4, 10, 1, 2, 24][i] ?? 2, active: true }));
+  const S100 = 'practice/S100', S200 = 'practice/S200', HOUSE = 'practice/HOUSE';
+  const places = [
+    { place: S100, name: 'S100 Storage (practice)', self: false,
+      units: [{ id: 'practice-loft', name: LOFT, recordId: null, cleansAhead: 4 }, { id: 'practice-apt', name: '🧪 Practice Apt 2', recordId: null, cleansAhead: 3 }] },
+    { place: S200, name: 'S200 Storage (practice)', self: false, units: [] },
+    { place: HOUSE, name: UNIT, self: true, units: [{ id: 'practice', name: UNIT, recordId: null, cleansAhead: 2 }] }
+  ];
+  let seq = 0;
+  const at = (day: string) => `${day} 09:${String(10 + (seq++ % 50)).padStart(2, '0')}:00`;
+  const mv = (kind: Move['kind'], itemId: string, place: string, qty: number, day: string, unitId: string | null = null, byName = 'Practice team'): Move & { note?: string } =>
+    ({ itemId, place, unitId, kind, qty, at: at(day), byName, source: unitId ? 'cleaner' : 'team' });
+  const moves: (Move & { note?: string })[] = [
+    mv('count', 's1', S100, 30, addDays(today, -6)), mv('count', 's6', S100, 40, addDays(today, -6)), mv('count', 's3', S100, 8, addDays(today, -6)),
+    mv('taken', 's1', S100, 4, addDays(today, -3), 'practice-loft', 'Practice cleaner'), mv('taken', 's6', S100, 6, addDays(today, -3), 'practice-loft', 'Practice cleaner'),
+    mv('count', 's1', HOUSE, 6, addDays(today, -5)), mv('missing', 's6', HOUSE, 0, addDays(today, -1), 'practice', 'Practice cleaner')
+  ];
+  const mins = new Map<string, number>();
+  const orders: Inventory['orders'] = [];
+  const fieldTodos: Inventory['fieldTodos'] = [
+    { id: 'pt1', title: `Supplies requested — clean of ${LOFT} on ${addDays(today, -1)}`, group: 'request' },
+    { id: 'pt2', title: `Problem at ${UNIT}: Broken blind`, group: 'problem' }
+  ];
+  const nameOf = (key: string | null) => places.find(p => p.place === key)?.name ?? '▲ no place';
+  const view = (): { ok: true } & Inventory => {
+    const levels = stockLevels(moves);
+    return { ok: true, items: clone(items), aheadDays: 14, windowDays: 60, unassigned: [], orders: clone(orders), fieldTodos: clone(fieldTodos),
+      places: places.map(p => ({ ...clone(p), items: items.map(i => {
+        const l = levels.get(`${i.id}|${p.place}`);
+        const need = p.units.reduce((a, u) => a + (i.perClean ?? 0) * u.cleansAhead, 0);
+        const own = mins.get(`${i.id}|${p.place}`);
+        const min = own ?? i.reorderAt;
+        return { itemId: i.id, qty: l?.qty ?? null, countedAt: l?.countedAt ?? null, missingSince: l?.missingSince ?? null,
+                 perClean: i.perClean, learned: false, reportedCleans: 0, need: Math.ceil(need), min, minOwn: own !== undefined,
+                 toOrder: toOrder(l?.countedAt ? l.qty : null, need, min) };
+      }) })),
+      recent: [...moves].reverse().map((m, k) => ({ id: String(k), item: items.find(i => i.id === m.itemId)?.name ?? '', place: nameOf(m.place),
+        unit: places.flatMap(p => p.units).find(u => u.id === m.unitId)?.name ?? null, kind: m.kind, qty: m.qty, note: m.note ?? null,
+        byName: m.byName ?? '', source: (m.source ?? 'team') as 'team', photos: [], at: m.at.slice(0, 16) })) };
+  };
+  const fail = (message: string) => ({ ok: false as const, message });
+  const act = async (b: Record<string, unknown>) => {
+    await sleep();
+    const place = String(b.place ?? '');
+    if (b.action === 'count') for (const c of (b.counts as { itemId: string; qty: string }[])) moves.push(mv('count', c.itemId, place, Number(c.qty), today));
+    else if (b.action === 'mins') for (const m of (b.mins as { itemId: string; qty: string }[])) {
+      if (m.qty === '') mins.delete(`${m.itemId}|${place}`); else mins.set(`${m.itemId}|${place}`, Number(m.qty));
+    } else if (b.action === 'move') {
+      if (!b.itemId || !Number(b.qty)) return fail('How many?');
+      moves.push({ ...mv(b.kind as Move['kind'], String(b.itemId), place, Number(b.qty), today), note: String(b.note ?? '') || undefined });
+    } else if (b.action === 'order') {
+      const lines = b.lines as { itemId: string; place: string; qty: number }[];
+      const list = orderList(lines.map(l => ({ item: items.find(i => i.id === l.itemId)!, place: nameOf(l.place), qty: l.qty })));
+      if (!list) return fail('Nothing to order.');
+      const t = b.forTodo ? fieldTodos.find(x => x.id === b.forTodo) : null;
+      const had = t ? orders.find(o => o.todoId === t.id) : null;
+      if (had) had.lines.push(...lines);
+      else orders.unshift({ todoId: t?.id ?? `po${orders.length + 1}`, title: t?.title ?? list.title, lines: clone(lines), at: today, purchases: 0 });
+    } else return fail('Unknown action.');
+    return view();
+  };
+  return {
+    get: async () => { await sleep(); return view(); },
+    act,
+    upload: async f => {
+      await sleep();
+      const lines = JSON.parse(String(f.get('lines') ?? '[]')) as { itemId: string; place: string; qty: number }[];
+      if (!(Number(f.get('total')) > 0)) return fail('Write the total you paid.');
+      for (const l of lines) moves.push({ ...mv('purchase', l.itemId, l.place, l.qty, today), note: String(f.get('note') ?? '') || undefined });
+      const o = orders.find(x => x.todoId === f.get('todoId'));
+      if (o) o.purchases++;
+      return view();
+    }
+  };
+}
+
 /* ── the page ─────────────────────────────────────────────────────── */
 
 export function PracticePage({ which }: { which: PracticeWhich }) {
   const crew = useMemo(crewPractice, []);
   const helper = useMemo(helperPractice, []);
+  const inventory = useMemo(inventoryPractice, []);
   return (
     <main>
       <p className="banner warn practice-banner">🧪 <b>Practice — nothing here is real.</b> Example data; nothing is saved or sent (no Hostaway, Slack or Drive). Reload to start over.
@@ -368,6 +468,7 @@ export function PracticePage({ which }: { which: PracticeWhich }) {
       {which === 'vendor' && <VendorPractice />}
       {which === 'cleaner' && <CrewHome practice={crew} />}
       {which === 'helper' && <ReportPage token={null} practice={helper} />}
+      {which === 'inventory' && <InventoryView canEdit api={inventory} />}
     </main>
   );
 }

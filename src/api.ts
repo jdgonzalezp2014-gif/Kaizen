@@ -588,6 +588,8 @@ import type { Area, AreaDef, CheckResult, InspectionItem, Outcome, Section, Unit
 export interface RunCheck {
   id: string; itemId: string | null; area: Area; n: number; label: string; result: CheckResult | null;
   note: string | null; photos: { name: string; url: string }[]; outcome: Outcome | null;
+  /** §150: what to buy, when it is bought — a supply and how many. */
+  supplyId?: string | null; supplyQty?: number | null;
   todoId?: string | null; cleanTaskId?: string | null;
 }
 export interface InspectionRunData {
@@ -632,7 +634,8 @@ export async function inspectPhotos(token: string, reporter: string, checkId: st
 export interface InspectionLink { link: string; unit: string; date: string; expires: string }
 export const inspectionLinkFor = (inspectionId: string) => runAction<InspectionLink>({ action: 'link', inspectionId });
 /** The checklist setup (§138): items, areas, and the active units with house/apartment from the Repository. */
-export interface ChecklistSetupData { ok: true; items: InspectionItem[]; areas: AreaDef[]; units: { id: string; name: string; type: UnitType }[]; switchedOff?: boolean }
+export interface ChecklistSetupData { ok: true; items: InspectionItem[]; areas: AreaDef[]; units: { id: string; name: string; type: UnitType }[]; switchedOff?: boolean;
+  /** §150: what a "purchase" item can preset. */ supplies: { id: string; name: string; measure: string }[] }
 export const getInspectionItems = () => call<ChecklistSetupData | Fail>('/api/inspection-items');
 export const saveInspectionItem = (body: Record<string, unknown>) =>
   call<ChecklistSetupData | Fail>('/api/inspection-items', { method: 'POST', body: JSON.stringify(body) });

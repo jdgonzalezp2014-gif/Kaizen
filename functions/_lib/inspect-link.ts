@@ -24,7 +24,7 @@
 import type { SqlFn } from './accounts.ts';
 import { decrypt, encrypt } from './crypto.ts';
 import { newToken, sha256 } from './crew.ts';
-import { addFinding, addPhotos, allOk, loadRun, removeFinding, saveCheck } from './inspection-run.ts';
+import { addFinding, addPhotos, allOk, checkSupply, loadRun, removeFinding, saveCheck } from './inspection-run.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
 import { progress } from '../../src/lib/inspection.ts';
 
@@ -128,6 +128,7 @@ export async function inspectPost(sql: SqlFn, encryptionKey: string, request: Re
       case 'check': extra = { checkId: await saveCheck(sql, who, body) }; break;
       case 'allOk': await allOk(sql, who, body); break;
       case 'add': extra = { checkId: await addFinding(sql, who, body) }; break;
+      case 'supply': await checkSupply(sql, who, body); break;
       case 'remove': await removeFinding(sql, body); break;
       case 'photo': await addPhotos(sql, encryptionKey, who, l.id, String(b.checkId ?? ''), files); break;
       case 'send': {

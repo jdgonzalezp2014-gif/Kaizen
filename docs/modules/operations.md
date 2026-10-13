@@ -257,7 +257,12 @@ key had no SOPs.
   purchase (from an open order, filled in, or from scratch; total + receipt) → a `purchase` move per line and
   place + ONE Restock expense (`purchase-<id>`) + a note on the order; the team closes the order. The only way
   stock goes up from buying. The inspector's 🛒 Purchase has the same 🔍 (supply + how many) → the inspection's
-  to-do is an order filled in, to the unit's place.
+  to-do is an order filled in, to the unit's place. A checklist item that is bought can PRESET its supply
+  (Setup → Inspection checklist → "Supply to buy", 071 `inspection_items.supply_id`): failed, the inspector is
+  only asked "how many?" (no preset → optional 🔍); blank = buy what the note says.
+- **Practice → 📦 Inventory** (`/#practice/inventory`, the SOP panel on Inventory): the real screen over an
+  in-browser transport (`InvTransport`, `inventoryPractice` in Practice.tsx) — two storages and a house closet,
+  counts, a "not found", a field request and a problem to attach an order to; nothing leaves the browser.
 - **Cleaners speak, the team records (§150).** "I bought something" = their words + total + receipt → a pending
   field expense, no stock; approved ONLY via "✓ Approve — record in inventory" (items, places) in Operations →
   Cleaners → `recordPurchase`. A clean's reports are THREE kinds of to-do (070 `todos.clean_key/clean_group`):

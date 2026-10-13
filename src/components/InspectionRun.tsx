@@ -105,6 +105,14 @@ export function InspectionRun({ id, onClose, canEdit, transport, link = false }:
     const r = await tr.act({ action: 'check', inspectionId: ins.id, checkId: c.id, ...patch }).catch(() => null);
     if (!r?.ok) fail(r && !r.ok ? r.message : undefined); else setErr('');
   };
+  // §150: what to buy for a finding — a supply and how many (null clears it).
+  const setSupply = async (c: RunCheck | undefined, supplyId: string | null, supplyQty: number | null) => {
+    if (!c?.id) return;
+    patchLocal(checkKey(c), { supplyId, supplyQty });
+    changed.current = true;
+    const r = await tr.act({ action: 'supply', inspectionId: ins.id, checkId: c.id, supplyId: supplyId ?? '', supplyQty: supplyQty ?? '' }).catch(() => null);
+    if (!r?.ok) fail(r && !r.ok ? r.message : undefined); else setErr('');
+  };
   const photos = async (checkId: string, files: FileList | null) => {
     if (!files?.length) return;
     setErr('Uploading the photo…');
@@ -186,13 +194,15 @@ export function InspectionRun({ id, onClose, canEdit, transport, link = false }:
                     <button className="link tiny" onClick={() => void allOk(s)}>✓ Everything else here is OK</button>}
                   {s.items.map(i => {
                     const c = byKey.get(`${i.id}:${s.n}`);
-                    return <ItemRow key={i.id} label={i.label} c={c} readOnly={readOnly}
+                    return <ItemRow key={i.id} label={i.label} c={c} readOnly={readOnly} buy={{ supplies: data.supplies ?? [], preset: i.supplyId ?? null }}
+                                    onSupply={(sid, n) => void setSupply(c, sid, n)}
                                     onResult={r => void answer(s, i.id, i.label, { result: r })}
                                     onNote={t => c?.id ? void saveExisting(c, { note: t }) : void answer(s, i.id, i.label, { note: t })}
                                     onPhotos={async files => { const id2 = c?.id || await answer(s, i.id, i.label, { result: 'attention' }); if (id2) await photos(id2, files); }} />;
                   })}
                   {extra.map(c => (
                     <ItemRow key={c.id} label={`${c.label} (added)`} c={c} readOnly={readOnly} adhoc
+                             buy={{ supplies: data.supplies ?? [], preset: null }} onSupply={(sid, n) => void setSupply(c, sid, n)}
                              onResult={() => {}} onNote={t => void saveExisting(c, { note: t })} onPhotos={files => photos(c.id, files)}
                              onRemove={async () => { await tr.act({ action: 'remove', inspectionId: ins.id, checkId: c.id }); changed.current = true; await load(); }} />
                   ))}
@@ -221,8 +231,11 @@ export function InspectionRun({ id, onClose, canEdit, transport, link = false }:
 }
 
 /** One checklist item: three buttons, and — when it needs attention — a note, a photo and the decision. */
-function ItemRow({ label, c, readOnly, adhoc, onResult, onNote, onPhotos, onRemove }: {
+function ItemRow({ label, c, readOnly, adhoc, onResult, onNote, onPhotos, onRemove, buy, onSupply }: {
   label: string; c: RunCheck | undefined; readOnly: boolean; adhoc?: boolean;
+  /** §150: the supplies and this item's preset — a finding to be bought asks how many. */
+  buy?: { supplies: { id: string; name: string; measure: string }[]; preset: string | null };
+  onSupply?: (supplyId: string | null, qty: number | null) => void;
   onResult: (r: 'ok' | 'attention' | 'na') => void; onNote: (t: string) => void;
   onPhotos: (files: FileList | null) => void | Promise<void>; onRemove?: () => void;
 }) {
@@ -255,8 +268,50 @@ function ItemRow({ label, c, readOnly, adhoc, onResult, onNote, onPhotos, onRemo
             {!readOnly && onRemove && <button className="link tiny danger" onClick={onRemove}>remove</button>}
           </div>
           {c?.outcome && <div className="sub-n">→ {OUTCOME_LABEL[c.outcome]}</div>}
+          {c?.outcome === 'purchase' && buy && onSupply && <BuyQty key={c.id} c={c} readOnly={readOnly} {...buy} onSave={onSupply} />}
         </div>
       )}
+    </div>
+  );
+}
+
+/**
+ * A finding to be bought (§150, owner): how many of the item's preset supply —
+ * or, with no preset, 🔍 one (optional; blank = what the note says). Saved on
+ * leaving the box; the inspection's order then comes filled in.
+ */
+function BuyQty({ c, readOnly, supplies, preset, onSave }: {
+  c: RunCheck; readOnly: boolean; supplies: { id: string; name: string; measure: string }[]; preset: string | null;
+  onSave: (supplyId: string | null, qty: number | null) => void;
+}) {
+  const [chosen, setChosen] = useState<string | null>(c.supplyId ?? preset);
+  const [qty, setQty] = useState(c.supplyQty ? String(c.supplyQty) : '');
+  const [q, setQ] = useState('');
+  const sup = supplies.find(x => x.id === chosen);
+  if (!sup) {
+    if (readOnly) return null;
+    const hits = q.trim() ? supplies.filter(x => x.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 6) : [];
+    return (
+      <div className="insp-buy">
+        <input value={q} placeholder="🛒 🔍 Which supply? (optional)" onChange={e => setQ(e.target.value)} />
+        {hits.length > 0 && <div className="button-row">{hits.map(h =>
+          <button key={h.id} className="small secondary" onClick={() => { setChosen(h.id); setQ(''); }}>+ {h.name}</button>)}</div>}
+      </div>
+    );
+  }
+  const commit = () => {
+    const n = Math.ceil(Number(qty));
+    if (n >= 1 && (sup.id !== c.supplyId || n !== c.supplyQty)) onSave(sup.id, n);
+    if (!qty && c.supplyId) onSave(null, null);
+  };
+  return (
+    <div className="insp-buy row" style={{ gap: 6, alignItems: 'center' }}>
+      <span>🛒 How many <b>{sup.name}</b>?</span>
+      <input className="inv-qty" type="number" min="1" step="1" inputMode="numeric" value={qty} disabled={readOnly} aria-label={`How many ${sup.name}`}
+             onChange={e => setQty(e.target.value)} onBlur={commit} />
+      <span className="sub-n">{sup.measure.replace(/s?$/, 's')}</span>
+      {!readOnly && chosen !== preset && <button className="link tiny" onClick={() => { setChosen(preset); setQty(''); if (c.supplyId) onSave(null, null); }}>✕ not this</button>}
+      {!qty && <span className="sub-n">blank = buy what the note says</span>}
     </div>
   );
 }

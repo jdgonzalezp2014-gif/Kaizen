@@ -49,6 +49,8 @@ export interface InspectionItem {
   /** With appliesTo `units`: which. */
   unitIds: string[];
   position: number; active: boolean;
+  /** §150: the supply bought when it fails — the inspector then only says how many. */
+  supplyId?: string | null;
 }
 
 export interface UnitShape { id: string; type?: UnitType; bedrooms: number | null; bathrooms: number | null }
