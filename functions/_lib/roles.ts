@@ -65,11 +65,12 @@ export const PERMISSIONS: Permission[] = [
   { key: 'guests.documents', label: 'Guest documents — see and upload IDs and rental agreements', routes: [
     { path: '/api/guest-docs', methods: ['POST'] }, { path: '/api/guest-docs-upload', methods: ['POST'] }] },
   { key: 'repository', label: 'Repository — look up records and documents', tab: 'repository', routes: [
-    { path: '/api/repository', methods: ['GET'] }] },
+    { path: '/api/repository', methods: ['GET'] }, { path: '/api/repository-check', methods: ['GET'] }] },
   { key: 'repository.reveal', label: 'Repository — reveal passwords (each reveal is logged)', routes: [
     { path: '/api/repository-reveal', methods: ['POST'] }] },
   { key: 'repository.edit', label: 'Repository — add and edit records, upload and remove documents', routes: [
-    { path: '/api/repository-edit', methods: ['POST'] }, { path: '/api/repository-upload', methods: ['POST'] }] },
+    { path: '/api/repository-edit', methods: ['POST'] }, { path: '/api/repository-upload', methods: ['POST'] },
+    { path: '/api/repository-check', methods: ['POST'] }] },
   { key: 'repository.structure', label: 'Repository — sections, tables and columns', routes: [
     { path: '/api/repository-structure', methods: ['POST'] }, { path: '/api/repository-import', methods: ['POST'] }] },
   { key: 'costs', label: 'Costs — record expenses, see cleaning costs', tab: 'costs', routes: [

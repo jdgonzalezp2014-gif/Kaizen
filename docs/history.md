@@ -3863,3 +3863,18 @@ of a leasing office: "dejar el número y contactarlos", the POC). Cortland has O
 apartment row points to it; houses' storage stays blank; P2 pending. The list disagrees with Hostaway's
 Wi-Fi on 5 listings (repository.md open items) — Hostaway is what guests and cleaners get first, so it
 needs the owner's word before it is changed. One-off script, backup first, audit row per record.
+
+## §149 — Repository ⇄ Hostaway check: Wi-Fi and guest cleaning fee (2026-10-13)
+
+The owner: "una sección simple para validar que el wifi haga match o actualizarlo si no; lo mismo ver que
+tengan los mismos cleaning fee para accounting; déjalo abierto para añadir más datos". Repository →
+"⇄ Check against Hostaway": active units × CHECKS (`src/lib/repo-checks.ts`, pure and tested), each side
+shown, and two ways to agree — copy Hostaway's into the record, or send the record's to the listing
+(confirmed in place, read back, logged in `listing_text_changes`). Kept generic on purpose: a check is a
+list of (Repository column, Hostaway listing field, text|money); the next one is one entry. Capitals-only
+differences are their own state (an SSID is case-sensitive, but the owner left P2-4212 that way).
+"Cleaning fee" here is the GUEST charge (Hostaway `cleaningFee`, revenue) — not `units.cleaning_fee`, the
+cleaner's pay; a new Repository column `cleaning_fee` holds it, baseline copied from Hostaway, so a later
+change on either side shows. Used on real data the same day: "créele a Hostaway" → 8 records took
+Hostaway's Wi-Fi through the screen's own endpoint; P2-4315 was sent to Hostaway (it showed 4212's
+network) and read back. New lib function `updateListingFields` (hostaway.ts): partial PUT + read-back.

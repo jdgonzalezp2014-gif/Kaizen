@@ -6,13 +6,14 @@ records, encrypted secrets, files in Drive. Tab **Repository**.
 ## Files
 
 - Screen: `src/screens/Repository.tsx` (grid, header menus, record side panel, phone list,
-  Monday import), `src/components/usePhone.ts`.
+  Monday import), `src/components/usePhone.ts`, `src/components/HostawayCheck.tsx` (§149).
 - API: `repository.ts` (read), `repository-edit.ts`, `repository-structure.ts`,
-  `repository-reveal.ts`, `repository-upload.ts`, `repository-import.ts`,
+  `repository-reveal.ts`, `repository-upload.ts`, `repository-import.ts`, `repository-check.ts` (§149),
   `google-drive.ts`, `google-callback.ts`.
 - Server libs: `repo-store.ts`, `gdrive.ts`, `repository.ts` (old Apps Script API — only for the
   one-time import).
-- Pure libs: `src/lib/repo.ts` (IDs, validation, `coerce`), `repo-import.ts` (Monday export parsing).
+- Pure libs: `src/lib/repo.ts` (IDs, validation, `coerce`), `repo-import.ts` (Monday export parsing),
+  `repo-checks.ts` (CHECKS, runCheck, writePlan — §149).
 - Script: `scripts/import-repository.mjs` (`npm run import:repository`, `--dry`, `--replace`).
 
 ## Tables
@@ -78,6 +79,16 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   Timbercrest, Quest, Concord. Houses do not need the building block (floor, bldg, building link, lease
   portal) — their POC is the manager or landlord.
 
+- **Check against Hostaway (§149):** sidebar "⇄ Check against Hostaway" → per active unit and check, the
+  Repository value beside the live listing (● same · ◐ capitals differ · ▲ different · ○ missing). Editors:
+  "← Use Hostaway's" (writes the record, audited by field name, never the values) or "Send to Hostaway →"
+  (asked in place — guests see it; PUT, read back, before/after in `listing_text_changes`; Wi-Fi also
+  refreshes `units.wifi_*` so cleaners get it before the next sync). Checks today: Wi-Fi (`wifi_network` +
+  `password_2` ↔ wifiUsername/wifiPassword) and guest cleaning fee (`cleaning_fee` ↔ cleaningFee, for
+  accounting; baseline copied from Hostaway 2026-10-13). **A new check = one entry in `CHECKS`** (+ its
+  Hostaway field in `HOSTAWAY_FIELD` and the column in the three Units tables). GET `repository`, POST
+  `repository.edit`. Owner rule: Hostaway is right unless said otherwise.
+
 ## Open items — Units data (owner, 2026-10-13; first two first)
 
 1. **Admin / backup codes:** admin missing on Bobcat, Napa Valley, Timber Crest and the 8 P2; backup
@@ -87,12 +98,12 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
 3. **P2 storage:** which Storage row (S2101 / S1105 / S4116, "Back up fobs") each LP unit uses — pending.
 4. **Closet codes (houses):** confirm Preston Vineyard / Napa Valley / Amber Valley, fill the rest.
 5. **POC:** Preston Vineyard and Bobcat have none.
-6. **Hostaway Wi-Fi ≠ the owner's list** (guest-facing, not changed): CL2260, Preston Vineyard, Napa
-   Valley (Hostaway "InternetConnection"), P2-4315 (Hostaway shows "4212wifi"), P2-4212 (case only).
-   No Wi-Fi in the list for P2-1201, 1406, 4304, 4308, 4323 (Hostaway has it).
+6. **Wi-Fi settled (§149):** Hostaway kept for CL2260, Preston Vineyard, Napa Valley, Concord and P2 1201/
+   1406/4304/4308; P2-4315 fixed in Hostaway (4315WiFi). P2-4212 left as is (capitals differ: the owner's
+   call). Bobcat has no guest cleaning fee in Hostaway.
 7. **Parking and lost key/fob fee per house** — no rush.
 - The old Apps Script link/key in Settings can be cleared now the import is confirmed.
 
 ## History
 
-§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147, §148.
+§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147, §148, §149.

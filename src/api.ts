@@ -690,6 +690,18 @@ export const repoStructure = (body: Record<string, unknown>) =>
   call<{ ok: true; data: any } | { ok: false; message?: string }>('/api/repository-structure', {
     method: 'POST', body: JSON.stringify(body)
   });
+/* §149: Repository → Units against the live Hostaway listings. */
+export interface RepoCheckDef { key: string; label: string; note: string; fields: string[] }
+export interface RepoCheckUnit {
+  unitId: string; unit: string; table: string | null; recordId: string | null; record: string | null;
+  checks: import('./lib/repo-checks.ts').CheckResult[];
+}
+export const getRepoCheck = () =>
+  call<{ ok: true; checks: RepoCheckDef[]; units: RepoCheckUnit[] } | { ok: false; message?: string }>('/api/repository-check');
+export const fixRepoCheck = (body: { unitId: string; check: string; to: 'repository' | 'hostaway' }) =>
+  call<{ ok: true; unit: RepoCheckUnit } | { ok: false; message?: string }>('/api/repository-check', {
+    method: 'POST', body: JSON.stringify(body)
+  });
 /** A file to Drive, through Kaizen (§72). Multipart, so not through `call`'s JSON headers. */
 export async function uploadRepoFile(table: string, id: string, column: string, file: File) {
   const form = new FormData();

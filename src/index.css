@@ -2017,3 +2017,22 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .practice-banner { line-height: 1.5; }
 .sop-practice { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 8px; }
 .sop-practice .sop-row { display: flex; flex-direction: column; gap: 2px; text-decoration: none; color: inherit; }
+
+/* §149 Repository → Check against Hostaway */
+.hc-head { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin: 0 0 6px; }
+.hc-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-right: auto; }
+.hc-only { white-space: nowrap; font-size: 13px; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.hc-note { margin: 0 0 10px; }
+.hc-list { display: grid; gap: 8px; }
+.hc-row { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px;
+  display: flex; flex-wrap: wrap; gap: 8px 18px; align-items: flex-start; }
+.hc-unit { display: grid; gap: 2px; min-width: 150px; }
+.hc-sides { display: flex; flex-wrap: wrap; gap: 6px 22px; flex: 1 1 260px; min-width: 0; }
+.hc-field { display: grid; gap: 2px; min-width: 0; font-size: 13px; }
+.hc-field code { overflow-wrap: anywhere; }
+.hc-diff code { color: var(--amber); font-weight: 600; }
+.hc-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: auto; }
+.hc-ask { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: 13px; color: var(--amber); }
+.hc-ok { color: var(--green); font-weight: 600; font-size: 13px; }
+.hc-warn { color: var(--amber); font-weight: 600; font-size: 13px; }
+.hc-gap { color: var(--muted); font-weight: 600; font-size: 13px; }

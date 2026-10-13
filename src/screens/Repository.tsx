@@ -32,6 +32,7 @@ import {
 import { proposeColumns, readBoard, type Board, type ProposedColumn } from '../lib/repo-import.ts';
 import { coerce, type ColumnType } from '../lib/repo.ts';
 import { usePhone } from '../components/usePhone.ts';
+import { HostawayCheck } from '../components/HostawayCheck.tsx';
 
 interface Can { reveal: boolean; edit: boolean; structure: boolean }
 type DocEntry = { folderUrl: string; files: RepoFile[]; truncated?: boolean };
@@ -170,6 +171,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const [pop, setPop] = useState<Pop | null>(null);
   const [editing, setEditing] = useState<string | null>(null);   // `${id}|${col}`
   const [importing, setImporting] = useState<string | null>(null); // section key, while a Monday board is being imported
+  const [checking, setChecking] = useState(false); // §149: the Hostaway check fills the main pane
   const [say, toast] = useToast();
   const searchRef = useRef<HTMLInputElement>(null);
 
@@ -302,8 +304,8 @@ export function Repository({ canReveal, canEdit, canStructure }: {
                 onClick={e => setPop({ kind: 'newtable', rect: e.currentTarget.getBoundingClientRect(), section: s })}>+</button>}
             </div>
             {s.tables.map(t => (
-              <div key={t.key} className={`rb-nav-item ${!hits && tableKey === t.key ? 'active' : ''}`}>
-                <button className="rb-nav-link" onClick={() => { setHits(null); setImporting(null); setFilter(''); setTableKey(t.key); }}>
+              <div key={t.key} className={`rb-nav-item ${!checking && !hits && tableKey === t.key ? 'active' : ''}`}>
+                <button className="rb-nav-link" onClick={() => { setHits(null); setImporting(null); setChecking(false); setFilter(''); setTableKey(t.key); }}>
                   {t.title}
                   {rowsBy[t.key] && <span className="rb-nav-count">{rowsBy[t.key]!.length}</span>}
                 </button>
@@ -319,9 +321,9 @@ export function Repository({ canReveal, canEdit, canStructure }: {
               <span>{showArchive ? '▾' : '▸'} Archive · {archived.length}</span>
             </button>
             {showArchive && archived.map(t => (
-              <div key={t.key} className={`rb-nav-item ${!hits && tableKey === t.key ? 'active' : ''}`}>
+              <div key={t.key} className={`rb-nav-item ${!checking && !hits && tableKey === t.key ? 'active' : ''}`}>
                 <button className="rb-nav-link" title={`${t.sectionTitle} · archived ${t.archivedAt.slice(0, 10)}`}
-                        onClick={() => { setHits(null); setImporting(null); setFilter(''); setTableKey(t.key); }}>
+                        onClick={() => { setHits(null); setImporting(null); setChecking(false); setFilter(''); setTableKey(t.key); }}>
                   {t.title}<span className="rb-nav-count">{t.sectionTitle}</span>
                 </button>
               </div>
@@ -330,20 +332,21 @@ export function Repository({ canReveal, canEdit, canStructure }: {
         )}
         {canStructure && <button className="rb-add-link" onClick={e => setPop({ kind: 'newsection', rect: e.currentTarget.getBoundingClientRect() })}>+ New section</button>}
         {canStructure && <button className="rb-add-link" onClick={() => { setHits(null); setImporting(sections[0]?.key ?? ''); }}>⇪ Import from Monday</button>}
+        <button className="rb-add-link" onClick={() => { setHits(null); setImporting(null); setChecking(true); }}>⇄ Check against Hostaway</button>
       </aside>
 
       <div className="rb-main">
         <header className="rb-bar">
-          <h2>{hits ? `Search: “${hits.q}”` : table?.title ?? ''}</h2>
-          {!hits && rows && <span className="rb-count">{rows.length} record{rows.length === 1 ? '' : 's'}</span>}
+          <h2>{checking ? 'Check against Hostaway' : hits ? `Search: “${hits.q}”` : table?.title ?? ''}</h2>
+          {!checking && !hits && rows && <span className="rb-count">{rows.length} record{rows.length === 1 ? '' : 's'}</span>}
           {loading && <span className="rb-count loading-dot">Loading</span>}
           <span className="rb-spacer" />
-          <form className="rb-search" onSubmit={e => { e.preventDefault(); void runSearch(); }}>
+          {!checking && <form className="rb-search" onSubmit={e => { e.preventDefault(); void runSearch(); }}>
             <input ref={searchRef} type="search" value={filter} onChange={e => { setFilter(e.target.value); if (!e.target.value) setHits(null); }}
                    placeholder={table ? `Filter ${table.title}…` : 'Search'} />
-          </form>
+          </form>}
           {hits && <button className="secondary small" onClick={() => { setHits(null); setFilter(''); }}>Back to {table?.title}</button>}
-          {!hits && tableKey && <button className="secondary small" title="Reload" onClick={() => void loadRows(tableKey)}>↻</button>}
+          {!checking && !hits && tableKey && <button className="secondary small" title="Reload" onClick={() => void loadRows(tableKey)}>↻</button>}
         </header>
 
         {/* §118: typing filters this table; searching everywhere is a visible choice, not a hidden Enter. */}
@@ -359,7 +362,9 @@ export function Repository({ canReveal, canEdit, canStructure }: {
             {canStructure && <button className="secondary small" onClick={() => void structure({ op: 'tables.restore', table: archivedTable.key }, `${archivedTable.title} restored`)}>↺ Restore</button>}
           </div>
         )}
-        {importing !== null ? (
+        {checking ? (
+          <HostawayCheck canEdit={canEdit} say={say} onClose={() => setChecking(false)} />
+        ) : importing !== null ? (
           <MondayImport sections={sections} initial={importing} say={say} onCancel={() => setImporting(null)}
             onDone={async key => { setImporting(null); await loadMeta(); setTableKey(key); }} />
         ) : hits ? (

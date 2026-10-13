@@ -699,6 +699,20 @@ export async function updateListingDiscounts(
 }
 
 /**
+ * Change plain listing fields (PUT takes a partial object) and return the listing as read back —
+ * the caller says whether it took. Only the fields given are sent.
+ */
+export async function updateListingFields(
+  creds: HostawayCredentials, listingId: string, body: Record<string, string | number>
+): Promise<{ ok: boolean; detail: string; after: HostawayListing | null }> {
+  const t = await getAccessToken(creds);
+  const r = await apiSend(`/listings/${listingId}`, t, body, 'PUT');
+  if (!r.ok) return { ok: false, detail: `Hostaway rejected the update (${r.status}): ${r.text.slice(0, 200)}`, after: null };
+  const after = (await fetchListings(creds, t)).find(l => l.listingId === String(listingId)) ?? null;
+  return { ok: !!after, detail: after ? '' : 'Wrote, but the listing did not come back to confirm.', after };
+}
+
+/**
  * Calendars for many listings at once.
  *
  * One request per listing is unavoidable here — unlike /reservations,
