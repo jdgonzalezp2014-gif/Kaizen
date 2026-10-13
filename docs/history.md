@@ -3812,3 +3812,22 @@ each `slack_threads` row for `subject = 'task'`, `chat.update` with `task_start`
 out of the actions block, same text and everything else untouched) ran once against the 38 on record:
 30 updated, 7 already clean, 1 gone (deleted or too old for the API). Script deleted after. Reading a
 thread's replies (`conversations.replies`) is a different call this was never meant to enable.
+
+## §146 — An inspection's repairs become ONE work order, not one each (2026-10-13)
+
+The owner, looking at the Repairs step on the practice flow (3 findings, 3 separate work orders): "las
+ordenes de trabajo podrían ser únicas o separarlas. si hay 10 arreglos que pueda hacer alguien pues mejor
+hacerlos [juntos]." Asked whether to let the team pick which findings combine (a checkbox per finding —
+real in his own example, where two findings needed a gas license and one did not) or always combine: "creo
+que está bien todo como una única, y luego puedes separar y cambiar" — always one, split apart by hand
+afterward if a repair turns out to need its own vendor. So repairs now follow purchases' own pattern
+(§133): `repairList` (`src/lib/inspection.ts`) returns ONE work order for every repair finding of the
+run, a sub-task per repair plus "Assign and schedule" at the end — nobody is on the combined order yet.
+One finding alone is untouched: same single work order as before, titled and worded identically (verified
+by test — `repairList` delegates to `workFor` in that case). `functions/_lib/inspection-run.ts`'s
+per-finding loop became one grouped insert, mirroring the purchase block line for line. The review step's
+copy and the finish screen's summary now say "1 work order" / "1 work order for N repairs" instead of
+"N work orders, each with…". Not tested against a live Neon branch — Practice House's inspection is a
+pure in-browser mock (`src/screens/Practice.tsx`) and does not reach `/api/inspection-run`, so this went
+in on the pure-function tests, tsc and build, plus the established confidence of mirroring the purchases
+code path exactly; worth a real multi-repair inspection before trusting it on a unit that matters.

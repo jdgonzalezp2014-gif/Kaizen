@@ -21,7 +21,7 @@ import { todayIn, addDays } from '../../src/lib/dates.ts';
 import { eligibleInspectors } from '../../src/lib/operations.ts';
 import { unitTypes } from './unit-access.ts';
 import {
-  ASSIGN_SUBTASK, areaTitle, checklistFor, cleanTaskText, overallResult, purchaseList, readyToFinish, roomsOf, suggestedOutcome, workFor,
+  ASSIGN_SUBTASK, areaTitle, checklistFor, cleanTaskText, overallResult, purchaseList, readyToFinish, repairList, roomsOf, suggestedOutcome,
   type Area, type AreaDef, type Check, type CheckResult, type InspectionItem, type Outcome, type UnitShape
 } from '../../src/lib/inspection.ts';
 
@@ -304,26 +304,29 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
   const toPush: string[] = [];
 
   // A finding that already made its work (a finish retried) makes nothing again.
-  // Repairs: one work order each. Purchases: one shopping list for all of them, below.
-  for (const c of checks.filter(x => x.result === 'attention' && x.outcome === 'repair' && !x.todoId)) {
-    const work = workFor(c, { unit: ins.unit_name, date: ins.date, inspector, sectionTitle: title(c) });
-    if (!work) continue;
+  // Repairs: ONE work order for all of them (§146 — easier to split one apart after than
+  // to always juggle several). Purchases: one shopping list for all of them, below.
+  const reps = checks.filter(x => x.result === 'attention' && x.outcome === 'repair' && !x.todoId);
+  const repWork = repairList(reps, { unit: ins.unit_name, date: ins.date, inspector }, title);
+  if (repWork) {
     const [t] = await sql`
       INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, inspection_id)
-      VALUES (1, ${work.title}, ${work.description}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, ${work.kind}, 'pending', 'none', ${Number(id)})
+      VALUES (1, ${repWork.title}, ${repWork.description}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'work_order', 'pending', 'none', ${Number(id)})
       RETURNING id::text` as { id: string }[];
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
-              VALUES (1, 'task', ${t!.id}, 'status', ${`${work.kind === 'work_order' ? 'Work order' : 'To-do'} created from the inspection of ${ins.unit_name} on ${ins.date}.`}, ${who})`;
-    if (work.kind === 'work_order') {
-      // Nobody is on a repair yet: its first step is to find someone and a day.
+              VALUES (1, 'task', ${t!.id}, 'status', ${`Work order created from the inspection of ${ins.unit_name} on ${ins.date}${repWork.items.length ? ` — ${repWork.items.length} repairs` : ''}.`}, ${who})`;
+    for (const item of repWork.items) {
       await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id, inspection_id)
-                VALUES (1, ${ASSIGN_SUBTASK}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
-      await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
-                VALUES (1, 'task', ${t!.id}, 'change', ${`Sub-task added: ${ASSIGN_SUBTASK}`}, ${who})`;
+                VALUES (1, ${item}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
     }
-    await sql`UPDATE inspection_checks SET todo_id = ${Number(t!.id)} WHERE account_id = 1 AND id = ${Number(c.id)}`;
+    // Nobody is on a repair yet: its first step is to find someone and a day.
+    await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id, inspection_id)
+              VALUES (1, ${ASSIGN_SUBTASK}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'task', ${t!.id}, 'change', ${`Sub-task added: ${ASSIGN_SUBTASK}`}, ${who})`;
+    await sql`UPDATE inspection_checks SET todo_id = ${Number(t!.id)} WHERE account_id = 1 AND id = ANY(${reps.map(c => Number(c.id))}::bigint[])`;
     toPush.push(t!.id);
-    made.push({ kind: work.kind === 'work_order' ? 'repair' : 'purchase', title: work.title, id: t!.id });
+    made.push({ kind: 'repair', title: repWork.title, id: t!.id });
   }
 
   // Purchases: ONE to-do for all of them, an item per sub-task to tick off as it is bought.

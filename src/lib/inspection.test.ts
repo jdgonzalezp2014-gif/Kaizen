@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { appliesHere, areaKey, checklistFor, overallResult, unitTypeOf, progress, purchaseList, readyToFinish, reviewSteps, roomsOf, suggestedOutcome, workFor,
+import { appliesHere, areaKey, checklistFor, overallResult, unitTypeOf, progress, purchaseList, readyToFinish, repairList, reviewSteps, roomsOf, suggestedOutcome, workFor,
          type Check, type InspectionItem } from './inspection.ts';
 
 const item = (id: string, area: InspectionItem['area'], label: string, extra: Partial<InspectionItem> = {}): InspectionItem =>
@@ -94,6 +94,21 @@ test('all purchases become one shopping list, an item per sub-task', () => {
   assert.deepEqual(l.items, ['Buy: Coffee — none left (Kitchen)', 'Buy: Towels (Bathroom)']);
   assert.match(l.description, /• Coffee — none left \(Kitchen\)\n  Photo: https:\/\/x\/p\n• Towels/);
   assert.equal(purchaseList([cs[2]!], { unit: 'X', date: 'd', inspector: '' }, () => ''), null);
+});
+
+test('one repair keeps its own work order; two or more become ONE, a sub-task per repair (§146)', () => {
+  const ctx = { unit: 'CL1250', date: '2026-10-12', inspector: 'Sharon' };
+  const titleOf = (c: Check) => c.area === 'bathroom' ? 'Bathroom' : 'Kitchen';
+  const one = check('3', 2, 'attention', { label: 'Grout', note: 'cracked by the tub', outcome: 'repair', area: 'bathroom', photos: [{ name: 'p', url: 'https://x/p' }] });
+  const solo = repairList([one], ctx, titleOf)!;
+  assert.equal(solo.title, 'Bathroom: Grout — cracked by the tub');
+  assert.deepEqual(solo.items, [], 'a single repair gets no extra sub-task — "Assign and schedule" is the only one');
+  const cs = [one, check('4', 1, 'attention', { label: 'Lock', outcome: 'repair' }), check('5', 1, 'attention', { label: 'Coffee', outcome: 'purchase' })];
+  const l = repairList(cs, ctx, titleOf)!;
+  assert.equal(l.title, 'Repairs at CL1250: 2 items');
+  assert.deepEqual(l.items, ['Grout — cracked by the tub (Bathroom)', 'Lock (Kitchen)']);
+  assert.match(l.description, /• Grout — cracked by the tub \(Bathroom\)\n  Photo: https:\/\/x\/p\n• Lock \(Kitchen\)/);
+  assert.equal(repairList([cs[2]!], ctx, titleOf), null);
 });
 
 test('the review walks repairs, then purchases, then cleaning — only the steps with findings', () => {

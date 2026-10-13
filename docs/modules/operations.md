@@ -145,7 +145,8 @@ key had no SOPs.
   Cleaning/Repair/Purchase buttons for on-the-spot findings; a finding needs an outcome — a photo is optional
   everywhere (Drive folder "Kaizen — inspections"; the owner: photos are never required). Review & finish is a step wizard (the owner's flow): 🔧 Repairs → 🛒 Purchases →
   🧽 Cleaning → ✓ Finish, each with editable notes, "move to another kind" and "Confirm & continue". Finish
-  (validated BEFORE anything is made, idempotent via todo_id / clean_task_id): repair → work order + sub-task
+  (validated BEFORE anything is made, idempotent via todo_id / clean_task_id): repairs → **ONE work order for
+  all of them** (§146 — one each only when there is exactly one; `repairList`), a sub-task per repair plus
   "Assign and schedule"; ALL purchases → ONE to-do "Buy for <unit>: N items", a sub-task per item; cleaning →
   one choice for the group (`cleanMode`): clean_next →
   `clean_tasks` on the unit's next clean in the record (board 🧾, cleaner's page "From the inspection");

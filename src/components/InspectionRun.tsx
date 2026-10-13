@@ -305,7 +305,8 @@ function QuickAdd({ data, tr, kind, onCancel, onDone }: {
  * Review & finish, step by step (the owner's flow): Repairs → Purchases →
  * Cleaning → Finish. Each step shows its findings with their notes (editable),
  * lets one move to another kind, and goes on with "Confirm & continue".
- * Repairs become one work order each; purchases ONE to-do, a shopping list;
+ * Repairs become one work order — one each only alone, else all together (§146);
+ * purchases ONE to-do, a shopping list;
  * cleaning findings go to the next clean or one new clean — one choice for all.
  */
 function Review({ data, tr, onBack, onSave, onPhotos, onFinished }: {
@@ -341,8 +342,13 @@ function Review({ data, tr, onBack, onSave, onPhotos, onFinished }: {
     onFinished(r.made);
   };
   const count = (f: (c: RunCheck) => boolean) => findings.filter(f).length;
+  // §146: one repair becomes its own work order, same as always; two or more become ONE,
+  // nobody on it yet, a sub-task per repair plus "Assign and schedule" — split one out later if it needs its own vendor.
+  const repairNote = group.length > 1
+    ? `All ${group.length} become ONE work order — nobody on it yet — a sub-task per repair plus “Assign and schedule”.`
+    : 'Becomes a work order — nobody on it yet — with the sub-task “Assign and schedule”.';
   const HEAD: Record<string, [string, string]> = {
-    repair: ['🔧 Repairs', 'Each becomes a work order — nobody on it yet — with the sub-task “Assign and schedule”.'],
+    repair: ['🔧 Repairs', repairNote],
     purchase: ['🛒 Purchases', 'All of them become ONE to-do: a shopping list, an item per sub-task to tick off.'],
     clean: ['🧽 Cleaning', 'One choice for all of them: tasks for the unit’s next clean, or one new clean.']
   };
@@ -370,7 +376,9 @@ function Review({ data, tr, onBack, onSave, onPhotos, onFinished }: {
             {' '}they stay out of the report. <button className="link" onClick={onBack}>Back to the rooms</button></p>}
           {!findings.length ? <p className="banner ok">✓ Nothing needs attention.</p> : (
             <ul className="insp-made">
-              {count(c => c.outcome === 'repair') > 0 && <li>🔧 {count(c => c.outcome === 'repair')} work order{count(c => c.outcome === 'repair') === 1 ? '' : 's'}, each with “Assign and schedule”</li>}
+              {count(c => c.outcome === 'repair') > 0 && <li>🔧 {count(c => c.outcome === 'repair') === 1
+                ? '1 work order, with “Assign and schedule”'
+                : `1 work order for ${count(c => c.outcome === 'repair')} repairs, with “Assign and schedule”`}</li>}
               {count(c => c.outcome === 'purchase') > 0 && <li>🛒 1 to-do: buy {count(c => c.outcome === 'purchase')} item{count(c => c.outcome === 'purchase') === 1 ? '' : 's'}</li>}
               {count(isClean) > 0 && <li>🧽 {cleanMode === 'next' && data.nextClean
                 ? `${count(isClean)} task${count(isClean) === 1 ? '' : 's'} for the next clean (${data.nextClean.date})`
