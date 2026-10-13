@@ -3757,3 +3757,15 @@ To avoid problems (money spent by someone outside the roster, with no account be
 page drops "🛒 I bought something"; it still offers wrong / need / missing. `FieldReport` takes a `kinds`
 list (the helper passes it without `purchase`) and `/api/report-link` refuses a `purchase` even from an old
 open page. The cleaner's own page keeps it, and purchases still reach Costs through approval (§137).
+
+## §142 — A check-in deadline on every clean the cleaner sees (2026-10-12)
+
+The owner: cleaners ran late on a house that had no next check-in, so nothing told them when to finish — they
+were lucky a last-minute booking came. From now on a cleaner always has a check-in to beat: **4:00 PM by
+default**, shown on every checkout clean even when no guest is booked. When a same-day guest is confirmed it
+reads "check-in confirmed at 4:00 PM"; when the real arrival is **earlier** than 4 PM (early check-in) that
+actual time shows instead (the tighter deadline). A **late check-out** needs nothing added — the checkout
+time, when the cleaner can start, is already shown. `checkInFlag` + `DEFAULT_CHECKIN` in `src/screens/Crew.tsx`
+(CleanCard, UpcomingRow and the ICS export), labels `checkInConfirmed` / `checkInBy` in `crew-i18n.ts` (EN/ES).
+Only on checkout cleans, not manual/extra ones, and not on past record cleans. The old `nextGuestAt` /
+`nextGuestSameDay` labels stay for other uses.

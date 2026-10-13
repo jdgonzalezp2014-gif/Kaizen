@@ -115,6 +115,8 @@ export const TX = {
     tagNew: '+ new', tagMoved: (d: string) => `⇢ moved from ${d}`, tagTime: '◷ time changed',
     manualClean: (k: string) => `manual clean (${k})`, checkout: (t: string) => `checkout ${t}`,
     nextGuestAt: (t: string) => `⚡ next guest in at ${t}`, nextGuestSameDay: '⚡ next guest in the same day', deep: '🧽 deep',
+    // §142: cleaners always finish by the check-in. 4:00 PM by default; the real time when it is earlier (early check-in).
+    checkInConfirmed: (t: string) => `⏰ check-in confirmed at ${t}`, checkInBy: (t: string) => `⏰ finish before check-in (${t})`,
     cantDoIt: "Can't do it", whyOptional: 'Why (optional) — the team reads it', sending: 'Sending…',
     declineBtn: 'Decline this clean', keepIt: 'Keep it', declineNote: 'It goes back to the team unassigned, for someone else.',
     notPaidReason: (r: string) => `○ not paid — ${r}`, comingUpTag: '○ coming up', notYours: '○ not assigned to you any more',
@@ -214,6 +216,8 @@ export const TX = {
     tagNew: '+ nueva', tagMoved: (d: string) => `⇢ movida desde el ${d}`, tagTime: '◷ cambió la hora',
     manualClean: (k: string) => `limpieza manual (${k})`, checkout: (t: string) => `salida ${t}`,
     nextGuestAt: (t: string) => `⚡ entra huésped a las ${t}`, nextGuestSameDay: '⚡ entra huésped el mismo día', deep: '🧽 profunda',
+    // §142: los cleaners siempre terminan antes de la entrada. 4:00 PM por defecto; la hora real si es antes (entrada temprana).
+    checkInConfirmed: (t: string) => `⏰ entrada confirmada a las ${t}`, checkInBy: (t: string) => `⏰ termina antes de la entrada (${t})`,
     cantDoIt: 'No puedo', whyOptional: '¿Por qué? (opcional) — el equipo lo lee', sending: 'Enviando…',
     declineBtn: 'Rechazar esta limpieza', keepIt: 'Me la quedo', declineNote: 'Vuelve al equipo sin asignar, para otra persona.',
     notPaidReason: (r: string) => `○ sin pago — ${r}`, comingUpTag: '○ próxima', notYours: '○ ya no está asignada a ti',

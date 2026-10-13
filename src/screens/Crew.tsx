@@ -403,6 +403,20 @@ interface ActiveClean {
   ahead: boolean;
 }
 
+/** §142: the check-in a cleaner must finish before — 4:00 PM by default, the
+ *  real time when the guest comes earlier (early check-in). A late check-out is
+ *  already shown as the checkout (start) time. The label on a checkout clean. */
+const DEFAULT_CHECKIN = '4:00 PM';
+function clockMins(t: string | null): number | null {
+  const m = t && /^(\d{1,2}):(\d{2})\s*(AM|PM)$/i.exec(t.trim());
+  return m ? (Number(m[1]) % 12 + (/pm/i.test(m[3]!) ? 12 : 0)) * 60 + Number(m[2]) : null;
+}
+function checkInFlag(tx: (typeof TX)[Lang], c: { sameDay: boolean; checkIn: string | null }) {
+  const mins = clockMins(c.checkIn);
+  const time = mins != null && mins < 16 * 60 ? c.checkIn! : DEFAULT_CHECKIN; // earlier than 4 PM = early check-in
+  return <span className="ops-flag urgent">{c.sameDay ? tx.checkInConfirmed(time) : tx.checkInBy(time)}</span>;
+}
+
 /** Today's cleans (from Coming up, else the record), then the last 3 days' — newest first. */
 function activeCleans(page: CrewPage): ActiveClean[] {
   const from = addDays(page.today, -3);
@@ -449,7 +463,7 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onCl
         <p className="clean-card-unit">🏠 {a.unit}{a.beds ? <span className="sub-n"> · {bedsWord(lang, a.beds)}</span> : null}
           {a.price != null && <span className="sub-n"> · {money2(a.price)}</span>}</p>
         <p className="note">{a.manual ? tx.manualClean(kindWord(lang, a.manual)) : a.time ? tx.checkout(a.time) : ''}
-          {a.sameDay && <span className="ops-flag urgent">{a.checkIn ? tx.nextGuestAt(a.checkIn) : tx.nextGuestSameDay}</span>}
+          {!a.manual && a.date >= ctx.today && checkInFlag(tx, a)}
           {a.deep && <span className="ops-flag deep">{tx.deep}</span>}</p>
         {page.access?.[a.key] && <AccessBox tx={tx} a={page.access[a.key]!} />}
         {!!a.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{a.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
@@ -849,7 +863,7 @@ function downloadIcs(page: CrewPage, lang: Lang) {
     const what = r.manual ? tx.manualClean(kindWord(lang, r.manual)) : tx.icsCheckout;
     return ['BEGIN:VEVENT', `UID:kaizen-${r.key}@kaizen-os`, `DTSTAMP:${stamp}`, `DTSTART:${t.start}`, `DTEND:${t.end}`,
             `SUMMARY:${esc(tx.icsSummary(r.unit, bedsWord(lang, r.beds)))}`,
-            `DESCRIPTION:${esc(`${what}${r.sameDay ? tx.icsNextGuest(r.checkIn) : ''}.${tx.icsPays(pay(r.price))}`)}`,
+            `DESCRIPTION:${esc(`${what}${r.manual ? '' : tx.icsNextGuest(clockMins(r.checkIn) != null && clockMins(r.checkIn)! < 16 * 60 ? r.checkIn : DEFAULT_CHECKIN)}.${tx.icsPays(pay(r.price))}`)}`,
             'END:VEVENT'].join('\r\n');
   });
   const ics = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kaizen OS//Crew//EN', 'CALSCALE:GREGORIAN', ...events, 'END:VCALENDAR'].join('\r\n');
@@ -905,7 +919,7 @@ function UpcomingRow({ r, act, reload, tag, lang, ctx, fs, address }: { r: CrewU
         {tag && <div className={tag.startsWith('○') ? 'sub-n' : 'breach'}>{tag}</div>}</div>
       <div>
         {r.manual ? tx.manualClean(kindWord(lang, r.manual)) : tx.checkout(r.time)}
-        {r.sameDay && <span className="ops-flag urgent">{r.checkIn ? tx.nextGuestAt(r.checkIn) : tx.nextGuestSameDay}</span>}
+        {!r.manual && checkInFlag(tx, r)}
         {r.deep && <span className="ops-flag deep">{tx.deep}</span>}
         {!!r.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{r.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
         {address && <div className="sub-n">📍 <a href={`https://maps.google.com/?q=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer">{address}</a></div>}

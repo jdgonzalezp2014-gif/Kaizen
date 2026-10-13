@@ -291,6 +291,13 @@ key had no SOPs.
   before the next guest / high = next days / low = when possible); "Check stock" is medium. Every to-do
   made from the field or Inventory is announced in Slack's tasks channel (`taskCreated`) and mirrored.
 - **Cleans' daily thread in Slack (§134):** see the slack module (`functions/_lib/clean-slack.ts`).
+- **Check-in deadline every clean sees (§142, owner):** a cleaner always has a check-in to finish before —
+  **4:00 PM by default**, even when no next guest is booked (a last-minute booking can still come; cleaners
+  ran late on a no-check-in house). When a same-day guest is confirmed it reads "check-in confirmed at
+  4:00 PM"; when their real arrival is **earlier** than 4 PM (early check-in) that actual time shows instead.
+  A **late check-out** needs nothing extra — the checkout time (when the cleaner can start) is already shown.
+  `checkInFlag` / `DEFAULT_CHECKIN` in `src/screens/Crew.tsx` (CleanCard, UpcomingRow, the ICS export);
+  labels `checkInConfirmed` / `checkInBy` in `crew-i18n.ts`. Shown on checkout cleans, not manual ones.
 
 - **Practice (§139):** `src/screens/Practice.tsx`, two doors to the same page: the in-app hash
   `/#practice/<which>` for the team, and two public paths for cleaners / helpers to open without
@@ -354,4 +361,4 @@ key had no SOPs.
 
 ## History
 
-§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140, §141.
+§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140, §141, §142.
