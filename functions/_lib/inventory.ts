@@ -437,6 +437,32 @@ export async function newItem(sql: SqlFn, b: Record<string, unknown>) {
   return r!.id;
 }
 
+/**
+ * A to-do's own order, saved as a draft from the to-do (§150, owner: "it may
+ * not be finished — save it as a draft, but the to-do has that order"): the
+ * lines REPLACE its order (saving twice never doubles it), noted in its log;
+ * no lines = no order. 🧾 Record the purchase starts from it.
+ */
+export async function saveTodoOrder(sql: SqlFn, by: string, todoId: unknown, lines: { itemId: string; place: string; qty: number }[]) {
+  const [t] = await sql`SELECT id::text FROM todos WHERE account_id = 1 AND id = ${Number(todoId) || 0} AND parent_id IS NULL
+                          AND status NOT IN ('completed', 'cancelled')` as { id: string }[];
+  if (!t) throw new Error('That to-do is closed or gone.');
+  const keep = lines.filter(l => l.qty > 0 && l.place).map(l => ({ itemId: String(l.itemId), place: l.place, qty: Math.ceil(l.qty) }));
+  if (!keep.length) { await sql`DELETE FROM inventory_orders WHERE account_id = 1 AND todo_id = ${Number(t.id)}`; return; }
+  const [items, sp] = await Promise.all([invItems(sql), supplyPlaces(sql)]);
+  const named = keep.map(l => {
+    const item = items.find(i => i.id === l.itemId);
+    const p = sp.places.find(x => x.key === l.place);
+    if (!item) throw new Error('Which item?');
+    if (!p) throw new Error('Which place?');
+    return { item, place: p.self ? `${p.name} closet` : p.name, qty: l.qty };
+  });
+  await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(keep)}::jsonb, ${by})
+            ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = EXCLUDED.lines, created_by = EXCLUDED.created_by, created_at = now()`;
+  await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+            VALUES (1, 'task', ${t.id}, 'change', ${`Order draft saved:\n${orderList(named)!.items.map(i => i.replace(/^Buy: /, '• ')).join('\n')}`}, ${by})`;
+}
+
 /** The order being written, saved as a draft (§150): no to-do until it is created. Empty lines = discard. */
 export async function saveDraft(sql: SqlFn, by: string, lines: { itemId: string; place: string; qty: number }[], forTodo: string | null) {
   const keep = lines.filter(l => l.qty > 0 && l.place);

@@ -713,9 +713,10 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
   const out = flat(lines);
   const home = inv.places.find(p => p.units.some(u => unitIds.includes(u.id)))?.place ?? null;
   const hadOrder = inv.orders.some(o => o.todoId === todoId);
-  const order = async () => {
+  // Not finished? Kept as this to-do's order — a draft it carries, replaced on every save, until it is bought.
+  const draft = async () => {
     setBusy(true); setMsg('');
-    try { const r = await inventoryAction({ action: 'order', lines: out, forTodo: todoId }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { setMsg('✓ Saved as this to-do’s order (its sub-tasks).'); onBought(false); } }
+    try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines: out }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onBought(false); }
     catch (e) { setMsg(String(e)); } finally { setBusy(false); }
   };
   const bought = async () => {
@@ -732,8 +733,8 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
   return (
     <div className="card task-buy">
       <h3>🛒 Purchase for this to-do</h3>
-      <p className="note">{hadOrder ? 'Its order comes filled in.' : 'Add what is to buy with 🔍.'} Bought? Record it — it goes into the stock of each
-        place and into Costs (Restock) with the receipt. Not yet? Save it as this to-do’s order.</p>
+      <p className="note">{hadOrder ? 'Its order comes filled in — as it was left.' : 'Add what is to buy with 🔍.'} Bought? Record it — it goes into
+        the stock of each place and into Costs (Restock) with the receipt. Not finished? 💾 Save draft: the to-do keeps this order.</p>
       <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={home} onInv={setInv} />
       <div className="row">
         <label>Total paid ($)<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} /></label>
@@ -744,7 +745,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
       <label className="check"><input type="checkbox" checked={closeIt} onChange={e => setCloseIt(e.target.checked)} /> ✓ and close this to-do</label>
       <div className="button-row">
         <button disabled={busy || !out.length || !(Number(total) > 0)} onClick={() => void bought()}>{busy ? 'Saving…' : '🧾 Record the purchase'}</button>
-        <button className="secondary" disabled={busy || !out.length} onClick={() => void order()}>Save as this to-do’s order</button>
+        <button className="secondary" disabled={busy || (!out.length && !hadOrder)} onClick={() => void draft()}>💾 Save draft</button>
         <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
         {!(Number(total) > 0) && out.length > 0 && <span className="note">The total paid is needed to record it.</span>}
       </div>

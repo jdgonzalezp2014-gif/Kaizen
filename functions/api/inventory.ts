@@ -7,6 +7,7 @@
  *   POST { action: 'removeItem', itemId }                               off the list everywhere (history kept)
  *   POST { action: 'adjusts', place, note, adjusts: [{ itemId, qty }] } corrections (+/−) to the record, with why
  *   POST { action: 'draft', lines, forTodo? }                           the order kept as a draft (no lines = discard)
+ *   POST { action: 'todoOrder', todoId, lines }                         a to-do's own order, saved as a draft (replaces it)
  *   POST { action: 'hide', place, itemId, hide }                        "not kept here" (or back)
  *   POST { action: 'newItem', name, measure?, category? }               a supply added on the spot
  * A count, a correction or a take may leave a place below its minimum → "Low stock" to-do, if Setup has it on.
@@ -19,7 +20,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, fieldPhotos, hideItem, lowStock, mirrorTodos, newItem, overview, recordMove, recordPurchase, removeItem, saveDraft, saveSettings } from '../_lib/inventory.ts';
+import { createOrder, fieldPhotos, hideItem, lowStock, mirrorTodos, newItem, overview, recordMove, recordPurchase, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -63,6 +64,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       // Added from a place: kept there, even if it was "not kept here" before.
       if (b.place) await hideItem(sql, who.email, b.place, id, false);
       return Response.json({ ok: true, itemId: id, ...(await overview(sql)) });
+    } else if (b.action === 'todoOrder') {
+      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
+        .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0 })) : [];
+      await saveTodoOrder(sql, who.email, b.todoId, lines);
     } else if (b.action === 'draft') {
       // §150: the order kept as a draft — no to-do until it is created; no lines = discard it.
       const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
