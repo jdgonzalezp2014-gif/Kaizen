@@ -284,6 +284,12 @@ key had no SOPs.
 - **Practice → 📦 Inventory** (`/#practice/inventory`, the SOP panel on Inventory): the real screen over an
   in-browser transport (`InvTransport`, `inventoryPractice` in Practice.tsx) — two storages and a house closet,
   counts, a "not found", a field request and a problem to attach an order to; nothing leaves the browser.
+- **Order vs purchase, and the cleaner's request (§150, owner):** an ORDER is a purchase without a total — a request,
+  editable, more lines can come; the PURCHASE executes it. Closing (✓ Done or Cancel) a cleaner's supplies request
+  (`clean_group = 'request'`) with no purchase recorded for it opens a pop-up — it reads as dismissing the request:
+  🛒 Record the purchase · Keep it open · or close it with a required reason, posted on the to-do. The to-do list
+  carries `cleanGroup` and `purchases` for it. The four older "Request at …" to-dos from Irene (#55, #56, #62, #63) were
+  tagged `request` on 2026-10-13.
 - **A to-do carries its purchase (§150, owner):** any open top-level to-do (Operations → To-do) has "+ 🛒 purchase"
   (`TaskPurchase`, Inventory.tsx): its order filled in if it has one, else 🔍 to the unit's place; "🧾 Record the
   purchase" (stock + Restock expense + receipt, `recordPurchase` with `todoId` — no order needed first) and "✓ and close

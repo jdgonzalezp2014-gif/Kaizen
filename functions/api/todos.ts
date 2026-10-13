@@ -64,6 +64,7 @@ interface Row {
   assignee_user_id?: number | null; supervisor_user_id?: number | null; supervisor?: string | null;
   start_time?: string | null; due_time?: string | null; resolution_note?: string | null;
   charge_owner?: boolean; hostaway_expense_id?: string | null;
+  clean_group?: string | null; purchases?: number;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
 const num = (v: string | null) => v == null ? null : Number(v);
@@ -77,7 +78,9 @@ const out = (r: Row) => ({
   hostawayTaskId: r.hostaway_task_id ?? null, hostawayError: r.hostaway_error ?? null, source: r.source ?? 'kaizen',
   assigneeUserId: r.assignee_user_id ?? null, supervisorUserId: r.supervisor_user_id ?? null, supervisor: r.supervisor ?? null,
   startTime: r.start_time ?? null, dueTime: r.due_time ?? null, resolutionNote: r.resolution_note ?? null,
-  chargeOwner: !!r.charge_owner, hostawayExpenseId: r.hostaway_expense_id ?? null
+  chargeOwner: !!r.charge_owner, hostawayExpenseId: r.hostaway_expense_id ?? null,
+  // §150: a cleaner's supplies request, and whether anything was bought for it — closing it unbought is asked.
+  cleanGroup: r.clean_group ?? null, purchases: Number(r.purchases ?? 0)
 });
 
 async function list(sql: SqlFn, claim?: string) {
@@ -87,7 +90,8 @@ async function list(sql: SqlFn, claim?: string) {
            t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
            t.reservation_id, t.reservation_label, t.hostaway_task_id, t.hostaway_error, t.source,
            t.assignee_user_id, t.supervisor_user_id, t.supervisor, to_char(t.start_time, 'HH24:MI') AS start_time,
-           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note, t.charge_owner, t.hostaway_expense_id,
+           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note, t.charge_owner, t.hostaway_expense_id, t.clean_group,
+           (SELECT count(*)::int FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id) AS purchases,
            (SELECT count(*)::int FROM work_updates w
              WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
       FROM todos t

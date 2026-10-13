@@ -350,9 +350,15 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
   const mine = sortTodos(kids.get(t.id) ?? []);
   const prog = progress(mine);
   const parent = t.parentId ? byId.get(t.parentId) : undefined;
-  const tick = async () => { setBusy(true); await act({ action: 'done', id: t.id, done: !closed }); setBusy(false); };
+  const doTick = async () => { setBusy(true); await act({ action: 'done', id: t.id, done: !closed }); setBusy(false); };
   // §105: the row's own actions — done, cancel, reopen — and renaming in place.
-  const cancel = async () => { setBusy(true); await act({ action: 'update', id: t.id, status: 'cancelled' }); setBusy(false); };
+  const doCancel = async () => { setBusy(true); await act({ action: 'update', id: t.id, status: 'cancelled' }); setBusy(false); };
+  // §150, owner: closing a cleaner's supplies request with nothing bought for it reads as dismissing it — asked first.
+  const [dismiss, setDismiss] = useState<null | 'done' | 'cancel'>(null);
+  const [why, setWhy] = useState('');
+  const unbought = !closed && !t.parentId && t.cleanGroup === 'request' && !t.purchases;
+  const tick = async () => { if (unbought) setDismiss('done'); else await doTick(); };
+  const cancel = async () => { if (unbought) setDismiss('cancel'); else await doCancel(); };
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(t.title);
   const rename = async () => {
@@ -429,6 +435,26 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
                   onClick={() => setLineDel(true)}>✕</button>
         )}
       </div>
+      {dismiss && (
+        <Modal title="Close a cleaner’s request with nothing bought?" onClose={() => { setDismiss(null); setWhy(''); }}>
+          <p>This is what a cleaner asked for on a clean, and no purchase is recorded for it. Closing it now reads as
+            <b> the request was dismissed</b>.</p>
+          <div className="button-row">
+            <button onClick={() => { setDismiss(null); if (!open) onOpen(); setSubsOpen(true); setBuying(true); }}>🛒 Record the purchase</button>
+            <button className="secondary" onClick={() => { setDismiss(null); setWhy(''); }}>Keep it open</button>
+          </div>
+          <label>Or close it without buying — why? <span className="sub-n">(kept on the to-do)</span>
+            <input value={why} maxLength={300} placeholder="e.g. there was enough in the closet; already bought by …" onChange={e => setWhy(e.target.value)} /></label>
+          <div className="button-row">
+            <button className="danger" disabled={busy || !why.trim()} onClick={async () => {
+              const how = dismiss;
+              await act({ action: 'note', id: t.id, body: `Closed without buying: ${why.trim()}` });
+              setDismiss(null); setWhy('');
+              if (how === 'done') await doTick(); else await doCancel();
+            }}>{dismiss === 'done' ? 'Mark done without buying' : 'Cancel the request'}</button>
+          </div>
+        </Modal>
+      )}
       {lineDel && (
         <div className="todo-confirm">
           <span className="note">Remove the sub-task “{t.title}”?</span>
@@ -470,7 +496,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
                             )}
                             {buying ? (
                               <TaskPurchase todoId={t.id} unitIds={t.unitIds} onClose={() => setBuying(false)}
-                                            onBought={async closeIt => { setBuying(false); if (closeIt && !closed) await tick(); else reload(); }} />
+                                            onBought={async closeIt => { setBuying(false); if (closeIt && !closed) await doTick(); else reload(); }} />
                             ) : !addingSub ? (
                               <div className="todo-add-buttons">
                                 <button className="link tiny" onClick={() => setAddingSub('task')}>+ sub-task</button>

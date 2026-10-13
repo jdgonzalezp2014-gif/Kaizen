@@ -98,3 +98,5 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   `src/screens/Inventory.tsx`, beside "+ sub-task / + 🔧 work order" in `TodoRow`.
 - **Sub-tasks folded in the list (§150, owner):** under a task they no longer show open; "▸ ☑ n/m" on its row
   opens them (`kidsShown` in `TodoRow`). Open the task for the full sub-task section, as before.
+- **Closing an unbought cleaner request asks first (§150):** `TodoRow`'s ✓ Done / Cancel on a `cleanGroup = 'request'`
+  to-do with no `purchases` opens a Modal (record the purchase / keep open / close with a reason, posted as a note).
