@@ -19,7 +19,8 @@ import { mirrorOn, pushWork } from './hostaway-tasks.ts';
 import { opsConfig } from './ops.ts';
 import { todayIn, addDays } from '../../src/lib/dates.ts';
 import { eligibleInspectors } from '../../src/lib/operations.ts';
-import { unitTypes } from './unit-access.ts';
+import { supplyPlaces, unitTypes } from './unit-access.ts';
+import { invItems } from './inventory.ts';
 import {
   ASSIGN_SUBTASK, areaTitle, checklistFor, cleanTaskText, overallResult, purchaseList, readyToFinish, repairList, roomsOf, suggestedOutcome,
   type Area, type AreaDef, type Check, type CheckResult, type InspectionItem, type Outcome, type UnitShape
@@ -97,6 +98,8 @@ export async function loadRun(sql: SqlFn, id: string) {
     checks: await checksOf(sql, id),
     nextClean: await nextClean(sql, ins.unit_id, today),
     inspectors: eligibleInspectors(cfg.roster, cfg.extraInspectors, null),
+    // §150: the supplies list, for the 🔍 on a purchase — the inspection's order comes filled in.
+    supplies: (await invItems(sql)).filter(i => i.active).map(i => ({ id: i.id, name: i.name, measure: i.measure })),
     today
   };
 }
@@ -215,13 +218,22 @@ export async function addFinding(sql: SqlFn, who: string, b: Record<string, unkn
   await openRun(sql, id);
   const kind = String(b.kind ?? '');
   const outcome: Outcome = kind === 'purchase' ? 'purchase' : kind === 'clean' ? 'clean_next' : 'repair';
-  const label = String(b.label ?? '').trim().slice(0, 200);
+  // §150: a purchase can be a supply from the list (🔍) and how many — it goes on the order filled in.
+  let supply: { id: number; name: string } | undefined, supplyQty: number | null = null;
+  if (outcome === 'purchase' && b.supplyId) {
+    [supply] = await sql`SELECT id, name FROM inventory_items WHERE account_id = 1 AND id = ${Number(b.supplyId)} AND active` as { id: number; name: string }[];
+    if (!supply) throw new Error('Which item?');
+    supplyQty = Math.ceil(Number(b.supplyQty) || 1);
+    if (supplyQty < 1 || supplyQty > 10000) throw new Error('How many?');
+  }
+  const label = (supply ? `${supply.name} × ${supplyQty}` : String(b.label ?? '').trim()).slice(0, 200);
   if (!label) throw new Error('Say what it is.');
   const area = (await inspectionAreas(sql)).some(a => a.key === String(b.area)) ? String(b.area) : 'general';
   const n = Math.max(1, Number(b.n) || 1);
   const [c] = await sql`
-    INSERT INTO inspection_checks (account_id, inspection_id, item_id, area, area_n, label, result, note, outcome, updated_by)
-    VALUES (1, ${Number(id)}, NULL, ${area}, ${n}, ${label}, 'attention', ${String(b.note ?? '').trim().slice(0, 1000) || null}, ${outcome}, ${who})
+    INSERT INTO inspection_checks (account_id, inspection_id, item_id, area, area_n, label, result, note, outcome, updated_by, supply_id, supply_qty)
+    VALUES (1, ${Number(id)}, NULL, ${area}, ${n}, ${label}, 'attention', ${String(b.note ?? '').trim().slice(0, 1000) || null}, ${outcome}, ${who},
+            ${supply?.id ?? null}, ${supplyQty})
     RETURNING id::text` as { id: string }[];
   return c!.id;
 }
@@ -344,6 +356,15 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
                 VALUES (1, ${item}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
     }
     await sql`UPDATE inspection_checks SET todo_id = ${Number(t!.id)} WHERE account_id = 1 AND id = ANY(${buys.map(c => Number(c.id))}::bigint[])`;
+    // §150: the supplies chosen from the list make it an order filled in — to the unit's place — that
+    // Inventory → 🧾 Record a purchase starts from. Free-text lines stay on the to-do only.
+    const supplies = await sql`SELECT supply_id::text AS "itemId", supply_qty::float AS qty FROM inspection_checks
+                                WHERE account_id = 1 AND id = ANY(${buys.map(c => Number(c.id))}::bigint[]) AND supply_id IS NOT NULL` as { itemId: string; qty: number }[];
+    if (supplies.length) {
+      const place = ins.unit_id ? (await supplyPlaces(sql)).byUnit.get(ins.unit_id)?.key ?? '' : '';
+      await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by)
+                VALUES (1, ${Number(t!.id)}, ${JSON.stringify(supplies.map(s => ({ itemId: s.itemId, place, qty: s.qty })))}::jsonb, ${who})`;
+    }
     toPush.push(t!.id);
     made.push({ kind: 'purchase', title: list.title, id: t!.id });
   }

@@ -19,6 +19,8 @@ export interface UnitAccess {
   code: string | null; codeFrom: 'repository' | 'hostaway' | null;
   lockbox: string | null; fob: string | null;
   wifiName: string | null; wifiPassword: string | null;
+  /** §150: where this unit's supplies come from — a storage ("S1105") or the house's own closet — and its code. */
+  supplies?: { label: string; self: boolean; code: string | null } | null;
   /** What the team still has to fill for cleaners. */
   missing: ('address' | 'access' | 'code' | 'lockbox' | 'wifi')[];
 }
@@ -82,4 +84,54 @@ export function unitAccess(u: UnitRow, rec: RepoRow | null): UnitAccess {
     lockType, kind, code, codeFrom: teamCode ? 'repository' : code ? 'hostaway' : null,
     lockbox, fob, wifiName, wifiPassword, missing
   };
+}
+
+/**
+ * Where a unit's supplies are kept (§150): the place its Repository `storage`
+ * names — a Storage row ("S1105 Storage (stock)"), or the house itself (its
+ * own name = its own closet). Looked up in the unit's table first, then in
+ * every Units table, so a storage shared across buildings needs no code.
+ * Blank, or a name no record has: no place (null) — never guessed.
+ */
+export interface SupplyPlace { key: string; name: string; self: boolean; code: string | null }
+export function supplyPlace(rec: RepoRow | null, records: RepoRow[]): SupplyPlace | null {
+  const want = norm(rec?.vals.storage);
+  if (!rec || !want) return null;
+  const self = norm(rec.vals.name) === want;
+  const target = self ? rec : records.find(r => r.table === rec.table && norm(r.vals.name) === want) ?? records.find(r => norm(r.vals.name) === want);
+  if (!target) return null;
+  // A house's lockbox holds the door keys, not the closet's — only a storage's lockbox opens the storage.
+  const code = text(target.vals.closet_code) ?? (self ? null : text(target.vals.lockbox));
+  return { key: `${target.table}/${target.id}`, name: String(target.vals.name ?? '').trim(), self, code };
+}
+
+/** What a cleaner reads for a place: "S1105" out of "S1105 Storage (stock)"; a house's own is its closet (the caller's word). */
+export const placeLabel = (name: string) => /\bS\d+\b/i.exec(name)?.[0].toUpperCase() ?? name;
+
+export interface PlaceRow { key: string; name: string; self: boolean; units: { id: string; name: string; recordId: string | null }[] }
+/**
+ * The inventory's places, from the Repository (§150): every Storage row and
+ * every place an active unit is assigned to (a house's own closet), with the
+ * active units each one supplies — and the active units with no place.
+ */
+export function inventoryPlaces(units: { id: string; name: string; active: boolean }[], records: RepoRow[]) {
+  const byUnit = new Map<string, SupplyPlace | null>();
+  const places = new Map<string, PlaceRow>();
+  for (const r of records) if (/^storage$/i.test(String(r.vals.property_type ?? '').trim()))
+    places.set(`${r.table}/${r.id}`, { key: `${r.table}/${r.id}`, name: String(r.vals.name ?? '').trim(), self: false, units: [] });
+  const unassigned: { id: string; name: string; recordId: string | null }[] = [];
+  for (const u of units) {
+    const rec = repoMatch(u.name, records);
+    const p = supplyPlace(rec, records);
+    byUnit.set(u.id, p);
+    if (!u.active) continue;
+    const recordId = rec ? `${rec.table}/${rec.id}` : null;
+    if (!p) { unassigned.push({ id: u.id, name: u.name, recordId }); continue; }
+    const row = places.get(p.key) ?? { key: p.key, name: p.name, self: p.self, units: [] };
+    row.units.push({ id: u.id, name: u.name, recordId });
+    places.set(p.key, row);
+  }
+  // Storages first, then the houses' closets.
+  const list = [...places.values()].sort((a, b) => Number(a.self) - Number(b.self) || a.name.localeCompare(b.name));
+  return { places: list, unassigned, byUnit };
 }

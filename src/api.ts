@@ -449,6 +449,8 @@ export interface CrewPage {
   field?: Record<string, CleanFieldState>;
   /** §136: how to get in, for today's cleans only; the address of the coming ones. */
   access?: Record<string, import('./lib/unit-access.ts').UnitAccess>;
+  /** §150: where each clean's supplies come from (label only; the code is in today's `access`). */
+  places?: Record<string, NonNullable<import('./lib/unit-access.ts').UnitAccess['supplies']>>;
   addresses?: Record<string, string>;
   /** §134: the photos of those cleans (ids for crewPhoto), by key. */
   fieldPhotos?: Record<string, { id: string; stage: 'before' | 'after' }[]>;
@@ -486,19 +488,30 @@ export interface SupplyItem { id: string; name: string; measure: string; categor
 export interface InvItemRow extends SupplyItem { perClean: number | null; reorderAt: number | null; active: boolean }
 export interface InvLevel {
   itemId: string; qty: number | null; countedAt: string | null; missingSince: string | null;
-  perClean: number | null; learned: boolean; toOrder: number;
-  /** Storage only: what the coming cleans of every unit will take out of it (§134). */
-  need?: number;
+  /** §150: the average per clean of what cleaners reported, over the units this place supplies (else the item's estimate). */
+  perClean: number | null; learned: boolean; reportedCleans: number;
+  /** What the next cleans of its units will take out; the minimum here (`minOwn`: set for this place, else the item's). */
+  need: number; min: number | null; minOwn: boolean; toOrder: number;
 }
-export interface InvPlace { unitId: string | null; place: string; cleansAhead: number; items: InvLevel[] }
+/** A place (§150): a Repository record `table/ROW-id` — a storage or a house's closet; null = moves of units with no place. */
+export interface InvPlace { place: string | null; name: string; self: boolean; units: { id: string; name: string; recordId: string | null; cleansAhead: number }[]; items: InvLevel[] }
 export interface InvMove {
-  id: string; item: string; place: string; kind: 'count' | 'used' | 'purchase' | 'adjust' | 'missing' | 'taken'; qty: number;
+  id: string; item: string; place: string | null; unit: string | null; kind: 'count' | 'used' | 'purchase' | 'adjust' | 'missing' | 'taken'; qty: number;
   note: string | null; byName: string; source: 'team' | 'cleaner' | 'link'; photos: { name: string; url: string }[]; at: string;
 }
-export interface Inventory { items: InvItemRow[]; places: InvPlace[]; recent: InvMove[]; aheadDays: number; windowDays: number }
+export interface Inventory {
+  items: InvItemRow[]; places: InvPlace[]; recent: InvMove[]; aheadDays: number; windowDays: number;
+  /** Active units whose Repository `storage` is blank or names no record (§150). */
+  unassigned: { id: string; name: string; recordId: string | null; cleansAhead: number }[];
+  /** Orders (shopping to-dos) not closed, with their lines — a purchase can start from one (§150). */
+  orders: { todoId: string; title: string; lines: { itemId: string; place: string; qty: number }[]; at: string; purchases: number }[];
+}
 export const getInventory = () => call<({ ok: true } & Inventory) | Fail>('/api/inventory');
 export const inventoryAction = (body: Record<string, unknown>) =>
   call<({ ok: true; todoId?: string } & Inventory) | Fail>('/api/inventory', { method: 'POST', body: JSON.stringify(body) });
+/** A purchase with its receipt (multipart, §150). */
+export const inventoryUpload = (form: FormData) =>
+  fetch('/api/inventory', { method: 'POST', body: form }).then(r => r.json() as Promise<({ ok: true } & Inventory) | Fail>);
 export const inventoryItemAction = (body: Record<string, unknown>) =>
   call<{ ok: true; items: InvItemRow[] } | Fail>('/api/inventory-items', { method: 'POST', body: JSON.stringify(body) });
 
@@ -532,7 +545,7 @@ export const crewCleanLink = (key: string, token?: string | null) =>
 /** Money paid in the field, waiting for the team's approval before it reaches Costs (§137). */
 export interface FieldExpense {
   id: string; source: 'cleaner' | 'link' | 'vendor'; byName: string; cleaningKey: string | null; todoId: string | null;
-  unit: string | null; category: string; amount: number; description: string; photos: { name: string; url: string }[]; at: string;
+  unitId: string | null; unit: string | null; category: string; amount: number; description: string; photos: { name: string; url: string }[]; at: string;
 }
 
 export interface PendingExtra {
@@ -581,6 +594,8 @@ export interface InspectionRunData {
   sections: Section[]; rooms: { bedrooms: number; bathrooms: number };
   checks: RunCheck[]; nextClean: { key: string; date: string; cleaner: string | null } | null;
   inspectors: string[]; today: string;
+  /** §150: the supplies list, for the 🔍 on a purchase. */
+  supplies?: { id: string; name: string; measure: string }[];
 }
 export const getRun = (id: string) => call<({ ok: true } & InspectionRunData) | Fail>(`/api/inspection-run?id=${encodeURIComponent(id)}`);
 export const runAction = <T extends object = Record<string, unknown>>(body: Record<string, unknown>) =>

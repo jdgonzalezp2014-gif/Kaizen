@@ -77,19 +77,22 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
 
   // What is still missing — said on the Send button's line, never only by a greyed-out button.
   // §137: a purchase reaches Costs only with what it cost — so the total is required (the team approves it).
-  const missing = kind === 'purchase' || kind === 'missing' ? (!itemId ? tx.supNeedItem : kind === 'purchase' && qty < 1 ? tx.supNeedQty
-      : kind === 'purchase' && !(Number(cost) > 0) ? tx.supNeedCost : '')
+  // §150: what they bought is said in their own words; the team records it in Inventory when approving it.
+  const missing = kind === 'purchase' ? (!text.trim() ? tx.supNeedText : !(Number(cost) > 0) ? tx.supNeedCost : '')
+    : kind === 'missing' ? (!itemId ? tx.supNeedItem : '')
     : (!text.trim() ? tx.supNeedText : !prio ? tx.urgNeed : '');
 
   async function submit() {
     if (missing || busy) return;
     setBusy(true); setErr('');
     try {
-      const r = kind === 'purchase' || kind === 'missing'
-          ? await send({ action: 'supply', kind: kind!, itemId, qty: String(qty), ...(kind === 'purchase' && cost ? { cost } : {}) }, await Promise.all(files.map(shrink)))
+      const r = kind === 'purchase'
+          ? await send({ action: 'supply', kind: 'purchase', text: text.trim(), cost }, await Promise.all(files.map(shrink)))
+          : kind === 'missing'
+          ? await send({ action: 'supply', kind: 'missing', itemId, qty: String(qty) }, await Promise.all(files.map(shrink)))
           : await send({ action: kind!, kind: kind!, text: text.trim(), priority: prio }, await Promise.all(files.map(shrink)));
       if (!r.ok) { setErr(r.message ?? tx.notSaved); return; }
-      setDone({ task: kind !== 'purchase' });
+      setDone({ task: true });
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
   }
 
@@ -111,16 +114,20 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
       <button className="link fr-back" onClick={back}>{start ? tx.supClose : tx.supBack}</button>
       <p className="fr-kind">{tx.supKind[kind]}</p>
 
-      {(kind === 'purchase' || kind === 'missing') && <>
-        <p className="fr-q">{kind === 'purchase' ? tx.supBuyQ : tx.supMissQ}</p>
+      {kind === 'missing' && <>
+        <p className="fr-q">{tx.supMissQ}</p>
         {itemPick}
-        <p className="fr-q">{kind === 'purchase' ? tx.supHowMany : tx.supFound}</p>
-        <Stepper n={qty} min={kind === 'purchase' ? 1 : 0} onStep={d => setQty(q => Math.max(kind === 'purchase' ? 1 : 0, Math.min(999, q + d)))} />
-        {kind === 'purchase' && <>
-          {photo(tx.supReceiptBtn)}
-          <label className="fr-field">{tx.supCost}
-            <input type="number" inputMode="decimal" min="0" step="0.01" value={cost} onChange={e => setCost(e.target.value)} /></label>
-        </>}
+        <p className="fr-q">{tx.supFound}</p>
+        <Stepper n={qty} min={0} onStep={d => setQty(q => Math.max(0, Math.min(999, q + d)))} />
+      </>}
+
+      {kind === 'purchase' && <>
+        <p className="fr-q">{tx.supBuyQ}</p>
+        <textarea className="fr-text" rows={3} maxLength={300} value={text} placeholder={tx.supBuyEg} onChange={e => setText(e.target.value)} />
+        <p className="fr-tip">{tx.supSpeakTip}</p>
+        {photo(tx.supReceiptBtn)}
+        <label className="fr-field">{tx.supCost}
+          <input type="number" inputMode="decimal" min="0" step="0.01" value={cost} onChange={e => setCost(e.target.value)} /></label>
       </>}
 
       {(kind === 'problem' || kind === 'request') && <>

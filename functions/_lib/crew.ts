@@ -16,7 +16,7 @@ import { tellCleanThread } from './clean-slack.ts';
 import { accessByUnit } from './unit-access.ts';
 import type { UnitAccess } from '../../src/lib/unit-access.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type CleanState, type Stage } from './clean-record.ts';
-import { activeUnits, esMessage, fieldPhotos, fieldTodo, invItems, mirrorTodos, nothingTaken, recordMove, recordUses } from './inventory.ts';
+import { activeUnits, esMessage, fieldPhotos, fieldPurchase, fieldTodo, invItems, mirrorTodos, nothingTaken, recordMove, recordUses } from './inventory.ts';
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
 import type { Level } from '../../src/lib/operations.ts';
 import {
@@ -60,6 +60,7 @@ export interface CrewPage {
   field?: Record<string, CleanState>;
   /** §136: how to get in (address, lock, code, Wi-Fi) — only for the cleaner's cleans of TODAY, by key. */
   access?: Record<string, UnitAccess>;
+  places?: Record<string, NonNullable<UnitAccess['supplies']>>;
   /** §136: the address of each coming clean (no codes ahead of the day), by key. */
   addresses?: Record<string, string>;
   /** §134: the photos themselves (ids to ask for), by clean — shown on the cleaner's past cleans. */
@@ -319,6 +320,9 @@ export async function crewGet(request: Request, env: Env, sql: SqlFn, me: CrewCa
   const acc = await accessByUnit(sql);
   const todays = [...page.upcoming.rows.filter(r => r.date === page.today), ...page.cleans.filter(c => c.date === page.today && !c.voidReason)];
   page.access = Object.fromEntries(todays.flatMap(c => { const a = acc.get(c.unit); return a ? [[c.key, strip(a)]] : []; }));
+  // §150: where each clean's supplies come from (no code: that is for today's, in `access`).
+  page.places = Object.fromEntries([...page.upcoming.rows, ...page.cleans]
+    .flatMap(c => { const s = acc.get(c.unit)?.supplies; return s ? [[c.key, { ...s, code: null }]] : []; }));
   page.addresses = Object.fromEntries(page.upcoming.rows.filter(r => r.date > page.today)
     .flatMap(r => { const a = acc.get(r.unit)?.address; return a ? [[r.key, a]] : []; }));
   return Response.json({ ok: true, ...page });
@@ -507,14 +511,16 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     try {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${me.name} ${String(body.kind ?? body.action)}`);
       const what = String(body.action === 'supply' ? body.kind : body.action);
-      let r: string | null = null, text = String(body.text ?? '').trim().slice(0, 300);
-      if (body.action !== 'supply') r = await fieldTodo(sql, who2, { ...body, kind: body.action }, photos);
+      let r: string | null = null, fresh = true, text = String(body.text ?? '').trim().slice(0, 300);
+      if (body.action !== 'supply') ({ todoId: r, fresh } = await fieldTodo(sql, who2, { ...body, kind: body.action }, photos));
       else if (body.kind === 'used') await recordUses(sql, who2, body);
+      // §150: what they bought, in their own words — the team records it in Inventory when approving it.
+      else if (body.kind === 'purchase') ({ todoId: r, fresh } = await fieldPurchase(sql, who2, body, photos));
       else {
         const m = await recordMove(sql, who2, body, photos);
-        r = m.todoId; text = body.kind === 'missing' ? `${m.item} (found ${Number(body.qty) || 0})` : `${m.item} × ${Number(body.qty) || 0}`;
+        r = m.todoId; fresh = m.fresh; text = `${m.item} (found ${Number(body.qty) || 0})`;
       }
-      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r], me.name));
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r], me.name, fresh));
       // §136: Ops sees it in the day's thread too, on that clean.
       const ck = String(body.cleaningKey ?? '');
       if (ck && what !== 'used' && ['problem', 'request', 'missing', 'purchase'].includes(what)) {

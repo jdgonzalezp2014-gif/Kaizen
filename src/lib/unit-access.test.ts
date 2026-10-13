@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { kindOf, repoMatch, unitAccess, type RepoRow, type UnitRow } from './unit-access.ts';
+import { inventoryPlaces, kindOf, placeLabel, repoMatch, supplyPlace, unitAccess, type RepoRow, type UnitRow } from './unit-access.ts';
 
 const rec = (id: string, vals: Record<string, unknown>): RepoRow => ({ id, table: 't', vals });
 const RECS = [rec('a', { name: 'CL-1125' }), rec('b', { name: 'LP-4308' }), rec('c', { name: 'Timbercrest' }),
@@ -26,4 +26,35 @@ test('the access a clean carries: the team’s cleaner code first, the guests’
   const fob = unitAccess({ ...u, wifiName: null }, rec('f', { lock_type: 'Access Fob', keys_fobs: 'Access Fob' }));
   assert.equal(fob.kind, 'fob'); assert.deepEqual(fob.missing, ['lockbox', 'wifi']);
   assert.equal(kindOf('Yale Smart Lock'), 'smart'); assert.equal(kindOf('keys'), 'keys'); assert.equal(kindOf(null), null);
+});
+
+test('a unit draws supplies from the record its Storage names: a storage, or the house itself (§150)', () => {
+  const r = (table: string, id: string, vals: Record<string, unknown>): RepoRow => ({ id, table, vals });
+  const recs = [
+    r('the_links', 'S1', { name: 'S1105 Storage (stock)', property_type: 'Storage', lockbox: '3611' }),
+    r('the_links', 'S4', { name: 'S4116 Storage (stock)', property_type: 'Storage' }),
+    r('cortland', 'S13', { name: 'CORTLAND STORAGE S13', property_type: 'Storage' }),
+    r('the_links', 'L1', { name: 'LP-4315', storage: 'S1105 Storage (stock)' }),
+    r('the_links', 'L2', { name: 'LP-1201', storage: '' }),
+    r('the_links', 'L3', { name: 'LP-4212', storage: 'CORTLAND STORAGE S13' }),   // a storage of another building
+    r('houses', 'H1', { name: 'Preston Vineyard', storage: 'Preston Vineyard', closet_code: '1234#', lockbox: '3611' }),
+    r('houses', 'H2', { name: 'Bobcat', storage: 'Gone storage' })
+  ];
+  assert.deepEqual(supplyPlace(recs[3]!, recs), { key: 'the_links/S1', name: 'S1105 Storage (stock)', self: false, code: '3611' });
+  assert.equal(supplyPlace(recs[4]!, recs), null);
+  assert.equal(supplyPlace(recs[5]!, recs)?.key, 'cortland/S13');
+  // The house's own closet: its closet code, never its door lockbox.
+  assert.deepEqual(supplyPlace(recs[6]!, recs), { key: 'houses/H1', name: 'Preston Vineyard', self: true, code: '1234#' });
+  assert.equal(supplyPlace(recs[7]!, recs), null);
+  assert.equal(placeLabel('S1105 Storage (stock)'), 'S1105');
+  assert.equal(placeLabel('CORTLAND STORAGE S13'), 'S13');
+  assert.equal(placeLabel('Main warehouse'), 'Main warehouse');
+
+  const units = [{ id: '1', name: 'P2-4315', active: true }, { id: '2', name: 'P2-1201', active: true }, { id: '3', name: 'Preston Vineyard', active: true },
+                 { id: '4', name: 'P2-4212', active: false }];
+  const m = inventoryPlaces(units, recs);
+  assert.deepEqual(m.places.map(p => [p.name, p.units.map(u => u.name)]),
+    [['CORTLAND STORAGE S13', []], ['S1105 Storage (stock)', ['P2-4315']], ['S4116 Storage (stock)', []], ['Preston Vineyard', ['Preston Vineyard']]]);
+  assert.deepEqual(m.unassigned.map(u => u.name), ['P2-1201']);
+  assert.equal(m.byUnit.get('4')?.key, 'cortland/S13');   // inactive: not listed, still resolved for its past
 });

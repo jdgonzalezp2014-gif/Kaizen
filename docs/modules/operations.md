@@ -30,7 +30,9 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   `report-link.ts` (SELF_AUTHENTICATING, `X-Report-Token`; GET the clean, POST photo/taken/nothing/
   done/reopened/problem/request/missing/purchase), the crew handler's `cleanLink`/`cleanPhoto`/`cleanTaken`/
   `cleanNothing`/`cleanMark`/`supply`/`problem`/`request` actions and `GET ?photo=`; server lib `functions/_lib/inventory.ts`;
-  pure `src/lib/inventory.ts` (stockLevels, reconcile, perClean, toOrder, toBuy, orderList).
+  pure `src/lib/inventory.ts` (stockLevels, reconcile, unitUses, perClean, needByPlace, toOrder, orderList) and the
+  places in `src/lib/unit-access.ts` (supplyPlace, placeLabel, inventoryPlaces); server `recordPurchase`, `fieldPurchase`,
+  `cleanTodo`, `setMins` (functions/_lib/inventory.ts); `FieldPurchaseLines` (Inventory.tsx) in the approval.
 - Script: `scripts/whatsapp-cleanings.mjs` (crew chat history, one-off).
 
 ## Tables
@@ -41,7 +43,8 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 `link_token_hash`), `accounts.assign_rule`, `accounts.crew_calendar(_days)`, `crew_extras_folder`,
 `cleanings.flag_note/flagged_by/at`, `cleaning_extras` (+ `cleaning_extra_files`), `crew_declines`,
 `crew_schedule_confirms` (snapshot jsonb), `accounts.ops_rules` / `ops_mode`, `stay_notes`, `inspections`,
-`extra_inspectors`, `host_note_pushes`, `inventory_items`, `inventory_moves` (057; kind `taken` 061),
+`extra_inspectors`, `host_note_pushes`, `inventory_items`, `inventory_moves` (057; kind `taken` 061; `place` 068, `purchase_id` 069),
+`inventory_place_mins` (068), `inventory_orders`, `inventory_purchases` (069), `todos.clean_key`, `inspection_checks.supply_id/qty` (069),
 `accounts.field_reports_folder`, `clean_links` (058), `clean_records` (+ `supplies_at/by/none` 061) / `clean_photos` /
 `clean_marks`, `accounts.clean_photos_folder` (059), `clean_slack_posts` (060). (057's `cleaners.report_token_*`
 were dropped in 058.)
@@ -236,16 +239,29 @@ key had no SOPs.
   price (blank = the card's rate at the unit's size; no rate → must type one), note required and shown
   to the cleaner (`edited_by/at`, `edit_note`). Today and ahead are changed on the board.
 
-- **Inventory (§134): the stock is never stored.** It is the last `count` + `purchase` − `used` ± `adjust`
-  per item and place (`unit_id` NULL = Storage), floored at 0. **`taken`** (061) = out of the STORAGE for a
-  clean: it lowers the storage, names the unit and clean it went to, and leaves the unit's record alone —
-  the owner: what matters is what leaves the storage, not what was already in the house. `missing` changes nothing: it marks the
-  item ⚠ and makes a "Check stock" to-do; a count clears it. Only the team counts or corrects
-  (`recordMove` refuses it from a cleaner or a link). Per clean = the item's estimate until 3 cleans in
-  that unit reported uses or takes in 60 days. **Storage to order** = Σ units (per-clean take × cleans in the
-  next 14 days) + the item's minimum − storage stock, only once the storage is counted. A counted house
-  short of its own minimum also gets a line (`toOrder(null) = 0`: never-counted is not guessed — 273 lines
-  on the first test). An order = one to-do with a sub-task per line, mirrored like any work.
+- **Inventory (§134, §150): by PLACE, never by unit.** A place = a Repository record (`table/ROW-id`): a Storage
+  row (S13, S1105…) or a house's own record (its closet). Which place a unit draws from = the Repository's
+  `storage` column, the ONLY source (a house names itself; blank = ▲ no place), read every time by
+  `supplyPlaces` (functions/_lib/unit-access.ts) / `supplyPlace`, `inventoryPlaces` (src/lib/unit-access.ts) —
+  looked up in every Units table. Setup → Inventory shows the map with ▲ and a link to each record (`/?repo=`).
+  **The stock is never stored**: last `count` + `purchase` − `used`/`taken` ± `adjust` per item and place, floored
+  at 0. Every move keeps the place it happened in (`inventory_moves.place`) — a unit moved later leaves its past;
+  `taken` also names the unit and the clean; a unit with no place records with place NULL (▲, never blocks).
+  `missing` changes nothing: ⚠ and a "Check stock" to-do; a count clears it. Only the team counts or corrects.
+  **Per clean = the average** of what cleaners reported over every clean that answered step 2 in 60 days
+  ("nothing" included), per unit wherever it took from; the item's estimate until 3. **To order per place** =
+  Σ its units now (per clean × cleans in 14 d) + its minimum (`inventory_place_mins`, else the item's) − its
+  stock, only once counted (never-counted is not guessed — 273 lines on the first test).
+- **Order ≠ purchase (§150, owner).** The ORDER = a shopping to-do, a line per ITEM and where it goes (one place
+  or ⑂ split; 🔍 adds any item), lines kept in `inventory_orders`. The PURCHASE = Inventory → 🧾 Record a
+  purchase (from an open order, filled in, or from scratch; total + receipt) → a `purchase` move per line and
+  place + ONE Restock expense (`purchase-<id>`) + a note on the order; the team closes the order. The only way
+  stock goes up from buying. The inspector's 🛒 Purchase has the same 🔍 (supply + how many) → the inspection's
+  to-do is an order filled in, to the unit's place.
+- **Cleaners speak, the team records (§150).** "I bought something" = their words + total + receipt → a pending
+  field expense, no stock; approved ONLY via "✓ Approve — record in inventory" (items, places) in Operations →
+  Cleaners → `recordPurchase`. A clean's reports (need, missing, bought) = ONE to-do "From the clean of <unit> on
+  <date>" (`todos.clean_key`), a sub-task each, the most urgent priority; "something is wrong" stays its own.
 - **Per clean, not per team (§134, owner):** everything a cleaner does is on one clean (see "The cleaner's
   page" below), and the helper's link too. The helper link (`clean_links`, token encrypted to be
   shared again, `/report#t=…`) is for THAT clean: unit and key come from the link, never the page; it
@@ -269,8 +285,9 @@ key had no SOPs.
   preview): only a photo of a clean whose `clean_records.cleaner` is them; the team's Drive stays theirs.
   In "Changes since", a clean taken off a cleaner (reassigned or unassigned) reads just "cancelled" to
   them; the team's view still says what happened.
-- **A clean's 4 steps (§134):** 1 photos BEFORE · 2 🧴 what I took from storage (**required**: lines, or
-  the explicit "I took nothing from storage" — `clean_records.supplies_at/by/none`) · 3 photos AFTER ·
+- **A clean's 4 steps (§134):** 1 photos BEFORE · 2 🧴 what I took from <its place> — "from S1105", "from the closet"
+  (§150; with the place's code; "from storage" if the team has not set it) (**required**: lines, or
+  the explicit "I took nothing …" — `clean_records.supplies_at/by/none`) · 3 photos AFTER ·
   4 ✅ done. Done is refused until 2 and 3 are there. "What I took" is no longer in the reports menu.
   The helper page (`/report`): the header IS the clean (unit, day small under it; EN/ES beside ☾), then two
   big tabs "🧽 My clean" / "🙋 Report or ask" so both show without scrolling. Reports in the owner's
@@ -326,15 +343,17 @@ key had no SOPs.
   (the page says so in ES) — a Spanish label per item in Setup is not built. Not built: a Slack notice when an
   inspection is sent; choosing the inspector's language on the team side (it follows the roster, else EN).
   Cancelling a scheduled inspection that has answers fails (FK from `inspection_checks`) — pre-existing.
-- **Inventory and the field steps built, not in use (§134).** Migrations 057–059 applied. To start:
-  count Storage and the busiest units (Operations → Inventory → ▣ Count), adjust the starter list (13
-  items, estimates are guesses). Access **Bypass** app "Kaizen — public links" (Bypass Everyone) is live since
+- **Inventory by place (§150) live 2026-10-13** (068–069 applied; Repository filled; the 6 test moves placed —
+  nothing is counted yet, so every place reads "never counted" and nothing is ordered). To start: count
+  S1105, S13 and the house closets (Operations → Inventory → ▣ Count), set minimums per place, adjust the starter
+  list (13 items, estimates are guesses). Hostaway task 16400930 ("Buy supplies: 2 items") and its Slack notice
+  were a branch test — delete them (owner's OK). Not built: transfers between places; closing an order
+  automatically; per-item supplier/price; a Spanish label per supply. Access **Bypass** app "Kaizen — public links" (Bypass Everyone) is live since
   2026-10-12 for `/report`, `/api/report-link`, `/crew`, `/api/crew-link`, `/assets/*` — verified: those
   answer without sign-in (APIs 403 without a token), `/` and every other `/api/*` still redirect. SOP drafts: "Keep the supplies counted and
   ordered", and the cleaners' "Your clean step by step: photos, done, supplies" / "Tu limpieza paso a
   paso: fotos, completada, insumos" (publish them to show on the crew page). Not built: photos and done
-  on the Operations board; done does not feed the record or pay. Not built: transfers Storage → unit (a use in a unit does not take
-  from Storage), costs of purchases into Costs, supplier/price per item, a Slack notice for ⚠.
+  on the Operations board; done does not feed the record or pay. Not built: a Slack notice for ⚠.
 
 - **Stars built, tiers still deciding (§121).** `accounts.assign_rule = 'tiers'`; the board shows
   "needs ★N · has ★M ✓/▲" and "by stars: X" beside each clean. Next: the owner sets each
@@ -362,4 +381,4 @@ key had no SOPs.
 
 ## History
 
-§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140, §141, §142, §147.
+§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140, §141, §142, §147, §150.

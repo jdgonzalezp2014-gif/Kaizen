@@ -1,6 +1,7 @@
 /**
  * A clean, step by step (§134): 1 photos BEFORE, 2 what was taken from the
- * STORAGE (not what was already in the house), 3 photos AFTER, 4 mark it
+ * unit's PLACE — its storage (S1105) or the house's closet, §150 — not what was
+ * already in the unit, 3 photos AFTER, 4 mark it
  * done — or reopen it. The same on the cleaner's page and on the link their
  * helpers open; several people can work one clean, each photo and mark is
  * theirs.
@@ -19,6 +20,7 @@ import { useState } from 'react';
 import type { CleanFieldState as StepState, SupplyItem } from '../api.ts';
 import { SupplyCounter } from './FieldReport.tsx';
 import type { Tx } from '../lib/crew-i18n.ts';
+import type { UnitAccess } from '../lib/unit-access.ts';
 import { PhotoPicker, shrink } from './PhotoPicker.tsx';
 
 export type Result = { ok: boolean; message?: string; state?: StepState };
@@ -29,9 +31,16 @@ export type Taken = (lines: { itemId: string; qty: number }[] | null) => Promise
 
 const EMPTY: StepState = { before: 0, after: 0, folderUrl: null, done: null, supplies: null };
 
-export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState }: {
+/** §150: "from S1105" / "from the closet" — where this unit's supplies are kept; "from storage" when the team has not set it. */
+export const fromWords = (tx: Tx, place: UnitAccess['supplies']) =>
+  !place ? tx.fromStorage : place.self ? tx.fromCloset : tx.fromPlace(place.label);
+
+export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState, place }: {
   tx: Tx; items: SupplyItem[]; state?: StepState; sendPhoto: SendPhoto; taken: Taken; mark: Mark; onState?: (s: StepState) => void;
+  /** Where step 2 takes from, and its code — from the unit's access (§136, §150). */
+  place?: UnitAccess['supplies'];
 }) {
+  const from = fromWords(tx, place);
   const [st, setSt] = useState<StepState>(state ?? EMPTY);
   const [stage, setStage] = useState<'before' | 'after' | 'taken' | null>(null);
   const [asking, setAsking] = useState(false);
@@ -39,11 +48,11 @@ export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState }
   const [msg, setMsg] = useState('');
   const take = (s?: StepState) => { if (s) { setSt(s); onState?.(s); } };
 
-  if (stage === 'taken') return <TakenStep tx={tx} items={items} send={taken}
+  if (stage === 'taken') return <TakenStep tx={tx} items={items} send={taken} from={from} code={place?.code ?? null}
                                           onDone={s => { take(s); setStage(null); }} onBack={() => setStage(null)} />;
   if (stage) return <PhotoStep tx={tx} stage={stage} send={f => sendPhoto(stage, f)}
                                onDone={s => { take(s); setStage(null); }} onBack={() => setStage(null)} />;
-  const needs = !st.supplies ? tx.stepNeedTaken : !st.after ? tx.stepNeedAfter : '';
+  const needs = !st.supplies ? tx.stepNeedTaken(from) : !st.after ? tx.stepNeedAfter : '';
 
   const doMark = async (kind: 'done' | 'reopened') => {
     setBusy(true); setMsg('');
@@ -56,8 +65,8 @@ export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState }
       <button className="fr-btn fr-choice fr-stepbtn" onClick={() => setStage('before')}>
         <span className="fr-num">1</span><span>{tx.stepBefore}<small>{tx.stepCount(st.before)}</small></span></button>
       <button className="fr-btn fr-choice fr-stepbtn" onClick={() => setStage('taken')}>
-        <span className="fr-num">2</span><span>{tx.stepTaken}<small>{!st.supplies ? tx.takenNotYet
-          : st.supplies.none ? tx.takenNone : tx.takenCount(st.supplies.lines)}</small></span></button>
+        <span className="fr-num">2</span><span>{tx.stepTaken(from)}<small>{!st.supplies ? tx.takenNotYet
+          : st.supplies.none ? tx.takenNone(from) : tx.takenCount(st.supplies.lines)}</small></span></button>
       <button className="fr-btn fr-choice fr-stepbtn" onClick={() => setStage('after')}>
         <span className="fr-num">3</span><span>{tx.stepAfter}<small>{tx.stepCount(st.after)}</small></span></button>
       {st.done ? <>
@@ -87,8 +96,8 @@ export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState }
  * own, so the answer is always said, never skipped. Adding more later (a
  * second helper, something forgotten) adds to what was sent.
  */
-function TakenStep({ tx, items, send, onDone, onBack }: {
-  tx: Tx; items: SupplyItem[]; send: Taken; onDone: (s?: StepState) => void; onBack: () => void;
+function TakenStep({ tx, items, send, from, code, onDone, onBack }: {
+  tx: Tx; items: SupplyItem[]; send: Taken; from: string; code: string | null; onDone: (s?: StepState) => void; onBack: () => void;
 }) {
   const [counts, setCounts] = useState<Record<string, number>>({});
   const [busy, setBusy] = useState(false);
@@ -102,14 +111,14 @@ function TakenStep({ tx, items, send, onDone, onBack }: {
   return (
     <div className="fr">
       <button className="link fr-back" onClick={onBack} disabled={busy}>{tx.supBack}</button>
-      <p className="fr-q">{tx.stepTaken}</p>
-      <p className="fr-tip">{tx.takenQ}</p>
+      <p className="fr-q">{tx.stepTaken(from)}</p>
+      <p className="fr-tip">{tx.takenQ(from)}{code && <><br /><b>{tx.placeCode(code)}</b></>}</p>
       <SupplyCounter tx={tx} items={items} counts={counts} onCounts={setCounts} />
       <div className="fr-send">
         <button className="fr-btn fr-go" disabled={busy || !picked.length}
                 onClick={() => void go(picked.map(([itemId, qty]) => ({ itemId, qty })))}>
           {busy ? tx.sending : picked.length ? tx.supSendCount(picked.length) : tx.sendTeam}</button>
-        {!picked.length && <button className="fr-btn secondary" disabled={busy} onClick={() => void go(null)}>{tx.takenNothing}</button>}
+        {!picked.length && <button className="fr-btn secondary" disabled={busy} onClick={() => void go(null)}>{tx.takenNothing(from)}</button>}
         {err && <p className="breach" role="alert">{err}</p>}
       </div>
     </div>

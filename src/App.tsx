@@ -184,6 +184,8 @@ function TeamApp() {
           history.replaceState(null, '', location.pathname);
           return;
         }
+        // A link to one Repository record (§150 — Setup → Inventory's map): ?repo=<table>/<ROW-id>, opened by Repository itself.
+        if (new URLSearchParams(location.search).get('repo') && tabs.includes('repository')) { setTab('repository'); return; }
         setTab(prev => (prev && tabs.includes(prev)) ? prev : ((back ?? tabs[0]) as Tab));
       })
       .catch(e => {

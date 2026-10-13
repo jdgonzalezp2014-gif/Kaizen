@@ -15,6 +15,7 @@
  */
 import type { SqlFn } from './accounts.ts';
 import { todayIn } from '../../src/lib/dates.ts';
+import { recordPurchase } from './inventory.ts';
 
 const TZ = 'America/New_York';
 
@@ -67,13 +68,27 @@ export async function addFieldExpense(sql: SqlFn, e: {
   return r!.id;
 }
 
-/** Approve (→ an expense on its unit, today) or deny; only a pending one — a decision is never silently overwritten. */
-export async function decideFieldExpense(sql: SqlFn, id: string, status: 'approved' | 'denied', note: string | null, by: string) {
+/**
+ * Approve or deny; only a pending one — a decision is never silently overwritten.
+ * A cleaner's purchase (§150) is approved only by recording it in the
+ * inventory — `lines`: which items, to which place — and that purchase is its
+ * stock and its cost (one Restock expense, with the receipt). A handyman's
+ * charge stays part of its repair.
+ */
+export async function decideFieldExpense(sql: SqlFn, id: string, status: 'approved' | 'denied', note: string | null, by: string, lines?: unknown) {
+  const [p] = await sql`SELECT source, amount::float AS amount, description, by_name, photos FROM field_expenses
+                         WHERE account_id = 1 AND id = ${Number(id) || 0} AND status = 'pending'` as
+    { source: string; amount: number; description: string; by_name: string; photos: { name: string; url: string }[] }[];
+  if (!p) throw new Error('Only a pending one can be decided.');
+  if (status === 'approved' && p.source !== 'vendor') {
+    if (!Array.isArray(lines) || !lines.length) throw new Error('Record what was bought in the inventory first: the items and where each went.');
+    // Checked and saved first: a wrong line leaves it pending, never approved without its purchase.
+    await recordPurchase(sql, by, { lines, total: p.amount, note: `Paid by ${p.by_name} — ${p.description}`.slice(0, 500) }, p.photos ?? [], id);
+  }
   const [f] = await sql`UPDATE field_expenses SET status = ${status}, decided_by = ${by}, decided_at = now(), decision_note = ${note}
                          WHERE account_id = 1 AND id = ${Number(id) || 0} AND status = 'pending'
-                         RETURNING id::text, unit_id, category, amount::float AS amount, description, by_name, cleaning_key, source, todo_id::text AS todo_id` as
-    { id: string; unit_id: string | null; category: string; amount: number; description: string; by_name: string; cleaning_key: string | null;
-      source: string; todo_id: string | null }[];
+                         RETURNING id::text, amount::float AS amount, description, source, todo_id::text AS todo_id` as
+    { id: string; amount: number; description: string; source: string; todo_id: string | null }[];
   if (!f) throw new Error('Only a pending one can be decided.');
   // A handyman's charge is part of the repair: the approved ones ARE its cost, and the repair — once
   // completed — is the one expense in Costs (settleRepair, by the caller). Never a second row here.
@@ -83,14 +98,6 @@ export async function decideFieldExpense(sql: SqlFn, id: string, status: 'approv
                WHERE account_id = 1 AND id = ${Number(f.todo_id)}`;
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
               VALUES (1, 'task', ${f.todo_id}, 'change', ${`${status === 'approved' ? 'Approved' : 'Denied'}: $${f.amount.toFixed(2)} — ${f.description}${note ? ` · “${note}”` : ''}`.slice(0, 4000)}, ${by})`;
-    return f;
-  }
-  if (status === 'approved') {
-    const [u] = f.unit_id ? await sql`SELECT id FROM units WHERE account_id = 1 AND id = ${f.unit_id}` as { id: string }[] : [];
-    await sql`INSERT INTO expenses (account_id, unit_id, shared, start_date, category, frequency, amount, label, notes, source, external_ref, created_by)
-              VALUES (1, ${u?.id ?? null}, ${!u}, ${todayIn(TZ)}, ${f.category}, 'One-time', ${f.amount}, ${f.description.slice(0, 120)},
-                      ${`Paid by ${f.by_name}${f.cleaning_key ? ` · clean ${f.cleaning_key}` : ''} · approved by ${by}`}, 'field', ${f.id}, ${by})
-              ON CONFLICT (source, external_ref) WHERE external_ref IS NOT NULL DO NOTHING`;
   }
   return f;
 }
@@ -98,7 +105,7 @@ export async function decideFieldExpense(sql: SqlFn, id: string, status: 'approv
 /** What waits for the team. */
 export async function pendingFieldExpenses(sql: SqlFn) {
   return await sql`SELECT f.id::text, f.source, f.by_name AS "byName", f.cleaning_key AS "cleaningKey", f.todo_id::text AS "todoId",
-                          u.name AS unit, f.category, f.amount::float AS amount, f.description, f.photos,
+                          f.unit_id AS "unitId", u.name AS unit, f.category, f.amount::float AS amount, f.description, f.photos,
                           to_char(f.created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS at
                      FROM field_expenses f LEFT JOIN units u ON u.account_id = f.account_id AND u.id = f.unit_id
                     WHERE f.account_id = 1 AND f.status = 'pending' ORDER BY f.created_at`;

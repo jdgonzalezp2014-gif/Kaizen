@@ -114,7 +114,7 @@ export function ReportPage({ token: first, practice }: { token: string | null; p
         <p className="fr-kind report-who">👤 {name} · <button className="link" onClick={() => setNamed(false)}>{tx.repChange}</button></p>
         {tab === 'clean' ? <div className="card">
           {team.access && <div style={{ marginBottom: 12 }}><AccessBox tx={tx} a={team.access} /></div>}
-          <CleanSteps tx={tx} items={team.items} state={team.state} onState={s => setTeam(t => t && { ...t, state: s })}
+          <CleanSteps tx={tx} items={team.items} state={team.state} onState={s => setTeam(t => t && { ...t, state: s })} place={team.access?.supplies ?? null}
                       sendPhoto={(stage, f) => post({ kind: 'photo', stage }, [f]) as Promise<Result>}
                       taken={lines => post(lines ? { kind: 'taken', lines: JSON.stringify(lines) } : { kind: 'nothing' }, []) as Promise<Result>}
                       mark={kind => post({ kind }, []) as Promise<Result>} />

@@ -25,7 +25,8 @@ import {
 import { money2 } from '../lib/format.ts';
 import { addDays } from '../lib/dates.ts';
 import { FieldReport, KINDS, type Kind, type Send } from '../components/FieldReport.tsx';
-import { CleanSteps, type Result } from '../components/CleanSteps.tsx';
+import { CleanSteps, fromWords, type Result } from '../components/CleanSteps.tsx';
+import { FieldPurchaseLines } from './Inventory.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { ThemeToggle } from '../components/ThemeToggle.tsx';
 import { AccessBox } from '../components/AccessBox.tsx';
@@ -166,7 +167,8 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
       <div className="card">
         <h2>Purchases & charges waiting for approval <span className="chan-tag">{fieldPending.length}</span></h2>
         <p className="note">Paid in the field with its receipt — by a cleaner or a cleaner’s helper (🧹), or a handyman’s labor and
-          materials on a repair (🔧). Approved, a purchase goes to Costs on its unit (and is owed back to whoever paid); a handyman’s
+          materials on a repair (🔧). A cleaner’s purchase is approved by recording it in the inventory — which items, to which place — and
+          that purchase is its stock and its cost (owed back to whoever paid); a handyman’s
           charge becomes the repair’s cost and reaches Costs as Repairs. Denied, they read why. Nothing reaches Costs before a person approves it.</p>
         {!fieldPending.length ? <p className="note">None waiting.</p> : (
           <div className="crew-list">
@@ -176,7 +178,8 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
                   <div className="sub-n">{f.category} · asked {f.at}</div></div>
                 <div><b>{money2(f.amount)}</b> — {f.description} <Files files={f.photos.map((p, i) => ({ id: String(i), ...p }))} />
                   {!f.photos.length && <span className="breach"> no receipt</span>}</div>
-                {canEdit && <Decide id={f.id} kind="decideField" onDone={load} />}
+                {canEdit && <Decide id={f.id} kind="decideField" onDone={load}
+                  record={f.source === 'vendor' ? undefined : { unitId: f.unitId, said: f.description }} />}
               </div>
             ))}
           </div>
@@ -224,18 +227,27 @@ function ConfirmRow({ t, roster, canEdit, onDone }: { t: ToConfirm; roster: Clea
   );
 }
 
-function Decide({ id, onDone, kind = 'decideExtra' }: { id: string; onDone: () => void; kind?: 'decideExtra' | 'decideField' }) {
+/** `record`: a cleaner's purchase — approved only by recording it in the inventory (§150). */
+function Decide({ id, onDone, kind = 'decideExtra', record }: {
+  id: string; onDone: () => void; kind?: 'decideExtra' | 'decideField'; record?: { unitId: string | null; said: string };
+}) {
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState('');
-  const go = async (status: 'approved' | 'denied') => {
-    const r = await crewAdminAction({ action: kind, id, status, note }).catch(e => ({ ok: false as const, message: String(e) }));
+  const [recording, setRecording] = useState(false);
+  const go = async (status: 'approved' | 'denied', lines?: unknown[]) => {
+    const r = await crewAdminAction({ action: kind, id, status, note, ...(lines ? { lines } : {}) }).catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
     onDone();
   };
+  if (recording && record) return <>
+    <FieldPurchaseLines unitId={record.unitId} said={record.said} onSave={lines => go('approved', lines)} onCancel={() => setRecording(false)} />
+    {msg && <span className="breach">{msg}</span>}
+  </>;
   return (
     <div className="crew-decide">
       <input value={note} maxLength={500} placeholder="Note for the cleaner (needed to deny)" onChange={e => setNote(e.target.value)} />
-      <button className="small" onClick={() => void go('approved')}>✓ Approve</button>
+      {record ? <button className="small" onClick={() => { setMsg(''); setRecording(true); }}>✓ Approve — record in inventory</button>
+              : <button className="small" onClick={() => void go('approved')}>✓ Approve</button>}
       <button className="small secondary" disabled={!note.trim()} onClick={() => void go('denied')}>■ Deny</button>
       {msg && <span className="breach">{msg}</span>}
     </div>
@@ -475,6 +487,7 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onCl
           {tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
         </div>
         {tab === 'clean' && <CleanSteps tx={tx} items={ctx.supplies.items} state={fs} onState={setFs}
+          place={page.access?.[a.key]?.supplies ?? page.places?.[a.key] ?? null}
           sendPhoto={(stage, f) => ctx.report({ action: 'cleanPhoto', key: a.key, stage }, [f]) as Promise<Result>}
           taken={lines => ctx.report(lines ? { action: 'cleanTaken', key: a.key, lines: JSON.stringify(lines) }
                                            : { action: 'cleanNothing', key: a.key }, []) as Promise<Result>}
@@ -558,7 +571,7 @@ function PastCard({ a, page, lang, ctx, reload, onClose }: { a: ActiveClean; pag
   return (
     <div className="clean-card bare">
       <p className={fs?.done ? 'field-ok' : 'note'}>{fs?.done ? tx.doneBy(fs.done.by.replace(/^.*'s team: /, ''), fs.done.at.slice(11, 16)) : tx.notDoneYet}</p>
-      {fs?.supplies && <p className="note">{fs.supplies.none ? tx.takenNone : `🧴 ${tx.takenCount(fs.supplies.lines)}`}</p>}
+      {fs?.supplies && <p className="note">{fs.supplies.none ? tx.takenNone(fromWords(tx, page.places?.[a.key] ?? null)) : `🧴 ${tx.takenCount(fs.supplies.lines)}`}</p>}
       {(['before', 'after'] as const).map(st => {
         const list = photos.filter(p => p.stage === st);
         return list.length ? <div key={st}>

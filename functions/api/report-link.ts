@@ -128,8 +128,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       }
     } else if (b.kind === 'problem' || b.kind === 'request') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
-      const id = await fieldTodo(sql, who, b, photos);
-      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.name));
+      const { todoId: id, fresh } = await fieldTodo(sql, who, b, photos);
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.name, fresh));
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: {
         kind: 'report', what: b.kind, text: String(b.text ?? '').trim().slice(0, 300), priority: String(b.priority ?? '') || null, todoId: id } }));
       tell({ kind: 'report', what: String(b.kind), text: String(b.text ?? '').trim().slice(0, 300), priority: String(b.priority ?? '') || null });
@@ -148,7 +148,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     } else if (b.kind === 'missing') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `${l.unit_name} ${String(b.kind)}`);
       const r = await recordMove(sql, who, b, photos);
-      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId], who.name));
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId], who.name, r.fresh));
       const text = b.kind === 'missing' ? `${r.item} (found ${Number(b.qty) || 0})` : `${r.item} × ${Number(b.qty) || 0}`;
       tell({ kind: 'report', what: String(b.kind), text });
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: {

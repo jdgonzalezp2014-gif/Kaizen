@@ -3878,3 +3878,58 @@ cleaner's pay; a new Repository column `cleaning_fee` holds it, baseline copied 
 change on either side shows. Used on real data the same day: "créele a Hostaway" → 8 records took
 Hostaway's Wi-Fi through the screen's own endpoint; P2-4315 was sent to Hostaway (it showed 4212's
 network) and read back. New lib function `updateListingFields` (hostaway.ts): partial PUT + read-back.
+
+## §150 — Inventory by place; an order is not a purchase (2026-10-13)
+
+**Owner:** supplies are kept only in places — a building's storage or a house's own closet — never in each
+unit; each unit draws from ONE place, changeable per unit (all of P2 → S1105 today; maybe one central
+storage later). Nothing may assume one storage per building or one global storage.
+
+**One source for the assignment: the Repository's `storage` column** (§147). It names a Storage row (S13,
+S1105…) or, for a house, **the house's own name** — its closet (the owner preferred that to "blank = own
+closet": explicit, and a house can later point to a central storage). Blank = ▲ no place. `supplyPlace`
+(src/lib/unit-access.ts) looks the name up in the unit's table first, then in EVERY Units table — so a
+cross-building storage needs no code (the Repository's `ref` column still only offers the same table; a
+central storage across buildings = repoint that ref, or a Storage row in the table). Places =
+Storage rows + places active units draw from (`inventoryPlaces`); key = the record `table/ROW-id`.
+Filled 2026-10-13: 8 LP → "S1105 Storage (stock)", 9 houses → themselves; Cortland was already S13.
+
+**Moves carry their place** (068: `inventory_moves.place`), written when they happen — moving a unit to
+another storage leaves its past where it was. `taken` comes out of the unit's place and still names the
+unit and the clean. A unit with no place still records (place NULL, shown "▲ No place") — the cleaner's
+step 2 is never blocked. Existing rows (6, all test: 5 `missing` at Preston Vineyard → its closet, 1
+`taken` P2-4315 → S1105; none had unit_id NULL) were filled by a one-off script.
+
+**Per clean is an average (owner):** what cleaners reported taking ÷ every clean that answered step 2 in
+60 days ("nothing" included — `unitUses(…, answered)`), per unit wherever it took from; the item's
+estimate only until 3 reported cleans. A place shows the average over the units it supplies now.
+**To order per place** = Σ its units' (per clean × cleans in 14 d) + its minimum − its stock, once counted.
+Minimums per place (068: `inventory_place_mins`), else the item's.
+
+**The cleaner's step 2 names the place:** "🧴 What I took from S1105" / "from the closet" (EN/ES), with the
+code (a storage's closet code or lockbox; a house's closet code — never its door lockbox), sent inside
+`UnitAccess.supplies` on the same rules as the door codes; the label alone for other days (`page.places`).
+
+**Order ≠ purchase (owner, 069).** The ORDER is the shopping to-do, a line per ITEM saying where it goes —
+one place or split ("⑂ split", 🔍 to add any item); its lines are kept (`inventory_orders`). The PURCHASE
+is what was really bought: Inventory → 🧾 Record a purchase, from an open order (filled in) or from
+scratch, with the total and the receipt → a `purchase` move per line and place (`purchase_id`) + one
+Restock expense (`purchase-<id>`; a house's if all went to one closet, else shared) + a note on the order.
+The team's per-place "Bought" move is gone (one way in). The inspector's 🛒 Purchase has the same 🔍:
+a supply and how many (069: `inspection_checks.supply_id/qty`), so the inspection's to-do is an order
+filled in, to the unit's place.
+
+**Cleaners speak, the team records (owner).** "I bought something" is now free text + total + receipt
+(`fieldPurchase`): a pending field expense, no stock. It is approved ONLY by recording it in the inventory
+(Operations → Cleaners → "Approve — record in inventory": items and places) — that purchase is its stock
+and cost. What a cleaner reports on one clean — a need, something missing, something bought — is ONE
+to-do "From the clean of <unit> on <date>" (`todos.clean_key`), each report a sub-task, the to-do taking
+the most urgent priority; a sub-task added later is mirrored, not announced again. "Something is wrong"
+stays its own to-do.
+
+**Incident:** the first `npm run migrate` meant for the test branch ran against production (the branch URL's
+`&` broke `source`; `--env-file=.env.local` filled the gap): 068 landed in production early — additive
+(nullable column, index, empty table), read by nothing then. And a test order on the branch was mirrored
+to Hostaway (task 16400930) and announced in Slack, because a branch copies the account's credentials.
+Lesson: pass a branch's URL with `node --env-file=<branch file>`, and switch the branch's
+`hostaway_tasks` off and its Slack token to NULL before testing anything that makes to-dos.

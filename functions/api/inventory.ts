@@ -1,10 +1,12 @@
 /**
- * /api/inventory — supplies per unit and in storage (§134).
+ * /api/inventory — supplies by place (§134, §150): the Repository's storages and the houses' closets.
  *
- *   GET                                               every place: stock, use per clean, coming cleans, to order
- *   POST { action: 'move', kind, itemId, unitId?, qty, note?, cost? }    (multipart with photos too)
- *   POST { action: 'count', unitId?, counts: [{ itemId, qty }] }        a count of a place — reconciles it
- *   POST { action: 'order', lines: [{ itemId, unitId?, qty }] }         ONE to-do, a line per item
+ *   GET                                               every place: stock, average per clean, what its units need, to order
+ *   POST { action: 'move', kind, itemId, place, qty, note?, cost? }     (multipart with photos too)
+ *   POST { action: 'count', place, counts: [{ itemId, qty }] }          a count of a place — reconciles it
+ *   POST { action: 'mins', place, mins: [{ itemId, qty }] }             the minimum to keep there ('' = the item's)
+ *   POST { action: 'order', lines: [{ itemId, place, qty }] }           the ORDER: ONE to-do, a line per item and its places
+ *   POST { action: 'purchase', lines, total, todoId?, note? } + receipt  what was BOUGHT: stock per place + one Restock expense
  *
  * GET with `operations`, POST with `operations.edit` (roles.ts). To-dos made
  * here are mirrored to Hostaway after the response.
@@ -12,7 +14,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, fieldPhotos, mirrorTodos, overview, recordMove } from '../_lib/inventory.ts';
+import { createOrder, fieldPhotos, mirrorTodos, overview, recordMove, recordPurchase, setMins } from '../_lib/inventory.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -41,10 +43,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const counts = Array.isArray(b.counts) ? b.counts as { itemId: unknown; qty: unknown }[] : [];
       const given = counts.filter(c => c.qty !== '' && c.qty != null);
       if (!given.length) return bad('Count at least one item.');
-      for (const c of given) await recordMove(sql, me, { kind: 'count', itemId: c.itemId, unitId: b.unitId, qty: c.qty, note: b.note });
+      for (const c of given) await recordMove(sql, me, { kind: 'count', itemId: c.itemId, place: b.place, qty: c.qty, note: b.note });
+    } else if (b.action === 'purchase') {
+      const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, 'inventory purchase');
+      await recordPurchase(sql, who.email, b, photos);
+    } else if (b.action === 'mins') {
+      await setMins(sql, who.email, b.place, Array.isArray(b.mins) ? b.mins as { itemId: unknown; qty: unknown }[] : []);
     } else if (b.action === 'order') {
-      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; unitId: unknown; qty: unknown }[])
-        .map(l => ({ itemId: String(l.itemId), unitId: l.unitId ? String(l.unitId) : null, qty: Number(l.qty) || 0 })) : [];
+      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
+        .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0 })) : [];
       const id = await createOrder(sql, who.email, lines);
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.email));
       return Response.json({ ok: true, todoId: id, ...(await overview(sql)) });

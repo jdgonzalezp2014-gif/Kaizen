@@ -101,7 +101,7 @@ export async function markClean(sql: SqlFn, key: string, kind: 'done' | 'reopene
   if (kind !== 'done' && kind !== 'reopened') throw new Error('Done or reopen?');
   const st = (await cleanStates(sql, [key]))[key];
   if (!st) throw new Error('Which clean?');
-  if (kind === 'done' && !st.supplies) throw new Error('First say what you took from the storage (step 2).');
+  if (kind === 'done' && !st.supplies) throw new Error('First say what you took for this clean (step 2).');
   if (kind === 'done' && !st.after) throw new Error('Add at least one AFTER photo first.');
   if (kind === 'done' && st.done) return false;     // already done: a second tap changes nothing (and tells nobody)
   if (kind === 'reopened' && !st.done) return false;

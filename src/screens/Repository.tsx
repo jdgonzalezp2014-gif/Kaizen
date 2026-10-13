@@ -174,6 +174,8 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const [checking, setChecking] = useState(false); // §149: the Hostaway check fills the main pane
   const [say, toast] = useToast();
   const searchRef = useRef<HTMLInputElement>(null);
+  // ?repo=<table>/<ROW-id> (§150): open that record once, then forget the address.
+  const wanted = useRef((([t, id]) => t && id ? { table: t, id } : null)((new URLSearchParams(location.search).get('repo') ?? '').split('/')));
 
   const tables = useMemo(() => (sections ?? []).flatMap(s => s.tables), [sections]);
   const archivedTable = archived.find(t => t.key === tableKey) ?? null;
@@ -192,6 +194,8 @@ export function Repository({ canReveal, canEdit, canStructure }: {
     if (!r.ok) { setErr(r.message ?? 'Could not read the repository.'); return; }
     setSections(r.meta.sections);
     setArchived(r.meta.archived ?? []);
+    const w = wanted.current?.table;
+    if (w && r.meta.sections.some(s => s.tables.some(t => t.key === w))) { setTableKey(w); return; }
     setTableKey(k => k && (r.meta.sections.some(s => s.tables.some(t => t.key === k)) || (r.meta.archived ?? []).some(t => t.key === k)) ? k
       : r.meta.sections.flatMap(s => s.tables)[0]?.key ?? null);
   }, []);
@@ -207,6 +211,13 @@ export function Repository({ canReveal, canEdit, canStructure }: {
 
   useEffect(() => { void loadMeta(); }, [loadMeta]);
   useEffect(() => { if (tableKey) { setOpenId(null); void loadRows(tableKey, !!rowsBy[tableKey]); } }, [tableKey]);
+  useEffect(() => {
+    const w = wanted.current;
+    if (!w || w.table !== tableKey || !rows) return;
+    wanted.current = null;
+    history.replaceState(null, '', location.pathname);
+    if (rows.some(r => String(r.id) === w.id)) setOpenId(w.id);
+  }, [tableKey, rows]);
 
   // Files for every visible row: one call per document column, as the
   // repository's own grid did. The cells show what each record holds

@@ -48,9 +48,13 @@ const UNIT = '🧪 Practice House', LOFT = '🧪 Practice Loft';
 const ACCESS: UnitAccess = {
   address: '123 Practice Ln, Frisco, TX 75035', mapsUrl: 'https://maps.google.com/?q=Frisco%2C%20TX',
   lockType: 'Smart lock (practice)', kind: 'smart', code: '1234', codeFrom: 'repository', lockbox: null, fob: null,
-  wifiName: 'Practice-WiFi', wifiPassword: 'practice123', missing: []
+  wifiName: 'Practice-WiFi', wifiPassword: 'practice123', missing: [],
+  // §150: a house takes from its own closet…
+  supplies: { label: 'Closet', self: true, code: '4321' }
 };
-const LOFT_ACCESS: UnitAccess = { ...ACCESS, address: '45 Example Ave #210, Frisco, TX 75034', lockType: 'Lockbox (practice)', kind: 'keys', code: null, lockbox: '0000' };
+// …an apartment from its building's storage.
+const LOFT_ACCESS: UnitAccess = { ...ACCESS, address: '45 Example Ave #210, Frisco, TX 75034', lockType: 'Lockbox (practice)', kind: 'keys', code: null, lockbox: '0000',
+  supplies: { label: 'S100', self: false, code: '0000' } };
 const SUPPLIES: SupplyItem[] = [
   { id: 's1', name: 'Toilet paper', measure: 'rolls', category: 'Bathroom' },
   { id: 's2', name: 'Paper towels', measure: 'rolls', category: 'Kitchen' },
@@ -99,7 +103,8 @@ function inspectionTransport(lang: Lang): RunTransport {
   const data = (): InspectionRunData => ({
     inspection: { id: 'practice', unitId: 'practice', unit: UNIT, date: today, inspector: 'You', result: fin?.result ?? null, notes: fin?.notes ?? null, finished: !!fin },
     sections, rooms: { bedrooms: 2, bathrooms: 2 }, checks: clone(checks),
-    nextClean: { key: 'P-NEXT', date: addDays(today, 1), cleaner: 'Practice cleaner' }, inspectors: ['You'], today
+    nextClean: { key: 'P-NEXT', date: addDays(today, 1), cleaner: 'Practice cleaner' }, inspectors: ['You'], today,
+    supplies: SUPPLIES.map(s => ({ id: s.id, name: s.name, measure: s.measure }))
   });
   const patch = (c: RunCheck, b: Record<string, unknown>) => {
     if ('result' in b) { c.result = (b.result as RunCheck['result']) ?? null; if (c.result !== 'attention') c.outcome = null; }
@@ -132,7 +137,10 @@ function inspectionTransport(lang: Lang): RunTransport {
       }
       if (b.action === 'add') {
         const outcome: Outcome = b.kind === 'purchase' ? 'purchase' : b.kind === 'clean' ? 'clean_next' : 'repair';
-        const c: RunCheck = { id: String(seq++), itemId: null, area: String(b.area ?? 'general'), n: Number(b.n) || 1, label: String(b.label ?? '').trim(),
+        // §150: a supply from the 🔍 reads "Toilet paper × 4", as the real one.
+        const sup = SUPPLIES.find(s => s.id === String(b.supplyId ?? ''));
+        const c: RunCheck = { id: String(seq++), itemId: null, area: String(b.area ?? 'general'), n: Number(b.n) || 1,
+                              label: sup ? `${sup.name} × ${Math.ceil(Number(b.supplyQty) || 1)}` : String(b.label ?? '').trim(),
                               result: 'attention', note: String(b.note ?? '').trim() || null, photos: [], outcome };
         if (!c.label) return { ok: false as const, message: 'Say what it is.' };
         checks.push(c);
@@ -281,6 +289,8 @@ function crewPractice(): PracticeCrew {
     supplies: { items: SUPPLIES, units: [{ id: 'practice', name: UNIT }, { id: 'practice-loft', name: LOFT }] },
     field: { 'P-101': { ...blankState(), before: 6, after: 8, supplies: { lines: 2, none: false }, done: { by: 'Practice cleaner', at: NOW() } }, 'P-102': blankState() },
     access: { 'P-201': ACCESS, 'P-202': LOFT_ACCESS },
+    places: Object.fromEntries([['P-101', LOFT_ACCESS], ['P-102', ACCESS], ['P-201', ACCESS], ['P-202', LOFT_ACCESS], ['P-301', ACCESS], ['P-302', LOFT_ACCESS]]
+      .map(([k, a]) => [k, { ...(a as UnitAccess).supplies!, code: null }])),
     addresses: { 'P-301': ACCESS.address!, 'P-302': LOFT_ACCESS.address! },
     fieldPhotos: {},
     upcoming: {

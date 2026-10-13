@@ -266,6 +266,9 @@ function QuickAdd({ data, tr, kind, onCancel, onDone }: {
   data: RunData; tr: RunTransport; kind: 'clean' | 'repair' | 'purchase'; onCancel: () => void; onDone: () => void;
 }) {
   const [label, setLabel] = useState('');
+  // §150: a purchase from the supplies list (🔍) and how many — the order then comes filled in.
+  const [supply, setSupply] = useState<{ id: string; name: string; measure: string } | null>(null);
+  const [qty, setQty] = useState('1');
   const [where, setWhere] = useState(data.sections[0] ? secKey(data.sections[0]) : 'general:1');
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
@@ -274,7 +277,8 @@ function QuickAdd({ data, tr, kind, onCancel, onDone }: {
   const save = async () => {
     setBusy(true); setMsg('');
     const [area, n] = where.split(':');
-    const r = await tr.act<{ checkId: string }>({ action: 'add', inspectionId: data.inspection.id, kind, label, area, n: Number(n) }).catch(() => null);
+    const r = await tr.act<{ checkId: string }>({ action: 'add', inspectionId: data.inspection.id, kind, label, area, n: Number(n),
+                                                  ...(supply ? { supplyId: supply.id, supplyQty: qty } : {}) }).catch(() => null);
     if (!r?.ok) { setBusy(false); setMsg(r && !r.ok ? r.message ?? 'Not saved.' : 'Not saved.'); return; }
     if (files.length) {
       const p = await tr.photos(r.checkId, files).catch(e => ({ ok: false as const, message: String(e) }));
@@ -285,7 +289,20 @@ function QuickAdd({ data, tr, kind, onCancel, onDone }: {
   return (
     <div className="insp-quick-form">
       <b>{QUICK.find(q => q.kind === kind)!.label}</b>
-      <input autoFocus value={label} maxLength={200} placeholder={`What ${word}`} onChange={e => setLabel(e.target.value)} />
+      {supply ? <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+          <b>{supply.name}</b>
+          <input className="inv-qty" type="number" min="1" step="1" value={qty} aria-label="How many" onChange={e => setQty(e.target.value)} />
+          <span className="sub-n">{supply.measure.replace(/s?$/, 's')}</span>
+          <button className="link tiny" onClick={() => setSupply(null)}>✕ not this</button>
+        </div> : <>
+        <input autoFocus value={label} maxLength={200} placeholder={kind === 'purchase' ? '🔍 Search the supplies, or write what to buy' : `What ${word}`}
+               onChange={e => setLabel(e.target.value)} />
+        {kind === 'purchase' && label.trim() && (() => {
+          const hits = (data.supplies ?? []).filter(i => i.name.toLowerCase().includes(label.trim().toLowerCase())).slice(0, 6);
+          return hits.length ? <div className="button-row">{hits.map(i =>
+            <button key={i.id} className="small secondary" onClick={() => { setSupply(i); setQty('1'); }}>+ {i.name}</button>)}</div> : null;
+        })()}
+      </>}
       <select value={where} onChange={e => setWhere(e.target.value)}>
         {data.sections.map(s => <option key={secKey(s)} value={secKey(s)}>{s.title}</option>)}
         {!data.sections.length && <option value="general:1">General</option>}
@@ -293,7 +310,7 @@ function QuickAdd({ data, tr, kind, onCancel, onDone }: {
       <label className="chip">📷 {files.length ? `${files.length} photo${files.length === 1 ? '' : 's'}` : 'Photo (optional)'}
         <input type="file" accept="image/*" multiple hidden onChange={e => setFiles([...(e.target.files ?? [])])} /></label>
       <div className="button-row">
-        <button className="small" disabled={busy || !label.trim()} onClick={() => void save()}>{busy ? 'Saving…' : 'Add'}</button>
+        <button className="small" disabled={busy || (!label.trim() && !supply) || (!!supply && !(Number(qty) >= 1))} onClick={() => void save()}>{busy ? 'Saving…' : 'Add'}</button>
         <button className="small secondary" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
       {msg && <p className="breach">{msg}</p>}

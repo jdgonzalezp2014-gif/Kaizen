@@ -66,12 +66,15 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
 - **Units access/parking block (§147):** the three Units tables share one block, same keys, types
   and order after Type: `lock_type` (select: Schlage Smart Lock / Yale Smart Lock / Access Fob / Keys /
   None) · `keys_fobs` (Access Fob / None) · `cleaner_code` · `lockbox` · `closet_code` (houses: the
-  supply closet in the house) · `storage` (ref → `name` of the same table: apartments point to the
-  building's shared Storage row, which holds its own lockbox) · `admin_code` 🔒 · `backup_code` 🔒 ·
+  supply closet in the house) · `storage` (ref → `name` of the same table: **where the unit's supplies are
+  kept** — a Storage row, or a house's OWN name = its closet; blank = ▲ no place. The inventory reads it and
+  nothing else (§150); it is looked up in every Units table, but the ref picker offers only the same table —
+  a central storage across buildings = repoint the ref or add its row) · `admin_code` 🔒 · `backup_code` 🔒 ·
   `parking` ("Parking notes") · `parking_free_street` · `parking_extra_price` ($/night, covered) ·
   `fob_replacement_fee` · and `lease_notes` after Status. Blank where it does not apply; the team
   fills it. Cleaners get only cleaner code, lockbox, fob (unit-access.ts); admin/backup are secrets.
-  `closet_code` and `storage` are not sent to cleaners yet (next: supplies instructions).
+  Since §150 the place (`storage`) and its code (a storage's closet code or lockbox; a house's `closet_code`) go to
+  cleaners in step 2 of a clean, on the same rules as the door codes.
 - Units tables still hold Wi-Fi and the account `password` columns as plain text (§66).
 - **§148 filled:** Wi-Fi + `internet_account` (AT&T account #, after the Wi-Fi password) from the owner's
   list; `storage` = CORTLAND STORAGE S13 on every Cortland apartment (houses: blank, by design);
@@ -79,6 +82,7 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   Timbercrest, Quest, Concord. Houses do not need the building block (floor, bldg, building link, lease
   portal) — their POC is the manager or landlord.
 
+- **`?repo=<table>/<ROW-id>`** opens that record (Setup → Inventory's map links here, §150).
 - **Check against Hostaway (§149):** sidebar "⇄ Check against Hostaway" → per active unit and check, the
   Repository value beside the live listing (● same · ◐ capitals differ · ▲ different · ○ missing). Editors:
   "← Use Hostaway's" (writes the record, audited by field name, never the values) or "Send to Hostaway →"
@@ -95,7 +99,8 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
    missing on every house and every P2. Amber Valley's admin "551" was probably "0551" (number column).
 2. **Contracts (low):** lease, move-out date, leasing office hours, renewals, autopay, utilities,
    maintenance # — empty on most units.
-3. **P2 storage:** which Storage row (S2101 / S1105 / S4116, "Back up fobs") each LP unit uses — pending.
+3. **P2 storage:** decided (§150) — all 8 LP → "S1105 Storage (stock)"; houses → their own name (closet).
+   Filled in production 2026-10-13 (audited as `storage (supplies place, §150)`).
 4. **Closet codes (houses):** confirm Preston Vineyard / Napa Valley / Amber Valley, fill the rest.
 5. **POC:** Preston Vineyard and Bobcat have none.
 6. **Wi-Fi settled (§149):** Hostaway kept for CL2260, Preston Vineyard, Napa Valley, Concord and P2 1201/
@@ -106,4 +111,4 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
 
 ## History
 
-§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147, §148, §149.
+§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147, §148, §149, §150.
