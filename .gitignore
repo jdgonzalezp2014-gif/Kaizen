@@ -13,6 +13,9 @@ build/
 .DS_Store
 *.log
 
+# Per-machine Claude Code settings (permissions); never shared
+.claude/settings.local.json
+
 # Cloudflare
 .wrangler/
 .neon
