@@ -408,7 +408,7 @@ function inventoryPractice(): InvTransport {
     return { ok: true, items: clone(items), aheadDays: 14, windowDays: 60, unassigned: [], orders: clone(orders), fieldTodos: clone(fieldTodos),
       draft: clone(draft), lowStockTasks: false,
       places: places.map(p => ({ ...clone(p), hidden: items.filter(i => hidden.has(`${i.id}|${p.place}`)).map(i => i.id),
-        items: items.filter(i => !hidden.has(`${i.id}|${p.place}`)).map(i => {
+        items: items.filter(i => i.active && !hidden.has(`${i.id}|${p.place}`)).map(i => {
         const l = levels.get(`${i.id}|${p.place}`);
         const need = p.units.reduce((a, u) => a + (i.perClean ?? 0) * u.cleansAhead, 0);
         const own = mins.get(`${i.id}|${p.place}`);
@@ -426,12 +426,20 @@ function inventoryPractice(): InvTransport {
     await sleep();
     const place = String(b.place ?? '');
     if (b.action === 'count') for (const c of (b.counts as { itemId: string; qty: string }[])) moves.push(mv('count', c.itemId, place, Number(c.qty), today));
-    else if (b.action === 'mins') for (const m of (b.mins as { itemId: string; qty: string }[])) {
-      if (m.qty === '') mins.delete(`${m.itemId}|${place}`); else mins.set(`${m.itemId}|${place}`, Number(m.qty));
-    } else if (b.action === 'adjusts') {
+    else if (b.action === 'settings') for (const e of (b.items as { itemId: string; name?: string; measure?: string; perClean?: string; min?: string }[])) {
+      const it = items.find(i => i.id === e.itemId);
+      if (!it) continue;
+      if (e.name !== undefined) it.name = e.name.trim() || it.name;
+      if (e.measure !== undefined) it.measure = e.measure.trim() || 'unit';
+      if (e.perClean !== undefined) it.perClean = e.perClean === '' ? null : Number(e.perClean);
+      if (e.min !== undefined) { if (e.min === '') mins.delete(`${e.itemId}|${place}`); else mins.set(`${e.itemId}|${place}`, Number(e.min)); }
+        } else if (b.action === 'adjusts') {
       if (!String(b.note ?? '').trim()) return fail('Say why it is corrected.');
       for (const a of (b.adjusts as { itemId: string; qty: number }[]))
         moves.push({ ...mv('adjust', a.itemId, place, Number(a.qty), today), note: String(b.note) });
+    } else if (b.action === 'removeItem') {
+      const it = items.find(i => i.id === String(b.itemId));
+      if (it) it.active = false;
     } else if (b.action === 'hide') {
       const k = `${b.itemId}|${place}`;
       if (b.hide !== false) hidden.add(k); else hidden.delete(k);
@@ -439,7 +447,7 @@ function inventoryPractice(): InvTransport {
       const name = String(b.name ?? '').trim();
       if (!name) return fail('An item needs a name.');
       const had = items.find(i => i.name.toLowerCase() === name.toLowerCase());
-      if (had) return { ...view(), itemId: had.id };
+      if (had) { had.active = true; hidden.delete(`${had.id}|${place}`); return { ...view(), itemId: had.id }; }
       const id = `s${items.length + 1}`;
       items.push({ id, name, category: String(b.category ?? 'other'), measure: String(b.measure ?? 'unit') || 'unit', perClean: null, reorderAt: null, active: true });
       return { ...view(), itemId: id };

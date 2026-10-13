@@ -266,9 +266,12 @@ key had no SOPs.
   🏠 Own closet (self storage) and ▲ Not assigned → `inventory-items` action `assign` writes the Repository's
   `storage` (the one source; audited by field name). Cross-table storages are allowed here (the Repository's
   own ref picker still offers only the same table).
-- **Corrections (§150, owner):** "On record" has − / + per item (staged; Save corrections needs why → `adjust`
-  moves, API `adjusts`) — for what comes from outside or is lost; a count still replaces the record. The team's
-  old "Record a move" form (used / adjust) is gone.
+- **Corrections (§150, owner):** "On record" has − [n] + per item (fixed box, typing works; staged; Save corrections
+  needs why → `adjust` moves, API `adjusts`) — for what comes from outside or is lost; a count still replaces the record.
+- **✎ Edit settings (§150, owner: everything in one edit):** per item name, counted in, estimate per clean (the item's)
+  and Keep at least here (`saveSettings`, API `settings`; replaced "Minimums here"), + Add an item, 🙈 Not here, 🗑 Remove
+  (switched off everywhere, asked first). **📝 Draft order for what's short** puts the place's toOrder > 0 or ❗ items
+  into the draft order.
 - **Order ≠ purchase (§150, owner).** The ORDER = a shopping to-do, a line per ITEM and where it goes ("Everything
   goes to" one place by default; ⑂ on a part splits half to another place, again for a sub-split; 🔍 adds any
   item), lines kept in `inventory_orders`. The PURCHASE = Inventory → 🧾 Record a

@@ -382,6 +382,36 @@ export async function createOrder(sql: SqlFn, by: string, lines: { itemId: strin
   return { id, fresh: true };
 }
 
+/**
+ * Edit settings (§150, owner: everything at once, no reprocess): per item its
+ * name, measure and estimate per clean (the item's — every place) and the
+ * minimum to keep in this place ('' = the item's). All checked, then saved.
+ */
+export async function saveSettings(sql: SqlFn, by: string, place: unknown, raw: unknown) {
+  const list = (Array.isArray(raw) ? raw : []) as { itemId: unknown; name?: unknown; measure?: unknown; perClean?: unknown; min?: unknown }[];
+  const items = await invItems(sql);
+  const plan = list.map(e => {
+    const it = items.find(i => i.id === String(e.itemId));
+    if (!it) throw new Error('Which item?');
+    const name = e.name === undefined ? it.name : String(e.name).trim().slice(0, 120);
+    const measure = e.measure === undefined ? it.measure : String(e.measure).trim().slice(0, 20) || 'unit';
+    const perClean = e.perClean === undefined ? it.perClean : e.perClean === '' ? null : Number(e.perClean);
+    if (!name) throw new Error('An item needs a name.');
+    if (perClean !== null && !(perClean >= 0)) throw new Error('Amounts are numbers, 0 or more.');
+    if (items.some(o => o.id !== it.id && o.name.toLowerCase() === name.toLowerCase())) throw new Error(`There is already an item called "${name}".`);
+    return { it, name, measure, perClean, min: e.min };
+  });
+  for (const x of plan) if (x.name !== x.it.name || x.measure !== x.it.measure || x.perClean !== x.it.perClean)
+    await sql`UPDATE inventory_items SET name = ${x.name}, measure = ${x.measure}, per_clean = ${x.perClean}, updated_at = now() WHERE account_id = 1 AND id = ${Number(x.it.id)}`;
+  const mins = plan.filter(x => x.min !== undefined).map(x => ({ itemId: x.it.id, qty: x.min }));
+  if (mins.length) await setMins(sql, by, place, mins);
+}
+
+/** Off the list everywhere (§150): switched off, never erased — its moves keep naming it. */
+export async function removeItem(sql: SqlFn, itemId: unknown) {
+  await sql`UPDATE inventory_items SET active = false, updated_at = now() WHERE account_id = 1 AND id = ${Number(itemId)}`;
+}
+
 /** "Not kept here" (§150): an item off a place's list — or back on it. */
 export async function hideItem(sql: SqlFn, by: string, place: unknown, itemId: unknown, hide: boolean) {
   const p = (await supplyPlaces(sql)).places.find(x => x.key === String(place ?? ''));

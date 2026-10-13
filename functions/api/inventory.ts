@@ -3,7 +3,8 @@
  *
  *   GET                                               every place: stock, average per clean, what its units need, to order
  *   POST { action: 'count', place, counts: [{ itemId, qty }] }          a count of a place — reconciles it
- *   POST { action: 'mins', place, mins: [{ itemId, qty }] }             the minimum to keep there ('' = the item's)
+ *   POST { action: 'settings', place, items: [{ itemId, name?, measure?, perClean?, min? }] }   edit settings, one save
+ *   POST { action: 'removeItem', itemId }                               off the list everywhere (history kept)
  *   POST { action: 'adjusts', place, note, adjusts: [{ itemId, qty }] } corrections (+/−) to the record, with why
  *   POST { action: 'draft', lines, forTodo? }                           the order kept as a draft (no lines = discard)
  *   POST { action: 'hide', place, itemId, hide }                        "not kept here" (or back)
@@ -18,7 +19,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, fieldPhotos, hideItem, lowStock, mirrorTodos, newItem, overview, recordMove, recordPurchase, saveDraft, setMins } from '../_lib/inventory.ts';
+import { createOrder, fieldPhotos, hideItem, lowStock, mirrorTodos, newItem, overview, recordMove, recordPurchase, removeItem, saveDraft, saveSettings } from '../_lib/inventory.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -59,14 +60,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       await hideItem(sql, who.email, b.place, b.itemId, b.hide !== false);
     } else if (b.action === 'newItem') {
       const id = await newItem(sql, b);
+      // Added from a place: kept there, even if it was "not kept here" before.
+      if (b.place) await hideItem(sql, who.email, b.place, id, false);
       return Response.json({ ok: true, itemId: id, ...(await overview(sql)) });
     } else if (b.action === 'draft') {
       // §150: the order kept as a draft — no to-do until it is created; no lines = discard it.
       const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
         .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0 })) : [];
       await saveDraft(sql, who.email, lines, b.forTodo ? String(b.forTodo) : null);
-    } else if (b.action === 'mins') {
-      await setMins(sql, who.email, b.place, Array.isArray(b.mins) ? b.mins as { itemId: unknown; qty: unknown }[] : []);
+    } else if (b.action === 'settings') {
+      await saveSettings(sql, who.email, b.place, b.items);
+      waitUntil(lowStock(sql, [String(b.place ?? '')]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
+    } else if (b.action === 'removeItem') {
+      await removeItem(sql, b.itemId);
     } else if (b.action === 'order') {
       const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
         .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0 })) : [];

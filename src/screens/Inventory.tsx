@@ -87,22 +87,35 @@ function InventoryBody({ canEdit }: { canEdit: boolean }) {
   );
 }
 
-/** One place: what the record says, what its units' cleans take, a count against it, its minimums and a quick move. */
+/**
+ * One place: what the record says, what its units' cleans take, and — on a
+ * desk — everything about it in one edit (§150, owner: "no reprocess"):
+ * corrections with − [n] + on the record, its settings (name, measure,
+ * estimate per clean, minimum here), items added, kept elsewhere or removed;
+ * and a draft order for what is short.
+ */
+type ItemEdit = { name?: string; measure?: string; perClean?: string; min?: string };
 function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace; canEdit: boolean; onSaved: (i: Inventory) => void }) {
   const api = useContext(InvApi);
-  const items = inv.items.filter(i => i.active);
-  const [mode, setMode] = useState<'view' | 'mins'>('view');
+  // What this place keeps — "not kept here" items are off its list (§150).
+  const items = p.items.map(l => inv.items.find(i => i.id === l.itemId)).filter((i): i is InvItemRow => !!i);
+  const [mode, setMode] = useState<'view' | 'edit'>('view');
   // §150, owner: counting is done onsite, on a phone — a sheet like the inspection's.
   const [onsite, setOnsite] = useState(false);
-  const [counts, setCounts] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
-  // §150, owner: "On record" corrected in place with − / + (something brought from outside, a loss…) —
-  // staged, then saved together with why, so a stray tap never moves the stock.
+  // "On record" corrected in place (something brought from outside, a loss…) — staged, then saved with why,
+  // so a stray tap never moves the stock.
   const [fix, setFix] = useState<Record<string, number>>({});
   const [why, setWhy] = useState('');
   const fixes = Object.entries(fix).filter(([, d]) => d !== 0);
-  const bump = (id: string, d: number, now: number) => setFix(m => ({ ...m, [id]: Math.max(-now, (m[id] ?? 0) + d) }));
+  const setTo = (id: string, n: number, now: number) => setFix(m => ({ ...m, [id]: Math.max(0, Math.round(n * 100) / 100) - now }));
+  // Edit settings: every change staged, one save.
+  const [eds, setEds] = useState<Record<string, ItemEdit>>({});
+  const [adding, setAdding] = useState<{ name: string; measure: string; category: string } | null>(null);
+  const [sure, setSure] = useState<string | null>(null);
+  const edited = Object.entries(eds).filter(([, e]) => Object.keys(e).length);
+  const ed = (id: string, k: keyof ItemEdit, v: string) => setEds(m => ({ ...m, [id]: { ...m[id], [k]: v } }));
   const levelOf = (id: string) => p.items.find(l => l.itemId === id);
   const send = async (body: Record<string, unknown>, done: string) => {
     setBusy(true); setMsg('');
@@ -112,7 +125,14 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
       onSaved(r); setMsg(done); return true;
     } catch (e) { setMsg(String(e)); return false; } finally { setBusy(false); }
   };
-  const changedMins = Object.entries(counts);
+  // §150, owner: "draft order for missing items" — what is short here (or reported not there) into the draft order.
+  const shortItems = p.items.filter(l => l.toOrder > 0 || l.missingSince);
+  const draftShort = async () => {
+    const mine = shortItems.map(l => ({ itemId: l.itemId, place: p.place!, qty: l.toOrder || Math.max(1, Math.ceil(l.min ?? 1)) }));
+    const keep = (inv.draft?.lines ?? []).filter(x => !(x.place === p.place && mine.some(m => m.itemId === x.itemId)));
+    await send({ action: 'draft', lines: [...keep, ...mine], forTodo: inv.draft?.forTodo ?? undefined },
+               `📝 ${mine.length} line${mine.length === 1 ? '' : 's'} in the draft order — see To order below.`);
+  };
   const ahead = p.units.reduce((a, u) => a + u.cleansAhead, 0);
   const edit = canEdit && !!p.place;
   return (
@@ -131,41 +151,71 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
         <table className="units compact">
           <thead><tr><th>Item</th><th className="n">On record</th><th>Counted</th><th className="n">Per clean</th>
             <th className="n">Cleans take ({inv.aheadDays} d)</th><th className="n">Keep at least</th><th className="n">To order</th>
-            {mode === 'mins' && <th className="n">New minimum</th>}</tr></thead>
+            {mode === 'edit' && <th></th>}</tr></thead>
           <tbody>
             {items.map(i => {
               const l = levelOf(i.id);
-              const c = counts[i.id] ?? '';
+              const e = eds[i.id] ?? {};
+              const now = l?.qty ?? 0;
+              const val = now + (fix[i.id] ?? 0);
               return (
                 <tr key={i.id}>
-                  <td><b>{i.name}</b> <span className="sub-n">{i.measure}</span>
+                  <td>{mode === 'edit' ? <span className="inv-edit">
+                      <input value={e.name ?? i.name} maxLength={120} aria-label="Name" onChange={x => ed(i.id, 'name', x.target.value)} />
+                      <input value={e.measure ?? i.measure} maxLength={20} aria-label="Counted in" className="inv-measure" onChange={x => ed(i.id, 'measure', x.target.value)} />
+                    </span> : <><b>{i.name}</b> <span className="sub-n">{i.measure}</span></>}
                     {l?.missingSince && <div className="breach">⚠ reported not there {short(l.missingSince)} — count it</div>}</td>
                   <td className="n">{edit && mode === 'view' ? (
                     <span className="inv-adj">
-                      <button type="button" aria-label={`One less ${i.name}`} disabled={busy || ((l?.qty ?? 0) + (fix[i.id] ?? 0)) <= 0}
-                              onClick={() => bump(i.id, -1, l?.qty ?? 0)}>−</button>
-                      <b>{fmt((l?.qty ?? 0) + (fix[i.id] ?? 0))}</b>
-                      <button type="button" aria-label={`One more ${i.name}`} disabled={busy} onClick={() => bump(i.id, 1, l?.qty ?? 0)}>+</button>
-                      {fix[i.id] ? <span className="breach"> {fix[i.id]! > 0 ? `+${fix[i.id]}` : fix[i.id]}</span> : null}
+                      <button type="button" aria-label={`One less ${i.name}`} disabled={busy || val <= 0} onClick={() => setTo(i.id, val - 1, now)}>−</button>
+                      <input type="number" inputMode="decimal" min="0" step="any" aria-label={`${i.name} on record`} value={fmt(val) === '—' ? '0' : String(Math.round(val * 100) / 100)}
+                             onChange={x => setTo(i.id, Number(x.target.value) || 0, now)} />
+                      <button type="button" aria-label={`One more ${i.name}`} disabled={busy} onClick={() => setTo(i.id, val + 1, now)}>+</button>
+                      <span className="inv-delta">{fix[i.id] ? (fix[i.id]! > 0 ? `+${fix[i.id]}` : fix[i.id]) : ''}</span>
                     </span>) : fmt(l?.qty)}</td>
                   <td>{l?.countedAt ? short(l.countedAt) : <span className="sub-n">never</span>}</td>
-                  <td className="n">{fmt(l?.perClean)}{l?.perClean != null && <span className="sub-n">{l.learned ? ` avg of ${l.reportedCleans}` : ' est.'}</span>}</td>
+                  <td className="n">{mode === 'edit'
+                    ? <input className="inv-qty" type="number" min="0" step="any" aria-label="Estimate per clean" value={e.perClean ?? (i.perClean == null ? '' : String(i.perClean))}
+                             onChange={x => ed(i.id, 'perClean', x.target.value)} />
+                    : <>{fmt(l?.perClean)}{l?.perClean != null && <span className="sub-n">{l.learned ? ` avg of ${l.reportedCleans}` : ' est.'}</span>}</>}</td>
                   <td className="n">{l?.need ? l.need : '—'}</td>
-                  <td className="n">{fmt(l?.min)}{l?.min != null && <span className="sub-n">{l.minOwn ? ' here' : ' item'}</span>}</td>
+                  <td className="n">{mode === 'edit'
+                    ? <input className="inv-qty" type="number" min="0" step="any" aria-label="Keep at least here" placeholder={fmt(i.reorderAt)}
+                             value={e.min ?? (l?.minOwn ? String(l.min) : '')} onChange={x => ed(i.id, 'min', x.target.value)} />
+                    : <>{fmt(l?.min)}{l?.min != null && <span className="sub-n">{l.minOwn ? ' here' : ' item'}</span>}</>}</td>
                   <td className="n">{l?.toOrder ? <b>{l.toOrder}</b> : '—'}</td>
-                  {mode === 'mins' && <td className="n"><input className="inv-qty" type="number" inputMode="decimal" min="0" step="any"
-                    value={counts[i.id] ?? (l?.minOwn ? String(l.min) : '')} placeholder={fmt(i.reorderAt)}
-                    onChange={e => setCounts(m => ({ ...m, [i.id]: e.target.value }))} /></td>}
+                  {mode === 'edit' && <td className="n nowrap">
+                    <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'hide', place: p.place, itemId: i.id, hide: true }, `${i.name}: not kept here.`)}>🙈 Not here</button>{' '}
+                    {sure === i.id
+                      ? <>Remove from every place? <button className="link tiny danger" disabled={busy} onClick={async () => { if (await send({ action: 'removeItem', itemId: i.id }, `${i.name} removed from the list (its history stays).`)) setSure(null); }}>Yes, remove</button>{' '}
+                          <button className="link tiny" onClick={() => setSure(null)}>No</button></>
+                      : <button className="link tiny danger" onClick={() => setSure(i.id)}>🗑 Remove</button>}
+                  </td>}
                 </tr>
               );
             })}
           </tbody>
         </table>
       </div>
+      {mode === 'edit' && <>
+        {!adding ? <button className="secondary" onClick={() => setAdding({ name: '', measure: 'unit', category: 'other' })}>+ Add an item</button> : (
+          <div className="row">
+            <label>Name<input autoFocus value={adding.name} maxLength={120} onChange={x => setAdding(a => a && { ...a, name: x.target.value })} /></label>
+            <label>Counted in<input value={adding.measure} maxLength={20} placeholder="roll, bottle, pod…" onChange={x => setAdding(a => a && { ...a, measure: x.target.value })} /></label>
+            <label>Category<select value={adding.category} onChange={x => setAdding(a => a && { ...a, category: x.target.value })}>
+              {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
+            <div className="button-row">
+              <button disabled={busy || !adding.name.trim()} onClick={async () => { if (await send({ action: 'newItem', ...adding, place: p.place }, `${adding.name.trim()} added.`)) setAdding(null); }}>Add it</button>
+              <button className="secondary" onClick={() => setAdding(null)}>Cancel</button>
+            </div>
+          </div>)}
+        {p.hidden.length > 0 && <p className="sub-n">Not kept here: {p.hidden.map((id, k) => <Fragment key={id}>{k ? ' · ' : ''}<button type="button" className="link tiny" disabled={busy}
+          onClick={() => void send({ action: 'hide', place: p.place, itemId: id, hide: false }, 'Back on this place.')}>↺ {inv.items.find(x => x.id === id)?.name ?? id}</button></Fragment>)}</p>}
+      </>}
       {edit && (
         <div className="button-row">
           {mode === 'view' && fixes.length > 0 && <>
-            <input value={why} maxLength={500} placeholder="Why — e.g. brought from outside, broken, lent" onChange={e => setWhy(e.target.value)} />
+            <input value={why} maxLength={500} placeholder="Why — e.g. brought from outside, broken, lent" onChange={x => setWhy(x.target.value)} />
             <button disabled={busy || !why.trim()}
                     onClick={async () => { if (await send({ action: 'adjusts', place: p.place, note: why, adjusts: fixes.map(([itemId, qty]) => ({ itemId, qty })) },
                                                       `Corrected ${fixes.length} item${fixes.length === 1 ? '' : 's'}.`)) { setFix({}); setWhy(''); } }}>
@@ -174,19 +224,22 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
           </>}
           {mode === 'view' && !fixes.length && <>
             <button onClick={() => { setOnsite(true); setMsg(''); }}>📱 Count {placeTitle(p)}</button>
-            <button className="secondary" onClick={() => { setMode('mins'); setCounts({}); setMsg(''); }}>✎ Minimums here</button>
+            <button className="secondary" disabled={busy || !shortItems.length} title={shortItems.length ? '' : 'Nothing short here (counted places only)'}
+                    onClick={() => void draftShort()}>📝 Draft order for what's short{shortItems.length ? ` (${shortItems.length})` : ''}</button>
+            <button className="secondary" onClick={() => { setMode('edit'); setEds({}); setMsg(''); }}>✎ Edit settings</button>
           </>}
-          {mode === 'mins' && <>
-            <button disabled={busy || !changedMins.length}
-                    onClick={async () => { if (await send({ action: 'mins', place: p.place, mins: changedMins.map(([itemId, qty]) => ({ itemId, qty })) },
-                                                      'Minimums saved.')) { setMode('view'); setCounts({}); } }}>Save the minimums</button>
-            <span className="note">Blank = the item's own minimum (Setup → Inventory).</span>
+          {mode === 'edit' && <>
+            <button disabled={busy || !edited.length} onClick={async () => {
+              const body = { action: 'settings', place: p.place, items: edited.map(([itemId, x]) => ({ itemId, ...x })) };
+              if (await send(body, `Saved ${edited.length} item${edited.length === 1 ? '' : 's'}.`)) { setMode('view'); setEds({}); }
+            }}>Save changes ({edited.length})</button>
+            <span className="note">Name, “counted in” and the estimate are the item's (every place); “Keep at least” is this place's — blank = the item's.</span>
+            <button className="secondary" onClick={() => { setMode('view'); setEds({}); setAdding(null); setSure(null); }}>Done</button>
           </>}
-          {mode !== 'view' && <button className="secondary" onClick={() => { setMode('view'); setCounts({}); }}>Cancel</button>}
           {msg && <span className="note">{msg}</span>}
         </div>
       )}
-      {edit && mode === 'view' && <p className="note">− / + on “On record” corrects it (say why); a full count replaces it. What was bought
+      {edit && mode === 'view' && <p className="note">− [n] + on “On record” corrects it (say why); a full count replaces it. What was bought
         goes in 🧾 Record a purchase (below), with its cost.</p>}
     </div>
   );
