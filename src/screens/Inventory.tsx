@@ -94,7 +94,12 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
   const [counts, setCounts] = useState<Record<string, string>>({});
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
-  const [move, setMove] = useState({ kind: 'used', itemId: '', qty: '', note: '' });
+  // §150, owner: "On record" corrected in place with − / + (something brought from outside, a loss…) —
+  // staged, then saved together with why, so a stray tap never moves the stock.
+  const [fix, setFix] = useState<Record<string, number>>({});
+  const [why, setWhy] = useState('');
+  const fixes = Object.entries(fix).filter(([, d]) => d !== 0);
+  const bump = (id: string, d: number, now: number) => setFix(m => ({ ...m, [id]: Math.max(-now, (m[id] ?? 0) + d) }));
   const levelOf = (id: string) => p.items.find(l => l.itemId === id);
   const send = async (body: Record<string, unknown>, done: string) => {
     setBusy(true); setMsg('');
@@ -134,7 +139,14 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
                 <tr key={i.id}>
                   <td><b>{i.name}</b> <span className="sub-n">{i.measure}</span>
                     {l?.missingSince && <div className="breach">⚠ reported not there {short(l.missingSince)} — count it</div>}</td>
-                  <td className="n">{fmt(l?.qty)}</td>
+                  <td className="n">{edit && mode === 'view' ? (
+                    <span className="inv-adj">
+                      <button type="button" aria-label={`One less ${i.name}`} disabled={busy || ((l?.qty ?? 0) + (fix[i.id] ?? 0)) <= 0}
+                              onClick={() => bump(i.id, -1, l?.qty ?? 0)}>−</button>
+                      <b>{fmt((l?.qty ?? 0) + (fix[i.id] ?? 0))}</b>
+                      <button type="button" aria-label={`One more ${i.name}`} disabled={busy} onClick={() => bump(i.id, 1, l?.qty ?? 0)}>+</button>
+                      {fix[i.id] ? <span className="breach"> {fix[i.id]! > 0 ? `+${fix[i.id]}` : fix[i.id]}</span> : null}
+                    </span>) : fmt(l?.qty)}</td>
                   <td>{l?.countedAt ? short(l.countedAt) : <span className="sub-n">never</span>}</td>
                   <td className="n">{fmt(l?.perClean)}{l?.perClean != null && <span className="sub-n">{l.learned ? ` avg of ${l.reportedCleans}` : ' est.'}</span>}</td>
                   <td className="n">{l?.need ? l.need : '—'}</td>
@@ -156,7 +168,15 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
       </div>
       {edit && (
         <div className="button-row">
-          {mode === 'view' && <>
+          {mode === 'view' && fixes.length > 0 && <>
+            <input value={why} maxLength={500} placeholder="Why — e.g. brought from outside, broken, lent" onChange={e => setWhy(e.target.value)} />
+            <button disabled={busy || !why.trim()}
+                    onClick={async () => { if (await send({ action: 'adjusts', place: p.place, note: why, adjusts: fixes.map(([itemId, qty]) => ({ itemId, qty })) },
+                                                      `Corrected ${fixes.length} item${fixes.length === 1 ? '' : 's'}.`)) { setFix({}); setWhy(''); } }}>
+              Save corrections ({fixes.length})</button>
+            <button className="secondary" onClick={() => { setFix({}); setWhy(''); }}>Undo</button>
+          </>}
+          {mode === 'view' && !fixes.length && <>
             <button onClick={() => { setMode('count'); setCounts({}); setMsg(''); }}>▣ Count {placeTitle(p)}</button>
             <button className="secondary" onClick={() => { setMode('mins'); setCounts({}); setMsg(''); }}>✎ Minimums here</button>
           </>}
@@ -177,33 +197,18 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
           {msg && <span className="note">{msg}</span>}
         </div>
       )}
-      {edit && mode === 'view' && (
-        <>
-          <h3>Record a move here</h3>
-          <p className="note">What was bought goes in 🧾 Record a purchase (below), with its cost.</p>
-          <div className="row">
-            <label>What<select value={move.kind} onChange={e => setMove(m => ({ ...m, kind: e.target.value }))}>
-              <option value="used">Used</option><option value="adjust">Correct (+ or −)</option>
-            </select></label>
-            <label>Item<select value={move.itemId} onChange={e => setMove(m => ({ ...m, itemId: e.target.value }))}>
-              <option value="">—</option>{items.map(i => <option key={i.id} value={i.id}>{i.name} ({i.measure})</option>)}</select></label>
-            <label>Quantity<input type="number" inputMode="decimal" step="any" value={move.qty} onChange={e => setMove(m => ({ ...m, qty: e.target.value }))} /></label>
-            <label>Note<input value={move.note} maxLength={500} onChange={e => setMove(m => ({ ...m, note: e.target.value }))} /></label>
-          </div>
-          <div className="button-row">
-            <button disabled={busy || !move.itemId || move.qty === ''}
-                    onClick={async () => { if (await send({ action: 'move', ...move, place: p.place }, 'Saved.')) setMove(m => ({ ...m, itemId: '', qty: '', note: '' })); }}>Save</button>
-          </div>
-        </>
-      )}
+      {edit && mode === 'view' && <p className="note">− / + on “On record” corrects it (say why); a full count replaces it. What was bought
+        goes in 🧾 Record a purchase (below), with its cost.</p>}
     </div>
   );
 }
 
 /**
  * Items, each to one place or split between several (§150, owner) — the
- * order and the purchase are written the same way: 🔍 adds any item; "⑂ split"
- * sends part of it to another place; "one place" puts it all back in one.
+ * order and the purchase are written the same way: "Everything goes to" sends
+ * every line to one place by default (most purchases go to one storage); 🔍
+ * adds any item; ⑂ on a part splits it — half to another place, which can be
+ * split again; "one place" puts the item back together.
  */
 type Part = { place: string; qty: string };
 type Lines = Map<string, Part[]>;
@@ -216,11 +221,27 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace }: {
   const [q, setQ] = useState('');
   const item = (id: string) => inv.items.find(i => i.id === id);
   const placeName = (key: string) => { const p = places.find(x => x.place === key); return p ? placeTitle(p) : key; };
-  // A new item goes where it was asked for, else where most units draw from.
-  const busiest = defaultPlace ?? [...places].sort((a, b) => b.units.length - a.units.length)[0]?.place ?? '';
+  // Everything goes where it was asked for, else where most units draw from — until someone says otherwise.
+  const [allTo, setAllTo] = useState(defaultPlace ?? [...places].sort((a, b) => b.units.length - a.units.length)[0]?.place ?? '');
+  const busiest = allTo;
   const set = (id: string, parts: Part[] | null) => { const n = new Map(value); if (parts?.length) n.set(id, parts); else n.delete(id); onChange(n); };
+  // Lines not split follow "Everything goes to"; a split line keeps its parts.
+  const sendAll = (place: string) => {
+    setAllTo(place);
+    onChange(new Map([...value].map(([id, parts]) => [id, parts.length === 1 ? [{ ...parts[0]!, place }] : parts])));
+  };
+  const splitPart = (id: string, parts: Part[], k: number) => {
+    const p = parts[k]!, n = Math.ceil(Number(p.qty) || 0);
+    const other = places.find(x => !parts.some(q => q.place === x.place))?.place ?? p.place;
+    const half = Math.floor(n / 2);
+    set(id, [...parts.slice(0, k), { ...p, qty: n ? String(n - half) : p.qty }, { place: other, qty: n ? String(half) : '' }, ...parts.slice(k + 1)]);
+  };
   const found = q.trim() ? inv.items.filter(i => i.active && !value.has(i.id) && i.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 8) : [];
   return <>
+    {canEdit && places.length > 1 && <label>Everything goes to
+      <select value={allTo} onChange={e => sendAll(e.target.value)}>
+        {places.map(x => <option key={x.place} value={x.place!}>{placeTitle(x)}</option>)}</select>
+      <span className="sub-n">items not split follow this; ⑂ splits one part to another place</span></label>}
     {canEdit && <label>🔍 Add an item
       <input value={q} placeholder="Search the supplies list…" onChange={e => setQ(e.target.value)} /></label>}
     {found.length > 0 && <div className="button-row">{found.map(i => (
@@ -247,11 +268,10 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace }: {
                           {places.map(x => <option key={x.place} value={x.place!}>{placeTitle(x)}</option>)}</select>
                         <input className="inv-qty" type="number" min="0" step="1" value={p.qty} aria-label="Quantity"
                                onChange={e => set(id, parts.map((x, j) => j === k ? { ...x, qty: e.target.value } : x))} />
+                        {canEdit && <button className="link tiny" title="Split this part: half to another place" onClick={() => splitPart(id, parts, k)}>⑂ split</button>}
                         {parts.length > 1 && <button className="link tiny" aria-label="Remove this place" onClick={() => set(id, parts.filter((_, j) => j !== k))}>✕</button>}
                       </div>))}
-                    {canEdit && <button className="link tiny" onClick={() => set(id, [...parts, { place: places.find(x => !parts.some(p => p.place === x.place))?.place ?? busiest, qty: '' }])}>
-                      ⑂ split to another place</button>}
-                    {canEdit && parts.length > 1 && <> · <button className="link tiny" onClick={() => set(id, [{ place: parts[0]!.place, qty: String(total) }])}>one place</button></>}
+                    {canEdit && parts.length > 1 && <button className="link tiny" onClick={() => set(id, [{ place: parts[0]!.place, qty: String(total) }])}>⇢ one place</button>}
                   </td>
                   <td className="n">{canEdit && <button className="link tiny danger" onClick={() => set(id, null)}>remove</button>}</td>
                 </tr>

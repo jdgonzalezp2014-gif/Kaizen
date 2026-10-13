@@ -252,8 +252,12 @@ key had no SOPs.
   ("nothing" included), per unit wherever it took from; the item's estimate until 3. **To order per place** =
   Σ its units now (per clean × cleans in 14 d) + its minimum (`inventory_place_mins`, else the item's) − its
   stock, only once counted (never-counted is not guessed — 273 lines on the first test).
-- **Order ≠ purchase (§150, owner).** The ORDER = a shopping to-do, a line per ITEM and where it goes (one place
-  or ⑂ split; 🔍 adds any item), lines kept in `inventory_orders`. The PURCHASE = Inventory → 🧾 Record a
+- **Corrections (§150, owner):** "On record" has − / + per item (staged; Save corrections needs why → `adjust`
+  moves, API `adjusts`) — for what comes from outside or is lost; a count still replaces the record. The team's
+  old "Record a move" form (used / adjust) is gone.
+- **Order ≠ purchase (§150, owner).** The ORDER = a shopping to-do, a line per ITEM and where it goes ("Everything
+  goes to" one place by default; ⑂ on a part splits half to another place, again for a sub-split; 🔍 adds any
+  item), lines kept in `inventory_orders`. The PURCHASE = Inventory → 🧾 Record a
   purchase (from an open order, filled in, or from scratch; total + receipt) → a `purchase` move per line and
   place + ONE Restock expense (`purchase-<id>`) + a note on the order; the team closes the order. The only way
   stock goes up from buying. The inspector's 🛒 Purchase has the same 🔍 (supply + how many) → the inspection's

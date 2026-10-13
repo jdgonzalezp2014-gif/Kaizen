@@ -2,9 +2,9 @@
  * /api/inventory — supplies by place (§134, §150): the Repository's storages and the houses' closets.
  *
  *   GET                                               every place: stock, average per clean, what its units need, to order
- *   POST { action: 'move', kind, itemId, place, qty, note?, cost? }     (multipart with photos too)
  *   POST { action: 'count', place, counts: [{ itemId, qty }] }          a count of a place — reconciles it
  *   POST { action: 'mins', place, mins: [{ itemId, qty }] }             the minimum to keep there ('' = the item's)
+ *   POST { action: 'adjusts', place, note, adjusts: [{ itemId, qty }] } corrections (+/−) to the record, with why
  *   POST { action: 'order', lines: [{ itemId, place, qty }], forTodo? }  the ORDER: ONE to-do (or onto a field to-do), a line per item
  *   POST { action: 'purchase', lines, total, todoId?, note? } + receipt  what was BOUGHT: stock per place + one Restock expense
  *
@@ -35,11 +35,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       for (const [k, v] of form.entries()) { if (k === 'file') { if (typeof v !== 'string') files.push(v); } else b[k] = v; }
     } else b = await request.json().catch(() => ({})) as Record<string, unknown>;
 
-    if (b.action === 'move') {
-      const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `inventory ${String(b.kind)}`);
-      const r = await recordMove(sql, me, b, photos);
-      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId], who.email));
-    } else if (b.action === 'count') {
+    if (b.action === 'count') {
       const counts = Array.isArray(b.counts) ? b.counts as { itemId: unknown; qty: unknown }[] : [];
       const given = counts.filter(c => c.qty !== '' && c.qty != null);
       if (!given.length) return bad('Count at least one item.');
@@ -47,6 +43,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     } else if (b.action === 'purchase') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, 'inventory purchase');
       await recordPurchase(sql, who.email, b, photos);
+    } else if (b.action === 'adjusts') {
+      // §150: − / + on "On record", saved together with why.
+      const list = Array.isArray(b.adjusts) ? (b.adjusts as { itemId: unknown; qty: unknown }[]).filter(a => Number(a.qty)) : [];
+      if (!list.length) return bad('Nothing to correct.');
+      if (!String(b.note ?? '').trim()) return bad('Say why it is corrected.');
+      for (const a of list) await recordMove(sql, me, { kind: 'adjust', itemId: a.itemId, place: b.place, qty: a.qty, note: b.note });
     } else if (b.action === 'mins') {
       await setMins(sql, who.email, b.place, Array.isArray(b.mins) ? b.mins as { itemId: unknown; qty: unknown }[] : []);
     } else if (b.action === 'order') {

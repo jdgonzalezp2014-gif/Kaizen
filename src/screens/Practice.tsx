@@ -424,9 +424,10 @@ function inventoryPractice(): InvTransport {
     if (b.action === 'count') for (const c of (b.counts as { itemId: string; qty: string }[])) moves.push(mv('count', c.itemId, place, Number(c.qty), today));
     else if (b.action === 'mins') for (const m of (b.mins as { itemId: string; qty: string }[])) {
       if (m.qty === '') mins.delete(`${m.itemId}|${place}`); else mins.set(`${m.itemId}|${place}`, Number(m.qty));
-    } else if (b.action === 'move') {
-      if (!b.itemId || !Number(b.qty)) return fail('How many?');
-      moves.push({ ...mv(b.kind as Move['kind'], String(b.itemId), place, Number(b.qty), today), note: String(b.note ?? '') || undefined });
+    } else if (b.action === 'adjusts') {
+      if (!String(b.note ?? '').trim()) return fail('Say why it is corrected.');
+      for (const a of (b.adjusts as { itemId: string; qty: number }[]))
+        moves.push({ ...mv('adjust', a.itemId, place, Number(a.qty), today), note: String(b.note) });
     } else if (b.action === 'order') {
       const lines = b.lines as { itemId: string; place: string; qty: number }[];
       const list = orderList(lines.map(l => ({ item: items.find(i => i.id === l.itemId)!, place: nameOf(l.place), qty: l.qty })));

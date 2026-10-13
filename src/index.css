@@ -2045,3 +2045,5 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
   align-items: center; gap: 6px 12px; padding: 10px 0; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
 .fr-more { position: sticky; bottom: 10px; z-index: 3; width: fit-content; margin: 6px auto; padding: 6px 14px; border-radius: 999px;
   background: var(--ink); color: var(--bg); font-size: 14px; font-weight: 600; pointer-events: none; }
+.inv-adj { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.inv-adj button { min-width: 30px; min-height: 30px; padding: 0 8px; font-size: 16px; line-height: 1; }
