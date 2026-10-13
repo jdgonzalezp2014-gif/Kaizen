@@ -57,13 +57,17 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ ok: true, month, lines, carryable: recent });
   }
 
+  // §150 (owner): filtered by dates on the server, so an older range is never cut off by the last-500 window.
+  const day = (v: string | null) => v && /^\d{4}-\d{2}-\d{2}$/.test(v) ? v : null;
+  const from = day(url.searchParams.get('from')), to = day(url.searchParams.get('to'));
   const rows = await sql`
-    SELECT e.id, e.label, e.unit_id, e.shared, e.start_date, e.end_date, e.category,
+    SELECT e.id, e.label, e.unit_id, e.shared, e.start_date::text AS start_date, e.end_date::text AS end_date, e.category,
            e.frequency, e.amount, e.notes, e.created_by, e.created_at, u.name AS unit_name, e.source, e.external_ref
       FROM expenses e LEFT JOIN units u ON u.account_id = e.account_id AND u.id = e.unit_id
      WHERE e.account_id = 1 AND e.frequency <> 'Monthly'
-     ORDER BY e.start_date DESC LIMIT 500`;
-  return Response.json({ ok: true, expenses: rows });
+       AND (${from}::date IS NULL OR e.start_date >= ${from}::date) AND (${to}::date IS NULL OR e.start_date <= ${to}::date)
+     ORDER BY e.start_date DESC, e.id DESC LIMIT ${from || to ? 3000 : 500}`;
+  return Response.json({ ok: true, expenses: rows, capped: rows.length >= (from || to ? 3000 : 500) });
 };
 
 interface PostBody {

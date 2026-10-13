@@ -133,8 +133,8 @@ export interface VariableExpense extends FixedLine {
 export const getFixed = (month: string) =>
   call<{ ok: boolean; month: string; lines: FixedLine[]; carryable: FixedLine[] }>(`/api/expenses?month=${month}`);
 
-export const getVariable = () =>
-  call<{ ok: boolean; expenses: VariableExpense[] }>('/api/expenses');
+export const getVariable = (from?: string, to?: string) =>
+  call<{ ok: boolean; expenses: VariableExpense[]; capped?: boolean }>(`/api/expenses${from || to ? `?from=${from ?? ''}&to=${to ?? ''}` : ''}`);
 
 export const postExpense = (body: Record<string, unknown>) =>
   call<{ ok: boolean; id?: string; added?: number; message?: string; error?: string }>('/api/expenses', {

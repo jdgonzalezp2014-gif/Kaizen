@@ -68,3 +68,10 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
 ## History
 
 §4–§7, §9, §14–§28, §30–§48, §50, §53–§54, §62, §69.
+
+- **One-off & repairs: filters, groups, open orders (§150, owner, 2026-10-13):** From/To (default this month; asked
+  of `/api/expenses?from=&to=`, up to 3000 lines, ▲ said if capped; no dates = the latest 500 as before), unit,
+  category, Find; Group by unit / category / month — a folded line per group with its subtotal; the total of what
+  is shown. Dates read `YYYY-MM-DD` (the API returns `start_date::text`; it used to show the ISO timestamp). On top,
+  **🛒 Orders not bought yet** (`OpenOrders`, from `/api/inventory`): the draft order and open orders with no
+  purchase — hidden for roles that cannot read Inventory.

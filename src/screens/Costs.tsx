@@ -9,6 +9,7 @@
  * shared that gets divided across the active ones.
  */
 import { useEffect, useMemo, useState } from 'react';
+import { getInventory, type Inventory } from '../api.ts';
 import {
   getFixed, getVariable, postExpense, deleteExpense,
   type FixedLine, type VariableExpense, type UnitRow
@@ -281,17 +282,33 @@ function AddColumn({ existing, onAdd }: { existing: string[]; onAdd: (c: string)
   );
 }
 
+/**
+ * One-off & repairs (§150, owner): filtered by dates (asked of the server, so
+ * an older range is never cut off), unit, category and words; grouped by unit,
+ * category or month — each group a folded line with its subtotal — and the
+ * orders not bought yet on top, so a forgotten one is seen where money is.
+ */
+type GroupBy = 'none' | 'unit' | 'category' | 'month';
 function Variable({ units }: { units: UnitRow[] }) {
   const [rows, setRows] = useState<VariableExpense[]>([]);
+  const [capped, setCapped] = useState(false);
   const [unit, setUnit] = useState('');
   const [cat, setCat] = useState('Handyman');
   const [amt, setAmt] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [notes, setNotes] = useState('');
   const [busy, setBusy] = useState(false);
+  const today = new Date().toISOString().slice(0, 10);
+  const [from, setFrom] = useState(() => `${today.slice(0, 7)}-01`);
+  const [to, setTo] = useState(today);
+  const [fUnit, setFUnit] = useState('');
+  const [fCat, setFCat] = useState('');
+  const [q, setQ] = useState('');
+  const [group, setGroup] = useState<GroupBy>('none');
+  const [openG, setOpenG] = useState<Set<string>>(new Set());
 
-  const load = () => getVariable().then(r => setRows(r.expenses ?? []));
-  useEffect(() => { load(); }, []);
+  const load = () => getVariable(from || undefined, to || undefined).then(r => { setRows(r.expenses ?? []); setCapped(!!r.capped); });
+  useEffect(() => { load(); }, [from, to]);
 
   const add = () => {
     setBusy(true);
@@ -301,8 +318,33 @@ function Variable({ units }: { units: UnitRow[] }) {
       .finally(() => setBusy(false));
   };
 
+  const shown = rows.filter(r => (!fUnit || (fUnit === 'shared' ? !r.unit_id : r.unit_id === fUnit)) && (!fCat || r.category === fCat)
+    && (!q.trim() || `${r.notes ?? ''} ${r.label ?? ''} ${r.unit_name ?? ''} ${r.created_by ?? ''}`.toLowerCase().includes(q.trim().toLowerCase())));
+  const total = shown.reduce((a, r) => a + Number(r.amount), 0);
+  const keyOf = (r: VariableExpense) => group === 'unit' ? r.unit_name ?? 'Shared' : group === 'category' ? r.category
+    : group === 'month' ? String(r.start_date).slice(0, 7) : '';
+  const groups = group === 'none' ? [] : [...shown.reduce((m, r) => m.set(keyOf(r), [...m.get(keyOf(r)) ?? [], r]), new Map<string, VariableExpense[]>())]
+    .map(([k, rs]) => ({ k, rs, sum: rs.reduce((a, r) => a + Number(r.amount), 0) }))
+    .sort((a, b) => group === 'month' ? b.k.localeCompare(a.k) : b.sum - a.sum);
+  const cats = [...new Set(rows.map(r => r.category))].sort();
+  const row = (r: VariableExpense) => (
+    <tr key={r.id}>
+      <td>{String(r.start_date).slice(0, 10)}</td>
+      <td>{r.unit_name ?? <span className="muted">Shared</span>}</td>
+      <td>{r.category}</td>
+      <td className="n">{money(Number(r.amount))}</td>
+      <td>{r.source === 'repair' ? <>🔧 {r.label}{r.notes ? <span className="muted"> · {r.notes}</span> : null}</> : r.notes ?? r.label}</td>
+      <td className="muted">{r.created_by?.split('@')[0]}</td>
+      {/* §95: a repair's cost follows the repair — changed or removed there. */}
+      <td>{r.source === 'repair'
+        ? <span className="muted" title="Change the cost, or reopen the repair, in the to-do list">from repair</span>
+        : <button className="link danger" onClick={() => deleteExpense(r.id).then(load)}>remove</button>}</td>
+    </tr>
+  );
+
   return (
     <>
+      <OpenOrders />
       <div className="entry">
         <label>Date<input type="date" value={date} onChange={e => setDate(e.target.value)} /></label>
         <label>Unit
@@ -324,26 +366,61 @@ function Variable({ units }: { units: UnitRow[] }) {
         <button disabled={busy || amt.trim() === ''} onClick={add}>Add</button>
       </div>
 
+      <div className="entry costs-filter">
+        <label>From<input type="date" value={from} onChange={e => setFrom(e.target.value)} /></label>
+        <label>To<input type="date" value={to} onChange={e => setTo(e.target.value)} /></label>
+        <label>Unit<select value={fUnit} onChange={e => setFUnit(e.target.value)}>
+          <option value="">All</option><option value="shared">Shared</option>
+          {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}</select></label>
+        <label>Category<select value={fCat} onChange={e => setFCat(e.target.value)}>
+          <option value="">All</option>{cats.map(c => <option key={c}>{c}</option>)}</select></label>
+        <label className="grow">Find<input value={q} placeholder="note, cleaner, unit…" onChange={e => setQ(e.target.value)} /></label>
+        <label>Group by<select value={group} onChange={e => { setGroup(e.target.value as GroupBy); setOpenG(new Set()); }}>
+          <option value="none">Nothing</option><option value="unit">Unit</option><option value="category">Category</option><option value="month">Month</option></select></label>
+      </div>
+      <p className="note"><b>{shown.length}</b> line{shown.length === 1 ? '' : 's'} · <b>{money(total)}</b>
+        {from || to ? ` · ${from || '…'} → ${to || '…'}` : ''}{capped ? ' · ▲ only the latest lines are shown — narrow the dates' : ''}</p>
+
       <table className="units">
         <thead><tr><th>Date</th><th>Unit</th><th>Category</th><th className="n">Amount</th><th>Note</th><th>By</th><th></th></tr></thead>
         <tbody>
-          {rows.map(r => (
-            <tr key={r.id}>
-              <td>{r.start_date}</td>
-              <td>{r.unit_name ?? <span className="muted">Shared</span>}</td>
-              <td>{r.category}</td>
-              <td className="n">{money(Number(r.amount))}</td>
-              <td>{r.source === 'repair' ? <>🔧 {r.label}{r.notes ? <span className="muted"> · {r.notes}</span> : null}</> : r.notes}</td>
-              <td className="muted">{r.created_by?.split('@')[0]}</td>
-              {/* §95: a repair's cost follows the repair — changed or removed there. */}
-              <td>{r.source === 'repair'
-                ? <span className="muted" title="Change the cost, or reopen the repair, in the to-do list">from repair</span>
-                : <button className="link danger" onClick={() => deleteExpense(r.id).then(load)}>remove</button>}</td>
-            </tr>
-          ))}
-          {rows.length === 0 && <tr><td colSpan={7} className="note">Nothing recorded yet.</td></tr>}
+          {group === 'none' ? shown.map(row) : groups.map(g => {
+            const on = openG.has(g.k);
+            return [
+              <tr key={`g-${g.k}`} className="costs-group" onClick={() => setOpenG(s => { const n = new Set(s); if (n.has(g.k)) n.delete(g.k); else n.add(g.k); return n; })}>
+                <td colSpan={3}><button type="button" className="link" aria-expanded={on}>{on ? '▾' : '▸'} <b>{g.k}</b></button>
+                  <span className="muted"> · {g.rs.length} line{g.rs.length === 1 ? '' : 's'}</span></td>
+                <td className="n"><b>{money(g.sum)}</b></td><td colSpan={3}></td>
+              </tr>,
+              ...(on ? g.rs.map(row) : [])
+            ];
+          })}
+          {shown.length === 0 && <tr><td colSpan={7} className="note">Nothing in these dates and filters.</td></tr>}
         </tbody>
       </table>
     </>
+  );
+}
+
+/**
+ * Orders not bought yet (§150, owner: "see the draft orders in case they
+ * forget"): the inventory's draft order and every open order with no purchase
+ * recorded — bought, they become a Restock line here.
+ */
+function OpenOrders() {
+  const [inv, setInv] = useState<Inventory | null>(null);
+  useEffect(() => { void getInventory().then(r => { if (r.ok) setInv(r); }).catch(() => {}); }, []);
+  if (!inv) return null;
+  const waiting = inv.orders.filter(o => !o.purchases);
+  if (!inv.draft && !waiting.length) return null;
+  const n = (ls: { qty: number }[]) => `${ls.length} line${ls.length === 1 ? '' : 's'}`;
+  return (
+    <div className="card costs-orders">
+      <b>🛒 Orders not bought yet</b>
+      <ul>
+        {inv.draft && <li>📝 Draft order — {n(inv.draft.lines)}, saved {inv.draft.savedAt} by {inv.draft.savedBy.split('@')[0]} · Operations → Inventory → To order</li>}
+        {waiting.map(o => <li key={o.todoId}>{o.at} · {o.title} — {n(o.lines)} · Operations → To-do → + 🛒 purchase</li>)}
+      </ul>
+    </div>
   );
 }

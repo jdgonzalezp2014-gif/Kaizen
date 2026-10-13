@@ -2070,3 +2070,5 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .onsite-step input { width: 72px; min-height: 48px; text-align: center; font-size: 18px; }
 .onsite-add { display: grid; gap: 8px; border: 1px dashed var(--line); border-radius: 10px; padding: 10px; }
 .todo-prog-btn { background: transparent; cursor: pointer; font: inherit; font-size: 11px; }
+.costs-group { cursor: pointer; background: color-mix(in srgb, var(--line) 25%, transparent); }
+.costs-orders ul { margin: 6px 0 0; padding-left: 18px; } .costs-orders { margin-bottom: 12px; }
