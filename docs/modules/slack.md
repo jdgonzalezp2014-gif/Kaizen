@@ -49,6 +49,10 @@ with im:write, app_mentions:read, reactions:write and the `app_mention` event. D
   total) and ↘ the next arrival (same day + time, or date + days empty; guest, nights, guests,
   total) — totals only for roles with `money` (§116). The board is read a week past the day.
 - Task card and claim card (comments, Add comment with focus). Kaizen comments → thread.
+- **A task message carries two buttons (§143)**: ✓ Complete and 💬 Comment (↺ Reopen when closed).
+  ▶ Start went because the first comment now starts the work by itself (work module, §143), and
+  "Kaizen ↗" because it opened the app's front door, not the task. ▶ Start still exists where it is
+  a deliberate choice: the task pop-up (`card_start`) and the ⋯ menu of `/kaizen tasks` (`start:`).
 - **Cleans' daily thread (§134, §136)**, event `cleanThread` (**ON since 2026-10-12** → #kaizen-ops): the
   clock posts the day's message at the morning reminder's hour (team time, until 20:00; `slack_sent`
   `cleanday:<date>`) with EVERY clean of the day — board checkouts + manual MAN- cleans, cleaner or

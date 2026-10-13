@@ -34,6 +34,10 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 - Hostaway's task model (§94): status pending/confirmed/in_progress/completed/cancelled;
   priority none/low/medium/high/urgent = null/1/2/3/4 (**scale unverified** — flip in
   PRIORITY_NUMBER); one listing per task; owner/supervisor = Hostaway users; times NY → UTC.
+- **The first comment starts the work (§143):** a comment on a `pending` or `confirmed` to-do moves it
+  to `in_progress` by itself (`/api/todos` action `note`, so from the app, a Slack thread or the task
+  pop-up alike), writes the status line on the timeline and pushes it to Hostaway like any other status
+  change. Nothing is posted to Slack for it. A vendor's first "before" photo already did this (§137).
 - Owners are optional (days off, shifts) — never shown as "no owner".
 - **To-dos from the field (§134)** are made by `functions/_lib/inventory.ts` (`newTodo`), not /api/todos:
   a problem or a need from a cleaner or a helper link ("Problem at <unit>: …", "Request at …") with the

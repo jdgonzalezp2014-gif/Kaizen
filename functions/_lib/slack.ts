@@ -99,7 +99,7 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
   const [p] = await sql`SELECT parent_id FROM todos WHERE id::text = ${id}` as { parent_id: string | null }[];
   if (p?.parent_id) return;
   const word = event === 'assigned' ? `assigned to ${t.assignee ?? 'nobody'}` : event === 'hostaway' ? `changed in Hostaway${extra ? ` (${extra})` : ''}` : event;
-  await rememberThread(sql, await postTo(s, 'tasks', taskMessage(t, word, who(by), s.config.appUrl)), 'task', id);
+  await rememberThread(sql, await postTo(s, 'tasks', taskMessage(t, word, who(by))), 'task', id);
 }
 
 /**
@@ -116,7 +116,7 @@ export async function tellOwner(sql: SqlFn, key: string, id: string, by: string,
   const target = dmTarget(s.config, r.assignee_user_id);
   const t = await taskLite(sql, id);
   if (!target || !t) return;
-  const m = taskMessage(t, 'for you', who(by), s.config.appUrl);
+  const m = taskMessage(t, 'for you', who(by));
   const head = target.standIn ? `🧪 Test — would go to *${r.assignee}*: ${lead.toLowerCase()}` : `👋 ${lead}`;
   await slackApi(s.token, 'chat.postMessage', { channel: target.to, text: `${lead}: ${t.title}`,
     blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: head }] }, ...m.blocks] });

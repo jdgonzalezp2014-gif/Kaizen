@@ -692,7 +692,7 @@ class Kaizen {
       if (!r.ok) { await this.reply(url, { response_type: 'ephemeral', replace_original: false, text: r.message ?? 'Not saved.' }); return ack(); }
       const t = await taskLite(this.sql, taskId);
       if (inChannel && t) {
-        await this.reply(url, { replace_original: true, ...taskMessage(t, taskVerb === 'complete' ? 'completed' : taskVerb === 'start' ? 'started' : taskVerb === 'reopen' ? 'reopened' : 'updated', this.email.split('@')[0]!, this.s.config.appUrl) });
+        await this.reply(url, { replace_original: true, ...taskMessage(t, taskVerb === 'complete' ? 'completed' : taskVerb === 'start' ? 'started' : taskVerb === 'reopen' ? 'reopened' : 'updated', this.email.split('@')[0]!) });
       } else {
         const note = taskVerb === 'remove' && t ? [{ type: 'section', text: { type: 'mrkdwn', text: `Removed *${t.title}*.` },
           accessory: { type: 'button', text: { type: 'plain_text', text: 'Undo' }, action_id: 'task_restore', value: taskId } }] : [];

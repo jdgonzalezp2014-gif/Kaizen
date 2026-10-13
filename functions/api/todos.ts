@@ -45,6 +45,8 @@ const KINDS = ['task', 'work_order'];
 // Hostaway's task model, word for word (§94).
 const STATUSES = ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'];
 const CLOSED = ['completed', 'cancelled'];
+// Nobody has touched the work yet, so the first comment on it means it began (§143).
+const UNSTARTED = ['pending', 'confirmed'];
 const PRIORITIES = ['none', 'low', 'medium', 'high', 'urgent'];
 const STATUS_WORD: Record<string, string> = {
   pending: 'Pending', confirmed: 'Confirmed', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled'
@@ -320,6 +322,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     const body = typeof b.body === 'string' ? b.body.trim().slice(0, 4000) : '';
     if (!body) return bad('An update needs words.');
     await note(sql, 'task', id, 'note', body, who.email);
+    // §143: the first comment is what "started" means — somebody is on it, in
+    // words. Saying so by hand as well was a button that told nobody anything
+    // (the field already does this when a vendor's "before" photos land).
+    if (UNSTARTED.includes(before.status)) {
+      await sql`UPDATE todos SET status = 'in_progress', updated_at = now() WHERE account_id = 1 AND id = ${id}`;
+      await note(sql, 'task', id, 'status', `${STATUS_WORD[before.status]} → ${STATUS_WORD.in_progress}`, who.email);
+      mirror(id);
+    }
     if (b.via !== 'slack-thread') waitUntil(commentToThread(sql, env.ENCRYPTION_KEY, 'task', id, body, who.email).catch(() => {}));
     return Response.json({ ok: true, todos: await list(sql, scope) });
   }

@@ -3769,3 +3769,23 @@ time, when the cleaner can start, is already shown. `checkInFlag` + `DEFAULT_CHE
 (CleanCard, UpcomingRow and the ICS export), labels `checkInConfirmed` / `checkInBy` in `crew-i18n.ts` (EN/ES).
 Only on checkout cleans, not manual/extra ones, and not on past record cleans. The old `nextGuestAt` /
 `nextGuestSameDay` labels stay for other uses.
+
+## §143 — Two buttons on a task message; the first comment is the start (2026-10-12)
+
+The owner, looking at a "To-do created" message on his phone: "ese Start no sirve de nada" and the
+Kaizen button "se me hace innecesario". Both were right for different reasons. **Kaizen ↗** was a link
+to `appUrl` — the app's front door, not the task — so it spent a line of a phone screen on a trip the
+person still had to finish by hand; there is no deep link to a task today (the app's `#t=` are the crew
+and report tokens), so it went rather than became one. **▶ Start** was not dead — `in_progress` is a
+real status, it mirrors to Hostaway and the daily task check reads it, and the record shows ten moves
+into it, by three people, the last that same day — but on the message that announces a task was *just
+created* nobody marks "I started" a second later. His rule: "el primer comentario, update o cambio es
+equivalente a start". So a comment on a `pending` or `confirmed` to-do now moves it to `in_progress` on
+its own, in `/api/todos` action `note` — the one door every comment goes through, from the app, from a
+Slack thread and from the task pop-up — with the status line on the timeline and the usual push to
+Hostaway. Nothing extra is said in Slack (the channel notice is only for closed / reopened / assigned).
+The field already worked this way: a vendor's first "before" photo starts the order (§137).
+`taskMessage` now carries ✓ Complete and 💬 Comment (↺ Reopen when closed) and no longer takes
+`appUrl`. ▶ Start stays where pressing it is a deliberate choice rather than clutter in the channel:
+the task pop-up (`card_start`) and the ⋯ menu of `/kaizen tasks`. A field change (a due date, an owner)
+deliberately does **not** start the work — assigning is not beginning.

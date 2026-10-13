@@ -179,7 +179,14 @@ export function pickTask(list: { id?: string; title: string; unit?: string | nul
     options: ordered.slice(0, 100).map(t => ({ text: plain(label(t)), value: t.id })) }] }];
 }
 
-export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: string): { text: string; blocks: Block[] } {
+/**
+ * Two buttons, not four (§143): the first comment is what "started" means
+ * (/api/todos moves an untouched task to In progress when one lands), so a
+ * Start button said nothing a comment does not; and "Kaizen ↗" opened the
+ * app's front door, not the task, so it cost a line of the phone's screen
+ * for a trip the person still had to finish by hand.
+ */
+export function taskMessage(t: TaskLite, event: string, by: string): { text: string; blocks: Block[] } {
   const closed = t.status === 'completed' || t.status === 'cancelled';
   const title = `${what(t)} ${event}: *${esc(t.title)}*`;
   return {
@@ -188,12 +195,8 @@ export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: str
       section(title),
       context(taskFacts(t), by ? `by ${esc(by)}` : ''),
       { type: 'actions', elements: [
-        ...(closed ? [button('↺ Reopen', 'task_reopen', t.id)] : [
-          button('✓ Complete', 'task_complete', t.id, 'primary'),
-          ...(t.status !== 'in_progress' ? [button('▶ Start', 'task_start', t.id)] : [])
-        ]),
-        button('💬 Comment', 'task_open', t.id),
-        ...(appUrl ? [{ type: 'button', text: plain('Kaizen ↗'), url: `${appUrl}/`, action_id: 'open_kaizen' }] : [])
+        ...(closed ? [button('↺ Reopen', 'task_reopen', t.id)] : [button('✓ Complete', 'task_complete', t.id, 'primary')]),
+        button('💬 Comment', 'task_open', t.id)
       ] }
     ]
   };

@@ -54,7 +54,10 @@ test('a task message carries the buttons that act on it', () => {
   const s = JSON.stringify(m.blocks);
   assert.match(s, /Fix &lt;AC&gt;/);
   assert.match(s, /task_complete/);
-  assert.match(s, /task_start/);
+  // §143: Complete and Comment only — the first comment is what "started" means,
+  // and "Kaizen ↗" led to the front door rather than the task.
+  assert.doesNotMatch(s, /task_start|open_kaizen/);
+  assert.match(s, /task_open/);
   assert.match(s, /▲ high/);
   const done = JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'completed', priority: 'none' }, 'completed', '').blocks);
   assert.match(done, /task_reopen/);
