@@ -799,3 +799,48 @@ export async function writeHostNote(
     ? { ok: true, detail: 'written and confirmed' }
     : { ok: false, detail: 'Hostaway accepted the write but the note reads back differently.' };
 }
+
+/* ── a stay's check-in / check-out hour ───────────────────────────── */
+
+/** Whole hours 0–23, as Hostaway keeps them on a reservation (src/lib/stay-time.ts). */
+export interface StayHours { checkInTime?: number; checkOutTime?: number }
+
+/** The listing's standard hours — what a stay goes back to when Kaizen's time is cleared. */
+export async function fetchStandardHours(creds: HostawayCredentials, listingId: string): Promise<Required<StayHours> | null> {
+  const token = await getAccessToken(creds);
+  const res = await fetch(`${BASE}/listings/${encodeURIComponent(listingId)}`, {
+    headers: { Authorization: `Bearer ${token}` }, cache: 'no-store'
+  });
+  if (!res.ok) return null;
+  const l = ((await res.json()) as { result?: Record<string, unknown> }).result;
+  const cin = Number(l?.checkInTimeStart), cout = Number(l?.checkOutTime);
+  return Number.isInteger(cin) && Number.isInteger(cout) && l?.checkInTimeStart != null && l?.checkOutTime != null
+    ? { checkInTime: cin, checkOutTime: cout } : null;
+}
+
+/**
+ * Sets the reservation's check-in and/or check-out hour — only the ones
+ * given, never the whole reservation — and READS THEM BACK: a 200 that
+ * changed nothing is a failure, as everywhere in this file.
+ */
+export async function updateReservationTimes(
+  creds: HostawayCredentials, reservationId: string, hours: StayHours
+): Promise<{ ok: boolean; detail: string }> {
+  const body: Record<string, number> = {};
+  for (const k of ['checkInTime', 'checkOutTime'] as const) {
+    const h = hours[k];
+    if (h === undefined) continue;
+    if (!Number.isInteger(h) || h < 0 || h > 23) return { ok: false, detail: `Refusing to send ${k} = ${h}.` };
+    body[k] = h;
+  }
+  if (!Object.keys(body).length) return { ok: false, detail: 'No time to send.' };
+  const token = await getAccessToken(creds);
+  const put = await apiSend(`/reservations/${encodeURIComponent(reservationId)}`, token, body, 'PUT');
+  if (!put.ok) return { ok: false, detail: `Hostaway answered ${put.status}: ${put.text.slice(0, 160)}` };
+  const back = await fetchReservationDetail(creds, reservationId);
+  if (!back) return { ok: false, detail: 'Written, but could not be read back to confirm.' };
+  const wrong = Object.entries(body).filter(([k, v]) => Number(back[k]) !== v || back[k] == null);
+  return wrong.length
+    ? { ok: false, detail: `Hostaway accepted the write but reads back ${wrong.map(([k]) => `${k} = ${back[k] ?? 'empty'}`).join(', ')}.` }
+    : { ok: true, detail: 'written and confirmed' };
+}

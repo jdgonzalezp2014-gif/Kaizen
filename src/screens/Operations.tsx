@@ -40,6 +40,7 @@ import {
 } from '../lib/operations.ts';
 import { money, money2 } from '../lib/format.ts';
 import { hostawayReservationUrl } from '../lib/operations.ts';
+import { HOURS, hourOf, hourWord, syncState, timeOfHour, type SyncState } from '../lib/stay-time.ts';
 import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
@@ -541,13 +542,14 @@ function Board({ data, range, patch, reload }: {
                                  docs={canDocs && r.kind === 'in' && docUnits.has(r.unitId) ? docs[r.resId] ?? null : undefined}
                                  todos={todosBy.get(r.unitId)} flag={r.kind === 'out' ? flags[r.resId] : undefined}
                                  cleanTasks={r.kind === 'out' ? data.cleanTasks?.[r.resId] : undefined}
+                                 sync={timeSync(r, data)}
                                  open={open === key} onToggle={() => {
                                    // Read-only roles see the board; the editor is not offered.
                                    if (can(data.permissions, 'operations.edit')) setOpen(open === key ? null : key);
                                  }} />
                       {open === key && (
                         <tr className="ops-edit-row"><td colSpan={9}>
-                          <Editor r={r} data={data} docs={canDocs && r.kind === 'in' ? docs[r.resId] : undefined}
+                          <Editor r={r} data={data} docs={canDocs && r.kind === 'in' ? docs[r.resId] : undefined} reload={reload}
                                   flag={flags[r.resId] ?? null} onFlag={note => setFlag(r.resId, note)}
                                   onManualClean={kind => setAddingClean({ unitId: r.unitId, resId: r.resId, kind })}
                                   onDocs={d => setDocs(m => ({ ...m, [r.resId]: d }))} onSaved={(set, note) => {
@@ -570,7 +572,9 @@ function Board({ data, range, patch, reload }: {
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, today, flag, seen, cleanTasks }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, today, flag, seen, cleanTasks, sync }: {
+  /** Whether this time is the one on the Hostaway reservation. */
+  sync?: SyncState;
   /** §133: what an inspection asked this clean to do. */
   cleanTasks?: string[];
   r: BoardRow; showMoney: boolean; shadow: boolean; open: boolean; onToggle: () => void;
@@ -602,7 +606,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
           {showMoney && r.total > 0 ? ` · ${money(r.total)}` : ''}
         </div>
       </td>
-      <td className={r.manual.time ? 'ops-manual' : undefined}>{r.time}</td>
+      <td className={r.manual.time ? 'ops-manual' : undefined}>{r.time}{sync && <div><TimeSyncTag s={sync} /></div>}</td>
       <td data-label={out ? 'Next stay' : undefined}>
         {!out ? (r.preppedBy ? <span className="sub-n">prepped by {r.preppedBy}</span> : null)
           : !r.next ? <span className="breach">▲ nothing booked through {through}</span>
@@ -780,8 +784,10 @@ function PastLine({ c, open, onToggle }: { c: Cleaning; open: boolean; onToggle:
 }
 
 /** One stay's controls, opened in place under its row. */
-function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag }: {
+function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag, reload }: {
   r: BoardRow; data: OperationsResponse; onSaved: (set: TurnoverSet | null, note?: string) => void;
+  /** Reload the board — after a time is sent, to show whether it reached Hostaway. */
+  reload: () => void;
   /** The clean's flag by hand (§124), and what to do when it changes. */
   flag: string | null; onFlag: (note: string | null) => void;
   /** Start a manual clean for this stay (§79): the guest left early, or a mid-stay clean. */
@@ -790,27 +796,32 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag }:
   docs: StayDocs | undefined; onDocs: (d: StayDocs) => void;
 }) {
   const out = r.kind === 'out';
-  const [time, setTime] = useState(r.manual.time ? r.time : '');
   const [note, setNote] = useState(r.note);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   const active = data.roster.filter(c => c.active);
 
-  const send = async (set: TurnoverSet | null, text?: string) => {
+  const send = async (set: TurnoverSet | null, text?: string, resendTime?: 'checkin' | 'checkout') => {
     setBusy(true); setMsg('');
     const r2 = await saveTurnover({
       resId: r.resId, set: set ?? undefined,
       note: text !== undefined ? { kind: out ? 'checkout' : 'checkin', text } : undefined,
       unitId: r.unitId, unit: r.unit, guest: r.guest,
-      checkIn: r.kind === 'in' ? r.date : undefined
+      checkIn: r.kind === 'in' ? r.date : undefined, resendTime
     }).catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (!r2.ok) { setMsg(r2.message ?? 'Could not save.'); return; }
     onSaved(set, text);
     setMsg(!r.listed ? 'Saved in Kaizen. This listing is archived in Hostaway, which refuses notes on it — nothing was sent.'
+      : r2.time === 'queued' ? 'Saved — sending the time to the Hostaway reservation…'
       : r2.push === 'queued' ? 'Saved — the Host Note is being updated in Hostaway.'
       : 'Saved in Kaizen. Shadow mode: nothing is written to Hostaway.');
+    // The send runs after the response; a few seconds later the board says whether it landed.
+    if (r2.time === 'queued') setTimeout(reload, 6000);
   };
+  const end = out ? 'checkout' as const : 'checkin' as const;
+  const sync = timeSync(r, data);
+  const manualHour = r.manual.time ? hourOf(r.time) : null;
 
   const cleanerValue = !r.manual.cleaner ? '__rule'
     : r.assignment === 'assigned' ? `c:${r.cleaner}` : r.assignment;
@@ -855,12 +866,23 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag }:
           </label>
         )}
         <label>{out ? 'Checkout time' : 'Check-in time'}
-          <input disabled={busy} value={time} placeholder={out ? DEFAULT_CHECKOUT_TIME : DEFAULT_CHECKIN_TIME}
-                 onChange={e => setTime(e.target.value)}
-                 onBlur={() => {
-                   if (time === (r.manual.time ? r.time : '')) return;
-                   void send(out ? { checkoutTime: time || null } : { checkinTime: time || null });
-                 }} />
+          {/* Whole hours: the time goes to the guest's Hostaway reservation, which keeps no minutes. */}
+          <select disabled={busy} value={r.manual.time ? (manualHour ?? 'odd') : ''} onChange={e => {
+            const v = e.target.value === '' ? null : timeOfHour(Number(e.target.value));
+            void send(out ? { checkoutTime: v } : { checkinTime: v });
+          }}>
+            <option value="">Standard — the listing's hour</option>
+            {r.manual.time && manualHour == null && <option value="odd" disabled>{r.time} — not a whole hour, pick one</option>}
+            {HOURS.map(h => <option key={h} value={h}>{timeOfHour(h)}</option>)}
+          </select>
+          {sync && data.mode === 'live' && (
+            <span className="sub-n">
+              <TimeSyncTag s={sync} />
+              {sync.state === 'failed' && <> — {sync.detail}</>}
+              {sync.state !== 'sent' && r.listed && <> <button className="link tiny" disabled={busy}
+                onClick={() => void send(null, undefined, end)}>Send again</button></>}
+            </span>
+          )}
         </label>
       </div>
       <label>{out ? 'Check-out note' : 'Check-in note'}
@@ -1434,6 +1456,20 @@ function InspectionForm({ data, editing, onDone }: { data: OperationsResponse; e
       </div>
     </div>
   );
+}
+
+/** Whether the board's time for this stay end is the one on the Hostaway reservation (live mode only). */
+function timeSync(r: BoardRow, data: OperationsResponse): SyncState {
+  if (data.mode !== 'live') return null;
+  return syncState(r.manual.time ? r.time : null, data.timePushes?.[`${r.resId}:${r.kind === 'out' ? 'checkout' : 'checkin'}`]);
+}
+
+function TimeSyncTag({ s }: { s: NonNullable<SyncState> }) {
+  if (s.state === 'sent') {
+    return <span className="sub-n" title={`On the Hostaway reservation${s.hour != null ? `: ${hourWord(s.hour)}` : ''}${s.standard ? " (the listing's standard)" : ''}`}>⇄ in Hostaway</span>;
+  }
+  if (s.state === 'failed') return <span className="breach" title={s.detail}>⚠ not in Hostaway</span>;
+  return <span className="sub-n" title="Sent after saving — reload in a moment, or send again">… not in Hostaway yet</span>;
 }
 
 /* ── Notes log ────────────────────────────────────────────────────── */

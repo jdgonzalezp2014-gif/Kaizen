@@ -17,6 +17,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadOps, recordCleanings, trimForOps, OPS_TZ } from '../_lib/ops.ts';
 import { syncUnits } from '../_lib/sync.ts';
 import { crewVisibility } from '../_lib/crew.ts';
+import type { TimePush } from '../../src/lib/stay-time.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const who = identify(request, env);
@@ -50,11 +51,18 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
   }
 
   // Newest first, bounded: a log is read from the top.
-  const [noteLog, pushes, manualCleans, flagRows, cleanTaskRows] = await Promise.all([
-    sql`SELECT n.reservation_id AS "resId", n.kind, n.unit_name AS unit, n.guest,
-               n.check_in::text AS "checkIn", n.notes, n.source, n.created_by AS "by",
-               to_char(n.created_at AT TIME ZONE ${OPS_TZ}, 'YYYY-MM-DD HH24:MI') AS "loggedAt"
-          FROM stay_notes n WHERE n.account_id = 1 ORDER BY n.id DESC LIMIT 400`,
+  const [noteLog, pushes, manualCleans, flagRows, cleanTaskRows, timePushRows] = await Promise.all([
+    // The notes, and each time sent to the Hostaway reservation ("⇄ Hostaway: check-out 4 PM").
+    sql`SELECT "resId", kind, unit, guest, "checkIn", notes, source, "by",
+               to_char(t AT TIME ZONE ${OPS_TZ}, 'YYYY-MM-DD HH24:MI') AS "loggedAt"
+          FROM (SELECT n.reservation_id AS "resId", n.kind, n.unit_name AS unit, n.guest,
+                       n.check_in::text AS "checkIn", n.notes, n.source, n.created_by AS "by", n.created_at AS t
+                  FROM stay_notes n WHERE n.account_id = 1
+                UNION ALL
+                SELECT p.reservation_id, p.kind, p.unit_name, p.guest, p.check_in::text, p.note, 'hostaway',
+                       p.created_by, p.at
+                  FROM stay_time_pushes p WHERE p.account_id = 1) x
+         ORDER BY t DESC LIMIT 400`,
     sql`SELECT reservation_id AS "resId", outcome, detail,
                to_char(at AT TIME ZONE ${OPS_TZ}, 'YYYY-MM-DD HH24:MI') AS at
           FROM host_note_pushes WHERE account_id = 1 ORDER BY id DESC LIMIT 60`,
@@ -74,8 +82,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
            AND checkout_on >= ${s.today}::date - 7 AND checkout_on <= ${s.end}::date`,
     // §133: what an inspection asked the next clean to do.
     sql`SELECT cleaning_key AS key, text FROM clean_tasks
-         WHERE account_id = 1 AND clean_on >= ${s.today}::date - 7 AND clean_on <= ${s.end}::date ORDER BY id`
-  ]) as [unknown[], unknown[], unknown[], { key: string; note: string; by: string | null }[], { key: string; text: string }[]];
+         WHERE account_id = 1 AND clean_on >= ${s.today}::date - 7 AND clean_on <= ${s.end}::date ORDER BY id`,
+    // The latest time sent to Hostaway per stay end: the board's ⇄ / ⚠ beside the time.
+    sql`SELECT DISTINCT ON (reservation_id, kind) reservation_id AS "resId", kind, hour, standard, outcome, detail,
+               to_char(at AT TIME ZONE ${OPS_TZ}, 'YYYY-MM-DD HH24:MI') AS at
+          FROM stay_time_pushes WHERE account_id = 1 AND at > now() - interval '60 days'
+         ORDER BY reservation_id, kind, id DESC`
+  ]) as [unknown[], unknown[], unknown[], { key: string; note: string; by: string | null }[], { key: string; text: string }[],
+         ({ resId: string; kind: string } & TimePush)[]];
 
   // A listing new to Hostaway is on the board before it is in `units`, and
   // until it is there it cannot be ticked in Setup, claimed against or
@@ -99,6 +113,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
     rows: s.rows, summary: s.summary, panel: s.panel,
     inspectionLog: { done: s.inspections.done.slice(0, 200), scheduled: s.inspections.scheduled },
     noteLog, pushes,
+    timePushes: Object.fromEntries(timePushRows.map(({ resId, kind, ...p }) => [`${resId}:${kind}`, p])),
     rules: s.rules, assignRule: s.assignRule,
     // What cleaners can already see on their page (§127), so the board can mark it 👁.
     crewView: await crewVisibility(sql), extraInspectors: s.extraInspectors, guestDocUnits: s.guestDocUnits, manualCleans,

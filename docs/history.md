@@ -4040,3 +4040,17 @@ cached (`botUserIdOf()`), also captured on Settings → Slack → Test connectio
 Slack → the app → App Manifest → paste → Save → Reinstall to Workspace (flagged in the module doc's
 Open items). Until then nothing changes for §153; §152 (public mention replies) needed no manifest
 change and is already live. No schema change; 277 tests still pass, `tsc`/build clean.
+
+## §154 — Early check-in / late check-out reach the Hostaway reservation (2026-10-13)
+
+The owner: a time changed on the board for one stay must be the time the guest sees. Read first (reservation
+66996913): Hostaway keeps `checkInTime` / `checkOutTime` on the reservation as **whole hours 0–23**, the listing's
+standard as `checkInTimeStart` / `checkOutTime`; some reservations already carry their own hour. The owner chose
+whole hours only — the picker offers hours, the server refuses minutes — rather than rounding a time nobody agreed to.
+
+The time goes after the response (`waitUntil`, live mode, like the Host Note): PUT with only the changed field, read
+back; cleared → the listing's standard. Each attempt is a `stay_time_pushes` row (078) — the Notes log's "⇄ Hostaway"
+line and the board's ⇄ / ⚠ / "not yet" beside the time; ⚠ offers "Send again". Saving never waits on Hostaway.
+
+Tested on Amber Valley 66089538 (checkout 2026-10-14, late check-out the owner gave): Hostaway `checkOutTime` 10 → 16,
+dates unchanged, log "⇄ Hostaway: check-out 4 PM". A 4:30 PM was refused with the whole-hours message.

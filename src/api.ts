@@ -294,6 +294,7 @@ export const getCleanings = (
 /* ── operations ───────────────────────────────────────────────────── */
 
 import type { AssignRule, BoardRow, BoardSummary, Cleaner, OpsRules, UnitInspection } from './lib/operations.ts';
+import type { TimePush } from './lib/stay-time.ts';
 
 export interface InspectionEntry {
   id: string; date: string; unit: string; by: string; result: string; notes: string;
@@ -317,6 +318,8 @@ export interface OperationsResponse {
   rows: BoardRow[]; summary: BoardSummary; panel: UnitInspection[];
   inspectionLog: { done: InspectionEntry[]; scheduled: InspectionEntry[] };
   noteLog: NoteEntry[]; pushes: HostNotePush[];
+  /** The latest time sent to the Hostaway reservation, by `${resId}:${checkin|checkout}`. */
+  timePushes: Record<string, TimePush>;
   rules: OpsRules; extraInspectors: string[]; roster: Cleaner[];
   /** Which rule decides who cleans (§121). */
   assignRule: AssignRule;
@@ -361,7 +364,8 @@ export const saveTurnover = (body: {
   resId: string; set?: TurnoverSet;
   note?: { kind: 'checkin' | 'checkout'; text: string };
   unitId?: string; unit?: string; guest?: string; checkIn?: string;
-}) => call<{ ok: true; push: 'queued' | 'shadow' | 'archived' } | Fail>('/api/turnover', {
+  resendTime?: 'checkin' | 'checkout';
+}) => call<{ ok: true; push: 'queued' | 'shadow' | 'archived'; time: 'queued' | null } | Fail>('/api/turnover', {
   method: 'POST', body: JSON.stringify(body)
 });
 
