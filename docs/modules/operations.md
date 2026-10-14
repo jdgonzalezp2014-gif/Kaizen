@@ -483,3 +483,6 @@ key had no SOPs.
 - **A to-do's order is a purchase with no price (owner, 2026-10-13):** `TaskPurchase` opens as "🛒 Purchase order" — items,
   quantities, places, 💾 Save order (`todoOrder`). Total paid / paid by / receipt / "close this to-do" appear only after
   "🧾 Bought — record it" (← back to the order returns). The to-do row's link reads "+ 🛒 purchase order".
+- **A to-do's purchase order = the Record-a-purchase form (owner, 2026-10-14):** `TaskPurchase` shows items, total, paid by,
+  note, receipt at once; 💾 Save order = the order (draft, no price), 🧾 Record the purchase = the order processed. The
+  two-step "Bought — record it" is gone. Open: SOPs that describe the two steps still need the new wording.
