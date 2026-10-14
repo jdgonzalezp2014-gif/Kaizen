@@ -853,12 +853,6 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   // Editing (§104): the content first — title, description, the conversation —
   // and everything else folded under one line that says where it stands.
   if (initial) {
-    const owner = people.find(p => p.id === v.assigneeUserId)?.name ?? (v.assigneeUserId === initial.assigneeUserId ? initial.assignee : null);
-    const claim = v.claimId ? claims.find(c => String(c.id) === v.claimId) : undefined;
-    const summary = [v.status ? STATUS_LABEL[v.status] : '', owner ? `Owner ${owner}` : 'No owner',
-      v.priority !== 'none' ? PRIORITY_LABEL[v.priority] : '', v.unitIds.map(name).join(', '),
-      v.dueOn ? `Finish by ${shortDay(v.dueOn)}` : 'No deadline', claim ? `⚑ ${claimLabel(claim)}` : v.claimId ? '⚑ claim' : '',
-      v.reservationLabel ? `🛏 ${v.reservationLabel}` : '', v.costActual != null ? money2(v.costActual) : '', wo ? '🔧 Work order' : ''].filter(Boolean);
     return (
       <div className="task-edit">
         {/* The row above is the heading (title and its marks); ✎ beside the title renames it (§105). */}
@@ -867,7 +861,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
         <section className={`task-fold ${details ? 'open' : ''}`}>
           <button type="button" className="task-fold-head" aria-expanded={details} onClick={() => setDetails(!details)}>
             <b>Details</b>
-            <span className="task-fold-sum">{summary.join(' · ')}</span>
+            {/* No summary: the row above already shows status, priority, deadline, unit, owner (owner, 2026-10-14). */}
             <span className="task-fold-edit">{details ? '▴ Close' : '✎ Edit'}</span>
           </button>
           {!details && (v.description ?? '').trim() && <div className="task-fold-desc"><Linked text={v.description!} /></div>}
