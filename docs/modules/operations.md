@@ -174,8 +174,8 @@ key had no SOPs.
   one choice for the group (`cleanMode`): clean_next →
   `clean_tasks` on the unit's next clean in the record (board 🧾, cleaner's page "From the inspection");
   clean_new → one MAN- extra clean, TBD, carrying them; overall result suggested (OK / Minor issues /
-  Maintenance needed). Repairs/purchases are mirrored to Hostaway (pushWork after the response); not
-  announced in Slack. Inspections view: Inspect now / Schedule, month calendar (○ ◐ ✓ ▲), ▶ Start/Continue,
+  Maintenance needed). Repairs/purchases are mirrored to Hostaway (pushWork after the response), then
+  announced in Slack's tasks channel like app work (`notifyTask` created, the work order and the order only — 2026-10-14, owner). Inspections view: Inspect now / Schedule, month calendar (○ ◐ ✓ ▲), ▶ Start/Continue,
   View report; the old log form is folded ("past inspection without the checklist").
   **Inspect now reuses an overdue plan** (2026-10-14): a unit with an open plan dated ≤ today (e.g. the monthly
   auto-schedule) runs that plan, moved to today, instead of a new row that left the plan open (4308: #25 vs #16).

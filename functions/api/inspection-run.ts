@@ -18,6 +18,7 @@ import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { linkFor } from '../_lib/inspect-link.ts';
+import { notifyTask } from '../_lib/slack.ts';
 import { addFinding, addPhotos, allOk, checkSupply, finishRun, loadRun, pushMade, removeFinding, saveCheck, startRun } from '../_lib/inspection-run.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -53,7 +54,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       case 'link': return Response.json({ ok: true, ...(await linkFor(sql, env.ENCRYPTION_KEY, String(b.inspectionId ?? ''), new URL(request.url).origin)) });
       case 'finish': {
         const r = await finishRun(sql, who.email, b);
-        waitUntil(pushMade(sql, env.ENCRYPTION_KEY, r.toPush));
+        // The work order and the purchase order are announced like any work made in the app (the team
+        // saw nothing in #kaizen-ops after an inspection); their sub-tasks ride in them, not as messages.
+        waitUntil(pushMade(sql, env.ENCRYPTION_KEY, r.toPush).catch(() => {}).then(async () => {
+          for (const id of r.toPush) await notifyTask(sql, env.ENCRYPTION_KEY, id, 'created', who.email).catch(() => {});
+        }));
         return Response.json({ ok: true, result: r.result, made: r.made });
       }
       default: return bad('Unknown action.');
