@@ -4139,3 +4139,9 @@ refund first, then negotiate") should become an SOP so nobody asks again.
   each with one retry on 503/429. Phones and emails are taken out first; the model is told to leave out what the
   conversation does not say. `accounts.ai_last` (081) keeps who answered or why none did. On 2026-10-14 every Gemini
   flash model answered 503 ("high demand") while flash-lite answered — the reason for the chain.
+- **✨ grades and asks (same day).** The first real try ("shorten with no change in payout") gave a two-step SOP the
+  owner called bland: an assistant reading it later would be as lost. ✨ now also returns `score` (strict: 1 point each for
+  who/when, steps with their system, what to tell the guest, each likely answer, how it is closed) and up to 5 polite,
+  specific `gaps` questions — never re-opening a decision the thread made — shown at the top of the form. What the person
+  typed goes to the model too, so answering the questions and tapping ✨ again re-grades it (tested: 1/5 → 5/5). Owner is a
+  role, never a name. The title skips a leading @mention.

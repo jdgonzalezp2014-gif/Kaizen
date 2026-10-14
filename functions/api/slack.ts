@@ -24,7 +24,7 @@ import * as expenses from './expenses.ts';
 import { invItems, saveTodoOrder } from '../_lib/inventory.ts';
 import * as sopsApi from './sops.ts';
 import { askJson } from '../_lib/ai-chain.ts';
-import { draftFromAi, draftFromThread, readSopForm, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
+import { draftFromAi, draftFromThread, partialSopForm, readSopForm, reviewFromAi, reviewNote, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
          type SopSectionLite, type SopSource } from '../../src/lib/slack-sops.ts';
 import { addToBlocks, sourceOf, suggestTarget, type AddSource, type AddTarget } from '../../src/lib/slack-addto.ts';
 import { supplyPlaces } from '../_lib/unit-access.ts';
@@ -580,11 +580,14 @@ class Kaizen {
     // Same block ids: what is typed stays; only the note changes.
     await busy('✨ Reading the thread…');
     const msgs = await this.threadMessages(source.channel, source.ts);
-    const p = sopPrompt(sections, msgs.map(m => ({ who: m.who, text: m.text })));
+    // What the person typed goes too: ✨ keeps it, and re-grades it after they add what was missing.
+    const current = partialSopForm(view.state?.values ?? {});
+    const p = sopPrompt(sections, msgs.map(m => ({ who: m.who, text: m.text })), current);
     const r = await askJson(this.sql, this.ctx.env, p.system, p.user);
     if (!r.ok) { await busy(`⚠ No AI could answer just now — try ✨ again in a minute. (${r.error.slice(0, 200)})`); return; }
     await slackApi(this.s.token!, 'views.update', { view_id: view.id,
-      view: sopModal(sections, draftFromAi(r.json, sections), { canPublish, source, v: v + 1, note: `✨ Suggested by ${r.by} — check every field before saving.` }) });
+      view: sopModal(sections, { ...draftFromAi(r.json, sections), ...(current.sectionKey && !draftFromAi(r.json, sections).sectionKey ? { sectionKey: current.sectionKey } : {}) },
+                     { canPublish, source, v: v + 1, note: reviewNote(r.by, reviewFromAi(r.json)) }) });
   }
   private async sopCounts() {
     const canEdit = this.may('/api/sops', 'POST');

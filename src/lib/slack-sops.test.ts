@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { draftFromAi, draftFromThread, linesOf, readSopForm, redact, sopBody, sopModal, sopPrompt, sopsBlocks } from './slack-sops.ts';
+import { draftFromAi, draftFromThread, linesOf, partialSopForm, readSopForm, redact, reviewFromAi, reviewNote, sopBody, sopModal, sopPrompt, sopsBlocks } from './slack-sops.ts';
 
 const sections = [{ key: 'guest', label: 'Guest lifecycle' }, { key: 'claims', label: 'Claims & disputes' }];
 
@@ -8,6 +8,8 @@ test('SOP from Slack: a thread is the starting point, steps one per line', () =>
   assert.deepEqual(linesOf('1. Offer no refund\n- Negotiate\n\n2) Update Hostaway'), ['Offer no refund', 'Negotiate', 'Update Hostaway']);
   const d = draftFromThread([{ who: 'Boss', text: '*Early checkout*\nOffer to shorten with no refund' }, { who: 'Laura', text: 'ok <@U123>' }]);
   assert.equal(d.title, 'Early checkout');
+  // A message that opens with a mention: the title is its words, not "@someone" (2026-10-14).
+  assert.equal(draftFromThread([{ who: 'Laura', text: '<@U9>\nWe have a guest at Quest' }]).title, 'We have a guest at Quest');
   assert.deepEqual(d.steps, ['*Early checkout*', 'Offer to shorten with no refund', 'ok @someone']);
 });
 
@@ -25,6 +27,20 @@ test('the model gets the conversation without phones or emails, and its answer i
   assert.equal(d.owner, '');
   assert.equal(sopBody(['If A → B']), '## Rules\n- If A → B');
   assert.equal(sopBody([]), null);
+});
+
+test('✨ grades how complete it is and asks politely for what is missing; a second ✨ builds on what was typed', () => {
+  const p = sopPrompt(sections, [{ who: 'Derek', text: 'shorten, no change in payout' }], { steps: ['Shorten in Hostaway'], rules: [] });
+  assert.match(p.system, /be strict/);
+  assert.match(p.system, /Never question a decision/);
+  assert.match(p.user, /Current draft \(written by the person — keep it\):\n\{"steps":\["Shorten in Hostaway"\]/);
+  assert.doesNotMatch(sopPrompt(sections, [{ who: 'a', text: 'b' }], { title: '', steps: [] }).user, /Current draft/);
+  assert.deepEqual(reviewFromAi({ score: 7, gaps: ['What do we tell the guest?', 3] }), { score: null, gaps: ['What do we tell the guest?'] });
+  const n = reviewNote('gemini', { score: 2, gaps: ['What do we tell the guest?'] });
+  assert.match(n, /Completeness: 2\/5/); assert.match(n, /• What do we tell the guest\?/); assert.match(n, /tap ✨ again/);
+  assert.match(reviewNote('gemini', { score: 5, gaps: [] }), /anyone could follow this/);
+  const vals = { title_1: { v: { value: 'X' } }, steps_1: { v: { value: '1. a\n2. b' } } };
+  assert.deepEqual(partialSopForm(vals as never).steps, ['a', 'b']);
 });
 
 test('the form: versioned blocks, ✨ only from a thread, publish only for editors; read back or the field to fix', () => {

@@ -38,24 +38,44 @@ export const slackText = (t: string) => t.replace(/<@[A-Z0-9]+>/g, '@someone').r
 /** The thread as it was said — the form's starting point, before any model. */
 export function draftFromThread(messages: { who: string; text: string }[]): SopDraft {
   const clean = messages.map(m => ({ who: m.who, text: slackText(m.text).trim() })).filter(m => m.text);
-  const first = clean[0]?.text.split('\n')[0]?.replace(/[*_~`]/g, '').trim() ?? '';
+  // The title: the first line with words, mentions left out (a message opening "@Derek" gave "@someone", 2026-10-14).
+  const first = messages.flatMap(m => m.text.replace(/<@[A-Z0-9]+>/g, '').split('\n')).map(l => slackText(l).replace(/[*_~`]/g, '').trim())
+    .find(l => /[a-z]{3}/i.test(l)) ?? '';
   return { ...EMPTY, title: first.slice(0, 80), steps: clean.flatMap(m => linesOf(m.text, 60)).slice(0, 60) };
 }
 
-/** What the model is asked: only the conversation and the sections; nothing invented. */
-export function sopPrompt(sections: SopSectionLite[], messages: { who: string; text: string }[]) {
+/**
+ * What the model is asked: the conversation, the sections, and what the person already wrote — nothing
+ * invented. It also grades how complete the SOP is and asks, politely, for what is missing (owner,
+ * 2026-10-14: "shorten with no refund" said nothing about what to tell the guest or what if they say yes —
+ * an assistant reading it later would be as lost). Tapping ✨ again re-grades what was added.
+ */
+export function sopPrompt(sections: SopSectionLite[], messages: { who: string; text: string }[], current?: Partial<SopDraft> | null) {
   const system = [
     'You turn a team conversation from a short-term-rental company into a Standard Operating Procedure.',
     'Answer ONLY with JSON: {"title": string, "sectionKey": string, "purpose": string, "trigger": string, "owner": string,',
-    '"steps": string[], "doneWhen": string, "rules": string[]}.',
+    '"steps": string[], "doneWhen": string, "rules": string[], "score": number, "gaps": string[]}.',
     'title: short, a name for the procedure. sectionKey: one of the given keys. purpose: why it exists, one or two sentences.',
-    'trigger: when it applies. owner: the role that runs it, if the conversation says; else "". steps: in order, imperative, one action each.',
+    'trigger: when it applies. owner: a ROLE (e.g. "Guest communications", "Operations manager") — never a person\'s name; "" if unknown.',
+    'steps: in order, imperative, one action each, naming the system where it happens (Hostaway, Airbnb, Kaizen) when known.',
     'doneWhen: how to know it is finished. rules: "If … → …" decisions stated in the conversation.',
-    'Use only what the conversation says. Do not invent policies, amounts or names; leave a field "" or [] when it is not there.',
+    'Use only what the conversation and the current draft say. Do not invent policies, amounts or names; leave a field "" or [] when it is not there.',
+    'If a current draft is given, keep what the person wrote and only tidy it or add what the conversation says.',
+    'score: be strict. Start at 0 and add 1 for each of these that the SOP really covers (a vague mention does not count):',
+    '(a) when it applies and who does it; (b) every step, in order, with the system where it is done; (c) what to tell the guest or the',
+    'other party — the words or the key points — in a polite tone that protects reviews; (d) what to do for each likely answer or',
+    'exception (they accept, they refuse, they insist, they threaten a bad review); (e) how it is closed and recorded (Hostaway, the',
+    'calendar, payouts, Kaizen). Minimum 1. A two-step SOP that never says what to tell the guest is a 1 or a 2.',
+    'gaps: up to 5 short, friendly, specific questions to the author, one per missing point above, about THIS procedure.',
+    'Never question a decision the conversation already made (if it says "no change in payout", do not ask whether to refund);',
+    'ask how to carry it out. Example: "What do we tell the guest when we shorten the stay but cannot adjust the payout, so it does',
+    'not turn into a bad review?". [] when nothing is missing.',
     'Write in English.'
   ].join('\n');
+  const has = current && Object.values(current).some(v => Array.isArray(v) ? v.length : v);
   const user = `Sections (key: label):\n${sections.map(s => `${s.key}: ${s.label}`).join('\n')}\n\nConversation:\n` +
-    messages.map(m => `${m.who}: ${redact(slackText(m.text))}`).join('\n').slice(0, 12000);
+    messages.map(m => `${m.who}: ${redact(slackText(m.text))}`).join('\n').slice(0, 12000) +
+    (has ? `\n\nCurrent draft (written by the person — keep it):\n${redact(JSON.stringify(current)).slice(0, 8000)}` : '');
   return { system, user };
 }
 
@@ -66,6 +86,29 @@ export function draftFromAi(j: Record<string, unknown>, sections: SopSectionLite
   const key = str(j.sectionKey, 80);
   return { title: str(j.title, 160), sectionKey: sections.some(s => s.key === key) ? key : '', purpose: str(j.purpose, 2000), trigger: str(j.trigger, 1000),
            owner: str(j.owner, 120), steps: list(j.steps), doneWhen: str(j.doneWhen, 1000), rules: list(j.rules) };
+}
+
+/** The model's grade: 1–5 and the questions to ask, or nothing when it gave none. */
+export function reviewFromAi(j: Record<string, unknown>): { score: number | null; gaps: string[] } {
+  const n = Math.round(Number(j.score));
+  return { score: n >= 1 && n <= 5 ? n : null,
+           gaps: Array.isArray(j.gaps) ? j.gaps.map(g => typeof g === 'string' ? g.trim().slice(0, 300) : '').filter(Boolean).slice(0, 5) : [] };
+}
+
+/** The grade as the form shows it: polite, and pointing at where to add it. */
+export function reviewNote(by: string, r: { score: number | null; gaps: string[] }): string {
+  const head = `✨ Suggested by ${by} — check every field before saving.`;
+  if (r.score === null && !r.gaps.length) return head;
+  const grade = r.score !== null ? `*Completeness: ${r.score}/5*${r.score >= 5 ? ' — anyone could follow this. 🙌' : ' — to make it something anyone (or an assistant) can follow without asking:'}` : '*To make it complete:*';
+  return [head, grade, ...r.gaps.map(g => `• ${g}`),
+          ...(r.gaps.length ? ['_Add the answers in Steps or Rules, then tap ✨ again to re-check._'] : [])].join('\n');
+}
+
+/** What is typed in the form so far, unchecked — for ✨ to keep and build on. */
+export function partialSopForm(values: Record<string, Record<string, Record<string, unknown>>>): Partial<SopDraft> {
+  const s = (name: string) => String(fieldOf(values, name)?.value ?? '').trim();
+  return { title: s('title'), sectionKey: String((fieldOf(values, 'section')?.selected_option as { value?: string } | undefined)?.value ?? ''),
+           purpose: s('purpose'), trigger: s('trigger'), owner: s('owner'), steps: linesOf(s('steps')), doneWhen: s('done'), rules: linesOf(s('rules')) };
 }
 
 /** §151: rules go in the body under "## Rules" — its last header, so an assistant finds them by name. */
