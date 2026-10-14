@@ -24,6 +24,18 @@ export function wordsOf(text: string): string[] {
 }
 const isCode = (w: string) => /\d/.test(w) && /[a-z]/.test(w);
 
+/** One letter off — added, missing or changed ("tuvi" ~ "truvi", 2026-10-14). */
+export function oneOff(a: string, b: string): boolean {
+  if (a === b || Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, edits = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++edits > 1) return false;
+    if (a.length > b.length) i++; else if (b.length > a.length) j++; else { i++; j++; }
+  }
+  return edits + (a.length - i) + (b.length - j) <= 1;
+}
+
 /**
  * The likeliest target for a message, or null: a shared unit code counts 4, a shared word 2,
  * a word that starts the other ("shan" ~ "shannon") 1 — so "Shan Eviction" beats "evict Shan" for
@@ -38,6 +50,8 @@ export function suggestTarget(text: string, targets: AddTarget[], last?: string 
     let n = 0;
     for (const w of mine) {
       if (theirs.includes(w)) n += isCode(w) ? 4 : 2;
+      // A typo of a real word counts as the word.
+      else if (w.length >= 4 && !isCode(w) && theirs.some(x => x.length >= 4 && oneOff(w, x))) n += 2;
       else if (w.length >= 4 && theirs.some(x => x.length >= 4 && (x.startsWith(w) || w.startsWith(x)))) n += 1;
     }
     return { t, n };

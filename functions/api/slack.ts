@@ -225,6 +225,9 @@ async function offerAddTo(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string
   const [last] = await sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE ${`addto:${ev.channel}:%`}
                              AND sent_at > now() - interval '1 hour' ORDER BY sent_at DESC LIMIT 1` as { key: string }[];
   const lastTarget = last ? last.key.split(':').slice(2).join(':') : null;
+  // Slack shows a private reply that comes too fast ABOVE the message it answers (owner, 2026-10-14: confusing) —
+  // a moment's wait lets the message land first.
+  await new Promise(r => setTimeout(r, 1500));
   await slackApi(s.token!, 'chat.postEphemeral', { channel: ev.channel, user: ev.user, text: 'Add this to Kaizen?',
     blocks: addToBlocks(targets, source, suggestTarget(String(ev.text ?? ''), targets, lastTarget)), ...(ev.thread_ts ? { thread_ts: ev.thread_ts } : {}) });
 }

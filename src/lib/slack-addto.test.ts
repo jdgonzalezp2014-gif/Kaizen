@@ -44,7 +44,15 @@ test('the guess comes chosen in its menu; the channel’s last target counts by 
   assert.equal(suggestTarget('the deputy will call me back', T, null), null);
   // A word that matches beats the channel's memory ("Test 2 Truvi" offered the towels, 2026-10-14).
   assert.equal(suggestTarget('Test 2 Truvi', T, 'task:6')?.value, 'task:5');
+  // …and so does a typo of it ("Tuvi will run background checks").
+  assert.equal(suggestTarget('Tuvi will run backgorund checks', T, 'task:6')?.value, 'task:5');
   const tie: AddTarget[] = [{ value: 'task:1', label: 'A', group: 'task', words: 'fix door Concord' },
                             { value: 'task:2', label: 'B', group: 'task', words: 'paint door Concord', recent: true }];
   assert.equal(suggestTarget('the door at Concord', tie)?.value, 'task:2');
+});
+
+test('one letter off', async () => {
+  const { oneOff } = await import('./slack-addto.ts');
+  assert.ok(oneOff('tuvi', 'truvi') && oneOff('truvi', 'tuvi') && oneOff('towls', 'towel') === false && oneOff('towel', 'towels'));
+  assert.ok(!oneOff('same', 'same') && !oneOff('door', 'dirt'));
 });

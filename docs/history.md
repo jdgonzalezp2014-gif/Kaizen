@@ -4183,3 +4183,5 @@ refund first, then negotiate") should become an SOP so nobody asks again.
 - **Words beat the channel's memory (same day):** "Test 2 Truvi" offered the towels (the channel's last target, 3) over Truvi
   (one word, 2). The memory now decides only when no word points anywhere, else it adds 1; one distinctive word (2) is enough
   to come chosen, if ahead of the next — ✓ Add still decides.
+- **Below the message, and typos (same day):** a private reply sent too fast showed above the message it answers — the offer now
+  waits 1.5 s. A word one letter off a target's word ("Tuvi" ~ "Truvi") counts as the word (`oneOff`, 4+ letters, not unit codes).
