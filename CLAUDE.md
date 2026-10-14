@@ -49,7 +49,8 @@ git push origin master   # deploys
 ```
 - Migrations applied: 001–082. New ones are the next number.
 - Testing on a Neon branch: `node --env-file=<branch file> scripts/migrate.mjs` (never `source` a URL with `&`);
-  first set the branch's `accounts.hostaway_tasks = 'off'` and `slack_bot_token_enc = NULL` — a branch copies the credentials (§150).
+  first set the branch's `accounts.hostaway_tasks = 'off'`, `slack_bot_token_enc = NULL` and `google_refresh_token_enc = NULL,
+  google_access_token_enc = NULL` — a branch copies the credentials (§150; Drive: a branch made duplicate "Kaizen — …" folders, 2026-10-14).
 - Local server (`$S` = scratch dir):
   `U=$(grep -h '^DATABASE_URL=' .env.local|head -1|cut -d= -f2-|tr -d '"'"'"); EK=$(grep -h '^ENCRYPTION_KEY=' .env.local .dev.vars|head -1|cut -d= -f2-|tr -d '"'"'"); nohup npx wrangler pages dev dist --port 8799 --binding "DATABASE_URL=$U" --binding "ENCRYPTION_KEY=$EK" --binding "ALLOW_UNAUTHENTICATED=true" > $S/wrangler.log 2>&1 &`
   Stop it with `ps -eo pid,args | grep "[w]rangler pages dev"` + kill (`pkill -f` kills its own shell).
