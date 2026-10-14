@@ -38,6 +38,12 @@ test('ready by: the next check-in that day, else 4 PM, nothing after a late chec
   assert.match(crewDayMessage('en', 'today', '2026-10-14', [{ unit: 'A', time: '11:00 AM' }]).text + JSON.stringify(crewDayMessage('en', 'today', '2026-10-14', [{ unit: 'A', time: '11:00 AM' }]).blocks), /⏰ ready by 4:00 PM/);
   assert.match(crewHelperMessage('es', { by: 'Luz', unit: 'Timber Crest', kind: 'photos', stage: 'after', n: 4 }).text, /Luz · Timber Crest: 4 fotos DESPUÉS/);
   assert.match(crewHelperMessage('es', { by: 'Luz', unit: 'T', kind: 'taken', lines: [{ name: 'Toilet paper', qty: 4 }] }).text, /tomó del storage: Toilet paper × 4/);
+  // The cleaner's own reports too (owner, 2026-10-14); one with a to-do says the team answers in its thread.
+  const req = crewHelperMessage('es', { by: 'Irene', kind: 'report', what: 'request', text: 'Papel', priority: 'high' }, true);
+  assert.match(req.text, /🧴 Pide insumos \(🟠 pronto\) — Irene: Papel/);
+  assert.match(JSON.stringify(req.blocks), /El equipo responde en este hilo/);
+  assert.equal(crewHelperMessage('en', { by: 'Irene', unit: 'A', kind: 'done' }).blocks.length, 1);
+  assert.match(crewHelperMessage('en', { by: 'Irene', unit: 'A', kind: 'extra', amount: 20, description: 'Oven' }).text, /💵 Irene · A added an extra: \$20 — Oven/);
   assert.match(crewHelperMessage('en', { by: 'Luz', unit: 'T', kind: 'report', what: 'problem', text: 'Leak <sink>', priority: 'urgent' }).text,
     /⚠️ Something is wrong \(🔴 urgent\) — Luz · T: Leak &lt;sink&gt;/);
 });

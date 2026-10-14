@@ -210,7 +210,8 @@ function Cleaners({ cfg, busy, run, onSaved }: {
           {' '}and tomorrow’s at <input type="time" value={cc.evening} onChange={e => setCc(p => ({ ...p, evening: e.target.value }))} />
           <span className="sub-n"> — only on days they have cleans, with the 4 steps recalled; clear a time to skip that one</span></label>
         <label className="check"><input type="checkbox" checked={cc.helperNotices} onChange={e => setCc(p => ({ ...p, helperNotices: e.target.checked }))} />
-          {' '}Tell each cleaner what their helpers report from a clean’s link — photos, what they took from storage, done, problems and needs</label>
+          {' '}Tell each cleaner, in their channel, what they and their helpers report — photos, what they took from storage, done, problems, needs, extras.
+          <span className="sub-n"> To follow up there: the team’s reply in a request’s thread is a comment on its to-do; it is still managed in Kaizen.</span></label>
       </div>
       <div className="button-row">
         <button className="small" disabled={busy} onClick={() => void run({ action: 'save', config: { ...cfg, crewChannels: cc } }, () => 'Cleaners’ channels saved.').then(onSaved)}>

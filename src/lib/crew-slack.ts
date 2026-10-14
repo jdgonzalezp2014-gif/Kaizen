@@ -68,6 +68,7 @@ const W = {
     steps: 'At each clean: 1 📷 photos BEFORE · 2 🧴 what you took from storage · 3 📷 photos AFTER · 4 ✅ mark it done — in Options… on your page. If something changes, your page has the latest.',
     open: 'Open my page',
     stage: { before: 'BEFORE', after: 'AFTER' }, photos: (n: number) => `${n} photo${n === 1 ? '' : 's'}`,
+    extra: 'added an extra:', declined: "can't do it", reply: '💬 The team answers in this thread.',
     took: 'took from storage:', nothing: 'took nothing from storage', done: 'marked it ✅ done', reopened: 'reopened it ↩️',
     what: { problem: '⚠️ Something is wrong', request: '🧴 Requests supplies', missing: '❓ Something is missing', purchase: '🛒 Bought' } as Record<string, string>,
     urg: { urgent: '🔴 urgent', high: '🟠 soon', low: '⚪ when possible' } as Record<string, string>
@@ -79,6 +80,7 @@ const W = {
     steps: 'En cada limpieza: 1 📷 fotos ANTES · 2 🧴 lo que tomaste del storage · 3 📷 fotos DESPUÉS · 4 ✅ marcar completada — en Opciones… de tu página. Si algo cambia, tu página tiene lo último.',
     open: 'Abrir mi página',
     stage: { before: 'ANTES', after: 'DESPUÉS' }, photos: (n: number) => `${n} ${n === 1 ? 'foto' : 'fotos'}`,
+    extra: 'agregó un extra:', declined: 'no puede hacerla', reply: '💬 El equipo responde en este hilo.',
     took: 'tomó del storage:', nothing: 'no tomó nada del storage', done: 'la marcó ✅ completada', reopened: 'la reabrió ↩️',
     what: { problem: '⚠️ Algo está mal', request: '🧴 Pide insumos', missing: '❓ Falta algo', purchase: '🛒 Compró' } as Record<string, string>,
     urg: { urgent: '🔴 urgente', high: '🟠 pronto', low: '⚪ cuando se pueda' } as Record<string, string>
@@ -97,21 +99,29 @@ export function crewDayMessage(lang: Lang, kind: 'today' | 'tomorrow', day: stri
   ] };
 }
 
-/** Something one of their helpers did on a clean, said to the cleaner. */
-export type HelperEvent = { by: string; unit: string } & (
+/**
+ * Something done on a clean or from the field — by the cleaner or one of their helpers — said in the
+ * cleaner's channel (owner, 2026-10-14: their own too, to follow up and answer there). No unit: a report
+ * not tied to a clean.
+ */
+export type HelperEvent = { by: string; unit?: string | null } & (
   | { kind: 'photos'; stage: 'before' | 'after'; n: number }
   | { kind: 'taken'; lines: { name: string; qty: number }[] }
   | { kind: 'nothing' } | { kind: 'done' } | { kind: 'reopened' }
+  | { kind: 'extra'; amount: number; description: string } | { kind: 'declined'; reason: string }
   | { kind: 'report'; what: string; text: string; priority?: string | null });
 
-export function crewHelperMessage(lang: Lang, e: HelperEvent) {
+export function crewHelperMessage(lang: Lang, e: HelperEvent, todo?: boolean) {
   const w = W[lang];
-  const who = `*${esc(e.by)}* · ${esc(e.unit)}`;
+  const who = `*${esc(e.by)}*${e.unit ? ` · ${esc(e.unit)}` : ''}`;
   const line = e.kind === 'photos' ? `📷 ${who}: ${w.photos(e.n)} ${w.stage[e.stage]}`
     : e.kind === 'taken' ? `🧴 ${who} ${w.took} ${e.lines.map(l => `${esc(l.name)} × ${l.qty}`).join(', ')}`
     : e.kind === 'nothing' ? `🧴 ${who} ${w.nothing}`
     : e.kind === 'done' ? `✅ ${who} ${w.done}`
     : e.kind === 'reopened' ? `↩️ ${who} ${w.reopened}`
+    : e.kind === 'extra' ? `💵 ${who} ${w.extra} $${e.amount} — ${esc(e.description)}`
+    : e.kind === 'declined' ? `✕ ${who} ${w.declined}${e.reason ? `: ${esc(e.reason)}` : ''}`
     : `${w.what[e.what] ?? e.what}${e.priority && w.urg[e.priority] ? ` (${w.urg[e.priority]})` : ''} — ${who}: ${esc(e.text)}`;
-  return { text: line.replace(/\*/g, ''), blocks: [section(line)] };
+  // A to-do behind it: a reply in the thread is a comment on it (§153), so it can be followed up there.
+  return { text: line.replace(/\*/g, ''), blocks: [section(line), ...(todo ? [context(w.reply)] : [])] };
 }

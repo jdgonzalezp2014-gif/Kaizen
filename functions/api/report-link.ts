@@ -108,8 +108,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     b = { ...b, unitId: l.unit_id, cleaningKey: l.cleaning_key };
     const who = { name: `${l.cleaner}'s team: ${reporter}`, source: 'link' as const };
     // §134: the cleaner hears what their helper did, in their own channel (if they have one and it is on).
-    const tell = (e: { kind: HelperEvent['kind'] } & Record<string, unknown>, photosKey?: string) =>
-      waitUntil(tellCleaner(sql, env.ENCRYPTION_KEY, l.cleaner, { by: reporter, unit: l.unit_name, ...e } as HelperEvent, photosKey));
+    const tell = (e: { kind: HelperEvent['kind'] } & Record<string, unknown>, photosKey?: string, todoId?: string | null) =>
+      waitUntil(tellCleaner(sql, env.ENCRYPTION_KEY, l.cleaner, { by: reporter, unit: l.unit_name, ...e } as HelperEvent, photosKey, todoId));
     if (b.kind === 'photo') {
       const stage = String(b.stage) as Stage;
       await addPhotos(sql, env.ENCRYPTION_KEY, l.cleaning_key, stage, files, { name: who.name, source: 'link' });
@@ -132,7 +132,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.name, fresh));
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: {
         kind: 'report', what: b.kind, text: String(b.text ?? '').trim().slice(0, 300), priority: String(b.priority ?? '') || null, todoId: id } }));
-      tell({ kind: 'report', what: String(b.kind), text: String(b.text ?? '').trim().slice(0, 300), priority: String(b.priority ?? '') || null });
+      tell({ kind: 'report', what: String(b.kind), text: String(b.text ?? '').trim().slice(0, 300), priority: String(b.priority ?? '') || null }, undefined, id);
     } else if (b.kind === 'taken' || b.kind === 'used') {
       const out = await ranOut(sql, who, l.cleaning_key, l.unit_id, b.out);
       if (out) waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [out.todoId], who.name, out.fresh));
@@ -155,7 +155,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const r = await recordMove(sql, who, b, photos);
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [r.todoId], who.name, r.fresh));
       const text = b.kind === 'missing' ? `${r.item} (found ${Number(b.qty) || 0})` : `${r.item} × ${Number(b.qty) || 0}`;
-      tell({ kind: 'report', what: String(b.kind), text });
+      tell({ kind: 'report', what: String(b.kind), text }, undefined, r.todoId);
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: {
         kind: 'report', what: b.kind, text, todoId: r.todoId } }));
     } else return bad('Unknown report.');

@@ -86,7 +86,9 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   cleans, with the 4 steps recalled — the board is read once per pass (`crewpass:<kind>:<day>`, each
   cleaner `crew:<kind>:<day>:<name>` in `slack_sent`); and **their helpers' reports** from a clean's link
   (photos as one growing line per clean and stage naming each helper, what they took from storage,
-  done/reopened, problems/needs with urgency, missing/bought). The cleaner's own actions are not echoed.
+  done/reopened, problems/needs with urgency, missing/bought) — **and their own (owner, 2026-10-14)**: photos (one growing
+  line, `own:<key>:<stage>`), storage, done/reopened, problems/requests/missing/bought, 💵 extras, ✕ can't do it.
+  A report with a to-do is that to-do's thread (`rememberThread`): the team's reply there is a comment (§153).
   "Send now" / "Preview" by hand still work.
   The cleaners' channels are **private**: only members see them. Creating one invites the cleaner AND
   whoever pressed Create (§136 — the owner made three, for Irene, Veronica and Karina and Marvin, and saw

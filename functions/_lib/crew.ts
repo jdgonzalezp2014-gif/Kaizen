@@ -13,6 +13,8 @@ import { loadOps, pushHostNotes, recordCleanings } from './ops.ts';
 import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { decrypt, encrypt } from './crypto.ts';
 import { tellCleanThread } from './clean-slack.ts';
+import { tellCleaner } from './crew-slack.ts';
+import type { HelperEvent } from '../../src/lib/crew-slack.ts';
 import { accessByUnit } from './unit-access.ts';
 import type { UnitAccess } from '../../src/lib/unit-access.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type CleanState, type Stage } from './clean-record.ts';
@@ -407,6 +409,11 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
   }
   const [who] = await sql`SELECT lang FROM cleaners WHERE account_id = 1 AND name = ${me.name}` as { lang: 'en' | 'es' }[];
   const say: Say = (en, es) => who?.lang === 'es' ? es : en;
+  // Owner, 2026-10-14: what they do or ask for shows in their own channel too (helpers' already did), to follow up there.
+  const tellMine = (e: HelperEvent, photosKey?: string, todoId?: string | null) =>
+    waitUntil(tellCleaner(sql, env.ENCRYPTION_KEY, me.name, e, photosKey, todoId));
+  const unitOf = async (key: string) =>
+    ((await sql`SELECT unit_name FROM cleanings WHERE account_id = 1 AND key = ${key}` as { unit_name: string | null }[])[0]?.unit_name) ?? null;
   if (files.length > MAX_FILES) return refuse(400, 'bad_request', say(`At most ${MAX_FILES} files at a time.`, `Máximo ${MAX_FILES} archivos a la vez.`));
   const today = todayIn(TZ);
 
@@ -440,6 +447,7 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     await saveFiles(sql, Number(row!.id), me.by, up);
     waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'extra', amount, description } },
                               { unit: c.unit_name, date: c.date }));
+    tellMine({ by: me.name, unit: c.unit_name, kind: 'extra', amount, description });
     return Response.json({ ok: true });
   }
 
@@ -474,6 +482,7 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
                 VALUES (1, ${key}, ${me.name}, ${m.date}, ${m.unit_name}, ${reason}, ${me.by})`;
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'declined', reason } },
                                 { unit: m.unit_name, date: m.date }));
+      tellMine({ by: me.name, unit: m.unit_name, kind: 'declined', reason: reason ?? '' });
       return Response.json({ ok: true });
     }
     // A checkout: only one the board gives them right now.
@@ -493,6 +502,7 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
               VALUES (1, ${key}, ${me.name}, ${row.date}, ${row.unit}, ${reason}, ${me.by})`;
     waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'declined', reason } },
                               { unit: row.unit, date: row.date }));
+    tellMine({ by: me.name, unit: row.unit, kind: 'declined', reason: reason ?? '' });
     // Live: the record and the Host Note follow at once, as for any reassignment.
     if (s.mode === 'live') {
       waitUntil((async () => {
@@ -531,6 +541,8 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
         waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, ck, { kind: 'event', by: me.name, event: {
           kind: 'report', what: what as 'problem', text, priority: String(body.priority ?? '') || null, todoId: r } }));
       }
+      if (what !== 'used') tellMine({ by: me.name, unit: ck ? await unitOf(ck) : null, kind: 'report', what, text,
+                                      priority: String(body.priority ?? '') || null }, undefined, r);
     } catch (e) {
       const m = e instanceof Error ? e.message : String(e);
       return refuse(400, 'bad_request', who?.lang === 'es' ? esMessage(m) : m);
@@ -596,18 +608,28 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
           const used = await recordUses(sql, inv, { lines: body.lines, cleaningKey: key, unitId: u?.unit_id ?? null });
           // §150: below the minimum → a "Low stock" to-do, when Setup has it on.
           waitUntil(lowStock(sql, [used.place]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, 'Kaizen')).catch(() => {}));
-          waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'taken', lines: await namedLines(sql, body.lines) } }));
+          const lines = await namedLines(sql, body.lines);
+          waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'taken', lines } }));
+          tellMine({ by: me.name, unit: await unitOf(key), kind: 'taken', lines });
         } else {
           await nothingTaken(sql, inv, key);
           waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'nothing' } }));
+          tellMine({ by: me.name, unit: await unitOf(key), kind: 'nothing' });
         }
       } else if (body.action === 'cleanPhoto') {
         const stage = String(body.stage) as Stage;
         await addPhotos(sql, env.ENCRYPTION_KEY, key, stage, files, by);
         waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'photos', stage, by: me.name }));
+        // One growing line per clean and stage for their own photos (the helpers' have theirs).
+        const [n] = await sql`SELECT count(*)::int AS n FROM clean_photos WHERE account_id = 1 AND cleaning_key = ${key} AND stage = ${stage}
+                                AND source = 'cleaner'` as { n: number }[];
+        tellMine({ by: me.name, unit: await unitOf(key), kind: 'photos', stage, n: n?.n ?? files.length }, `own:${key}:${stage}`);
       } else {
         const kind = String(body.kind) as 'done' | 'reopened';
-        if (await markClean(sql, key, kind, by)) waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind }));
+        if (await markClean(sql, key, kind, by)) {
+          waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind }));
+          tellMine({ by: me.name, unit: await unitOf(key), kind });
+        }
       }
     } catch (e) { return refuse(400, 'bad_request', inLang(e)); }
     return Response.json({ ok: true, state: (await cleanStates(sql, [key]))[key] });
