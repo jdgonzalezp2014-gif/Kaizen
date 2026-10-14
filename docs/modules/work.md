@@ -118,3 +118,6 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   it back on later). While off, a test task no longer reaches Hostaway.
 - **An open to-do reads its description (owner, 2026-10-13):** links show as 🔗 until "✎ Edit" opens the textarea; Slack
   permalinks are saved without their `?thread_ts…` query (1 old description shortened; #76 lost its "task:").
+- **To-do rows, less crowded (owner, 2026-10-14):** the title on its own line with ✕ ✓ at its right (absolute), what describes
+  it on the next (`.todo-break`); every row the same left edge (the red bar only says urgent), room between rows, a hover tint,
+  groups spaced. A description that is only a link ("From Slack: 🔗") is not shown on the row. Same component in Home and Work.

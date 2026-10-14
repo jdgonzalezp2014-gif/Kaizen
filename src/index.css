@@ -2148,3 +2148,19 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .rb-grid td.rb-cell:hover .rb-fill { display: block; }
 .rb-grid td.rb-filling { box-shadow: inset 0 0 0 2px var(--series-1); }
 .todo-desc-read { display: flex; align-items: flex-start; gap: 8px; } .todo-desc-read .todo-desc-full { flex: 1; margin: 0; }
+
+/* Owner, 2026-10-14: the to-do rows were crowded and ran into each other. Every row the same left edge (a bar only
+   says urgent), the title on its own line with ✕ ✓ at its right, what describes it underneath, room between rows. */
+.todo { position: relative; padding: 10px 92px 10px 12px; box-shadow: inset 3px 0 0 transparent; border-radius: 6px; }
+.todo.prio-urgent:not(.is-done) { padding-left: 12px; }
+.todo:hover { background: color-mix(in srgb, var(--tint) 55%, transparent); }
+.todo + .todo { border-top: 1px solid var(--line); }
+.todo-line { gap: 4px 8px; }
+.todo-break { flex-basis: 100%; height: 0; }
+.todo-line > .todo-title { font-weight: 550; }
+.todo-quick { position: absolute; top: 8px; right: 8px; margin-left: 0; }
+.todo-desc { margin: 4px 0 0; max-width: 100%; }
+.todo-kids .todo { padding-right: 92px; }
+.todo-bucket + .todo-bucket { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
+.bucket-head { padding: 6px 0; }
+@media (max-width: 720px) { .todo { padding-right: 84px; } }

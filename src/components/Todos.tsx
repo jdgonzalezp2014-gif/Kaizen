@@ -487,6 +487,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           <button className="todo-title" onClick={onOpen} title="Open it">{t.title}</button>
           <button type="button" className="todo-pencil" title="Rename" aria-label={`Rename ${t.title}`} onClick={() => { setName(t.title); setRenaming(true); }}>✎</button>
         </>}
+        {/* Owner, 2026-10-14 (crowded): the title on its own line, what describes it on the next. */}
+        <span className="todo-break" aria-hidden="true" />
         {prog.total > 0 && (!flat && !open && !compact && mine.some(k => !isClosed(k.status))
           ? <button type="button" className={`todo-prog todo-prog-btn ${prog.done === prog.total ? 'all' : ''}`} aria-expanded={kidsShown}
                     title={kidsShown ? 'Hide the sub-tasks' : 'Show the sub-tasks'} onClick={() => setKidsShown(v => !v)}>
@@ -572,7 +574,9 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} />
         </div>
       )}
-      {t.description && !open && <div className="todo-desc" title={t.description}><Linked text={t.description} /></div>}
+      {/* A description that is only a link ("From Slack: 🔗") says nothing on the row — the open to-do has it. */}
+      {t.description && !open && t.description.replace(/https?:\/\/\S+/g, '').replace(/from slack:?/ig, '').trim() &&
+        <div className="todo-desc" title={t.description}><Linked text={t.description} /></div>}
       {/* Sub-tasks sit under their task when the list is not filtered (§78) — folded until asked (owner, §150:
           a clean's five reports open under it were noise); ▸ ☑ n/m on the row shows them. */}
       {!flat && !open && !compact && kidsShown && mine.some(k => !isClosed(k.status)) && (
