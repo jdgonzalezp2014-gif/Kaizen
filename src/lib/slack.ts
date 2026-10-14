@@ -203,7 +203,8 @@ export function taskMessage(t: TaskLite, event: string, by: string): { text: str
       context(taskFacts(t), by ? `by ${esc(by)}` : ''),
       { type: 'actions', elements: [
         ...(closed ? [button('↺ Reopen', 'task_reopen', t.id)] : [button('✓ Complete', 'task_complete', t.id, 'primary')]),
-        button('💬 Comment', 'task_open', t.id)
+        // Owner, 2026-10-14: "Manage", like the daily message — it opens the whole card, not only comments.
+        button('Manage', 'task_open', t.id)
       ] }
     ]
   };
