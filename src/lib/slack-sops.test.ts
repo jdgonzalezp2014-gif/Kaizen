@@ -83,3 +83,22 @@ test('@Kaizen help <question>: a few SOPs by words, the model answers only from 
   assert.match(JSON.stringify(helpAnswerBlocks('Log it.', [lib[1]!], 'https://k', { missing: 'whether we refund', from })), /The SOPs don't say \*whether we refund\*.*mention_new_sop/);
   assert.match(JSON.stringify(helpMissingBlocks('refund?', from)), /No SOP covers this yet.*please explain it here/);
 });
+
+test('the grade is the team’s own standard, general; the questions can go to the thread; search words count', async () => {
+  const { standardFrom, DEFAULT_STANDARD, sopPrompt, gapsInThread, sopModal, rankSops } = await import('./slack-sops.ts');
+  const body = '## One SOP, one process\nx\n## What a complete SOP covers\nOne point each.\n- **Scope** — a\n- **Outcomes** — b\n\n## Where it shows\ny';
+  assert.equal(standardFrom(body), 'One point each.\n- **Scope** — a\n- **Outcomes** — b');
+  assert.equal(standardFrom('no such header'), null);
+  assert.match(sopPrompt([], [{ who: 'a', text: 'b' }], null, 'MY STANDARD').system, /The standard \(what a complete SOP covers\):\nMY STANDARD/);
+  assert.match(sopPrompt([], [{ who: 'a', text: 'b' }]).system, /\*\*Outcomes\*\*/);
+  assert.ok(DEFAULT_STANDARD.includes('counts as covered'));   // not every SOP talks to a guest
+  const t = gapsInThread(['What if it fails?'], 'Record a charge');
+  assert.match(JSON.stringify(t.blocks), /Writing an SOP from this thread: \*Record a charge\*.*• What if it fails\?/);
+  const m = sopModal([], {}, { canPublish: false, source: { channel: 'C', ts: '1' }, gaps: ['q'] }) as { private_metadata: string };
+  assert.ok(JSON.stringify(m).includes('sop_ask_thread'));
+  assert.deepEqual(JSON.parse(m.private_metadata).gaps, ['q']);
+  assert.ok(!JSON.stringify(sopModal([], {}, { canPublish: false, source: { channel: 'C', ts: '1' } })).includes('sop_ask_thread'));
+  const lib = [{ id: '2', title: 'Early departure or mid-stay clean', steps: [], keywords: ['guest left early', 'salida temprana'] },
+               { id: '3', title: 'Record a cost', steps: [] }];
+  assert.deepEqual(rankSops('la salida temprana del huésped', lib).map(s => s.id), ['2']);
+});

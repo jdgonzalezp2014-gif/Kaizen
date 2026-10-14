@@ -45,12 +45,37 @@ export function draftFromThread(messages: { who: string; text: string }[]): SopD
 }
 
 /**
+ * What a complete SOP covers — the grade ✨ gives. The team keeps it in their SOP "How we write and keep
+ * SOPs" under the header "## What a complete SOP covers" (owner, 2026-10-14: general, not only guest
+ * cases — the next SOP may be how to record a charge); this is the fallback when that section is missing.
+ */
+export const STANDARD_HEADER = '## What a complete SOP covers';
+export const DEFAULT_STANDARD = [
+  '- **Scope** — when it applies (and when it does not), and the role that does it.',
+  '- **Steps** — every action in order, one per step, each saying where it is done (Hostaway, Kaizen, the bank, on site).',
+  '- **Outcomes** — every likely result has its next action: it works, it fails, someone says no, the usual exceptions.',
+  '- **People** — who must be told what (guest, owner, cleaner, vendor, the team) and the key points or words. Only when the process involves someone else; when nobody needs telling, this point counts as covered.',
+  '- **Done and recorded** — how anyone checks it was done right, and where it is recorded (Kaizen, Hostaway, the books).'
+].join('\n');
+
+/** The standard's section out of an SOP body, or null. */
+export function standardFrom(body: string | null | undefined): string | null {
+  if (!body) return null;
+  const i = body.indexOf(STANDARD_HEADER);
+  if (i < 0) return null;
+  const rest = body.slice(i + STANDARD_HEADER.length);
+  const end = rest.search(/\n## /);
+  const t = (end < 0 ? rest : rest.slice(0, end)).trim();
+  return t || null;
+}
+
+/**
  * What the model is asked: the conversation, the sections, and what the person already wrote — nothing
  * invented. It also grades how complete the SOP is and asks, politely, for what is missing (owner,
  * 2026-10-14: "shorten with no refund" said nothing about what to tell the guest or what if they say yes —
  * an assistant reading it later would be as lost). Tapping ✨ again re-grades what was added.
  */
-export function sopPrompt(sections: SopSectionLite[], messages: { who: string; text: string }[], current?: Partial<SopDraft> | null) {
+export function sopPrompt(sections: SopSectionLite[], messages: { who: string; text: string }[], current?: Partial<SopDraft> | null, standard = DEFAULT_STANDARD) {
   const system = [
     'You turn a team conversation from a short-term-rental company into a Standard Operating Procedure.',
     'How to read the conversation: someone usually ASKS (a case, a question) and someone with authority DECIDES (admin or',
@@ -70,15 +95,11 @@ export function sopPrompt(sections: SopSectionLite[], messages: { who: string; t
     'Use only what the conversation and the current draft say (and the glossary, to understand them). Do not invent policies,',
     'amounts or names; leave a field "" or [] when it is not there.',
     'If a current draft is given, keep what the person wrote and only tidy it or add what the conversation says.',
-    'score: be strict. Start at 0 and add 1 for each of these that the SOP really covers (a vague mention does not count):',
-    '(a) when it applies and who does it; (b) every step, in order, with the system where it is done; (c) what to tell the guest or the',
-    'other party — the words or the key points — in a polite tone that protects reviews; (d) what to do for each likely answer or',
-    'exception (they accept, they refuse, they insist, they threaten a bad review); (e) how it is closed and recorded (Hostaway, the',
-    'calendar, payouts, Kaizen). Minimum 1. A two-step SOP that never says what to tell the guest is a 1 or a 2.',
-    'gaps: up to 5 short, friendly, specific questions to the author, one per missing point above, about THIS procedure.',
-    'Never question a decision the conversation already made (if it says "no change in payout", do not ask whether to refund);',
-    'ask how to carry it out. Example: "What do we tell the guest when we shorten the stay but cannot adjust the payout, so it does',
-    'not turn into a bad review?". [] when nothing is missing.',
+    'score: be strict — 1 point for each point of the standard below that the SOP really covers (a vague mention does not count);',
+    'minimum 1. A two-step SOP with no outcomes is a 1 or a 2.',
+    'gaps: up to 5 short, friendly, specific questions to the author, one per point not covered, about THIS procedure.',
+    'Never question a decision the conversation already made; ask how to carry it out, or what happens in each case.',
+    `The standard (what a complete SOP covers):\n${standard}`,
     'Write in English.'
   ].join('\n');
   const has = current && Object.values(current).some(v => Array.isArray(v) ? v.length : v);
@@ -95,6 +116,13 @@ export function draftFromAi(j: Record<string, unknown>, sections: SopSectionLite
   const key = str(j.sectionKey, 80);
   return { title: str(j.title, 160), sectionKey: sections.some(s => s.key === key) ? key : '', purpose: str(j.purpose, 2000), trigger: str(j.trigger, 1000),
            owner: str(j.owner, 120), steps: list(j.steps), doneWhen: str(j.doneWhen, 1000), rules: list(j.rules) };
+}
+
+/** The questions, posted in the thread the SOP comes from — answered there, then ✨ reads them. */
+export function gapsInThread(gaps: string[], title: string): { text: string; blocks: Block[] } {
+  const head = `📝 Writing an SOP from this thread${title ? `: *${esc(title)}*` : ''}. To make it complete, could whoever knows answer here?`;
+  return { text: 'Questions for the SOP', blocks: [section(`${head}\n${gaps.map(g => `• ${esc(g)}`).join('\n')}`),
+    context('Reply in this thread — then whoever writes it taps ✨ again in the form, or *@Kaizen newsop* here.')] };
 }
 
 /** The model's grade: 1–5 and the questions to ask, or nothing when it gave none. */
@@ -127,7 +155,8 @@ export const sopBody = (rules: string[]) => rules.length ? `## Rules\n${rules.ma
  * The form. Block ids carry a version: Slack keeps what was typed in a block it already
  * shows, so a suggestion lands only in new blocks. `fieldOf` reads them back.
  */
-export function sopModal(sections: SopSectionLite[], d: Partial<SopDraft>, o: { canPublish: boolean; source?: SopSource | null; note?: string; v?: number } = { canPublish: false }): Block {
+export function sopModal(sections: SopSectionLite[], d: Partial<SopDraft>,
+                         o: { canPublish: boolean; source?: SopSource | null; note?: string; v?: number; gaps?: string[] } = { canPublish: false }): Block {
   const v = o.v ?? 0;
   const x = { ...EMPTY, ...d };
   const text = (block: string, label: string, initial: string, opts: { multiline?: boolean; optional?: boolean; hint?: string } = {}): Block => ({
@@ -139,9 +168,11 @@ export function sopModal(sections: SopSectionLite[], d: Partial<SopDraft>, o: { 
   const init = opts.find(op => op.value === x.sectionKey);
   return {
     type: 'modal', callback_id: 'sop_save', title: plain('New SOP'), submit: plain('Save'), close: plain('Cancel'),
-    private_metadata: JSON.stringify({ source: o.source ?? null, v }),
+    private_metadata: JSON.stringify({ source: o.source ?? null, v, gaps: o.gaps ?? [] }),
     blocks: [
       ...(o.note ? [context(o.note)] : []),
+      // The questions can go to the thread, for whoever knows to answer there (owner, 2026-10-14).
+      ...(o.source && o.gaps?.length ? [{ type: 'actions', block_id: 'sop_gaps', elements: [button('🧵 Ask these in the thread', 'sop_ask_thread', 'go')] }] : []),
       ...(o.source ? [{ type: 'actions', block_id: 'sop_ai', elements: [button('✨ Suggest with AI', 'sop_suggest', 'go', 'primary')] },
                       context(`From ${o.source.link ? `<${o.source.link}|this thread>` : 'this thread'} — ✨ reads it and fills the form; you check it before saving.`)] : []),
       text('title', 'Title', x.title, { optional: false }),
@@ -219,17 +250,22 @@ export function sopViewModal(s: { id: string; title: string; status: string; pur
 
 /* ── @Kaizen help <question> (owner, 2026-10-14): the SOPs answer, or the thread is asked to write one ── */
 
-export interface SopDoc { id: string; title: string; purpose?: string | null; trigger?: string | null; steps: { text: string }[]; body?: string | null; section?: string }
+export interface SopDoc { id: string; title: string; purpose?: string | null; trigger?: string | null; steps: { text: string }[]; body?: string | null; section?: string; keywords?: string[] }
 
 const words = (t: string) => [...new Set((t.toLowerCase().match(/[a-z0-9]+(?:-[a-z0-9]+)*/g) ?? []).filter(w => w.length >= 3))];
 
-/** The SOPs most likely to answer, by words — so the model reads a few, not the whole library. */
+/**
+ * The SOPs most likely to answer, by words — so the model reads a few, not the whole library: the title
+ * counts 3, its search words (synonyms, Spanish, shorthand — written by AI on save) 2, the text 1.
+ */
 export function rankSops(question: string, sops: SopDoc[], max = 8): SopDoc[] {
   const q = words(question);
+  const near = (w: string, list: string[]) => list.some(x => x === w || (w.length >= 4 && x.length >= 4 && (x.startsWith(w) || w.startsWith(x))));
   return sops.map(s => {
-    const title = words(s.title), rest = words([s.purpose, s.trigger, s.section, ...s.steps.map(x => x.text), s.body].filter(Boolean).join(' '));
+    const title = words(s.title), kw = words((s.keywords ?? []).join(' ')),
+          rest = words([s.purpose, s.trigger, s.section, ...s.steps.map(x => x.text), s.body].filter(Boolean).join(' '));
     let n = 0;
-    for (const w of q) n += title.some(x => x === w || (w.length >= 4 && (x.startsWith(w) || w.startsWith(x)))) ? 3 : rest.includes(w) ? 1 : 0;
+    for (const w of q) n += near(w, title) ? 3 : near(w, kw) ? 2 : rest.includes(w) ? 1 : 0;
     return { s, n };
   }).filter(x => x.n > 0).sort((a, b) => b.n - a.n).slice(0, max).map(x => x.s);
 }

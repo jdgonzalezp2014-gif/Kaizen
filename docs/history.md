@@ -4159,3 +4159,13 @@ refund first, then negotiate") should become an SOP so nobody asks again.
   thread is asked. No model available → the closest by words, to read. Tested on the library: photos → "Your clean step
   by step"; add a task from Slack → "Kaizen in Slack"; refund an early checkout → none (the claims SOP only says how to log
   a refund request).
+- **A general standard the team keeps (same day).** The grade was cut to the guest case ("what to tell the guest"); the next
+  SOP may be how to record a charge. ✨ now grades against "## What a complete SOP covers" in the team's SOP "How we write and
+  keep SOPs" (#6, new version): Scope, Steps (with where), Outcomes (every likely result has its next action), People (only if
+  someone must be told — else covered), Done and recorded. Editing that section in Kaizen changes the grade (`standardFrom`;
+  `DEFAULT_STANDARD` if it is gone). Tested: a shortening SOP and a laundry-cost SOP each got questions of their own kind.
+- **🧵 Ask these in the thread:** with questions open, the form posts them in the source thread ("📝 Writing an SOP from this
+  thread… could whoever knows answer here?"); they answer there and ✨ reads it.
+- **Search words (082 `sops.keywords`):** the AI chain writes 12–25 per SOP (synonyms, shorthand, English and Spanish) when an
+  SOP is saved in Kaizen or from Slack (`writeKeywords`, after the answer); written for all 27 on 2026-10-14. `rankSops`:
+  title 3, keyword 2, text 1 — "el huésped se va antes" finds "Early departure or mid-stay clean".

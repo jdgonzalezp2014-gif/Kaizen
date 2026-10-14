@@ -24,7 +24,7 @@ import * as expenses from './expenses.ts';
 import { invItems, saveTodoOrder } from '../_lib/inventory.ts';
 import * as sopsApi from './sops.ts';
 import { askJson } from '../_lib/ai-chain.ts';
-import { draftFromAi, draftFromThread, helpAnswerBlocks, helpFromAi, helpMissingBlocks, helpPrompt, rankSops, type SopDoc, partialSopForm, readSopForm, reviewFromAi, reviewNote, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
+import { gapsInThread, standardFrom, draftFromAi, draftFromThread, helpAnswerBlocks, helpFromAi, helpMissingBlocks, helpPrompt, rankSops, type SopDoc, partialSopForm, readSopForm, reviewFromAi, reviewNote, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
          type SopSectionLite, type SopSource } from '../../src/lib/slack-sops.ts';
 import { addToBlocks, sourceOf, suggestTarget, type AddSource, type AddTarget } from '../../src/lib/slack-addto.ts';
 import { supplyPlaces } from '../_lib/unit-access.ts';
@@ -601,18 +601,32 @@ class Kaizen {
     const msgs = await this.threadMessages(source.channel, source.ts);
     // What the person typed goes too: ✨ keeps it, and re-grades it after they add what was missing.
     const current = partialSopForm(view.state?.values ?? {});
-    const p = sopPrompt(sections, msgs.map(m => ({ who: m.role ? `${m.who} (${m.role})` : m.who, text: m.text })), current);
+    // The team's own standard, from their SOP about SOPs ("## What a complete SOP covers"); else the default.
+    const [std] = await this.sql`SELECT body FROM sops WHERE account_id = 1 AND deleted_at IS NULL AND status = 'published'
+                                   AND body LIKE '%## What a complete SOP covers%' ORDER BY id LIMIT 1` as { body: string }[];
+    const standard = standardFrom(std?.body) ?? undefined;
+    const p = sopPrompt(sections, msgs.map(m => ({ who: m.role ? `${m.who} (${m.role})` : m.who, text: m.text })), current, standard);
     const r = await askJson(this.sql, this.ctx.env, p.system, p.user);
     if (!r.ok) { await busy(`⚠ No AI could answer just now — try ✨ again in a minute. (${r.error.slice(0, 200)})`); return; }
+    const review = reviewFromAi(r.json);
     await slackApi(this.s.token!, 'views.update', { view_id: view.id,
       view: sopModal(sections, { ...draftFromAi(r.json, sections), ...(current.sectionKey && !draftFromAi(r.json, sections).sectionKey ? { sectionKey: current.sectionKey } : {}) },
-                     { canPublish, source, v: v + 1, note: reviewNote(r.by, reviewFromAi(r.json)) }) });
+                     { canPublish, source, v: v + 1, note: reviewNote(r.by, review), gaps: review.gaps }) });
+  }
+  /** 🧵: the open questions to the thread, for the team to answer there; the form stays as it is. */
+  private async askGapsInThread(view: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+    const meta = JSON.parse(view.private_metadata || '{}') as { source?: SopSource | null; v?: number; gaps?: string[] };
+    if (!meta.source || !meta.gaps?.length) return;
+    const title = String(partialSopForm(view.state?.values ?? {}).title ?? '');
+    const r = await slackApi(this.s.token!, 'chat.postMessage', { channel: meta.source.channel, thread_ts: meta.source.ts, unfurl_links: false, ...gapsInThread(meta.gaps, title) });
+    await slackApi(this.s.token!, 'views.update', { view_id: view.id, view: sopModal(await this.sopSections(), {}, { canPublish: this.may('/api/sops', 'POST'), source: meta.source, v: meta.v ?? 0,
+      note: r.ok ? '🧵 Asked in the thread. When they answer, tap ✨ again — or close this and use *@Kaizen newsop* there later.' : `⚠ Could not post in the thread: ${r.error}` }) });
   }
   /** A question to the SOPs: a few by words, then a model picks and answers from them — or the thread is asked. */
   async helpFromSops(question: string, from: { channel: string; root: string }): Promise<{ text: string; blocks: unknown[] }> {
     const missing = { text: 'No SOP covers this yet', blocks: helpMissingBlocks(question, from) };
     if (!this.may('/api/sops', 'GET')) return { text: 'Your Kaizen role does not include SOPs.', blocks: [] };
-    const rows = await this.sql`SELECT o.id::text, o.title, o.purpose, o.trigger, o.steps, o.body, s.label AS section FROM sops o
+    const rows = await this.sql`SELECT o.id::text, o.title, o.purpose, o.trigger, o.steps, o.body, o.keywords, s.label AS section FROM sops o
                                   LEFT JOIN sop_sections s ON s.account_id = o.account_id AND s.key = o.section_key
                                  WHERE o.account_id = 1 AND o.deleted_at IS NULL AND o.status = 'published'` as SopDoc[];
     const shown = rankSops(question, rows);
@@ -871,6 +885,7 @@ class Kaizen {
       return await this.openSopForm(p.trigger_id, String(v.title ?? ''), v.from ? { channel: v.from.channel, ts: v.from.root, root: v.from.root, text: '' } : undefined);
     }
     if (id === 'sop_suggest') { this.ctx.waitUntil(this.suggestSop(p.view ?? {}).catch(() => {})); return ack(); }
+    if (id === 'sop_ask_thread') { this.ctx.waitUntil(this.askGapsInThread(p.view ?? {}).catch(() => {})); return ack(); }
     if (id === 'sops_section') {
       if (!this.may('/api/sops', 'GET')) return this.deny('SOPs');
       const view = await this.sopList(value);

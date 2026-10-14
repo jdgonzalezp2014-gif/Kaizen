@@ -14,6 +14,7 @@
  * Reading is its own permission (`sops`), writing another (`sops.edit`);
  * the middleware enforces GET vs POST, and drafts are filtered here.
  */
+import { writeKeywords } from '../_lib/sop-keywords.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { accessOf, type SqlFn } from '../_lib/accounts.ts';
@@ -71,7 +72,7 @@ interface Body {
 const bad = (error: string, status = 400) => Response.json({ ok: false, error }, { status });
 const text = (v: unknown, max: number) => { const t = String(v ?? '').trim(); return t ? t.slice(0, max) : null; };
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const who = identify(request, env);
   if (!who) return unauthorised();
   const sql = db(env);
@@ -160,6 +161,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!row) return bad('Not saved.', 500);
     await sql`INSERT INTO sop_versions (account_id, sop_id, version, snapshot, note, edited_by)
               VALUES (1, ${row.id}, 1, ${JSON.stringify(content)}::jsonb, ${note ?? 'Created'}, ${who.email})`;
+    // Owner, 2026-10-14: its search words for "@Kaizen help", after the answer.
+    waitUntil?.(writeKeywords(sql as unknown as SqlFn, env, String(row.id)).catch(() => null));
     return Response.json({ ok: true, sop: toSop(row) });
   }
 
@@ -184,5 +187,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await sql`INSERT INTO sop_versions (account_id, sop_id, version, snapshot, note, edited_by)
               VALUES (1, ${cur.id}, ${version}, ${JSON.stringify(content)}::jsonb, ${note}, ${who.email})`;
   }
+  if (changed) waitUntil?.(writeKeywords(sql as unknown as SqlFn, env, String(row!.id)).catch(() => null));
   return Response.json({ ok: true, sop: toSop(row), newVersion: changed });
 };
