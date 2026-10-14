@@ -123,3 +123,5 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   groups spaced. A description that is only a link ("From Slack: 🔗") is not shown on the row. Same component in Home and Work.
 - **Open to-do: Details on top, ✎ Edit (owner, 2026-10-14):** the empty description box was confusing — Details ("✎ Edit", no summary —
   the row already shows it) sits under the title; the description is read there when it has text and edited inside Details. Then files, comments, sub-tasks.
+- **Opening a to-do (owner, 2026-10-14):** ▸/▾ before the title, and a click anywhere on the row's line opens/closes it
+  (`todo-opener`; clicks on its buttons, links and fields are left to them).

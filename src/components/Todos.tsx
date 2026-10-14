@@ -475,7 +475,9 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
 
   return (
     <li className={`todo due-${due} ${closed ? 'is-done' : ''} prio-${t.priority}`}>
-      <div className="todo-line">
+      {/* Owner, 2026-10-14: opening a task was not obvious — a ▸ before the title, and a click anywhere on
+          the row opens it (its own buttons, links and fields keep their job). */}
+      <div className="todo-line todo-opener" onClick={e => { if (!renaming && !(e.target as HTMLElement).closest('button, a, input, select, textarea, label')) onOpen(); }}>
         {/* Owner, Oct 2026: the ✓ and ✕ at the right are enough — no box. */}
         {t.kind === 'work_order' && <span title="Work order">🔧</span>}
         {flat && parent && <span className="sub-n" title="Sub-task of">↳ {parent.title} ·</span>}
@@ -484,7 +486,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                  onChange={e => setName(e.target.value)} onBlur={() => void rename()}
                  onKeyDown={e => { if (e.key === 'Enter') void rename(); if (e.key === 'Escape') { setName(t.title); setRenaming(false); } }} />
         ) : <>
-          <button className="todo-title" onClick={onOpen} title="Open it">{t.title}</button>
+          <button className="todo-title" onClick={onOpen} aria-expanded={open} title={open ? 'Close it' : 'Open it'}><span className="todo-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>{t.title}</button>
           <button type="button" className="todo-pencil" title="Rename" aria-label={`Rename ${t.title}`} onClick={() => { setName(t.title); setRenaming(true); }}>✎</button>
         </>}
         {/* Owner, 2026-10-14 (crowded): the title on its own line, what describes it on the next. */}

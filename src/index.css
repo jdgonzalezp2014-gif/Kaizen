@@ -1131,6 +1131,8 @@ button.rb-danger { background: var(--crit); color: #fff; }
 .todo-line input[type=checkbox] { width: auto; margin: 0; }
 .todo-title { background: none; border: 0; padding: 0; color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
 .todo-title:hover { text-decoration: underline; }
+.todo-opener { cursor: pointer; }
+.todo-caret { display: inline-block; width: 1em; color: var(--muted); font-size: .85em; }
 .todo.is-done .todo-title { color: var(--muted); text-decoration: line-through; }
 .todo-unit { display: inline-flex; align-items: center; gap: 3px; font-size: 11px; padding: 1px 7px; border-radius: 999px;
   border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
