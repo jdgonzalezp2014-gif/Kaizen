@@ -13,6 +13,7 @@
  * Rows open in place, never in a dialog (§22): the list is what a
  * decision is compared against.
  */
+import { Hint } from '../components/Hint.tsx';
 import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { WorkView } from '../components/Todos.tsx';
@@ -439,9 +440,9 @@ function Board({ data, range, patch, reload }: {
             {(past.rows.filter(c => c.flag_note).length > 0) && ` · ⚑ ${past.rows.filter(c => c.flag_note).length} flagged`}</small></dd></div>}
       </dl>
 
-      {hasPast && <p className="note">Days before today show the cleanings record — who cleaned, what it paid, what
+      {hasPast && <p className="note">Past days: the cleanings record <Hint>Days before today show the cleanings record — who cleaned, what it paid, what
         was flagged. Arrivals are not kept there, so those days list departures and manual cleans only.
-        {range.from < data.today && range.to >= data.today && ' From today on, the live board.'}</p>}
+        {range.from < data.today && range.to >= data.today && ' From today on, the live board.'}</Hint></p>}
       {hasPast && pastErr && <p className="banner error">▲ {pastErr}</p>}
 
       {canDocs && docsErr && <p className="banner warn">▲ Guest documents: {docsErr}</p>}
@@ -1234,12 +1235,10 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
         <div><dt>Current</dt><dd>{count('ok')}</dd></div>
         <div><dt>Scheduled</dt><dd>{data.inspectionLog.scheduled.length}</dd></div>
       </dl>
-      <p className="note">
-        Every unit at least every <b>{st.inspectionIntervalDays} days</b> (amber from day {st.inspectionSoonDays}),
+      <p className="note">When a unit is due <Hint>Every unit at least every <b>{st.inspectionIntervalDays} days</b> (amber from day {st.inspectionSoonDays}),
         and before any booking of <b>{data.showMoney ? money(st.inspectionValueTrigger) : 'high value'}</b>.
         The inspector is never the person who cleaned.
-        {!hasHistory && ' No inspection is recorded in Kaizen yet, so no unit is called overdue — import the daily file\'s log in Setup, or log them here.'}
-      </p>
+        {!hasHistory && ' No inspection is recorded in Kaizen yet, so no unit is called overdue — import the daily file\'s log in Setup, or log them here.'}</Hint></p>
 
       {run && <InspectionRun id={run} canEdit={canEdit} onClose={changed => { setRun(null); if (changed) reload(); }} />}
       {canEdit && <InspectStart data={data} onStart={b => void start(b)} onScheduled={reload} />}
@@ -1383,7 +1382,7 @@ function InspectStart({ data, onStart, onScheduled }: {
         <button className="secondary" disabled={!unitId || !by} onClick={() => void schedule()}>Schedule for {date === data.today ? 'today' : date}</button>
         {msg && <span className="note">{msg}</span>}
       </div>
-      <p className="note">The checklist follows the unit: its bedrooms and bathrooms, house or apartment, and the items set for it. Edit it in Setup → Inspections.</p>
+      <p className="note">The checklist follows the unit <Hint>The checklist follows the unit: its bedrooms and bathrooms, house or apartment, and the items set for it. Edit it in Setup → Inspections.</Hint></p>
     </div>
   );
 }
@@ -1761,12 +1760,9 @@ function Setup({ data, reload, section, onSection }: { data: OperationsResponse;
       </div>
 
       <div className="card">
-        <h2>Import from the daily file</h2>
-        <p className="note">
-          Its roster and both rate cards, its rules, the Inspection Log and the Notes Log — read from the published links in
+        <h2>Import from the daily file <Hint>Its roster and both rate cards, its rules, the Inspection Log and the Notes Log — read from the published links in
           Settings → Daily file. Running it again replaces what an earlier import brought; anything entered in Kaizen is never
-          touched. In Kaizen now: {cfg.counts.inspections} inspection(s), {cfg.counts.notes} note(s), {cfg.counts.overrides} override(s).
-        </p>
+          touched. In Kaizen now: {cfg.counts.inspections} inspection(s), {cfg.counts.notes} note(s), {cfg.counts.overrides} override(s).</Hint></h2>
         <div className="button-row">
           <button className="secondary" onClick={() => void runImport(false)}>Preview</button>
           {preview && <button onClick={() => void runImport(true)}>Import</button>}
@@ -1787,11 +1783,8 @@ function Setup({ data, reload, section, onSection }: { data: OperationsResponse;
 
       {section === 'cleaners' && <>
       <div className="card">
-        <h2>Roster and pay</h2>
-        <p className="note">
-          The first active cleaner in each tier (lowest order) is the one the rule picks. A blank rate is "not priced",
-          never $0; a blank deep rate pays the ordinary one.
-        </p>
+        <h2>Roster and pay <Hint>The first active cleaner in each tier (lowest order) is the one the rule picks. A blank rate is "not priced",
+          never $0; a blank deep rate pays the ordinary one.</Hint></h2>
         <div className="grid-scroll">
           <table className="units compact roster-edit">
             <thead><tr><th>Name</th><th>Tier</th><th>Order</th><th>Active</th>
@@ -1817,8 +1810,8 @@ function Setup({ data, reload, section, onSection }: { data: OperationsResponse;
                                                                                  stars: 3, level: 'standard', zones: [], maxPerDay: null }])}>Add cleaner</button>
           <button onClick={() => void save({ roster }, 'Roster saved.')}>Save roster</button>
         </div>
-        <p className="note">Renaming someone is removing them and adding a new person — stays set to the old name by hand
-          would read as off the roster. Mark them inactive instead and add the new name.</p>
+        <p className="note">Renaming someone? <Hint>Renaming someone is removing them and adding a new person — stays set to the old name by hand
+          would read as off the roster. Mark them inactive instead and add the new name.</Hint></p>
       </div>
 
       <LevelSetup cfg={cfg} roster={roster} setRoster={setRoster} rules={rules} setRules={setRules} save={save} />
@@ -1856,11 +1849,10 @@ function AccessAudit({ rows }: { rows: NonNullable<OpsSettings['access']> }) {
   const mark = (ok: boolean, label = '') => ok ? <span className="ok-tag">✓{label && ` ${label}`}</span> : <span className="breach">▲ missing</span>;
   return (
     <div className="card">
-      <h2>How cleaners get in <span className={gaps.length ? 'chan-tag' : 'ok-tag'}>{gaps.length ? `${gaps.length} unit${gaps.length === 1 ? '' : 's'} to complete` : 'all complete'}</span></h2>
-      <p className="note">On a clean of the day, the cleaner (and the helper's link) sees the address, the lock, the code and the Wi-Fi.
+      <h2>How cleaners get in <span className={gaps.length ? 'chan-tag' : 'ok-tag'}>{gaps.length ? `${gaps.length} unit${gaps.length === 1 ? '' : 's'} to complete` : 'all complete'}</span> <Hint>On a clean of the day, the cleaner (and the helper's link) sees the address, the lock, the code and the Wi-Fi.
         Address and Wi-Fi come from Hostaway (refreshed by Settings → Sync listings); the lock type, the <b>Cleaner Code</b> and
         the <b>Lockbox</b> from Repository → Units. A Hostaway door code is the guests' — used only until a cleaner code is set,
-        and the cleaner is told so. Admin and backup codes are never shown.</p>
+        and the cleaner is told so. Admin and backup codes are never shown.</Hint></h2>
       <div className="grid-scroll">
         <table className="units compact">
           <thead><tr><th>Unit</th><th>Lock</th><th>Address</th><th>Cleaner code</th><th>Lockbox / fob</th><th>Wi-Fi</th><th>Repository</th></tr></thead>
@@ -1881,7 +1873,7 @@ function AccessAudit({ rows }: { rows: NonNullable<OpsSettings['access']> }) {
           </tbody>
         </table>
       </div>
-      <p className="note">Next (owner): a code of their own for each cleaner instead of one shared cleaner code per unit — see the operations open items.</p>
+      <p className="note">One shared cleaner code per unit, for now <Hint>Planned: a code of its own for each cleaner instead of one shared cleaner code per unit.</Hint></p>
     </div>
   );
 }
@@ -1907,12 +1899,9 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
 
   return (
     <div className="card">
-      <h2>Crew pages</h2>
-      <p className="note">
-        Each cleaner sees their cleans, what each paid, what was flagged or not paid, their invoice, and can ask for extras
+      <h2>Crew pages <Hint>Each cleaner sees their cleans, what each paid, what was flagged or not paid, their invoice, and can ask for extras
         (with a receipt or photo) that the team approves or denies in Operations → Cleaners. To see a page as the cleaner sees it:
-        {' '}<code>{app}/#crew/&lt;name&gt;</code>.
-      </p>
+        {' '}<code>{app}/#crew/&lt;name&gt;</code>.</Hint></h2>
       <ol className="note">
         <li><b>Sign-in (main way):</b> in Cloudflare Zero Trust → Access → the Kaizen application, add the cleaner's email to the
           policy, with the <b>One-time PIN</b> login method on. They open <code>{app}</code>, type their email and the code they get.
@@ -1956,10 +1945,9 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
         <span className="note">Saves the whole roster, as Roster and pay does.</span>
       </div>
 
-      <h3>What is coming</h3>
-      <p className="note">Nobody has to confirm anything. Each cleaner sees what a person assigned to them, and the rule's picks
+      <h3>What is coming <Hint>Nobody has to confirm anything. Each cleaner sees what a person assigned to them, and the rule's picks
         <b> {autoDays || 0} days ahead</b> — close enough that they rarely move. On the board these carry 👁. A daily snapshot
-        tells them what changed since. Publishing the whole schedule shows them everything ahead.</p>
+        tells them what changed since. Publishing the whole schedule shows them everything ahead.</Hint></h3>
       <label>The rule's picks show this many days ahead (0 = only what a person assigned)
         <input className="amt" value={autoDays} onChange={e => setAutoDays(e.target.value)} /></label>
       <label className="check"><input type="checkbox" checked={calendar} onChange={e => setCalendar(e.target.checked)} />
@@ -2011,9 +1999,8 @@ function ChecklistSetup() {
   const ready = (v: typeof blankItem) => !!v.label.trim() && (v.appliesTo !== 'units' || v.unitIds.length > 0);
   return (
     <div className="card">
-      <h2>Inspection checklist</h2>
-      <p className="note">What the inspector checks, area by area, in walking order. Bedrooms and bathrooms repeat once per room in the unit.
-        Each item says what a failure usually becomes — the inspector can change it at the end — and where it applies.</p>
+      <h2>Inspection checklist <Hint>What the inspector checks, area by area, in walking order. Bedrooms and bathrooms repeat once per room in the unit.
+        Each item says what a failure usually becomes — the inspector can change it at the end — and where it applies.</Hint></h2>
       <p className="sub-n">House or apartment comes from <b>Repository → Units → Property type</b>:
         {' '}🏠 {houses.length} houses · 🏢 {flats.length} apartments
         {untyped.length > 0 && <span className="breach"> · ▲ no type: {untyped.map(u => u.name).join(', ')} — they get only the items for all units and their own</span>}</p>
@@ -2136,10 +2123,9 @@ function VendorSetup() {
   };
   return (
     <div className="card">
-      <h2>Vendors &amp; handymen</h2>
-      <p className="note">Who does repairs and supplies, and how to reach them. A repair's vendor is picked from this list.
+      <h2>Vendors &amp; handymen <Hint>Who does repairs and supplies, and how to reach them. A repair's vendor is picked from this list.
         Each work order can go to its vendor by a link (📤 Send to vendor, no account); a vendor with an <b>email</b> here can also
-        sign in and see all their open work orders — add that email to the Cloudflare Access policy, as for cleaners (§137).</p>
+        sign in and see all their open work orders — add that email to the Cloudflare Access policy, as for cleaners (§137).</Hint></h2>
       <table className="units compact">
         <thead><tr><th>Name</th><th>Trade</th><th>Phone</th><th>Email</th><th>Notes</th><th></th></tr></thead>
         <tbody>
@@ -2216,12 +2202,9 @@ function LevelSetup({ cfg, roster, setRoster, rules, setRules, save }: {
 
   return (
     <div className="card">
-      <h2>Who cleans: by levels <span className={deciding ? 'ok-tag' : 'chan-tag'}>{deciding ? 'deciding' : `${cfg.assignRule} decides now`}</span></h2>
-      <p className="note">
-        {deciding ? 'Levels decide who cleans each turnover.'
+      <h2>Who cleans: by levels <span className={deciding ? 'ok-tag' : 'chan-tag'}>{deciding ? 'deciding' : `${cfg.assignRule} decides now`}</span> <Hint>{deciding ? 'Levels decide who cleans each turnover.'
           : `The ${cfg.assignRule} rule still decides. The board shows what levels would pick beside each clean ("by levels: …").`}
-        {' '}Host Notes change only where the cleaner changes.
-      </p>
+        {' '}Host Notes change only where the cleaner changes.</Hint></h2>
       <LevelRules rules={withDefaults(rules)} />
 
       <div className="grid-scroll">
@@ -2292,8 +2275,8 @@ function LevelSetup({ cfg, roster, setRoster, rules, setRules, save }: {
               </tbody>
             </table>
           )}
-          <p className="note">Stays set by hand keep their cleaner either way. "Unassigned" counts the cleans waiting for a booking —
-            they are not the team's problem until the day before. Only the board's window is compared.</p>
+          <p className="note">How this compares <Hint>Stays set by hand keep their cleaner either way. "Unassigned" counts the cleans waiting for a booking —
+            they are not the team's problem until the day before. Only the board's window is compared.</Hint></p>
         </div>
       )}
     </div>
@@ -2330,10 +2313,9 @@ function GuestDocUnits({ initial, onSave }: { initial: string[]; onSave: (ids: s
 
   return (
     <div className="card">
-      <h2>Guest documents — copy in Drive</h2>
-      <p className="note">Every guest is asked for an ID and a signed rental agreement through Hostaway's guest
+      <h2>Guest documents — copy in Drive <Hint>Every guest is asked for an ID and a signed rental agreement through Hostaway's guest
         portal, and the board shows both for every arrival. Tick the units whose building also needs a COPY of
-        the ID and agreement kept in Drive; those arrivals also show ○/✓ ID in Drive.</p>
+        the ID and agreement kept in Drive; those arrivals also show ○/✓ ID in Drive.</Hint></h2>
       {!units ? <p className="note loading-dot">Reading units</p> : (
         <div className="docunits">
           {groups.map(([b, us]) => {
@@ -2382,13 +2364,10 @@ function HostawayTasks({ state, onChanged }: { state: HostawayTasksState; onChan
   };
   return (
     <div className="card ha-tasks">
-      <h2>Hostaway tasks</h2>
-      <p className="note">
-        When on, every to-do and repair is also a task in Hostaway — on its listing and stay, with its deadline and owner —
+      <h2>Hostaway tasks <Hint>When on, every to-do and repair is also a task in Hostaway — on its listing and stay, with its deadline and owner —
         so the team can work it from Hostaway and its mobile app. What they change there (started, done, assigned, cost)
         comes back here, on the task's timeline. Tasks written by hand in Hostaway come in as to-dos. Hostaway's automatic
-        cleaning tasks stay out: the board runs the cleans. Removing work here cancels its Hostaway task; nothing is deleted there.
-      </p>
+        cleaning tasks stay out: the board runs the cleans. Removing work here cancels its Hostaway task; nothing is deleted there.</Hint></h2>
       <div className="ha-state">
         <span className={`ha-mode ${on ? 'on' : ''}`}>{on ? '● On' : '○ Off'}</span>
         {on && <span className="sub-n">{state.linked} linked · {state.imported} from Hostaway
