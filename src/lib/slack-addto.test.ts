@@ -42,6 +42,8 @@ test('the guess comes chosen in its menu; the channel’s last target counts by 
   // "the deputy will call me back" — no words in common, but the channel was just adding to the eviction.
   assert.equal(suggestTarget('the deputy will call me back', T, 'claim:1')?.value, 'claim:1');
   assert.equal(suggestTarget('the deputy will call me back', T, null), null);
+  // A word that matches beats the channel's memory ("Test 2 Truvi" offered the towels, 2026-10-14).
+  assert.equal(suggestTarget('Test 2 Truvi', T, 'task:6')?.value, 'task:5');
   const tie: AddTarget[] = [{ value: 'task:1', label: 'A', group: 'task', words: 'fix door Concord' },
                             { value: 'task:2', label: 'B', group: 'task', words: 'paint door Concord', recent: true }];
   assert.equal(suggestTarget('the door at Concord', tie)?.value, 'task:2');

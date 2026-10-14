@@ -4180,3 +4180,6 @@ refund first, then negotiate") should become an SOP so nobody asks again.
   message** (`reaction_added`, needs `reactions:read` + the event — manifest, reinstall) saves it to its thread's task/claim
   (✅ on it), or, outside a known thread, gives the reactor the private "Add to…". `@Kaizen <text>` in the thread still saves.
   Threads Kaizen posted (and `@Kaizen new` threads) keep §153: their plain replies are comments.
+- **Words beat the channel's memory (same day):** "Test 2 Truvi" offered the towels (the channel's last target, 3) over Truvi
+  (one word, 2). The memory now decides only when no word points anywhere, else it adds 1; one distinctive word (2) is enough
+  to come chosen, if ahead of the next — ✓ Add still decides.

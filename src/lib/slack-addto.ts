@@ -28,7 +28,7 @@ const isCode = (w: string) => /\d/.test(w) && /[a-z]/.test(w);
  * The likeliest target for a message, or null: a shared unit code counts 4, a shared word 2,
  * a word that starts the other ("shan" ~ "shannon") 1 — so "Shan Eviction" beats "evict Shan" for
  * "the Shan eviction" (2026-10-14, a tie that offered nothing). What the channel last added to (the
- * last hour) counts 3 by itself; recent work breaks a tie. At least 3, and ahead of the next.
+ * last hour) decides when no word points anywhere, else only tips; recent work breaks a tie. At least 2, ahead.
  */
 export function suggestTarget(text: string, targets: AddTarget[], last?: string | null): AddTarget | null {
   const mine = wordsOf(text);
@@ -40,14 +40,20 @@ export function suggestTarget(text: string, targets: AddTarget[], last?: string 
       if (theirs.includes(w)) n += isCode(w) ? 4 : 2;
       else if (w.length >= 4 && theirs.some(x => x.length >= 4 && (x.startsWith(w) || w.startsWith(x)))) n += 1;
     }
-    // Owner, 2026-10-14: what this channel was last adding to (the last hour) — a conversation keeps its topic.
-    if (t.value === last) n += 3;
-    // Worked on lately: only breaks a tie.
-    if (n > 0 && t.recent) n += 0.5;
     return { t, n };
-  }).sort((a, b) => b.n - a.n);
+  });
+  // Owner, 2026-10-14: what this channel was last adding to (the last hour) — a conversation keeps its topic. It decides
+  // only when the words point nowhere ("the deputy will call me back"); a word that matches wins ("Test 2 Truvi" → Truvi).
+  const wordsPoint = scored.some(x => x.n >= 2);
+  for (const x of scored) {
+    if (x.t.value === last) x.n += wordsPoint ? 1 : 3;
+    // Worked on lately: only breaks a tie.
+    if (x.n > 0 && x.t.recent) x.n += 0.5;
+  }
+  scored.sort((a, b) => b.n - a.n);
   const [best, next] = scored;
-  return best && best.n >= 3 && best.n > (next?.n ?? 0) ? best.t : null;
+  // One distinctive word is enough ("Truvi"); it only comes chosen — ✓ Add still decides.
+  return best && best.n >= 2 && best.n > (next?.n ?? 0) ? best.t : null;
 }
 
 const GROUPS: [AddTarget['group'], string][] = [['order', '🛒 Purchase orders'], ['work_order', '🔧 Work orders'], ['claim', '⚑ Claims']];
