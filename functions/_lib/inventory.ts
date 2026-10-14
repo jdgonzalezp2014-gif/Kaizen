@@ -108,7 +108,12 @@ export async function overview(sql: SqlFn) {
                                     to_char(saved_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS "savedAt" FROM inventory_order_drafts WHERE account_id = 1` as
     { lines: { itemId: string; place: string; qty: number }[]; forTodo: string | null; savedBy: string; savedAt: string }[];
   const [acc] = await sql`SELECT inventory_low_stock_tasks AS low FROM accounts WHERE id = 1` as { low: boolean }[];
-  return { items, places, unassigned, recent, orders: await openOrders(sql), fieldTodos: await fieldTodos(sql),
+  // The latest photos/note of how each place looked when counted.
+  const looks = new Map((await sql`SELECT DISTINCT ON (place) place, note, photos, by_name AS "byName", counted,
+                                          to_char(created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS at
+                                     FROM inventory_place_looks WHERE account_id = 1 ORDER BY place, id DESC` as
+    ({ place: string } & PlaceLook)[]).map(({ place, ...l }) => [place, l]));
+  return { items, places: places.map(p => ({ ...p, look: (p.place && looks.get(p.place)) || null })), unassigned, recent, orders: await openOrders(sql), fieldTodos: await fieldTodos(sql),
            draft: draft ?? null, lowStockTasks: !!acc?.low, toPayBack: await toPayBack(sql), aheadDays: AHEAD_DAYS, windowDays: WINDOW_DAYS };
 }
 
@@ -618,6 +623,16 @@ export async function setMins(sql: SqlFn, by: string, place: unknown, mins: { it
     await sql`INSERT INTO inventory_place_mins (account_id, item_id, place, min_qty, updated_by) VALUES (1, ${itemId}, ${p.key}, ${qty}, ${by})
               ON CONFLICT (account_id, item_id, place) DO UPDATE SET min_qty = EXCLUDED.min_qty, updated_by = EXCLUDED.updated_by, updated_at = now()`;
   }
+}
+
+export type PlaceLook = { note: string | null; photos: { name: string; url: string }[]; byName: string; counted: number; at: string };
+/** How a place looked at a count (owner, 2026-10-14): photos and a note, kept apart from the per-item moves. */
+export async function recordLook(sql: SqlFn, by: string, place: unknown, note: unknown, photos: { name: string; url: string }[], counted: number) {
+  const n = String(note ?? '').trim().slice(0, 1000) || null;
+  if (!photos.length && !n) return;
+  if (!(await supplyPlaces(sql)).places.some(p => p.key === String(place))) throw new Error('Which place?');
+  await sql`INSERT INTO inventory_place_looks (place, note, photos, by_name, counted)
+            VALUES (${String(place)}, ${n}, ${JSON.stringify(photos)}::jsonb, ${by}, ${counted})`;
 }
 
 const MAX_FILE_BYTES = 15 * 1024 * 1024;

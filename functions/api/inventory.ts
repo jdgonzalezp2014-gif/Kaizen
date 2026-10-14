@@ -2,7 +2,8 @@
  * /api/inventory — supplies by place (§134, §150): the Repository's storages and the houses' closets.
  *
  *   GET                                               every place: stock, average per clean, what its units need, to order
- *   POST { action: 'count', place, counts: [{ itemId, qty }] }          a count of a place — reconciles it
+ *   POST { action: 'count', place, counts: [{ itemId, qty }], look? } (+ photos)  a count of a place — reconciles it;
+ *        photos and `look` (a note) say how the storage looked — either alone is fine, without counting
  *   POST { action: 'settings', place, items: [{ itemId, name?, measure?, perClean?, min? }] }   edit settings, one save
  *   POST { action: 'removeItem', itemId }                               off the list everywhere (history kept)
  *   POST { action: 'adjusts', place, note, adjusts: [{ itemId, qty }] } corrections (+/−) to the record, with why
@@ -22,7 +23,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { commentToThread } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, fieldPhotos, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
+import { createOrder, fieldPhotos, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -44,9 +45,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     } else b = await request.json().catch(() => ({})) as Record<string, unknown>;
 
     if (b.action === 'count') {
-      const counts = Array.isArray(b.counts) ? b.counts as { itemId: unknown; qty: unknown }[] : [];
+      // Multipart (with photos) sends the counts as JSON text.
+      const raw = typeof b.counts === 'string' ? JSON.parse(b.counts) as unknown : b.counts;
+      const counts = Array.isArray(raw) ? raw as { itemId: unknown; qty: unknown }[] : [];
       const given = counts.filter(c => c.qty !== '' && c.qty != null);
-      if (!given.length) return bad('Count at least one item.');
+      const look = String(b.look ?? '').trim();
+      if (!given.length && !files.length && !look) return bad('Count at least one item, or add a photo or a note.');
+      const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `storage ${String(b.place ?? '')}`);
+      await recordLook(sql, who.email, b.place, look, photos, given.length);
       for (const c of given) await recordMove(sql, me, { kind: 'count', itemId: c.itemId, place: b.place, qty: c.qty, note: b.note });
       waitUntil(lowStock(sql, [String(b.place ?? '')]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
     } else if (b.action === 'purchase') {

@@ -15,6 +15,8 @@ import { Fragment, createContext, useContext, useEffect, useMemo, useState } fro
 import { getInventory, inventoryAction, inventoryItemAction, inventoryUpload, type InvItemRow, type InvPlace, type Inventory } from '../api.ts';
 import { CATEGORIES, reconcile } from '../lib/inventory.ts';
 import { Sheet } from '../components/InspectionRun.tsx';
+import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
+import { TX } from '../lib/crew-i18n.ts';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2026-10-12 …" → "Oct 12". */
@@ -147,6 +149,9 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
         {' '}<Hint label="What the columns mean"><b>Per clean</b> is the average of what cleaners reported taking (over the last {inv.windowDays} days, every clean that
         answered, “nothing” included) — the item's estimate until 3 cleans have reported. <b>To order</b> = what those cleans
         will take + the minimum to keep − what is here, once the place has been counted.</Hint></p>
+      {p.look && <p className="sub-n">📷 How it looked {short(p.look.at)}{p.look.counted ? '' : ' (no count)'} · {p.look.byName}
+        {p.look.note && <> — “{p.look.note}”</>}
+        {p.look.photos.map((f, k) => <Fragment key={f.url}> · <a href={f.url} target="_blank" rel="noreferrer">photo {k + 1}</a></Fragment>)}</p>}
       <div className="grid-scroll">
         <table className="units compact">
           <thead><tr><th>Item</th><th className="n">On record</th><th>Counted</th><th className="n">Per clean</th>
@@ -260,18 +265,28 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
   const [adding, setAdding] = useState<{ name: string; measure: string; category: string } | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  // Owner, 2026-10-14: how the storage looks (damp, mess, a broken shelf) — optional, saved with the count.
+  const [files, setFiles] = useState<File[]>([]);
+  const [look, setLook] = useState('');
   const levelOf = (id: string) => p.items.find(l => l.itemId === id);
   const shown = p.items.map(l => inv.items.find(i => i.id === l.itemId)!).filter(Boolean);
   const list = q.trim() ? shown.filter(i => i.name.toLowerCase().includes(q.trim().toLowerCase())) : shown;
   const done = Object.keys(counts).length;
-  const act = async (body: Record<string, unknown>) => {
+  const act = async (body: Record<string, unknown>, photos: File[] = []) => {
     setBusy(true); setMsg('');
-    try { const r = await api.act(body); if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return null; } onSaved(r); return r; }
+    try {
+      let r: InvResult;
+      if (photos.length) {
+        const form = new FormData();
+        for (const [k, v] of Object.entries(body)) form.append(k, typeof v === 'string' ? v : JSON.stringify(v));
+        for (const f of await Promise.all(photos.map(shrink))) form.append('file', f);
+        r = await api.upload(form);
+      } else r = await api.act(body); if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return null; } onSaved(r); return r; }
     catch (e) { setMsg(String(e)); return null; } finally { setBusy(false); }
   };
   const set = (id: string, n: number) => setCounts(c => ({ ...c, [id]: Math.max(0, Math.min(99999, n)) }));
   const save = async () => {
-    const r = await act({ action: 'count', place: p.place, counts: Object.entries(counts).map(([itemId, qty]) => ({ itemId, qty })) });
+    const r = await act({ action: 'count', place: p.place, counts: Object.entries(counts).map(([itemId, qty]) => ({ itemId, qty })), look: look.trim() }, files);
     if (r) onClose();
   };
   return (
@@ -326,11 +341,20 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
           return <Fragment key={id}>{k ? ' · ' : ''}<button type="button" className="link tiny" disabled={busy}
             onClick={() => void act({ action: 'hide', place: p.place, itemId: id, hide: false })}>↺ {i?.name ?? id}</button></Fragment>;
         })}</p>}
+        <div className="onsite-look">
+          <b>📷 How the storage looks</b>
+          <span className="sub-n">Optional — damp, a mess, a broken shelf, pests. Up to 5 photos, kept in Drive with this count;
+            the place shows the latest.</span>
+          <PhotoPicker tx={TX.en} files={files} onChange={setFiles} max={5} disabled={busy} />
+          <textarea rows={2} maxLength={1000} value={look} placeholder="A note on the storage (optional)" onChange={e => setLook(e.target.value)} />
+        </div>
         {msg && <p className="breach" role="alert">{msg}</p>}
       </div>
       <div className="insp-foot">
-        <span className="note">{done ? `${done} counted — saving replaces their record` : 'Nothing counted yet'}</span>
-        <button disabled={busy || !done} onClick={() => void save()}>{busy ? 'Saving…' : `Save the count (${done})`}</button>
+        <span className="note">{done ? `${done} counted — saving replaces their record` : 'Nothing counted yet'}
+          {(files.length > 0 || look.trim()) && ` · 📷 ${files.length} photo${files.length === 1 ? '' : 's'}${look.trim() ? ' + note' : ''}`}</span>
+        <button disabled={busy || (!done && !files.length && !look.trim())} onClick={() => void save()}>
+          {busy ? 'Saving…' : done ? `Save the count (${done})` : 'Save photos & note'}</button>
       </div>
     </Sheet>
   );

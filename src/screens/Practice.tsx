@@ -471,6 +471,8 @@ function inventoryPractice(): InvTransport {
     get: async () => { await sleep(); return view(); },
     act,
     upload: async f => {
+      // A count with storage photos: the count is kept, the photos stay in the browser (nothing leaves it).
+      if (f.get('action') === 'count') return act({ action: 'count', place: f.get('place'), counts: JSON.parse(String(f.get('counts') ?? '[]')) });
       await sleep();
       const lines = JSON.parse(String(f.get('lines') ?? '[]')) as { itemId: string; place: string; qty: number }[];
       if (!(Number(f.get('total')) > 0)) return fail('Write the total you paid.');

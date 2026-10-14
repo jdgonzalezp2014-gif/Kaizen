@@ -282,6 +282,12 @@ key had no SOPs.
   touched items saved; "+ Add an item here" (`newItem`, an old switched-off name comes back on) and "🙈 Not kept
   here" (073 `inventory_place_hidden`: off that place's list, needs and orders; ↺ back). The desk table's count
   mode is gone.
+- **How the storage looks (owner, 2026-10-14, 084 `inventory_place_looks`):** the count sheet ends with 📷 up to 5
+  photos (PhotoPicker, shrunk) + a note, both optional; saved with the count (multipart `count`, `counts` as JSON text,
+  `look` = the note) to Drive "Kaizen — field reports" (`fieldPhotos`), one row per count that had any (`recordLook`).
+  Photos/note alone save without counting ("Save photos & note"). The place card shows only the latest
+  (`InvPlace.look`: "📷 How it looked <date> · who — note · photo 1…"); older ones are in the table/Drive, not shown.
+  Practice keeps the count, drops the photos. SOP #15 v12.
 - **Drafts and low stock (§150, owner, 072):** "💾 Save draft" keeps the order being written (`inventory_order_drafts`,
   one per account; comes back as left, "Discard draft"; creating the order clears it). Setup → Inventory → **Low stock
   to-dos** (`accounts.inventory_low_stock_tasks`, OFF by default): after a count, a correction or a take, a counted

@@ -507,7 +507,9 @@ export interface InvLevel {
 }
 /** A place (§150): a Repository record `table/ROW-id` — a storage or a house's closet; null = moves of units with no place. */
 export interface InvPlace { place: string | null; name: string; self: boolean; units: { id: string; name: string; recordId: string | null; cleansAhead: number }[]; items: InvLevel[];
-  /** §150: items "not kept here". */ hidden: string[] }
+  /** §150: items "not kept here". */ hidden: string[];
+  /** The latest photos / note of how the place looked at a count (owner, 2026-10-14). */
+  look?: { note: string | null; photos: { name: string; url: string }[]; byName: string; counted: number; at: string } | null }
 export interface InvMove {
   id: string; item: string; place: string | null; unit: string | null; kind: 'count' | 'used' | 'purchase' | 'adjust' | 'missing' | 'taken'; qty: number;
   note: string | null; byName: string; source: 'team' | 'cleaner' | 'link'; photos: { name: string; url: string }[]; at: string;
