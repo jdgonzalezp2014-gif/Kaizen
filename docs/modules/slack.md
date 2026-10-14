@@ -113,13 +113,9 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 
 ## Open items
 
-- **📎 to save needs the manifest + reinstall (2026-10-14):** `reactions:read` and the `reaction_added` event are in the
-  manifest (Settings → Slack → Show the manifest); paste in Slack, Save, **Reinstall** (a new scope).
 
-- **§157 needs the manifest updated** (Settings → Slack → Show the manifest → paste in Slack → Save): the ⋯ "Make SOP
-  from this" shortcut and the `/kaizen` hint. No new scopes. "Add to…" needs nothing (message events and history
-  scopes are on; the bot is in #kaizen-ops and #kgp-team). Turn the channels on in Settings → Slack → 3 · Channels.
-- SOP 8 "Kaizen in Slack" does not yet describe Add to… / newsop / sops (owner's to approve).
+- **#kaizen-task is still in the "Add to…" channels** (added for testing, 2026-10-14) — take it out in Settings → Slack → 3
+  when testing ends. Manifest with §157 + 📎 is installed (reactions:read verified).
 
 - **§152/§153 need a manifest reinstall to take effect.** Code is deployed, but Slack only sends
   `message.channels`/`message.groups` once the app's manifest is updated and reinstalled: Settings →
@@ -212,3 +208,5 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - **Missing scopes are said in Settings (2026-10-14):** `GET /api/slack-settings` returns `grantedScopes` (auth.test's
   `x-oauth-scopes`); Settings → Slack → 1 compares them with the manifest and warns "⚠ the installed app is missing …" with
   the steps — a reinstall from a stale manifest (an old page) had left 📎 without `reactions:read`.
+- **SOPs updated (2026-10-14):** #34 "Add Slack messages to Kaizen and write SOPs from Slack" published (final behaviour);
+  #8 "Kaizen in Slack" — More ›, the card's files and order, help with a question, sops/newsop, Add to… and 📎.
