@@ -167,3 +167,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - **Manual cleans in the cleaners' reminders (owner, 2026-10-14):** the board only lists checkouts, so `remindCleaners` also reads
   `cleanings` `MAN-%` (assigned, not voided, that day) — a mid-stay one says "🧹 mid-stay clean" instead of "checkout <time>".
   Irene's mid-stay at CL2450 was missed on the 14th's 9:18 reminder (morning turned on by the owner that day, 09:18).
+- **Ready-by in the cleaners' reminders (owner, 2026-10-14):** never "no check-in" (cleaners went late). Each clean says
+  "⏰ ready by <next guest's check-in>" when a guest arrives that day (early check-ins show), else "ready by 4:00 PM";
+  after a late checkout (1 PM or later) with no arrival that day, nothing; a mid-stay, nothing (`readyBy`, `src/lib/crew-slack.ts`;
+  the check-in time from the board's `in` row in `cleanerSchedule`). "⚡ next guest the same day" went (the time says it).

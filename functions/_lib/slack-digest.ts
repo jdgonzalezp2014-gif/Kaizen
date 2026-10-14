@@ -66,7 +66,10 @@ export async function cleanerSchedule(sql: SqlFn, creds: HostawayCredentials, na
   // name null: every assigned clean (§134, the cleaners' reminders read the board once for all).
   return s.rows.filter(r => r.kind === 'out' && r.assignment === 'assigned' && (name === null || (r.cleaner ?? '').toLowerCase() === name.toLowerCase()))
     .map(r => ({ date: r.date, time: r.time, unit: r.unit, beds: r.beds, deep: r.deep, sameDay: r.urgency === 'turnover', note: r.note || null,
-                 cleaner: r.cleaner ?? '' }));
+                 cleaner: r.cleaner ?? '',
+                 // The next guest's check-in, only when they arrive the day of the clean (owner, 2026-10-14).
+                 checkin: r.next?.arrival === r.date
+                   ? s.rows.find(x => x.kind === 'in' && x.unitId === r.unitId && x.date === r.date)?.time ?? null : null }));
 }
 
 /** A day's cleans from the board (§101): who, when, what kind — for the Cleans pop-up. */
