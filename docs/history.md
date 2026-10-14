@@ -4087,3 +4087,5 @@ with Finance.
 dev identity), then 3 Adds drafted. They duplicate its rules 4 and 16 (pets — tiered in the rule, $150 in
 Airbnb's pet fee — and the $600 lost fob): the owner picks which wording stays before House rules is sent.
 SOP 33 written as a draft.
+Then (owner): "lo de las mascotas borra ese pedazo para que no se duplique donde ya esté" — `draftAdds` no longer
+drafts a pet Add when the original rules mention pets, and Preston's was cleared (audited, kaizen-os).

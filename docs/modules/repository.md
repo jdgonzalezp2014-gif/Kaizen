@@ -123,9 +123,9 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
    call). Bobcat has no guest cleaning fee in Hostaway.
 7. **Parking and lost key/fob fee per house** — no rush.
 8. **Sections filled (§155): only Preston Vineyard** (2026-10-13, all 42 fields from Hostaway + 3 Adds drafted).
-   The other 20 units: "← Copy all … from Hostaway" section by section, then read the Adds. Preston's Adds
-   repeat its own rules 4 (pets, tiered $100–$300 vs Airbnb pet fee $150) and 16 ($600 lost key/fob):
-   owner to choose original or Add before sending House rules.
+   The other 20 units: "← Copy all … from Hostaway" section by section, then read the Adds. Owner: no pet Add
+   where the original rules already speak of pets (`draftAdds` skips it; Preston's was cleared). Preston's lost
+   key/fob Add still repeats its rule 16 ($600) — owner to choose before sending House rules.
 - The old Apps Script link/key in Settings can be cleared now the import is confirmed.
 
 ## History

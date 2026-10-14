@@ -176,7 +176,8 @@ export function draftAdds(vals: Record<string, unknown>): Record<string, string>
   const has = (k: string) => !!norm('rules', vals[k]);
   const pet = money(vals.pet_fee), fob = money(vals.fob_replacement_fee), extra = money(vals.extra_guest_fee);
   const included = norm('number', vals.guests_included), max = norm('number', vals.max_guests);
-  if (pet && !has('rule_add_pet_fee'))
+  // Owner: where the original rules already speak of pets, no pet Add — it would say it twice.
+  if (pet && !has('rule_add_pet_fee') && !/\bpets?\b/i.test(String(vals.house_rules ?? '')))
     out.rule_add_pet_fee = `Pet fee: ${pet} per pet, per stay. Pets must be disclosed and approved before arrival.`;
   if (fob && !has('rule_add_lost_fob'))
     out.rule_add_lost_fob = `Keys and fobs: a key or access fob that is lost or not returned at check-out is charged ${fob} to replace.`;

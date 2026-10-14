@@ -105,4 +105,5 @@ test('draftAdds words the empty Adds from the record\'s own fees', () => {
   assert.equal(d.rule_add_lost_fob, undefined, 'never overwrites');
   assert.match(d.rule_add_extra_guest!, /includes 8 guests; each additional guest is \$25 per night \(maximum 10 guests\)/);
   assert.deepEqual(draftAdds({}), {});
+  assert.equal(draftAdds({ pet_fee: 150, house_rules: '4. Pets must be disclosed.' }).rule_add_pet_fee, undefined, 'the original already covers pets');
 });
