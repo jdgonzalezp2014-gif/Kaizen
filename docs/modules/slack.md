@@ -164,3 +164,6 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   (mention or plain reply, `subtype: file_share` allowed) go onto it. Done after the answer (`attachFromSlack`, waitUntil),
   then "📎 n files added…" in the thread. **Needs `files:read`** (added to the manifest — reinstall). `task:` with a colon
   now parses as `task` (Derek's to-do kept "task:" in its title).
+- **Manual cleans in the cleaners' reminders (owner, 2026-10-14):** the board only lists checkouts, so `remindCleaners` also reads
+  `cleanings` `MAN-%` (assigned, not voided, that day) — a mid-stay one says "🧹 mid-stay clean" instead of "checkout <time>".
+  Irene's mid-stay at CL2450 was missed on the 14th's 9:18 reminder (morning turned on by the owner that day, 09:18).

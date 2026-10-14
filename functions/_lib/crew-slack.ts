@@ -47,10 +47,17 @@ export async function remindCleaners(sql: SqlFn, s: SlackSetup, creds: HostawayC
   const chans = Object.entries(s.config.cleaners ?? {}).filter(([, c]) => c.channelId);
   if (!s.token || !chans.length) return { sent: [], failed: 0 };
   const all = await cleanerSchedule(sql, creds, null, 3);
+  const manual = (await sql`SELECT unit_name AS unit, cleaner, coalesce(checkout_time, '') AS time, deep, kind FROM cleanings
+                             WHERE account_id = 1 AND key LIKE 'MAN-%' AND void_reason IS NULL AND assignment = 'assigned'
+                               AND cleaner IS NOT NULL AND checkout_on = ${day}::date` as
+                  { unit: string; cleaner: string; time: string; deep: boolean | null; kind: string }[])
+    .map(m => ({ unit: m.unit, cleaner: m.cleaner, time: m.time, deep: !!m.deep, midStay: m.kind === 'mid_stay' }));
   const sent: string[] = [];
   let failed = 0;
   for (const [name, ch] of chans) {
-    const mine = all.filter(c => c.cleaner.toLowerCase() === name.toLowerCase() && c.date === day);
+    // The board only has checkouts; manual cleans (MAN-, e.g. mid-stay) are in the record (owner, 2026-10-14: Irene's was missed).
+    const mine = [...all.filter(c => c.cleaner.toLowerCase() === name.toLowerCase() && c.date === day),
+                  ...manual.filter(c => c.cleaner.toLowerCase() === name.toLowerCase())];
     if (!mine.length) continue;
     const key = `crew:${kind}:${day}:${name}`;
     if (!(await claim(key))) continue;

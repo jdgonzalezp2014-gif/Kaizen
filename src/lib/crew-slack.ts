@@ -36,12 +36,13 @@ type Block = Record<string, unknown>;
 const section = (text: string): Block => ({ type: 'section', text: { type: 'mrkdwn', text } });
 const context = (text: string): Block => ({ type: 'context', elements: [{ type: 'mrkdwn', text }] });
 
-export interface CrewClean { unit: string; time: string; beds?: number | null; deep?: boolean; sameDay?: boolean }
+// midStay: a manual clean while the guest stays (§79) — no checkout to name.
+export interface CrewClean { unit: string; time: string; beds?: number | null; deep?: boolean; sameDay?: boolean; midStay?: boolean }
 
 const W = {
   en: {
     head: (k: 'today' | 'tomorrow', d: string, n: number) => `${k === 'today' ? '☀️ Today' : '🌙 Tomorrow'}, ${d} — ${n} clean${n === 1 ? '' : 's'}`,
-    checkout: 'checkout', sameDay: '⚡ next guest the same day', deep: '🧽 deep',
+    checkout: 'checkout', midStay: '🧹 mid-stay clean', sameDay: '⚡ next guest the same day', deep: '🧽 deep',
     steps: 'At each clean: 1 📷 photos BEFORE · 2 🧴 what you took from storage · 3 📷 photos AFTER · 4 ✅ mark it done — in Options… on your page. If something changes, your page has the latest.',
     open: 'Open my page',
     stage: { before: 'BEFORE', after: 'AFTER' }, photos: (n: number) => `${n} photo${n === 1 ? '' : 's'}`,
@@ -51,7 +52,7 @@ const W = {
   },
   es: {
     head: (k: 'today' | 'tomorrow', d: string, n: number) => `${k === 'today' ? '☀️ Hoy' : '🌙 Mañana'}, ${d} — ${n} ${n === 1 ? 'limpieza' : 'limpiezas'}`,
-    checkout: 'salida', sameDay: '⚡ entra huésped el mismo día', deep: '🧽 profunda',
+    checkout: 'salida', midStay: '🧹 limpieza durante la estadía', sameDay: '⚡ entra huésped el mismo día', deep: '🧽 profunda',
     steps: 'En cada limpieza: 1 📷 fotos ANTES · 2 🧴 lo que tomaste del storage · 3 📷 fotos DESPUÉS · 4 ✅ marcar completada — en Opciones… de tu página. Si algo cambia, tu página tiene lo último.',
     open: 'Abrir mi página',
     stage: { before: 'ANTES', after: 'DESPUÉS' }, photos: (n: number) => `${n} ${n === 1 ? 'foto' : 'fotos'}`,
@@ -65,7 +66,7 @@ const W = {
 export function crewDayMessage(lang: Lang, kind: 'today' | 'tomorrow', day: string, cleans: CrewClean[], appUrl?: string) {
   const w = W[lang];
   const head = w.head(kind, dayLabel(lang, day), cleans.length);
-  const lines = cleans.map(c => [`• *${esc(c.unit)}*`, c.beds ? bedsWord(lang, c.beds) : '', `${w.checkout} ${esc(c.time)}`,
+  const lines = cleans.map(c => [`• *${esc(c.unit)}*`, c.beds ? bedsWord(lang, c.beds) : '', c.midStay ? w.midStay + (c.time ? ` ${esc(c.time)}` : '') : `${w.checkout} ${esc(c.time)}`,
     c.sameDay ? w.sameDay : '', c.deep ? w.deep : ''].filter(Boolean).join(' · '));
   return { text: head, blocks: [
     section(`*${head}*\n${lines.join('\n')}`),
