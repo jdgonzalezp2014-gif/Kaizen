@@ -31,3 +31,18 @@ test('the private reply: tasks in one menu, orders / repairs / claims grouped in
   assert.deepEqual(sourceOf('addto_a|C9|1.6|1.5'), { channel: 'C9', ts: '1.6', thread: '1.5' });
   assert.ok(!JSON.stringify(addToBlocks(T.filter(t => t.group === 'claim'), { channel: 'C', ts: '1' })).includes('addto_task'));
 });
+
+test('the guess comes chosen in its menu; the channel’s last target counts by itself; recent work breaks a tie', () => {
+  const pick = (b: unknown[], id: string) => JSON.parse(JSON.stringify(b)).flatMap((x: { elements?: { action_id: string; initial_option?: { value: string } }[] }) => x.elements ?? [])
+    .find((e: { action_id: string }) => e.action_id === id)?.initial_option?.value;
+  assert.equal(pick(addToBlocks(T, { channel: 'C', ts: '1' }, T[2]), 'addto_task'), 'task:5');
+  assert.equal(pick(addToBlocks(T, { channel: 'C', ts: '1' }, T[2]), 'addto_other'), undefined);
+  assert.equal(pick(addToBlocks(T, { channel: 'C', ts: '1' }, T[0]), 'addto_other'), 'claim:1');
+  assert.equal(pick(addToBlocks(T, { channel: 'C', ts: '1' }, null), 'addto_task'), undefined);
+  // "the deputy will call me back" — no words in common, but the channel was just adding to the eviction.
+  assert.equal(suggestTarget('the deputy will call me back', T, 'claim:1')?.value, 'claim:1');
+  assert.equal(suggestTarget('the deputy will call me back', T, null), null);
+  const tie: AddTarget[] = [{ value: 'task:1', label: 'A', group: 'task', words: 'fix door Concord' },
+                            { value: 'task:2', label: 'B', group: 'task', words: 'paint door Concord', recent: true }];
+  assert.equal(suggestTarget('the door at Concord', tie)?.value, 'task:2');
+});

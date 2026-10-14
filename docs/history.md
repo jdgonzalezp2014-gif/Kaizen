@@ -4171,3 +4171,7 @@ refund first, then negotiate") should become an SOP so nobody asks again.
   title 3, keyword 2, text 1 — "el huésped se va antes" finds "Early departure or mid-stay clean".
 - **Add to… confirms in the thread (same day):** on Add the private question is deleted and one quiet context line goes in the
   message's own thread ("📎 Saved to <x> in Kaizen by @who — replies in this thread are saved there too"); a failure stays private.
+- **Add to… guesses better, for free (same day):** the guess comes chosen in its menu (✓ Add takes it; picking another adds
+  that one; ✕ Not this). What the channel last added to in the past hour counts 3 by itself (`slack_sent` `addto:<channel>:<target>`,
+  renewed on every Add) — a conversation keeps its topic ("the deputy will call me back" → the eviction). Work with activity in the
+  last 3 days breaks a tie. No AI: the owner found it slow and no better for this.

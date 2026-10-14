@@ -219,8 +219,12 @@ async function offerAddTo(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string
   const targets = await k.addTargets();
   if (!targets.length) return;
   const source: AddSource = { channel: String(ev.channel), ts: String(ev.ts), thread: ev.thread_ts ? String(ev.thread_ts) : null };
+  // What this channel last added to, in the last hour (owner, 2026-10-14).
+  const [last] = await sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE ${`addto:${ev.channel}:%`}
+                             AND sent_at > now() - interval '1 hour' ORDER BY sent_at DESC LIMIT 1` as { key: string }[];
+  const lastTarget = last ? last.key.split(':').slice(2).join(':') : null;
   await slackApi(s.token!, 'chat.postEphemeral', { channel: ev.channel, user: ev.user, text: 'Add this to Kaizen?',
-    blocks: addToBlocks(targets, source, suggestTarget(String(ev.text ?? ''), targets)), ...(ev.thread_ts ? { thread_ts: ev.thread_ts } : {}) });
+    blocks: addToBlocks(targets, source, suggestTarget(String(ev.text ?? ''), targets, lastTarget)), ...(ev.thread_ts ? { thread_ts: ev.thread_ts } : {}) });
 }
 
 /** The bot's own Slack user id, cached in slack_config — fetched once (auth.test) and saved if missing. */
@@ -513,12 +517,14 @@ class Kaizen {
     const out: AddTarget[] = [];
     if (this.may('/api/todos', 'POST')) {
       const rows = await this.sql`SELECT t.id::text, t.title, t.kind, u.name AS unit,
-                                         EXISTS (SELECT 1 FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id) AS ordered
+                                         EXISTS (SELECT 1 FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id) AS ordered,
+                                         EXISTS (SELECT 1 FROM work_updates w WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text
+                                                    AND w.created_at > now() - interval '3 days') AS recent
                                     FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
                                    WHERE t.account_id = 1 AND t.deleted_at IS NULL AND t.parent_id IS NULL AND t.status NOT IN ('completed', 'cancelled')
-                                   ORDER BY t.created_at DESC LIMIT 300` as { id: string; title: string; kind: string; unit: string | null; ordered: boolean }[];
+                                   ORDER BY t.created_at DESC LIMIT 300` as { id: string; title: string; kind: string; unit: string | null; ordered: boolean; recent: boolean }[];
       for (const r of rows) out.push({ value: `task:${r.id}`, label: `${r.title}${r.unit ? ` · ${r.unit}` : ''}`,
-        group: r.kind === 'work_order' ? 'work_order' : r.ordered ? 'order' : 'task', words: `${r.title} ${r.unit ?? ''}` });
+        group: r.kind === 'work_order' ? 'work_order' : r.ordered ? 'order' : 'task', words: `${r.title} ${r.unit ?? ''}`, recent: r.recent });
     }
     if (this.may('/api/claims', 'POST')) {
       const rows = await this.sql`SELECT c.id::text, coalesce(nullif(c.description, ''), c.category) AS what, c.category, u.name AS unit
@@ -561,6 +567,9 @@ class Kaizen {
     if (m.files.length) this.attachFiles(subject, id, m.files);
     // Its thread is this subject's from now on: later replies there are comments by themselves (§153).
     await rememberThread(this.sql, { ok: true, channel: src.channel, ts: src.thread ?? src.ts }, subject, id);
+    // The channel's memory: the next message there offers this first, for an hour.
+    await this.sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`addto:${src.channel}:${target}`})
+                   ON CONFLICT (account_id, key) DO UPDATE SET sent_at = now()`;
     return { ok: true };
   }
 

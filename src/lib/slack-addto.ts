@@ -8,7 +8,8 @@ type Block = Record<string, unknown>;
 const plain = (text: string) => ({ type: 'plain_text', text: text.slice(0, 75), emoji: true });
 const mrk = (text: string) => ({ type: 'mrkdwn', text: text.slice(0, 3000) });
 
-export interface AddTarget { value: string; label: string; group: 'task' | 'order' | 'work_order' | 'claim'; words: string }
+export interface AddTarget { value: string; label: string; group: 'task' | 'order' | 'work_order' | 'claim'; words: string;
+  /** Worked on in the last days — breaks a tie. */ recent?: boolean }
 export interface AddSource { channel: string; ts: string; thread?: string | null }
 
 const STOP = new Set(['the', 'and', 'for', 'with', 'from', 'this', 'that', 'have', 'has', 'are', 'was', 'you', 'can', 'not', 'but', 'about',
@@ -26,11 +27,12 @@ const isCode = (w: string) => /\d/.test(w) && /[a-z]/.test(w);
 /**
  * The likeliest target for a message, or null: a shared unit code counts 4, a shared word 2,
  * a word that starts the other ("shan" ~ "shannon") 1 — so "Shan Eviction" beats "evict Shan" for
- * "the Shan eviction" (2026-10-14, a tie that offered nothing). At least 3, and ahead of the next.
+ * "the Shan eviction" (2026-10-14, a tie that offered nothing). What the channel last added to (the
+ * last hour) counts 3 by itself; recent work breaks a tie. At least 3, and ahead of the next.
  */
-export function suggestTarget(text: string, targets: AddTarget[]): AddTarget | null {
+export function suggestTarget(text: string, targets: AddTarget[], last?: string | null): AddTarget | null {
   const mine = wordsOf(text);
-  if (!mine.length) return null;
+  if (!mine.length && !last) return null;
   const scored = targets.map(t => {
     const theirs = wordsOf(t.words);
     let n = 0;
@@ -38,6 +40,10 @@ export function suggestTarget(text: string, targets: AddTarget[]): AddTarget | n
       if (theirs.includes(w)) n += isCode(w) ? 4 : 2;
       else if (w.length >= 4 && theirs.some(x => x.length >= 4 && (x.startsWith(w) || w.startsWith(x)))) n += 1;
     }
+    // Owner, 2026-10-14: what this channel was last adding to (the last hour) — a conversation keeps its topic.
+    if (t.value === last) n += 3;
+    // Worked on lately: only breaks a tie.
+    if (n > 0 && t.recent) n += 0.5;
     return { t, n };
   }).sort((a, b) => b.n - a.n);
   const [best, next] = scored;
@@ -58,8 +64,11 @@ export function addToBlocks(targets: AddTarget[], source: AddSource, suggested?:
       ...(suggested ? { accessory: { type: 'button', action_id: 'addto_yes', value: suggested.value, text: plain('✓ Add'), style: 'primary' } } : {}),
       block_id: `addto_s|${src}` },
     { type: 'actions', block_id: `addto_a|${src}`, elements: [
-      ...(tasks.length ? [{ type: 'static_select', action_id: 'addto_task', placeholder: plain('Add as comment to task…'), options: tasks.map(opt) }] : []),
-      ...(groups.length ? [{ type: 'static_select', action_id: 'addto_other', placeholder: plain('Add to something else…'), option_groups: groups }] : []),
+      // Owner, 2026-10-14: the guess comes chosen in its menu — ✓ Add takes it; picking another adds that one.
+      ...(tasks.length ? [{ type: 'static_select', action_id: 'addto_task', placeholder: plain('Add as comment to task…'), options: tasks.map(opt),
+                            ...(suggested?.group === 'task' && tasks.some(t => t.value === suggested.value) ? { initial_option: opt(suggested) } : {}) }] : []),
+      ...(groups.length ? [{ type: 'static_select', action_id: 'addto_other', placeholder: plain('Add to something else…'), option_groups: groups,
+                             ...(suggested && suggested.group !== 'task' && groups.some(g => g.options.some(o => o.value === suggested.value)) ? { initial_option: opt(suggested) } : {}) }] : []),
       { type: 'button', action_id: 'addto_dismiss', value: 'x', text: plain('✕ Not this') }
     ] },
     { type: 'context', elements: [mrk('Only you see this. Once added, later replies in its thread are saved too.')] }
