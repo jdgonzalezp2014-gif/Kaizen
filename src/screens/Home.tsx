@@ -66,9 +66,9 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     return r;
   });
   const red = useLoad(canUnits, async () => {
-    const r = await getForward(today, 30);
+    const r = await getForward(today, 30, true); // up to 10 minutes old (owner, Oct 2026)
     if (!r.ok) throw new Error(r.error === 'not_configured' ? 'Hostaway is not connected.' : (r.error ?? 'Could not load.'));
-    return { list: redUnits(r.units, (r.meta.occFloorPct ?? 60) / 100, r.meta.asOf), total: r.units.filter(u => u.active).length };
+    return { list: redUnits(r.units, (r.meta.occFloorPct ?? 60) / 100, r.meta.asOf), total: r.units.filter(u => u.active).length, at: r.meta.generatedAt };
   });
   const spend = useLoad(canCosts, async () => {
     const r = await getVariable();
@@ -314,7 +314,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
         {canUnits && (
           <Card id="red" title="Units in red" count={red.data?.list.length} load={red} action="Open Units" onAction={() => onGo('units')}
                 busyText="Reading every calendar…"
-                foot={red.data ? `By the Units screen's analysis, of ${red.data.total} live units` : undefined}>
+                foot={red.data ? `By the Units screen's analysis, of ${red.data.total} live units · read ${red.data.at ? new Date(red.data.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) : 'now'} (kept 10 min; Units is live)` : undefined}>
             {red.data && !red.data.list.length ? <Empty>No unit is red. ● All live units are filling, full or too early to tell.</Empty> : (
               <ShowMore items={red.data?.list ?? []} render={({ unit: u, read }) => (
                   <li key={u.listingId}>

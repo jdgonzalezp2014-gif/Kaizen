@@ -89,13 +89,13 @@ import type { ForwardUnit } from './lib/forward.ts';
 export interface ForwardResponse {
   ok: boolean;
   meta: { asOf: string; days: number; to: string; tookMs: number; occFloorPct: number;
-          offlineAfterDays: number; parkedThrough: string };
+          offlineAfterDays: number; parkedThrough: string; generatedAt?: string };
   units: ForwardUnit[];
   error?: string;
 }
 
-export const getForward = (asOf: string, days: number) =>
-  call<ForwardResponse>(`/api/forward?asOf=${asOf}&days=${days}`);
+export const getForward = (asOf: string, days: number, cached = false) =>
+  call<ForwardResponse>(`/api/forward?asOf=${asOf}&days=${days}${cached ? '&cache=1' : ''}`);
 
 export interface PriceChange {
   listingId: string;

@@ -83,3 +83,6 @@ Hostaway client, sync, crypto, migrations.
 ## History
 
 §1–§3, §8, §10–§13, §20, §27–§29, §49, §51–§52, §55, §65, §67, §75, §80–§81, §91–§92, §96–§98, §137, §151.
+- **Home's "Units in red" cached (owner, 2026-10-13, migration 077 `api_cache`):** `/api/forward?cache=1` (Home only) keeps
+  the answer 10 min for everyone (`forward:<asOf>:<days>`); *.pages.dev has no usable Cache API. The card says when it
+  was read. Units asks without `cache` — live.

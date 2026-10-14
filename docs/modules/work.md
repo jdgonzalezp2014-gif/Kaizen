@@ -113,3 +113,6 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   (≤10, 15 MB each, any type), Drive (field reports folder, "to-do #N — name"), ✕ takes one off (Drive copy stays);
   activity line per add/remove. Row shows "📎 n". API `/api/todo-files` (GET ?todoId, POST multipart, POST remove; role
   `todos`). Server `functions/_lib/todo-files.ts` (attachTodoFiles, slackFiles, slackMessageFiles).
+- **Hostaway task mirror OFF (owner, 2026-10-13):** `accounts.hostaway_tasks = 'off'` — the mirror cost most of the to-do
+  list's Hostaway calls for little use. Links kept; the toggle is Operations → Setup → "Hostaway tasks" (owner will turn
+  it back on later). While off, a test task no longer reaches Hostaway.

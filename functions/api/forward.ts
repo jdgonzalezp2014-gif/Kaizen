@@ -40,6 +40,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const asOf = url.searchParams.get('asOf') || today();
   const days = Math.max(1, Math.min(365, Number(url.searchParams.get('days')) || account.fwdStudyDays));
   const to = addDays(asOf, days - 1);
+  // Owner, Oct 2026: Home asks with cache=1 — the same answer for 10 minutes, for everyone, instead of
+  // every calendar in Hostaway on each visit. Units asks without it: live, as before.
+  const cacheKey = url.searchParams.get('cache') === '1' ? `forward:${asOf}:${days}` : null;
+  if (cacheKey) {
+    const [hit] = await sql`SELECT body FROM api_cache WHERE account_id = 1 AND key = ${cacheKey} AND at > now() - interval '10 minutes'` as { body: unknown }[];
+    if (hit) return Response.json(hit.body);
+  }
 
   // The calendar is pulled for whichever is longer: the window being
   // studied, or the horizon the parked test needs. One fetch, both
@@ -174,7 +181,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const portfolioMedianOcc = median(
     units.filter(u => u.active && u.occupancy != null).map(u => u.occupancy as number));
 
-  return Response.json({
+  const body = {
     ok: true,
     meta: {
       portfolioMedianOcc,
@@ -185,5 +192,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       generatedAt: new Date().toISOString()
     },
     units
-  });
+  };
+  if (cacheKey) await sql`INSERT INTO api_cache (account_id, key, body) VALUES (1, ${cacheKey}, ${JSON.stringify(body)}::jsonb)
+                          ON CONFLICT (account_id, key) DO UPDATE SET body = EXCLUDED.body, at = now()`.catch(() => {});
+  return Response.json(body);
 };
