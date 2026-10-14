@@ -862,18 +862,22 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
     return (
       <div className="task-edit">
         {/* The row above is the heading (title and its marks); ✎ beside the title renames it (§105). */}
-        <textarea className="task-desc" value={v.description ?? ''} maxLength={4000} aria-label="Description"
-                  rows={Math.min(8, Math.max(2, (v.description ?? '').split('\n').length + 1))}
-                  placeholder="Add a description — who, what exactly, anything to remember"
-                  onChange={e => set('description', e.target.value || null)} />
-        {middle}
+        {/* Owner, 2026-10-14: the empty description box on top was confusing — the details sit there instead,
+            with a ✎ to edit them; the description is one of them (read here when it has text). */}
         <section className={`task-fold ${details ? 'open' : ''}`}>
           <button type="button" className="task-fold-head" aria-expanded={details} onClick={() => setDetails(!details)}>
-            <span className="task-fold-caret" aria-hidden="true">{details ? '▾' : '▸'}</span><b>Details</b>
+            <b>Details</b>
             <span className="task-fold-sum">{summary.join(' · ')}</span>
+            <span className="task-fold-edit">{details ? '▴ Close' : '✎ Edit'}</span>
           </button>
+          {!details && (v.description ?? '').trim() && <div className="task-fold-desc"><Linked text={v.description!} /></div>}
           {details && (
             <div className="task-fold-body">
+              <label className="task-fold-descin">Description
+                <textarea className="task-desc" value={v.description ?? ''} maxLength={4000}
+                          rows={Math.min(8, Math.max(2, (v.description ?? '').split('\n').length + 1))}
+                          placeholder="Who, what exactly, anything to remember"
+                          onChange={e => set('description', e.target.value || null)} /></label>
               <div className="task-fold-row">
                 <div className="todo-kind" role="group" aria-label="Kind">
                   {(['task', 'work_order'] as TaskKind[]).map(k => (
@@ -898,6 +902,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
             </div>
           )}
         </section>
+        {middle}
         {after}
         {dirty && (
           <div className="task-savebar" role="status">

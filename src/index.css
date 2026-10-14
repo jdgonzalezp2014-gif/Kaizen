@@ -1695,6 +1695,9 @@ button.sop-num { cursor: pointer; }
 .task-fold-head:hover { background: var(--tint); border-radius: 10px; }
 .task-fold-caret { color: var(--muted); font-size: 11px; width: 10px; }
 .task-fold-sum { color: var(--muted); font-size: 12.5px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.task-fold-edit { margin-left: auto; flex: none; color: var(--series-1); font-size: 12.5px; font-weight: 600; }
+.task-fold-desc { padding: 0 12px 10px; font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; }
+.task-fold-descin { display: block; margin-bottom: 10px; }
 .task-fold.open .task-fold-head { border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; }
 .task-fold-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
 .task-fold > div:not(.task-fold-body) { padding: 6px 12px; }

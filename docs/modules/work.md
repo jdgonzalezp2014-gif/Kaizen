@@ -121,3 +121,5 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 - **To-do rows, less crowded (owner, 2026-10-14):** the title on its own line with ✕ ✓ at its right (absolute), what describes
   it on the next (`.todo-break`); every row the same left edge (the red bar only says urgent), room between rows, a hover tint,
   groups spaced. A description that is only a link ("From Slack: 🔗") is not shown on the row. Same component in Home and Work.
+- **Open to-do: Details on top, ✎ Edit (owner, 2026-10-14):** the empty description box was confusing — Details (summary line +
+  "✎ Edit") sits under the title; the description is read there when it has text and edited inside Details. Then files, comments, sub-tasks.
