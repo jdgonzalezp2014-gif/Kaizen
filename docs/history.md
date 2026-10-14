@@ -4185,3 +4185,6 @@ refund first, then negotiate") should become an SOP so nobody asks again.
   to come chosen, if ahead of the next — ✓ Add still decides.
 - **Below the message, and typos (same day):** a private reply sent too fast showed above the message it answers — the offer now
   waits 1.5 s. A word one letter off a target's word ("Tuvi" ~ "Truvi") counts as the word (`oneOff`, 4+ letters, not unit codes).
+- **Big photos from Slack (same day):** a 24 MB phone photo of the court notice was dropped without a word (limit 15 MB).
+  `slackFiles` now keeps Slack's own 1024-px copy of an image over the limit ("<name> (reduced)"); any file still left out is
+  said in the message's thread ("⚠ 1 file not added to Kaizen…"). The missing photo was added to to-do #76 by hand.

@@ -405,9 +405,13 @@ class Kaizen {
    * Files from a card's 📎 box (owner, 2026-10-14). After the answer: Slack waits 3 s, the download and Drive do not.
    * A to-do lists them (its activity says so); a claim keeps none of its own, so a comment links them.
    */
-  attachFiles(subject: 'task' | 'claim', id: string, files: unknown[]) {
+  attachFiles(subject: 'task' | 'claim', id: string, files: unknown[], from?: { channel: string; thread: string }) {
     this.ctx.waitUntil((async () => {
       const got = await slackFiles(this.s.token!, files);
+      // A file Kaizen could not keep is said where it was posted, not dropped quietly (2026-10-14).
+      const missed = files.length - got.length;
+      if (missed && from) await slackApi(this.s.token!, 'chat.postMessage', { channel: from.channel, thread_ts: from.thread,
+        text: `⚠ ${missed} file${missed === 1 ? '' : 's'} not added to Kaizen — over 15 MB and not a photo. Add ${missed === 1 ? 'it' : 'them'} in Kaizen, or share a smaller copy.` });
       if (!got.length) return;
       if (subject === 'task') { await attachTodoFiles(this.sql, this.ctx.env.ENCRYPTION_KEY, id, got, this.email, 'slack'); return; }
       const up = await toDrive(this.sql, this.ctx.env.ENCRYPTION_KEY, `claim #${id}`, got);
@@ -596,7 +600,7 @@ class Kaizen {
       const r = await this.comment(subject, id, `${m.who}: ${words || '(no text)'}${link.permalink ? `\n— From Slack: ${link.permalink.split('?')[0]}` : ''}`);
       if (!r.ok) return { ok: false, message: String(r.message ?? r.error ?? 'Not saved.') };
     }
-    if (m.files.length) this.attachFiles(subject, id, m.files);
+    if (m.files.length) this.attachFiles(subject, id, m.files, { channel: src.channel, thread: src.thread ?? src.ts });
     // Its thread is this subject's from now on — as a conversation: a reply is saved when someone reacts 📎 to it
     // (or writes @Kaizen), not every reply (owner, 2026-10-14).
     await this.sql`INSERT INTO slack_threads (account_id, channel, ts, subject, subject_id, via)

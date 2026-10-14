@@ -61,15 +61,22 @@ export async function attachTodoFiles(sql: SqlFn, key: string, todoId: string, f
 
 /** Slack's files on a message, downloaded with the bot's token (files:read). Over the limits: left out. */
 export async function slackFiles(token: string, files: unknown): Promise<InFile[]> {
-  const list = (Array.isArray(files) ? files : []) as { name?: string; title?: string; mimetype?: string; size?: number; url_private_download?: string; url_private?: string; mode?: string }[];
+  const list = (Array.isArray(files) ? files : []) as { name?: string; title?: string; mimetype?: string; size?: number; url_private_download?: string; url_private?: string; mode?: string;
+    thumb_1024?: string; thumb_960?: string; thumb_720?: string }[];
   const out: InFile[] = [];
   for (const f of list.slice(0, MAX_FILES)) {
-    const url = f.url_private_download ?? f.url_private;
-    if (!url || f.mode === 'tombstone' || (f.size ?? 0) > MAX_FILE_BYTES) continue;
+    // A phone photo over the limit (a 24 MB court notice, 2026-10-14): Slack's own 1024-px copy — still readable.
+    const big = (f.size ?? 0) > MAX_FILE_BYTES;
+    const thumb = big && /^image\//.test(f.mimetype ?? '') ? f.thumb_1024 ?? f.thumb_960 ?? f.thumb_720 : undefined;
+    const url = thumb ?? f.url_private_download ?? f.url_private;
+    if (!url || f.mode === 'tombstone' || (big && !thumb)) continue;
     const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
     // Without files:read Slack answers with its sign-in page, not the file.
     if (!r.ok || (r.headers.get('Content-Type') ?? '').startsWith('text/html')) continue;
-    out.push({ name: f.name ?? f.title ?? 'file', type: f.mimetype ?? r.headers.get('Content-Type') ?? 'application/octet-stream', data: await r.arrayBuffer() });
+    const name = f.name ?? f.title ?? 'file';
+    out.push({ name: thumb ? name.replace(/(\.[a-z0-9]+)?$/i, ' (reduced)$1') : name,
+               type: thumb ? r.headers.get('Content-Type') ?? f.mimetype ?? 'image/jpeg' : f.mimetype ?? r.headers.get('Content-Type') ?? 'application/octet-stream',
+               data: await r.arrayBuffer() });
   }
   return out;
 }
