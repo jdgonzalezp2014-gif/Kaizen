@@ -9,7 +9,7 @@
  */
 import type { SqlFn } from './accounts.ts';
 import { decrypt } from './crypto.ts';
-import { claimMessage, dmTarget, eventsOf, taskMessage, type ClaimLite, type SlackConfig, type TaskLite, type Topic } from '../../src/lib/slack.ts';
+import { claimMessage, dmTarget, esc, eventsOf, taskMessage, type ClaimLite, type SlackConfig, type TaskLite, type Topic } from '../../src/lib/slack.ts';
 
 export interface SlackSetup { config: SlackConfig; token: string | null; secret: string | null }
 
@@ -86,7 +86,24 @@ export async function taskLite(sql: SqlFn, id: string): Promise<TaskLite | null>
 
 export type TaskEvent = 'created' | 'assigned' | 'completed' | 'cancelled' | 'reopened' | 'hostaway';
 
-/** A task's news in its channel — only top-level work, and only the events switched on. */
+/**
+ * Where a task's or claim's news goes (owner, Oct 2026): its own thread — else, for work made from
+ * somewhere, the thread it was made from: a sub-task's parent's, a claim's task's claim's. So
+ * what is opened from a thread is talked about in that thread, not in a new one. `own` = its own.
+ */
+export async function threadFor(sql: SqlFn, subject: 'task' | 'claim', id: string, depth = 0): Promise<{ channel: string; ts: string; own: boolean } | null> {
+  const [t] = await sql`SELECT channel, ts FROM slack_threads WHERE account_id = 1 AND subject = ${subject} AND subject_id = ${id}
+                         ORDER BY created_at DESC LIMIT 1` as { channel: string; ts: string }[];
+  if (t) return { ...t, own: depth === 0 };
+  if (subject !== 'task' || depth > 2) return null;
+  const [p] = await sql`SELECT parent_id::text AS parent_id, claim_id::text AS claim_id FROM todos WHERE account_id = 1 AND id::text = ${id}` as
+    { parent_id: string | null; claim_id: string | null }[];
+  if (p?.parent_id) return threadFor(sql, 'task', p.parent_id, depth + 1);
+  if (p?.claim_id) return threadFor(sql, 'claim', p.claim_id, depth + 1);
+  return null;
+}
+
+/** A task's news in its channel — only the events switched on. Work made from a thread is told in that thread. */
 export async function notifyTask(sql: SqlFn, key: string, id: string, event: TaskEvent, by: string, extra = ''): Promise<void> {
   const s = await slackSetup(sql, key);
   if (!s.token || !s.config.channels?.tasks) return;
@@ -96,11 +113,23 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
   if (!on) return;
   const t = await taskLite(sql, id);
   if (!t) return;
-  const [p] = await sql`SELECT parent_id FROM todos WHERE id::text = ${id}` as { parent_id: string | null }[];
-  if (p?.parent_id) return;
+  const [p] = await sql`SELECT parent_id::text AS parent_id, claim_id::text AS claim_id FROM todos WHERE id::text = ${id}` as { parent_id: string | null; claim_id: string | null }[];
   const word = event === 'assigned' ? `assigned to ${t.assignee ?? 'nobody'}` : event === 'hostaway' ? `changed in Hostaway${extra ? ` (${extra})` : ''}` : event;
+  if (p?.parent_id || p?.claim_id) {
+    const home = await threadFor(sql, 'task', id);
+    if (home && !home.own) {
+      // A sub-task is a line in its parent's thread; a claim's task is its whole message, with its buttons.
+      const m = p.parent_id ? { text: `${SUB_ICON[event] ?? '•'} Sub-task ${word}: ${t.title}`,
+                                blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: `${SUB_ICON[event] ?? '•'} Sub-task ${word}: *${esc(t.title)}* · ${who(by)}` }] }] }
+        : taskMessage(t, word, who(by));
+      await slackApi(s.token, 'chat.postMessage', { channel: home.channel, thread_ts: home.ts, text: m.text, blocks: m.blocks, unfurl_links: false });
+      return;
+    }
+    if (p.parent_id) return;
+  }
   await rememberThread(sql, await postTo(s, 'tasks', taskMessage(t, word, who(by))), 'task', id);
 }
+const SUB_ICON: Partial<Record<TaskEvent, string>> = { created: '➕', completed: '✓', cancelled: '✕', reopened: '↺', assigned: '🙋' };
 
 /**
  * The owner hears it directly (§100): a task given to them — on creation
@@ -147,11 +176,12 @@ export async function notifyClaim(sql: SqlFn, key: string, id: string, event: 'o
  * that came from that thread (@Kaizen) is not sent back.
  */
 export async function commentToThread(sql: SqlFn, key: string, subject: 'task' | 'claim', id: string, body: string, by: string): Promise<void> {
-  const [t] = await sql`SELECT channel, ts FROM slack_threads WHERE account_id = 1 AND subject = ${subject} AND subject_id = ${id}
-                         ORDER BY created_at DESC LIMIT 1` as { channel: string; ts: string }[];
+  const t = await threadFor(sql, subject, id);
   if (!t) return;
   const s = await slackSetup(sql, key);
   if (!s.token) return;
+  // In a thread it was made from (a parent's, a claim's): say which work the comment is on.
+  const on = t.own ? '' : subject === 'task' ? ` on *${esc((await taskLite(sql, id))?.title ?? 'a task')}*` : '';
   await slackApi(s.token, 'chat.postMessage', { channel: t.channel, thread_ts: t.ts, text: `💬 ${who(by)}: ${body}`.slice(0, 3000),
-    blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `💬 *${who(by)}* · in Kaizen\n${body.slice(0, 2900)}` } }], unfurl_links: false });
+    blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `💬 *${who(by)}*${on} · in Kaizen\n${body.slice(0, 2900)}`.slice(0, 3000) } }], unfurl_links: false });
 }

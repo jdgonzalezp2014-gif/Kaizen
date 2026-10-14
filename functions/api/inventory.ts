@@ -19,6 +19,7 @@
  * here are mirrored to Hostaway after the response.
  */
 import { db, type Env } from '../_lib/db.ts';
+import { commentToThread } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { createOrder, fieldPhotos, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
@@ -51,6 +52,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     } else if (b.action === 'purchase') {
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, 'inventory purchase');
       await recordPurchase(sql, who.email, b, photos);
+      // Owner, Oct 2026: an order's news is told in its to-do's Slack thread — what was bought, and for how much.
+      if (b.todoId) {
+        const [n] = await sql`SELECT body FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${String(b.todoId)} AND kind = 'note'
+                               ORDER BY id DESC LIMIT 1` as { body: string }[];
+        if (n) waitUntil(commentToThread(sql, env.ENCRYPTION_KEY, 'task', String(b.todoId), `🧾 ${n.body}${b.note ? `\n— ${String(b.note)}` : ''}`, who.email).catch(() => {}));
+      }
     } else if (b.action === 'adjusts') {
       // §150: − / + on "On record", saved together with why.
       const list = Array.isArray(b.adjusts) ? (b.adjusts as { itemId: unknown; qty: unknown }[]).filter(a => Number(a.qty)) : [];
@@ -70,7 +77,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     } else if (b.action === 'todoOrder') {
       const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
         .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0 })) : [];
-      await saveTodoOrder(sql, who.email, b.todoId, lines);
+      const said = await saveTodoOrder(sql, who.email, b.todoId, lines);
+      if (said) waitUntil(commentToThread(sql, env.ENCRYPTION_KEY, 'task', String(b.todoId), `🛒 ${said.replace(/^Order draft saved/, 'Purchase order saved')}`, who.email).catch(() => {}));
     } else if (b.action === 'draft') {
       // §150: the order kept as a draft — no to-do until it is created; no lines = discard it.
       const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])

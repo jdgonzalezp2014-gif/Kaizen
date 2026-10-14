@@ -263,6 +263,8 @@ function claimRows(c: ClaimLite): Block[] {
 export interface ClaimCard extends ClaimLite {
   source?: string | null; refund?: number; repairCost?: number;
   updates: { who: string; when: string; body: string }[];
+  /** Owner, Oct 2026: the claim's work, as in Kaizen — each opens its own card. */
+  work?: { id: string; title: string; status: string; kind: string }[];
 }
 
 /**
@@ -278,17 +280,25 @@ export function claimCard(c: ClaimCard, note?: string, root?: 'claims', focus = 
     f('Refund', money(c.refund)), f('Repair cost', money(c.repairCost))].filter(Boolean).slice(0, 10);
   return {
     type: 'modal', callback_id: 'claim_card', private_metadata: JSON.stringify({ id: c.id, ...(root ? { root } : {}) }),
-    title: plain('Claim'), submit: plain('Add comment'), close: plain('Close'),
+    title: plain('Claim'), submit: plain('Save'), close: plain('Close'),
     blocks: [
       { type: 'header', text: plain(claimTitle(c).slice(0, 150)) },
       ...(note ? [context(note)] : []),
       { type: 'section', fields },
       ...(c.description ? [section(esc(c.description).slice(0, 2900))] : []),
       ...(c.caseUrl ? [context(link(c.caseUrl, '↗ Platform case'))] : []),
+      ...(c.work?.length ? [{ type: 'divider' },
+        section(`*Work* · ${c.work.filter(w => w.status !== 'completed' && w.status !== 'cancelled').length} open of ${c.work.length}`),
+        ...c.work.slice(0, 20).map(w => {
+          const done = w.status === 'completed' || w.status === 'cancelled';
+          return section(`${w.status === 'completed' ? '✓' : w.status === 'cancelled' ? '✕' : '☐'} ${w.kind === 'work_order' ? '🔧 ' : ''}${done ? `~${esc(w.title)}~` : esc(w.title)}`.slice(0, 2900),
+                         button('Open', 'claim_task_open', w.id));
+        })] : []),
       { type: 'divider' },
       section(c.updates.length ? `*Comments* · ${c.updates.length}` : '_No comments yet._'),
       ...c.updates.slice(-10).map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
-      input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) })
+      input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) }),
+      input('task', 'Add a to-do for this claim', text())
     ]
   };
 }
@@ -947,8 +957,9 @@ export function quickTitle(text: string): { title: string; description: string |
 }
 
 /** The reply in the request's thread: it is tracked, and the way to add details. */
-export function trackedReply(t: { id: string; title: string; kind: string; unit?: string | null }): { text: string; blocks: Block[] } {
-  const what = t.kind === 'work_order' ? 'repair' : 'to-do';
+export function trackedReply(t: { id: string; title: string; kind: string; unit?: string | null }, under?: 'sub-task' | 'claim'): { text: string; blocks: Block[] } {
+  // Made inside a task's or a claim's thread (owner, Oct 2026): it belongs to that one.
+  const what = under === 'sub-task' ? 'sub-task of this task' : `${t.kind === 'work_order' ? 'repair' : 'to-do'}${under === 'claim' ? ' for this claim' : ''}`;
   return {
     text: `📋 Tracked in Kaizen as a ${what}: ${t.title}`,
     blocks: [

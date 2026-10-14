@@ -145,3 +145,12 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   "Add a sub-task" box next to the comment box (submit "Save" does either or both; not on a sub-task's own card) and the
   activity log's last 3 lines. Same card for to-dos and work orders. Next phases (owner's list): edit fields from the card
   (status/priority/owner/date/listing/claim link — ✎ Edit covers part), "Bought" for an order, claims' own work list.
+- **What is opened from a thread lives in that thread (owner, 2026-10-13):** `threadFor(subject, id)` = its own thread, else
+  its parent's (sub-task), else its claim's (claim work). `commentToThread` uses it (comment says "on *<sub-task>*");
+  `notifyTask` posts a sub-task's events (➕ created ✓ ✕ ↺ 🙋) as a line in the parent's thread, and a claim's task's
+  events as its full message in the claim's thread — no new channel message/thread. Sub-task creation now notifies
+  (before: silent). `@Kaizen new` inside a task's thread → a sub-task of it; inside a claim's → a to-do for the claim
+  (via `slack-thread`: no second notice); its listing defaults to the parent's/claim's. Order saved / bought on a to-do
+  → a line in its thread (`/api/inventory` todoOrder / purchase).
+- **Claim card = the claim in Kaizen:** its work (each "Open" → `claim_task_open`, the task card pushed on top) and an
+  "Add a to-do for this claim" box (submit "Save" does comment and/or to-do; the to-do is told in the claim's thread).

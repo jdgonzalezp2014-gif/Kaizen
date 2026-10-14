@@ -298,15 +298,23 @@ class Kaizen {
   async quickCreate(kind: 'task' | 'work_order', words: string, thread: { channel: string; ts: string }, messageTs: string): Promise<Record<string, unknown>> {
     if (!this.may('/api/todos', 'POST')) return { ok: false, message: 'your role does not include the to-do list' };
     const units = await this.units();
-    const unit = guessUnit(words, units);
     const { title, description } = quickTitle(words);
+    // Owner, Oct 2026: made inside a task's thread → its sub-task; inside a claim's → work on that claim. Either way it
+    // lives in that thread (no new one): its news and comments go there (threadFor).
+    const [home] = await this.sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${thread.channel} AND ts = ${thread.ts}` as
+      { subject: 'task' | 'claim'; subject_id: string }[];
+    const parent = home?.subject === 'task' ? (await this.sql`SELECT id::text, unit_ids FROM todos WHERE account_id = 1 AND id::text = ${home.subject_id}
+                                                                AND parent_id IS NULL AND deleted_at IS NULL` as { id: string; unit_ids: string[] }[])[0] : undefined;
+    const claim = home?.subject === 'claim' ? await this.claimRow(home.subject_id) : undefined;
+    const unit = guessUnit(words, units) ?? parent?.unit_ids?.[0] ?? claim?.unit_id ?? null;
     const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: thread.channel, message_ts: messageTs });
-    const r = await this.todo({ action: 'create', kind, title, unitIds: unit ? [unit] : [], priority: 'none',
+    const r = await this.todo({ action: 'create', kind, title, unitIds: unit ? [unit] : [], priority: 'none', via: home ? 'slack-thread' : 'slack',
+      ...(parent ? { parentId: parent.id } : {}), ...(claim ? { claimId: String(claim.id) } : {}),
       description: [description, link.permalink ? `From Slack: ${link.permalink}` : ''].filter(Boolean).join('\n\n') || null });
     if (!r.ok || !r.id) return r;
-    const m = trackedReply({ id: String(r.id), title, kind, unit: units.find(u => u.value === unit)?.label ?? null });
+    const m = trackedReply({ id: String(r.id), title, kind, unit: units.find(u => u.value === unit)?.label ?? null }, parent ? 'sub-task' : claim ? 'claim' : undefined);
     const posted = await slackApi<{ ts?: string }>(this.s.token!, 'chat.postMessage', { channel: thread.channel, thread_ts: thread.ts, ...m, unfurl_links: false });
-    if (posted.ok) await rememberThread(this.sql, { ok: true, ...thread }, 'task', String(r.id));
+    if (posted.ok && !home) await rememberThread(this.sql, { ok: true, ...thread }, 'task', String(r.id));
     return r;
   }
 
@@ -379,13 +387,15 @@ class Kaizen {
   }
   /* ── the claim card (§113) ── */
   private async claimCardOf(id: string) {
-    const [c, row, ups] = await Promise.all([
+    const [c, row, ups, work] = await Promise.all([
       claimLite(this.sql, id), this.claimRow(id),
       this.sql`SELECT body, created_by, created_at FROM work_updates WHERE account_id = 1 AND subject = 'claim' AND subject_id = ${id} AND kind = 'note'
-                ORDER BY created_at, id` as Promise<{ body: string; created_by: string | null; created_at: string }[]>
+                ORDER BY created_at, id` as Promise<{ body: string; created_by: string | null; created_at: string }[]>,
+      this.sql`SELECT id::text, title, status, kind FROM todos WHERE account_id = 1 AND claim_id::text = ${id} AND parent_id IS NULL AND deleted_at IS NULL
+                ORDER BY status IN ('completed', 'cancelled'), created_at` as Promise<{ id: string; title: string; status: string; kind: string }[]>
     ]);
     if (!c || !row) return null;
-    return { ...c, source: row.source, refund: Number(row.refund) || 0, repairCost: Number(row.repair_cost) || 0,
+    return { ...c, work, source: row.source, refund: Number(row.refund) || 0, repairCost: Number(row.repair_cost) || 0,
       updates: ups.map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
   }
   private async openClaimCard(trigger: string, id: string, push = false) {
@@ -645,6 +655,13 @@ class Kaizen {
       return ack();
     }
 
+    // Owner, Oct 2026: a claim's work opens on top of the claim's card.
+    if (id === 'claim_task_open') {
+      if (!this.may('/api/todos', 'GET')) return this.deny('the to-do list');
+      const c = await this.card(value);
+      if (c) await slackApi(this.s.token!, 'views.push', { trigger_id: p.trigger_id, view: taskCard(c) });
+      return ack();
+    }
     // §100: the task card — opened from a message or a list, worked inside the pop-up.
     if (id === 'task_open' || (id === 'task_menu' && value.startsWith('open:'))) {
       if (!this.may('/api/todos', 'GET')) return this.deny('the to-do list');
@@ -848,15 +865,28 @@ class Kaizen {
                  { type: 'context', elements: [{ type: 'mrkdwn', text: 'In Costs → One-offs. To change or remove it, open Costs in Kaizen.' }] }] } });
     }
     if (view.callback_id === 'claim_card') {
-      // §113: "Add comment" on a claim; the card stays open with it in, and the Claims list beneath follows.
+      // §113: "Save" on a claim — a comment and/or a to-do for it (owner, Oct 2026); the card stays open with them in.
       const body = String(state.update?.v?.value ?? '').trim();
-      if (!body) return json({ response_action: 'errors', errors: { update: 'Write a comment first.' } });
-      if (!this.may('/api/claims', 'POST')) return json({ response_action: 'errors', errors: { update: 'Your role does not include claims.' } });
-      const r = await this.claimSave({ action: 'note', id: meta.id, body });
-      if (!r.ok) return json({ response_action: 'errors', errors: { update: String(r.error ?? 'Not saved.') } });
+      const task = String(state.task?.v?.value ?? '').trim();
+      if (!body && !task) return json({ response_action: 'errors', errors: { update: 'Write a comment or a to-do first.' } });
+      const done: string[] = [];
+      if (task) {
+        if (!this.may('/api/todos', 'POST')) return json({ response_action: 'errors', errors: { task: 'Your role does not include the to-do list.' } });
+        const row = await this.claimRow(String(meta.id));
+        const r = await this.todo({ action: 'create', kind: 'task', title: task.slice(0, 300), claimId: String(meta.id), priority: 'none',
+                                    unitIds: row?.unit_id ? [row.unit_id] : [] });
+        if (!r.ok) return json({ response_action: 'errors', errors: { task: r.message ?? 'Not saved.' } });
+        done.push('✓ To-do added');
+      }
+      if (body) {
+        if (!this.may('/api/claims', 'POST')) return json({ response_action: 'errors', errors: { update: 'Your role does not include claims.' } });
+        const r = await this.claimSave({ action: 'note', id: meta.id, body });
+        if (!r.ok) return json({ response_action: 'errors', errors: { update: String(r.error ?? 'Not saved.') } });
+        done.push('✓ Comment added');
+      }
       const root = (meta as { root?: 'claims' }).root;
       const c = await this.claimCardOf(String(meta.id));
-      return c ? json({ response_action: 'update', view: claimCard(c, '✓ Comment added', root) }) : json({ response_action: 'clear' });
+      return c ? json({ response_action: 'update', view: claimCard(c, done.join(' · '), root) }) : json({ response_action: 'clear' });
     }
     if (view.callback_id === 'clean_assign_save') {
       if (!this.may('/api/turnover', 'POST')) return json({ response_action: 'errors', errors: { cleaner: 'Your role does not include operations.' } });

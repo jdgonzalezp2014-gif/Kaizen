@@ -337,6 +337,15 @@ test('a claim has its card: the case, its comments and the box; every row and me
   assert.match(JSON.stringify(claimMessage(c, 'opened', 'juan').blocks), /claim_open/);
 });
 
+test("a claim's card lists its work (each opens) and adds a to-do; a reply made in a thread says whose it is", () => {
+  const c = { id: '5', unit: 'P2-4308', category: 'Damage', severity: 'High', status: 'Open', description: 'Missing fob', days: 3, updates: [],
+              work: [{ id: '18', title: 'Check the lockbox', status: 'pending', kind: 'task' }, { id: '19', title: 'New fob', status: 'completed', kind: 'work_order' }] };
+  const s = JSON.stringify(claimCard(c));
+  for (const k of ['Work* · 1 open of 2', '"action_id":"claim_task_open","value":"18"', '~New fob~', '"block_id":"task"']) assert.ok(s.includes(k), k);
+  assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'task' }, 'sub-task')), /sub-task of this task/);
+  assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'work_order' }, 'claim')), /repair for this claim/);
+});
+
 test('@Kaizen all asks for the whole reminder', () => {
   assert.deepEqual(parseMention('<@U1> all'), { verb: 'all', arg: '' });
   assert.deepEqual(parseMention('<@U1> status'), { verb: 'all', arg: '' });
