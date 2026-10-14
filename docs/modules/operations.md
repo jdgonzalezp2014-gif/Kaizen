@@ -393,6 +393,14 @@ key had no SOPs.
 - The helper link shows the codes while it is valid (until 2 days after the clean): anyone the link is
   forwarded to sees them. The per-cleaner codes above are the fix.
 
+- **Shannon H.'s monthly checklist (2026-10-13, owner):** the Kaizen checklist gained what hers checks (area Laundry +
+  18 items: extinguisher, alarm dates/batteries, first aid kit, cameras, keys/openers, HVAC filter, vents, water heater,
+  washer, cabinets, stoppers, bath mats, towel bars/mirrors, outdoor furniture/gazebo, drainage, landscaping, Napa's
+  projector) with supplies preset; 29 supplies added (linens, dishes, cutlery, safety items, filters, stoppers, handles —
+  no minimums). **Napa Valley 10/08 entered as hers: inspection #24** (7 ▲; work order #67 pantry knob; order #69:
+  extinguisher, first aid kit, drinking glasses; follow-ups #73 gardener Pedro, #74 grill, #75 landscaping photos) and
+  her count at Napa's own place dated 10/08 — unclear lines counted 0 "for Shannon to verify". **Concord: she enters it
+  herself (#22)** — compare on 2026-10-14 with `docs/reference/inspection-expected-2026-10-01-concord.md`.
 - **Inspector's link built (§135), test inspection P2-1304 on 2026-10-12.** Checklist items are English only
   (the page says so in ES) — a Spanish label per item in Setup is not built. Not built: a Slack notice when an
   inspection is sent; choosing the inspector's language on the team side (it follows the roster, else EN).
