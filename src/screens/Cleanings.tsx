@@ -10,6 +10,7 @@
  * by the people doing the work — and a second place to edit it would be
  * a second version of the truth.
  */
+import { Hint } from '../components/Hint.tsx';
 import { useEffect, useMemo, useState } from 'react';
 import { getCleanings, type Cleaning, type CleaningScope, type ExcludedCleaning } from '../api.ts';
 import { money2 } from '../lib/format.ts';
@@ -227,11 +228,9 @@ export function Cleanings() {
             </p>
           )}
           {scope === 'scheduled' && (
-            <p className="note">
-              Work committed but not done. Useful for a projection; not part of what this month
+            <p className="note">Scheduled — not this month's cost yet <Hint>Work committed but not done. Useful for a projection; not part of what this month
               has cost.{' '}
-              <button className="link" onClick={() => setScope('done')}>Back to what was paid</button>
-            </p>
+              <button className="link" onClick={() => setScope('done')}>Back to what was paid</button></Hint></p>
           )}
 
           {stats.cleaners.length > 1 && (
@@ -308,8 +307,8 @@ export function Cleanings() {
             <div className="group">
               <h3>Not counted in this range <span className="count">{data.excluded.length}</span>{' '}
                 <button className="link" onClick={() => setShowExcluded(v => !v)}>{showExcluded ? 'hide' : 'show'}</button></h3>
-              <p className="note">Rows the record keeps but does not pay: cancelled bookings, a second row for one unit on
-                one day, history lines captured twice. A booking that comes back is counted again.</p>
+              <p className="note">Rows that are not paid <Hint>Rows the record keeps but does not pay: cancelled bookings, a second row for one unit on
+                one day, history lines captured twice. A booking that comes back is counted again.</Hint></p>
               {showExcluded && (
                 <table className="units compact">
                   <tbody>

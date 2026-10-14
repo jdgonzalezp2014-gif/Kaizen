@@ -8,6 +8,7 @@
  * VARIABLE is dated and one-off: a repair on one unit, or something
  * shared that gets divided across the active ones.
  */
+import { Hint } from '../components/Hint.tsx';
 import { useEffect, useMemo, useState } from 'react';
 import { getInventory, inventoryAction, type Inventory } from '../api.ts';
 import {
@@ -221,11 +222,9 @@ function Fixed({ units }: { units: UnitRow[] }) {
         </div>
       )}
 
-      <p className="note">
-        Amounts are per month. The shared row is divided across active units when the dashboard
+      <p className="note">Monthly amounts <Hint>Amounts are per month. The shared row is divided across active units when the dashboard
         prorates it; a cost typed on a unit belongs to that unit alone. An empty cell means nothing
-        was recorded, which is not the same as zero.
-      </p>
+        was recorded, which is not the same as zero.</Hint></p>
     </>
   );
 }

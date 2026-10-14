@@ -88,5 +88,6 @@ Hostaway client, sync, crypto, migrations.
   was read. Units asks without `cache` — live.
 - **Explanations behind a "?" (owner, 2026-10-14: too much text on screen):** `src/components/Hint.tsx` — a ? beside a title;
   the text shows on hover, keyboard focus or a tap (role=tooltip, Escape closes). Only explanations move there; states, limits,
-  warnings and empty states stay on screen. Done: Settings → Slack (and its cleaners' options, one per line). Next: Operations,
-  Settings, Crew, Inventory, Todos, Units — screen by screen.
+  warnings and empty states stay on screen. Done (2026-10-14): Settings → Slack, Operations (16), Settings (17), Inventory (9), Crew's
+  admin parts (2), Revenue, Cleanings (2), Costs. Kept on screen on purpose: Todos' notes and Units' data caveats (states),
+  the cleaner-facing crew page, empty states.

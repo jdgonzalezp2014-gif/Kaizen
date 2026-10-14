@@ -11,6 +11,7 @@
  * Phone first: cleaners read it on a phone, so rows wrap instead of
  * scrolling sideways.
  */
+import { Hint } from '../components/Hint.tsx';
 import { Fragment, useEffect, useState } from 'react';
 import {
   crewAction, crewAdminAction, crewCleanLink, crewPhoto, crewReport, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
@@ -125,9 +126,8 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
       {page && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={setPeriod} reload={load} act={crewAdminAction} />}
       {toConfirm.length > 0 && (
         <div className="card">
-          <h2>Cancelled after arrival — confirm <span className="chan-tag">{toConfirm.length}</span></h2>
-          <p className="note">These bookings were cancelled on or after their arrival day, so the guest may have used the unit.
-            Each clean waits here — unpaid, unassigned — until someone says who cleaned it, or that no clean was needed.</p>
+          <h2>Cancelled after arrival — confirm <span className="chan-tag">{toConfirm.length}</span> <Hint>These bookings were cancelled on or after their arrival day, so the guest may have used the unit.
+            Each clean waits here — unpaid, unassigned — until someone says who cleaned it, or that no clean was needed.</Hint></h2>
           <div className="crew-list">
             {toConfirm.map(t => <ConfirmRow key={t.key} t={t} roster={roster} canEdit={canEdit} onDone={load} />)}
           </div>
@@ -165,11 +165,10 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
         )}
       </div>
       <div className="card">
-        <h2>Purchases & charges waiting for approval <span className="chan-tag">{fieldPending.length}</span></h2>
-        <p className="note">Paid in the field with its receipt — by a cleaner or a cleaner’s helper (🧹), or a handyman’s labor and
+        <h2>Purchases & charges waiting for approval <span className="chan-tag">{fieldPending.length}</span> <Hint>Paid in the field with its receipt — by a cleaner or a cleaner’s helper (🧹), or a handyman’s labor and
           materials on a repair (🔧). A cleaner’s purchase is approved by recording it in the inventory — which items, to which place — and
           that purchase is its stock and its cost (owed back to whoever paid); a handyman’s
-          charge becomes the repair’s cost and reaches Costs as Repairs. Denied, they read why. Nothing reaches Costs before a person approves it.</p>
+          charge becomes the repair’s cost and reaches Costs as Repairs. Denied, they read why. Nothing reaches Costs before a person approves it.</Hint></h2>
         {!fieldPending.length ? <p className="note">None waiting.</p> : (
           <div className="crew-list">
             {fieldPending.map(f => (

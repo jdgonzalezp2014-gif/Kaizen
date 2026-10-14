@@ -10,6 +10,7 @@
  * its last count — so every place says when it was counted, and a "not there"
  * report asks for a count instead of changing the number on one person's word.
  */
+import { Hint } from '../components/Hint.tsx';
 import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getInventory, inventoryAction, inventoryItemAction, inventoryUpload, type InvItemRow, type InvPlace, type Inventory } from '../api.ts';
 import { CATEGORIES, reconcile } from '../lib/inventory.ts';
@@ -61,11 +62,10 @@ function InventoryBody({ canEdit }: { canEdit: boolean }) {
   return (
     <div className="inv">
       <div className="card">
-        <h2>Inventory</h2>
-        <p className="note">Supplies are kept in places — a storage, or a house's own closet — never in each unit. Each unit draws
+        <h2>Inventory <Hint>Supplies are kept in places — a storage, or a house's own closet — never in each unit. Each unit draws
           from the place its Repository record names (⚙ Setup → Inventory shows the map). The stock is the last count plus what was bought,
           minus what cleaners took. Counting a place resets its record and shows how far off it was. Cleaners and their helpers
-          report from their pages; they cannot count or correct.</p>
+          report from their pages; they cannot count or correct.</Hint></h2>
         <p className="note">
           {flagged.length ? <span className="breach">⚠ {flagged.length} place{flagged.length === 1 ? '' : 's'} with something reported not there: {flagged.map(placeTitle).join(', ')}</span>
                           : '✓ Nothing reported missing.'}
@@ -144,9 +144,9 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
           moves stay here.</>
           : !p.units.length ? <>No active unit draws from here now.</>
           : <>Supplies {p.units.map(u => u.name).join(', ')} — {ahead} clean{ahead === 1 ? '' : 's'} in the next {inv.aheadDays} days.</>}
-        {' '}<b>Per clean</b> is the average of what cleaners reported taking (over the last {inv.windowDays} days, every clean that
+        {' '}<Hint label="What the columns mean"><b>Per clean</b> is the average of what cleaners reported taking (over the last {inv.windowDays} days, every clean that
         answered, “nothing” included) — the item's estimate until 3 cleans have reported. <b>To order</b> = what those cleans
-        will take + the minimum to keep − what is here, once the place has been counted.</p>
+        will take + the minimum to keep − what is here, once the place has been counted.</Hint></p>
       <div className="grid-scroll">
         <table className="units compact">
           <thead><tr><th>Item</th><th className="n">On record</th><th>Counted</th><th className="n">Per clean</th>
@@ -233,14 +233,14 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
               const body = { action: 'settings', place: p.place, items: edited.map(([itemId, x]) => ({ itemId, ...x })) };
               if (await send(body, `Saved ${edited.length} item${edited.length === 1 ? '' : 's'}.`)) { setMode('view'); setEds({}); }
             }}>Save changes ({edited.length})</button>
-            <span className="note">Name, “counted in” and the estimate are the item's (every place); “Keep at least” is this place's — blank = the item's.</span>
+            <span className="note">How editing works <Hint>Name, “counted in” and the estimate are the item's (every place); “Keep at least” is this place's — blank = the item's.</Hint></span>
             <button className="secondary" onClick={() => { setMode('view'); setEds({}); setAdding(null); setSure(null); }}>Done</button>
           </>}
           {msg && <span className="note">{msg}</span>}
         </div>
       )}
-      {edit && mode === 'view' && <p className="note">− [n] + on “On record” corrects it (say why); a full count replaces it. What was bought
-        goes in 🧾 Record a purchase (below), with its cost.</p>}
+      {edit && mode === 'view' && <p className="note">Correcting a count <Hint>− [n] + on “On record” corrects it (say why); a full count replaces it. What was bought
+        goes in 🧾 Record a purchase (below), with its cost.</Hint></p>}
     </div>
   );
 }
@@ -469,10 +469,9 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
   const uncounted = inv.places.filter(p => p.place && p.units.length && p.items.every(l => !l.countedAt));
   return (
     <div className="card">
-      <h2>🛒 To order — next {inv.aheadDays} days</h2>
-      <p className="note">An order is a shopping to-do: a line per item and where it goes. Suggested: what each place's units will take
+      <h2>🛒 To order — next {inv.aheadDays} days <Hint>An order is a shopping to-do: a line per item and where it goes. Suggested: what each place's units will take
         in the next {inv.aheadDays} days, plus its minimum, minus what it holds — places never counted are not guessed at. The stock
-        changes only when the purchase is recorded (🧾 below).</p>
+        changes only when the purchase is recorded (🧾 below).</Hint></h2>
       {uncounted.length > 0 && <p className="note">▲ Count first (nothing is suggested for them until then): {uncounted.map(placeTitle).join(', ')}.</p>}
       {inv.draft && <p className="note">📝 <b>Draft</b> saved {inv.draft.savedAt} by {inv.draft.savedBy} — it becomes a to-do only when you create the order.</p>}
       {!order.size && <p className="note">Nothing to order from what has been counted. Add an item with 🔍 to order it anyway.</p>}
@@ -546,9 +545,8 @@ function PurchaseForm({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory
   };
   return (
     <div className="card">
-      <h2>🧾 Record a purchase</h2>
-      <p className="note">What was really bought: it adds to each place's stock and goes to Costs as one Restock expense with its receipt.
-        Start from an open order (its lines come filled in) or add the items with 🔍. Close the order in To-do once everything is bought.</p>
+      <h2>🧾 Record a purchase <Hint>What was really bought: it adds to each place's stock and goes to Costs as one Restock expense with its receipt.
+        Start from an open order (its lines come filled in) or add the items with 🔍. Close the order in To-do once everything is bought.</Hint></h2>
       <label>For the order
         <select value={todoId} onChange={e => pick(e.target.value)}>
           <option value="">— none (a purchase on its own)</option>
@@ -631,10 +629,9 @@ function PlacesMap({ inv, onChanged }: { inv: Inventory; onChanged: () => void }
   };
   return (
     <div className="card">
-      <h2>Places &amp; who draws from them</h2>
-      <p className="note">A unit's supplies come from the place its Repository record names in <b>Storage</b>. Drag a unit to another
+      <h2>Places &amp; who draws from them <Hint>A unit's supplies come from the place its Repository record names in <b>Storage</b>. Drag a unit to another
         place — or tap it and choose — and Kaizen writes it there; past moves stay where they happened. A new storage = a new record with
-        Property type “Storage” in a Units table.</p>
+        Property type “Storage” in a Units table.</Hint></h2>
       <div className="map-zones">
         {zones.map(z => (
           <div key={z.key || 'none'} className={`map-zone${over === z.key ? ' over' : ''}${z.key === '' && z.units.length ? ' warn' : ''}`}
@@ -680,9 +677,9 @@ function LowStockSetting({ inv, onChanged }: { inv: Inventory; onChanged: () => 
         setBusy(false);
         if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onChanged();
       }} /> {inv.lowStockTasks ? '✓ On' : '○ Off'} — create a to-do when a counted place falls below an item's minimum</label>
-      <p className="note">One open “Low stock at S1105” to-do per place, a sub-task per item (never twice while it is open), with its order
+      <p className="note">What it creates <Hint>One open “Low stock at S1105” to-do per place, a sub-task per item (never twice while it is open), with its order
         filled in — so 🧾 Record a purchase starts from it. Checked after every count, correction and take. Places never counted never
-        trigger it.</p>
+        trigger it.</Hint></p>
       {msg && <p className="breach">{msg}</p>}
     </div>
   );
@@ -852,10 +849,9 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
     setForm(f => ({ ...f, buyOptions: f.buyOptions.map((o, j) => j === k ? { ...o, ...patch } : o) }));
   return (
     <div className="card">
-      <h2>Items list</h2>
-      <p className="note">🧴 <b>Supplies</b> are what cleans consume — cleaners see only these, and only those their unit's place keeps. 🪑 <b>Furniture</b> is
+      <h2>Items list <Hint>🧴 <b>Supplies</b> are what cleans consume — cleaners see only these, and only those their unit's place keeps. 🪑 <b>Furniture</b> is
         the house's things (linens, dishes, equipment): counted, never handed out. Per clean is the starting estimate (until 3 cleans have reported);
-        Keep at least is the minimum unless a place sets its own. <b>Buy at</b>: where to buy it, with the link.</p>
+        Keep at least is the minimum unless a place sets its own. <b>Buy at</b>: where to buy it, with the link.</Hint></h2>
       <div className="chip-row">{(['all', 'supply', 'furniture'] as const).map(k =>
         <button key={k} className={show === k ? 'chip active' : 'chip'} onClick={() => setShow(k)}>{k === 'all' ? `All (${items.length})` : `${TYPE_WORD[k]} (${items.filter(i => (i.kind ?? 'supply') === k).length})`}</button>)}</div>
       <div className="grid-scroll">

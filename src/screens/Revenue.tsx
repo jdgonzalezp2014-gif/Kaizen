@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { Hint } from '../components/Hint.tsx';
 import { RangePicker } from '../components/RangePicker.tsx';
 import { NetOverTime } from '../components/charts.tsx';
 import { resolvePreset, granularityFor, type PresetId } from '../lib/ranges.ts';
@@ -158,13 +159,10 @@ export function Revenue() {
       </div>
 
       <div className="card">
-        <h2>By unit</h2>
-        <p className="note">
-          Worst first — that is what needs a decision. Occupancy sits beside the money on
+        <h2>By unit <Hint>Worst first — that is what needs a decision. Occupancy sits beside the money on
           purpose: a unit can clear its target on a half-empty calendar, and that is a price
           that found few takers rather than a unit that is working. Click a unit for its
-          own revenue, costs and channels.
-        </p>
+          own revenue, costs and channels.</Hint></h2>
         <Filters rows={view.units} value={filter} onChange={setFilter} counts={view.counts} />
         <div className="ulist">
           {/* Columns were unlabelled: four money figures in a row with
