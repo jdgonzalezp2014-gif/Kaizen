@@ -381,6 +381,10 @@ export const scheduleInspections = () =>
   call<{ ok: true; proposed: number; added: number } | Fail>('/api/inspections', {
     method: 'POST', body: JSON.stringify({ action: 'schedule' })
   });
+export const rescheduleInspection = (id: string, date: string, inspector?: string) =>
+  call<{ ok: true } | Fail>('/api/inspections', {
+    method: 'POST', body: JSON.stringify({ action: 'reschedule', id, date, inspector })
+  });
 export const cancelInspection = (id: string) =>
   call<{ ok: true } | Fail>(`/api/inspections?id=${id}`, { method: 'DELETE' });
 

@@ -3,6 +3,7 @@
  *
  *   POST { action: 'log', unit, date, inspector, result, notes, reservationId?, id? }
  *   POST { action: 'schedule' }            book every due unit at its next checkout
+ *   POST { action: 'reschedule', id, date, inspector? }  move a SCHEDULED one
  *   DELETE ?id=…                           cancel a SCHEDULED one
  *
  * A row without a result is a plan. Plans can be cancelled; a done
@@ -40,6 +41,26 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       added += r.length;
     }
     return Response.json({ ok: true, proposed: proposals.length, added });
+  }
+
+  if (body.action === 'reschedule') {
+    const id = String(body.id ?? '');
+    const date = String(body.date ?? '');
+    if (!/^\d+$/.test(id) || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return bad('Which inspection, and which day?');
+    const inspector = body.inspector === undefined ? undefined : String(body.inspector).trim() || null;
+    const [plan] = await sql`SELECT unit_name, link_expires_on IS NOT NULL AS linked FROM inspections
+                              WHERE account_id = 1 AND id = ${id} AND result IS NULL` as { unit_name: string; linked: boolean }[];
+    if (!plan) return bad('Only a scheduled inspection can be moved — a done one is part of the audit trail.');
+    const clash = await sql`SELECT 1 FROM inspections WHERE account_id = 1 AND lower(unit_name) = lower(${plan.unit_name})
+                              AND inspected_on = ${date} AND id <> ${id}`;
+    if (clash.length) return bad(`${plan.unit_name} already has an inspection on ${date}.`);
+    // A sent link lasts until the day after the inspection, so it follows the new day.
+    await sql`UPDATE inspections SET inspected_on = ${date},
+                     inspector = CASE WHEN ${inspector === undefined} THEN inspector ELSE ${inspector ?? null} END,
+                     link_expires_on = CASE WHEN ${plan.linked} THEN (${date}::date + 1) ELSE link_expires_on END,
+                     updated_at = now()
+               WHERE account_id = 1 AND id = ${id} AND result IS NULL`;
+    return Response.json({ ok: true });
   }
 
   if (body.action !== 'log') return bad('Unknown action.');

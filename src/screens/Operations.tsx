@@ -26,7 +26,7 @@ import { addDays, daysBetween, isDateStr, todayIn } from '../lib/dates.ts';
 import { stayLabel } from '../lib/todos.ts';
 import {
   getCleanings, type Cleaning, type ExcludedCleaning,
-  getOperations, saveTurnover, logInspection, scheduleInspections, cancelInspection,
+  getOperations, saveTurnover, logInspection, scheduleInspections, cancelInspection, rescheduleInspection,
   getOpsSettings, saveOpsSettings, cutoverImport, can, getGuestDocs, syncAgreement, uploadGuestDoc, getUnits, getTodos,
   type Todo, type HostawayTasksState,
   type StayDocs, type OperationsResponse, type ManualClean, type ManualCleanKind, type StayOnDay,
@@ -1211,6 +1211,7 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
   const [run, setRun] = useState<string | null>(null);
   // §135: the scheduled inspection whose link is open.
   const [linkFor, setLinkFor] = useState<string | null>(null);
+  const [moveFor, setMoveFor] = useState<string | null>(null);
   const start = async (body: Record<string, unknown>) => {
     setMsg('');
     const r = await runAction<{ id: string }>({ action: 'start', ...body }).catch(e => ({ ok: false as const, message: String(e) }));
@@ -1258,8 +1259,12 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
                 {canEdit && <div className="insp-sched-actions">
                   <button className="small" onClick={() => void start({ inspectionId: e.id })}>▶ {e.sentBy ? 'Review' : e.started ? 'Continue' : 'Start'}</button>
                   <button className="small secondary" onClick={() => setLinkFor(linkFor === e.id ? null : e.id)}>🔗 Link</button>
+                  <button className="small secondary" onClick={() => setMoveFor(moveFor === e.id ? null : e.id)}>📅 Move</button>
                   <button className="link tiny danger" onClick={() => void cancelInspection(e.id).then(reload)}>cancel</button>
-                </div>}</td>
+                </div>}
+                {moveFor === e.id && <MoveInspection date={e.date} inspector={e.by} onCancel={() => setMoveFor(null)}
+                  onSave={async (date, by) => { const r = await rescheduleInspection(e.id, date, by);
+                    if (!r.ok) return r.message ?? 'Not moved.'; setMoveFor(null); reload(); return null; }} />}</td>
               <td className="ops-note">{e.sentBy && <div><b>📨 Sent from the link by {e.sentBy}</b> — review and finish</div>}{e.notes}</td>
             </tr>
             {linkFor === e.id && <tr><td colSpan={2}><InspectionLinkPanel id={e.id} unit={e.unit} date={e.date} inspector={e.by} onClose={() => setLinkFor(null)} /></td></tr>}
@@ -1321,6 +1326,26 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
  * opens /report on that unit and day. WhatsApp first, like a clean's helper
  * link; the inspector sends, the team reviews and finishes here.
  */
+/** Move a scheduled inspection to another day (and/or inspector); a done one never moves. */
+function MoveInspection({ date, inspector, onSave, onCancel }: {
+  date: string; inspector: string; onSave: (date: string, inspector: string) => Promise<string | null>; onCancel: () => void;
+}) {
+  const [d, setD] = useState(date);
+  const [by, setBy] = useState(inspector);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const save = async () => { setBusy(true); setMsg(''); const err = await onSave(d, by.trim()); setBusy(false); if (err) setMsg(err); };
+  return (
+    <div className="insp-sched-actions">
+      <input type="date" value={d} aria-label="New day" onChange={ev => setD(ev.target.value)} />
+      <input value={by} placeholder="Inspector" aria-label="Inspector" maxLength={80} onChange={ev => setBy(ev.target.value)} />
+      <button className="small" disabled={busy || !d || (d === date && by.trim() === inspector)} onClick={() => void save()}>{busy ? 'Saving…' : 'Save'}</button>
+      <button className="link tiny" disabled={busy} onClick={onCancel}>Cancel</button>
+      {msg && <p className="breach">{msg}</p>}
+    </div>
+  );
+}
+
 function InspectionLinkPanel({ id, unit, date, inspector, onClose }: { id: string; unit: string; date: string; inspector: string; onClose: () => void }) {
   const [l, setL] = useState<InspectionLink | null>(null);
   const [msg, setMsg] = useState('');
