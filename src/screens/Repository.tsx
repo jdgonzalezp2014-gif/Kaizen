@@ -33,7 +33,7 @@ import { proposeColumns, readBoard, type Board, type ProposedColumn } from '../l
 import { coerce, type ColumnType } from '../lib/repo.ts';
 import { usePhone } from '../components/usePhone.ts';
 import { HostawayCheck } from '../components/HostawayCheck.tsx';
-import { SYNCED_COLUMNS, UNIT_TABLES } from '../lib/repo-checks.ts';
+import { COMPOSED, UNIT_TABLES, composeParts, composeText, isSynced, partKeys, partOf } from '../lib/repo-checks.ts';
 
 interface Can { reveal: boolean; edit: boolean; structure: boolean }
 type DocEntry = { folderUrl: string; files: RepoFile[]; truncated?: boolean };
@@ -150,6 +150,7 @@ type Pop =
   | { kind: 'colmenu'; rect: DOMRect; col: RepoColumn }
   | { kind: 'addcol'; rect: DOMRect }
   | { kind: 'text'; rect: DOMRect; row: RepoRow; col: RepoColumn }
+  | { kind: 'composed'; row: RepoRow; base: string; focus: string }
   | { kind: 'table'; rect: DOMRect; table: RepoTable }
   | { kind: 'newtable'; rect: DOMRect; section: RepoSection }
   | { kind: 'newsection'; rect: DOMRect };
@@ -268,6 +269,15 @@ export function Repository({ canReveal, canEdit, canStructure }: {
     const r = await safe(repoEdit({ op: 'update', table: table.key, id, values: { [col.key]: value } }));
     if (r.ok) { replaceRow(table.key, id, r.data as RepoRow); say('Saved'); }
     else { replaceRow(table.key, id, row); say(r.message ?? 'Not saved.', true); }
+  };
+  /** Several columns of one record at once (a composed text's parts, §155). */
+  const saveValues = async (row: RepoRow, values: Record<string, unknown>) => {
+    if (!table) return false;
+    const id = String(row.id);
+    const r = await safe(repoEdit({ op: 'update', table: table.key, id, values }));
+    if (!r.ok) { say(r.message ?? 'Not saved.', true); return false; }
+    replaceRow(table.key, id, r.data as RepoRow); say('Saved');
+    return true;
   };
   const createRow = async (values: Record<string, unknown>) => {
     if (!table) return;
@@ -413,6 +423,16 @@ export function Repository({ canReveal, canEdit, canStructure }: {
           <LongText col={pop.col} value={text(pop.row[pop.col.key])} onSave={v => { setPop(null); void saveCell(pop.row, pop.col, v); }} />
         </Popover>
       )}
+      {pop && table && pop.kind === 'composed' && (
+        <ComposedEditor table={table} base={pop.base} focus={pop.focus} can={can}
+          row={(rowsBy[table.key] ?? []).find(r => String(r.id) === String(pop.row.id)) ?? pop.row}
+          onClose={() => setPop(null)} onSave={values => saveValues(pop.row, values)}
+          onAddPart={async title => {
+            const r = await safe(repoStructure({ op: 'units.addPart', base: pop.base, title }));
+            if (!r.ok) { say(r.message ?? 'Not added.', true); return false; }
+            say(`Add: ${title} — added to the three Units tables`); await loadMeta(); return true;
+          }} />
+      )}
       {pop && table && pop.kind === 'docs' && (
         <Popover anchor={pop.rect} onClose={() => setPop(null)} width={340}>
           <DocsBox table={table} row={pop.row} col={pop.col} can={can} say={say}
@@ -465,6 +485,9 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
   const primary = primaryKey(table);
   const { slots, runs, isOpen, toggle } = useSections(table, cols);
   const synced = UNIT_TABLES.includes(table.key);
+  const order = cols.map(c => c.key);
+  // Drag-to-fill, as in a spreadsheet: the handle of a cell copies its value into the rows it is dragged over.
+  const [fill, setFill] = useState<{ key: string; from: number; to: number } | null>(null);
   const [dragCol, setDragCol] = useState<string | null>(null);
   const [dropCol, setDropCol] = useState<string | null>(null);
   const shown = useMemo(() => {
@@ -473,6 +496,23 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
   }, [rows, filter]);
 
   const phone = usePhone();
+
+  useEffect(() => {
+    if (!fill) return;
+    const up = () => {
+      setFill(null);
+      const src = shown[fill.from], col = cols.find(c => c.key === fill.key);
+      if (!src || !col || fill.to === fill.from) return;
+      const targets = fill.to > fill.from ? shown.slice(fill.from + 1, fill.to + 1) : shown.slice(fill.to, fill.from);
+      void (async () => {
+        for (const r of targets) await onSave(r, col, src[col.key]);
+        say(`${col.title}: copied into ${targets.length} row${targets.length === 1 ? '' : 's'}`);
+      })();
+    };
+    document.addEventListener('mouseup', up);
+    return () => document.removeEventListener('mouseup', up);
+  }, [fill]);
+  const inFill = (i: number, key: string) => !!fill && fill.key === key && i >= Math.min(fill.from, fill.to) && i <= Math.max(fill.from, fill.to);
 
   if (!rows) return <div className="rb-board"><div className="rb-skel" /></div>;
 
@@ -527,7 +567,7 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
                   onDragEnd={() => { setDragCol(null); setDropCol(null); }}>
                 <span className="rb-th">
                   <span className="rb-th-title" title={`${c.title} · ${TYPE_LABEL[c.type] ?? c.type}`}>{c.title}</span>
-                  {synced && SYNCED_COLUMNS.has(c.key) && <span className="rb-sync" title="Kept in step with the Hostaway listing — see ⇄ Check against Hostaway">⇄ sync</span>}
+                  {synced && isSynced(c.key) && <span className="rb-sync" title="Kept in step with the Hostaway listing — see ⇄ Check against Hostaway">⇄ sync</span>}
                   {can.structure && <button className="rb-th-menu" title="Column options"
                     onClick={e => setPop({ kind: 'colmenu', rect: e.currentTarget.getBoundingClientRect(), col: c })}>▾</button>}
                 </span>
@@ -540,18 +580,20 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
           </tr>
         </thead>
         <tbody>
-          {shown.map(row => {
+          {shown.map((row, i) => {
             const id = String(row.id);
             return (
               <tr key={id} className={openId === id ? 'rb-open' : undefined}>
                 <td className="rb-sticky rb-idcol"><button className="rb-idlink" onClick={() => onOpen(id)} title="Open the record">{id}</button></td>
                 {slots.map(c => 'stub' in c
-                  ? <td key={c.stub} className="rb-stub" onClick={() => toggle(c.stub)} title={`Show ${c.stub}`}>{c.cols.filter(x => text(row[x.key])).length}/{c.cols.length}</td>
+                  ? <Stub key={c.stub} group={c.stub} cols={c.cols} row={row} order={order} toggle={toggle} setPop={setPop} />
                   : (
                   <Cell key={c.key} table={table} row={row} col={c} can={can} primary={c.key === primary}
                         docs={docs[`${table.key}|${c.key}|${id}`]} editing={editing === `${id}|${c.key}`}
                         setEditing={v => setEditing(v ? `${id}|${c.key}` : null)} setPop={setPop}
-                        onSave={v => onSave(row, c, v)} say={say} />
+                        onSave={v => onSave(row, c, v)} say={say} order={order} filling={inFill(i, c.key)}
+                        onFillStart={() => setFill({ key: c.key, from: i, to: i })}
+                        onFillOver={() => setFill(f => f && f.key === c.key ? { ...f, to: i } : f)} />
                 ))}
                 <td className="rb-rowend"><button className="rb-open-btn" title="Open the record" onClick={() => onOpen(id)}>›</button></td>
               </tr>
@@ -567,15 +609,30 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
 }
 
 /** One cell: the value as it reads, and — for those who may — its editor in place. */
-function Cell({ table, row, col, can, primary, docs, editing, setEditing, setPop, onSave, say }: {
+function Cell({ table, row, col, can, primary, docs, editing, setEditing, setPop, onSave, say, order, filling, onFillStart, onFillOver }: {
   table: RepoTable; row: RepoRow; col: RepoColumn; can: Can; primary: boolean; docs: DocEntry | undefined;
   editing: boolean; setEditing: (on: boolean) => void; setPop: (p: Pop) => void;
   onSave: (v: unknown) => Promise<void>; say: (m: string, bad?: boolean) => void;
+  order: string[]; filling: boolean; onFillStart: () => void; onFillOver: () => void;
 }) {
   const v = row[col.key];
+  const base = composedBase(col.key);
   const editable = can.edit && col.editable && !['secret', 'doc', 'ref'].includes(col.type) || (can.edit && col.type === 'ref');
   const cls = ['rb-cell', primary ? 'rb-sticky rb-primary' : '', editable ? 'rb-editable' : '', `t-${col.type}`].join(' ');
   const rect = (e: React.MouseEvent) => (e.currentTarget as HTMLElement).getBoundingClientRect();
+  const fillable = editable && !primary && !['secret', 'doc'].includes(col.type);
+  const handle = fillable && <span className="rb-fill" title="Drag down (or up) to copy this value into those rows"
+    onMouseDown={e => { e.preventDefault(); e.stopPropagation(); onFillStart(); }} onClick={e => e.stopPropagation()} />;
+
+  // §155: the house rules and the description read as the whole text Hostaway gets; a click opens it whole.
+  if (base) {
+    return (
+      <td className={`${cls} rb-composed ${filling ? 'rb-filling' : ''}`} onMouseEnter={onFillOver} title="Open the whole text"
+          onClick={() => setPop({ kind: 'composed', row, base, focus: col.key })}>
+        {col.key === base ? composeText(base, row, order) : text(v)}{handle}
+      </td>
+    );
+  }
 
   if (editing) {
     return <td className={`${cls} rb-editing`}><InlineInput col={col} value={v} onDone={val => { setEditing(false); if (val !== undefined) void onSave(val); }} /></td>;
@@ -590,10 +647,12 @@ function Cell({ table, row, col, can, primary, docs, editing, setEditing, setPop
     setEditing(true);
   };
   return (
-    <td className={cls} onClick={click} title={col.type === 'longtext' || col.type === 'text' ? text(v) : undefined}>
+    <td className={`${cls} ${filling ? 'rb-filling' : ''}`} onClick={click} onMouseEnter={onFillOver}
+        title={col.type === 'longtext' || col.type === 'text' ? text(v) : undefined}>
       {col.type === 'secret'
         ? <SecretInline table={table} row={row} col={col} can={can} say={say} />
         : <Value col={col} v={v} docs={docs} editable={editable} />}
+      {handle}
     </td>
   );
 }
@@ -654,6 +713,95 @@ function InlineInput({ col, value, onDone }: { col: RepoColumn; value: RepoRow[s
 }
 
 /** The empty last row: typing in it creates the record, with its ID and folders. */
+/* ── composed texts: house rules and description (§155) ───────────── */
+
+const composedBase = (key: string) => key in COMPOSED ? key : partOf(key);
+
+/** A folded section: the count of filled columns — or, holding a composed text, that text, opened by a click. */
+function Stub({ group, cols, row, order, toggle, setPop }: {
+  group: string; cols: RepoColumn[]; row: RepoRow; order: string[]; toggle: (g: string) => void; setPop: (p: Pop) => void;
+}) {
+  const base = cols.find(c => c.key in COMPOSED)?.key;
+  if (base) {
+    return <td className="rb-stub rb-composed" title="Open the whole text" onClick={() => setPop({ kind: 'composed', row, base, focus: base })}>
+      {composeText(base, row, order) || '—'}</td>;
+  }
+  return <td className="rb-stub" onClick={() => toggle(group)} title={`Show ${group}`}>{cols.filter(x => text(row[x.key])).length}/{cols.length}</td>;
+}
+
+/**
+ * The whole text, in a pop-up: the main text and each footer part (its own column, appended at the end —
+ * marked as such), editable in place; "Whole text" shows it as Hostaway gets it, the footer parts marked.
+ * A new footer part is a new column in the three Units tables. Saving writes the record only; Hostaway gets
+ * it from ⇄ Check against Hostaway.
+ */
+function ComposedEditor({ table, row, base, focus, can, onClose, onSave, onAddPart }: {
+  table: RepoTable; row: RepoRow; base: string; focus: string; can: Can; onClose: () => void;
+  onSave: (values: Record<string, unknown>) => Promise<boolean>; onAddPart: (title: string) => Promise<boolean>;
+}) {
+  const cols = userColumns(table);
+  const order = cols.map(c => c.key);
+  const keys = [base, ...partKeys(base, row, order)];
+  const title = (k: string) => cols.find(c => c.key === k)?.title ?? k;
+  const [draft, setDraft] = useState<Record<string, string>>({});
+  const [view, setView] = useState<'edit' | 'whole'>('edit');
+  const [adding, setAdding] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const val = (k: string) => draft[k] ?? text(row[k]);
+  const changed = keys.filter(k => val(k) !== text(row[k]));
+  const parts = composeParts(base, Object.fromEntries(keys.map(k => [k, val(k)])), order);
+  const num = (k: string) => /^(\d+)\./.exec(parts.find(p => p.key === k && !p.main)?.text ?? '')?.[1];
+  const close = () => { if (!changed.length || window.confirm('Close without saving your changes?')) onClose(); };
+  useEffect(() => {
+    const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    document.addEventListener('keydown', key);
+    return () => document.removeEventListener('keydown', key);
+  });
+
+  return createPortal(
+    <div className="rb-modal-back" onMouseDown={e => { if (e.target === e.currentTarget) close(); }}>
+      <div className="rb-modal" role="dialog" aria-label={title(base)}>
+        <div className="rb-modal-head">
+          <b>{title(base)}</b><span className="rb-hint">{text(row.name)} · {String(row.id)}</span><span className="rb-spacer" />
+          <button className={`chip ${view === 'edit' ? 'active' : ''}`} onClick={() => setView('edit')}>Parts</button>
+          <button className={`chip ${view === 'whole' ? 'active' : ''}`} onClick={() => setView('whole')}>Whole text</button>
+          <button className="rb-icon" title="Close" onClick={close}>×</button>
+        </div>
+        {view === 'whole' ? (
+          <div className="rb-modal-body rb-whole">
+            {parts.length ? parts.map(p => <p key={p.key} className={p.main ? '' : 'rb-part-mark'} title={p.main ? 'Main text' : `From the column ${title(p.key)}`}>{p.text}</p>)
+              : <p className="rb-hint">Nothing written yet.</p>}
+          </div>
+        ) : (
+          <div className="rb-modal-body">
+            {keys.map((k, i) => (
+              <label key={k} className={`rb-part ${i ? 'rb-part-foot' : ''}`}>
+                <span className="rb-part-name">{i ? <>Footer · {title(k)}{num(k) && <span className="rb-hint"> — appears as {num(k)}.</span>}</> : `${title(base)} — main text`}</span>
+                <textarea className="rb-input" rows={i ? 3 : 14} autoFocus={k === focus} readOnly={!can.edit}
+                          value={val(k)} onChange={e => setDraft(d => ({ ...d, [k]: e.target.value }))} />
+              </label>
+            ))}
+            {can.structure && (adding === null
+              ? <button className="link tiny rb-addpart" onClick={() => setAdding('')}>+ Add a footer part</button>
+              : <form className="rb-inline-form" onSubmit={async e => { e.preventDefault(); if (!adding.trim()) return; setBusy(true); if (await onAddPart(adding.trim())) setAdding(null); setBusy(false); }}>
+                  <input className="rb-input" autoFocus placeholder="Its name, e.g. Parking" value={adding} onChange={e => setAdding(e.target.value)} />
+                  <button className="small" disabled={busy || !adding.trim()}>Add</button>
+                  <button type="button" className="link tiny" onClick={() => setAdding(null)}>cancel</button>
+                </form>)}
+          </div>
+        )}
+        <div className="rb-modal-foot">
+          <span className="rb-hint">Footer parts go at the end of the main text, in this order{COMPOSED[base]!.numbered ? ', numbered on' : ''}. Hostaway gets it from ⇄ Check against Hostaway.</span>
+          <span className="rb-spacer" />
+          <button className="secondary small" onClick={close}>{changed.length ? 'Cancel' : 'Close'}</button>
+          {can.edit && <button className="small" disabled={busy || !changed.length}
+            onClick={async () => { setBusy(true); const ok = await onSave(Object.fromEntries(changed.map(k => [k, val(k)]))); setBusy(false); if (ok) { setDraft({}); onClose(); } }}>
+            {busy ? 'Saving…' : `Save${changed.length > 1 ? ` ${changed.length} parts` : ''}`}</button>}
+        </div>
+      </div>
+    </div>, document.body);
+}
+
 /* ── sections: a column group other than Details folds into one column (§155) ── */
 
 type Slot = RepoColumn | { stub: string; cols: RepoColumn[] };
@@ -1244,6 +1392,16 @@ function FieldValue({ table, row, col, can, setPop, say, onSave }: {
   const [newSecret, setNewSecret] = useState<string | null>(null);
   const v = row[col.key];
   const editable = can.edit && col.editable;
+  const base = composedBase(col.key);
+
+  if (base) {
+    return (
+      <div className="rb-fieldval rb-editable rb-composed" title="Open the whole text" onClick={() => setPop({ kind: 'composed', row, base, focus: col.key })}>
+        <span className="rb-longtext">{col.key === base ? composeText(base, row, userColumns(table).map(c => c.key)) : text(v)}</span>
+        {isEmpty(v) && <span className="rb-hint">Add…</span>}
+      </div>
+    );
+  }
 
   if (col.type === 'secret') {
     return (

@@ -23,29 +23,32 @@ type Listing = Record<string, unknown>;
 
 async function load(sql: SqlFn, env: Env, onlyUnit?: string) {
   const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
-  const [listings, units, recs] = await Promise.all([
+  const [listings, units, recs, cols] = await Promise.all([
     fetchListingsRaw(creds),
     sql`SELECT id, name FROM units WHERE account_id = 1 AND active ORDER BY name` as Promise<{ id: string; name: string }[]>,
     sql`SELECT table_key AS "table", id, vals FROM repo_records
          WHERE account_id = 1 AND table_key = ANY(${UNIT_TABLES}) AND archived_at IS NULL` as Promise<RepoRow[]>,
+    // Column order decides the order of a text's footer parts.
+    sql`SELECT table_key, key FROM repo_columns WHERE account_id = 1 AND table_key = ANY(${UNIT_TABLES}) ORDER BY position` as Promise<{ table_key: string; key: string }[]>,
   ]);
+  const orderOf = (t: string | undefined) => cols.filter(c => c.table_key === t).map(c => c.key);
   const byId = new Map(listings.map(l => [String(l.id), l]));
-  const rows: (UnitCheck & { listing: Listing | null; vals: Record<string, unknown> })[] = [];
+  const rows: (UnitCheck & { listing: Listing | null; vals: Record<string, unknown>; order: string[] })[] = [];
   for (const u of units) {
     if (onlyUnit && String(u.id) !== onlyUnit) continue;
     const rec = repoMatch(u.name, recs);
     const listing = byId.get(String(u.id)) ?? null;
-    const vals = rec?.vals ?? {};
+    const vals = rec?.vals ?? {}, order = orderOf(rec?.table);
     rows.push({
       unitId: String(u.id), unit: u.name, table: rec?.table ?? null, recordId: rec?.id ?? null,
-      record: rec ? String(rec.vals.name ?? '') : null, listing, vals,
-      checks: CHECKS.map(c => runCheck(c, vals, listing ?? {})),
+      record: rec ? String(rec.vals.name ?? '') : null, listing, vals, order,
+      checks: CHECKS.map(c => runCheck(c, vals, listing ?? {}, order)),
     });
   }
   return { creds, rows };
 }
 
-const strip = ({ listing: _l, vals: _v, ...r }: UnitCheck & { listing: unknown; vals: unknown }) => r;
+const strip = ({ listing: _l, vals: _v, order: _o, ...r }: UnitCheck & { listing: unknown; vals: unknown; order: unknown }) => r;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!identify(request, env)) return unauthorised();
@@ -53,7 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const { rows } = await load(db(env) as unknown as SqlFn, env);
     return Response.json({
       ok: true, sections: SECTIONS,
-      checks: CHECKS.map(({ key, label, section, note, send, fields }) => ({ key, label, section, note, send, fields: fields.map(f => f.label), long: fields.some(f => f.kind === 'longtext' || f.kind === 'rules') })),
+      checks: CHECKS.map(({ key, label, section, note, send, fields }) => ({ key, label, section, note, send, fields: fields.map(f => f.label), long: fields.some(f => f.kind === 'longtext' || f.kind === 'composed') })),
       units: rows.map(strip),
     });
   } catch (e) {
@@ -93,7 +96,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const to = b.to;
     const plan: Record<string, string | number | boolean> = {};
     for (const def of defs as typeof CHECKS) {
-      const p = writePlan(def, row.checks.find(c => c.key === def.key)!, to, row.vals);
+      const p = writePlan(def, row.checks.find(c => c.key === def.key)!, to, row.vals, row.order);
       if (typeof p === 'string') return fail(400, p);
       Object.assign(plan, p);
     }
@@ -108,7 +111,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const w = await updateListingFields(creds, row.unitId, plan as Record<string, string | number>);
     const after = w.ok ? (await fetchListingsRaw(creds)).find(l => String(l.id) === row.unitId) ?? null : null;
     const fields = (defs as typeof CHECKS).flatMap(d => d.fields);
-    const kept = (d: (typeof CHECKS)[number]) => after && runCheck(d, row.vals, after).status === 'match';
+    const kept = (d: (typeof CHECKS)[number]) => after && runCheck(d, row.vals, after, row.order).status === 'match';
     const took = !!after && (defs as typeof CHECKS).every(kept);
     for (const f of fields) {
       await sql`INSERT INTO listing_text_changes (account_id, listing_id, field, before, after, outcome, detail, changed_by)

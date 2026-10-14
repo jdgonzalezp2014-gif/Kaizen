@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CHECKS, SECTIONS, SYNCED_COLUMNS, runCheck, writePlan, norm, composeRules, splitRules, draftAdds, hostawayValue, firstDiffLine } from './repo-checks.ts';
+import { CHECKS, SECTIONS, SYNCED_COLUMNS, runCheck, writePlan, norm, composeText, composeParts, splitText, isSynced, draftAdds, hostawayValue, firstDiffLine } from './repo-checks.ts';
 
 const wifi = CHECKS.find(c => c.key === 'wifi')!;
 const fee = CHECKS.find(c => c.key === 'cleaning_fee')!;
@@ -41,7 +41,7 @@ test('every check has a section, a unique key and unique columns', () => {
   assert.equal(new Set(CHECKS.map(c => c.key)).size, CHECKS.length);
   const cols = CHECKS.flatMap(c => c.fields.map(f => f.repo));
   assert.equal(new Set(cols).size, cols.length);
-  assert.ok(SYNCED_COLUMNS.has('wifi_network') && SYNCED_COLUMNS.has('rule_add_pet_fee'));
+  assert.ok(SYNCED_COLUMNS.has('wifi_network') && isSynced('rule_add_pet_fee') && isSynced('desc_add_parking') && !isSynced('lease_notes'));
   assert.ok(CHECKS.filter(c => c.section === 'hostaway').every(c => !c.send));
 });
 
@@ -82,16 +82,16 @@ const RULES = 'House Rules:\n\n1. Sign the agreement.\n\n2. No parties.';
 
 test('house rules = the original + the Adds, numbered on', () => {
   const vals = { house_rules: RULES, rule_add_pet_fee: 'Pet fee: $150 per pet.', rule_add_other: 'Quiet hours 10pm.' };
-  assert.equal(composeRules(vals), `${RULES}\n\n3. Pet fee: $150 per pet.\n\n4. Quiet hours 10pm.`);
-  assert.equal(composeRules({ house_rules: 'Be nice.', rule_add_pet_fee: 'Pets $50.' }), 'Be nice.\n\nPets $50.');
-  assert.equal(composeRules({ rule_add_pet_fee: 'Pets $50.' }), 'Pets $50.');
+  assert.equal(composeText('house_rules', vals), `${RULES}\n\n3. Pet fee: $150 per pet.\n\n4. Quiet hours 10pm.`);
+  assert.equal(composeText('house_rules', { house_rules: 'Be nice.', rule_add_pet_fee: 'Pets $50.' }), 'Be nice.\n\nPets $50.');
+  assert.equal(composeText('house_rules', { rule_add_pet_fee: 'Pets $50.' }), 'Pets $50.');
 });
 
 test('copying Hostaway\'s rules back keeps the Adds out of the original', () => {
   const vals = { house_rules: 'old', rule_add_pet_fee: 'Pet fee: $150 per pet.', rule_add_other: 'Quiet hours 10pm.' };
   const hostaway = `${RULES}\n\n3. Pet fee: $150 per pet.\n\n4. Quiet hours 10pm.`;
-  assert.equal(splitRules(hostaway, vals), RULES);
-  assert.equal(splitRules(RULES, vals), RULES, 'Adds not in Hostaway yet: the whole text is the original');
+  assert.equal(splitText('house_rules', hostaway, vals), RULES);
+  assert.equal(splitText('house_rules', RULES, vals), RULES, 'Adds not in Hostaway yet: the whole text is the original');
   const d = check('house_rules');
   const r = runCheck(d, vals, { houseRules: hostaway });
   assert.deepEqual(writePlan(d, r, 'repository', vals), { house_rules: RULES });
@@ -106,4 +106,19 @@ test('draftAdds words the empty Adds from the record\'s own fees', () => {
   assert.match(d.rule_add_extra_guest!, /includes 8 guests; each additional guest is \$25 per night \(maximum 10 guests\)/);
   assert.deepEqual(draftAdds({}), {});
   assert.equal(draftAdds({ pet_fee: 150, house_rules: '4. Pets must be disclosed.' }).rule_add_pet_fee, undefined, 'the original already covers pets');
+});
+
+test('description = main text + footer parts in column order, not numbered', () => {
+  const vals = { description: 'Welcome.\n\n1. Three bedrooms.', desc_add_b: 'Parking: two cars.', desc_add_a: 'Pool heated in winter.' };
+  assert.equal(composeText('description', vals, ['description', 'desc_add_b', 'desc_add_a']),
+    'Welcome.\n\n1. Three bedrooms.\n\nParking: two cars.\n\nPool heated in winter.');
+  assert.deepEqual(composeParts('description', vals, ['desc_add_a']).map(p => [p.key, p.main]), [['description', true], ['desc_add_a', false]]);
+  const d = CHECKS.find(c => c.key === 'description')!;
+  const r = runCheck(d, vals, { description: 'Welcome new.\n\nParking: two cars.' }, ['desc_add_b']);
+  assert.deepEqual(writePlan(d, r, 'repository', vals, ['desc_add_b']), { description: 'Welcome new.' });
+});
+
+test('no fob or extra-guest Add where the original rules already say it', () => {
+  const rules = '13. There is a $600 penalty for lost keys/clicker/fob.\n14. Each additional guest is $25.';
+  assert.deepEqual(draftAdds({ house_rules: rules, fob_replacement_fee: 600, extra_guest_fee: 25, guests_included: 8 }), {});
 });

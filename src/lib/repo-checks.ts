@@ -14,7 +14,7 @@ export const UNIT_TABLES = ['cortland_legacy', 'houses', 'the_links'];
 export type SectionKey = 'settings' | 'description' | 'rules' | 'fees' | 'hostaway';
 export const SECTIONS: { key: SectionKey; label: string; note: string }[] = [
   { key: 'settings', label: 'House settings', note: 'Wi-Fi, check-in / check-out hours and guests — what guests and cleaners are told.' },
-  { key: 'description', label: 'House description', note: 'The listing\'s texts, as guests read them.' },
+  { key: 'description', label: 'House description', note: 'The listing\'s texts, as guests read them. The Description is the main text plus its footer parts (Add: …), appended at the end.' },
   { key: 'rules', label: 'House rules', note: 'Hostaway keeps one text: the original rules, then the additions (Add: …) appended at the end, numbered on.' },
   { key: 'fees', label: 'Fees', note: 'What the guest is charged. Each fee is explained to guests by its Add in House rules.' },
   { key: 'hostaway', label: 'Hostaway settings', note: 'Mapped for later: copied into the Repository to keep, never sent from here.' },
@@ -23,15 +23,28 @@ export const SECTIONS: { key: SectionKey; label: string; note: string }[] = [
 /**
  * text/longtext compare as written · money: an amount, 0 = none · number: a count (0 counts) ·
  * hour: an hour of the day (Hostaway 16 = "4 PM" in the Repository) · bool: Hostaway 1/0 = a checkbox ·
- * rules: the house rules, composed from the original + the additions.
+ * composed: a main text with footer parts appended (house rules, description — see COMPOSED).
  */
-export type FieldKind = 'text' | 'longtext' | 'money' | 'number' | 'hour' | 'bool' | 'rules';
+export type FieldKind = 'text' | 'longtext' | 'money' | 'number' | 'hour' | 'bool' | 'composed';
 export interface CheckField { label: string; repo: string; hostaway: string; kind: FieldKind }
 /** `send: false` — compared and copied into the Repository, never written to Hostaway from here. */
 export interface CheckDef { key: string; label: string; section: SectionKey; note: string; fields: CheckField[]; send: boolean }
 
 /** The additions appended to the house rules, in this order (§155). */
 export const RULE_ADDS = ['rule_add_pet_fee', 'rule_add_lost_fob', 'rule_add_extra_guest', 'rule_add_other'];
+
+/**
+ * Texts Hostaway keeps as ONE field but the record keeps in parts: the main column + footer columns
+ * (every column of the table whose key has the prefix, in column order), appended at the end (owner, §155).
+ * The team adds footer columns from the text's pop-up.
+ */
+export const COMPOSED: Record<string, { prefix: string; numbered: boolean; part: string }> = {
+  house_rules: { prefix: 'rule_add_', numbered: true, part: 'rule' },
+  description: { prefix: 'desc_add_', numbered: false, part: 'description' },
+};
+export const isPart = (key: string) => Object.values(COMPOSED).some(c => key.startsWith(c.prefix));
+/** The main column a footer column belongs to. */
+export const partOf = (key: string) => Object.keys(COMPOSED).find(b => key.startsWith(COMPOSED[b]!.prefix)) ?? null;
 
 const one = (section: SectionKey, repo: string, label: string, hostaway: string, kind: FieldKind, note = '', send = section !== 'hostaway'): CheckDef =>
   ({ key: repo, label, section, note, send, fields: [{ label, repo, hostaway, kind }] });
@@ -47,7 +60,7 @@ export const CHECKS: CheckDef[] = [
   one('settings', 'guests_included', 'Guests included in the price', 'guestsIncluded', 'number'),
 
   one('description', 'listing_title', 'Listing title', 'name', 'text', 'The public title, on every channel.'),
-  one('description', 'description', 'Description', 'description', 'longtext'),
+  one('description', 'description', 'Description', 'description', 'composed', 'The main text plus every footer part, as one text.'),
   one('description', 'summary', 'Summary', 'airbnbSummary', 'longtext'),
   one('description', 'the_space', 'The space', 'airbnbSpace', 'longtext'),
   one('description', 'guest_access', 'Guest access', 'airbnbAccess', 'longtext'),
@@ -56,7 +69,7 @@ export const CHECKS: CheckDef[] = [
   one('description', 'getting_around', 'Getting around', 'airbnbTransit', 'longtext'),
   one('description', 'other_notes', 'Other things to note', 'airbnbNotes', 'longtext'),
 
-  one('rules', 'house_rules', 'House rules', 'houseRules', 'rules', 'The original rules plus every Add, as one text.'),
+  one('rules', 'house_rules', 'House rules', 'houseRules', 'composed', 'The original rules plus every Add, as one text.'),
 
   one('fees', 'cleaning_fee', 'Cleaning fee (guest)', 'cleaningFee', 'money', 'What the guest is charged to clean — revenue, not the cleaner\'s pay.'),
   one('fees', 'extra_guest_fee', 'Extra guest fee (per night)', 'priceForExtraPerson', 'money', 'Per guest over "Guests included", per night.'),
@@ -94,7 +107,8 @@ export const CHECKS: CheckDef[] = [
 ];
 
 /** Every Repository column a check keeps in step with Hostaway — the grid marks them ⇄. */
-export const SYNCED_COLUMNS = new Set([...CHECKS.flatMap(c => c.fields.map(f => f.repo)), ...RULE_ADDS]);
+export const SYNCED_COLUMNS = new Set(CHECKS.flatMap(c => c.fields.map(f => f.repo)));
+export const isSynced = (key: string) => SYNCED_COLUMNS.has(key) || isPart(key);
 
 /** `case` = equal but for capitals (an SSID is case-sensitive, so it is still shown). */
 export type CheckStatus = 'match' | 'case' | 'differ' | 'no-repository' | 'no-hostaway' | 'empty';
@@ -128,7 +142,7 @@ export function norm(kind: FieldKind, v: unknown): string {
   if (kind === 'number') { const n = Number(s); return Number.isFinite(n) ? String(n) : s; }
   if (kind === 'hour') { const h = parseHour(s); return h === null ? s : hourLabel(h); }
   // Hostaway and a pasted text differ in line endings and trailing spaces — not a difference anyone sees.
-  if (kind === 'longtext' || kind === 'rules') return s.replace(/\r\n?/g, '\n').split('\n').map(l => l.trimEnd()).join('\n').trim();
+  if (kind === 'longtext' || kind === 'composed') return s.replace(/\r\n?/g, '\n').split('\n').map(l => l.trimEnd()).join('\n').trim();
   return s;
 }
 
@@ -139,27 +153,42 @@ export function hostawayValue(listing: Record<string, unknown>, field: string): 
   return fees.find(f => f.feeType === field.slice(4) && !Number(f.channelId))?.amount ?? '';
 }
 
-/* ── house rules: the original + the additions ─────────────────────── */
+/* ── composed texts: the main text + footer parts (§155) ────────────── */
 
 const lastNumber = (text: string) => {
   const all = [...text.matchAll(/^\s*(\d+)\s*\./gm)];
   return all.length ? Number(all[all.length - 1]![1]) : 0;
 };
 
-/** The rules as Hostaway should hold them: the original, then each Add, numbered on if the original is numbered. */
-export function composeRules(vals: Record<string, unknown>): string {
-  const base = norm('rules', vals.house_rules);
-  const adds = RULE_ADDS.map(k => norm('rules', vals[k])).filter(Boolean);
-  let n = lastNumber(base);
-  const parts = adds.map(a => n && !/^\d+\s*\./.test(a) ? `${++n}. ${a}` : a);
-  return [base, ...parts].filter(Boolean).join('\n\n');
+/**
+ * The footer columns of a main text, in order: as the table orders its columns (`order`), else the
+ * known rules Adds first and any other in key order.
+ */
+export function partKeys(base: string, vals: Record<string, unknown>, order?: string[]): string[] {
+  const prefix = COMPOSED[base]!.prefix;
+  if (order) return order.filter(k => k.startsWith(prefix));
+  const known = RULE_ADDS.filter(k => k.startsWith(prefix));
+  return [...known, ...Object.keys(vals).filter(k => k.startsWith(prefix) && !known.includes(k)).sort()];
 }
 
-/** Hostaway's rules minus the Adds the record already has at the end — what is left is the original. */
-export function splitRules(text: string, vals: Record<string, unknown>): string {
-  let rest = norm('rules', text);
-  for (const k of [...RULE_ADDS].reverse()) {
-    const add = norm('rules', vals[k]);
+/** Each piece as it lands in the text: the main one, then each filled footer part (numbered on, for rules). */
+export function composeParts(base: string, vals: Record<string, unknown>, order?: string[]): { key: string; text: string; main: boolean }[] {
+  const main = norm('composed', vals[base]);
+  let n = COMPOSED[base]!.numbered ? lastNumber(main) : 0;
+  const parts = partKeys(base, vals, order).map(k => ({ key: k, add: norm('composed', vals[k]) })).filter(p => p.add)
+    .map(p => ({ key: p.key, main: false, text: n && !/^\d+\s*\./.test(p.add) ? `${++n}. ${p.add}` : p.add }));
+  return [...(main ? [{ key: base, text: main, main: true }] : []), ...parts];
+}
+
+/** The text as Hostaway should hold it. */
+export const composeText = (base: string, vals: Record<string, unknown>, order?: string[]) =>
+  composeParts(base, vals, order).map(p => p.text).join('\n\n');
+
+/** Hostaway's text minus the footer parts the record already has at the end — what is left is the main text. */
+export function splitText(base: string, text: string, vals: Record<string, unknown>, order?: string[]): string {
+  let rest = norm('composed', text);
+  for (const k of partKeys(base, vals, order).reverse()) {
+    const add = norm('composed', vals[k]);
     if (!add || !rest.endsWith(add)) continue;
     const before = rest.slice(0, rest.length - add.length);
     const m = before.match(/(^|\n\n)(\d+\.\s*)?$/);
@@ -173,15 +202,16 @@ const money = (v: unknown) => { const n = Number(norm('money', v)); return n ? `
 /** A first wording for each empty Add, from the record's own fees — the team rewrites it as they like. */
 export function draftAdds(vals: Record<string, unknown>): Record<string, string> {
   const out: Record<string, string> = {};
-  const has = (k: string) => !!norm('rules', vals[k]);
+  const has = (k: string) => !!norm('composed', vals[k]);
+  const said = (re: RegExp) => re.test(String(vals.house_rules ?? ''));
   const pet = money(vals.pet_fee), fob = money(vals.fob_replacement_fee), extra = money(vals.extra_guest_fee);
   const included = norm('number', vals.guests_included), max = norm('number', vals.max_guests);
   // Owner: where the original rules already speak of pets, no pet Add — it would say it twice.
-  if (pet && !has('rule_add_pet_fee') && !/\bpets?\b/i.test(String(vals.house_rules ?? '')))
+  if (pet && !has('rule_add_pet_fee') && !said(/\bpets?\b/i))
     out.rule_add_pet_fee = `Pet fee: ${pet} per pet, per stay. Pets must be disclosed and approved before arrival.`;
-  if (fob && !has('rule_add_lost_fob'))
+  if (fob && !has('rule_add_lost_fob') && !said(/\bfobs?\b|lost keys?/i))
     out.rule_add_lost_fob = `Keys and fobs: a key or access fob that is lost or not returned at check-out is charged ${fob} to replace.`;
-  if (extra && included && !has('rule_add_extra_guest'))
+  if (extra && included && !has('rule_add_extra_guest') && !said(/\b(extra|additional) (guest|person)s?\b/i))
     out.rule_add_extra_guest = `Extra guests: the price includes ${included} guests; each additional guest is ${extra} per night${max ? ` (maximum ${max} guests)` : ''}.`;
   return out;
 }
@@ -202,9 +232,9 @@ function fieldStatus(repo: string, hostaway: string): CheckStatus {
 /** The worst field decides the check: a real difference over a missing side over capitals over a match. */
 const RANK: CheckStatus[] = ['differ', 'no-repository', 'no-hostaway', 'case', 'match', 'empty'];
 
-export function runCheck(def: CheckDef, repoVals: Record<string, unknown>, listing: Record<string, unknown>): CheckResult {
+export function runCheck(def: CheckDef, repoVals: Record<string, unknown>, listing: Record<string, unknown>, order?: string[]): CheckResult {
   const fields = def.fields.map(f => {
-    const repo = f.kind === 'rules' ? composeRules(repoVals) : norm(f.kind, repoVals[f.repo]);
+    const repo = f.kind === 'composed' ? composeText(f.repo, repoVals, order) : norm(f.kind, repoVals[f.repo]);
     const hostaway = norm(f.kind, hostawayValue(listing, f.hostaway));
     return { label: f.label, repo, hostaway, status: fieldStatus(repo, hostaway) };
   });
@@ -220,15 +250,15 @@ const toHostaway = (kind: FieldKind, v: string): string | number =>
 
 /**
  * What a write sets: Repository columns from Hostaway, or Hostaway fields from the Repository.
- * The house rules copy into the Repository as the original only — the record's Adds stay where they are.
+ * A composed text copies into the Repository as its main text only — the record's footer parts stay where they are.
  */
-export function writePlan(def: CheckDef, result: CheckResult, to: 'repository' | 'hostaway', repoVals: Record<string, unknown> = {}): Record<string, string | number | boolean> | string {
+export function writePlan(def: CheckDef, result: CheckResult, to: 'repository' | 'hostaway', repoVals: Record<string, unknown> = {}, order?: string[]): Record<string, string | number | boolean> | string {
   if (to === 'hostaway' && !def.send) return `${def.label} is changed in Hostaway only.`;
   const out: Record<string, string | number | boolean> = {};
   for (const [i, f] of def.fields.entries()) {
     const v = to === 'repository' ? result.fields[i]!.hostaway : result.fields[i]!.repo;
     if (!v) return `${f.label} is empty in ${to === 'repository' ? 'Hostaway' : 'the Repository'} — nothing to copy.`;
-    if (to === 'repository') out[f.repo] = f.kind === 'rules' ? splitRules(v, repoVals) : toRepo(f.kind, v);
+    if (to === 'repository') out[f.repo] = f.kind === 'composed' ? splitText(f.repo, v, repoVals, order) : toRepo(f.kind, v);
     else out[f.hostaway] = toHostaway(f.kind, v);
   }
   return out;

@@ -2123,3 +2123,26 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
   border-radius: 8px; background: color-mix(in srgb, var(--series-1) 5%, transparent); }
 .ops-time-check ul { margin: 6px 0; padding-left: 18px; }
 .ops-time-check label.check { display: block; margin: 6px 0; }
+
+/* §155: a composed text (house rules, description) opens whole; its footer parts are marked. */
+.rb-grid td.rb-composed, .rb-fieldval.rb-composed { cursor: pointer; }
+.rb-modal-back { position: fixed; inset: 0; z-index: 70; background: rgb(0 0 0 / 0.35); display: grid; place-items: center; padding: 16px; }
+.rb-modal { background: var(--card); border: 1px solid var(--line); border-radius: 12px; width: min(820px, 100%);
+  max-height: calc(100vh - 32px); display: flex; flex-direction: column; box-shadow: 0 12px 40px rgb(0 0 0 / 0.25); }
+.rb-modal-head, .rb-modal-foot { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 12px 16px; }
+.rb-modal-head { border-bottom: 1px solid var(--line); }
+.rb-modal-foot { border-top: 1px solid var(--line); }
+.rb-modal-body { overflow: auto; padding: 12px 16px; display: grid; gap: 12px; }
+.rb-part { display: grid; gap: 4px; }
+.rb-part textarea { width: 100%; resize: vertical; font: 13px/1.5 inherit; }
+.rb-part-name { font-size: 12px; font-weight: 650; }
+.rb-part-foot { border-left: 3px solid var(--series-1); padding-left: 10px; }
+.rb-whole p { white-space: pre-wrap; margin: 0; font-size: 13.5px; line-height: 1.55; }
+.rb-whole p.rb-part-mark { border-left: 3px solid var(--series-1); padding: 4px 10px; background: var(--bg); border-radius: 0 6px 6px 0; }
+.rb-addpart { justify-self: start; }
+/* Drag-to-fill handle, as in a spreadsheet. */
+.rb-grid td.rb-cell:not(.rb-sticky) { position: relative; }
+.rb-fill { position: absolute; right: 1px; bottom: 1px; width: 8px; height: 8px; background: var(--series-1);
+  border: 1px solid var(--card); cursor: crosshair; display: none; }
+.rb-grid td.rb-cell:hover .rb-fill { display: block; }
+.rb-grid td.rb-filling { box-shadow: inset 0 0 0 2px var(--series-1); }

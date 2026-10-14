@@ -12,6 +12,7 @@
  *   { op: 'columns.move', table, columnKey, direction: 'left' | 'right' }
  *   { op: 'columns.reorder', table, columnKey, toIndex }
  *   { op: 'columns.delete', table, columnKey, confirm }   confirm = the column's title
+ *   { op: 'units.addPart', base, title }                   a footer part of a composed text, in every Units table (§155)
  *
  * `repository.structure` (roles.ts). Structure is data, as it was in the
  * old repository: an admin shapes it from the screen, never a migration.
@@ -25,9 +26,10 @@ import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { KEY, SYSTEM_KEYS, audit, tableCols } from '../_lib/repo-store.ts';
 import { CONVERTIBLE, coerce, slug, type ColumnType } from '../../src/lib/repo.ts';
+import { COMPOSED, UNIT_TABLES } from '../../src/lib/repo-checks.ts';
 
 const OPS = new Set(['sections.create', 'sections.rename', 'tables.create', 'tables.rename', 'tables.delete', 'tables.restore',
-                     'columns.add', 'columns.update', 'columns.move', 'columns.reorder', 'columns.delete']);
+                     'columns.add', 'columns.update', 'columns.move', 'columns.reorder', 'columns.delete', 'units.addPart']);
 /** What a person may create. `ref` comes only from the import, where the target is known. */
 const NEW_TYPES = new Set<string>([...CONVERTIBLE, 'secret', 'doc']);
 
@@ -93,6 +95,27 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await sql`UPDATE repo_sections SET archived_at = NULL WHERE account_id = 1 AND key = ${back[0].section_key}`;
       await audit(sql, who.email, op, table, null, `restored “${back[0].title}” from the Archive`);
       return ok({ key: table });
+    }
+
+    /* ── a footer part of the house rules or the description (§155): the three Units tables keep the same
+       columns, so it is added to each, right after the text's last part, in the text's section. ── */
+    if (op === 'units.addPart') {
+      const base = String(b.base ?? '');
+      const spec = COMPOSED[base];
+      if (!spec || !title) return fail(400, 'Which text, and the part\'s name?');
+      const cols = await sql`SELECT table_key, key, grp, position FROM repo_columns WHERE account_id = 1 AND table_key = ANY(${UNIT_TABLES})` as { table_key: string; key: string; grp: string; position: number }[];
+      const key = spec.prefix + slug(title, cols.filter(c => c.key.startsWith(spec.prefix)).map(c => c.key.slice(spec.prefix.length))).slice(0, 64 - spec.prefix.length);
+      const label = `Add: ${title}`;
+      for (const t of UNIT_TABLES) {
+        const mine = cols.filter(c => c.table_key === t);
+        const anchor = mine.filter(c => c.key === base || c.key.startsWith(spec.prefix)).sort((x, y) => y.position - x.position)[0];
+        if (!anchor) continue;
+        await sql`UPDATE repo_columns SET position = position + 1 WHERE account_id = 1 AND table_key = ${t} AND position > ${anchor.position}`;
+        await sql`INSERT INTO repo_columns (account_id, table_key, key, title, type, grp, position)
+                  VALUES (1, ${t}, ${key}, ${label}, 'longtext', ${anchor.grp}, ${anchor.position + 1})`;
+        await log(`+ ${label} (footer of ${base})`, t);
+      }
+      return ok({ key });
     }
 
     const table = String(b.table ?? '');

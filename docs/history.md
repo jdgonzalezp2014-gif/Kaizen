@@ -4103,3 +4103,12 @@ who it was checked with, then save. A later check-out closes that night in Hosta
 "if the calendar allows it, do it after the confirmation" — it does: `isAvailable: 0`, read back; reopened with 1, the night
 came back as it was: price, minimum stay, status). The reminder goes to the cleaner's own Slack channel only (owner),
 in their language; tested in #kaizen-task. Host Notes now carry a non-standard check-in hour read from Hostaway too.
+
+Then (owner, same day): the description works like the rules — "una sección por descripción y rules… todo el texto
+menos los campos que podemos después que se van al final"; the section unfolds to show those footer columns, and a
+click on the whole text opens a pop-up, folded or not, marking what comes from the footer columns. So `COMPOSED`
+generalizes the rules: main column + prefixed footer columns in column order, the team adding parts from the
+pop-up (`units.addPart`, all three Units tables). And drag-to-fill in the grid, as in Excel. On data: "no cambies
+nada fuera de lo duplicado" — only Preston's duplicates went (lost-fob Add; rule 13's repeat of rule 16); the
+fill of the other 20 units was stopped by the owner.
+

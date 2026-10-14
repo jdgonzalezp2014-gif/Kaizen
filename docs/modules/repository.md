@@ -97,13 +97,19 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   - **Columns (079):** 50 per Units table, `grp` = the section. Hours are a select ("4 PM" ↔ Hostaway 16);
     Hostaway 1/0 ↔ checkbox. `cleaning_fee` moved into Fees; `password_2` is titled "Wifi password". Wi-Fi stays in
     Details, marked **⇄ sync** in the header like every compared column (`SYNCED_COLUMNS`).
-  - **House rules = original + Adds** (owner): `house_rules` (the original) + `rule_add_pet_fee`, `rule_add_lost_fob`,
-    `rule_add_extra_guest`, `rule_add_other`, appended in that order and numbered on (`composeRules`). Copying from
-    Hostaway strips the Adds the record already has off the end (`splitRules`) so they are not doubled.
-    "✎ Draft the Adds from the fees" (`draftAdds`) words only EMPTY Adds from the record's fees — Repository only.
-    The fees' explanation for guests IS their Add.
+  - **Composed texts = main + footer parts** (owner; `COMPOSED`): `house_rules` + every `rule_add_*` column
+    (numbered on) and `description` + every `desc_add_*` column (not numbered), appended in COLUMN order
+    (`composeText`, order from `repo_columns.position`). Copying from Hostaway strips the record's parts off the end
+    (`splitText`). A click on the text — the main cell, a part's cell, or the folded section — opens the pop-up
+    (`ComposedEditor`): main text + each footer part (marked), "Whole text" as Hostaway gets it, "+ Add a footer
+    part" = structure op `units.addPart` (new `<prefix><slug>` column in the three Units tables, after the last part).
+    "✎ Draft the Adds" (`draftAdds`) words only EMPTY Adds and skips any the original rules already cover (pets,
+    lost key/fob, extra guests). The fees' explanation for guests IS their Add.
   - **Hostaway settings** (`hw_*`) and the Insurance custom fee: copy-only (`send: false`), mapped for later.
-  - **Grid sections:** any group other than Details folds into one column (▸ Fees · 10, cells "filled/total");
+  - **Drag to fill** (any table): the small handle at a cell's bottom-right, dragged down or up, copies its value
+    into those rows (one save each, audited as usual). Not on the name column, secrets or documents.
+  - **Grid sections:** any group other than Details folds into one column (▸ Fees · 10, cells "filled/total";
+    House rules / House description show their whole text instead);
     click unfolds sideways, remembered per browser (`localStorage kaizen.repo.unfolded`). The record panel
     already shows groups as headings.
   - SOP 33 "Keep a unit's record and its Hostaway listing in step" — **draft**, for the owner to publish.
@@ -122,10 +128,13 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
    1406/4304/4308; P2-4315 fixed in Hostaway (4315WiFi). P2-4212 left as is (capitals differ: the owner's
    call). Bobcat has no guest cleaning fee in Hostaway.
 7. **Parking and lost key/fob fee per house** — no rush.
-8. **Sections filled (§155): only Preston Vineyard** (2026-10-13, all 42 fields from Hostaway + 3 Adds drafted).
-   The other 20 units: "← Copy all … from Hostaway" section by section, then read the Adds. Owner: no pet Add
-   where the original rules already speak of pets (`draftAdds` skips it; Preston's was cleared). Preston's lost
-   key/fob Add still repeats its rule 16 ($600) — owner to choose before sending House rules.
+8. **Sections filled (§155): only Preston Vineyard** (owner: change nothing else for now). Its duplicates were
+   removed in Kaizen only: the pet and lost-fob Adds (its rules already say them) and rule 13's "$600 penalty for
+   lost keys/clicker/fob" (rule 16 says it, with more). Not sent to Hostaway. The other units' Hostaway rules
+   use the same template — rules 13 and 16 likely repeat there too; no literal repeated sentence in any
+   description or rules (read-only scan, 2026-10-13).
+9. **"Inventory" checkmark pop-up** (owner, unclear): descriptions "based on what is in the inventory", as a pop-up
+   of checkmarks — Kaizen's inventory is supplies only; probably the listing's amenities. Ask before building.
 - The old Apps Script link/key in Settings can be cleared now the import is confirmed.
 
 ## History
