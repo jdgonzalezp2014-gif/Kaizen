@@ -210,3 +210,9 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   the steps — a reinstall from a stale manifest (an old page) had left 📎 without `reactions:read`.
 - **SOPs updated (2026-10-14):** #34 "Add Slack messages to Kaizen and write SOPs from Slack" published (final behaviour);
   #8 "Kaizen in Slack" — More ›, the card's files and order, help with a question, sops/newsop, Add to… and 📎.
+- **DM to Kaizen = the commands without the @ (owner, 2026-10-14):** `message` events with `channel_type: 'im'` → `dmMessage`:
+  a reply in a thread Kaizen knows → `threadReply` (comment); else `mention(…, dm = true)` — answers in the DM itself
+  (no per-question thread), "private" answers posted plainly. A to-do made from a DM (`new …` or the form) is
+  `via: 'slack-dm'` → announced in the tasks channel like app work, and the DM is NOT remembered as its thread.
+  **Needs in the Slack app:** bot event `message.im`, scope `im:history`, App Home → Messages tab on +
+  "Allow users to send … messages from the messages tab"; then reinstall.

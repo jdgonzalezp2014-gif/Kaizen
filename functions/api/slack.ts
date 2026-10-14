@@ -65,6 +65,8 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       if (ev.type === 'app_mention' && !ev.bot_id) ctx.waitUntil(mention(ctx, sql, s, ev).catch(() => {}));
       // Owner, 2026-10-14: 📎 on a message saves it — to its thread's task or claim, else the "Add to…" question.
       else if (ev.type === 'reaction_added' && ev.reaction === 'paperclip' && ev.item?.type === 'message') ctx.waitUntil(clipped(ctx, sql, s, ev).catch(() => {}));
+      // Owner, 2026-10-14: a DM to Kaizen takes the same commands as "@Kaizen …", no @ needed.
+      else if (ev.type === 'message' && ev.channel_type === 'im' && !ev.bot_id && (!ev.subtype || ev.subtype === 'file_share')) ctx.waitUntil(dmMessage(ctx, sql, s, ev).catch(() => {}));
       // A threaded reply, not the thread's own first message, and not itself an @-mention (app_mention above owns that one).
       else if (ev.type === 'message' && !ev.bot_id && (!ev.subtype || ev.subtype === 'file_share')) {
         if (ev.thread_ts && ev.thread_ts !== ev.ts) ctx.waitUntil(threadReply(ctx, sql, s, ev).catch(() => {}));
@@ -114,15 +116,26 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
  *   @Kaizen <anything else>          → saved as a comment (✅ on the message)
  *   anywhere else, other text        → offered as a new to-do
  */
-async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+/** A DM to the bot: a reply in a thread Kaizen knows is a comment there; anything else is a command, as after "@Kaizen". */
+async function dmMessage(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (ev.thread_ts && ev.thread_ts !== ev.ts) {
+    const [known] = await sql`SELECT 1 FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}`;
+    if (known) return threadReply(ctx, sql, s, ev);
+  }
+  return mention(ctx, sql, s, ev, true);
+}
+
+async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>, dm = false) { // eslint-disable-line @typescript-eslint/no-explicit-any
   const inThread = !!ev.thread_ts && ev.thread_ts !== ev.ts;
   const threadTsOf = String(inThread ? ev.thread_ts : ev.ts);
+  // In a DM the answer is the next message (a thread per question would hide it); in a channel, the asker's thread.
   const say = async (text: string, blocks?: unknown[]) =>
-    slackApi(s.token!, 'chat.postMessage', { channel: ev.channel, thread_ts: threadTsOf, text, ...(blocks ? { blocks } : {}), unfurl_links: false });
+    slackApi(s.token!, 'chat.postMessage', { channel: ev.channel, ...(dm && !inThread ? {} : { thread_ts: threadTsOf }), text, ...(blocks ? { blocks } : {}), unfurl_links: false });
   // §115/§152: only help and access errors stay private — nothing there for the team to manage or comment on.
   // Slack shows a private reply only in a thread that exists — one line, "🔒 Answered privately", opens it first.
   let privateTs: string | null = inThread ? String(ev.thread_ts) : null;
   const sayPrivate = async (text: string, blocks?: unknown[]) => {
+    if (dm) return say(text, blocks); // a DM is already private
     if (!privateTs) {
       const stub = await slackApi<{ ts?: string }>(s.token!, 'chat.postMessage', { channel: ev.channel, thread_ts: ev.ts, text: `🔒 Answered <@${ev.user}> privately`,
         blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: `🔒 Answered <@${ev.user}> privately here` }] }] });
@@ -207,6 +220,9 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
  * private, silent reply — add it as a comment to a task, or to an order, a work order or a claim. Not in a thread
  * Kaizen already knows (those are saved by themselves), not an @Kaizen (the mention answers). No model reads it.
  */
+/** A DM's channel id starts with D. */
+const dmChannel = (channel: string) => channel.startsWith('D');
+
 async function offerAddTo(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!(s.config.addTo?.channels ?? []).some(c => c.id === ev.channel)) return;
   const botId = await botUserIdOf(sql, s);
@@ -444,13 +460,14 @@ class Kaizen {
     const claim = home?.subject === 'claim' ? await this.claimRow(home.subject_id) : undefined;
     const unit = guessUnit(words, units) ?? parent?.unit_ids?.[0] ?? claim?.unit_id ?? null;
     const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: thread.channel, message_ts: messageTs });
-    const r = await this.todo({ action: 'create', kind, title, unitIds: unit ? [unit] : [], priority: 'none', via: home ? 'slack-thread' : 'slack',
+    const r = await this.todo({ action: 'create', kind, title, unitIds: unit ? [unit] : [], priority: 'none', via: home ? 'slack-thread' : dmChannel(thread.channel) ? 'slack-dm' : 'slack',
       ...(parent ? { parentId: parent.id } : {}), ...(claim ? { claimId: String(claim.id) } : {}),
       description: [description, link.permalink ? `From Slack: ${link.permalink.split('?')[0]}` : ''].filter(Boolean).join('\n\n') || null });
     if (!r.ok || !r.id) return r;
     const m = trackedReply({ id: String(r.id), title, kind, unit: units.find(u => u.value === unit)?.label ?? null }, parent ? 'sub-task' : claim ? 'claim' : undefined);
     const posted = await slackApi<{ ts?: string }>(this.s.token!, 'chat.postMessage', { channel: thread.channel, thread_ts: thread.ts, ...m, unfurl_links: false });
-    if (posted.ok && !home) await rememberThread(this.sql, { ok: true, ...thread }, 'task', String(r.id));
+    // From a DM the task's thread is its notice in the tasks channel (via 'slack-dm'), where the team talks — not the DM.
+    if (posted.ok && !home && !dmChannel(thread.channel)) await rememberThread(this.sql, { ok: true, ...thread }, 'task', String(r.id));
     this.attachFromSlack(String(r.id), { channel: thread.channel, ts: messageTs, thread: thread.ts }, files);
     return r;
   }
@@ -1336,6 +1353,8 @@ class Kaizen {
       if (!this.may('/api/todos', 'POST')) return json({ response_action: 'errors', errors: { title: 'Your role does not include the to-do list.' } });
       const m = meta as { id: string | null; kind?: string; card?: boolean; root?: string; from?: { channel: string; ts: string } };
       const body = readTaskForm(state, { id: m.id, kind: m.kind ?? 'task' });
+      const fromDm = !!m.from && dmChannel(m.from.channel);
+      if (fromDm && !m.id) (body as Record<string, unknown>).via = 'slack-dm';
       if (Number.isNaN(body.costActual)) return json({ response_action: 'errors', errors: { cost: 'A number, like 85 or 85.50.' } });
       const r = await this.todo(body);
       if (!r.ok) return json({ response_action: 'errors', errors: { title: r.message ?? 'Not saved.' } });
@@ -1345,7 +1364,7 @@ class Kaizen {
         const from = m.from;
         this.ctx.waitUntil(slackApi(this.s.token!, 'chat.postMessage', { channel: from.channel, thread_ts: from.ts,
           text: `📋 Tracked in Kaizen as a ${m.kind === 'work_order' ? 'repair' : 'task'}: *${String(body.title)}* — reply here with @Kaizen to comment` })
-          .then(() => rememberThread(this.sql, { ok: true, ...from }, 'task', String(r.id))).catch(() => {}));
+          .then(() => fromDm ? undefined : rememberThread(this.sql, { ok: true, ...from }, 'task', String(r.id))).catch(() => {}));
       }
       // Edited on top of the card: back to the card, refreshed.
       if (m.card && m.id && view.root_view_id) { await this.refreshCard(view.root_view_id, m.id, '✎ Saved'); return ack(); }
