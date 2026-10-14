@@ -119,6 +119,16 @@ test('the task card: facts, buttons, sub-tasks, latest updates, a box to add one
   assert.doesNotMatch(s, /card_start/);
 });
 
+test('the task card does what Kaizen does: sub-tasks with ⋯, cancel, claim, order, activity, a sub-task box', () => {
+  const v = taskCard({ id: '9', title: 'Buy for Napa', kind: 'task', status: 'pending', priority: 'none', claim: 'CL2260 · Eviction',
+    order: ['Fire extinguisher × 1'], activity: [{ when: 'Oct 13', who: 'juan', body: 'Order draft saved:\n• x' }],
+    children: [{ id: '10', title: 'Buy: extinguisher', status: 'pending' }, { id: '11', title: 'Buy: kit', status: 'completed' }], updates: [] });
+  const s = JSON.stringify(v);
+  for (const k of ['card_cancel', 'card_sub', 'done:10', 'reopen:11', '⚑ CL2260', 'Purchase order', 'Fire extinguisher × 1', 'Activity log', '"block_id":"subtask"']) assert.ok(s.includes(k), k);
+  // A sub-task's own card has no sub-task box (one level, §78).
+  assert.doesNotMatch(JSON.stringify(taskCard({ id: '10', title: 'x', kind: 'task', status: 'pending', priority: 'none', parentId: '9', children: [], updates: [] })), /"block_id":"subtask"/);
+});
+
 
 test('the cleans pop-up: each clean with its state, and Assign / Change when allowed', () => {
   const rows = [

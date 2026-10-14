@@ -259,7 +259,9 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   };
 
   const isOrder = (t: Todo) => !!orderIds?.has(t.id);
-  const bucketed = (key: string, list: Todo[]) => {
+  // Purchase orders and work orders (owner, Oct 2026): their comments unfold on the row.
+  const chatRow = (t: Todo) => <TodoRow key={t.id} t={t} chat open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
+  const bucketed = (key: string, list: Todo[], chat = false) => {
     const by: Record<Bucket, Todo[]> = { now: [], week: [], later: [], scheduled: [] };
     for (const t of list) by[bucketOf(t, today)].push(t);
     const first = BUCKETS.find(([b]) => by[b].length)?.[0];
@@ -271,7 +273,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
             <span aria-hidden="true">{on ? '▾' : '▸'}</span> <b>{label}</b> <span className="count">{by[b].length}</span>
             <span className="bucket-hint">{hint}</span>
           </button>
-          {on && <ul className="todo-list">{(laneAll[k] ? by[b] : by[b].slice(0, cap)).map(taskRow)}</ul>}
+          {on && <ul className="todo-list">{(laneAll[k] ? by[b] : by[b].slice(0, cap)).map(t => chat ? chatRow(t) : taskRow(t))}</ul>}
           {on && by[b].length > cap && (
             <button className="link tiny home-more" onClick={() => setLaneAll(m => ({ ...m, [k]: !m[k] }))}>
               {laneAll[k] ? 'Show less ▴' : `Show ${by[b].length - 5} more ▾`}</button>
@@ -286,7 +288,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     { key: 'task', label: 'Tasks', count: taskItems.filter(t => !isOrder(t)).length, alert: late(taskItems) > 0, add: 'task',
       body: taskItems.some(t => !isOrder(t)) ? bucketed('task', taskItems.filter(t => !isOrder(t))) : <p className="note">Nothing to do. ✓</p> },
     { key: 'work_order', label: '🔧 Repairs', count: repairItems.length, alert: late(repairItems) > 0, add: 'work_order',
-      body: repairItems.length ? bucketed('work_order', repairItems) : <p className="note">No repairs open. ✓</p> },
+      body: repairItems.length ? bucketed('work_order', repairItems, true) : <p className="note">No repairs open. ✓</p> },
     ...(showClaims ? [{ key: 'claims', label: '⚑ Claims', count: cases.length, alert: noWork > 0, add: 'claim' as const,
       body: cases.length ? <>
         {noWork > 0 && <p className="note"><span className="breach">▲ {noWork} with no work yet</span></p>}
@@ -296,7 +298,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
       </> : <p className="note">No open claims. ✓</p> }] : []),
     ...extraTabs,
     ...(orderIds ? [{ key: 'orders', label: '🛒 Purchase orders', count: openList.filter(isOrder).length,
-      body: openList.some(isOrder) ? <ul className="todo-list">{openList.filter(isOrder).map(t => <TodoRow key={t.id} t={t} chat open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />)}</ul>
+      body: openList.some(isOrder) ? <ul className="todo-list">{openList.filter(isOrder).map(chatRow)}</ul>
         : <p className="note">No purchase order open. ✓</p> }] : [])
   ] : [];
   const cur = homeTabs.find(x => x.key === tab) ?? homeTabs[0];

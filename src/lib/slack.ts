@@ -539,8 +539,10 @@ export function helpBlocks(sop: { title: string; purpose: string | null; steps: 
 
 export interface TaskCard extends TaskLite {
   supervisor?: string | null; scheduledOn?: string | null; vendor?: string | null; costActual?: number | null; costEstimate?: number | null;
-  resolutionNote?: string | null; children: { title: string; status: string }[];
+  resolutionNote?: string | null; children: { id?: string; title: string; status: string }[];
   updates: { when: string; who: string; body: string }[];
+  /** Owner, Oct 2026 — Slack shows what Kaizen shows: the claim it belongs to, its purchase order, the activity log. */
+  claim?: string | null; order?: string[] | null; activity?: { when: string; who: string; body: string }[]; parentId?: string | null;
 }
 
 /**
@@ -555,12 +557,12 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
     f('Status', STATUS_WORD[t.status] ?? t.status), f('Owner', t.assignee ?? 'Nobody'),
     f('Priority', t.priority !== 'none' ? t.priority[0]!.toUpperCase() + t.priority.slice(1) : null), f('Listing', t.unit),
     f('Start from', t.scheduledOn ? day(t.scheduledOn) : null), f('Finish by', t.dueOn ? day(t.dueOn) : null),
-    f('Supervisor', t.supervisor), f('Stay', t.reservationLabel), f('Vendor', t.vendor),
+    f('Supervisor', t.supervisor), f('Stay', t.reservationLabel), f('Claim', t.claim ? `⚑ ${t.claim}` : null), f('Vendor', t.vendor),
     f('Cost', t.costActual != null ? `$${t.costActual.toFixed(2)}` : t.costEstimate != null ? `~$${t.costEstimate.toFixed(2)} estimated` : null)
   ].filter(Boolean).slice(0, 10);
   return {
     type: 'modal', callback_id: 'task_card', private_metadata: JSON.stringify({ id: t.id, ...(root ? { root } : {}) }),
-    title: plain(t.kind === 'work_order' ? 'Repair' : 'To-do'), submit: plain('Add comment'), close: plain('Close'),
+    title: plain(t.kind === 'work_order' ? 'Repair' : 'To-do'), submit: plain('Save'), close: plain('Close'),
     blocks: [
       { type: 'header', text: plain(t.title.slice(0, 150)) },
       ...(note ? [context(note)] : []),
@@ -570,17 +572,28 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
       { type: 'actions', elements: [
         // §143: Start dropped from here too — the comment box right below is the same
         // door /api/todos starts the work through, so pressing it first said nothing twice.
-        ...(closed ? [button('↺ Reopen', 'card_reopen', t.id)] : [button('✓ Complete', 'card_complete', t.id, 'primary')]),
+        ...(closed ? [button('↺ Reopen', 'card_reopen', t.id)] : [button('✓ Complete', 'card_complete', t.id, 'primary'), button('✕ Cancel', 'card_cancel', t.id)]),
         button('🙋 Take it', 'card_take', t.id),
         button('✎ Edit', 'card_edit', t.id)
       ] },
-      ...(t.children.length ? [{ type: 'divider' }, section(`*Sub-tasks* · ${t.children.filter(c => c.status === 'completed').length}/${t.children.length}\n` +
-        t.children.map(c => `${c.status === 'completed' ? '✓' : '☐'} ${esc(c.title)}`).join('\n'))] : []),
+      ...(t.order?.length ? [{ type: 'divider' }, section(`*🛒 Purchase order*\n${t.order.map(l => `• ${esc(l)}`).join('\n')}`.slice(0, 2900)),
+        context('No price yet — record what was bought in Kaizen (Inventory or the to-do).')] : []),
+      // Owner, Oct 2026: each sub-task is worked from here, as in Kaizen — ✓ / ✕ / ↺ in its ⋯ menu.
+      ...(t.children.length ? [{ type: 'divider' }, section(`*Sub-tasks* · ${t.children.filter(c => c.status === 'completed').length}/${t.children.length}`),
+        ...t.children.slice(0, 25).map(c => {
+          const done = c.status === 'completed' || c.status === 'cancelled';
+          const mark = c.status === 'completed' ? '✓' : c.status === 'cancelled' ? '✕' : '☐';
+          const line = `${mark} ${done ? `~${esc(c.title)}~` : esc(c.title)}`.slice(0, 2900);
+          return c.id ? section(line, { type: 'overflow', action_id: 'card_sub', options: (done ? [['↺ Reopen', 'reopen']] : [['✓ Complete', 'done'], ['✕ Cancel', 'cancel']])
+            .map(([l, v]) => ({ text: plain(l!), value: `${v}:${c.id}` })) }) : section(line);
+        })] : []),
       { type: 'divider' },
       section(t.updates.length ? `*Latest comments*` : '_No comments yet._'),
       ...t.updates.map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
       // Opened to comment (§111): the cursor waits in the box.
-      input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) })
+      input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) }),
+      ...(t.parentId ? [] : [input('subtask', 'Add a sub-task', text())]),
+      ...(t.activity?.length ? [context(`*Activity log* · ${t.activity.map(a => `${esc(a.when)} ${esc(a.who)}: ${esc(a.body.split('\n')[0]!)}`).join(' · ')}`.slice(0, 2900))] : [])
     ]
   };
 }

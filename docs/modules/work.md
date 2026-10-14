@@ -108,3 +108,4 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   `TodoList` props `extraTabs` / `orderIds`. Operations → To-do uses the same tabs and buckets (no row cap; kind chips gone; no checkbox anywhere).
 - **Purchase orders tab: comments on the row (owner, 2026-10-13):** each order has "▸ 💬 n / Comment" that unfolds its
   Timeline (read + post, same `note` action → Slack thread, §143 rule applies) without opening the to-do (`TodoRow` prop `chat`).
+- **Work orders too:** the Repairs tab's rows also unfold their comments (`chatRow`), like purchase orders.

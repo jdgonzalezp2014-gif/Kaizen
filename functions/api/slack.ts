@@ -350,17 +350,28 @@ class Kaizen {
   private async card(id: string): Promise<TaskCard | null> {
     const [t] = await this.sql`SELECT t.id::text, t.title, t.kind, t.status, t.priority, t.assignee, t.supervisor, t.due_on::text AS due_on,
                                       t.scheduled_on::text AS scheduled_on, t.reservation_label, t.description, t.vendor, t.cost_actual,
-                                      t.cost_estimate, t.resolution_note, u.name AS unit
+                                      t.cost_estimate, t.resolution_note, u.name AS unit, t.parent_id::text AS parent_id,
+                                      (SELECT concat_ws(' · ', cu.name, coalesce(nullif(c.description, ''), c.category))
+                                         FROM claims c LEFT JOIN units cu ON cu.account_id = c.account_id AND cu.id = c.unit_id
+                                        WHERE c.account_id = 1 AND c.id::text = t.claim_id::text) AS claim
                                  FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
                                 WHERE t.account_id = 1 AND t.id::text = ${id} AND t.deleted_at IS NULL` as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     if (!t) return null;
-    const [kids, ups] = await Promise.all([
-      this.sql`SELECT title, status FROM todos WHERE account_id = 1 AND parent_id::text = ${id} AND deleted_at IS NULL ORDER BY created_at` as Promise<{ title: string; status: string }[]>,
+    const [kids, ups, acts, order] = await Promise.all([
+      this.sql`SELECT id::text, title, status FROM todos WHERE account_id = 1 AND parent_id::text = ${id} AND deleted_at IS NULL ORDER BY created_at` as Promise<{ id: string; title: string; status: string }[]>,
       // The card shows what people wrote; the system's lines are Kaizen's activity log (§103).
       this.sql`SELECT body, created_by, created_at FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id} AND kind = 'note'
-                ORDER BY created_at DESC, id DESC LIMIT 3` as Promise<{ body: string; created_by: string | null; created_at: string }[]>
+                ORDER BY created_at DESC, id DESC LIMIT 3` as Promise<{ body: string; created_by: string | null; created_at: string }[]>,
+      // Owner, Oct 2026: Slack shows what Kaizen does — the activity log's latest lines and the purchase order.
+      this.sql`SELECT body, created_by, created_at FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id} AND kind <> 'note'
+                ORDER BY created_at DESC, id DESC LIMIT 3` as Promise<{ body: string; created_by: string | null; created_at: string }[]>,
+      this.sql`SELECT i.name, sum((l->>'qty')::numeric)::int AS qty FROM inventory_orders o CROSS JOIN jsonb_array_elements(o.lines) l
+                 JOIN inventory_items i ON i.account_id = o.account_id AND i.id::text = l->>'itemId'
+                WHERE o.account_id = 1 AND o.todo_id::text = ${id} GROUP BY i.name ORDER BY i.name` as Promise<{ name: string; qty: number }[]>
     ]);
-    return { id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, supervisor: t.supervisor,
+    const line = (u: { body: string; created_by: string | null; created_at: string }) =>
+      ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short });
+    return { parentId: t.parent_id, claim: t.claim, order: order.length ? order.map(o => `${o.name} × ${o.qty}`) : null, activity: acts.reverse().map(line), id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, supervisor: t.supervisor,
       dueOn: t.due_on, scheduledOn: t.scheduled_on, reservationLabel: t.reservation_label, description: t.description, vendor: t.vendor,
       costActual: t.cost_actual == null ? null : Number(t.cost_actual), costEstimate: t.cost_estimate == null ? null : Number(t.cost_estimate),
       resolutionNote: t.resolution_note, unit: t.unit, children: kids,
@@ -650,6 +661,16 @@ class Kaizen {
       let body: Record<string, unknown> | null = null, note = '';
       if (id === 'card_complete') { body = { action: 'done', id: value, done: true }; note = '✓ Completed'; }
       if (id === 'card_reopen') { body = { action: 'done', id: value, done: false }; note = '↺ Reopened'; }
+      if (id === 'card_cancel') { body = { action: 'update', id: value, status: 'cancelled' }; note = '✕ Cancelled'; }
+      // Owner, Oct 2026: a sub-task's ⋯ — the card stays on its parent.
+      let cardId = value;
+      if (id === 'card_sub') {
+        const [verb = '', sub = ''] = value.split(':');
+        cardId = String(JSON.parse(p.view?.private_metadata || '{}').id ?? '');
+        body = verb === 'done' ? { action: 'done', id: sub, done: true } : verb === 'reopen' ? { action: 'done', id: sub, done: false }
+          : verb === 'cancel' ? { action: 'update', id: sub, status: 'cancelled' } : null;
+        note = verb === 'done' ? '✓ Sub-task done' : verb === 'reopen' ? '↺ Sub-task reopened' : '✕ Sub-task cancelled';
+      }
       if (id === 'card_take') {
         const mine = hostawayUserOf(this.s.config, this.slackUser);
         if (!mine) { await this.refreshCard(viewId, value, '⚠ You are not linked to a Hostaway user yet (Settings → Slack → People), so Kaizen cannot make you the owner.'); return ack(); }
@@ -657,8 +678,14 @@ class Kaizen {
       }
       if (!body) return ack();
       const r = await this.todo(body);
+      // §150: a request closed with nothing bought asks why, on top of the card.
+      if (r.error === 'unbought' && (id === 'card_complete' || id === 'card_cancel')) {
+        const t = await taskLite(this.sql, value);
+        if (t) { const verb = id === 'card_cancel' ? 'cancel' : 'complete';
+                 await this.pushForm(p.trigger_id, unboughtModal(t, verb, this.s.config.appUrl) as Record<string, unknown>, { id: value, verb }); return ack(); }
+      }
       const root = (JSON.parse(p.view?.private_metadata || '{}') as { root?: 'tasks' }).root;
-      await this.refreshCard(viewId, value, r.ok ? note : `⚠ ${r.message ?? 'Not saved.'}`, root);
+      await this.refreshCard(viewId, cardId, r.ok ? note : `⚠ ${r.message ?? 'Not saved.'}`, root);
       // Opened from the Tasks pop-up: the list beneath follows.
       if (root === 'tasks' && p.view?.root_view_id && p.view.root_view_id !== viewId) await this.refreshTasks(p.view.root_view_id);
       return ack();
@@ -782,13 +809,23 @@ class Kaizen {
     const meta = JSON.parse(view.private_metadata || '{}') as { id: string | null; kind?: string };
     const state = view.state?.values ?? {};
     if (view.callback_id === 'task_card') {
-      // "Add comment": the box at the bottom of the card; the card stays open with it in.
+      // "Save": the comment and/or a new sub-task (owner, Oct 2026); the card stays open with them in.
       const body = String(state.update?.v?.value ?? '').trim();
-      if (!body) return json({ response_action: 'errors', errors: { update: 'Write a comment first.' } });
-      const r = await this.todo({ action: 'note', id: meta.id, body });
-      if (!r.ok) return json({ response_action: 'errors', errors: { update: r.message ?? 'Not saved.' } });
+      const sub = String(state.subtask?.v?.value ?? '').trim();
+      if (!body && !sub) return json({ response_action: 'errors', errors: { update: 'Write a comment or a sub-task first.' } });
+      const done: string[] = [];
+      if (sub) {
+        const r = await this.todo({ action: 'create', title: sub.slice(0, 300), parentId: meta.id, kind: 'task' });
+        if (!r.ok) return json({ response_action: 'errors', errors: { subtask: r.message ?? 'Not saved.' } });
+        done.push('✓ Sub-task added');
+      }
+      if (body) {
+        const r = await this.todo({ action: 'note', id: meta.id, body });
+        if (!r.ok) return json({ response_action: 'errors', errors: { update: r.message ?? 'Not saved.' } });
+        done.push('✓ Comment added');
+      }
       const c = await this.card(String(meta.id));
-      return c ? json({ response_action: 'update', view: taskCard(c, '✓ Comment added') }) : json({ response_action: 'clear' });
+      return c ? json({ response_action: 'update', view: taskCard(c, done.join(' · ')) }) : json({ response_action: 'clear' });
     }
     if (view.callback_id === 'task_unbought') {
       const m = meta as { id: string; verb?: string };

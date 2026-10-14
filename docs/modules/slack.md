@@ -139,3 +139,9 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - **Orders closed unbought (§150, operations):** ✓ Complete on a cleaner's or an inspection's request with no purchase
   recorded opens `unboughtModal` (callback `task_unbought`; views.open from a message, views.push inside the Tasks
   pop-up): a link to record the purchase in Kaizen, or a required reason → `/api/todos` done with `closeReason`.
+- **The task card does what Kaizen does — phase 1 (owner, 2026-10-13):** `taskCard` shows the claim (⚑), the purchase order
+  (item × qty from `inventory_orders`), each sub-task with a ⋯ menu (`card_sub`: ✓ Complete / ✕ Cancel / ↺ Reopen, the card
+  stays on the parent), ✕ Cancel beside ✓ Complete (`card_cancel`; an unbought request asks why via `unboughtModal`), an
+  "Add a sub-task" box next to the comment box (submit "Save" does either or both; not on a sub-task's own card) and the
+  activity log's last 3 lines. Same card for to-dos and work orders. Next phases (owner's list): edit fields from the card
+  (status/priority/owner/date/listing/claim link — ✎ Edit covers part), "Bought" for an order, claims' own work list.
