@@ -585,7 +585,7 @@ class Kaizen {
       const [m] = email ? await this.sql`SELECT role FROM members WHERE account_id = 1 AND lower(email) = ${email}` as { role: string }[] : [];
       if (m) roles.set(u, m.role);
     }
-    return msgs.map(m => ({ who: names.get(m.user ?? '') ?? 'Someone', role: roles.get(m.user ?? '') ?? null, text: m.text ?? '', ts: m.ts, files: m.files ?? [] }));
+    return msgs.map(m => ({ who: names.get(m.user ?? '') ?? 'Someone', user: m.user ?? '', role: roles.get(m.user ?? '') ?? null, text: m.text ?? '', ts: m.ts, files: m.files ?? [] }));
   }
 
   /** The message into Kaizen: its words (who said them, a link back) as a comment, its files, and its thread from now on. */
@@ -597,7 +597,9 @@ class Kaizen {
     const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: src.channel, message_ts: src.ts });
     const words = slackText(m.text).trim();
     if (words || !m.files.length) {
-      const r = await this.comment(subject, id, `${m.who}: ${words || '(no text)'}${link.permalink ? `\n— From Slack: ${link.permalink.split('?')[0]}` : ''}`);
+      // The author's name only when someone else saves it — the comment already says who saved it (2026-10-14: noise).
+      const by = m.user && m.user === this.slackUser ? '' : `${m.who}: `;
+      const r = await this.comment(subject, id, `${by}${words || '(no text)'}${link.permalink ? `\n— From Slack: ${link.permalink.split('?')[0]}` : ''}`);
       if (!r.ok) return { ok: false, message: String(r.message ?? r.error ?? 'Not saved.') };
     }
     if (m.files.length) this.attachFiles(subject, id, m.files, { channel: src.channel, thread: src.thread ?? src.ts });

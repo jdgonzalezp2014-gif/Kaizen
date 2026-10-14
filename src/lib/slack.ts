@@ -93,6 +93,8 @@ const context = (...texts: string[]): Block => ({ type: 'context', elements: tex
 const button = (text: string, action_id: string, value: string, style?: 'primary' | 'danger'): Block =>
   ({ type: 'button', text: plain(text), action_id, value, ...(style ? { style } : {}) });
 const link = (url: string, text: string) => `<${url}|${esc(text)}>`;
+/** "— From Slack: <url>" at the end of a comment, as a short link (owner, 2026-10-14: noise). */
+export const slackSource = (t: string) => t.replace(/\n?— From Slack: (https?:\/\/\S+)\s*$/, ' <$1|↗ Slack>');
 
 /* ── tasks ──────────────────────────────────────────────────────────── */
 
@@ -598,7 +600,7 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
         })] : []),
       { type: 'divider' },
       section(t.updates.length ? `*Latest comments*` : '_No comments yet._'),
-      ...t.updates.map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
+      ...t.updates.map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, slackSource(esc(u.body)).slice(0, 1500))),
       // Opened to comment (§111): the cursor waits in the box.
       input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) }),
       // Owner, 2026-10-14: the purchase order is made from the card too, a line at a time (0 takes one out).

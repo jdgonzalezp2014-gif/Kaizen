@@ -270,6 +270,12 @@ test('check-in lists everything open; check-out counts the day', () => {
   for (const k of ['(1 done, 1 cancelled)', '✓ Fob · laura', '✕ Old · juan', '＋ Call HOA · juan', 'Still open']) assert.ok(so.includes(k), k);
 });
 
+test('a comment from Slack ends in a short link, not the URL (2026-10-14)', async () => {
+  const { slackSource } = await import('./slack.ts');
+  assert.equal(slackSource('Deputy says 5 days\n— From Slack: https://x.slack.com/archives/C1/p2'), 'Deputy says 5 days <https://x.slack.com/archives/C1/p2|↗ Slack>');
+  assert.equal(slackSource('no link here'), 'no link here');
+});
+
 test('@Kaizen: what a mention asks for', () => {
   assert.deepEqual(parseMention('<@U1>'), { verb: 'help', arg: '' });
   assert.deepEqual(parseMention('<@U1> new Fix the AC in P2-4308'), { verb: 'new', arg: 'Fix the AC in P2-4308' });

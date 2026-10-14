@@ -40,6 +40,14 @@ const Linked = ({ text }: { text: string }) => <>{text.split(/(https?:\/\/\S+)/)
        aria-label={`Open the link (${p.includes('slack.com') ? 'Slack' : p.replace(/^https?:\/\/([^/]+).*/, '$1')})`}>🔗</a>
   : p)}</>;
 
+/** A comment from Slack ends "— From Slack: <url>": shown as a short "↗ Slack" link, not the URL (owner, 2026-10-14: noise). */
+const NoteText = ({ text }: { text: string }) => {
+  const m = /\n?— From Slack: (https?:\/\/\S+)\s*$/.exec(text);
+  return m ? <><Linked text={text.slice(0, m.index)} />{' '}
+    <a className="desc-link" href={m[1]} target="_blank" rel="noreferrer" title={m[1]} onClick={e => e.stopPropagation()}>↗ Slack</a></>
+    : <Linked text={text} />;
+};
+
 type Unit = { id: string; name: string; active: boolean };
 type Act = (b: Record<string, unknown>) => Promise<boolean>;
 
@@ -1015,7 +1023,7 @@ export function Timeline({ load, post, version = 0, readOnly = false, title, def
               {(earlier ? notes : notes.slice(-5)).map(u => (
                 <li key={u.id}>
                   <span className="tl-note-head"><b>{u.createdBy?.split('@')[0] ?? '—'}</b> · {nyParts(u.createdAt).short}</span>
-                  <span className="tl-note-body">{u.body}</span>
+                  <span className="tl-note-body"><NoteText text={u.body} /></span>
                 </li>
               ))}
             </ol>
@@ -1038,7 +1046,7 @@ export function Timeline({ load, post, version = 0, readOnly = false, title, def
                 <li key={u.id} className={`tl-${u.kind}`}>
                   <span className="tl-when" title="New York time">{nyParts(u.createdAt).short}</span>
                   <span className="tl-who">{u.createdBy?.split('@')[0] ?? '—'}</span>
-                  <span className="tl-body">{u.body}</span>
+                  <span className="tl-body"><NoteText text={u.body} /></span>
                 </li>
               ))}
             </ol>
