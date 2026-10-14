@@ -2164,3 +2164,17 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .todo-bucket + .todo-bucket { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .bucket-head { padding: 6px 0; }
 @media (max-width: 720px) { .todo { padding-right: 84px; } }
+
+/* Owner, 2026-10-14: explanations behind a "?" (Hint), so screens show what is, not how it works. */
+.hint { position: relative; display: inline-flex; vertical-align: middle; margin-left: 6px; }
+.hint-q { width: 18px; height: 18px; padding: 0; border-radius: 999px; border: 1px solid var(--line); background: var(--card);
+  color: var(--muted); font-size: 11px; font-weight: 700; line-height: 1; cursor: help; display: inline-flex; align-items: center; justify-content: center; }
+.hint-q:hover, .hint-q:focus-visible, .hint-q[aria-expanded="true"] { color: var(--ink); border-color: var(--muted); }
+.hint-pop { position: absolute; top: calc(100% + 6px); left: -8px; z-index: 50; width: max-content; max-width: min(340px, 85vw);
+  padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, .18); font-size: 12.5px; font-weight: 400; line-height: 1.5; text-transform: none;
+  letter-spacing: normal; white-space: normal; text-align: left; }
+.hint-pop code { font-size: 11.5px; }
+.crew-opt { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; grid-column: 1 / -1; padding: 4px 0; }
+.crew-opt input[type=time] { width: auto; }
+.crew-opt .crew-and { font-size: 13px; color: var(--muted); }

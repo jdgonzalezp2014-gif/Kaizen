@@ -3,6 +3,7 @@
  * what, when the reservations reminder goes — and the cleaners' channels,
  * prepared but sent only by hand (cleans change, and are moved by hand).
  */
+import { Hint } from './Hint.tsx';
 import { useEffect, useState } from 'react';
 import { getOpsSettings, getSlack, slackAction, type SlackState } from '../api.ts';
 import { DEFAULT_DIGEST, DEFAULT_EVENTS, DEFAULT_TASK_CHECK, TOPICS, type SlackConfig, type Topic } from '../lib/slack.ts';
@@ -86,20 +87,17 @@ export function SlackPanel() {
 
   return (
     <div className="card slack-panel">
-      <h2>Slack</h2>
-      <p className="note">Tasks, claims and the day’s reservations in Slack — and <b>/kaizen</b> to list, add, edit, complete and remove them
-        from there. Whoever acts in Slack acts as the Kaizen member with the same email, with that member’s permissions.</p>
+      <h2>Slack <Hint>Tasks, claims and the day’s reservations in Slack — and <b>/kaizen</b> to list, add, edit, complete and remove them
+        from there. Whoever acts in Slack acts as the Kaizen member with the same email, with that member’s permissions.</Hint></h2>
       {st && (
         <p className={`slack-state ${connected ? 'on' : ''}`}>{connected ? `● Connected${cfg.team ? ` to ${cfg.team}` : ''}` : '○ Not connected yet'}</p>
       )}
 
       <section className="slack-step">
-        <h3>1 · The Slack app</h3>
-        <p className="note">At <a href="https://api.slack.com/apps?new_app=1" target="_blank" rel="noreferrer">api.slack.com/apps</a> →
-          <b> Create New App → From a manifest</b> → your workspace → paste this → Create → <b>Install to Workspace</b>.
-          It already points /kaizen and the buttons at this Kaizen ({origin}).</p>
-        <p className="note"><b>Already have the app?</b> When this manifest changes (it did for shortcuts, direct messages and thread comments): Slack → your app →
-          <b> App Manifest</b> → paste → Save → <b>Reinstall to Workspace</b>. The token stays the same.</p>
+        <h3>1 · The Slack app <Hint><b>New app:</b> api.slack.com/apps → Create New App → From a manifest → your workspace → paste this →
+          Create → Install to Workspace. It already points /kaizen and the buttons at this Kaizen ({origin}).<br /><br />
+          <b>Already have it?</b> When the manifest changes: Slack → your app → App Manifest → paste → Save → Reinstall to Workspace.
+          The token stays the same.</Hint></h3>
         <div className="button-row">
           <button className="secondary small" onClick={() => setShowManifest(!showManifest)}>{showManifest ? 'Hide' : 'Show'} the manifest</button>
           <button className="secondary small" onClick={() => void navigator.clipboard.writeText(manifest(origin)).then(() => setMsg({ ok: true, text: 'Manifest copied.' }))}>Copy the manifest</button>
@@ -115,7 +113,9 @@ export function SlackPanel() {
       </section>
 
       <section className="slack-step">
-        <h3>2 · Connect</h3>
+        <h3>2 · Connect <Hint>Slack reaches Kaizen at <code>/api/slack</code>, the clock at <code>/api/slack-cron</code>. In Cloudflare Zero Trust →
+          Access → Applications those two paths have a <b>Bypass · Everyone</b> policy: Slack signs every request and Kaizen checks it; the clock carries
+          the ingest token.</Hint></h3>
         <div className="row">
           <label>Bot token <span className="sub-n">— OAuth &amp; Permissions → Bot User OAuth Token</span>
             <input type="password" value={token} placeholder={st?.hasToken ? '•••• set — type to replace' : 'xoxb-…'} onChange={e => setToken(e.target.value)} /></label>
@@ -126,9 +126,7 @@ export function SlackPanel() {
           <button disabled={busy || (!token.trim() && !secret.trim())} onClick={() => void save({ botToken: token, signingSecret: secret })}>Save</button>
           <button className="secondary" disabled={busy || !st?.hasToken} onClick={() => void run({ action: 'test' }, r => `✓ ${r.bot} in ${r.team}.`).then(() => load())}>Test connection</button>
         </div>
-        <p className="note">Slack reaches Kaizen at <code>/api/slack</code>, and the reminder scheduler at <code>/api/slack-cron</code>. In Cloudflare
-          Zero Trust → Access → Applications, add one for those two paths with a <b>Bypass · Everyone</b> policy (as for
-          <code>/api/observations</code>): Slack signs every request and Kaizen checks it, the scheduler carries the ingest token.</p>
+
       </section>
 
       {st?.hasToken && (
@@ -152,9 +150,9 @@ export function SlackPanel() {
             </div>
           )}
           {!channels && cfg.channels && <p className="note">Now: {TOPICS.filter(t => cfg.channels?.[t.key]).map(t => `${t.label} → #${cfg.channels![t.key]!.name}`).join(' · ') || 'no channels yet'}</p>}
-          <p className="note"><b>Add to…</b> — in these channels each new message gets a private, silent offer (only its author sees it) to add it to a
-            task, a purchase order, a work order or a claim. Replies in its thread are not all saved: react 📎 to one to add it. No AI reads the messages.
-            {' '}{channels ? '' : `Now: ${(cfg.addTo?.channels ?? []).map(c => `#${c.name}`).join(', ') || 'none'} — read the channels to change.`}</p>
+          <p className="note"><b>Add to…</b> channels <Hint>In these channels each new message gets a private, silent offer (only its author sees it)
+            to add it to a task, a purchase order, a work order or a claim. Replies in its thread are not all saved: react 📎 to one to add it.
+            No AI reads the messages.</Hint>{channels ? '' : ` — now: ${(cfg.addTo?.channels ?? []).map(c => `#${c.name}`).join(', ') || 'none'} (read the channels to change)`}</p>
           {channels && (
             <div className="slack-events">
               {channels.filter(c => !c.private || c.member).map(c => {
@@ -167,7 +165,8 @@ export function SlackPanel() {
             </div>
           )}
 
-          <h3>4 · What is said</h3>
+          <h3>4 · What is said <Hint>A clock (the Cloudflare Worker <code>kaizen-clock</code>) calls Kaizen every 5 minutes; each message goes once a day
+            at its hour, in the time zone below. A GitHub Action is the backup.</Hint></h3>
           <div className="slack-events">
             {(Object.keys(EVENT_LABEL) as (keyof typeof DEFAULT_EVENTS)[]).map(k => (
               <label key={k} className="check"><input type="checkbox" checked={ev[k]} onChange={e => setCfg(p => ({ ...p, events: { ...ev, [k]: e.target.checked } }))} /> {EVENT_LABEL[k]}</label>
@@ -200,9 +199,7 @@ export function SlackPanel() {
             {cfg.channels?.reservations && <button className="secondary" disabled={busy}
               onClick={() => void run({ action: 'digestNow', kind: 'morning' }, r => `Reminder sent — ${r.missing ? `${r.missing} missing` : 'nothing missing'}.`)}>Send the reminder now</button>}
           </div>
-          <p className="note">The reminders go on a clock: a GitHub Action (<code>.github/workflows/slack-cron.yml</code>) calls Kaizen every hour,
-            and each message goes once a day at its hour, in the time zone above. It needs two repository secrets on GitHub — <code>KAIZEN_URL</code> ({origin}) and
-            <code>KAIZEN_INGEST_TOKEN</code> (the ingest token, above in Settings).</p>
+
 
           <People busy={busy} run={run} onSaved={() => void load()} />
           <Cleaners cfg={cfg} busy={busy} run={run} onSaved={() => void load()} />
@@ -225,18 +222,19 @@ function Cleaners({ cfg, busy, run, onSaved }: {
   useEffect(() => { void getOpsSettings().then(r => setNames(r.ok ? r.roster.filter(c => c.active).map(c => c.name) : [])).catch(() => setNames([])); }, []);
   return (
     <>
-      <h3>6 · Cleaners’ channels</h3>
-      <p className="note">One private channel per cleaner (<code>#cleaning-name</code>), invited with the email they use in Slack.
+      <h3>6 · Cleaners’ channels <Hint>One private channel per cleaner (<code>#cleaning-name</code>), invited with the email they use in Slack.
         Private means only its members see it: whoever creates it joins it; anyone else of the team uses <b>👁 Add me</b>. Messages there
-        are in the cleaner’s language (English or Spanish, as on their page). Times are the team’s ({cfg.taskCheck?.tz ?? DEFAULT_TASK_CHECK.tz}).</p>
+        are in the cleaner’s language (English or Spanish, as on their page). Times are the team’s ({cfg.taskCheck?.tz ?? DEFAULT_TASK_CHECK.tz}).</Hint></h3>
       <div className="slack-events">
-        <label className="check"><input type="checkbox" checked={cc.reminders} onChange={e => setCc(p => ({ ...p, reminders: e.target.checked }))} />
-          {' '}Remind each cleaner: today’s cleans at <input type="time" value={cc.morning} onChange={e => setCc(p => ({ ...p, morning: e.target.value }))} />
-          {' '}and tomorrow’s at <input type="time" value={cc.evening} onChange={e => setCc(p => ({ ...p, evening: e.target.value }))} />
-          <span className="sub-n"> — only on days they have cleans, with the 4 steps recalled; clear a time to skip that one</span></label>
-        <label className="check"><input type="checkbox" checked={cc.helperNotices} onChange={e => setCc(p => ({ ...p, helperNotices: e.target.checked }))} />
-          {' '}Tell each cleaner, in their channel, what they and their helpers report — photos, what they took from storage, done, problems, needs, extras.
-          <span className="sub-n"> To follow up there: the team’s reply in a request’s thread is a comment on its to-do; it is still managed in Kaizen.</span></label>
+        {/* One option per line (2026-10-14: side by side they squeezed into narrow columns); how each works behind its ?. */}
+        <div className="crew-opt"><label className="check"><input type="checkbox" checked={cc.reminders} onChange={e => setCc(p => ({ ...p, reminders: e.target.checked }))} />
+          {' '}Remind each cleaner: today’s cleans at</label> <input type="time" value={cc.morning} onChange={e => setCc(p => ({ ...p, morning: e.target.value }))} />
+          <span className="crew-and">and tomorrow’s at</span> <input type="time" value={cc.evening} onChange={e => setCc(p => ({ ...p, evening: e.target.value }))} />
+          <Hint>Only on days they have cleans, with the 4 steps recalled, and when the next guest checks in. Clear a time to skip that reminder.</Hint></div>
+        <div className="crew-opt"><label className="check"><input type="checkbox" checked={cc.helperNotices} onChange={e => setCc(p => ({ ...p, helperNotices: e.target.checked }))} />
+          {' '}Tell each cleaner, in their channel, what they and their helpers report</label>
+          <Hint>Photos, what they took from storage, done, problems, needs, extras. To follow up there: the team’s reply in a request’s thread
+            is a comment on its to-do; it is still managed in Kaizen.</Hint></div>
       </div>
       <div className="button-row">
         <button className="small" disabled={busy} onClick={() => void run({ action: 'save', config: { ...cfg, crewChannels: cc } }, () => 'Cleaners’ channels saved.').then(onSaved)}>
@@ -296,9 +294,8 @@ function People({ busy, run, onSaved }: {
   const save = () => void run({ action: 'save', config: { people: links, dm: { mode } } }, () => 'People and direct messages saved.').then(onSaved);
   return (
     <>
-      <h3>5 · People and direct messages</h3>
-      <p className="note">A task’s owner hears it directly in Slack — when it is given to them, and each morning if it is overdue — and
-        <b> 🙋 Take it</b> makes whoever presses it the owner. For that, each Hostaway user is linked to their Slack account here.</p>
+      <h3>5 · People and direct messages <Hint>A task’s owner hears it directly in Slack — when it is given to them, and each morning if it is overdue — and
+        <b> 🙋 Take it</b> makes whoever presses it the owner. For that, each Hostaway user is linked to their Slack account here.</Hint></h3>
       {!p ? <button className="secondary small" disabled={busy} onClick={read}>Read the people</button> : (
         <>
           <ul className="slack-cleaners">
