@@ -175,3 +175,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   the check-in time from the board's `in` row in `cleanerSchedule`). "⚡ next guest the same day" went (the time says it).
 - **Order at 8 AM (owner, 2026-10-14): the day's summary first, then the cleans' thread.** In `slack-cron` the digest runs before
   the `cleanday` block, and the thread waits while `digest:morning:<day>` is not sent — one hour at most, then it goes anyway.
+- **📎 Attach files on the Manage cards (owner, 2026-10-14):** the task card and the claim card have a `file_input` (block `files`,
+  up to 10). "Save" accepts files alone. After the answer (`Kaizen.attachFiles`, waitUntil): a to-do's go onto it (`todo_files`,
+  Drive, activity line); a claim keeps no files, so they go to Drive (`toDrive`, field-reports folder) and a claim comment links them.
+  The bot has `files:read` (checked 2026-10-14). SOP 8 not yet updated for it.

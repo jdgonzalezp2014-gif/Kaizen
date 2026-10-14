@@ -14,7 +14,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { mayAccess } from '../_lib/roles.ts';
-import { attachTodoFiles, slackFiles, slackMessageFiles } from '../_lib/todo-files.ts';
+import { attachTodoFiles, slackFiles, slackMessageFiles, toDrive } from '../_lib/todo-files.ts';
 import { rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
 import { cleansFor, digestFacts } from '../_lib/slack-digest.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
@@ -303,6 +303,20 @@ class Kaizen {
       const missed = raw.length - names.length;
       if (names.length || missed) await slackApi(this.s.token!, 'chat.postMessage', { channel: from.channel, thread_ts: from.thread ?? from.ts,
         text: `📎 ${names.length ? `${names.length} file${names.length === 1 ? '' : 's'} added to the to-do: ${names.join(', ')}` : ''}${missed ? `${names.length ? ' · ' : ''}${missed} could not be read (over 15 MB, or the app needs the files:read permission — reinstall it)` : ''}` });
+    })().catch(() => {}));
+  }
+
+  /**
+   * Files from a card's 📎 box (owner, 2026-10-14). After the answer: Slack waits 3 s, the download and Drive do not.
+   * A to-do lists them (its activity says so); a claim keeps none of its own, so a comment links them.
+   */
+  attachFiles(subject: 'task' | 'claim', id: string, files: unknown[]) {
+    this.ctx.waitUntil((async () => {
+      const got = await slackFiles(this.s.token!, files);
+      if (!got.length) return;
+      if (subject === 'task') { await attachTodoFiles(this.sql, this.ctx.env.ENCRYPTION_KEY, id, got, this.email, 'slack'); return; }
+      const up = await toDrive(this.sql, this.ctx.env.ENCRYPTION_KEY, `claim #${id}`, got);
+      await this.claimSave({ action: 'note', id, body: `📎 ${up.map(u => `${u.name}: ${u.url}`).join('\n')}` });
     })().catch(() => {}));
   }
 
@@ -854,8 +868,14 @@ class Kaizen {
       const body = String(state.update?.v?.value ?? '').trim();
       const sub = String(state.subtask?.v?.value ?? '').trim();
       const subRepair = String(state.subrepair?.v?.value ?? '').trim();
-      if (!body && !sub && !subRepair) return json({ response_action: 'errors', errors: { update: 'Write a comment, a sub-task or a work order first.' } });
+      const files = (state.files?.v?.files ?? []) as unknown[];
+      if (!body && !sub && !subRepair && !files.length) return json({ response_action: 'errors', errors: { update: 'Write a comment, a sub-task or a work order, or attach a file, first.' } });
       const done: string[] = [];
+      if (files.length) {
+        if (!this.may('/api/todo-files', 'POST')) return json({ response_action: 'errors', errors: { files: 'Your role does not include adding files.' } });
+        this.attachFiles('task', String(meta.id), files);
+        done.push(`📎 ${files.length} file${files.length === 1 ? '' : 's'} being added`);
+      }
       for (const [words, kind, block, said] of [[sub, 'task', 'subtask', '✓ Sub-task added'], [subRepair, 'work_order', 'subrepair', '✓ Work order added']] as const) {
         if (!words) continue;
         const r = await this.todo({ action: 'create', title: words.slice(0, 300), parentId: meta.id, kind });
@@ -895,8 +915,14 @@ class Kaizen {
       const body = String(state.update?.v?.value ?? '').trim();
       const task = String(state.task?.v?.value ?? '').trim();
       const repair = String(state.repair?.v?.value ?? '').trim();
-      if (!body && !task && !repair) return json({ response_action: 'errors', errors: { update: 'Write a comment, a to-do or a repair first.' } });
+      const files = (state.files?.v?.files ?? []) as unknown[];
+      if (!body && !task && !repair && !files.length) return json({ response_action: 'errors', errors: { update: 'Write a comment, a to-do or a repair, or attach a file, first.' } });
       const done: string[] = [];
+      if (files.length) {
+        if (!this.may('/api/claims', 'POST')) return json({ response_action: 'errors', errors: { files: 'Your role does not include claims.' } });
+        this.attachFiles('claim', String(meta.id), files);
+        done.push(`📎 ${files.length} file${files.length === 1 ? '' : 's'} being added`);
+      }
       for (const [words, kind, block, said] of [[task, 'task', 'task', '✓ To-do added'], [repair, 'work_order', 'repair', '✓ Repair added']] as const) {
         if (!words) continue;
         if (!this.may('/api/todos', 'POST')) return json({ response_action: 'errors', errors: { [block]: 'Your role does not include the to-do list.' } });

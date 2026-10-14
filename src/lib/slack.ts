@@ -299,7 +299,9 @@ export function claimCard(c: ClaimCard, note?: string, root?: 'claims', focus = 
       ...c.updates.slice(-10).map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
       input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) }),
       input('task', 'Add a to-do for this claim', text()),
-      input('repair', 'Add a 🔧 repair for this claim', text())
+      input('repair', 'Add a 🔧 repair for this claim', text()),
+      // A claim keeps no files of its own: they go to Drive and a comment links them.
+      input('files', '📎 Attach files', attach())
     ]
   };
 }
@@ -603,6 +605,8 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
       ...t.updates.map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
       // Opened to comment (§111): the cursor waits in the box.
       input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) }),
+      // Owner, 2026-10-14: files from the Manage card too — onto the to-do, kept in Drive.
+      input('files', '📎 Attach files', attach()),
       ...(t.parentId ? [] : [input('subtask', 'Add a sub-task', text()), input('subrepair', 'Add a 🔧 work order under it', text())]),
       ...(t.activity?.length ? [context(`*Activity log* · ${t.activity.map(a => `${esc(a.when)} ${esc(a.who)}: ${esc(a.body.split('\n')[0]!)}`).join(' · ')}`.slice(0, 2900))] : [])
     ]
@@ -658,6 +662,7 @@ const select = (options: Opt[], initial?: string | null): Block => {
 const text = (initial?: string | null, multiline = false): Block =>
   ({ type: 'plain_text_input', multiline, ...(initial ? { initial_value: initial } : {}) });
 const date = (initial?: string | null): Block => ({ type: 'datepicker', ...(initial ? { initial_date: initial } : {}) });
+const attach = (): Block => ({ type: 'file_input', max_files: 10 });
 
 /* ── a cost (§117) ── */
 

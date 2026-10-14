@@ -117,6 +117,8 @@ test('the task card: facts, buttons, sub-tasks, latest updates, a box to add one
   for (const k of ['card_complete', 'card_take', 'card_edit', 'Sub-tasks', '1/2', 'Vendor booked', '~$120.00 estimated', '✓ Started', '"block_id":"update"']) assert.ok(s.includes(k), k);
   // §143: Start dropped from the card too — the comment box right below it starts the work.
   assert.doesNotMatch(s, /card_start/);
+  // Owner, 2026-10-14: files can be attached from the card.
+  assert.match(s, /"block_id":"files".*"type":"file_input"/);
 });
 
 test('the task card does what Kaizen does: sub-tasks with ⋯, cancel, claim, order, activity, a sub-task box', () => {
@@ -342,7 +344,8 @@ test("a claim's card lists its work (each opens) and adds a to-do; a reply made 
   const c = { id: '5', unit: 'P2-4308', category: 'Damage', severity: 'High', status: 'Open', description: 'Missing fob', days: 3, updates: [],
               work: [{ id: '18', title: 'Check the lockbox', status: 'pending', kind: 'task' }, { id: '19', title: 'New fob', status: 'completed', kind: 'work_order' }] };
   const s = JSON.stringify(claimCard(c));
-  for (const k of ['Work* · 1 open of 2', '"action_id":"claim_task_open","value":"18"', '~New fob~', '"block_id":"task"', '"block_id":"repair"']) assert.ok(s.includes(k), k);
+  for (const k of ['Work* · 1 open of 2', '"action_id":"claim_task_open","value":"18"', '~New fob~', '"block_id":"task"', '"block_id":"repair"',
+                 '"block_id":"files"', '"type":"file_input"']) assert.ok(s.includes(k), k);
   assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'task' }, 'sub-task')), /sub-task of this task/);
   assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'work_order' }, 'claim')), /repair for this claim/);
 });
