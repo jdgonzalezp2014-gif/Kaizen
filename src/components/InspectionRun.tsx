@@ -355,7 +355,9 @@ function QuickAdd({ data, tr, kind, onCancel, onDone }: {
         {kind === 'purchase' && label.trim() && (() => {
           const hits = (data.supplies ?? []).filter(i => i.name.toLowerCase().includes(label.trim().toLowerCase())).slice(0, 6);
           return hits.length ? <div className="button-row">{hits.map(i =>
-            <button key={i.id} className="small secondary" onClick={() => { setSupply(i); setQty('1'); }}>+ {i.name}</button>)}</div> : null;
+            <button key={i.id} className="small secondary" onClick={() => { setSupply(i); setQty('1'); }}>+ {i.name}</button>)}</div>
+            // Nothing matching looked like a dead end; free text is a valid purchase.
+            : <p className="sub-n">Not in the supplies list — Add saves “{label.trim()}” as written.</p>;
         })()}
       </>}
       <select value={where} onChange={e => setWhere(e.target.value)}>
