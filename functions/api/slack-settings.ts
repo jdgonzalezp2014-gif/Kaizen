@@ -75,8 +75,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         // §134: the cleaners' channels — reminders at two local times, and their helpers' reports.
         crewChannels: c.crewChannels && typeof c.crewChannels === 'object' ? {
           reminders: !!c.crewChannels.reminders, helperNotices: !!c.crewChannels.helperNotices,
-          morning: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(c.crewChannels.morning)) ? String(c.crewChannels.morning) : '09:00',
-          evening: /^([01]\d|2[0-3]):[0-5]\d$/.test(String(c.crewChannels.evening)) ? String(c.crewChannels.evening) : '18:00'
+          // A cleared time = that reminder off (owner, Oct 2026: only tomorrow's, at 6 PM).
+          morning: c.crewChannels.morning === '' ? '' : /^([01]\d|2[0-3]):[0-5]\d$/.test(String(c.crewChannels.morning)) ? String(c.crewChannels.morning) : '09:00',
+          evening: c.crewChannels.evening === '' ? '' : /^([01]\d|2[0-3]):[0-5]\d$/.test(String(c.crewChannels.evening)) ? String(c.crewChannels.evening) : '18:00'
         } : s.config.crewChannels,
         dm: c.dm && ['off', 'test', 'on'].includes(c.dm.mode)
           ? { mode: c.dm.mode, testUser: c.dm.mode === 'test' ? (c.dm.testUser && /^[UW][A-Z0-9]+$/.test(c.dm.testUser) ? c.dm.testUser : await tester(s.token, who.email) ?? s.config.dm?.testUser ?? null) : null }

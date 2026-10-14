@@ -206,7 +206,7 @@ function Cleaners({ cfg, busy, run, onSaved }: {
         <label className="check"><input type="checkbox" checked={cc.reminders} onChange={e => setCc(p => ({ ...p, reminders: e.target.checked }))} />
           {' '}Remind each cleaner: today’s cleans at <input type="time" value={cc.morning} onChange={e => setCc(p => ({ ...p, morning: e.target.value }))} />
           {' '}and tomorrow’s at <input type="time" value={cc.evening} onChange={e => setCc(p => ({ ...p, evening: e.target.value }))} />
-          <span className="sub-n"> — only on days they have cleans, with the 4 steps recalled</span></label>
+          <span className="sub-n"> — only on days they have cleans, with the 4 steps recalled; clear a time to skip that one</span></label>
         <label className="check"><input type="checkbox" checked={cc.helperNotices} onChange={e => setCc(p => ({ ...p, helperNotices: e.target.checked }))} />
           {' '}Tell each cleaner what their helpers report from a clean’s link — photos, what they took from storage, done, problems and needs</label>
       </div>

@@ -26,8 +26,9 @@ export function dueCrewReminders(now: { day: string; hm: string }, cfg?: CrewCha
   const c = crewChannelsOf(cfg);
   if (!c.reminders) return [];
   const out: { kind: 'today' | 'tomorrow'; day: string }[] = [];
-  if (now.hm >= c.morning && now.hm < '13:00') out.push({ kind: 'today', day: now.day });
-  if (now.hm >= c.evening && now.hm < '23:30') out.push({ kind: 'tomorrow', day: nextDay(now.day) });
+  // An empty time is that reminder off (owner, Oct 2026: only tomorrow's, at 6 PM).
+  if (c.morning && now.hm >= c.morning && now.hm < '13:00') out.push({ kind: 'today', day: now.day });
+  if (c.evening && now.hm >= c.evening && now.hm < '23:30') out.push({ kind: 'tomorrow', day: nextDay(now.day) });
   return out;
 }
 

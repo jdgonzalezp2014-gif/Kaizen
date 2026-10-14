@@ -156,3 +156,6 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   "Add a to-do for this claim" box (submit "Save" does comment and/or to-do; the to-do is told in the claim's thread).
 - **Repairs too:** the task card also has "Add a 🔧 work order under it" (`subrepair`), the claim card "Add a 🔧 repair for
   this claim" (`repair`) — same rules (told in the thread they came from).
+- **Cleaners' reminder ON, evening only (owner, 2026-10-13):** `crewChannels` = { reminders: true, morning: '' (off), evening:
+  '18:00', helperNotices: false } — tomorrow's cleans at 6 PM Central in #cleaning-irene, #cleaning-veronica,
+  #cleaning-karina-and-marvin. An empty time = that reminder off (`dueCrewReminders`, Settings → Slack). No new scopes.

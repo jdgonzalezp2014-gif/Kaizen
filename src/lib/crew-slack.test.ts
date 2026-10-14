@@ -11,6 +11,9 @@ test('cleaners’ reminders (§134): off unless on; today from 9 until 1 PM, tom
   assert.deepEqual(dueCrewReminders({ day: '2026-10-31', hm: '18:10' }, on), [{ kind: 'tomorrow', day: '2026-11-01' }]);
   assert.deepEqual(dueCrewReminders({ day: '2026-10-12', hm: '23:45' }, on), []);
   assert.deepEqual(dueCrewReminders({ day: '2026-10-12', hm: '07:00' }, { reminders: true, morning: '07:00' }), [{ kind: 'today', day: '2026-10-12' }]);
+  // A cleared time is that reminder off: only tomorrow's.
+  assert.deepEqual(dueCrewReminders({ day: '2026-10-12', hm: '09:30' }, { reminders: true, morning: '' }), []);
+  assert.deepEqual(dueCrewReminders({ day: '2026-10-12', hm: '18:00' }, { reminders: true, morning: '' }), [{ kind: 'tomorrow', day: '2026-10-13' }]);
 });
 
 test('cleaners’ messages speak their language', () => {
