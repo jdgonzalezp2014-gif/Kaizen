@@ -2093,3 +2093,4 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .desc-link { text-decoration: none; margin-left: 2px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
 .buy-opts { display: grid; gap: 6px; margin: 8px 0; }
+.todo-talk { margin: 6px 0 4px; }

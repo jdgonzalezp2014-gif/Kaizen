@@ -296,7 +296,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
       </> : <p className="note">No open claims. ✓</p> }] : []),
     ...extraTabs,
     ...(orderIds ? [{ key: 'orders', label: '🛒 Purchase orders', count: openList.filter(isOrder).length,
-      body: openList.some(isOrder) ? <ul className="todo-list">{openList.filter(isOrder).map(taskRow)}</ul>
+      body: openList.some(isOrder) ? <ul className="todo-list">{openList.filter(isOrder).map(t => <TodoRow key={t.id} t={t} chat open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />)}</ul>
         : <p className="note">No purchase order open. ✓</p> }] : [])
   ] : [];
   const cur = homeTabs.find(x => x.key === tab) ?? homeTabs[0];
@@ -416,7 +416,10 @@ type RowCtx = {
   compact?: boolean;
 };
 
-function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void }) {
+function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; chat?: boolean }) {
+  // Owner, Oct 2026: a purchase order's comments unfold on its row — what changed, what was out of stock —
+  // without opening the whole to-do.
+  const [talk, setTalk] = useState(false);
   const { t, today, names, units, claims, claimNames, open, onOpen, act, inClaim, kids, byId, flat, canClaims, onClaimsChanged, reload, compact } = props;
   const [busy, setBusy] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
@@ -497,7 +500,10 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
           <span className="sub-n">{t.costActual != null ? money2(t.costActual) : `~${money2(t.costEstimate!)}`}</span>}
         {t.kind === 'work_order' && t.chargeOwner && <span className="todo-ha" title={t.hostawayExpenseId ? `Expense #${t.hostawayExpenseId} in Hostaway` : 'Charged when completed with a cost'}>
           {t.hostawayExpenseId ? '↗ billed to owner' : '↗ owner pays'}</span>}
-        {t.updates > 1 && <span className="sub-n" title="Updates">💬 {t.updates}</span>}
+        {props.chat && !open
+          ? <button type="button" className="link tiny" aria-expanded={talk} onClick={() => setTalk(v => !v)}
+                    title={talk ? 'Hide the comments' : 'Comments — read or leave one'}>{talk ? '▾' : '▸'} 💬 {t.updates > 1 ? t.updates : 'Comment'}</button>
+          : t.updates > 1 && <span className="sub-n" title="Updates">💬 {t.updates}</span>}
         {t.hostawayError ? <span className="todo-ha err" title={`Not yet in Hostaway: ${t.hostawayError} — retried on the next sync`}>⚠ Hostaway</span>
           : t.hostawayTaskId && <span className="todo-ha" title={`Hostaway task #${t.hostawayTaskId}${t.source === 'hostaway' ? ' — written in Hostaway' : ''}`}>⇄ Hostaway</span>}
         {/* A sub-task is removed from its own line, naming itself — never
@@ -548,6 +554,11 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
           <span className="note">Remove the sub-task “{t.title}”?</span>
           <button className="small danger" disabled={busy} onClick={() => void act({ action: 'delete', id: t.id })}>Remove</button>
           <button className="link tiny" onClick={() => setLineDel(false)}>Keep</button>
+        </div>
+      )}
+      {props.chat && talk && !open && (
+        <div className="todo-talk">
+          <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} />
         </div>
       )}
       {t.description && !open && <div className="todo-desc" title={t.description}><Linked text={t.description} /></div>}
