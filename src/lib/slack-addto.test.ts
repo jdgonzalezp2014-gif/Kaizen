@@ -15,6 +15,10 @@ test('Add to…: the first guess is by words — a unit code weighs most, a name
   assert.equal(suggestTarget('Here is the judgment for Shannon eviction', T)?.value, 'claim:1');
   assert.equal(suggestTarget('Fob still missing at P2-4308', T)?.value, 'claim:2');
   assert.equal(suggestTarget('P2-4308', T), null);        // a tie: the claim and the repair share the unit
+  // An exact word beats a prefix: "Shan Eviction" over "evict Shan" (the real case, 2026-10-14).
+  const shan: AddTarget[] = [{ value: 'task:1', label: 'Shan Eviction', group: 'task', words: 'Shan Eviction CL2260' },
+                             { value: 'task:2', label: 'court room hearing to evict Shan', group: 'task', words: 'court room hearing to evict Shan from 2260 CL2260' }];
+  assert.equal(suggestTarget('Here is the judgment file for the Shan eviction', shan)?.value, 'task:1');
   assert.equal(suggestTarget('good morning team', T), null);
 });
 

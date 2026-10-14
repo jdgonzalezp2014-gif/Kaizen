@@ -24,8 +24,9 @@ export function wordsOf(text: string): string[] {
 const isCode = (w: string) => /\d/.test(w) && /[a-z]/.test(w);
 
 /**
- * The likeliest target for a message, or null: a shared unit code counts 3, a shared word 1,
- * a word that starts the other ("shan" ~ "shannon") 1. At least 2, and clearly ahead of the next.
+ * The likeliest target for a message, or null: a shared unit code counts 4, a shared word 2,
+ * a word that starts the other ("shan" ~ "shannon") 1 — so "Shan Eviction" beats "evict Shan" for
+ * "the Shan eviction" (2026-10-14, a tie that offered nothing). At least 3, and ahead of the next.
  */
 export function suggestTarget(text: string, targets: AddTarget[]): AddTarget | null {
   const mine = wordsOf(text);
@@ -34,13 +35,13 @@ export function suggestTarget(text: string, targets: AddTarget[]): AddTarget | n
     const theirs = wordsOf(t.words);
     let n = 0;
     for (const w of mine) {
-      if (theirs.includes(w)) n += isCode(w) ? 3 : 1;
+      if (theirs.includes(w)) n += isCode(w) ? 4 : 2;
       else if (w.length >= 4 && theirs.some(x => x.length >= 4 && (x.startsWith(w) || w.startsWith(x)))) n += 1;
     }
     return { t, n };
   }).sort((a, b) => b.n - a.n);
   const [best, next] = scored;
-  return best && best.n >= 2 && best.n > (next?.n ?? 0) ? best.t : null;
+  return best && best.n >= 3 && best.n > (next?.n ?? 0) ? best.t : null;
 }
 
 const GROUPS: [AddTarget['group'], string][] = [['order', '🛒 Purchase orders'], ['work_order', '🔧 Work orders'], ['claim', '⚑ Claims']];
