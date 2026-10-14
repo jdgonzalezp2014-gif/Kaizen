@@ -43,6 +43,9 @@ test('ready by: the next check-in that day, else 4 PM, nothing after a late chec
   assert.match(req.text, /🧴 Pide insumos \(🟠 pronto\) — Irene: Papel/);
   assert.match(JSON.stringify(req.blocks), /El equipo responde en este hilo/);
   assert.equal(crewHelperMessage('en', { by: 'Irene', unit: 'A', kind: 'done' }).blocks.length, 1);
+  // The clean's Drive folder, in the cleaner's language (owner, 2026-10-14).
+  assert.match(JSON.stringify(crewHelperMessage('es', { by: 'Irene', unit: 'CL2450', kind: 'photos', stage: 'before', n: 12, folderUrl: 'https://d/f' }).blocks),
+    /12 fotos ANTES · <https:\/\/d\/f\|Abrir en Drive>/);
   assert.match(crewHelperMessage('en', { by: 'Irene', unit: 'A', kind: 'extra', amount: 20, description: 'Oven' }).text, /💵 Irene · A added an extra: \$20 — Oven/);
   assert.match(crewHelperMessage('en', { by: 'Luz', unit: 'T', kind: 'report', what: 'problem', text: 'Leak <sink>', priority: 'urgent' }).text,
     /⚠️ Something is wrong \(🔴 urgent\) — Luz · T: Leak &lt;sink&gt;/);

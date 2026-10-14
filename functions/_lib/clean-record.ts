@@ -5,6 +5,7 @@
  * they send to whoever helps them; several people can work the same clean,
  * and every photo and mark says who.
  */
+import { shareCleanFolder, shareRoot } from './clean-access.ts';
 import type { SqlFn } from './accounts.ts';
 import { DriveError, createFolder, driveToken, findChildFolder, folderUrl, uploadFile } from './gdrive.ts';
 
@@ -74,10 +75,13 @@ export async function addPhotos(sql: SqlFn, encryptionKey: string, key: string, 
     if (!root) {
       root = (await createFolder(token, null, 'Kaizen — clean photos')).id;
       await sql`UPDATE accounts SET clean_photos_folder = ${root} WHERE id = 1`;
+      await shareRoot(sql, token, root).catch(() => []);
     }
     const unit = await findChildFolder(token, root, rec.unit_name) ?? (await createFolder(token, root, rec.unit_name)).id;
     folder = (await createFolder(token, unit, `${rec.date} ${rec.unit_name}`)).id;
     await sql`UPDATE clean_records SET drive_folder = ${folder} WHERE account_id = 1 AND cleaning_key = ${key}`;
+    // Owner, 2026-10-14: the cleaner sees their own clean's folder in Drive; a sharing hiccup never loses the photos.
+    await shareCleanFolder(sql, token, key).catch(() => []);
   }
   const [had] = await sql`SELECT count(*)::int AS n FROM clean_photos WHERE account_id = 1 AND cleaning_key = ${key} AND stage = ${stage}` as { n: number }[];
   let i = had?.n ?? 0;

@@ -26,6 +26,12 @@ export async function tellCleaner(sql: SqlFn, encryptionKey: string, cleaner: st
     const s = await slackSetup(sql, encryptionKey);
     const channel = s.config.cleaners?.[cleaner]?.channelId;
     if (!s.token || !channel || !crewChannelsOf(s.config.crewChannels).helperNotices) return;
+    // Photos: the clean's Drive folder with them (photosKey ends in "<key>:<stage>").
+    if (e.kind === 'photos' && photosKey && e.folderUrl === undefined) {
+      const key = photosKey.split(':').slice(-2, -1)[0] ?? '';
+      const [f] = await sql`SELECT drive_folder FROM clean_records WHERE account_id = 1 AND cleaning_key = ${key}` as { drive_folder: string | null }[];
+      e = { ...e, folderUrl: f?.drive_folder ? `https://drive.google.com/drive/folders/${f.drive_folder}` : null };
+    }
     const msg = crewHelperMessage(await langOf(sql, cleaner), e, !!todoId);
     const token = s.token;
     if (photosKey) {

@@ -195,3 +195,8 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - **§157 (2026-10-14):** "Add to…" in listened channels (`offerAddTo`, `addto_*` actions, `Kaizen.addMessageTo`);
   SOPs from Slack (`newsop`/`sops` mention verbs, `/kaizen sop|sops`, `sop_from_message`, `sop_save`, `sops_section`,
   `sop_view`, `sop_suggest`); the AI chain (`functions/_lib/ai-chain.ts`, Gemini → flash-lite → Workers AI `[ai]`).
+- **Clean photos in Drive: admins + each cleaner (owner, 2026-10-14).** The root "Kaizen — clean photos" was "anyone with the
+  link"; now `functions/_lib/clean-access.ts`: link access off, members with role admin get writer on the root, each clean's
+  folder is shared (reader, no Google email) with its cleaner's email (`cleaners.email`) when it is made (`addPhotos`).
+  `syncCleanPhotoAccess` does all at once (run 2026-10-14). Manager/ops are not given it (owner: admins and the cleaner).
+  A cleaner's channel photo line now has "Open in Drive / Abrir en Drive" (`folderUrl`, from the clean's `drive_folder`).
