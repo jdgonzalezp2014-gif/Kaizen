@@ -209,3 +209,6 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   inspections, crew extras — with the members (admins writer, the rest reader; cleaners/handyman are not members), and takes
   "anyone with the link" off; when a root is made, and once a day from the clock (`drivesync:<day>`). Not the Repository's
   folders or guests' documents.
+- **Missing scopes are said in Settings (2026-10-14):** `GET /api/slack-settings` returns `grantedScopes` (auth.test's
+  `x-oauth-scopes`); Settings → Slack → 1 compares them with the manifest and warns "⚠ the installed app is missing …" with
+  the steps — a reinstall from a stale manifest (an old page) had left 📎 without `reactions:read`.

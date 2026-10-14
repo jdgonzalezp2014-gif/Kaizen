@@ -246,6 +246,7 @@ table.units .tag.grey  { color: var(--muted); }
   background: var(--tint); border-radius: 10px; padding: 1px 8px; }
 .group > .note { margin: 0 0 8px; max-width: 74ch; }
 .note.right { margin-left: auto; }
+.note.warn { color: var(--amber); }
 
 /* ── day picker ─────────────────────────────────────────────────── */
 .daypicker { margin: 14px 0 10px; }

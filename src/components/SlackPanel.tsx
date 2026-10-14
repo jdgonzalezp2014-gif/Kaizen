@@ -105,6 +105,13 @@ export function SlackPanel() {
           <button className="secondary small" onClick={() => void navigator.clipboard.writeText(manifest(origin)).then(() => setMsg({ ok: true, text: 'Manifest copied.' }))}>Copy the manifest</button>
         </div>
         {showManifest && <pre className="slack-manifest">{manifest(origin)}</pre>}
+        {(() => {
+          // The scopes this manifest asks for that the installed app does not have yet — paste it again and Reinstall.
+          const want = (JSON.parse(manifest(origin)) as { oauth_config: { scopes: { bot: string[] } } }).oauth_config.scopes.bot;
+          const missing = st?.grantedScopes ? want.filter(x => !st.grantedScopes!.includes(x)) : [];
+          return missing.length ? <p className="note warn">⚠ The installed Slack app is missing {missing.join(', ')} — so some features do not work yet.
+            Copy the manifest (reload this page first), paste it in Slack → App Manifest → Save → <b>Reinstall to Workspace</b>.</p> : null;
+        })()}
       </section>
 
       <section className="slack-step">

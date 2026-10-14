@@ -30,7 +30,15 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!identify(request, env)) return unauthorised();
   const sql = db(env) as unknown as SqlFn;
   const s = await slackSetup(sql, env.ENCRYPTION_KEY);
-  return Response.json({ ok: true, hasToken: !!s.token, hasSecret: !!s.secret, config: s.config });
+  // What Slack really granted the token (owner, 2026-10-14: a reinstall from an old manifest left 📎 without
+  // reactions:read) — the panel compares it with the manifest and says what is missing.
+  let grantedScopes: string[] | null = null;
+  if (s.token) {
+    const r = await fetch('https://slack.com/api/auth.test', { method: 'POST', headers: { Authorization: `Bearer ${s.token}` } }).catch(() => null);
+    const h = r?.headers.get('x-oauth-scopes');
+    grantedScopes = h ? h.split(',').map(x => x.trim()).filter(Boolean) : null;
+  }
+  return Response.json({ ok: true, hasToken: !!s.token, hasSecret: !!s.secret, config: s.config, grantedScopes });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {

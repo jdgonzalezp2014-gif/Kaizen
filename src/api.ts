@@ -850,7 +850,7 @@ export const sopAction = (body: Record<string, unknown>) =>
 
 /* ── Slack (§99) ─────────────────────────────────────────────────────── */
 import type { SlackConfig } from './lib/slack.ts';
-export interface SlackState { ok: boolean; hasToken?: boolean; hasSecret?: boolean; config?: SlackConfig; error?: string }
+export interface SlackState { ok: boolean; hasToken?: boolean; hasSecret?: boolean; config?: SlackConfig; error?: string; grantedScopes?: string[] | null }
 export const getSlack = () => call<SlackState>('/api/slack-settings');
 export const slackAction = (body: Record<string, unknown>) =>
   call<SlackState & { team?: string; bot?: string; channels?: { id: string; name: string; private: boolean; member: boolean }[];
