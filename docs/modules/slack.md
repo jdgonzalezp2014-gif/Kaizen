@@ -173,3 +173,5 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   "⏰ ready by <next guest's check-in>" when a guest arrives that day (early check-ins show), else "ready by 4:00 PM";
   after a late checkout (1 PM or later) with no arrival that day, nothing; a mid-stay, nothing (`readyBy`, `src/lib/crew-slack.ts`;
   the check-in time from the board's `in` row in `cleanerSchedule`). "⚡ next guest the same day" went (the time says it).
+- **Order at 8 AM (owner, 2026-10-14): the day's summary first, then the cleans' thread.** In `slack-cron` the digest runs before
+  the `cleanday` block, and the thread waits while `digest:morning:<day>` is not sent — one hour at most, then it goes anyway.

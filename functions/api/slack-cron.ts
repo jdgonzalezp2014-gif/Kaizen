@@ -96,12 +96,37 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
+  // The reservations reminder (§99, §102), New York hours.
+  // §109: in the team's zone (Central by default), like the check-out.
+  const TZ = teamTz(s.config);
+  const today = todayIn(TZ);
+  const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
+  const nudged = await nudgeOverdue(sql, s, hour, today);
+  // Owner, 2026-10-14: the day's summary first, then the cleans' thread — so the digest runs before it.
+  if (s.config.channels?.reservations) {
+    const sent = new Set((await sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE ${`digest:%:${today}`}` as { key: string }[]).map(r => r.key));
+    const due = dueDigests(hour, today, s.config, sent);
+    const facts = due.length ? await digestFacts(sql, await getCredentials(sql, env.ENCRYPTION_KEY), env.ENCRYPTION_KEY) : null;
+    for (const kind of due) {
+      // Claimed first: two runs at once never send it twice.
+      const claimed = await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`digest:${kind}:${today}`}) ON CONFLICT DO NOTHING RETURNING key`;
+      if (!claimed.length) continue;
+      const r = await postTo(s, 'reservations', digestMessage(facts!, kind, s.config.appUrl, helpUrlOf(s.config)));
+      if (!r?.ok) await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${`digest:${kind}:${today}`}`;
+      else out.push(kind);
+    }
+  }
+
   // §136: the cleans' daily thread, posted by the clock at the morning reminder's hour (the owner: it should
   // be automatic), listing the day's cleans; photos and ✅ done then fill it in. Once a day; a failure retries.
   if (eventsOf(s.config).cleanThread && s.config.channels?.reservations) {
     const now = localNow(teamTz(s.config));
     const from = String(s.config.digest?.morning ?? DEFAULT_DIGEST.morning).padStart(2, '0') + ':00';
-    if (now.hm >= from && now.hm < '20:00') {
+    // The summary first (owner, 2026-10-14): while the morning one is still to go out, the thread waits — an hour at most.
+    const summaryOut = s.config.digest?.morning === null ||
+      (await sql`SELECT 1 FROM slack_sent WHERE account_id = 1 AND key = ${`digest:morning:${today}`}`).length > 0;
+    const waitUntilHm = String(Number(from.slice(0, 2)) + 1).padStart(2, '0') + ':00';
+    if (now.hm >= from && now.hm < '20:00' && (summaryOut || now.hm >= waitUntilHm)) {
       const day = todayIn('America/New_York');          // the board's day
       const key = `cleanday:${day}`;
       const claimed = await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${key}) ON CONFLICT DO NOTHING RETURNING key`;
@@ -113,27 +138,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         }
       }
     }
-  }
-
-  // The reservations reminder (§99, §102), New York hours.
-  // §109: in the team's zone (Central by default), like the check-out.
-  const TZ = teamTz(s.config);
-  const today = todayIn(TZ);
-  const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
-  const nudged = await nudgeOverdue(sql, s, hour, today);
-  if (!s.config.channels?.reservations) return Response.json({ ok: true, sent: out, nudged, hour, notes });
-  const sent = new Set((await sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE ${`digest:%:${today}`}` as { key: string }[]).map(r => r.key));
-  const due = dueDigests(hour, today, s.config, sent);
-  if (!due.length) return Response.json({ ok: true, sent: out, nudged, hour, notes });
-
-  const facts = await digestFacts(sql, await getCredentials(sql, env.ENCRYPTION_KEY), env.ENCRYPTION_KEY);
-  for (const kind of due) {
-    // Claimed first: two runs at once never send it twice.
-    const claimed = await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`digest:${kind}:${today}`}) ON CONFLICT DO NOTHING RETURNING key`;
-    if (!claimed.length) continue;
-    const r = await postTo(s, 'reservations', digestMessage(facts, kind, s.config.appUrl, helpUrlOf(s.config)));
-    if (!r?.ok) await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${`digest:${kind}:${today}`}`;
-    else out.push(kind);
   }
   return Response.json({ ok: true, sent: out, nudged, hour, notes });
 };
