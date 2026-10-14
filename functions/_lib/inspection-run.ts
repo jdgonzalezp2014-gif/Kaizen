@@ -200,9 +200,13 @@ export async function saveCheck(sql: SqlFn, who: string, b: Record<string, unkno
     ON CONFLICT (inspection_id, item_id, area_n) WHERE item_id IS NOT NULL DO UPDATE SET
       result = COALESCE(EXCLUDED.result, inspection_checks.result),
       note = CASE WHEN ${note !== undefined} THEN EXCLUDED.note ELSE inspection_checks.note END,
-      outcome = CASE WHEN ${outcome !== undefined} THEN EXCLUDED.outcome
+      -- ✓/N/A after ▲ is no longer a finding: it keeps no outcome or supply (a stale one read as a purchase).
+      outcome = CASE WHEN EXCLUDED.result IN ('ok', 'na') THEN NULL
+                     WHEN ${outcome !== undefined} THEN EXCLUDED.outcome
                      WHEN EXCLUDED.result = 'attention' THEN COALESCE(inspection_checks.outcome, EXCLUDED.outcome)
                      ELSE inspection_checks.outcome END,
+      supply_id = CASE WHEN EXCLUDED.result IN ('ok', 'na') THEN NULL ELSE inspection_checks.supply_id END,
+      supply_qty = CASE WHEN EXCLUDED.result IN ('ok', 'na') THEN NULL ELSE inspection_checks.supply_qty END,
       updated_by = EXCLUDED.updated_by, updated_at = now()
     RETURNING id::text` as { id: string }[];
   return c!.id;
