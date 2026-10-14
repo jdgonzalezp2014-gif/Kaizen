@@ -24,7 +24,7 @@ import * as expenses from './expenses.ts';
 import { invItems, saveTodoOrder } from '../_lib/inventory.ts';
 import * as sopsApi from './sops.ts';
 import { askJson } from '../_lib/ai-chain.ts';
-import { draftFromAi, draftFromThread, partialSopForm, readSopForm, reviewFromAi, reviewNote, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
+import { draftFromAi, draftFromThread, helpAnswerBlocks, helpFromAi, helpMissingBlocks, helpPrompt, rankSops, type SopDoc, partialSopForm, readSopForm, reviewFromAi, reviewNote, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
          type SopSectionLite, type SopSource } from '../../src/lib/slack-sops.ts';
 import { addToBlocks, sourceOf, suggestTarget, type AddSource, type AddTarget } from '../../src/lib/slack-addto.ts';
 import { supplyPlaces } from '../_lib/unit-access.ts';
@@ -130,7 +130,19 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   };
   const { verb, arg } = parseMention(String(ev.text ?? ''));
   const from = { channel: String(ev.channel), ts: String(inThread ? ev.thread_ts : ev.ts) };
-  if (verb === 'help') { await sayPrivate('What Kaizen does in Slack', mentionHelpBlocks()); return; }
+  // "@Kaizen help" alone: what Kaizen does. "@Kaizen help <question>": the SOPs answer it (owner, 2026-10-14).
+  if (verb === 'help' && !arg.trim()) { await sayPrivate('What Kaizen does in Slack', mentionHelpBlocks()); return; }
+  if (verb === 'help') {
+    const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
+    if (!member.ok) { await sayPrivate(member.why); return; }
+    const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
+    const wait = await say('🔎 Looking in the SOPs…');
+    const m = await k.helpFromSops(arg, { channel: String(ev.channel), root: threadTsOf });
+    const ts = (wait as { ts?: string }).ts;
+    if (ts) await slackApi(s.token!, 'chat.update', { channel: ev.channel, ts, text: m.text, blocks: m.blocks });
+    else await say(m.text, m.blocks);
+    return;
+  }
   // Owner, 2026-10-14: a mention cannot open a pop-up — the button does.
   if (verb === 'newsop') {
     // In a thread, the form is that thread's: its words, and ✨ reads it (2026-10-14).
@@ -596,6 +608,27 @@ class Kaizen {
       view: sopModal(sections, { ...draftFromAi(r.json, sections), ...(current.sectionKey && !draftFromAi(r.json, sections).sectionKey ? { sectionKey: current.sectionKey } : {}) },
                      { canPublish, source, v: v + 1, note: reviewNote(r.by, reviewFromAi(r.json)) }) });
   }
+  /** A question to the SOPs: a few by words, then a model picks and answers from them — or the thread is asked. */
+  async helpFromSops(question: string, from: { channel: string; root: string }): Promise<{ text: string; blocks: unknown[] }> {
+    const missing = { text: 'No SOP covers this yet', blocks: helpMissingBlocks(question, from) };
+    if (!this.may('/api/sops', 'GET')) return { text: 'Your Kaizen role does not include SOPs.', blocks: [] };
+    const rows = await this.sql`SELECT o.id::text, o.title, o.purpose, o.trigger, o.steps, o.body, s.label AS section FROM sops o
+                                  LEFT JOIN sop_sections s ON s.account_id = o.account_id AND s.key = o.section_key
+                                 WHERE o.account_id = 1 AND o.deleted_at IS NULL AND o.status = 'published'` as SopDoc[];
+    const shown = rankSops(question, rows);
+    if (!shown.length) return missing;
+    const p = helpPrompt(question, shown);
+    const r = await askJson(this.sql, this.ctx.env, p.system, p.user);
+    if (!r.ok) {
+      // No model now: the best matches by words, to read — better than nothing.
+      return { text: 'SOPs that may help', blocks: helpAnswerBlocks('No AI could answer just now — these SOPs look closest:', shown.slice(0, 3), this.s.config.appUrl) };
+    }
+    const h = helpFromAi(r.json, shown);
+    if (!h.sops.length) return missing;
+    return { text: h.answer || 'From the SOPs',
+             blocks: helpAnswerBlocks(h.answer, h.sops, this.s.config.appUrl, h.covers === 'partial' ? { missing: h.missing, from } : null) };
+  }
+
   private async sopCounts() {
     const canEdit = this.may('/api/sops', 'POST');
     return await this.sql`SELECT s.key, s.label, s.parent_key AS "parentKey",

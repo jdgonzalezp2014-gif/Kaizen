@@ -927,6 +927,7 @@ export const MENTION_HELP = [
   '*@Kaizen today* — the same, only for you',
   'In a task’s thread: *@Kaizen* _your comment_ — saved as a comment · *@Kaizen comments* — the comments so far',
   '*@Kaizen newsop* _title_ — write an SOP · *@Kaizen sops* — the SOP library by section · ⋯ on a message → *Make SOP from this*',
+  '*@Kaizen help* _how do we handle an early checkout?_ — the answer from the SOPs; if none covers it, the thread is asked to write one',
   'Also: */kaizen* (type */kaizen help*) and the ⚡ shortcuts'
 ].join('\n');
 

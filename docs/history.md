@@ -4152,3 +4152,10 @@ refund first, then negotiate") should become an SOP so nobody asks again.
   for the nights they no longer use"). Re-tested on the real thread: right meaning, graded 1/5 with the questions.
 - **@Kaizen newsop in a thread (same day):** the button opens the form from that thread (its words, ✨ reads it); "write as
   sop", "make an SOP", "create sop" count as newsop (Derek wrote "@Kaizen write as sop").
+- **@Kaizen help <question> (same day).** Alone, `help` is still Kaizen's help. With words, it answers from the SOPs in the
+  asker's thread: published SOPs ranked by words (title 3, body 1), the top 8 to the AI chain, which must answer only from
+  them and say whether they cover it `full`, `partial` or `none`. Full → the answer + "Read" per SOP. Partial → the same and
+  "🙋 the SOPs don't say <missing> — explain it here" + 📝 Write it as SOP (the thread's form). None / no word match → the
+  thread is asked. No model available → the closest by words, to read. Tested on the library: photos → "Your clean step
+  by step"; add a task from Slack → "Kaizen in Slack"; refund an early checkout → none (the claims SOP only says how to log
+  a refund request).

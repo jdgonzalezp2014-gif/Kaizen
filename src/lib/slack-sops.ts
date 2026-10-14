@@ -216,3 +216,73 @@ export function sopViewModal(s: { id: string; title: string; status: string; pur
     ]
   };
 }
+
+/* ── @Kaizen help <question> (owner, 2026-10-14): the SOPs answer, or the thread is asked to write one ── */
+
+export interface SopDoc { id: string; title: string; purpose?: string | null; trigger?: string | null; steps: { text: string }[]; body?: string | null; section?: string }
+
+const words = (t: string) => [...new Set((t.toLowerCase().match(/[a-z0-9]+(?:-[a-z0-9]+)*/g) ?? []).filter(w => w.length >= 3))];
+
+/** The SOPs most likely to answer, by words — so the model reads a few, not the whole library. */
+export function rankSops(question: string, sops: SopDoc[], max = 8): SopDoc[] {
+  const q = words(question);
+  return sops.map(s => {
+    const title = words(s.title), rest = words([s.purpose, s.trigger, s.section, ...s.steps.map(x => x.text), s.body].filter(Boolean).join(' '));
+    let n = 0;
+    for (const w of q) n += title.some(x => x === w || (w.length >= 4 && (x.startsWith(w) || w.startsWith(x)))) ? 3 : rest.includes(w) ? 1 : 0;
+    return { s, n };
+  }).filter(x => x.n > 0).sort((a, b) => b.n - a.n).slice(0, max).map(x => x.s);
+}
+
+/** What the model is asked: only these SOPs; which answer the question, and a short answer from them. */
+export function helpPrompt(question: string, sops: SopDoc[]) {
+  const system = [
+    'You answer a team member\'s question from the company\'s SOPs (short-term rentals). Use ONLY the SOPs given; never invent.',
+    'Answer ONLY with JSON: {"ids": string[], "answer": string, "covers": "full" | "partial" | "none", "missing": string}.',
+    'ids: the ids of the SOPs that ANSWER THIS QUESTION, best first (at most 3). Be strict: an SOP about a nearby topic does',
+    'not count (a question about refunding an early checkout is not answered by an SOP about logging claims, nor by one about the',
+    'clean after an early departure). If no SOP says what to do about exactly this, return [] — the team will write one.',
+    'answer: 1–4 short sentences that answer it from those SOPs, in the language of the question; "" when ids is [].',
+    'covers: "full" if the SOPs say what to do about exactly this; "partial" if they cover only part (e.g. how to log a refund',
+    'request, but not whether we refund this case); "none" if nothing. missing: what the SOPs do not say, as a short phrase',
+    '(e.g. "whether we refund the nights of an early checkout"); "" when covers is "full".'
+  ].join('\n');
+  const user = `Question: ${redact(question).slice(0, 1000)}\n\nSOPs:\n` + sops.map(s => [
+    `[${s.id}] ${s.title}${s.section ? ` (${s.section})` : ''}`,
+    s.purpose ? `Purpose: ${s.purpose}` : '', s.trigger ? `When: ${s.trigger}` : '',
+    s.steps.length ? `Steps: ${s.steps.map((x, i) => `${i + 1}. ${x.text}`).join(' ')}` : '', s.body ? s.body : ''
+  ].filter(Boolean).join('\n').slice(0, 1800)).join('\n\n');
+  return { system, user };
+}
+
+/** The model's pick, checked against what it was shown. */
+export function helpFromAi(j: Record<string, unknown>, shown: SopDoc[]): { sops: SopDoc[]; answer: string; covers: 'full' | 'partial' | 'none'; missing: string } {
+  const ids = Array.isArray(j.ids) ? j.ids.map(String) : [];
+  const sops = ids.map(id => shown.find(s => s.id === id)).filter((s): s is SopDoc => !!s).slice(0, 3);
+  const covers = !sops.length ? 'none' : j.covers === 'partial' ? 'partial' : j.covers === 'none' ? 'none' : 'full';
+  return { sops: covers === 'none' ? [] : sops, answer: covers !== 'none' && typeof j.answer === 'string' ? j.answer.trim().slice(0, 1200) : '',
+           covers, missing: covers === 'full' ? '' : typeof j.missing === 'string' ? j.missing.trim().slice(0, 200) : '' };
+}
+
+/**
+ * The answer in the thread: what the SOPs say, and each to read. Covering only part of it, the thread is
+ * asked for the rest — and can become the SOP (owner, 2026-10-14: "do we refund an early checkout?" found
+ * only how to log a refund request).
+ */
+export function helpAnswerBlocks(answer: string, sops: SopDoc[], appUrl?: string, gap?: { missing: string; from: { channel: string; root: string } } | null): Block[] {
+  return [
+    section(`📚 ${esc(answer)}`),
+    ...sops.map(s => section(`*${esc(s.title)}*${s.purpose ? `\n${esc(s.purpose).slice(0, 160)}` : ''}`, button('Read', 'sop_view', s.id))),
+    ...(gap ? [section(`🙋 The SOPs don't say ${gap.missing ? `*${esc(gap.missing)}*` : 'the rest'}. Whoever knows — please explain it here in this thread, then tap the button and Kaizen turns it into an SOP.`),
+               { type: 'actions', elements: [{ ...button('📝 Write it as SOP', 'mention_new_sop', JSON.stringify({ title: '', from: gap.from })), style: 'primary' }] }] : []),
+    context(`From the SOPs${appUrl ? ` · <${appUrl}/?tab=sops|Open the library>` : ''}${gap ? '' : ' · not right? Explain it here and *@Kaizen newsop* turns it into one.'}`)
+  ];
+}
+
+/** No SOP covers it: the thread is asked, and can become the SOP. */
+export function helpMissingBlocks(question: string, from: { channel: string; root: string }): Block[] {
+  return [
+    section(`📭 No SOP covers this yet: _${esc(question).slice(0, 200)}_\n🙋 Whoever knows how we do it — please explain it here in this thread. Then tap the button (or *@Kaizen newsop*) and Kaizen turns the thread into an SOP, so nobody has to ask again.`),
+    { type: 'actions', elements: [{ ...button('📝 Write it as SOP', 'mention_new_sop', JSON.stringify({ title: '', from })), style: 'primary' }] }
+  ];
+}

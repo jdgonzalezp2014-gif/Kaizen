@@ -66,3 +66,20 @@ test('@Kaizen sops: a button per section that has something, the library link', 
   assert.ok(s.includes('Guest lifecycle · 2') && !s.includes('Empty') && !s.includes('Child'));
   assert.ok(s.includes('https://k/?tab=sops') && s.includes('2 to read'));
 });
+
+test('@Kaizen help <question>: a few SOPs by words, the model answers only from them; partial or none asks the thread', async () => {
+  const { rankSops, helpPrompt, helpFromAi, helpAnswerBlocks, helpMissingBlocks } = await import('./slack-sops.ts');
+  const lib = [{ id: '1', title: 'Your clean step by step: photos, done, supplies', steps: [{ text: 'Photos before' }] },
+               { id: '2', title: 'Log and follow a guest claim', purpose: 'A guest asks for a refund', steps: [] },
+               { id: '3', title: 'Record a cost', steps: [] }];
+  assert.deepEqual(rankSops('what about the photos?', lib).map(s => s.id), ['1']);
+  assert.deepEqual(rankSops('good morning', lib), []);
+  const p = helpPrompt('refund?', lib.slice(1, 2));
+  assert.match(p.user, /\[2\] Log and follow a guest claim/); assert.match(p.system, /Be strict/);
+  assert.deepEqual(helpFromAi({ ids: ['2', '9'], answer: 'Log it.', covers: 'partial', missing: 'whether we refund' }, lib),
+    { sops: [lib[1]], answer: 'Log it.', covers: 'partial', missing: 'whether we refund' });
+  assert.equal(helpFromAi({ ids: ['2'], covers: 'none' }, lib).sops.length, 0);
+  const from = { channel: 'C1', root: '1.2' };
+  assert.match(JSON.stringify(helpAnswerBlocks('Log it.', [lib[1]!], 'https://k', { missing: 'whether we refund', from })), /The SOPs don't say \*whether we refund\*.*mention_new_sop/);
+  assert.match(JSON.stringify(helpMissingBlocks('refund?', from)), /No SOP covers this yet.*please explain it here/);
+});
