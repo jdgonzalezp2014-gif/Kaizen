@@ -198,7 +198,7 @@ test('the check-ins pop-up: every arrival, what is missing, and the fix beside i
 test('the tasks and claims pop-ups: a menu per item, new from the top, undo in place', () => {
   const t = JSON.stringify((tasksModal([{ id: '7', title: 'Fix AC', kind: 'work_order', status: 'pending', priority: 'none', overdue: true }],
                                        '✓ Started: x', { id: '5', title: 'Old' }) as { blocks: unknown[] }).blocks);
-  for (const k of ['1 open', '▲ 1 overdue', 'task_new', 'open:7', 'remove:7', '✓ Started: x', 'Removed *Old*', 'task_restore']) assert.ok(t.includes(k), k);
+  for (const k of ['1 open', '▲ 1 overdue', 'task_new', '"action_id":"task_open","value":"7"', 'More ›', '✓ Started: x', 'Removed *Old*', 'task_restore']) assert.ok(t.includes(k), k);
   const c = JSON.stringify((claimsModal([{ id: '3', unit: 'P2-4308', severity: 'Medium', status: 'Open', description: 'Fob' }]) as { blocks: unknown[] }).blocks);
   for (const k of ['claim_new', '"action_id":"claim_status"', '"value":"Resolved|3"', '"action_id":"claim_edit","value":"3"', '"action_id":"claim_remove","value":"3"']) assert.ok(c.includes(k), k);
   // Slack allows at most five options in an overflow menu — none here goes over.

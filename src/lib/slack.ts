@@ -210,13 +210,8 @@ export function taskList(list: TaskLite[], appUrl?: string): Block[] {
   if (!list.length) return [section('Nothing open. ✓')];
   const blocks: Block[] = [section(`*Open work — ${list.length}*`)];
   for (const t of list.slice(0, 40)) {
-    blocks.push(section(`${t.kind === 'work_order' ? '🔧' : '☐'} *${esc(t.title)}*\n${taskFacts(t)}`, {
-      type: 'overflow', action_id: 'task_menu', options: [
-        { text: plain('💬 Open & comment'), value: `open:${t.id}` },
-        { text: plain('✓ Complete'), value: `complete:${t.id}` }, { text: plain('▶ Start'), value: `start:${t.id}` },
-        { text: plain('✎ Edit'), value: `edit:${t.id}` }, { text: plain('🗑 Remove'), value: `remove:${t.id}` }
-      ]
-    }));
+    // Owner, 2026-10-14: "More" opens the whole card (as 💬 Comment does), not a menu of a few actions.
+    blocks.push(section(`${t.kind === 'work_order' ? '🔧' : '☐'} *${esc(t.title)}*\n${taskFacts(t)}`, button('More ›', 'task_open', t.id)));
   }
   if (list.length > 40) blocks.push(context(`…and ${list.length - 40} more${appUrl ? ` — ${link(appUrl, 'open Kaizen')}` : ''}`));
   blocks.push(...pickTask(list));
@@ -425,12 +420,9 @@ export function tasksModal(list: (TaskLite & { overdue?: boolean; dueToday?: boo
     { type: 'divider' }
   ];
   for (const t of list.slice(0, 40)) {
-    blocks.push(section(`${t.overdue ? '▲ ' : t.dueToday ? '● ' : ''}${t.kind === 'work_order' ? '🔧' : '☐'} *${esc(t.title)}*\n${taskFacts(t)}`, {
-      type: 'overflow', action_id: 'task_menu', options: [
-        { text: plain('💬 Open & comment'), value: `open:${t.id}` }, { text: plain('✓ Complete'), value: `complete:${t.id}` },
-        { text: plain('▶ Start'), value: `start:${t.id}` }, { text: plain('✎ Edit'), value: `edit:${t.id}` }, { text: plain('🗑 Remove'), value: `remove:${t.id}` }
-      ]
-    }));
+    // Owner, 2026-10-14: "More" opens the whole card on top (as 💬 Comment does): complete, cancel, edit, files, sub-tasks.
+    blocks.push(section(`${t.overdue ? '▲ ' : t.dueToday ? '● ' : ''}${t.kind === 'work_order' ? '🔧' : '☐'} *${esc(t.title)}*\n${taskFacts(t)}`,
+      button('More ›', 'task_open', t.id)));
   }
   if (!list.length) blocks.push(section('Nothing open. ✓'));
   return { type: 'modal', callback_id: 'sec_tasks', private_metadata: JSON.stringify({}), title: plain('Tasks'), close: plain('Close'), blocks };

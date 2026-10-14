@@ -179,3 +179,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   up to 10). "Save" accepts files alone. After the answer (`Kaizen.attachFiles`, waitUntil): a to-do's go onto it (`todo_files`,
   Drive, activity line); a claim keeps no files, so they go to Drive (`toDrive`, field-reports folder) and a claim comment links them.
   The bot has `files:read` (checked 2026-10-14). SOP 8 not yet updated for it.
+- **Tasks list: "More ›" opens the card (owner, 2026-10-14).** In Manage → Tasks and `/kaizen tasks` each row's ⋯ menu (open,
+  complete, start, edit, remove) became a **More ›** button (`task_open`) that opens the whole task card, on top of the pop-up —
+  a Slack ⋯ cannot act on a click. Start / Remove are no longer in the list (the first comment starts; ✕ Cancel on the card, or
+  remove in Kaizen); `task_menu` handlers stay for messages already posted.
