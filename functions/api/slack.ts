@@ -878,7 +878,13 @@ class Kaizen {
       const blocks = (p.message?.blocks ?? []) as { block_id?: string }[];
       const src = sourceOf(String(a.block_id ?? blocks.find(b => String(b.block_id ?? '').startsWith('addto_'))?.block_id ?? ''));
       if (!src || !value) return ack();
-      const label = String(a.selected_option?.text?.text ?? '') || (value.startsWith('claim:') ? 'the claim' : 'the task');
+      // The name from Kaizen: ✓ Add is a button, with no menu option to read it from ("Saved to the task", 2026-10-14).
+      const [subject, sid = ''] = value.split(':');
+      const [named] = subject === 'claim'
+        ? await this.sql`SELECT concat_ws(' · ', u.name, coalesce(nullif(c.description, ''), c.category)) AS name FROM claims c
+                           LEFT JOIN units u ON u.account_id = c.account_id AND u.id = c.unit_id WHERE c.account_id = 1 AND c.id::text = ${sid}` as { name: string }[]
+        : await this.sql`SELECT title AS name FROM todos WHERE account_id = 1 AND id::text = ${sid}` as { name: string }[];
+      const label = String(named?.name ?? a.selected_option?.text?.text ?? (subject === 'claim' ? 'the claim' : 'the task')).slice(0, 120);
       // After the answer: reading the message, its link and its files takes longer than Slack waits.
       this.ctx.waitUntil((async () => {
         const r = await this.addMessageTo(value, src);
