@@ -758,6 +758,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   const dirty = !!initial && JSON.stringify(v) !== JSON.stringify(base);
   // The description: always there when editing; one click away when adding.
   const [withDesc, setWithDesc] = useState(!!initial);
+  const [editDesc, setEditDesc] = useState(false);
   const [busy, setBusy] = useState(false);
   const set = <K extends keyof FormValue>(k: K, x: FormValue[K]) => setV(p => ({ ...p, [k]: x }));
   const name = (id: string) => units.find(u => u.id === id)?.name ?? 'unit';
@@ -915,7 +916,13 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
                onKeyDown={e => { if (e.key === 'Escape' && onCancel) onCancel(); }} />
       </div>
       {/* The title stays a title; the detail goes here (§78). */}
-      {withDesc ? (
+      {/* Owner, Oct 2026: an open to-do reads its description (links as 🔗) until ✎ Edit. */}
+      {initial && withDesc && !editDesc && (v.description ?? '').trim() ? (
+        <div className="todo-desc-read">
+          <div className="todo-desc-full"><Linked text={v.description!} /></div>
+          <button type="button" className="link tiny" onClick={() => setEditDesc(true)}>✎ Edit</button>
+        </div>
+      ) : withDesc ? (
         <textarea className="todo-descin" rows={initial ? 3 : 2} value={v.description ?? ''} maxLength={4000}
                   placeholder="Details — who, what exactly, anything to remember"
                   onChange={e => set('description', e.target.value || null)} />

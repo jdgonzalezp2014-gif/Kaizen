@@ -2146,3 +2146,4 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
   border: 1px solid var(--card); cursor: crosshair; display: none; }
 .rb-grid td.rb-cell:hover .rb-fill { display: block; }
 .rb-grid td.rb-filling { box-shadow: inset 0 0 0 2px var(--series-1); }
+.todo-desc-read { display: flex; align-items: flex-start; gap: 8px; } .todo-desc-read .todo-desc-full { flex: 1; margin: 0; }

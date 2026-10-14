@@ -116,3 +116,5 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 - **Hostaway task mirror OFF (owner, 2026-10-13):** `accounts.hostaway_tasks = 'off'` — the mirror cost most of the to-do
   list's Hostaway calls for little use. Links kept; the toggle is Operations → Setup → "Hostaway tasks" (owner will turn
   it back on later). While off, a test task no longer reaches Hostaway.
+- **An open to-do reads its description (owner, 2026-10-13):** links show as 🔗 until "✎ Edit" opens the textarea; Slack
+  permalinks are saved without their `?thread_ts…` query (1 old description shortened; #76 lost its "task:").

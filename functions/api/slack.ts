@@ -333,7 +333,7 @@ class Kaizen {
     const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: thread.channel, message_ts: messageTs });
     const r = await this.todo({ action: 'create', kind, title, unitIds: unit ? [unit] : [], priority: 'none', via: home ? 'slack-thread' : 'slack',
       ...(parent ? { parentId: parent.id } : {}), ...(claim ? { claimId: String(claim.id) } : {}),
-      description: [description, link.permalink ? `From Slack: ${link.permalink}` : ''].filter(Boolean).join('\n\n') || null });
+      description: [description, link.permalink ? `From Slack: ${link.permalink.split('?')[0]}` : ''].filter(Boolean).join('\n\n') || null });
     if (!r.ok || !r.id) return r;
     const m = trackedReply({ id: String(r.id), title, kind, unit: units.find(u => u.value === unit)?.label ?? null }, parent ? 'sub-task' : claim ? 'claim' : undefined);
     const posted = await slackApi<{ ts?: string }>(this.s.token!, 'chat.postMessage', { channel: thread.channel, thread_ts: thread.ts, ...m, unfurl_links: false });
@@ -522,7 +522,7 @@ class Kaizen {
     const first = text.split('\n')[0]!.replace(/<[^>]+>/g, '').trim();
     await this.open(p.trigger_id, taskModal({
       kind: 'task', title: first.slice(0, 120),
-      description: [text, link?.permalink ? `From Slack: ${link.permalink}` : ''].filter(Boolean).join('\n\n').slice(0, 3800),
+      description: [text, link?.permalink ? `From Slack: ${link.permalink.split('?')[0]}` : ''].filter(Boolean).join('\n\n').slice(0, 3800),
       ...(channel && ts ? { from: { channel, ts: root } } : {})
     }, await this.units(), await this.people()));
     return ack();
