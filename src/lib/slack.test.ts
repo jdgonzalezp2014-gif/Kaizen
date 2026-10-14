@@ -121,6 +121,13 @@ test('the task card: facts, buttons, sub-tasks, latest updates, a box to add one
   assert.match(s, /"block_id":"files".*"type":"file_input"/);
 });
 
+test('the purchase order is made from the task card (owner, 2026-10-14)', () => {
+  const base = { id: '9', title: 'Buy', kind: 'task', status: 'pending', priority: 'none', children: [], updates: [] } as Parameters<typeof taskCard>[0];
+  const on = JSON.stringify(taskCard({ ...base, orderForm: { items: [{ value: '4', label: 'Toilet paper' }], places: [{ value: 'u/1', label: 'S13' }] } }));
+  for (const k of ['"block_id":"order_item"', '"block_id":"order_place"', '"block_id":"order_qty"', 'Toilet paper', '"type":"number_input"']) assert.ok(on.includes(k), k);
+  assert.doesNotMatch(JSON.stringify(taskCard(base)), /order_item/);
+});
+
 test('the task card does what Kaizen does: sub-tasks with ⋯, cancel, claim, order, activity, a sub-task box', () => {
   const v = taskCard({ id: '9', title: 'Buy for Napa', kind: 'task', status: 'pending', priority: 'none', claim: 'CL2260 · Eviction',
     order: ['Fire extinguisher × 1'], activity: [{ when: 'Oct 13', who: 'juan', body: 'Order draft saved:\n• x' }],

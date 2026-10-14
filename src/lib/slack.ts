@@ -548,6 +548,8 @@ export interface TaskCard extends TaskLite {
   updates: { when: string; who: string; body: string }[];
   /** Owner, Oct 2026 — Slack shows what Kaizen shows: the claim it belongs to, its purchase order, the activity log. */
   claim?: string | null; order?: string[] | null; activity?: { when: string; who: string; body: string }[]; parentId?: string | null;
+  /** Owner, 2026-10-14: what can go on its purchase order (an open, top-level to-do only). */
+  orderForm?: { items: Opt[]; places: Opt[] } | null;
 }
 
 /**
@@ -597,6 +599,11 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
       ...t.updates.map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
       // Opened to comment (§111): the cursor waits in the box.
       input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) }),
+      // Owner, 2026-10-14: the purchase order is made from the card too, a line at a time (0 takes one out).
+      ...(t.orderForm ? [
+        input('order_item', '🛒 Add to the purchase order', select(t.orderForm.items)),
+        input('order_place', 'For which place', select(t.orderForm.places)),
+        input('order_qty', 'How many (0 takes it out)', { type: 'number_input', is_decimal_allowed: false, min_value: '0' })] : []),
       // Owner, 2026-10-14: files from the Manage card too — onto the to-do, kept in Drive.
       input('files', '📎 Attach files', attach()),
       ...(t.parentId ? [] : [input('subtask', 'Add a sub-task', text()), input('subrepair', 'Add a 🔧 work order under it', text())]),

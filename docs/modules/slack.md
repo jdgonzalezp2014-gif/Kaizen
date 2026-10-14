@@ -183,3 +183,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   complete, start, edit, remove) became a **More ›** button (`task_open`) that opens the whole task card, on top of the pop-up —
   a Slack ⋯ cannot act on a click. Start / Remove are no longer in the list (the first comment starts; ✕ Cancel on the card, or
   remove in Kaizen); `task_menu` handlers stay for messages already posted.
+- **Purchase order from the task card (owner, 2026-10-14):** an open, top-level to-do's card (for roles with inventory POST) has
+  "🛒 Add to the purchase order" — item (active items), place (`supplyPlaces`), how many (empty = 1, 0 takes it out). "Save" merges
+  that line into `inventory_orders` via `saveTodoOrder` directly (not /api/inventory: it answers with the whole inventory, past Slack's
+  3 s) and tells it in the to-do's thread. The options load alongside the card's reads.

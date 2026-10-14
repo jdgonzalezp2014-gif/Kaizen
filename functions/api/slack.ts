@@ -15,12 +15,14 @@ import { db, type Env } from '../_lib/db.ts';
 import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { mayAccess } from '../_lib/roles.ts';
 import { attachTodoFiles, slackFiles, slackMessageFiles, toDrive } from '../_lib/todo-files.ts';
-import { rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
+import { commentToThread, rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
 import { cleansFor, digestFacts } from '../_lib/slack-digest.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import * as todos from './todos.ts';
 import * as claims from './claims.ts';
 import * as expenses from './expenses.ts';
+import { invItems, saveTodoOrder } from '../_lib/inventory.ts';
+import { supplyPlaces } from '../_lib/unit-access.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
   parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, unboughtModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
@@ -403,6 +405,8 @@ class Kaizen {
                                  FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
                                 WHERE t.account_id = 1 AND t.id::text = ${id} AND t.deleted_at IS NULL` as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     if (!t) return null;
+    // Alongside the reads below: Slack gives the card 3 s to open.
+    const form = this.orderForm({ parent_id: t.parent_id ?? null, status: String(t.status) });
     const [kids, ups, acts, order] = await Promise.all([
       this.sql`SELECT id::text, title, status FROM todos WHERE account_id = 1 AND parent_id::text = ${id} AND deleted_at IS NULL ORDER BY created_at` as Promise<{ id: string; title: string; status: string }[]>,
       // The card shows what people wrote; the system's lines are Kaizen's activity log (§103).
@@ -420,9 +424,32 @@ class Kaizen {
     return { parentId: t.parent_id, claim: t.claim, order: order.length ? order.map(o => `${o.name} × ${o.qty}`) : null, activity: acts.reverse().map(line), id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, supervisor: t.supervisor,
       dueOn: t.due_on, scheduledOn: t.scheduled_on, reservationLabel: t.reservation_label, description: t.description, vendor: t.vendor,
       costActual: t.cost_actual == null ? null : Number(t.cost_actual), costEstimate: t.cost_estimate == null ? null : Number(t.cost_estimate),
-      resolutionNote: t.resolution_note, unit: t.unit, children: kids,
+      resolutionNote: t.resolution_note, unit: t.unit, children: kids, orderForm: await form,
       updates: ups.reverse().map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
   }
+  /** What a to-do's purchase order can hold — only on an open, top-level one (as Kaizen's), for who may order. */
+  private async orderForm(t: { parent_id: string | null; status: string }) {
+    if (t.parent_id || t.status === 'completed' || t.status === 'cancelled' || !this.may('/api/inventory', 'POST')) return null;
+    const [items, sp] = await Promise.all([invItems(this.sql), supplyPlaces(this.sql)]);
+    return { items: items.filter(i => i.active).slice(0, 100).map(i => ({ value: i.id, label: i.name.slice(0, 75) })),
+             places: sp.places.slice(0, 100).map(p => ({ value: p.key, label: (p.self ? `${p.name} closet` : p.name).slice(0, 75) })) };
+  }
+  /** One line onto the to-do's order: a new item adds, the same item and place changes its quantity, 0 removes it. */
+  private async orderLine(todoId: string, itemId: string, place: string, qty: number) {
+    const [o] = await this.sql`SELECT lines FROM inventory_orders WHERE account_id = 1 AND todo_id = ${Number(todoId) || 0}` as { lines: { itemId: string; place: string; qty: number }[] }[];
+    const lines = (o?.lines ?? []).filter(l => !(String(l.itemId) === itemId && l.place === place));
+    if (qty > 0) lines.push({ itemId, place, qty });
+    // Saved directly, not through /api/inventory: that answers with the whole inventory, and Slack waits 3 s.
+    if (!this.may('/api/inventory', 'POST')) return { ok: false, message: 'Your role does not include inventory.' };
+    try {
+      const said = await saveTodoOrder(this.sql, this.email, todoId, lines);
+      // As Kaizen does: the order is told in the to-do's thread.
+      if (said) this.ctx.waitUntil(commentToThread(this.sql, this.ctx.env.ENCRYPTION_KEY, 'task', todoId,
+        `🛒 ${said.replace(/^Order draft saved/, 'Purchase order saved')}`, this.email).catch(() => {}));
+      return { ok: true };
+    } catch (e) { return { ok: false, message: e instanceof Error ? e.message : String(e) }; }
+  }
+
   /* ── the claim card (§113) ── */
   private async claimCardOf(id: string) {
     const [c, row, ups, work] = await Promise.all([
@@ -869,8 +896,17 @@ class Kaizen {
       const sub = String(state.subtask?.v?.value ?? '').trim();
       const subRepair = String(state.subrepair?.v?.value ?? '').trim();
       const files = (state.files?.v?.files ?? []) as unknown[];
-      if (!body && !sub && !subRepair && !files.length) return json({ response_action: 'errors', errors: { update: 'Write a comment, a sub-task or a work order, or attach a file, first.' } });
+      const orderItem = String(state.order_item?.v?.selected_option?.value ?? '');
+      const orderPlace = String(state.order_place?.v?.selected_option?.value ?? '');
+      const orderQty = state.order_qty?.v?.value == null || state.order_qty.v.value === '' ? 1 : Number(state.order_qty.v.value);
+      if (!body && !sub && !subRepair && !files.length && !orderItem) return json({ response_action: 'errors', errors: { update: 'Write a comment, a sub-task or a work order, add to the order, or attach a file, first.' } });
       const done: string[] = [];
+      if (orderItem) {
+        if (!orderPlace) return json({ response_action: 'errors', errors: { order_place: 'Which place is it for?' } });
+        const r = await this.orderLine(String(meta.id), orderItem, orderPlace, orderQty);
+        if (!r.ok) return json({ response_action: 'errors', errors: { order_item: String(r.message ?? 'Not saved.') } });
+        done.push(orderQty > 0 ? '🛒 Order updated' : '🛒 Taken off the order');
+      }
       if (files.length) {
         if (!this.may('/api/todo-files', 'POST')) return json({ response_action: 'errors', errors: { files: 'Your role does not include adding files.' } });
         this.attachFiles('task', String(meta.id), files);
