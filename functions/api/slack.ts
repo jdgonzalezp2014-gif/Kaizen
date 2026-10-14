@@ -829,12 +829,14 @@ class Kaizen {
       // "Save": the comment and/or a new sub-task (owner, Oct 2026); the card stays open with them in.
       const body = String(state.update?.v?.value ?? '').trim();
       const sub = String(state.subtask?.v?.value ?? '').trim();
-      if (!body && !sub) return json({ response_action: 'errors', errors: { update: 'Write a comment or a sub-task first.' } });
+      const subRepair = String(state.subrepair?.v?.value ?? '').trim();
+      if (!body && !sub && !subRepair) return json({ response_action: 'errors', errors: { update: 'Write a comment, a sub-task or a work order first.' } });
       const done: string[] = [];
-      if (sub) {
-        const r = await this.todo({ action: 'create', title: sub.slice(0, 300), parentId: meta.id, kind: 'task' });
-        if (!r.ok) return json({ response_action: 'errors', errors: { subtask: r.message ?? 'Not saved.' } });
-        done.push('✓ Sub-task added');
+      for (const [words, kind, block, said] of [[sub, 'task', 'subtask', '✓ Sub-task added'], [subRepair, 'work_order', 'subrepair', '✓ Work order added']] as const) {
+        if (!words) continue;
+        const r = await this.todo({ action: 'create', title: words.slice(0, 300), parentId: meta.id, kind });
+        if (!r.ok) return json({ response_action: 'errors', errors: { [block]: r.message ?? 'Not saved.' } });
+        done.push(said);
       }
       if (body) {
         const r = await this.todo({ action: 'note', id: meta.id, body });
@@ -868,15 +870,17 @@ class Kaizen {
       // §113: "Save" on a claim — a comment and/or a to-do for it (owner, Oct 2026); the card stays open with them in.
       const body = String(state.update?.v?.value ?? '').trim();
       const task = String(state.task?.v?.value ?? '').trim();
-      if (!body && !task) return json({ response_action: 'errors', errors: { update: 'Write a comment or a to-do first.' } });
+      const repair = String(state.repair?.v?.value ?? '').trim();
+      if (!body && !task && !repair) return json({ response_action: 'errors', errors: { update: 'Write a comment, a to-do or a repair first.' } });
       const done: string[] = [];
-      if (task) {
-        if (!this.may('/api/todos', 'POST')) return json({ response_action: 'errors', errors: { task: 'Your role does not include the to-do list.' } });
+      for (const [words, kind, block, said] of [[task, 'task', 'task', '✓ To-do added'], [repair, 'work_order', 'repair', '✓ Repair added']] as const) {
+        if (!words) continue;
+        if (!this.may('/api/todos', 'POST')) return json({ response_action: 'errors', errors: { [block]: 'Your role does not include the to-do list.' } });
         const row = await this.claimRow(String(meta.id));
-        const r = await this.todo({ action: 'create', kind: 'task', title: task.slice(0, 300), claimId: String(meta.id), priority: 'none',
+        const r = await this.todo({ action: 'create', kind, title: words.slice(0, 300), claimId: String(meta.id), priority: 'none',
                                     unitIds: row?.unit_id ? [row.unit_id] : [] });
-        if (!r.ok) return json({ response_action: 'errors', errors: { task: r.message ?? 'Not saved.' } });
-        done.push('✓ To-do added');
+        if (!r.ok) return json({ response_action: 'errors', errors: { [block]: r.message ?? 'Not saved.' } });
+        done.push(said);
       }
       if (body) {
         if (!this.may('/api/claims', 'POST')) return json({ response_action: 'errors', errors: { update: 'Your role does not include claims.' } });

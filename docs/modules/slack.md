@@ -154,3 +154,5 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   → a line in its thread (`/api/inventory` todoOrder / purchase).
 - **Claim card = the claim in Kaizen:** its work (each "Open" → `claim_task_open`, the task card pushed on top) and an
   "Add a to-do for this claim" box (submit "Save" does comment and/or to-do; the to-do is told in the claim's thread).
+- **Repairs too:** the task card also has "Add a 🔧 work order under it" (`subrepair`), the claim card "Add a 🔧 repair for
+  this claim" (`repair`) — same rules (told in the thread they came from).

@@ -124,7 +124,7 @@ test('the task card does what Kaizen does: sub-tasks with ⋯, cancel, claim, or
     order: ['Fire extinguisher × 1'], activity: [{ when: 'Oct 13', who: 'juan', body: 'Order draft saved:\n• x' }],
     children: [{ id: '10', title: 'Buy: extinguisher', status: 'pending' }, { id: '11', title: 'Buy: kit', status: 'completed' }], updates: [] });
   const s = JSON.stringify(v);
-  for (const k of ['card_cancel', 'card_sub', 'done:10', 'reopen:11', '⚑ CL2260', 'Purchase order', 'Fire extinguisher × 1', 'Activity log', '"block_id":"subtask"']) assert.ok(s.includes(k), k);
+  for (const k of ['card_cancel', 'card_sub', 'done:10', 'reopen:11', '⚑ CL2260', 'Purchase order', 'Fire extinguisher × 1', 'Activity log', '"block_id":"subtask"', '"block_id":"subrepair"']) assert.ok(s.includes(k), k);
   // A sub-task's own card has no sub-task box (one level, §78).
   assert.doesNotMatch(JSON.stringify(taskCard({ id: '10', title: 'x', kind: 'task', status: 'pending', priority: 'none', parentId: '9', children: [], updates: [] })), /"block_id":"subtask"/);
 });
@@ -341,7 +341,7 @@ test("a claim's card lists its work (each opens) and adds a to-do; a reply made 
   const c = { id: '5', unit: 'P2-4308', category: 'Damage', severity: 'High', status: 'Open', description: 'Missing fob', days: 3, updates: [],
               work: [{ id: '18', title: 'Check the lockbox', status: 'pending', kind: 'task' }, { id: '19', title: 'New fob', status: 'completed', kind: 'work_order' }] };
   const s = JSON.stringify(claimCard(c));
-  for (const k of ['Work* · 1 open of 2', '"action_id":"claim_task_open","value":"18"', '~New fob~', '"block_id":"task"']) assert.ok(s.includes(k), k);
+  for (const k of ['Work* · 1 open of 2', '"action_id":"claim_task_open","value":"18"', '~New fob~', '"block_id":"task"', '"block_id":"repair"']) assert.ok(s.includes(k), k);
   assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'task' }, 'sub-task')), /sub-task of this task/);
   assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'work_order' }, 'claim')), /repair for this claim/);
 });

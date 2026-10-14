@@ -298,7 +298,8 @@ export function claimCard(c: ClaimCard, note?: string, root?: 'claims', focus = 
       section(c.updates.length ? `*Comments* · ${c.updates.length}` : '_No comments yet._'),
       ...c.updates.slice(-10).map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
       input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) }),
-      input('task', 'Add a to-do for this claim', text())
+      input('task', 'Add a to-do for this claim', text()),
+      input('repair', 'Add a 🔧 repair for this claim', text())
     ]
   };
 }
@@ -602,7 +603,7 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
       ...t.updates.map(u => context(`*${esc(u.who)}* · ${esc(u.when)}`, esc(u.body).slice(0, 1500))),
       // Opened to comment (§111): the cursor waits in the box.
       input('update', 'Add a comment', { ...text(null, true), ...(focus ? { focus_on_load: true } : {}) }),
-      ...(t.parentId ? [] : [input('subtask', 'Add a sub-task', text())]),
+      ...(t.parentId ? [] : [input('subtask', 'Add a sub-task', text()), input('subrepair', 'Add a 🔧 work order under it', text())]),
       ...(t.activity?.length ? [context(`*Activity log* · ${t.activity.map(a => `${esc(a.when)} ${esc(a.who)}: ${esc(a.body.split('\n')[0]!)}`).join(' · ')}`.slice(0, 2900))] : [])
     ]
   };
