@@ -3,3 +3,7 @@ compatibility_date = "2024-11-27"
 # Needed by @neondatabase/serverless for its WebSocket transport.
 compatibility_flags = ["nodejs_compat"]
 pages_build_output_dir = "dist"
+
+# Workers AI — the free fallback when Gemini is busy (Slack's ✨ Suggest for SOPs). No key: a binding.
+[ai]
+binding = "AI"

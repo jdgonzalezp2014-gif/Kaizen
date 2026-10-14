@@ -4116,3 +4116,26 @@ And the owner asked to fill every unit and check both sides: empty fields copied
 after, 827 checks same, 179 empty on both, 2 on purpose (P2-4212 Wi-Fi capitals; Preston's rules with duplicates
 removed in Kaizen). Amenities: not wanted.
 
+
+## §157 — Slack: "Add to…" in listened channels; SOPs from Slack; a free AI chain (2026-10-14)
+
+The owner's boss: conversations in Slack (the Shan eviction, a judgment file posted to #kgp-team) should land in Kaizen
+under their project without admin work, and a procedure explained once in a thread ("early checkout: shorten with no
+refund first, then negotiate") should become an SOP so nobody asks again.
+
+- **"Add to…"** — in the channels picked in Settings → Slack (`slack_config.addTo.channels`: #kaizen-ops, #kgp-team),
+  every new message from a Kaizen member that is not in a thread Kaizen already knows gets a private, silent reply
+  (`chat.postEphemeral`, `src/lib/slack-addto.ts`): "Add as comment to task ▾", "Add to something else ▾" (🛒 orders,
+  🔧 work orders, ⚑ claims), ✕ Not this. A first guess by words (unit code 3, shared word 1, name prefix 1; ≥2 and
+  ahead) gets a ✓ Add button. Adding saves "<author>: <text> — From Slack: <link>" as a comment, the files (to-do
+  files / Drive + a claim comment), and remembers the thread (`slack_threads`): later replies there are comments by
+  themselves (§153). **No model reads messages** — the owner: something that reads everything is money given away.
+- **SOPs** — `@Kaizen newsop <title>` (a button: mentions cannot open pop-ups), `/kaizen sop <title>`, ⋯ "Make SOP from
+  this" (manifest) open the §151 form (`src/lib/slack-sops.ts`); from a message it starts with the thread's words.
+  Anyone saves a draft; only `sops.edit` publishes. `@Kaizen sops` / `/kaizen sops`: a button per section → list → read.
+  Saved through /api/sops (versions, note "From Slack: <link>"); rules go to the body under "## Rules".
+- **✨ Suggest** (only on a click) — `functions/_lib/ai-chain.ts`: the configured Gemini model, then
+  `gemini-3.5-flash-lite`, then Cloudflare Workers AI (`[ai]` binding, free, `@cf/meta/llama-3.3-70b-instruct-fp8-fast`),
+  each with one retry on 503/429. Phones and emails are taken out first; the model is told to leave out what the
+  conversation does not say. `accounts.ai_last` (081) keeps who answered or why none did. On 2026-10-14 every Gemini
+  flash model answered 503 ("high demand") while flash-lite answered — the reason for the chain.

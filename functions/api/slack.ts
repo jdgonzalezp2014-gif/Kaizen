@@ -22,6 +22,11 @@ import * as todos from './todos.ts';
 import * as claims from './claims.ts';
 import * as expenses from './expenses.ts';
 import { invItems, saveTodoOrder } from '../_lib/inventory.ts';
+import * as sopsApi from './sops.ts';
+import { askJson } from '../_lib/ai-chain.ts';
+import { draftFromAi, draftFromThread, readSopForm, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
+         type SopSectionLite, type SopSource } from '../../src/lib/slack-sops.ts';
+import { addToBlocks, sourceOf, suggestTarget, type AddSource, type AddTarget } from '../../src/lib/slack-addto.ts';
 import { supplyPlaces } from '../_lib/unit-access.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
@@ -59,8 +64,10 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       const ev = body.event ?? {};
       if (ev.type === 'app_mention' && !ev.bot_id) ctx.waitUntil(mention(ctx, sql, s, ev).catch(() => {}));
       // A threaded reply, not the thread's own first message, and not itself an @-mention (app_mention above owns that one).
-      else if (ev.type === 'message' && !ev.bot_id && (!ev.subtype || ev.subtype === 'file_share') && ev.thread_ts && ev.thread_ts !== ev.ts) {
-        ctx.waitUntil(threadReply(ctx, sql, s, ev).catch(() => {}));
+      else if (ev.type === 'message' && !ev.bot_id && (!ev.subtype || ev.subtype === 'file_share')) {
+        if (ev.thread_ts && ev.thread_ts !== ev.ts) ctx.waitUntil(threadReply(ctx, sql, s, ev).catch(() => {}));
+        // Owner, 2026-10-14: in a listened channel, a message no thread of Kaizen's already takes gets "Add to…".
+        ctx.waitUntil(offerAddTo(ctx, sql, s, ev).catch(() => {}));
       }
     }
     return ack();
@@ -79,6 +86,12 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     if (!payload) return await k.command(form.get('text') ?? '', form.get('trigger_id') ?? '', form.get('response_url') ?? '');
     if (payload.type === 'block_actions') return await k.action(payload);
     if (payload.type === 'shortcut') return await k.shortcut(payload);
+    // Owner, 2026-10-14: ⋯ → "Make SOP from this" — the form, filled from the message's thread.
+    if (payload.type === 'message_action' && payload.callback_id === 'sop_from_message') {
+      const m = payload.message ?? {};
+      return await k.openSopForm(payload.trigger_id, '', { channel: String(payload.channel?.id ?? ''), ts: String(m.ts ?? ''),
+                                                          root: String(m.thread_ts ?? m.ts ?? ''), text: String(m.text ?? '') });
+    }
     if (payload.type === 'message_action') return await k.fromMessage(payload);
     if (payload.type === 'view_submission') return await k.submit(payload);
     return ack();
@@ -118,6 +131,12 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   const { verb, arg } = parseMention(String(ev.text ?? ''));
   const from = { channel: String(ev.channel), ts: String(inThread ? ev.thread_ts : ev.ts) };
   if (verb === 'help') { await sayPrivate('What Kaizen does in Slack', mentionHelpBlocks()); return; }
+  // Owner, 2026-10-14: a mention cannot open a pop-up — the button does.
+  if (verb === 'newsop') {
+    await say('New SOP', [{ type: 'section', text: { type: 'mrkdwn', text: `📝 New SOP${arg ? `: *${arg.replace(/[<>&*]/g, '')}*` : ''} — tap to open the form.` },
+      accessory: { type: 'button', action_id: 'mention_new_sop', text: { type: 'plain_text', text: 'Open the form' }, style: 'primary', value: JSON.stringify({ title: arg.slice(0, 120) }) } }]);
+    return;
+  }
   // §110: "@Kaizen new <what>" is made at once — the reply in its thread has ✎ Add details. No words: the form.
   if ((verb === 'new' || verb === 'repair') && arg) {
     const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
@@ -139,6 +158,7 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   if (!member.ok) { await sayPrivate(member.why); return; }
   const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
   if (verb === 'tasks' || verb === 'today' || verb === 'claims') { const m = await k.forMention(verb); await say(m.text, m.blocks); return; }
+  if (verb === 'sops') { const m = await k.sopsMessage(); await say(m.text, m.blocks); return; }
   // §114: "@Kaizen all" — the reminder now, for everyone, in the thread of the asking message (the channel stays short).
   if (verb === 'all') { const m = await k.forMention('all'); await say(m.text, m.blocks); return; }
 
@@ -164,6 +184,29 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   if (!r.ok) { await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`); return; }
   const re = await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
   if (!re.ok) await say('✓ Saved as a comment in Kaizen.');
+}
+
+/**
+ * "Add to…" (owner, 2026-10-14): in a listened channel (Settings → Slack), each new message from a member gets a
+ * private, silent reply — add it as a comment to a task, or to an order, a work order or a claim. Not in a thread
+ * Kaizen already knows (those are saved by themselves), not an @Kaizen (the mention answers). No model reads it.
+ */
+async function offerAddTo(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  if (!(s.config.addTo?.channels ?? []).some(c => c.id === ev.channel)) return;
+  const botId = await botUserIdOf(sql, s);
+  if (botId && String(ev.text ?? '').includes(`<@${botId}>`)) return;
+  if (ev.thread_ts) {
+    const [known] = await sql`SELECT 1 FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}`;
+    if (known) return;
+  }
+  const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
+  if (!member.ok) return;
+  const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
+  const targets = await k.addTargets();
+  if (!targets.length) return;
+  const source: AddSource = { channel: String(ev.channel), ts: String(ev.ts), thread: ev.thread_ts ? String(ev.thread_ts) : null };
+  await slackApi(s.token!, 'chat.postEphemeral', { channel: ev.channel, user: ev.user, text: 'Add this to Kaizen?',
+    blocks: addToBlocks(targets, source, suggestTarget(String(ev.text ?? ''), targets)), ...(ev.thread_ts ? { thread_ts: ev.thread_ts } : {}) });
 }
 
 /** The bot's own Slack user id, cached in slack_config — fetched once (auth.test) and saved if missing. */
@@ -450,6 +493,127 @@ class Kaizen {
     } catch (e) { return { ok: false, message: e instanceof Error ? e.message : String(e) }; }
   }
 
+  /* ── "Add to…" (owner, 2026-10-14) ── */
+  /** What a message can be added to: open to-dos (plain, with an order, repairs) and open claims — as this member may. */
+  async addTargets(): Promise<AddTarget[]> {
+    const out: AddTarget[] = [];
+    if (this.may('/api/todos', 'POST')) {
+      const rows = await this.sql`SELECT t.id::text, t.title, t.kind, u.name AS unit,
+                                         EXISTS (SELECT 1 FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id) AS ordered
+                                    FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
+                                   WHERE t.account_id = 1 AND t.deleted_at IS NULL AND t.parent_id IS NULL AND t.status NOT IN ('completed', 'cancelled')
+                                   ORDER BY t.created_at DESC LIMIT 300` as { id: string; title: string; kind: string; unit: string | null; ordered: boolean }[];
+      for (const r of rows) out.push({ value: `task:${r.id}`, label: `${r.title}${r.unit ? ` · ${r.unit}` : ''}`,
+        group: r.kind === 'work_order' ? 'work_order' : r.ordered ? 'order' : 'task', words: `${r.title} ${r.unit ?? ''}` });
+    }
+    if (this.may('/api/claims', 'POST')) {
+      const rows = await this.sql`SELECT c.id::text, coalesce(nullif(c.description, ''), c.category) AS what, c.category, u.name AS unit
+                                    FROM claims c LEFT JOIN units u ON u.account_id = c.account_id AND u.id = c.unit_id
+                                   WHERE c.account_id = 1 AND c.deleted_at IS NULL AND c.status IN ('Open', 'In progress')
+                                   ORDER BY c.occurred_on DESC LIMIT 100` as { id: string; what: string; category: string; unit: string | null }[];
+      for (const r of rows) out.push({ value: `claim:${r.id}`, label: `${r.unit ? `${r.unit} · ` : ''}${r.what}`, group: 'claim', words: `${r.what} ${r.category} ${r.unit ?? ''}` });
+    }
+    return out;
+  }
+
+  /** A Slack thread's messages (people's, not bots'), with names — or only one of them. */
+  private async threadMessages(channel: string, root: string, only?: string) {
+    const r = await slackApi<{ messages?: { user?: string; bot_id?: string; text?: string; ts: string; files?: unknown[] }[] }>(this.s.token!, 'conversations.replies', { channel, ts: root, limit: 100 });
+    const msgs = (r.messages ?? []).filter(m => !m.bot_id && (!only || m.ts === only));
+    const names = new Map<string, string>();
+    for (const u of [...new Set(msgs.map(m => m.user).filter((x): x is string => !!x))]) {
+      const i = await slackApi<{ user?: { real_name?: string; profile?: { display_name?: string } } }>(this.s.token!, 'users.info', { user: u });
+      names.set(u, i.user?.profile?.display_name || i.user?.real_name || 'Someone');
+    }
+    return msgs.map(m => ({ who: names.get(m.user ?? '') ?? 'Someone', text: m.text ?? '', ts: m.ts, files: m.files ?? [] }));
+  }
+
+  /** The message into Kaizen: its words (who said them, a link back) as a comment, its files, and its thread from now on. */
+  async addMessageTo(target: string, src: AddSource): Promise<{ ok: boolean; message?: string }> {
+    const [subject, id = ''] = target.split(':') as ['task' | 'claim', string];
+    if (subject !== 'task' && subject !== 'claim') return { ok: false, message: 'Pick a task or a claim.' };
+    const [m] = await this.threadMessages(src.channel, src.thread ?? src.ts, src.ts);
+    if (!m) return { ok: false, message: 'Kaizen could not read that message (is the bot in the channel?).' };
+    const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: src.channel, message_ts: src.ts });
+    const words = slackText(m.text).trim();
+    if (words || !m.files.length) {
+      const r = await this.comment(subject, id, `${m.who}: ${words || '(no text)'}${link.permalink ? `\n— From Slack: ${link.permalink.split('?')[0]}` : ''}`);
+      if (!r.ok) return { ok: false, message: String(r.message ?? r.error ?? 'Not saved.') };
+    }
+    if (m.files.length) this.attachFiles(subject, id, m.files);
+    // Its thread is this subject's from now on: later replies there are comments by themselves (§153).
+    await rememberThread(this.sql, { ok: true, channel: src.channel, ts: src.thread ?? src.ts }, subject, id);
+    return { ok: true };
+  }
+
+  /* ── SOPs from Slack (owner, 2026-10-14) ── */
+  private async sopSections(): Promise<SopSectionLite[]> {
+    return await this.sql`SELECT key, label, parent_key AS "parentKey" FROM sop_sections WHERE account_id = 1 AND deleted_at IS NULL
+                           ORDER BY sort, label` as SopSectionLite[];
+  }
+  /** The form; from a message, its words first — the whole thread follows a moment later (Slack gives the form 3 s). */
+  async openSopForm(trigger: string, title = '', from?: { channel: string; ts: string; root: string; text: string }) {
+    const [sections, link] = await Promise.all([this.sopSections(),
+      from ? slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: from.channel, message_ts: from.ts }) : null]);
+    const source: SopSource | null = from ? { channel: from.channel, ts: from.root, link: link?.permalink?.split('?')[0] ?? null } : null;
+    const canPublish = this.may('/api/sops', 'POST');
+    const first = from ? draftFromThread([{ who: '', text: from.text }]) : { title };
+    const r = await slackApi<{ view?: { id: string } }>(this.s.token!, 'views.open', { trigger_id: trigger, view: sopModal(sections, first, { canPublish, source }) });
+    if (from && r.view?.id) {
+      const viewId = r.view.id;
+      this.ctx.waitUntil((async () => {
+        const msgs = await this.threadMessages(from.channel, from.root);
+        if (msgs.length > 1) await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: sopModal(sections, draftFromThread(msgs), { canPublish, source, v: 1 }) });
+      })().catch(() => {}));
+    }
+    return ack();
+  }
+  /** ✨: the thread to a model (Gemini, then flash-lite, then Workers AI), the answer into the form — never saved without a person. */
+  private async suggestSop(view: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+    const meta = JSON.parse(view.private_metadata || '{}') as { source?: SopSource | null; v?: number };
+    const source = meta.source;
+    if (!source) return;
+    const sections = await this.sopSections();
+    const canPublish = this.may('/api/sops', 'POST');
+    const v = meta.v ?? 0;
+    const busy = (note: string) => slackApi(this.s.token!, 'views.update', { view_id: view.id, view: sopModal(sections, {}, { canPublish, source, v, note }) });
+    // Same block ids: what is typed stays; only the note changes.
+    await busy('✨ Reading the thread…');
+    const msgs = await this.threadMessages(source.channel, source.ts);
+    const p = sopPrompt(sections, msgs.map(m => ({ who: m.who, text: m.text })));
+    const r = await askJson(this.sql, this.ctx.env, p.system, p.user);
+    if (!r.ok) { await busy(`⚠ No AI could answer just now — try ✨ again in a minute. (${r.error.slice(0, 200)})`); return; }
+    await slackApi(this.s.token!, 'views.update', { view_id: view.id,
+      view: sopModal(sections, draftFromAi(r.json, sections), { canPublish, source, v: v + 1, note: `✨ Suggested by ${r.by} — check every field before saving.` }) });
+  }
+  private async sopCounts() {
+    const canEdit = this.may('/api/sops', 'POST');
+    return await this.sql`SELECT s.key, s.label, s.parent_key AS "parentKey",
+                                 (SELECT count(*)::int FROM sops o WHERE o.account_id = 1 AND o.deleted_at IS NULL AND o.status <> 'archived'
+                                    AND (o.status = 'published' OR ${canEdit})
+                                    AND (o.section_key = s.key OR o.section_key IN (SELECT c.key FROM sop_sections c WHERE c.account_id = 1 AND c.parent_key = s.key AND c.deleted_at IS NULL))) AS n
+                            FROM sop_sections s WHERE s.account_id = 1 AND s.deleted_at IS NULL ORDER BY s.sort, s.label` as (SopSectionLite & { n: number })[];
+  }
+  async sopsMessage() {
+    return { text: 'SOPs', blocks: sopsBlocks(await this.sopCounts(), this.s.config.appUrl) };
+  }
+  private async sopList(key: string) {
+    const canEdit = this.may('/api/sops', 'POST');
+    const [sec] = await this.sql`SELECT label FROM sop_sections WHERE account_id = 1 AND key = ${key}` as { label: string }[];
+    const rows = await this.sql`SELECT id::text, title, purpose, status FROM sops WHERE account_id = 1 AND deleted_at IS NULL AND status <> 'archived'
+                                  AND (status = 'published' OR ${canEdit})
+                                  AND (section_key = ${key} OR section_key IN (SELECT c.key FROM sop_sections c WHERE c.account_id = 1 AND c.parent_key = ${key}))
+                                ORDER BY title` as { id: string; title: string; purpose: string | null; status: string }[];
+    return sopListModal(sec?.label ?? 'SOPs', rows);
+  }
+  private async sopView(id: string) {
+    const canEdit = this.may('/api/sops', 'POST');
+    const [s] = await this.sql`SELECT id::text, title, status, purpose, trigger, owner, done_when AS "doneWhen", steps, body FROM sops
+                                WHERE account_id = 1 AND id::text = ${id} AND deleted_at IS NULL AND (status = 'published' OR ${canEdit})` as
+      { id: string; title: string; status: string; purpose: string | null; trigger: string | null; owner: string | null; doneWhen: string | null; steps: { text: string; who?: string }[]; body: string | null }[];
+    return s ? sopViewModal(s, this.s.config.appUrl) : null;
+  }
+
   /* ── the claim card (§113) ── */
   private async claimCardOf(id: string) {
     const [c, row, ups, work] = await Promise.all([
@@ -579,6 +743,15 @@ class Kaizen {
       return ephemeral('How to use Kaizen in Slack', [sectionButtons(), ...helpBlocks(sop ?? null, helpUrlOf(this.s.config)),
         { type: 'context', elements: [{ type: 'mrkdwn', text: HELP.split('\n').map(l => l.split(' — ')[0]).join(' · ') }] }]);
     }
+    if (verb === 'sop') {
+      if (!this.may('/api/sops', 'GET')) return this.deny('SOPs');
+      return await this.openSopForm(trigger, arg);
+    }
+    if (verb === 'sops') {
+      if (!this.may('/api/sops', 'GET')) return this.deny('SOPs');
+      const m = await this.sopsMessage();
+      return ephemeral(m.text, m.blocks);
+    }
     if (verb === 'cleans') {
       const today = todayIn('America/New_York');
       return await this.openCleans(trigger, /tomorrow|mañana/i.test(arg) ? addDays(today, 1) : /^\d{4}-\d{2}-\d{2}$/.test(arg.trim()) ? arg.trim() : today);
@@ -632,6 +805,39 @@ class Kaizen {
     if (id === 'open_kaizen' || id.startsWith('open_hostaway_')) return ack();
     const inView: string = p.container?.type === 'view' ? (p.view?.callback_id ?? '') : '';
     const viewId: string = p.view?.id ?? '';
+
+    // Owner, 2026-10-14: "Add to…" — the private offer under a message in a listened channel.
+    if (id.startsWith('addto_')) {
+      if (id === 'addto_dismiss') { await this.reply(url, { delete_original: true }); return ack(); }
+      const blocks = (p.message?.blocks ?? []) as { block_id?: string }[];
+      const src = sourceOf(String(a.block_id ?? blocks.find(b => String(b.block_id ?? '').startsWith('addto_'))?.block_id ?? ''));
+      if (!src || !value) return ack();
+      const label = String(a.selected_option?.text?.text ?? '') || (value.startsWith('claim:') ? 'the claim' : 'the task');
+      // After the answer: reading the message, its link and its files takes longer than Slack waits.
+      this.ctx.waitUntil((async () => {
+        const r = await this.addMessageTo(value, src);
+        await this.reply(url, { replace_original: true, response_type: 'ephemeral',
+          text: r.ok ? `✓ Added to ${label} — later replies in this thread are saved too.` : `Not added: ${r.message}` });
+      })().catch(() => {}));
+      return ack();
+    }
+    // SOPs (owner, 2026-10-14).
+    if (id === 'mention_new_sop') {
+      if (!this.may('/api/sops', 'GET')) return this.deny('SOPs');
+      return await this.openSopForm(p.trigger_id, String((JSON.parse(value || '{}') as { title?: string }).title ?? ''));
+    }
+    if (id === 'sop_suggest') { this.ctx.waitUntil(this.suggestSop(p.view ?? {}).catch(() => {})); return ack(); }
+    if (id === 'sops_section') {
+      if (!this.may('/api/sops', 'GET')) return this.deny('SOPs');
+      const view = await this.sopList(value);
+      await slackApi(this.s.token!, inView ? 'views.push' : 'views.open', { trigger_id: p.trigger_id, view });
+      return ack();
+    }
+    if (id === 'sop_view') {
+      const view = await this.sopView(value);
+      if (view) await slackApi(this.s.token!, inView ? 'views.push' : 'views.open', { trigger_id: p.trigger_id, view });
+      return ack();
+    }
 
     // §102: "Manage" on each section of the reminder.
     if (id.startsWith('sec_')) {
@@ -890,6 +1096,22 @@ class Kaizen {
     const view = p.view ?? {};
     const meta = JSON.parse(view.private_metadata || '{}') as { id: string | null; kind?: string };
     const state = view.state?.values ?? {};
+    if (view.callback_id === 'sop_save') {
+      // Owner, 2026-10-14: anyone saves a draft; only who edits SOPs (sops.edit) publishes — as in Kaizen.
+      const f = readSopForm(state);
+      if ('error' in f) return json({ response_action: 'errors', errors: { [f.error.block]: f.error.message } });
+      const publish = f.publish && this.may('/api/sops', 'POST');
+      const src = (meta as unknown as { source?: SopSource | null }).source;
+      const r = await this.api(sopsApi.onRequestPost, '/api/sops', 'POST', { action: 'save', kind: 'sop', status: publish ? 'published' : 'draft',
+        title: f.draft.title, sectionKey: f.draft.sectionKey, purpose: f.draft.purpose, trigger: f.draft.trigger, owner: f.draft.owner,
+        doneWhen: f.draft.doneWhen, steps: f.draft.steps.map(text => ({ text })), body: sopBody(f.draft.rules),
+        note: src?.link ? `From Slack: ${src.link}` : 'From Slack' });
+      if (!r.ok) return json({ response_action: 'errors', errors: { [Object.keys(state).find(b => b.startsWith('title_')) ?? 'title_0']: String(r.error ?? 'Not saved.') } });
+      const sid = String((r.sop as { id?: string } | undefined)?.id ?? '');
+      const open = this.s.config.appUrl && sid ? ` · <${this.s.config.appUrl}/?sop=${sid}|Open in Kaizen>` : '';
+      return json({ response_action: 'update', view: { type: 'modal', title: { type: 'plain_text', text: 'SOP saved' }, close: { type: 'plain_text', text: 'Close' },
+        blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `✓ *${f.draft.title.replace(/[<>&*]/g, '')}* — ${publish ? 'published' : 'saved as a draft; an SOP editor publishes it in Kaizen'}${open}` } }] } });
+    }
     if (view.callback_id === 'task_card') {
       // "Save": the comment and/or a new sub-task (owner, Oct 2026); the card stays open with them in.
       const body = String(state.update?.v?.value ?? '').trim();

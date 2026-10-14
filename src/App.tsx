@@ -184,6 +184,13 @@ function TeamApp() {
           history.replaceState(null, '', location.pathname);
           return;
         }
+        // A link to a tab (owner, 2026-10-14 — "@Kaizen sops" links the SOP library): ?tab=<tab>.
+        const tabQ = new URLSearchParams(location.search).get('tab');
+        if (tabQ && tabs.includes(tabQ as Tab)) {
+          setTab(tabQ as Tab);
+          history.replaceState(null, '', location.pathname);
+          return;
+        }
         // A link to one Repository record (§150 — Setup → Inventory's map): ?repo=<table>/<ROW-id>, opened by Repository itself.
         if (new URLSearchParams(location.search).get('repo') && tabs.includes('repository')) { setTab('repository'); return; }
         setTab(prev => (prev && tabs.includes(prev)) ? prev : ((back ?? tabs[0]) as Tab));

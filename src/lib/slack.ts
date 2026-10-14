@@ -21,6 +21,8 @@ export const TOPICS: { key: Topic; label: string; what: string }[] = [
 export interface SlackConfig {
   /** Channel id per topic, and its name for display. */
   channels?: Partial<Record<Topic, { id: string; name: string }>>;
+  /** Owner, 2026-10-14: where each new message gets the private "Add to…" offer (#kaizen-ops, #kgp-team). */
+  addTo?: { channels: { id: string; name: string }[] };
   events?: { taskCreated?: boolean; taskAssigned?: boolean; taskClosed?: boolean; fromHostaway?: boolean; claimOpened?: boolean; claimChanged?: boolean;
              /** §134: one thread per day of cleans in the Reservations channel — photos and ✅ done as they arrive. Off until switched on. */
              cleanThread?: boolean };
@@ -625,13 +627,14 @@ export function cleanerMessage(name: string, cleans: { date: string; time: strin
 
 /* ── /kaizen ────────────────────────────────────────────────────────── */
 
-export type Verb = 'help' | 'tasks' | 'task' | 'repair' | 'claims' | 'claim' | 'cost' | 'today' | 'cleans';
+export type Verb = 'help' | 'tasks' | 'task' | 'repair' | 'claims' | 'claim' | 'cost' | 'today' | 'cleans' | 'sop' | 'sops';
 export function parseCommand(text: string): { verb: Verb; arg: string } {
   const t = (text ?? '').trim();
   const [first = '', ...rest] = t.split(/\s+/);
   const v = first.toLowerCase();
   const map: Record<string, Verb> = { '': 'help', help: 'help', tasks: 'tasks', todos: 'tasks', list: 'tasks', task: 'task', todo: 'task', new: 'task',
-    repair: 'repair', claims: 'claims', claim: 'claim', cost: 'cost', expense: 'cost', today: 'today', digest: 'today', cleans: 'cleans', cleanings: 'cleans', cleaning: 'cleans' };
+    repair: 'repair', claims: 'claims', claim: 'claim', cost: 'cost', expense: 'cost', today: 'today', digest: 'today', cleans: 'cleans', cleanings: 'cleans', cleaning: 'cleans',
+    sop: 'sop', newsop: 'sop', sops: 'sops' };
   return map[v] ? { verb: map[v]!, arg: rest.join(' ') } : { verb: 'task', arg: t };
 }
 export const HELP = [
@@ -641,6 +644,7 @@ export const HELP = [
   '*/kaizen cost 45 towels P2-4308* — log a cost (a form asks every field)',
   '*/kaizen help* or *@Kaizen* — buttons to every pop-up: Tasks · Claims · Check-ins · Cleans',
   '*/kaizen today* — check-ins, cleans and what is missing, now',
+  '*/kaizen sop* _title_ — write an SOP (a form opens) · */kaizen sops* — the SOP library',
   '*/kaizen cleans* (or *cleans tomorrow*) — the day’s cleans, and change who cleans',
   '⚡ *Shortcuts* — New task · Report a repair · New claim from anywhere; *Create task from message* in any message’s ⋯ menu',
   '*@Kaizen new Fix the AC in P2-4308* — in any channel: the to-do is made at once, with *✎ Add details* (also *repair*, *claim*, *tasks*, *today*, *help*)',
@@ -888,7 +892,7 @@ export function taskCheckMessage(kind: 'checkin' | 'checkout', d: TaskCheckInput
 
 /* ── @Kaizen: what a mention asks for (§108) ────────────────────────── */
 
-export type MentionVerb = 'help' | 'new' | 'repair' | 'claim' | 'cost' | 'claims' | 'tasks' | 'today' | 'all' | 'comments' | 'text';
+export type MentionVerb = 'help' | 'new' | 'repair' | 'claim' | 'cost' | 'claims' | 'tasks' | 'today' | 'all' | 'comments' | 'newsop' | 'sops' | 'text';
 
 /** "@Kaizen new Fix the AC" → { verb: 'new', arg: 'Fix the AC' }; anything else is plain text. */
 export function parseMention(text: string): { verb: MentionVerb; arg: string } {
@@ -896,7 +900,8 @@ export function parseMention(text: string): { verb: MentionVerb; arg: string } {
   const [first = '', ...rest] = t.split(/\s+/);
   const map: Record<string, MentionVerb> = { '': 'help', help: 'help', '?': 'help', commands: 'help',
     new: 'new', task: 'new', todo: 'new', 'to-do': 'new', add: 'new', repair: 'repair', claim: 'claim', claims: 'claims', cases: 'claims', cost: 'cost', expense: 'cost', gasto: 'cost', costo: 'cost',
-    tasks: 'tasks', list: 'tasks', today: 'today', all: 'all', status: 'all', reminder: 'all', summary: 'all', comments: 'comments', history: 'comments' };
+    tasks: 'tasks', list: 'tasks', today: 'today', all: 'all', status: 'all', reminder: 'all', summary: 'all', comments: 'comments', history: 'comments',
+    newsop: 'newsop', sop: 'newsop', sops: 'sops' };
   // "task: …" as much as "task …" (owner, Oct 2026 — Derek's to-do kept "task:" in its title).
   const v = map[first.toLowerCase().replace(/:$/, '')];
   return v ? { verb: v, arg: rest.join(' ') } : { verb: 'text', arg: t };
@@ -919,6 +924,7 @@ export const MENTION_HELP = [
   '*@Kaizen all* — the whole reminder now, in a thread for everyone: check-ins, cleans, tasks, claims, and how the day is going',
   '*@Kaizen today* — the same, only for you',
   'In a task’s thread: *@Kaizen* _your comment_ — saved as a comment · *@Kaizen comments* — the comments so far',
+  '*@Kaizen newsop* _title_ — write an SOP · *@Kaizen sops* — the SOP library by section · ⋯ on a message → *Make SOP from this*',
   'Also: */kaizen* (type */kaizen help*) and the ⚡ shortcuts'
 ].join('\n');
 

@@ -66,6 +66,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         people: c.people && typeof c.people === 'object'
           ? Object.fromEntries(Object.entries(c.people).filter(([h, u]) => /^\d+$/.test(h) && /^[UW][A-Z0-9]+$/.test(String(u))).map(([h, u]) => [h, String(u)]))
           : s.config.people,
+        // Owner, 2026-10-14: the channels where a message is offered "Add to…".
+        addTo: c.addTo && Array.isArray(c.addTo.channels)
+          ? { channels: (c.addTo.channels as { id?: unknown; name?: unknown }[]).filter(x => /^[CG][A-Z0-9]+$/.test(String(x?.id))).slice(0, 20)
+                .map(x => ({ id: String(x.id), name: String(x.name ?? '').slice(0, 80) })) }
+          : s.config.addTo,
         // §107: the tasks' check-in / check-out — local times, a known US zone.
         taskCheck: c.taskCheck && typeof c.taskCheck === 'object' ? {
           tz: ['America/Chicago', 'America/New_York', 'America/Denver', 'America/Los_Angeles'].includes(String(c.taskCheck.tz)) ? String(c.taskCheck.tz) : DEFAULT_TASK_CHECK.tz,

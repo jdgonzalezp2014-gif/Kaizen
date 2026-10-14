@@ -21,6 +21,8 @@ export interface Env extends AuthEnv {
   HOSTAWAY_API_KEY?: string;
   QUO_API_KEY?: string;
   QUO_FROM?: string;
+  // Cloudflare Workers AI (wrangler.toml [ai]): the free second provider behind Gemini (owner, 2026-10-14).
+  AI?: { run(model: string, input: Record<string, unknown>): Promise<unknown> };
 }
 
 export function db(env: Env) {

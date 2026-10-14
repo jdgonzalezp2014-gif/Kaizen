@@ -113,6 +113,11 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 
 ## Open items
 
+- **§157 needs the manifest updated** (Settings → Slack → Show the manifest → paste in Slack → Save): the ⋯ "Make SOP
+  from this" shortcut and the `/kaizen` hint. No new scopes. "Add to…" needs nothing (message events and history
+  scopes are on; the bot is in #kaizen-ops and #kgp-team). Turn the channels on in Settings → Slack → 3 · Channels.
+- SOP 8 "Kaizen in Slack" does not yet describe Add to… / newsop / sops (owner's to approve).
+
 - **§152/§153 need a manifest reinstall to take effect.** Code is deployed, but Slack only sends
   `message.channels`/`message.groups` once the app's manifest is updated and reinstalled: Settings →
   Slack → "Show the manifest" → copy → Slack → the app → App Manifest → paste → Save → Reinstall to
@@ -137,7 +142,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 
 ## History
 
-§99–§102, §107–§117, §119, §134, §152, §153.
+§99–§102, §107–§117, §119, §134, §152, §153, §157.
 - **Orders closed unbought (§150, operations):** ✓ Complete on a cleaner's or an inspection's request with no purchase
   recorded opens `unboughtModal` (callback `task_unbought`; views.open from a message, views.push inside the Tasks
   pop-up): a link to record the purchase in Kaizen, or a required reason → `/api/todos` done with `closeReason`.
@@ -187,3 +192,6 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   "🛒 Add to the purchase order" — item (active items), place (`supplyPlaces`), how many (empty = 1, 0 takes it out). "Save" merges
   that line into `inventory_orders` via `saveTodoOrder` directly (not /api/inventory: it answers with the whole inventory, past Slack's
   3 s) and tells it in the to-do's thread. The options load alongside the card's reads.
+- **§157 (2026-10-14):** "Add to…" in listened channels (`offerAddTo`, `addto_*` actions, `Kaizen.addMessageTo`);
+  SOPs from Slack (`newsop`/`sops` mention verbs, `/kaizen sop|sops`, `sop_from_message`, `sop_save`, `sops_section`,
+  `sop_view`, `sop_suggest`); the AI chain (`functions/_lib/ai-chain.ts`, Gemini → flash-lite → Workers AI `[ai]`).

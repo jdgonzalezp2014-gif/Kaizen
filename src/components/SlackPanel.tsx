@@ -25,13 +25,15 @@ function manifest(origin: string) {
       // Direct messages to people (§100): the app's Messages tab.
       app_home: { home_tab_enabled: false, messages_tab_enabled: true, messages_tab_read_only_enabled: false },
       slash_commands: [{ command: '/kaizen', url: `${origin}/api/slack`, description: 'Tasks, claims and today’s check-ins',
-                         usage_hint: 'tasks · task Fix the AC · repair … · claims · claim … · today', should_escape: false }],
+                         usage_hint: 'tasks · task Fix the AC · repair … · claims · claim … · today · sop … · sops', should_escape: false }],
       // ⚡ from anywhere, and ⋯ on any message (§100).
       shortcuts: [
         { name: 'New task', type: 'global', callback_id: 'new_task', description: 'Add a to-do in Kaizen' },
         { name: 'Report a repair', type: 'global', callback_id: 'new_repair', description: 'Add a repair in Kaizen' },
         { name: 'New claim', type: 'global', callback_id: 'new_claim', description: 'Log a guest claim in Kaizen' },
-        { name: 'Create task from message', type: 'message', callback_id: 'task_from_message', description: 'Track this message as a Kaizen task' }
+        { name: 'Create task from message', type: 'message', callback_id: 'task_from_message', description: 'Track this message as a Kaizen task' },
+        // Owner, 2026-10-14: a thread where a procedure was explained becomes an SOP draft (✨ AI fills it in, a person saves).
+        { name: 'Make SOP from this', type: 'message', callback_id: 'sop_from_message', description: 'Write an SOP from this thread' }
       ]
     },
     oauth_config: { scopes: { bot: ['chat:write', 'chat:write.public', 'commands', 'channels:read', 'groups:read', 'channels:manage',
@@ -141,6 +143,20 @@ export function SlackPanel() {
             </div>
           )}
           {!channels && cfg.channels && <p className="note">Now: {TOPICS.filter(t => cfg.channels?.[t.key]).map(t => `${t.label} → #${cfg.channels![t.key]!.name}`).join(' · ') || 'no channels yet'}</p>}
+          <p className="note"><b>Add to…</b> — in these channels each new message gets a private, silent offer (only its author sees it) to add it to a
+            task, a purchase order, a work order or a claim; once added, later replies in its thread are saved too. No AI reads the messages.
+            {' '}{channels ? '' : `Now: ${(cfg.addTo?.channels ?? []).map(c => `#${c.name}`).join(', ') || 'none'} — read the channels to change.`}</p>
+          {channels && (
+            <div className="slack-events">
+              {channels.filter(c => !c.private || c.member).map(c => {
+                const on = (cfg.addTo?.channels ?? []).some(x => x.id === c.id);
+                return <label key={c.id} className="check"><input type="checkbox" checked={on} onChange={e => setCfg(p => {
+                  const now = (p.addTo?.channels ?? []).filter(x => x.id !== c.id);
+                  return { ...p, addTo: { channels: e.target.checked ? [...now, { id: c.id, name: c.name }] : now } };
+                })} /> {c.private ? '🔒' : '#'}{c.name}</label>;
+              })}
+            </div>
+          )}
 
           <h3>4 · What is said</h3>
           <div className="slack-events">
