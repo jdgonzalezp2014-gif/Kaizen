@@ -102,7 +102,7 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   to-do with no `purchases` opens a Modal (record the purchase / keep open / close with a reason, posted as a note).
 - **Home's To-do card is tabs (owner feedback, 2026-10-13):** Tasks · 🔧 Repairs · ⚑ Claims · $ Approvals · 🛒 Purchase orders,
   each with its count (▲ when something is late / waiting). Tasks and Repairs are bucketed **Now** (overdue, today or urgent)
-  / **This week** (≤7 d or high) / **Later** — only the first non-empty bucket open, 5 rows then "Show more". Rows on Home have
+  / **This week** (≤7 d or high) / **Later** (no date) / **📅 Scheduled** (due or starting >7 d out — the landscaping) — only the first non-empty bucket open, 5 rows then "Show more". Rows on Home have
   no checkbox: ✕ (cancel) and ✓ (done) at the right. A URL in a description shows as 🔗 (`Linked`). Approvals come from
   `getCrewAdmin` (review in Operations → Cleaners); purchase orders = `getInventory().orders` to-dos, moved out of Tasks.
   `TodoList` props `extraTabs` / `orderIds`. Operations → To-do uses the same tabs and buckets (no row cap; kind chips gone; no checkbox anywhere).

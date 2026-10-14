@@ -26,7 +26,7 @@ import {
   progress, shortDay, sortTodos, workCost,
   type Priority, type TaskKind, type TaskStatus, type WorkFilter
 } from '../lib/todos.ts';
-import type { DateStr } from '../lib/dates.ts';
+import { addDays, type DateStr } from '../lib/dates.ts';
 import { money2 } from '../lib/format.ts';
 import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS, caseHost, cleanCaseUrl } from '../lib/claims.ts';
 
@@ -63,12 +63,16 @@ export interface WorkSum { open: number; overdue: number; today: number; urgent:
 export interface WorkTab { key: string; label: string; count: number; alert?: boolean; body: ReactNode }
 
 /** owner, Oct 2026: Home's buckets — what needs someone now, this week, later. Three chunks, the first one open. */
-type Bucket = 'now' | 'week' | 'later';
+type Bucket = 'now' | 'week' | 'later' | 'scheduled';
 const BUCKETS: [Bucket, string, string][] = [
-  ['now', '▲ Now', 'overdue, due today or urgent'], ['week', 'This week', 'due in 7 days or high priority'], ['later', 'Later', 'no rush, or no date']];
+  ['now', '▲ Now', 'overdue, due today or urgent'], ['week', 'This week', 'due in 7 days or high priority'], ['later', 'Later', 'no rush, or no date'],
+  ['scheduled', '📅 Scheduled', 'dated more than a week out']];
+/** Owner, Oct 2026: work with a date far ahead (the landscaping) is planned, not pending — its own folded bucket, so it is not noise. */
+const farOff = (t: Todo, today: DateStr) => dueOf(t, today) === 'later' || (!t.dueOn && !!t.scheduledOn && t.scheduledOn > addDays(today, 7));
 const bucketOf = (t: Todo, today: DateStr): Bucket => {
   const d = dueOf(t, today);
-  return d === 'overdue' || d === 'today' || t.priority === 'urgent' ? 'now' : d === 'soon' || t.priority === 'high' ? 'week' : 'later';
+  return d === 'overdue' || d === 'today' || t.priority === 'urgent' ? 'now' : farOff(t, today) ? 'scheduled'
+    : d === 'soon' || t.priority === 'high' ? 'week' : 'later';
 };
 
 export function TodoList({ today, compact = false, onMore, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds }: {
@@ -256,7 +260,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
 
   const isOrder = (t: Todo) => !!orderIds?.has(t.id);
   const bucketed = (key: string, list: Todo[]) => {
-    const by: Record<Bucket, Todo[]> = { now: [], week: [], later: [] };
+    const by: Record<Bucket, Todo[]> = { now: [], week: [], later: [], scheduled: [] };
     for (const t of list) by[bucketOf(t, today)].push(t);
     const first = BUCKETS.find(([b]) => by[b].length)?.[0];
     return BUCKETS.filter(([b]) => by[b].length).map(([b, label, hint]) => {
