@@ -96,7 +96,9 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   `repository.edit`. Owner rule: Hostaway is right unless said otherwise; fill Repository from Hostaway first.
   - **Columns (079):** 50 per Units table, `grp` = the section. Hours are a select ("4 PM" ↔ Hostaway 16);
     Hostaway 1/0 ↔ checkbox. `cleaning_fee` moved into Fees; `password_2` is titled "Wifi password". Wi-Fi stays in
-    Details, marked **⇄ sync** in the header like every compared column (`SYNCED_COLUMNS`).
+    Details, marked **⇄ sync** (cleaners get Hostaway's Wi-Fi on every sync); every other compared column is marked
+    **⇄ button**: owner — nothing but Wi-Fi moves on its own; copy/send only by button, after before → after
+    (the guest agent feeds on Hostaway, so not everything should go there). No Kaizen agent reads these columns.
   - **Composed texts = main + footer parts** (owner; `COMPOSED`): `house_rules` + every `rule_add_*` column
     and `description` + every `desc_add_*` column, appended as written (owner: never renumbered — the original
     order stays) in COLUMN order

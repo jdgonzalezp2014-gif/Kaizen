@@ -567,7 +567,9 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
                   onDragEnd={() => { setDragCol(null); setDropCol(null); }}>
                 <span className="rb-th">
                   <span className="rb-th-title" title={`${c.title} · ${TYPE_LABEL[c.type] ?? c.type}`}>{c.title}</span>
-                  {synced && isSynced(c.key) && <span className="rb-sync" title="Kept in step with the Hostaway listing — see ⇄ Check against Hostaway">⇄ sync</span>}
+                  {synced && isSynced(c.key) && (AUTO_SYNC.has(c.key)
+                    ? <span className="rb-sync" title="Wi-Fi: cleaners get Hostaway's on every sync; compare it here in ⇄ Check against Hostaway">⇄ sync</span>
+                    : <span className="rb-sync" title="Never automatic: copied from or sent to Hostaway only with a button in ⇄ Check against Hostaway, after a before → after">⇄ button</span>)}
                   {can.structure && <button className="rb-th-menu" title="Column options"
                     onClick={e => setPop({ kind: 'colmenu', rect: e.currentTarget.getBoundingClientRect(), col: c })}>▾</button>}
                 </span>
@@ -713,6 +715,9 @@ function InlineInput({ col, value, onDone }: { col: RepoColumn; value: RepoRow[s
 }
 
 /** The empty last row: typing in it creates the record, with its ID and folders. */
+/** Only Wi-Fi follows Hostaway on its own (cleaners get it on every sync); every other compared column moves by a button (owner, §155). */
+const AUTO_SYNC = new Set(['wifi_network', 'password_2']);
+
 /* ── composed texts: house rules and description (§155) ───────────── */
 
 const composedBase = (key: string) => key in COMPOSED ? key : partOf(key);
