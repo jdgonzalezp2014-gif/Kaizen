@@ -520,12 +520,16 @@ class Kaizen {
   private async threadMessages(channel: string, root: string, only?: string) {
     const r = await slackApi<{ messages?: { user?: string; bot_id?: string; text?: string; ts: string; files?: unknown[] }[] }>(this.s.token!, 'conversations.replies', { channel, ts: root, limit: 100 });
     const msgs = (r.messages ?? []).filter(m => !m.bot_id && (!only || m.ts === only));
-    const names = new Map<string, string>();
+    const names = new Map<string, string>(), roles = new Map<string, string>();
     for (const u of [...new Set(msgs.map(m => m.user).filter((x): x is string => !!x))]) {
-      const i = await slackApi<{ user?: { real_name?: string; profile?: { display_name?: string } } }>(this.s.token!, 'users.info', { user: u });
+      const i = await slackApi<{ user?: { real_name?: string; profile?: { display_name?: string; email?: string } } }>(this.s.token!, 'users.info', { user: u });
       names.set(u, i.user?.profile?.display_name || i.user?.real_name || 'Someone');
+      // Their Kaizen role, so a model reading the thread knows who decides (2026-10-14: the question was taken for the rule).
+      const email = i.user?.profile?.email?.toLowerCase();
+      const [m] = email ? await this.sql`SELECT role FROM members WHERE account_id = 1 AND lower(email) = ${email}` as { role: string }[] : [];
+      if (m) roles.set(u, m.role);
     }
-    return msgs.map(m => ({ who: names.get(m.user ?? '') ?? 'Someone', text: m.text ?? '', ts: m.ts, files: m.files ?? [] }));
+    return msgs.map(m => ({ who: names.get(m.user ?? '') ?? 'Someone', role: roles.get(m.user ?? '') ?? null, text: m.text ?? '', ts: m.ts, files: m.files ?? [] }));
   }
 
   /** The message into Kaizen: its words (who said them, a link back) as a comment, its files, and its thread from now on. */
@@ -582,7 +586,7 @@ class Kaizen {
     const msgs = await this.threadMessages(source.channel, source.ts);
     // What the person typed goes too: ✨ keeps it, and re-grades it after they add what was missing.
     const current = partialSopForm(view.state?.values ?? {});
-    const p = sopPrompt(sections, msgs.map(m => ({ who: m.who, text: m.text })), current);
+    const p = sopPrompt(sections, msgs.map(m => ({ who: m.role ? `${m.who} (${m.role})` : m.who, text: m.text })), current);
     const r = await askJson(this.sql, this.ctx.env, p.system, p.user);
     if (!r.ok) { await busy(`⚠ No AI could answer just now — try ✨ again in a minute. (${r.error.slice(0, 200)})`); return; }
     await slackApi(this.s.token!, 'views.update', { view_id: view.id,

@@ -4145,3 +4145,8 @@ refund first, then negotiate") should become an SOP so nobody asks again.
   specific `gaps` questions — never re-opening a decision the thread made — shown at the top of the form. What the person
   typed goes to the model too, so answering the questions and tapping ✨ again re-grades it (tested: 1/5 → 5/5). Owner is a
   role, never a name. The title skips a leading @mention.
+- **Reading who decides (same day).** "Can we shorten?" + "as usual we shorten but with no change in payout" came back as
+  "keep the payout unchanged" — the shorthand copied, the meaning lost (flash-lite answered; 3.6-flash was busy). Mostly
+  the prompt: it now says who asks and who decides (each person's Kaizen role after the name, from their Slack email →
+  `members`), has a short glossary (payout, shorten, Hostaway…), and must spell decisions out ("the guest is not refunded
+  for the nights they no longer use"). Re-tested on the real thread: right meaning, graded 1/5 with the questions.

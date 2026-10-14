@@ -33,6 +33,8 @@ test('✨ grades how complete it is and asks politely for what is missing; a sec
   const p = sopPrompt(sections, [{ who: 'Derek', text: 'shorten, no change in payout' }], { steps: ['Shorten in Hostaway'], rules: [] });
   assert.match(p.system, /be strict/);
   assert.match(p.system, /Never question a decision/);
+  // Who decides, and the shorthand spelled out (2026-10-14: "no change in payout" read as the rule's words, not its meaning).
+  assert.match(p.system, /DECIDES/); assert.match(p.system, /not refunded for the nights they no longer use/);
   assert.match(p.user, /Current draft \(written by the person — keep it\):\n\{"steps":\["Shorten in Hostaway"\]/);
   assert.doesNotMatch(sopPrompt(sections, [{ who: 'a', text: 'b' }], { title: '', steps: [] }).user, /Current draft/);
   assert.deepEqual(reviewFromAi({ score: 7, gaps: ['What do we tell the guest?', 3] }), { score: null, gaps: ['What do we tell the guest?'] });
