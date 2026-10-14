@@ -12,6 +12,7 @@
  * Work made here is mirrored to Hostaway like any other (pushWork, after the
  * response).
  */
+import { shareRoot } from './clean-access.ts';
 import type { SqlFn } from './accounts.ts';
 import { getCredentials } from './accounts.ts';
 import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
@@ -289,6 +290,8 @@ export async function addPhotos(sql: SqlFn, encryptionKey: string, who: string, 
   if (!folder) {
     folder = (await createFolder(token, null, 'Kaizen — inspections')).id;
     await sql`UPDATE accounts SET inspection_photos_folder = ${folder} WHERE id = 1`;
+    // Owner, 2026-10-14: the whole team opens what Kaizen keeps in Drive.
+    await shareRoot(sql, token, folder).catch(() => []);
   }
   const added: { name: string; url: string; driveId: string }[] = [];
   for (const f of files) {

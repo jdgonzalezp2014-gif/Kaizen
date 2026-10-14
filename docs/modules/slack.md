@@ -201,3 +201,8 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   `syncCleanPhotoAccess` does all at once (run 2026-10-14). Every Kaizen member gets the root: admins writer, the rest
   reader (owner, same day: Derek, Amanda, Laura, Juan, Shannon).
   A cleaner's channel photo line now has "Open in Drive / Abrir en Drive" (`folderUrl`, from the clean's `drive_folder`).
+- **All of Kaizen's Drive folders to the team (owner, 2026-10-14):** "a task's file would not open". `syncTeamDriveAccess`
+  (`functions/_lib/clean-access.ts`) shares every root — clean photos, field reports (to-do files, orders, field reports),
+  inspections, crew extras — with the members (admins writer, the rest reader; cleaners/handyman are not members), and takes
+  "anyone with the link" off; when a root is made, and once a day from the clock (`drivesync:<day>`). Not the Repository's
+  folders or guests' documents.

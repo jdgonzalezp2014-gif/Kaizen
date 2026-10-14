@@ -6,6 +6,7 @@
  * preview of it (/api/crew-admin), so what the team checks is exactly what
  * the cleaner sees.
  */
+import { shareRoot } from './clean-access.ts';
 import type { SqlFn } from './accounts.ts';
 import { getCredentials } from './accounts.ts';
 import type { Env } from './db.ts';
@@ -373,6 +374,8 @@ async function uploadEvidence(sql: SqlFn, encryptionKey: string, files: File[], 
   if (!folder) {
     folder = (await createFolder(token, null, 'Kaizen — crew extras')).id;
     await sql`UPDATE accounts SET crew_extras_folder = ${folder} WHERE id = 1`;
+    // Owner, 2026-10-14: the whole team opens what Kaizen keeps in Drive.
+    await shareRoot(sql, token, folder).catch(() => []);
   }
   const out = [];
   for (const f of files) {

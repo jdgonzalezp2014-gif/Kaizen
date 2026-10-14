@@ -37,10 +37,11 @@ export async function ensureAccess(token: string, file: string, emails: string[]
   return changed;
 }
 
-/** The root folder: every Kaizen member sees it all — admins organize (writer), the rest read
- *  (owner, 2026-10-14: Derek, Amanda, Laura, Juan, Shannon); nobody else, not by link. */
+/** A root folder of Kaizen's: every team member sees it all — admins organize (writer), the rest read
+ *  (owner, 2026-10-14: Derek, Amanda, Laura, Juan, Shannon); nobody else, not by link. Cleaners and the
+ *  handyman are not members: they see only what is theirs. */
 export async function shareRoot(sql: SqlFn, token: string, root: string) {
-  const m = await sql`SELECT email, role FROM members WHERE account_id = 1` as { email: string; role: string }[];
+  const m = await sql`SELECT email, role FROM members WHERE account_id = 1 AND role NOT IN ('cleaner', 'vendor', 'handyman')` as { email: string; role: string }[];
   return [...await ensureAccess(token, root, m.filter(x => x.role === 'admin').map(x => x.email), 'writer'),
           ...await ensureAccess(token, root, m.filter(x => x.role !== 'admin').map(x => x.email), 'reader')];
 }
@@ -53,12 +54,17 @@ export async function shareCleanFolder(sql: SqlFn, token: string, key: string): 
   return ensureAccess(token, r.drive_folder, [r.email], 'reader');
 }
 
-/** Everything at once — the first time, and whenever admins or cleaners change. */
-export async function syncCleanPhotoAccess(sql: SqlFn, encryptionKey: string): Promise<string[]> {
+/**
+ * Every Kaizen root folder to the team (owner, 2026-10-14: "a task's file would not open") — clean photos,
+ * field reports (to-do files, orders, reports), inspections, crew extras — and each clean's folder to its
+ * cleaner. The first time, once a day from the clock (new members), and when a root is made.
+ */
+export async function syncTeamDriveAccess(sql: SqlFn, encryptionKey: string): Promise<string[]> {
   const token = await driveToken(sql, encryptionKey);
-  const [a] = await sql`SELECT clean_photos_folder FROM accounts WHERE id = 1` as { clean_photos_folder: string | null }[];
+  const [a] = await sql`SELECT clean_photos_folder, field_reports_folder, inspection_photos_folder, crew_extras_folder FROM accounts WHERE id = 1` as
+    Record<string, string | null>[];
   const out: string[] = [];
-  if (a?.clean_photos_folder) out.push(...(await shareRoot(sql, token, a.clean_photos_folder)).map(x => `root: ${x}`));
+  for (const [col, id] of Object.entries(a ?? {})) if (id) out.push(...(await shareRoot(sql, token, id)).map(x => `${col}: ${x}`));
   const keys = await sql`SELECT cleaning_key FROM clean_records WHERE account_id = 1 AND drive_folder IS NOT NULL` as { cleaning_key: string }[];
   for (const k of keys) out.push(...(await shareCleanFolder(sql, token, k.cleaning_key)).map(x => `${k.cleaning_key}: ${x}`));
   return out;

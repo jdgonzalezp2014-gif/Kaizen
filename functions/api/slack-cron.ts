@@ -8,6 +8,7 @@
  * earliest it goes, and `slack_sent` makes a second run that day silent.
  * Outside Cloudflare Access (SELF_AUTHENTICATING) — the token is the check.
  */
+import { syncTeamDriveAccess } from '../_lib/clean-access.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { getCredentials, accessOf, type SqlFn } from '../_lib/accounts.ts';
 import { identify } from '../_lib/auth.ts';
@@ -51,6 +52,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${notesKey}`;
       notes = { error: e instanceof Error ? e.message : String(e) };
     }
+  }
+
+  // Owner, 2026-10-14: Kaizen's Drive folders to the whole team — once a day, so a new member gets them too.
+  const driveKey = `drivesync:${new Date().toISOString().slice(0, 10)}`;
+  if ((await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${driveKey}) ON CONFLICT DO NOTHING RETURNING key`).length) {
+    try { await syncTeamDriveAccess(sql, env.ENCRYPTION_KEY); }
+    catch { await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${driveKey}`; }
   }
 
   const s = await slackSetup(sql, env.ENCRYPTION_KEY);
