@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Hint } from '../components/Hint.tsx';
 import {
   getSettings, saveSettings, syncUnits, pullCleanings,
   type Account, type Connection, type CleaningMatch, type Member, type MemberAudit,
@@ -95,11 +96,8 @@ export function Settings() {
   return (
     <>
       <div className="card">
-        <h2>Hostaway connection</h2>
-        <p className="note">
-          Your own Hostaway credentials. They are encrypted before storage and never sent back to
-          this page — the field below shows whether a key is saved, not what it is.
-        </p>
+        <h2>Hostaway connection <Hint>Your own Hostaway credentials. They are encrypted before storage and never sent back to
+          this page — the field below shows whether a key is saved, not what it is.</Hint></h2>
 
         <div className={`banner ${connection?.ok ? 'ok' : 'warn'}`}>
           {connection?.ok ? '● ' : '○ '}{connection?.message}
@@ -127,12 +125,9 @@ export function Settings() {
       </div>
 
       <div className="card">
-        <h2>Targets</h2>
-        <p className="note">
-          The portfolio target is <b>computed</b>, never stored: active units × the per-unit
+        <h2>Targets <Hint>The portfolio target is <b>computed</b>, never stored: active units × the per-unit
           figure. Taking a unit offline moves the target rather than making the portfolio look
-          like it missed.
-        </p>
+          like it missed.</Hint></h2>
         <div className="row">
           <label>
             Net per unit / month
@@ -155,10 +150,8 @@ export function Settings() {
                    onChange={e => setAccount({ ...account, fwdStudyDays: Number(e.target.value) })} />
           </label>
         </div>
-        <p className="note">
-          The study window is how far ahead the Units screen looks by default — the nights a price
-          change can still affect.
-        </p>
+        <p className="note">About the study window <Hint>The study window is how far ahead the Units screen looks by default — the nights a price
+          change can still affect.</Hint></p>
         <button onClick={() => void save()}>Save targets</button>
       </div>
 
@@ -228,14 +221,11 @@ function CleaningsPanel({ account, onAccount }: {
 
   return (
     <div className="card">
-      <h2>Cleaning cost</h2>
-      <p className="note">
-        What the cleaner is paid, from your sheet — a cost, separate from the cleaning fee
+      <h2>Cleaning cost <Hint>What the cleaner is paid, from your sheet — a cost, separate from the cleaning fee
         Hostaway charges the guest, which is revenue. In the sheet: File → Share →
         Publish to web → the Cleanings log tab, CSV. Once the URL is saved it re-reads itself
         whenever the Cleanings tab is opened and the last read is more than three hours old;
-        this button is for the first pull and for “it should have updated by now”.
-      </p>
+        this button is for the first pull and for “it should have updated by now”.</Hint></h2>
       <label>
         Published CSV URL
         <input value={url} onChange={e => setUrl(e.target.value)}
@@ -347,12 +337,9 @@ function RolesPanel({ roles, catalog, onSaved }: {
 
   return (
     <div className="card">
-      <h2>Roles</h2>
-      <p className="note">
-        What each role may see and do. Each tick saves itself at once, changes it for everyone who
+      <h2>Roles <Hint>What each role may see and do. Each tick saves itself at once, changes it for everyone who
         holds the role, and is recorded in the access log below. Revealing a password is logged every
-        time, whoever does it.
-      </p>
+        time, whoever does it.</Hint></h2>
       <div className="grid-scroll">
         <table className="units compact roles-grid">
           <thead>
@@ -435,15 +422,12 @@ function DailyFilePanel({ account, onSaved }: { account: Account; onSaved: () =>
 
   return (
     <div className="card">
-      <h2>Daily file</h2>
-      <p className="note">
-        The operations sheet. Kaizen now runs operations itself; these links are for the{' '}
+      <h2>Daily file <Hint>The operations sheet. Kaizen now runs operations itself; these links are for the{' '}
         <b>one-time import</b> in Operations → Setup (roster, rates, rules, inspection and notes
         history) and for comparing against the sheet while in shadow mode. In the sheet: File →
         Share → Publish to web, pick the tab, choose CSV, and paste each link here. Guest-portal links are
         written as HYPERLINK formulas, so a published CSV carries the 🌐 label and never the
-        link's access token. The Cleanings Log link is the one under <b>Cleaning cost</b>.
-      </p>
+        link's access token. The Cleanings Log link is the one under <b>Cleaning cost</b>.</Hint></h2>
       <label>
         Link to open the sheet (the normal editing link)
         <input value={sheetUrl} onChange={e => setSheetUrl(e.target.value)}
@@ -464,10 +448,8 @@ function DailyFilePanel({ account, onSaved }: { account: Account; onSaved: () =>
         <input value={settings} onChange={e => setSettings(e.target.value)}
                placeholder="https://docs.google.com/spreadsheets/d/e/…/pub?gid=…&single=true&output=csv" />
       </label>
-      <p className="note">
-        Without the _Settings tab the board judges inspections against the sheet's built-in
-        defaults and says so on screen — the live values are edited in the sheet and may differ.
-      </p>
+      <p className="note">Without the _Settings tab <Hint>Without the _Settings tab the board judges inspections against the sheet's built-in
+        defaults and says so on screen — the live values are edited in the sheet and may differ.</Hint></p>
       <div className="button-row">
         <button disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save links'}</button>
       </div>
@@ -504,17 +486,12 @@ function RepositoryPanel({ account, onSaved }: { account: Account; onSaved: () =
 
   return (
     <div className="card">
-      <h2>Data Repository — import source</h2>
-      <p className="note">
-        The repository lives in Kaizen now: the <b>Repository</b> tab reads and edits Kaizen's own
+      <h2>Data Repository — import source <Hint>The repository lives in Kaizen now: the <b>Repository</b> tab reads and edits Kaizen's own
         database, passwords are encrypted with Kaizen's key, and every reveal is logged under the
-        person's name. Files stay in Drive, linked from each record.
-      </p>
-      <p className="note">
-        The old Apps Script project is no longer read by any screen. Its API link and key below are
+        person's name. Files stay in Drive, linked from each record.</Hint></h2>
+      <p className="note">The old Apps Script link <Hint>The old Apps Script project is no longer read by any screen. Its API link and key below are
         kept only for the one-time import (<code>npm run import:repository</code>); they can be cleared
-        once the import is confirmed.
-      </p>
+        once the import is confirmed.</Hint></p>
       <div className={`banner ${account.repoApiUrl && account.hasRepoKey ? 'ok' : 'warn'}`}>
         {account.repoApiUrl && account.hasRepoKey ? '● Import source set' : '○ No import source'}
       </div>
@@ -581,11 +558,8 @@ function DrivePanel() {
   if (!st) return <div className="card"><h2>Google Drive</h2><p className="note loading-dot">Reading</p></div>;
   return (
     <div className="card">
-      <h2>Google Drive — files</h2>
-      <p className="note">
-        The Repository's files go to Drive, into each record's folder — the same folders the old
-        repository built. Kaizen uploads as one Google account, connected here once.
-      </p>
+      <h2>Google Drive — files <Hint>The Repository's files go to Drive, into each record's folder — the same folders the old
+        repository built. Kaizen uploads as one Google account, connected here once.</Hint></h2>
       <div className={`banner ${st.connected && !st.problem ? 'ok' : 'warn'}`}>
         {st.connected && !st.problem
           ? <>● Connected as <b>{st.email}</b>{st.quota && <> · {gb(st.quota.usage)} used{st.quota.limit ? ` of ${gb(st.quota.limit)}` : ''}</>}</>
@@ -625,8 +599,8 @@ function DrivePanel() {
         Guest documents folder — IDs and rental agreements, one folder per reservation (Operations)
         <input value={root ?? ''} onChange={e => setRoot(e.target.value)} placeholder="https://drive.google.com/drive/folders/…" />
       </label>
-      <p className="note">The daily file's folder: year → month → day → "Sep 24 &amp; Guest" → ID / Rental Agreement.
-        Kaizen reads and files into the same folders, so nothing moves.</p>
+      <p className="note">How the daily file's folder is laid out <Hint>The daily file's folder: year → month → day → "Sep 24 &amp; Guest" → ID / Rental Agreement.
+        Kaizen reads and files into the same folders, so nothing moves.</Hint></p>
       <div className="button-row">
         <button className="secondary" disabled={busy || root === null}
                 onClick={() => void run({ action: 'guestRoot', folder: root }, 'Guest documents folder saved.')}>Save folder</button>
@@ -662,14 +636,11 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
 
   return (
     <div className="card">
-      <h2>AI suggestions &amp; market reading</h2>
-      <p className="note">
-        Gemini reviews one unit at a time and recommends what to do with its price. It is given
+      <h2>AI suggestions &amp; market reading <Hint>Gemini reviews one unit at a time and recommends what to do with its price. It is given
         only figures measured from your own account and is told it has no market data, so it
         cannot quote comparable listings it has not seen. It never writes to Hostaway — every
         change still goes through the same confirmation you would use by hand.
-        A free key comes from <code>aistudio.google.com/apikey</code>.
-      </p>
+        A free key comes from <code>aistudio.google.com/apikey</code>.</Hint></h2>
       <div className="row">
         <label>
           API key {account.hasGeminiKey && <span className="ok-tag">one is stored</span>}
@@ -687,14 +658,12 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
         <input type="password" value={jina} onChange={e => setJina(e.target.value)}
                placeholder={account.hasJinaKey ? 'stored — type to replace' : 'jina_…'} />
       </label>
-      <p className="note">
-        Only a fallback, and currently not a working one. The public rating and the
+      <p className="note">A fallback — not working now <Hint>Only a fallback, and currently not a working one. The public rating and the
         guest-facing price are read straight from the listing page first, with no key and no
         proxy — which is how the previous system did it. As last tested, Airbnb serves neither
         this deployment nor the reader anything but a shell, with or without a key. The code
         tries on every load and will start working the moment that changes; nothing else on a
-        unit card depends on it.
-      </p>
+        unit card depends on it.</Hint></p>
       <button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
       {msg && <p className="note">{msg}</p>}
     </div>
@@ -750,13 +719,10 @@ function MembersPanel({ members, audit, user, roles, onSaved }: {
 
   return (
     <div className="card">
-      <h2>Who can sign in</h2>
-      <p className="note">
-        Each person has one role, and each role is a set of permissions — defined in
+      <h2>Who can sign in <Hint>Each person has one role, and each role is a set of permissions — defined in
         <strong> Roles</strong> below. <strong>Admin</strong> is fixed and sees everything. Hiding
         a tab is only the visible half: the API refuses every route the role does not include,
-        because a tab that is merely not drawn is still an address anyone can type.
-      </p>
+        because a tab that is merely not drawn is still an address anyone can type.</Hint></h2>
 
       <table className="units compact">
         <thead><tr><th>Email</th><th>Role</th><th></th></tr></thead>
@@ -867,12 +833,9 @@ function IngestPanel({ account, onSaved }: { account: Account; onSaved: () => vo
 
   return (
     <div className="card">
-      <h2>Ratings from Apps Script</h2>
-      <p className="note">
-        Airbnb answers Google's addresses and refuses Cloudflare's, so the scraper stays in the
+      <h2>Ratings from Apps Script <Hint>Airbnb answers Google's addresses and refuses Cloudflare's, so the scraper stays in the
         Apps Script project where it already works and posts its readings here. Rows are matched
-        by unit name, the way the sheet already names them.
-      </p>
+        by unit name, the way the sheet already names them.</Hint></h2>
 
       <div className="button-row">
         <button onClick={() => void gen()} disabled={busy}>
@@ -952,13 +915,10 @@ function FeedPanel({ account, onSaved }: { account: Account; onSaved: () => void
 
   return (
     <div className="card">
-      <h2>Ratings feed</h2>
-      <p className="note">
-        In the Apps Script project run <code>installKaizenTriggers()</code> once: it writes a
+      <h2>Ratings feed <Hint>In the Apps Script project run <code>installKaizenTriggers()</code> once: it writes a
         <code>🔁 Kaizen Feed</code> tab and schedules it for 6am and 6pm. Publish that tab —
         File → Share → Publish to web → CSV — and paste the URL here. After that it refreshes
-        itself; this button is for the first pull and for “it should have updated by now”.
-      </p>
+        itself; this button is for the first pull and for “it should have updated by now”.</Hint></h2>
       <label>
         Published CSV URL
         <input value={url} onChange={e => setUrl(e.target.value)}
@@ -1028,13 +988,10 @@ function AlertsPanel({ account, onSaved }: { account: Account; onSaved: () => vo
   return (
     <div className="card">
       <h2>Alerts <span className={account.quoLive ? 'ok-tag' : 'chan-tag'}>
-        {account.quoLive ? 'sending' : 'staged'}</span></h2>
-      <p className="note">
-        One message when a listing goes red, one when it comes back. Never while it simply stays
+        {account.quoLive ? 'sending' : 'staged'}</span> <Hint>One message when a listing goes red, one when it comes back. Never while it simply stays
         red — a channel that repeats itself daily is a channel people mute, and then the message
         that mattered arrives to nobody. A listing counts as red only when a price change could
-        still recover real money, so this is a handful of units, not a digest.
-      </p>
+        still recover real money, so this is a handful of units, not a digest.</Hint></h2>
 
       <div className="row">
         <label>QUO API key {account.hasQuoKey && <span className="ok-tag">stored</span>}
