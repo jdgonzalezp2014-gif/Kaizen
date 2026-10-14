@@ -2072,3 +2072,22 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .todo-prog-btn { background: transparent; cursor: pointer; font: inherit; font-size: 11px; }
 .costs-group { cursor: pointer; background: color-mix(in srgb, var(--line) 25%, transparent); }
 .costs-orders ul { margin: 6px 0 0; padding-left: 18px; } .costs-orders { margin-bottom: 12px; }
+
+/* owner, Oct 2026 Home's To-do card: one kind at a time (tabs with counts), buckets inside, ✓ / ✕ at the right. */
+.work-tabs { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--line); }
+.work-tab { display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; font-weight: 600; padding: 4px 11px; border-radius: 999px;
+  background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer; }
+.work-tab .count { font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--tint); }
+.work-tab.active { color: var(--ink); border-color: color-mix(in srgb, var(--series-1) 60%, transparent); background: color-mix(in srgb, var(--series-1) 12%, transparent); }
+.work-tab.is-zero:not(.active) { opacity: .6; }
+.work-tab-alert { color: var(--warn); font-size: 10px; }
+.work-tab-body { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; }
+.todo-bucket { display: flex; flex-direction: column; }
+.bucket-head { display: flex; align-items: baseline; gap: 6px; background: none; border: 0; padding: 4px 0; cursor: pointer; color: var(--ink); font-size: 12.5px; text-align: left; }
+.bucket-head .count { font-size: 11px; padding: 0 7px; border-radius: 999px; background: var(--tint); color: var(--muted); }
+.bucket-hint { font-size: 11.5px; color: var(--muted); }
+.bucket-now .bucket-head b { color: var(--warn); }
+.todos.compact .todo-desc { margin-left: 0; }
+.todos.compact .todo-quick { opacity: .75; }
+.todos.compact .todo-quick button { padding: 2px 8px; font-size: 13px; min-width: 28px; }
+.desc-link { text-decoration: none; margin-left: 2px; }

@@ -23,12 +23,12 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  can, getClaims, getCrewAdmin, getForward, getGuestDocs, getOperations, getVariable, uploadGuestDoc,
+  can, getClaims, getCrewAdmin, getForward, getInventory, getGuestDocs, getOperations, getVariable, uploadGuestDoc,
   type Claim, type OperationsResponse, type StayDocs, type VariableExpense
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
 import { todayIn, addDays } from '../lib/dates.ts';
-import { TodoList, type WorkSum } from '../components/Todos.tsx';
+import { TodoList, type WorkSum, type WorkTab } from '../components/Todos.tsx';
 import { money, money2 } from '../lib/format.ts';
 import { hostawayReservationUrl, type BoardRow } from '../lib/operations.ts';
 
@@ -87,7 +87,16 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     if (!r.ok) throw new Error(r.message ?? r.error ?? 'Could not load approvals.');
     const extras = (r.pending ?? []).reduce((a, e) => a + Number(e.amount || 0), 0);
     const field = (r.fieldPending ?? []).reduce((a, e) => a + Number(e.amount || 0), 0);
-    return { count: (r.pending?.length ?? 0) + (r.fieldPending?.length ?? 0), total: extras + field };
+    // owner, Oct 2026: each one, for the Approvals tab in the To-do card.
+    const items = [
+      ...(r.pending ?? []).map(e => ({ id: `x${e.id}`, amount: Number(e.amount || 0), who: e.cleaner, what: e.description || 'Extra', where: e.unit })),
+      ...(r.fieldPending ?? []).map(e => ({ id: `f${e.id}`, amount: Number(e.amount || 0), who: e.byName, what: e.description || e.category, where: e.unit ?? '' }))];
+    return { count: items.length, total: extras + field, items };
+  });
+  // owner, Oct 2026: the open purchase orders (shopping to-dos) get their own tab in the To-do card.
+  const orders = useLoad(canOps, async () => {
+    const r = await getInventory();
+    return r.ok ? new Set(r.orders.map(o => o.todoId)) : new Set<string>();
   });
 
   const tomorrow = addDays(today, 1);
@@ -190,6 +199,21 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   // Not signed first — the three shown are the three to chase.
   const bySigned = (list: BoardRow[]) => [...list].sort((a, b) => Number(signed(a)) - Number(signed(b)));
   const [todoSum, setTodoSum] = useState<WorkSum | null>(null);
+  const showMoney = can(permissions, 'money');
+  const approvalTab: WorkTab[] = canApprove ? [{
+    key: 'approvals', label: '$ Approvals', count: approvals.data?.count ?? 0, alert: !!approvals.data?.count,
+    body: !approvals.data?.items.length ? <p className="note">{approvals.busy ? 'Reading…' : 'Nothing waiting for approval. ✓'}</p> : <>
+      <ul className="todo-list">{approvals.data.items.map(a => (
+        <li key={a.id} className="todo"><div className="todo-line">
+          <span className="todo-title-text">{a.what}</span>
+          {a.where && <span className="todo-unit">{a.where}</span>}
+          <span className="sub-n">→ {a.who}</span>
+          {showMoney && <span className="sub-n">{money2(a.amount)}</span>}
+          <span className="todo-quick"><button type="button" onClick={() => onGo('operations:crew')}>Review →</button></span>
+        </div></li>))}</ul>
+      <p className="note">Approve or deny in Operations → Cleaners.</p>
+    </>
+  }] : [];
   // Coming up (§91). Open claims only when the to-do card is not already
   // showing them in its Claims lane — the same case twice on one screen
   // makes the eye check whether they differ.
@@ -282,7 +306,8 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
           <Card id="todo" title="To-do" count={todoSum?.open} className="home-todos" load={{ data: true, err: '', busy: false }}
                 summary={todoSum && <WorkSummary s={todoSum} />}
                 action={canOps ? 'All to-dos' : undefined} onAction={() => onGo('operations:todos')}>
-            <TodoList today={today} compact canClaims={canClaims} onSummary={setTodoSum}
+            <TodoList today={today} compact canClaims={canClaims} onSummary={setTodoSum} extraTabs={approvalTab}
+                      orderIds={canOps ? orders.data ?? new Set() : undefined}
                       onMore={canOps ? () => onGo('operations:todos') : undefined} />
           </Card>
         )}

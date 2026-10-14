@@ -34,6 +34,12 @@ import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS, caseHost
 const CaseLink = ({ url }: { url: string | null }) => url
   ? <a className="case-link" href={url} target="_blank" rel="noreferrer" title={url}>↗ {caseHost(url)} case</a> : null;
 
+/** owner, Oct 2026: a pasted link (a Slack thread) is a 🔗, not 80 characters of URL. */
+const Linked = ({ text }: { text: string }) => <>{text.split(/(https?:\/\/\S+)/).map((p, i) => i % 2
+  ? <a key={i} className="desc-link" href={p} target="_blank" rel="noreferrer" title={p} onClick={e => e.stopPropagation()}
+       aria-label={`Open the link (${p.includes('slack.com') ? 'Slack' : p.replace(/^https?:\/\/([^/]+).*/, '$1')})`}>🔗</a>
+  : p)}</>;
+
 type Unit = { id: string; name: string; active: boolean };
 type Act = (b: Record<string, unknown>) => Promise<boolean>;
 
@@ -53,7 +59,19 @@ const ageDays = (c: Claim, today: DateStr) =>
 /** What Home's folded card says (§81). */
 export interface WorkSum { open: number; overdue: number; today: number; urgent: number; cases: number }
 
-export function TodoList({ today, compact = false, onMore, canClaims = false, claim, onChange, onSummary }: {
+/** Home's own tabs beside the work (owner, Oct 2026): approvals waiting, built by Home. */
+export interface WorkTab { key: string; label: string; count: number; alert?: boolean; body: ReactNode }
+
+/** owner, Oct 2026: Home's buckets — what needs someone now, this week, later. Three chunks, the first one open. */
+type Bucket = 'now' | 'week' | 'later';
+const BUCKETS: [Bucket, string, string][] = [
+  ['now', '▲ Now', 'overdue, due today or urgent'], ['week', 'This week', 'due in 7 days or high priority'], ['later', 'Later', 'no rush, or no date']];
+const bucketOf = (t: Todo, today: DateStr): Bucket => {
+  const d = dueOf(t, today);
+  return d === 'overdue' || d === 'today' || t.priority === 'urgent' ? 'now' : d === 'soon' || t.priority === 'high' ? 'week' : 'later';
+};
+
+export function TodoList({ today, compact = false, onMore, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds }: {
   today: DateStr;
   /** Home: open work only, the first few, and a door to the full list. */
   compact?: boolean; onMore?: () => void;
@@ -65,6 +83,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   onChange?: (list: Todo[]) => void;
   /** Home: the counts its card shows, folded or not. */
   onSummary?: (s: WorkSum) => void;
+  /** Home (owner, Oct 2026): tabs it adds after Claims, and the to-dos that are purchase orders (their own tab). */
+  extraTabs?: WorkTab[]; orderIds?: Set<string>;
 }) {
   const [todos, setTodos] = useState<Todo[] | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -80,6 +100,9 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const [adding, setAdding] = useState<null | TaskKind | 'claim'>(null);
   // Home (§81, §85): three lines per lane until asked for more.
   const [laneAll, setLaneAll] = useState<Record<string, boolean>>({});
+  // owner, Oct 2026: Home shows one kind at a time, and inside it the buckets folded but the first.
+  const [tab, setTab] = useState('task');
+  const [bucketOpen, setBucketOpen] = useState<Record<string, boolean>>({});
   // Open claims sit in the list as cases (§77), above the work — not inside a claim.
   const showClaims = canClaims && !claim;
 
@@ -231,6 +254,47 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     );
   };
 
+  const isOrder = (t: Todo) => !!orderIds?.has(t.id);
+  const bucketed = (key: string, list: Todo[]) => {
+    const by: Record<Bucket, Todo[]> = { now: [], week: [], later: [] };
+    for (const t of list) by[bucketOf(t, today)].push(t);
+    const first = BUCKETS.find(([b]) => by[b].length)?.[0];
+    return BUCKETS.filter(([b]) => by[b].length).map(([b, label, hint]) => {
+      const k = `${key}:${b}`, on = bucketOpen[k] ?? b === first;
+      return (
+        <section key={b} className={`todo-bucket bucket-${b}`}>
+          <button type="button" className="bucket-head" aria-expanded={on} onClick={() => setBucketOpen(m => ({ ...m, [k]: !on }))}>
+            <span aria-hidden="true">{on ? '▾' : '▸'}</span> <b>{label}</b> <span className="count">{by[b].length}</span>
+            <span className="bucket-hint">{hint}</span>
+          </button>
+          {on && <ul className="todo-list">{(laneAll[k] ? by[b] : by[b].slice(0, 5)).map(taskRow)}</ul>}
+          {on && by[b].length > 5 && (
+            <button className="link tiny home-more" onClick={() => setLaneAll(m => ({ ...m, [k]: !m[k] }))}>
+              {laneAll[k] ? 'Show less ▴' : `Show ${by[b].length - 5} more ▾`}</button>
+          )}
+        </section>
+      );
+    });
+  };
+  const homeTabs: (WorkTab & { add?: TaskKind | 'claim' })[] = compact && lanesOn ? [
+    { key: 'task', label: 'Tasks', count: taskItems.filter(t => !isOrder(t)).length, alert: late(taskItems) > 0, add: 'task',
+      body: taskItems.some(t => !isOrder(t)) ? bucketed('task', taskItems.filter(t => !isOrder(t))) : <p className="note">Nothing to do. ✓</p> },
+    { key: 'work_order', label: '🔧 Repairs', count: repairItems.length, alert: late(repairItems) > 0, add: 'work_order',
+      body: repairItems.length ? bucketed('work_order', repairItems) : <p className="note">No repairs open. ✓</p> },
+    ...(showClaims ? [{ key: 'claims', label: '⚑ Claims', count: cases.length, alert: noWork > 0, add: 'claim' as const,
+      body: cases.length ? <>
+        {noWork > 0 && <p className="note"><span className="breach">▲ {noWork} with no work yet</span></p>}
+        <ul className="todo-list cases">{(laneAll.claims ? cases : cases.slice(0, 5)).map(caseRow)}</ul>
+        {cases.length > 5 && <button className="link tiny home-more" onClick={() => setLaneAll(m => ({ ...m, claims: !m.claims }))}>
+          {laneAll.claims ? 'Show less ▴' : `Show ${cases.length - 5} more ▾`}</button>}
+      </> : <p className="note">No open claims. ✓</p> }] : []),
+    ...extraTabs,
+    ...(orderIds ? [{ key: 'orders', label: '🛒 Purchase orders', count: openList.filter(isOrder).length,
+      body: openList.some(isOrder) ? <ul className="todo-list">{openList.filter(isOrder).map(taskRow)}</ul>
+        : <p className="note">No purchase order open. ✓</p> }] : [])
+  ] : [];
+  const cur = homeTabs.find(x => x.key === tab) ?? homeTabs[0];
+
   return (
     <div className={`todos ${compact ? 'compact' : ''}`}>
       {/* Outside the lanes (a claim's own list, a kind filter): one row of adds. */}
@@ -293,6 +357,24 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
         </p>
       )}
       {todos === null ? <p className="note loading-dot">Reading</p>
+        : cur ? (
+          <div className="work-tabs-wrap">
+            <div className="work-tabs" role="tablist">
+              {homeTabs.map(x => (
+                <button key={x.key} type="button" role="tab" aria-selected={x === cur}
+                        className={`work-tab ${x === cur ? 'active' : ''} ${x.count ? '' : 'is-zero'}`}
+                        onClick={() => { setTab(x.key); setAdding(null); }}>
+                  {x.label} <span className="count">{x.count}</span>
+                  {x.alert && <span className="work-tab-alert" title="Needs attention">▲</span>}
+                </button>
+              ))}
+              <span className="rb-spacer" />
+              {cur.add && adding !== cur.add && <button className="link tiny lane-add" onClick={() => setAdding(cur.add!)}>+ Add</button>}
+            </div>
+            {cur.add && addForm(cur.add)}
+            <div role="tabpanel" className="work-tab-body">{cur.body}</div>
+          </div>
+        )
         : lanesOn ? (
           <div className="todo-lanes">
             {lane('task', 'To-dos', taskItems.map(taskRow), workAlert(taskItems), filtering ? 'None match.' : 'Nothing to do. ✓')}
@@ -379,8 +461,9 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
   return (
     <li className={`todo due-${due} ${closed ? 'is-done' : ''} prio-${t.priority}`}>
       <div className="todo-line">
-        <input type="checkbox" checked={closed} disabled={busy} onChange={() => void tick()}
-               aria-label={closed ? `Reopen: ${t.title}` : `Done: ${t.title}`} />
+        {/* owner, Oct 2026: on Home the ✓ and ✕ at the right are enough — no box. */}
+        {!compact && <input type="checkbox" checked={closed} disabled={busy} onChange={() => void tick()}
+               aria-label={closed ? `Reopen: ${t.title}` : `Done: ${t.title}`} />}
         {t.kind === 'work_order' && <span title="Work order">🔧</span>}
         {flat && parent && <span className="sub-n" title="Sub-task of">↳ {parent.title} ·</span>}
         {renaming ? (
@@ -425,8 +508,10 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
           {closed
             ? <button type="button" className="q-reopen" disabled={busy} onClick={() => void tick()} title="Reopen">↺ Reopen</button>
             : <>
-                <button type="button" className="q-cancel" disabled={busy} onClick={() => void cancel()} title="Cancel it — kept, closed as cancelled">Cancel</button>
-                <button type="button" className="q-done" disabled={busy} onClick={() => void tick()} title="Mark as done">✓ Done</button>
+                <button type="button" className="q-cancel" disabled={busy} onClick={() => void cancel()} title="Cancel it — kept, closed as cancelled"
+                        aria-label={`Cancel: ${t.title}`}>{compact ? '✕' : 'Cancel'}</button>
+                <button type="button" className="q-done" disabled={busy} onClick={() => void tick()} title="Mark as done"
+                        aria-label={`Done: ${t.title}`}>{compact ? '✓' : '✓ Done'}</button>
               </>}
         </span>
         {/* A sub-task is removed from its own line, naming itself — never
@@ -465,7 +550,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
           <button className="link tiny" onClick={() => setLineDel(false)}>Keep</button>
         </div>
       )}
-      {t.description && !open && <div className="todo-desc" title={t.description}>{t.description}</div>}
+      {t.description && !open && <div className="todo-desc" title={t.description}><Linked text={t.description} /></div>}
       {/* Sub-tasks sit under their task when the list is not filtered (§78) — folded until asked (owner, §150:
           a clean's five reports open under it were noise); ▸ ☑ n/m on the row shows them. */}
       {!flat && !open && !compact && kidsShown && mine.some(k => !isClosed(k.status)) && (
