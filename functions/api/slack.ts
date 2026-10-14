@@ -14,6 +14,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { mayAccess } from '../_lib/roles.ts';
+import { attachTodoFiles, slackFiles, slackMessageFiles } from '../_lib/todo-files.ts';
 import { rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
 import { cleansFor, digestFacts } from '../_lib/slack-digest.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
@@ -56,7 +57,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       const ev = body.event ?? {};
       if (ev.type === 'app_mention' && !ev.bot_id) ctx.waitUntil(mention(ctx, sql, s, ev).catch(() => {}));
       // A threaded reply, not the thread's own first message, and not itself an @-mention (app_mention above owns that one).
-      else if (ev.type === 'message' && !ev.bot_id && !ev.subtype && ev.thread_ts && ev.thread_ts !== ev.ts) {
+      else if (ev.type === 'message' && !ev.bot_id && (!ev.subtype || ev.subtype === 'file_share') && ev.thread_ts && ev.thread_ts !== ev.ts) {
         ctx.waitUntil(threadReply(ctx, sql, s, ev).catch(() => {}));
       }
     }
@@ -120,7 +121,7 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
     if (!member.ok) { await sayPrivate(member.why); return; }
     const r = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user))
-      .quickCreate(verb === 'repair' ? 'work_order' : 'task', arg, from, String(ev.ts));
+      .quickCreate(verb === 'repair' ? 'work_order' : 'task', arg, from, String(ev.ts), ev.files);
     if (!r.ok) await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`);
     return;
   }
@@ -155,6 +156,8 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
       { type: 'context', elements: [{ type: 'mrkdwn', text: 'Type *@Kaizen help* for everything Kaizen does here.' }] }]);
     return;
   }
+  if (t.subject === 'task' && ev.files?.length) k.attachFromSlack(t.subject_id, { channel: String(ev.channel), ts: String(ev.ts), thread: String(ev.thread_ts) }, ev.files);
+  if (!arg.trim() && ev.files?.length) return;
   const r = await k.comment(t.subject, t.subject_id, arg);
   if (!r.ok) { await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`); return; }
   const re = await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
@@ -185,10 +188,13 @@ async function threadReply(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<strin
     { subject: 'task' | 'claim'; subject_id: string }[];
   if (!t) return;
   const body = commentFromMention(text);
-  if (!body) return;
+  if (!body && !ev.files?.length) return;
   const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
   if (!member.ok) return;
   const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
+  // Owner, Oct 2026: files posted in a to-do's thread go onto the to-do.
+  if (t.subject === 'task' && ev.files?.length) k.attachFromSlack(t.subject_id, { channel: String(ev.channel), ts: String(ev.ts), thread: String(ev.thread_ts) }, ev.files);
+  if (!body) return;
   const r = await k.comment(t.subject, t.subject_id, body);
   if (r.ok) await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
 }
@@ -283,6 +289,23 @@ class Kaizen {
   }
 
   /** A comment on a task or a claim, as this member (§107). */
+  /**
+   * Owner, Oct 2026: a Slack message's files go onto the to-do — after the answer (Slack wants one in 3 s), and a line
+   * in the thread says so. `files` as the event carried them, or read back from the message (channel + ts).
+   */
+  attachFromSlack(todoId: string, from: { channel: string; ts: string; thread?: string }, files?: unknown[]) {
+    if (!this.may('/api/todo-files', 'POST')) return;
+    this.ctx.waitUntil((async () => {
+      const raw = files?.length ? files : await slackMessageFiles(this.s.token!, from.channel, from.ts);
+      if (!raw.length) return;
+      const got = await slackFiles(this.s.token!, raw);
+      const names = await attachTodoFiles(this.sql, this.ctx.env.ENCRYPTION_KEY, todoId, got, this.email, 'slack');
+      const missed = raw.length - names.length;
+      if (names.length || missed) await slackApi(this.s.token!, 'chat.postMessage', { channel: from.channel, thread_ts: from.thread ?? from.ts,
+        text: `📎 ${names.length ? `${names.length} file${names.length === 1 ? '' : 's'} added to the to-do: ${names.join(', ')}` : ''}${missed ? `${names.length ? ' · ' : ''}${missed} could not be read (over 15 MB, or the app needs the files:read permission — reinstall it)` : ''}` });
+    })().catch(() => {}));
+  }
+
   async comment(subject: 'task' | 'claim', id: string, body: string): Promise<Record<string, unknown>> {
     // via: it came from the thread, so it is not posted back there.
     if (subject === 'task') return this.may('/api/todos', 'POST') ? this.todo({ action: 'note', id, body, via: 'slack-thread' }) : { ok: false, message: 'your role does not include the to-do list' };
@@ -295,7 +318,7 @@ class Kaizen {
    * reply in the request's thread says it is tracked, with ✎ Add details,
    * and that thread becomes the task's.
    */
-  async quickCreate(kind: 'task' | 'work_order', words: string, thread: { channel: string; ts: string }, messageTs: string): Promise<Record<string, unknown>> {
+  async quickCreate(kind: 'task' | 'work_order', words: string, thread: { channel: string; ts: string }, messageTs: string, files?: unknown[]): Promise<Record<string, unknown>> {
     if (!this.may('/api/todos', 'POST')) return { ok: false, message: 'your role does not include the to-do list' };
     const units = await this.units();
     const { title, description } = quickTitle(words);
@@ -315,6 +338,7 @@ class Kaizen {
     const m = trackedReply({ id: String(r.id), title, kind, unit: units.find(u => u.value === unit)?.label ?? null }, parent ? 'sub-task' : claim ? 'claim' : undefined);
     const posted = await slackApi<{ ts?: string }>(this.s.token!, 'chat.postMessage', { channel: thread.channel, thread_ts: thread.ts, ...m, unfurl_links: false });
     if (posted.ok && !home) await rememberThread(this.sql, { ok: true, ...thread }, 'task', String(r.id));
+    this.attachFromSlack(String(r.id), { channel: thread.channel, ts: messageTs, thread: thread.ts }, files);
     return r;
   }
 

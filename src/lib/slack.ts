@@ -893,7 +893,8 @@ export function parseMention(text: string): { verb: MentionVerb; arg: string } {
   const map: Record<string, MentionVerb> = { '': 'help', help: 'help', '?': 'help', commands: 'help',
     new: 'new', task: 'new', todo: 'new', 'to-do': 'new', add: 'new', repair: 'repair', claim: 'claim', claims: 'claims', cases: 'claims', cost: 'cost', expense: 'cost', gasto: 'cost', costo: 'cost',
     tasks: 'tasks', list: 'tasks', today: 'today', all: 'all', status: 'all', reminder: 'all', summary: 'all', comments: 'comments', history: 'comments' };
-  const v = map[first.toLowerCase()];
+  // "task: …" as much as "task …" (owner, Oct 2026 — Derek's to-do kept "task:" in its title).
+  const v = map[first.toLowerCase().replace(/:$/, '')];
   return v ? { verb: v, arg: rest.join(' ') } : { verb: 'text', arg: t };
 }
 

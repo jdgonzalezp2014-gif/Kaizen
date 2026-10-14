@@ -109,3 +109,7 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 - **Purchase orders tab: comments on the row (owner, 2026-10-13):** each order has "▸ 💬 n / Comment" that unfolds its
   Timeline (read + post, same `note` action → Slack thread, §143 rule applies) without opening the to-do (`TodoRow` prop `chat`).
 - **Work orders too:** the Repairs tab's rows also unfold their comments (`chatRow`), like purchase orders.
+- **Files on a to-do (owner, 2026-10-13, migration 076 `todo_files`):** "📎 Files" in an open to-do — several at once
+  (≤10, 15 MB each, any type), Drive (field reports folder, "to-do #N — name"), ✕ takes one off (Drive copy stays);
+  activity line per add/remove. Row shows "📎 n". API `/api/todo-files` (GET ?todoId, POST multipart, POST remove; role
+  `todos`). Server `functions/_lib/todo-files.ts` (attachTodoFiles, slackFiles, slackMessageFiles).

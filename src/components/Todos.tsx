@@ -15,7 +15,7 @@
  */
 import { Modal } from './Modal.tsx';
 import { TaskPurchase } from '../screens/Inventory.tsx';
-import { vendorLink, getVendors, getInventory } from '../api.ts';
+import { vendorLink, getVendors, getInventory, getTodoFiles, uploadTodoFiles, removeTodoFile, type TodoFile } from '../api.ts';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
@@ -506,6 +506,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           ? <button type="button" className="link tiny" aria-expanded={talk} onClick={() => setTalk(v => !v)}
                     title={talk ? 'Hide the comments' : 'Comments — read or leave one'}>{talk ? '▾' : '▸'} 💬 {t.updates > 1 ? t.updates : 'Comment'}</button>
           : t.updates > 1 && <span className="sub-n" title="Updates">💬 {t.updates}</span>}
+        {!!t.files && <button type="button" className="link tiny" title="Files — open the to-do to see them" onClick={onOpen}>📎 {t.files}</button>}
         {t.hostawayError ? <span className="todo-ha err" title={`Not yet in Hostaway: ${t.hostawayError} — retried on the next sync`}>⚠ Hostaway</span>
           : t.hostawayTaskId && <span className="todo-ha" title={`Hostaway task #${t.hostawayTaskId}${t.source === 'hostaway' ? ' — written in Hostaway' : ''}`}>⇄ Hostaway</span>}
         {/* A sub-task is removed from its own line, naming itself — never
@@ -578,7 +579,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           {/* §104: title and description, the comments, then the details and sub-tasks folded. */}
           <TodoForm units={units} claims={claims} canClaims={!inClaim && claims.length > 0} initial={t} submitLabel="Save changes"
                     onSubmit={v => act({ action: 'update', id: t.id, ...v })}
-                    middle={<Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} />}
+                    middle={<><TodoFiles todoId={t.id} />
+                      <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} /></>}
                     after={t.parentId ? null : (
                       <section className={`task-fold ${subsOpen ? 'open' : ''}`}>
                         {mine.length > 0 && (
@@ -1298,6 +1300,47 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
                 post={async body => (await postClaimNote(String(claim.id), body).catch(() => ({ ok: false }))).ok}
                 version={work.length} />
     </div>
+  );
+}
+
+/**
+ * A to-do's files (owner, Oct 2026): photos, PDFs, documents — several at once, kept in Drive. Files sent
+ * with the Slack message @Kaizen made the to-do from (or later in its thread) land here too.
+ */
+function TodoFiles({ todoId }: { todoId: string }) {
+  const [files, setFiles] = useState<TodoFile[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const take = (r: { ok: true; files: TodoFile[] } | { ok: false; message?: string; error?: string }) =>
+    r.ok ? (setFiles(r.files), setMsg('')) : setMsg(r.message ?? r.error ?? 'Not saved.');
+  useEffect(() => { void getTodoFiles(todoId).then(take).catch(e => setMsg(String(e))); }, [todoId]);
+  const add = async (list: File[]) => {
+    if (!list.length) return;
+    setBusy(true);
+    try { take(await uploadTodoFiles(todoId, list.slice(0, 10))); } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
+  };
+  return (
+    <section className="todo-files">
+      <div className="todo-files-head">
+        <b>📎 Files</b> <span className="sub-n">{files ? files.length : '…'}</span>
+        <label className={`chip ${busy ? 'is-busy' : ''}`}>{busy ? 'Uploading…' : '+ Add files'}
+          <input type="file" multiple hidden disabled={busy} onChange={e => { void add([...(e.target.files ?? [])]); e.target.value = ''; }} /></label>
+        <span className="sub-n">up to 10 at a time, 15 MB each — photos, PDFs, documents</span>
+      </div>
+      {msg && <p className="breach" role="status">{msg}</p>}
+      {files && files.length > 0 && (
+        <ul className="todo-files-list">
+          {files.map(f => (
+            <li key={f.id}>
+              <a href={f.url} target="_blank" rel="noreferrer">{f.mime?.startsWith('image/') ? '🖼' : f.mime === 'application/pdf' ? '📄' : '📎'} {f.name}</a>
+              <span className="sub-n"> · {f.by.split('@')[0]}{f.source === 'slack' ? ' · from Slack' : ''}</span>
+              <button type="button" className="link tiny" aria-label={`Remove ${f.name}`} title="Take it off the to-do (the Drive copy stays)"
+                      onClick={() => void removeTodoFile(f.id).then(take)}>✕</button>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
   );
 }
 

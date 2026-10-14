@@ -159,3 +159,8 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - **Cleaners' reminder ON, evening only (owner, 2026-10-13):** `crewChannels` = { reminders: true, morning: '' (off), evening:
   '18:00', helperNotices: false } — tomorrow's cleans at 6 PM Central in #cleaning-irene, #cleaning-veronica,
   #cleaning-karina-and-marvin. An empty time = that reminder off (`dueCrewReminders`, Settings → Slack). No new scopes.
+- **Files from Slack onto the to-do (owner, 2026-10-13):** a to-do made by `@Kaizen new` / the offer's "+ New to-do" gets the
+  source message's files (event `files`, else read back with `conversations.replies`); files posted in a to-do's thread
+  (mention or plain reply, `subtype: file_share` allowed) go onto it. Done after the answer (`attachFromSlack`, waitUntil),
+  then "📎 n files added…" in the thread. **Needs `files:read`** (added to the manifest — reinstall). `task:` with a colon
+  now parses as `task` (Derek's to-do kept "task:" in its title).

@@ -264,6 +264,7 @@ test('check-in lists everything open; check-out counts the day', () => {
 test('@Kaizen: what a mention asks for', () => {
   assert.deepEqual(parseMention('<@U1>'), { verb: 'help', arg: '' });
   assert.deepEqual(parseMention('<@U1> new Fix the AC in P2-4308'), { verb: 'new', arg: 'Fix the AC in P2-4308' });
+  assert.deepEqual(parseMention('<@U1> task: court hearing for 2260'), { verb: 'new', arg: 'court hearing for 2260' });
   assert.deepEqual(parseMention('<@U1> repair leak'), { verb: 'repair', arg: 'leak' });
   assert.deepEqual(parseMention('<@U1> comments'), { verb: 'comments', arg: '' });
   assert.deepEqual(parseMention('<@U1> the plumber comes at 10'), { verb: 'text', arg: 'the plumber comes at 10' });

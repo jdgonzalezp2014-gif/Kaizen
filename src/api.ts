@@ -794,6 +794,17 @@ export const todoAction = (body: Record<string, unknown>) =>
 export type { WorkUpdate } from './lib/todos.ts';
 type UpdatesResult = { ok: true; updates: import('./lib/todos.ts').WorkUpdate[] } | { ok: false; message?: string; error?: string };
 export const getTaskUpdates = (id: string) => call<UpdatesResult>(`/api/todos?updates=${encodeURIComponent(id)}`);
+/** A to-do's files (owner, Oct 2026): in Drive, from Kaizen or from Slack. */
+export interface TodoFile { id: string; name: string; url: string; mime: string | null; source: 'app' | 'slack'; by: string; at: string }
+type FilesResult = { ok: true; files: TodoFile[] } | Fail;
+export const getTodoFiles = (todoId: string) => call<FilesResult>(`/api/todo-files?todoId=${encodeURIComponent(todoId)}`);
+export const uploadTodoFiles = (todoId: string, files: File[]) => {
+  const f = new FormData();
+  f.append('todoId', todoId);
+  for (const x of files) f.append('file', x);
+  return fetch('/api/todo-files', { method: 'POST', body: f }).then(r => r.json() as Promise<FilesResult>);
+};
+export const removeTodoFile = (id: string) => call<FilesResult>('/api/todo-files', { method: 'POST', body: JSON.stringify({ action: 'remove', id }) });
 export const getClaimUpdates = (id: string) => call<UpdatesResult>(`/api/claims?updates=${encodeURIComponent(id)}`);
 export const postClaimNote = (id: string, body: string) =>
   call<{ ok: boolean; error?: string }>('/api/claims', { method: 'POST', body: JSON.stringify({ action: 'note', id, body }) });

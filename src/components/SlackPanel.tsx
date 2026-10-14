@@ -39,7 +39,9 @@ function manifest(origin: string) {
                                     // §107: "@Kaizen …" in a thread — only the messages that name it — and the ✅ on them.
                                     'app_mentions:read', 'reactions:write',
                                     // §153: a plain reply in a task/claim's own thread, saved as a comment without the mention.
-                                    'channels:history', 'groups:history'] } },
+                                    'channels:history', 'groups:history',
+                                    // Owner, Oct 2026: the files of a message @Kaizen makes a to-do from go onto the to-do.
+                                    'files:read'] } },
     settings: { interactivity: { is_enabled: true, request_url: `${origin}/api/slack` },
                 event_subscriptions: { request_url: `${origin}/api/slack`, bot_events: ['app_mention', 'message.channels', 'message.groups'] },
                 org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false }

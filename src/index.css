@@ -2094,3 +2094,8 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
 .buy-opts { display: grid; gap: 6px; margin: 8px 0; }
 .todo-talk { margin: 6px 0 4px; }
+/* A to-do's files (owner, Oct 2026). */
+.todo-files { margin: 8px 0; display: flex; flex-direction: column; gap: 4px; }
+.todo-files-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.todo-files-head .chip { cursor: pointer; }
+.todo-files-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: 13px; }

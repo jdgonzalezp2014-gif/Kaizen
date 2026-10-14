@@ -60,6 +60,8 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/inventory-items', methods: ['POST'] }] },
   { key: 'todos', label: 'To-do list — see, add and tick off the team\'s to-dos', routes: [
     { path: '/api/todos', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] },
+    // A to-do's files (owner, Oct 2026).
+    { path: '/api/todo-files', methods: ['GET', 'POST'] },
     // A repair's vendor is picked from the directory (§133).
     { path: '/api/vendors', methods: ['GET'] }] },
   { key: 'guests.documents', label: 'Guest documents — see and upload IDs and rental agreements', routes: [

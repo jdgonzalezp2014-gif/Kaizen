@@ -28,6 +28,7 @@ export interface Todo {
   chargeOwner?: boolean; hostawayExpenseId?: string | null;
   /** §150: a cleaner's report group (problem / request / bought) and how many purchases were recorded for it. */
   cleanGroup?: 'problem' | 'request' | 'bought' | 'inspection' | null; purchases?: number;
+  /** Owner, Oct 2026: files on it (📎). */ files?: number;
   /** The claim this work resolves, if any. */
   claimId: string | null;
   /** Start from (any work); a repair's vendor, and what it costs. */
