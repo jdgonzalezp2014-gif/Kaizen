@@ -21,10 +21,12 @@ const TZ = 'America/New_York';
 const WINDOW_DAYS = 60, AHEAD_DAYS = 14;
 
 export async function invItems(sql: SqlFn): Promise<InvItem[]> {
-  const rows = await sql`SELECT id::text, name, category, measure, per_clean::float AS per_clean, reorder_at::float AS reorder_at, active
-                           FROM inventory_items WHERE account_id = 1 ORDER BY active DESC, category, lower(name)` as
-    { id: string; name: string; category: string; measure: string; per_clean: number | null; reorder_at: number | null; active: boolean }[];
-  return rows.map(r => ({ id: r.id, name: r.name, category: r.category, measure: r.measure, perClean: r.per_clean, reorderAt: r.reorder_at, active: r.active }));
+  const rows = await sql`SELECT id::text, name, category, measure, per_clean::float AS per_clean, reorder_at::float AS reorder_at, active, kind, buy_options
+                           FROM inventory_items WHERE account_id = 1 ORDER BY active DESC, kind DESC, category, lower(name)` as
+    { id: string; name: string; category: string; measure: string; per_clean: number | null; reorder_at: number | null; active: boolean;
+      kind: 'supply' | 'furniture'; buy_options: { label: string; url: string }[] | null }[];
+  return rows.map(r => ({ id: r.id, name: r.name, category: r.category, measure: r.measure, perClean: r.per_clean, reorderAt: r.reorder_at, active: r.active,
+                          kind: r.kind, buyOptions: r.buy_options ?? [] }));
 }
 
 export async function activeUnits(sql: SqlFn) {

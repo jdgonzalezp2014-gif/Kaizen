@@ -19,7 +19,13 @@
 export type MoveKind = 'count' | 'used' | 'purchase' | 'adjust' | 'missing' | 'taken';
 export const CATEGORIES = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'] as const;
 
-export interface InvItem { id: string; name: string; category: string; measure: string; perClean: number | null; reorderAt: number | null; active: boolean }
+export interface InvItem {
+  id: string; name: string; category: string; measure: string; perClean: number | null; reorderAt: number | null; active: boolean;
+  /** §150: 'supply' is consumed by cleans (what cleaners take); 'furniture' is the house's things (counted only). */
+  kind?: 'supply' | 'furniture';
+  /** Where to buy it. */
+  buyOptions?: { label: string; url: string }[];
+}
 export interface Move {
   itemId: string; place: string | null; unitId: string | null; kind: MoveKind; qty: number; at: string;
   cleaningKey?: string | null; byName?: string; source?: string;

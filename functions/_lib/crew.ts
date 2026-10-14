@@ -315,7 +315,8 @@ export async function crewGet(request: Request, env: Env, sql: SqlFn, me: CrewCa
                           ORDER BY title` as { title: string; purpose: string | null; steps: { text: string; detail?: string }[]; body: string | null; es: boolean }[])
     .map(h => ({ title: h.title, purpose: h.purpose, steps: h.steps, body: h.body, lang: h.es ? 'es' : 'en' }));
   const [items, units] = await Promise.all([invItems(sql), activeUnits(sql)]);
-  page.supplies = { items: items.filter(i => i.active).map(i => ({ id: i.id, name: i.name, measure: i.measure, category: i.category })), units };
+  // §150: cleaners take supplies — never the house's furniture (linens, dishes…), which is only counted.
+  page.supplies = { items: items.filter(i => i.active && i.kind !== 'furniture').map(i => ({ id: i.id, name: i.name, measure: i.measure, category: i.category })), units };
   // §136: the codes for today's cleans only; ahead, just where to go.
   const acc = await accessByUnit(sql);
   const todays = [...page.upcoming.rows.filter(r => r.date === page.today), ...page.cleans.filter(c => c.date === page.today && !c.voidReason)];

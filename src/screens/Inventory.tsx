@@ -826,30 +826,55 @@ export function InventorySetup() {
 }
 
 /** The supplies the team keeps track of. Switching one off keeps its history. */
+type Kind = 'supply' | 'furniture';
+const TYPE_WORD: Record<Kind, string> = { supply: '🧴 Supplies', furniture: '🪑 Furniture' };
+/**
+ * The items list (§150, owner): first what each thing is — 🧴 supplies (what
+ * cleans consume; the only ones a cleaner sees, per unit and clean) or 🪑
+ * furniture (linens, dishes, equipment: counted, never handed out) — and, last,
+ * where to buy it: as many options as there are, each with its link.
+ */
 function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void }) {
-  const blank = { id: '', name: '', category: 'other', measure: 'unit', perClean: '', reorderAt: '', active: true };
+  const blank = { id: '', kind: 'supply' as Kind, name: '', category: 'other', measure: 'unit', perClean: '', reorderAt: '', active: true,
+                  buyOptions: [] as { label: string; url: string }[] };
   const [form, setForm] = useState(blank);
+  const [show, setShow] = useState<'all' | Kind>('all');
   const [msg, setMsg] = useState('');
   const send = async (body: Record<string, unknown>, done: string) => {
     const r = await inventoryItemAction(body).catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return false; }
     setMsg(done); onSaved(); return true;
   };
+  const whole = (i: InvItemRow) => ({ action: 'save', id: i.id, name: i.name, category: i.category, measure: i.measure, perClean: i.perClean ?? '',
+                                      reorderAt: i.reorderAt ?? '', active: i.active, kind: i.kind ?? 'supply', buyOptions: i.buyOptions ?? [] });
+  const shown = items.filter(i => show === 'all' || (i.kind ?? 'supply') === show);
+  const setOpt = (k: number, patch: Partial<{ label: string; url: string }>) =>
+    setForm(f => ({ ...f, buyOptions: f.buyOptions.map((o, j) => j === k ? { ...o, ...patch } : o) }));
   return (
     <div className="card">
-      <h2>Supplies list</h2>
-      <p className="note">What is tracked, how it is counted, the starting estimate per clean (until cleaners have reported 3 cleans), and the minimum to keep in a place unless the place sets its own.</p>
+      <h2>Items list</h2>
+      <p className="note">🧴 <b>Supplies</b> are what cleans consume — cleaners see only these, and only those their unit's place keeps. 🪑 <b>Furniture</b> is
+        the house's things (linens, dishes, equipment): counted, never handed out. Per clean is the starting estimate (until 3 cleans have reported);
+        Keep at least is the minimum unless a place sets its own. <b>Buy at</b>: where to buy it, with the link.</p>
+      <div className="chip-row">{(['all', 'supply', 'furniture'] as const).map(k =>
+        <button key={k} className={show === k ? 'chip active' : 'chip'} onClick={() => setShow(k)}>{k === 'all' ? `All (${items.length})` : `${TYPE_WORD[k]} (${items.filter(i => (i.kind ?? 'supply') === k).length})`}</button>)}</div>
       <div className="grid-scroll">
         <table className="units compact">
-          <thead><tr><th>Item</th><th>Category</th><th>Counted in</th><th className="n">Per clean (est.)</th><th className="n">Keep at least</th><th></th></tr></thead>
+          <thead><tr><th>Type</th><th>Item</th><th>Category</th><th>Counted in</th><th className="n">Per clean (est.)</th><th className="n">Keep at least</th><th>Buy at</th><th></th></tr></thead>
           <tbody>
-            {items.map(i => (
+            {shown.map(i => (
               <tr key={i.id} className={i.active ? undefined : 'muted-row'}>
+                <td><select value={i.kind ?? 'supply'} aria-label={`Type of ${i.name}`}
+                            onChange={e => void send({ ...whole(i), kind: e.target.value }, `${i.name}: ${TYPE_WORD[e.target.value as Kind]}.`)}>
+                  <option value="supply">🧴 Supplies</option><option value="furniture">🪑 Furniture</option></select></td>
                 <td><b>{i.name}</b>{!i.active && <span className="sub-n"> · off</span>}</td><td>{i.category}</td><td>{i.measure}</td>
                 <td className="n">{fmt(i.perClean)}</td><td className="n">{fmt(i.reorderAt)}</td>
-                <td className="n">
-                  <button className="link tiny" onClick={() => setForm({ id: i.id, name: i.name, category: i.category, measure: i.measure,
-                    perClean: i.perClean == null ? '' : String(i.perClean), reorderAt: i.reorderAt == null ? '' : String(i.reorderAt), active: i.active })}>edit</button>{' '}
+                <td>{(i.buyOptions ?? []).length ? (i.buyOptions ?? []).map((o, k) => <Fragment key={k}>{k ? ' · ' : ''}<a href={o.url} target="_blank" rel="noreferrer">{o.label} ↗</a></Fragment>)
+                  : <span className="sub-n">—</span>}</td>
+                <td className="n nowrap">
+                  <button className="link tiny" onClick={() => setForm({ id: i.id, kind: i.kind ?? 'supply', name: i.name, category: i.category, measure: i.measure,
+                    perClean: i.perClean == null ? '' : String(i.perClean), reorderAt: i.reorderAt == null ? '' : String(i.reorderAt), active: i.active,
+                    buyOptions: (i.buyOptions ?? []).map(o => ({ ...o })) })}>edit</button>{' '}
                   {i.active && <button className="link tiny danger" onClick={() => void send({ action: 'delete', id: i.id }, `${i.name} switched off.`)}>remove</button>}
                 </td>
               </tr>
@@ -859,12 +884,24 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
       </div>
       <h3>{form.id ? `Edit ${form.name}` : 'Add an item'}</h3>
       <div className="row">
+        <label>Type<select value={form.kind} onChange={e => setForm(f => ({ ...f, kind: e.target.value as Kind }))}>
+          <option value="supply">🧴 Supplies</option><option value="furniture">🪑 Furniture</option></select></label>
         <label>Name<input value={form.name} maxLength={120} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></label>
         <label>Category<select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>
           {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}</select></label>
         <label>Counted in<input value={form.measure} maxLength={20} placeholder="roll, bottle, pod…" onChange={e => setForm(f => ({ ...f, measure: e.target.value }))} /></label>
         <label>Per clean (est.)<input type="number" min="0" step="any" value={form.perClean} onChange={e => setForm(f => ({ ...f, perClean: e.target.value }))} /></label>
         <label>Keep at least<input type="number" min="0" step="any" value={form.reorderAt} onChange={e => setForm(f => ({ ...f, reorderAt: e.target.value }))} /></label>
+      </div>
+      <div className="buy-opts">
+        <b>Buy at</b> <span className="sub-n">— where to buy it; each option with its link</span>
+        {form.buyOptions.map((o, k) => (
+          <div key={k} className="row" style={{ gap: 6, alignItems: 'center' }}>
+            <input value={o.label} maxLength={60} placeholder="Store, e.g. Costco" aria-label="Store" onChange={e => setOpt(k, { label: e.target.value })} />
+            <input value={o.url} maxLength={500} placeholder="https://…" aria-label="Link" style={{ flex: 1 }} onChange={e => setOpt(k, { url: e.target.value })} />
+            <button className="link tiny danger" onClick={() => setForm(f => ({ ...f, buyOptions: f.buyOptions.filter((_, j) => j !== k) }))}>✕</button>
+          </div>))}
+        <button className="link tiny" onClick={() => setForm(f => ({ ...f, buyOptions: [...f.buyOptions, { label: '', url: '' }] }))}>+ a buying option</button>
       </div>
       {form.id && <label className="check"><input type="checkbox" checked={form.active} onChange={e => setForm(f => ({ ...f, active: e.target.checked }))} /> Active</label>}
       <div className="button-row">

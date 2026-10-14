@@ -485,7 +485,9 @@ export async function crewUpload(fields: Record<string, string>, files: File[], 
 /* ── inventory (§134) ─────────────────────────────────────────────── */
 
 export interface SupplyItem { id: string; name: string; measure: string; category: string }
-export interface InvItemRow extends SupplyItem { perClean: number | null; reorderAt: number | null; active: boolean }
+export interface InvItemRow extends SupplyItem { perClean: number | null; reorderAt: number | null; active: boolean;
+  /** §150: supplies are what cleans consume; furniture is the house's things. */ kind?: 'supply' | 'furniture';
+  /** Where to buy it. */ buyOptions?: { label: string; url: string }[] }
 export interface InvLevel {
   itemId: string; qty: number | null; countedAt: string | null; missingSince: string | null;
   /** §150: the average per clean of what cleaners reported, over the units this place supplies (else the item's estimate). */

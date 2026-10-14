@@ -20,7 +20,7 @@ export interface UnitAccess {
   lockbox: string | null; fob: string | null;
   wifiName: string | null; wifiPassword: string | null;
   /** §150: where this unit's supplies come from — a storage ("S1105") or the house's own closet — and its code. */
-  supplies?: { label: string; self: boolean; code: string | null } | null;
+  supplies?: { label: string; self: boolean; code: string | null; skip?: string[] } | null;
   /** What the team still has to fill for cleaners. */
   missing: ('address' | 'access' | 'code' | 'lockbox' | 'wifi')[];
 }

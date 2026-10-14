@@ -293,6 +293,11 @@ key had no SOPs.
   ✓ Complete on one opens "Nothing bought" (`unboughtModal`: 🛒 Record the purchase in Kaizen, or a required why).
   Only these order to-dos; every other task closes as before. The four older "Request at …" to-dos from Irene (#55, #56, #62, #63) were
   tagged `request` on 2026-10-13.
+- **Items list: Type and Buy at (§150, owner, 075):** Setup → Inventory → Items list — first column **Type**: 🧴 Supplies
+  (`inventory_items.kind = 'supply'`, what cleans consume) or 🪑 Furniture (linens, dishes, equipment, hardware — counted,
+  never handed out; the 29 items of 2026-10-13 are furniture); last column **Buy at** (`buy_options` [{label, url}], as many
+  as there are). Cleaners' step 2 (crew page, helper link) lists supplies only, and only those their unit's place keeps
+  (`UnitAccess.supplies.skip` = its "not kept here").
 - **Inspection orders and who paid (§150, owner, 074):** the inspector only requests — the inspection's purchase to-do
   is `clean_group = 'inspection'`, an order processed as a purchase (closing it unbought asks first, like a cleaner's
   request). Every purchase form asks **Paid by**: Kaizen (company card) or someone — a name (`inventory_purchases.paid_by`);

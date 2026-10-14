@@ -2091,3 +2091,5 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .todos .todo-quick { opacity: .75; }
 .todos .todo-quick button { padding: 2px 8px; font-size: 13px; min-width: 28px; }
 .desc-link { text-decoration: none; margin-left: 2px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
+.buy-opts { display: grid; gap: 6px; margin: 8px 0; }

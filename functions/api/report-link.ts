@@ -68,7 +68,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
   const l = await linkOf(sql, request);
   if (l instanceof Response) return l;
-  const items = (await invItems(sql)).filter(i => i.active).map(i => ({ id: i.id, name: i.name, measure: i.measure, category: i.category }));
+  const items = (await invItems(sql)).filter(i => i.active && i.kind !== 'furniture').map(i => ({ id: i.id, name: i.name, measure: i.measure, category: i.category }));
   return Response.json({ ok: true, team: l.cleaner, lang: l.lang, items,
                          clean: { unit: l.unit_name, date: l.clean_date, until: l.expires_on },
                          state: (await cleanStates(sql, [l.cleaning_key]))[l.cleaning_key],

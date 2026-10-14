@@ -48,7 +48,7 @@ export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState, 
   const [msg, setMsg] = useState('');
   const take = (s?: StepState) => { if (s) { setSt(s); onState?.(s); } };
 
-  if (stage === 'taken') return <TakenStep tx={tx} items={items} send={taken} from={from} code={place?.code ?? null}
+  if (stage === 'taken') return <TakenStep tx={tx} items={place?.skip?.length ? items.filter(i => !place.skip!.includes(i.id)) : items} send={taken} from={from} code={place?.code ?? null}
                                           onDone={s => { take(s); setStage(null); }} onBack={() => setStage(null)} />;
   if (stage) return <PhotoStep tx={tx} stage={stage} send={f => sendPhoto(stage, f)}
                                onDone={s => { take(s); setStage(null); }} onBack={() => setStage(null)} />;
