@@ -444,3 +444,6 @@ key had no SOPs.
 ## History
 
 §18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140, §141, §142, §147, §150.
+- **A to-do's order is a purchase with no price (owner, 2026-10-13):** `TaskPurchase` opens as "🛒 Purchase order" — items,
+  quantities, places, 💾 Save order (`todoOrder`). Total paid / paid by / receipt / "close this to-do" appear only after
+  "🧾 Bought — record it" (← back to the order returns). The to-do row's link reads "+ 🛒 purchase order".

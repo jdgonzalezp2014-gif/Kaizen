@@ -723,6 +723,9 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
   const [paidBy, setPaidBy] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  // Owner, Oct 2026: an order is a purchase with no price yet — what, how many, where. The money,
+  // who paid and the receipt appear only once someone says it was bought.
+  const [paying, setPaying] = useState(false);
   useEffect(() => { void getInventory().then(r => {
     if (!r.ok) { setMsg(r.message ?? 'Could not load the inventory.'); return; }
     setInv(r);
@@ -753,10 +756,18 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
   };
   return (
     <div className="card task-buy">
-      <h3>🛒 Purchase for this to-do</h3>
-      <p className="note">{hadOrder ? 'Its order comes filled in — as it was left.' : 'Add what is to buy with 🔍.'} Bought? Record it — it goes into
-        the stock of each place and into Costs (Restock) with the receipt. Not finished? 💾 Save draft: the to-do keeps this order.</p>
+      <h3>{paying ? '🧾 Record the purchase' : '🛒 Purchase order'}</h3>
+      <p className="note">{paying ? 'What was bought goes into the stock of each place and into Costs (Restock) with the receipt.'
+        : <>{hadOrder ? 'The order as it was left.' : 'Add what is to buy with 🔍.'} No price yet — 💾 Save order keeps it on this to-do;
+          when it is bought, “🧾 Bought” asks for the total and the receipt.</>}</p>
       <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={home} onInv={setInv} />
+      {!paying ? (
+        <div className="button-row">
+          <button disabled={busy || (!out.length && !hadOrder)} onClick={() => void draft()}>{busy ? 'Saving…' : '💾 Save order'}</button>
+          <button className="secondary" disabled={busy || !out.length} onClick={() => setPaying(true)}>🧾 Bought — record it</button>
+          <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
+        </div>
+      ) : <>
       <div className="row">
         <label>Total paid ($)<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} /></label>
         <PaidBy value={paidBy} onChange={setPaidBy} />
@@ -767,10 +778,10 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
       <label className="check"><input type="checkbox" checked={closeIt} onChange={e => setCloseIt(e.target.checked)} /> ✓ and close this to-do</label>
       <div className="button-row">
         <button disabled={busy || !out.length || !(Number(total) > 0)} onClick={() => void bought()}>{busy ? 'Saving…' : '🧾 Record the purchase'}</button>
-        <button className="secondary" disabled={busy || (!out.length && !hadOrder)} onClick={() => void draft()}>💾 Save draft</button>
-        <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
+        <button className="secondary" disabled={busy} onClick={() => setPaying(false)}>← Back to the order</button>
         {!(Number(total) > 0) && out.length > 0 && <span className="note">The total paid is needed to record it.</span>}
       </div>
+      </>}
       {msg && <p className={msg.startsWith('✓') ? 'note' : 'breach'} role="status">{msg}</p>}
     </div>
   );

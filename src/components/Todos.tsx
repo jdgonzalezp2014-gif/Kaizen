@@ -589,7 +589,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
                               <div className="todo-add-buttons">
                                 <button className="link tiny" onClick={() => setAddingSub('task')}>+ sub-task</button>
                                 <button className="link tiny" onClick={() => setAddingSub('work_order')}>+ 🔧 work order</button>
-                                {!closed && <button className="link tiny" onClick={() => setBuying(true)}>+ 🛒 purchase</button>}
+                                {!closed && <button className="link tiny" onClick={() => setBuying(true)}>+ 🛒 purchase order</button>}
                               </div>
                             ) : (
                               <TodoForm key={addingSub} units={units} claims={claims} canClaims={false} submitLabel="Add" startKind={addingSub}
