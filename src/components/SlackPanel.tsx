@@ -43,9 +43,11 @@ function manifest(origin: string) {
                                     // §153: a plain reply in a task/claim's own thread, saved as a comment without the mention.
                                     'channels:history', 'groups:history',
                                     // Owner, Oct 2026: the files of a message @Kaizen makes a to-do from go onto the to-do.
-                                    'files:read'] } },
+                                    'files:read',
+                                    // Owner, 2026-10-14: 📎 on a message saves it to Kaizen.
+                                    'reactions:read'] } },
     settings: { interactivity: { is_enabled: true, request_url: `${origin}/api/slack` },
-                event_subscriptions: { request_url: `${origin}/api/slack`, bot_events: ['app_mention', 'message.channels', 'message.groups'] },
+                event_subscriptions: { request_url: `${origin}/api/slack`, bot_events: ['app_mention', 'message.channels', 'message.groups', 'reaction_added'] },
                 org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false }
   }, null, 2);
 }
@@ -144,7 +146,7 @@ export function SlackPanel() {
           )}
           {!channels && cfg.channels && <p className="note">Now: {TOPICS.filter(t => cfg.channels?.[t.key]).map(t => `${t.label} → #${cfg.channels![t.key]!.name}`).join(' · ') || 'no channels yet'}</p>}
           <p className="note"><b>Add to…</b> — in these channels each new message gets a private, silent offer (only its author sees it) to add it to a
-            task, a purchase order, a work order or a claim; once added, later replies in its thread are saved too. No AI reads the messages.
+            task, a purchase order, a work order or a claim. Replies in its thread are not all saved: react 📎 to one to add it. No AI reads the messages.
             {' '}{channels ? '' : `Now: ${(cfg.addTo?.channels ?? []).map(c => `#${c.name}`).join(', ') || 'none'} — read the channels to change.`}</p>
           {channels && (
             <div className="slack-events">

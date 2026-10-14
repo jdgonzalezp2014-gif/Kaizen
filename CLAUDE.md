@@ -47,7 +47,7 @@ npm run migrate          # db/migrations/NNN_*.sql, recorded in _migrations — 
                          # (reads DATABASE_URL_UNPOOLED first: to migrate a Neon branch, override BOTH)
 git push origin master   # deploys
 ```
-- Migrations applied: 001–082. New ones are the next number.
+- Migrations applied: 001–083. New ones are the next number.
 - Testing on a Neon branch: `node --env-file=<branch file> scripts/migrate.mjs` (never `source` a URL with `&`);
   first set the branch's `accounts.hostaway_tasks = 'off'`, `slack_bot_token_enc = NULL` and `google_refresh_token_enc = NULL,
   google_access_token_enc = NULL` — a branch copies the credentials (§150; Drive: a branch made duplicate "Kaizen — …" folders, 2026-10-14).

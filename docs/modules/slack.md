@@ -113,6 +113,9 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 
 ## Open items
 
+- **📎 to save needs the manifest + reinstall (2026-10-14):** `reactions:read` and the `reaction_added` event are in the
+  manifest (Settings → Slack → Show the manifest); paste in Slack, Save, **Reinstall** (a new scope).
+
 - **§157 needs the manifest updated** (Settings → Slack → Show the manifest → paste in Slack → Save): the ⋯ "Make SOP
   from this" shortcut and the `/kaizen` hint. No new scopes. "Add to…" needs nothing (message events and history
   scopes are on; the bot is in #kaizen-ops and #kgp-team). Turn the channels on in Settings → Slack → 3 · Channels.

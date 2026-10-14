@@ -63,6 +63,8 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     if (body.type === 'event_callback' && !request.headers.get('X-Slack-Retry-Num')) {
       const ev = body.event ?? {};
       if (ev.type === 'app_mention' && !ev.bot_id) ctx.waitUntil(mention(ctx, sql, s, ev).catch(() => {}));
+      // Owner, 2026-10-14: 📎 on a message saves it — to its thread's task or claim, else the "Add to…" question.
+      else if (ev.type === 'reaction_added' && ev.reaction === 'paperclip' && ev.item?.type === 'message') ctx.waitUntil(clipped(ctx, sql, s, ev).catch(() => {}));
       // A threaded reply, not the thread's own first message, and not itself an @-mention (app_mention above owns that one).
       else if (ev.type === 'message' && !ev.bot_id && (!ev.subtype || ev.subtype === 'file_share')) {
         if (ev.thread_ts && ev.thread_ts !== ev.ts) ctx.waitUntil(threadReply(ctx, sql, s, ev).catch(() => {}));
@@ -227,6 +229,32 @@ async function offerAddTo(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string
     blocks: addToBlocks(targets, source, suggestTarget(String(ev.text ?? ''), targets, lastTarget)), ...(ev.thread_ts ? { thread_ts: ev.thread_ts } : {}) });
 }
 
+/**
+ * 📎 on a message (owner, 2026-10-14): in a thread Kaizen knows, the message is saved there (✅ on it); elsewhere the
+ * reactor gets the private "Add to…" question for it. Only a Kaizen member's 📎 counts.
+ */
+async function clipped(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const channel = String(ev.item.channel), ts = String(ev.item.ts);
+  const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
+  if (!member.ok) return;
+  const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
+  // Where the message sits: a reply carries its thread's ts.
+  const r = await slackApi<{ messages?: { ts: string; thread_ts?: string; text?: string }[] }>(s.token!, 'conversations.replies', { channel, ts, limit: 1, inclusive: true });
+  const m = (r.messages ?? []).find(x => x.ts === ts) ?? r.messages?.[0];
+  const root = m?.thread_ts ?? ts;
+  const [t] = await sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${channel} AND ts = ${root}` as { subject: string; subject_id: string }[];
+  if (t) {
+    const a = await k.addMessageTo(`${t.subject}:${t.subject_id}`, { channel, ts, thread: root !== ts ? root : null });
+    if (a.ok) await slackApi(s.token!, 'reactions.add', { channel, timestamp: ts, name: 'white_check_mark' });
+    else await slackApi(s.token!, 'chat.postEphemeral', { channel, user: ev.user, text: `📎 Not saved: ${a.message}`, ...(root !== ts ? { thread_ts: root } : {}) });
+    return;
+  }
+  const targets = await k.addTargets();
+  if (!targets.length) return;
+  await slackApi(s.token!, 'chat.postEphemeral', { channel, user: ev.user, text: 'Add this to Kaizen?',
+    blocks: addToBlocks(targets, { channel, ts, thread: root !== ts ? root : null }, suggestTarget(String(m?.text ?? ''), targets)), ...(root !== ts ? { thread_ts: root } : {}) });
+}
+
 /** The bot's own Slack user id, cached in slack_config — fetched once (auth.test) and saved if missing. */
 async function botUserIdOf(sql: SqlFn, s: SlackSetup): Promise<string | null> {
   if (s.config.botUserId) return s.config.botUserId;
@@ -247,9 +275,10 @@ async function threadReply(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<strin
   const text = String(ev.text ?? '');
   const botId = await botUserIdOf(sql, s);
   if (botId && text.includes(`<@${botId}>`)) return;
-  const [t] = await sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}` as
-    { subject: 'task' | 'claim'; subject_id: string }[];
-  if (!t) return;
+  const [t] = await sql`SELECT subject, subject_id, via FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}` as
+    { subject: 'task' | 'claim'; subject_id: string; via: string }[];
+  // A conversation linked by "Add to…": its replies are not all saved (owner, 2026-10-14: volume) — 📎 on one saves it.
+  if (!t || t.via === 'addto') return;
   const body = commentFromMention(text);
   if (!body && !ev.files?.length) return;
   const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
@@ -565,8 +594,10 @@ class Kaizen {
       if (!r.ok) return { ok: false, message: String(r.message ?? r.error ?? 'Not saved.') };
     }
     if (m.files.length) this.attachFiles(subject, id, m.files);
-    // Its thread is this subject's from now on: later replies there are comments by themselves (§153).
-    await rememberThread(this.sql, { ok: true, channel: src.channel, ts: src.thread ?? src.ts }, subject, id);
+    // Its thread is this subject's from now on — as a conversation: a reply is saved when someone reacts 📎 to it
+    // (or writes @Kaizen), not every reply (owner, 2026-10-14).
+    await this.sql`INSERT INTO slack_threads (account_id, channel, ts, subject, subject_id, via)
+                   VALUES (1, ${src.channel}, ${src.thread ?? src.ts}, ${subject}, ${id}, 'addto') ON CONFLICT DO NOTHING`;
     // The channel's memory: the next message there offers this first, for an hour.
     await this.sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`addto:${src.channel}:${target}`})
                    ON CONFLICT (account_id, key) DO UPDATE SET sent_at = now()`;
@@ -893,7 +924,7 @@ class Kaizen {
         await this.reply(url, { delete_original: true });
         await slackApi(this.s.token!, 'chat.postMessage', { channel: src.channel, thread_ts: src.thread ?? src.ts, unfurl_links: false,
           text: `📎 Saved to ${label} in Kaizen`, blocks: [{ type: 'context', elements: [{ type: 'mrkdwn',
-            text: `📎 Saved to *${label.replace(/[<>&*]/g, '')}* in Kaizen by <@${this.slackUser}> — replies in this thread are saved there too.` }] }] });
+            text: `📎 Saved to *${label.replace(/[<>&*]/g, '')}* in Kaizen by <@${this.slackUser}> — react :paperclip: to a reply here to add it too.` }] }] });
       })().catch(() => {}));
       return ack();
     }

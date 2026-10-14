@@ -4175,3 +4175,8 @@ refund first, then negotiate") should become an SOP so nobody asks again.
   that one; ✕ Not this). What the channel last added to in the past hour counts 3 by itself (`slack_sent` `addto:<channel>:<target>`,
   renewed on every Add) — a conversation keeps its topic ("the deputy will call me back" → the eviction). Work with activity in the
   last 3 days breaks a tie. No AI: the owner found it slow and no better for this.
+- **Replies in a conversation are not all saved (same day, owner: volume, and a question per reply is heavy too).** A thread
+  linked by "Add to…" is `slack_threads.via = 'addto'` (083): its plain replies are neither saved nor offered. **📎 on any
+  message** (`reaction_added`, needs `reactions:read` + the event — manifest, reinstall) saves it to its thread's task/claim
+  (✅ on it), or, outside a known thread, gives the reactor the private "Add to…". `@Kaizen <text>` in the thread still saves.
+  Threads Kaizen posted (and `@Kaizen new` threads) keep §153: their plain replies are comments.

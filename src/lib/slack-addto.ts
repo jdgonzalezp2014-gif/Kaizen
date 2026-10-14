@@ -71,7 +71,7 @@ export function addToBlocks(targets: AddTarget[], source: AddSource, suggested?:
                              ...(suggested && suggested.group !== 'task' && groups.some(g => g.options.some(o => o.value === suggested.value)) ? { initial_option: opt(suggested) } : {}) }] : []),
       { type: 'button', action_id: 'addto_dismiss', value: 'x', text: plain('✕ Not this') }
     ] },
-    { type: 'context', elements: [mrk('Only you see this. Once added, later replies in its thread are saved too.')] }
+    { type: 'context', elements: [mrk('Only you see this. Later, react :paperclip: to a reply in its thread to add that one too.')] }
   ];
 }
 
