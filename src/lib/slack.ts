@@ -904,6 +904,8 @@ export function parseMention(text: string): { verb: MentionVerb; arg: string } {
     newsop: 'newsop', sop: 'newsop', sops: 'sops' };
   // "task: …" as much as "task …" (owner, Oct 2026 — Derek's to-do kept "task:" in its title).
   const v = map[first.toLowerCase().replace(/:$/, '')];
+  // "write as sop", "make an SOP of this", "create sop" — how Derek asked for one (2026-10-14).
+  if (!v && /^(write|make|create|turn|save)\b.*\bsops?\b/i.test(t)) return { verb: 'newsop', arg: '' };
   return v ? { verb: v, arg: rest.join(' ') } : { verb: 'text', arg: t };
 }
 

@@ -133,8 +133,10 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   if (verb === 'help') { await sayPrivate('What Kaizen does in Slack', mentionHelpBlocks()); return; }
   // Owner, 2026-10-14: a mention cannot open a pop-up — the button does.
   if (verb === 'newsop') {
-    await say('New SOP', [{ type: 'section', text: { type: 'mrkdwn', text: `📝 New SOP${arg ? `: *${arg.replace(/[<>&*]/g, '')}*` : ''} — tap to open the form.` },
-      accessory: { type: 'button', action_id: 'mention_new_sop', text: { type: 'plain_text', text: 'Open the form' }, style: 'primary', value: JSON.stringify({ title: arg.slice(0, 120) }) } }]);
+    // In a thread, the form is that thread's: its words, and ✨ reads it (2026-10-14).
+    await say('New SOP', [{ type: 'section', text: { type: 'mrkdwn', text: `📝 New SOP${arg ? `: *${arg.replace(/[<>&*]/g, '')}*` : inThread ? ' from this thread' : ''} — tap to open the form.` },
+      accessory: { type: 'button', action_id: 'mention_new_sop', text: { type: 'plain_text', text: 'Open the form' }, style: 'primary',
+                   value: JSON.stringify({ title: arg.slice(0, 120), ...(inThread ? { from: { channel: String(ev.channel), root: String(ev.thread_ts) } } : {}) }) } }]);
     return;
   }
   // §110: "@Kaizen new <what>" is made at once — the reply in its thread has ✎ Add details. No words: the form.
@@ -561,13 +563,14 @@ class Kaizen {
       from ? slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: from.channel, message_ts: from.ts }) : null]);
     const source: SopSource | null = from ? { channel: from.channel, ts: from.root, link: link?.permalink?.split('?')[0] ?? null } : null;
     const canPublish = this.may('/api/sops', 'POST');
-    const first = from ? draftFromThread([{ who: '', text: from.text }]) : { title };
+    const first = from ? { ...draftFromThread([{ who: '', text: from.text }]), ...(title ? { title } : {}) } : { title };
     const r = await slackApi<{ view?: { id: string } }>(this.s.token!, 'views.open', { trigger_id: trigger, view: sopModal(sections, first, { canPublish, source }) });
     if (from && r.view?.id) {
       const viewId = r.view.id;
       this.ctx.waitUntil((async () => {
         const msgs = await this.threadMessages(from.channel, from.root);
-        if (msgs.length > 1) await slackApi(this.s.token!, 'views.update', { view_id: viewId, view: sopModal(sections, draftFromThread(msgs), { canPublish, source, v: 1 }) });
+        if (msgs.length > 1 || !from.text) await slackApi(this.s.token!, 'views.update', { view_id: viewId,
+          view: sopModal(sections, { ...draftFromThread(msgs), ...(title ? { title } : {}) }, { canPublish, source, v: 1 }) });
       })().catch(() => {}));
     }
     return ack();
@@ -831,7 +834,8 @@ class Kaizen {
     // SOPs (owner, 2026-10-14).
     if (id === 'mention_new_sop') {
       if (!this.may('/api/sops', 'GET')) return this.deny('SOPs');
-      return await this.openSopForm(p.trigger_id, String((JSON.parse(value || '{}') as { title?: string }).title ?? ''));
+      const v = JSON.parse(value || '{}') as { title?: string; from?: { channel: string; root: string } };
+      return await this.openSopForm(p.trigger_id, String(v.title ?? ''), v.from ? { channel: v.from.channel, ts: v.from.root, root: v.from.root, text: '' } : undefined);
     }
     if (id === 'sop_suggest') { this.ctx.waitUntil(this.suggestSop(p.view ?? {}).catch(() => {})); return ack(); }
     if (id === 'sops_section') {

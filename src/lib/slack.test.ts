@@ -282,6 +282,11 @@ test('@Kaizen: what a mention asks for', () => {
   assert.match(b, /\\"title\\":\\"Fix the AC\\"/);
   assert.equal((newButtons('x', 'claim') as { elements: unknown[] }).elements.length, 1);
   assert.match(JSON.stringify(commentsBlocks([{ who: 'juan', when: 'Oct 6', body: 'hi' }], 'Leak').blocks), /Comments on Leak/);
+  // How Derek asked for one (2026-10-14).
+  assert.deepEqual(parseMention('<@U0BOT> write as sop'), { verb: 'newsop', arg: '' });
+  assert.deepEqual(parseMention('<@U0BOT> newsop Early checkout'), { verb: 'newsop', arg: 'Early checkout' });
+  assert.deepEqual(parseMention('<@U0BOT> sops'), { verb: 'sops', arg: '' });
+  assert.equal(parseMention('<@U0BOT> write the guest about the sofa').verb, 'text');
 });
 
 test('no message or pop-up has two elements with one action_id — Slack refuses it', () => {

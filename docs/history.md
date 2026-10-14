@@ -4150,3 +4150,5 @@ refund first, then negotiate") should become an SOP so nobody asks again.
   the prompt: it now says who asks and who decides (each person's Kaizen role after the name, from their Slack email →
   `members`), has a short glossary (payout, shorten, Hostaway…), and must spell decisions out ("the guest is not refunded
   for the nights they no longer use"). Re-tested on the real thread: right meaning, graded 1/5 with the questions.
+- **@Kaizen newsop in a thread (same day):** the button opens the form from that thread (its words, ✨ reads it); "write as
+  sop", "make an SOP", "create sop" count as newsop (Derek wrote "@Kaizen write as sop").
