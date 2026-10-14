@@ -211,7 +211,8 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
       deep: !!r.deep, urgency: r.urgency, checkoutTime: r.checkout_time, beds: r.beds }]));
   }
 
-  const opsListings = listings.map(l => ({ id: l.listingId, name: l.name, bedrooms: l.bedrooms, active: l.active }));
+  const opsListings = listings.map(l => ({ id: l.listingId, name: l.name, bedrooms: l.bedrooms, active: l.active,
+                                            checkInHour: l.checkInHour, checkOutHour: l.checkOutHour }));
   const panel = inspectionPanel(opsListings, reservations, inspections.done, inspections.scheduled, today, cfg.rules);
   const boardInput: Parameters<typeof buildBoard>[0] = {
     today, windowDays: days, listings: opsListings, reservations, roster: cfg.roster, rules: cfg.rules,

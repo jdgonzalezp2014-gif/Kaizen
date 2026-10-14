@@ -40,7 +40,7 @@ import {
 } from '../lib/operations.ts';
 import { money, money2 } from '../lib/format.ts';
 import { hostawayReservationUrl } from '../lib/operations.ts';
-import { HOURS, hourOf, hourWord, syncState, timeOfHour, type SyncState } from '../lib/stay-time.ts';
+import { HOURS, hourOf, hourWord, nightToBlock, syncState, timeOfHour, type SyncState } from '../lib/stay-time.ts';
 import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
@@ -96,7 +96,9 @@ function applyEdit(r: BoardRow, set: TurnoverSet, roster: Cleaner[], rules: OpsR
   }
   const t = r.kind === 'out' ? set.checkoutTime : set.checkinTime;
   if (t !== undefined) {
-    n.time = t || (r.kind === 'out' ? DEFAULT_CHECKOUT_TIME : DEFAULT_CHECKIN_TIME);
+    // Until the board reloads: a set time is Kaizen's; Standard reads as the listing's hour.
+    n.time = t || (r.standardHour != null ? timeOfHour(r.standardHour) : r.kind === 'out' ? DEFAULT_CHECKOUT_TIME : DEFAULT_CHECKIN_TIME);
+    n.timeFrom = t ? 'kaizen' : r.standardHour != null ? 'hostaway' : 'default';
     n.manual.time = !!t;
   }
   if (n.kind === 'out') {
@@ -801,13 +803,14 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag, r
   const [busy, setBusy] = useState(false);
   const active = data.roster.filter(c => c.active);
 
-  const send = async (set: TurnoverSet | null, text?: string, resendTime?: 'checkin' | 'checkout') => {
+  const send = async (set: TurnoverSet | null, text?: string, resendTime?: 'checkin' | 'checkout',
+                      timeCheck?: { checkedWith: string; cleaner: string | null; blockNight: string | null }) => {
     setBusy(true); setMsg('');
     const r2 = await saveTurnover({
       resId: r.resId, set: set ?? undefined,
       note: text !== undefined ? { kind: out ? 'checkout' : 'checkin', text } : undefined,
       unitId: r.unitId, unit: r.unit, guest: r.guest,
-      checkIn: r.kind === 'in' ? r.date : undefined, resendTime
+      checkIn: r.kind === 'in' ? r.date : undefined, resendTime, timeCheck
     }).catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (!r2.ok) { setMsg(r2.message ?? 'Could not save.'); return; }
@@ -822,6 +825,8 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag, r
   const end = out ? 'checkout' as const : 'checkin' as const;
   const sync = timeSync(r, data);
   const manualHour = r.manual.time ? hourOf(r.time) : null;
+  // A time change waits here until someone says it was checked with the cleaner (§156).
+  const [askTime, setAskTime] = useState<{ value: string | null; block: boolean } | null>(null);
 
   const cleanerValue = !r.manual.cleaner ? '__rule'
     : r.assignment === 'assigned' ? `c:${r.cleaner}` : r.assignment;
@@ -867,9 +872,10 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag, r
         )}
         <label>{out ? 'Checkout time' : 'Check-in time'}
           {/* Whole hours: the time goes to the guest's Hostaway reservation, which keeps no minutes. */}
-          <select disabled={busy} value={r.manual.time ? (manualHour ?? 'odd') : ''} onChange={e => {
+          <select disabled={busy || !!askTime} value={askTime ? (askTime.value ? hourOf(askTime.value) ?? '' : '')
+                                                   : r.manual.time ? (manualHour ?? 'odd') : ''} onChange={e => {
             const v = e.target.value === '' ? null : timeOfHour(Number(e.target.value));
-            void send(out ? { checkoutTime: v } : { checkinTime: v });
+            setMsg(''); setAskTime({ value: v, block: true });
           }}>
             <option value="">Standard — the listing's hour</option>
             {r.manual.time && manualHour == null && <option value="odd" disabled>{r.time} — not a whole hour, pick one</option>}
@@ -885,6 +891,14 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag, r
           )}
         </label>
       </div>
+      {askTime && <TimeCheck r={r} value={askTime.value} block={askTime.block} busy={busy}
+                             onBlock={b => setAskTime({ ...askTime, block: b })} onCancel={() => setAskTime(null)}
+                             onConfirm={async (checkedWith, night) => {
+                               const v = askTime.value;
+                               await send(out ? { checkoutTime: v } : { checkinTime: v }, undefined, undefined,
+                                          { checkedWith, cleaner: (out ? r.cleaner : r.preppedBy) ?? null, blockNight: night });
+                               setAskTime(null);
+                             }} />}
       <label>{out ? 'Check-out note' : 'Check-in note'}
         <textarea rows={2} disabled={busy} value={note} onChange={e => setNote(e.target.value)} />
       </label>
@@ -1461,7 +1475,58 @@ function InspectionForm({ data, editing, onDone }: { data: OperationsResponse; e
 /** Whether the board's time for this stay end is the one on the Hostaway reservation (live mode only). */
 function timeSync(r: BoardRow, data: OperationsResponse): SyncState {
   if (data.mode !== 'live') return null;
-  return syncState(r.manual.time ? r.time : null, data.timePushes?.[`${r.resId}:${r.kind === 'out' ? 'checkout' : 'checkin'}`]);
+  return syncState(r.timeFrom === 'kaizen' ? r.time : null, r.timeFrom === 'hostaway' ? hourOf(r.time) : null,
+                   data.timePushes?.[`${r.resId}:${r.kind === 'out' ? 'checkout' : 'checkin'}`]);
+}
+
+/**
+ * Before a check-in / check-out time changes (§156, owner): the cleaner is
+ * asked first — a later check-out or an earlier check-in squeezes the clean,
+ * and a guest can still book a same-day arrival at the last minute. A later
+ * check-out on a night nobody has closes that night in Hostaway (on by default).
+ */
+function TimeCheck({ r, value, block, busy, onBlock, onCancel, onConfirm }: {
+  r: BoardRow; value: string | null; block: boolean; busy: boolean;
+  onBlock: (b: boolean) => void; onCancel: () => void;
+  onConfirm: (checkedWith: string, night: string | null) => void;
+}) {
+  const out = r.kind === 'out';
+  const cleaner = (out ? r.cleaner : r.preppedBy) ?? '';
+  const [who, setWho] = useState(cleaner);
+  const newHour = value ? hourOf(value) : r.standardHour;
+  const night = nightToBlock(out ? 'checkout' : 'checkin', r.date, newHour, r.standardHour, r.next?.arrival ?? null);
+  const newText = value ?? `the listing's standard${r.standardHour != null ? ` (${timeOfHour(r.standardHour)})` : ''}`;
+  return (
+    <div className="ops-time-check">
+      <b>Check with the cleaner first</b> — {out ? 'check-out' : 'check-in'} {r.time} → <b>{newText}</b>.
+      <ul className="note">
+        {out
+          ? <li>{r.cleaner ? <>The clean is <b>{r.cleaner}</b>'s{' '}</> : <>No cleaner on this clean yet{' '}</>}
+              — it starts only once the guest leaves.</li>
+          : <li>{r.preppedBy ? <>The clean before this arrival is <b>{r.preppedBy}</b>'s, the same day — it must be done by then.</>
+              : <>No clean the same day before this arrival.</>}</li>}
+        {out && (r.next?.gapDays === 0
+          ? <li className="breach">▲ A guest arrives the same day.</li>
+          : <li>No one arrives that day yet — a last-minute booking could still land on this clean.</li>)}
+        <li>A reminder goes to Slack once it is saved.</li>
+      </ul>
+      {night && (
+        <label className="check">
+          <input type="checkbox" checked={block} onChange={e => onBlock(e.target.checked)} />
+          {' '}Block the night of {night} in Hostaway, so no one books a same-day arrival
+        </label>
+      )}
+      <label>Checked with
+        <input value={who} onChange={e => setWho(e.target.value)} placeholder="who said yes" />
+      </label>
+      <div className="button-row">
+        <button className="small" disabled={busy || !who.trim()} onClick={() => onConfirm(who.trim(), night && block ? night : null)}>
+          ✓ Checked with {who.trim() || '…'} — save and send
+        </button>
+        <button className="link tiny" disabled={busy} onClick={onCancel}>Cancel</button>
+      </div>
+    </div>
+  );
 }
 
 function TimeSyncTag({ s }: { s: NonNullable<SyncState> }) {

@@ -365,6 +365,8 @@ export const saveTurnover = (body: {
   note?: { kind: 'checkin' | 'checkout'; text: string };
   unitId?: string; unit?: string; guest?: string; checkIn?: string;
   resendTime?: 'checkin' | 'checkout';
+  /** A time change checked with the cleaner (§156): who said yes, and the night to close after a late check-out. */
+  timeCheck?: { checkedWith: string; cleaner: string | null; blockNight: string | null };
 }) => call<{ ok: true; push: 'queued' | 'shadow' | 'archived'; time: 'queued' | null } | Fail>('/api/turnover', {
   method: 'POST', body: JSON.stringify(body)
 });

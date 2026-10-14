@@ -4089,3 +4089,17 @@ Airbnb's pet fee — and the $600 lost fob): the owner picks which wording stays
 SOP 33 written as a draft.
 Then (owner): "lo de las mascotas borra ese pedazo para que no se duplique donde ya esté" — `draftAdds` no longer
 drafts a pet Add when the original rules mention pets, and Preston's was cleared (audited, kaizen-os).
+
+## §156 — The board reads the reservation's hours; a time change asks the cleaner first (2026-10-13)
+
+The owner, after §154: the board showed 10:00 AM / 4:00 PM for every stay — fixed constants, never what the reservation in
+Hostaway says — while people expect the time the guest was given. Now the board reads `checkInTime` / `checkOutTime` from the
+reservations it already loads (no extra calls). Kaizen keeps its own copy only until Hostaway confirms the write, then lets
+go, so Hostaway is the one source and a change made there shows. On the first read four agreed times appeared that the board
+had been hiding (P2-4304 out 1 PM, P2-1201 in 6 PM, P2-4304 in 11 PM, Amber out 4 PM).
+
+Every change now asks first (owner: always — even with no same-day guest, a last-minute booking can land on the clean):
+who it was checked with, then save. A later check-out closes that night in Hostaway when nobody arrives that day (owner:
+"if the calendar allows it, do it after the confirmation" — it does: `isAvailable: 0`, read back; reopened with 1, the night
+came back as it was: price, minimum stay, status). The reminder goes to the cleaner's own Slack channel only (owner),
+in their language; tested in #kaizen-task. Host Notes now carry a non-standard check-in hour read from Hostaway too.

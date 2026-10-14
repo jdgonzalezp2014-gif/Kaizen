@@ -26,7 +26,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadOps, opsConfig, pushHostNotes, recordCleanings } from '../_lib/ops.ts';
-import { pushStayTimes } from '../_lib/stay-times.ts';
+import { pushStayTimes, type TimeCheck } from '../_lib/stay-times.ts';
 import type { StayEnd } from '../../src/lib/stay-time.ts';
 
 // Whole hours: the time goes to the Hostaway reservation, which keeps no minutes.
@@ -72,7 +72,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       if (!(field in set)) continue;
       const v = set[field] === null || set[field] === '' ? null : String(set[field]).trim().toUpperCase();
       if (v !== null && !TIME.test(v)) return bad('Whole hours only, like 10:00 AM — Hostaway keeps the hour, not minutes.');
-      if (v !== cur[col]) times[col === 'checkout_time' ? 'checkout' : 'checkin'] = v;
+      // Always sent: Kaizen's copy is cleared once Hostaway has it, so "unchanged here" says nothing about Hostaway.
+      times[col === 'checkout_time' ? 'checkout' : 'checkin'] = v;
       next[col] = v;
     }
 
@@ -118,6 +119,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     }
   }
 
+  // §156: the board's pop-up — who the change was checked with, the cleaner to remind, the night to close.
+  const tc = body.timeCheck && typeof body.timeCheck === 'object' ? body.timeCheck as Record<string, unknown> : null;
+  const check: TimeCheck | null = tc && Object.keys(times).length ? {
+    checkedWith: String(tc.checkedWith ?? '').slice(0, 80).trim() || who.email,
+    cleaner: cfg.roster.some(c => c.name === tc.cleaner) ? String(tc.cleaner) : null,
+    blockNight: /^\d{4}-\d{2}-\d{2}$/.test(String(tc.blockNight)) ? String(tc.blockNight) : null
+  } : null;
+
   let push: 'queued' | 'shadow' | 'archived' = 'shadow';
   const timeQueued = cfg.mode === 'live' && Object.keys(times).length > 0;
   if (cfg.mode === 'live') {
@@ -126,7 +135,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       try {
         const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
         // First, and on its own: the guest's time does not wait on the board rebuild.
-        if (timeQueued) await pushStayTimes(sql, creds, resId, times, who.email).catch(() => {});
+        if (timeQueued) await pushStayTimes(sql, creds, env.ENCRYPTION_KEY, resId, times, who.email, check).catch(() => {});
         const s = await loadOps(sql, creds);
         // The record follows the edit at once — not whenever someone next
         // opens the board — so a cleaner changed at 9am is who gets paid.

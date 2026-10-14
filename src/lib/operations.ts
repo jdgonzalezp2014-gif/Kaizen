@@ -19,10 +19,15 @@
  *                      shown beside ours so the two can be compared
  */
 import { addDays, daysBetween, type DateStr } from './dates.ts';
+import { isAgreedTime, stayTime } from './stay-time.ts';
 
 /* ── inputs ───────────────────────────────────────────────────────── */
 
-export interface OpsListing { id: string; name: string; bedrooms: number | null; active: boolean }
+export interface OpsListing {
+  id: string; name: string; bedrooms: number | null; active: boolean;
+  /** The listing's standard hours, 0–23 (§156): what tells an agreed time from the usual one. */
+  checkInHour?: number | null; checkOutHour?: number | null;
+}
 
 export interface OpsReservation {
   reservationId: string; listingId: string;
@@ -41,6 +46,8 @@ export interface OpsReservation {
   cancelledAt?: string | null;
   /** The guest's id on the channel (Airbnb's "-guest-<id>-"), to recognise a rebooking. */
   guestKey?: string | null;
+  /** The reservation's own hours in Hostaway, 0–23 (§156) — what the guest was given. */
+  checkInHour?: number | null; checkOutHour?: number | null;
 }
 
 export type Assignment = 'assigned' | 'tbd' | 'not_needed';
@@ -267,8 +274,12 @@ export interface BoardRow {
   price: number | null;
   deep: boolean;
   urgency: Urgency;
-  /** Which fields a person chose rather than the rule. */
+  /** Which fields a person chose rather than the rule. `time`: an agreed time (early check-in / late check-out). */
   manual: { cleaner: boolean; deep: boolean; time: boolean };
+  /** Where the time comes from (§156): Kaizen (not yet confirmed in Hostaway), the reservation, or the fixed default. */
+  timeFrom: 'kaizen' | 'hostaway' | 'default';
+  /** The listing's standard hour for this end, when known. */
+  standardHour: number | null;
   inspection: { key: InspectionKey; reason: string };
   /** Shadow mode: what the daily file decided, and whether it has seen this stay. */
   sheet: OpsCleaning | null;
@@ -682,14 +693,15 @@ export function buildBoard(input: {
       next: null, auto: { cleaner: null, tier: 'none', reason: '' }, stars: null, levels: null,
       declined: input.declines?.get(x.reservationId) ?? [], cancelled: cx, carried: null,
       cleaner: null, assignment: 'unknown', price: null, deep: false, deepSuggested: false, urgency: null,
-      manual: { cleaner: false, deep: false, time: false },
+      manual: { cleaner: false, deep: false, time: false }, timeFrom: 'default', standardHour: null,
       inspection: { key: 'none', reason: '' }, sheet: null, inDailyFile: false, differs: [],
       sameDayOf: null, listed: l.active, preppedBy: null
     };
 
     if (!cx && x.arrival >= today && x.arrival <= end) {
-      rows.push({ ...base, time: ov?.checkinTime || DEFAULT_CHECKIN_TIME,
-                  manual: { ...base.manual, time: !!ov?.checkinTime },
+      const t = stayTime(ov?.checkinTime, x.checkInHour, DEFAULT_CHECKIN_TIME);
+      rows.push({ ...base, time: t.time, timeFrom: t.from, standardHour: l.checkInHour ?? null,
+                  manual: { ...base.manual, time: isAgreedTime(t.from, x.checkInHour ?? null, l.checkInHour) },
                   note: notes.get(`${x.reservationId}|checkin`) ?? '' });
     }
     if (x.departure < today || x.departure > end) continue;
@@ -724,12 +736,13 @@ export function buildBoard(input: {
 
     const sheet = input.sheet?.get(x.reservationId) ?? null;
 
+    const t = stayTime(ov?.checkoutTime, x.checkOutHour, DEFAULT_CHECKOUT_TIME);
     rows.push({
       ...base, date: x.departure, kind: 'out',
-      time: ov?.checkoutTime || DEFAULT_CHECKOUT_TIME,
+      time: t.time, timeFrom: t.from, standardHour: l.checkOutHour ?? null,
       note: notes.get(`${x.reservationId}|checkout`) ?? '',
       nights: stayed, next, auto, cleaner, assignment, deep, deepSuggested, price, urgency,
-      manual: { cleaner: manualCleaner, deep: ov?.deep != null, time: !!ov?.checkoutTime },
+      manual: { cleaner: manualCleaner, deep: ov?.deep != null, time: isAgreedTime(t.from, x.checkOutHour ?? null, l.checkOutHour) },
       sheet, inDailyFile: !!sheet, differs: []
     });
   }

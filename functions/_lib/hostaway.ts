@@ -114,6 +114,9 @@ export interface HostawayListing {
   /** Percent off, 0–100. See discountPct for why this is not the raw field. */
   weeklyDiscountPct: number | null;
   monthlyDiscountPct: number | null;
+  /** The standard hours a new booking gets (`checkInTimeStart` / `checkOutTime`, whole hours 0–23). */
+  checkInHour: number | null;
+  checkOutHour: number | null;
 }
 
 /**
@@ -166,6 +169,9 @@ export interface HostawayReservation {
   cancellationDate?: string | null;
   /** The guest's id on the channel — Airbnb's "<listing>-guest-<id>-confirmation-…" — to recognise a rebooking (§126). */
   guestKey?: string | null;
+  /** The reservation's own hours (`checkInTime` / `checkOutTime`, 0–23) — what the guest was given (§156). */
+  checkInHour?: number | null;
+  checkOutHour?: number | null;
 }
 
 export interface CalendarDay {
@@ -362,7 +368,9 @@ export async function fetchListings(creds: HostawayCredentials, token?: string):
     basePrice: Number(l.price) || null,
     cleaningFee: Number(l.cleaningFee) || null,
     weeklyDiscountPct: discountPct(l.weeklyDiscount),
-    monthlyDiscountPct: discountPct(l.monthlyDiscount)
+    monthlyDiscountPct: discountPct(l.monthlyDiscount),
+    checkInHour: wholeHour(l.checkInTimeStart),
+    checkOutHour: wholeHour(l.checkOutTime)
   }));
 }
 
@@ -372,6 +380,13 @@ export async function fetchListings(creds: HostawayCredentials, token?: string):
  */
 export async function fetchListingsRaw(creds: HostawayCredentials): Promise<Record<string, unknown>[]> {
   return withToken(creds, t => apiGet<Record<string, unknown>>('/listings', t));
+}
+
+/** Hostaway's hour fields: a whole hour 0–23, or null (missing, or something else). */
+function wholeHour(v: unknown): number | null {
+  if (v === null || v === undefined || v === '') return null;
+  const n = Number(v);
+  return Number.isInteger(n) && n >= 0 && n <= 23 ? n : null;
 }
 
 /** Reservation statuses that never occupied a night and never paid out. */
@@ -521,7 +536,9 @@ async function pagedReservationsWith(token: string, query: string,
         guests: Number(r.numberOfGuests ?? r.adults) || null,
         phone: String(r.phone ?? ''),
         cancellationDate: r.cancellationDate ? String(r.cancellationDate) : null,
-        guestKey: /-guest-(\d+)-/.exec(String(r.channelReservationId ?? ''))?.[1] ?? null
+        guestKey: /-guest-(\d+)-/.exec(String(r.channelReservationId ?? ''))?.[1] ?? null,
+        checkInHour: wholeHour(r.checkInTime),
+        checkOutHour: wholeHour(r.checkOutTime)
       };
     })
     .filter(r => r.arrival && r.departure && r.listingId);
@@ -821,9 +838,8 @@ export async function fetchStandardHours(creds: HostawayCredentials, listingId: 
   });
   if (!res.ok) return null;
   const l = ((await res.json()) as { result?: Record<string, unknown> }).result;
-  const cin = Number(l?.checkInTimeStart), cout = Number(l?.checkOutTime);
-  return Number.isInteger(cin) && Number.isInteger(cout) && l?.checkInTimeStart != null && l?.checkOutTime != null
-    ? { checkInTime: cin, checkOutTime: cout } : null;
+  const cin = wholeHour(l?.checkInTimeStart), cout = wholeHour(l?.checkOutTime);
+  return cin != null && cout != null ? { checkInTime: cin, checkOutTime: cout } : null;
 }
 
 /**
@@ -851,4 +867,35 @@ export async function updateReservationTimes(
   return wrong.length
     ? { ok: false, detail: `Hostaway accepted the write but reads back ${wrong.map(([k]) => `${k} = ${back[k] ?? 'empty'}`).join(', ')}.` }
     : { ok: true, detail: 'written and confirmed' };
+}
+
+/**
+ * Closes one night on the listing's calendar (the night that starts on
+ * `date`) — after a late check-out, so no same-day booking lands on a clean
+ * that cannot start until the afternoon. Only a night that is open is
+ * touched; read back like every write here.
+ */
+export async function blockNight(
+  creds: HostawayCredentials, listingId: string, date: DateStr
+): Promise<{ ok: boolean; detail: string }> {
+  const t = await getAccessToken(creds);
+  const before = await fetchCalendar(creds, listingId, date, date, t);
+  if (!before.length) return { ok: false, detail: 'Could not read that night on the calendar.' };
+  if (!before[0]!.available) return { ok: false, detail: `That night is not open (${before[0]!.status || 'unavailable'}) — nothing changed.` };
+  return setNightOpen(creds, listingId, date, false, t);
+}
+
+/** Opens or closes one night on the listing's calendar, read back. Opening is how a block is undone. */
+export async function setNightOpen(
+  creds: HostawayCredentials, listingId: string, date: DateStr, open: boolean, token?: string
+): Promise<{ ok: boolean; detail: string }> {
+  const t = token ?? await getAccessToken(creds);
+  const put = await apiSend(`/listings/${encodeURIComponent(listingId)}/calendar`, t,
+    { startDate: date, endDate: date, isAvailable: open ? 1 : 0 }, 'PUT');
+  if (!put.ok) return { ok: false, detail: `Hostaway answered ${put.status}: ${put.text.slice(0, 160)}` };
+  const after = await fetchCalendar(creds, listingId, date, date, t);
+  if (!after.length) return { ok: false, detail: 'Written, but could not be read back to confirm.' };
+  return after[0]!.available === open
+    ? { ok: true, detail: `${open ? 'opened' : 'blocked'} and confirmed` }
+    : { ok: false, detail: `Hostaway accepted the write but the night still reads ${open ? 'closed' : 'open'}.` };
 }

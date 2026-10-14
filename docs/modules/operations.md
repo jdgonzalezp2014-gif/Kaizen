@@ -15,7 +15,8 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   `stays.ts`, `cleaning-log.ts`, `cron.ts` (Host Note pass, reconcile).
 - Stay times to Hostaway (§154): server `functions/_lib/stay-times.ts` (`pushStayTimes`), Hostaway
   `updateReservationTimes` / `fetchStandardHours` (functions/_lib/hostaway.ts); pure `src/lib/stay-time.ts`
-  (hourOf, timeOfHour, syncLogLine, syncState).
+  (hourOf, timeOfHour, stayTime, isAgreedTime, nightToBlock, timeReminder, syncLogLine, syncState); `blockNight` /
+  `setNightOpen` (hostaway.ts).
 - Server libs: `crew.ts` (loadCrewPage, scheduleState, confirmSchedule, crewGet/crewPost, Drive evidence),
   `ops.ts` (recordCleanings, reconcileRecent, pushHostNotes, opsConfig),
   `daily.ts` (daily-file CSV readers), `cleanings-import.ts`, `sync.ts`.
@@ -46,7 +47,7 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 `link_token_hash`), `accounts.assign_rule`, `accounts.crew_calendar(_days)`, `crew_extras_folder`,
 `cleanings.flag_note/flagged_by/at`, `cleaning_extras` (+ `cleaning_extra_files`), `crew_declines`,
 `crew_schedule_confirms` (snapshot jsonb), `accounts.ops_rules` / `ops_mode`, `stay_notes`, `inspections`,
-`extra_inspectors`, `host_note_pushes`, `stay_time_pushes` (078), `inventory_items`, `inventory_moves` (057; kind `taken` 061; `place` 068, `purchase_id` 069),
+`extra_inspectors`, `host_note_pushes`, `stay_time_pushes` (078, 080), `inventory_items`, `inventory_moves` (057; kind `taken` 061; `place` 068, `purchase_id` 069),
 `inventory_place_mins` (068), `inventory_orders`, `inventory_purchases` (069), `todos.clean_key` (069) + `clean_group` (070), `inspection_checks.supply_id/qty` (069),
 `accounts.field_reports_folder`, `clean_links` (058), `clean_records` (+ `supplies_at/by/none` 061) / `clean_photos` /
 `clean_marks`, `accounts.clean_photos_folder` (059), `clean_slack_posts` (060). (057's `cleaners.report_token_*`
@@ -92,14 +93,22 @@ key had no SOPs.
   The scheduled push runs from `/api/slack-cron` (the 5-minute clock), at most once an hour (`slack_sent`
   key `hostnotes:<UTC hour>`): `/api/cron` sits behind Access and nothing calls it, so before 2026-10-12
   only stays someone edited got their note.
-- **Early check-in / late check-out reach the guest (§154, owner, 2026-10-13).** The board's time picker is whole hours
-  only (Hostaway's `checkInTime` / `checkOutTime` are integers 0–23; the server refuses minutes). A changed time is
-  written on the Hostaway reservation after the response (`waitUntil`, live mode only): PUT of just that field, read back;
-  cleared → the listing's `checkInTimeStart` / `checkOutTime`. Every attempt is a `stay_time_pushes` row = a Notes log line
-  ("⇄ Hostaway: check-out 4 PM" / "⚠ Hostaway: … not changed — reason"); the board shows "⇄ in Hostaway", "⚠ not in
-  Hostaway" (+ reason, "Send again" = `resendTime`) or "… not in Hostaway yet". Saving never waits on Hostaway.
-  Not done: the board still shows 10:00 AM / 4:00 PM when nothing is set, not the listing's own hours or a time set in
-  Hostaway by hand. SOP #32 "Early check-in or late check-out" (draft, operations.board).
+- **Early check-in / late check-out reach the guest (§154, §156, owner, 2026-10-13).** Whole hours only (Hostaway's
+  `checkInTime` / `checkOutTime` are integers 0–23; the server refuses minutes).
+  **The board READS the reservation's hours** (`checkInHour` / `checkOutHour` from the reservations list, no extra calls):
+  time = Kaizen's copy if it holds one, else the reservation's hour, else 10:00 AM / 4:00 PM (`stayTime`, `row.timeFrom`).
+  "Agreed" (highlighted, `manual.time`) = off the listing's standard (`checkInTimeStart` / `checkOutTime`, `row.standardHour`).
+  **Kaizen holds a time only until Hostaway confirms it**: on a confirmed write its `turnover_overrides` column is cleared, so a
+  change made later in Hostaway itself is what the board shows; a failed one stays (⚠, "Send again" = `resendTime`).
+  **Every change asks first** (`TimeCheck` pop-up in the editor): the clean's cleaner (checkout) or the same-day clean's
+  (check-in), whether a guest arrives that day, the last-minute-booking warning; "Checked with" (required) → save.
+  After saving (`waitUntil`, live mode): PUT of just that hour, read back; cleared → the listing's standard; a **later check-out
+  with nobody arriving that day closes that night** in Hostaway (checkbox, on by default; `blockNight` refuses a night that is
+  not open; `setNightOpen` reopens — tested on Amber 2027-03-09, restored exactly); a **reminder in the cleaner's OWN Slack
+  channel** only (owner), in their language (`timeReminder`) — no channel → "not sent — X has no channel" in the log.
+  Every attempt = a `stay_time_pushes` row (078; 080: checked_with, block_night/ok/detail, reminder) = a Notes log line.
+  Not built: reopening the night when a late check-out is taken back (do it in Hostaway); a reminder to the team channel.
+  SOP #32 "Early check-in or late check-out" (draft, operations.board).
 - "Not needed" / "TBD" are states, not cleaners; match on words, not emoji (§57).
 - Bulk writes with `unnest`, never one INSERT per row (§62).
 - Ops role sees the board without booking values (`money` permission) (§63, §65).
@@ -459,7 +468,7 @@ key had no SOPs.
 
 ## History
 
-§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140, §141, §142, §147, §150, §154.
+§18a, §53, §56–§64, §68, §70, §79, §80, §121, §122, §123, §124, §133, §134, §135, §136, §137, §138, §139, §140, §141, §142, §147, §150, §154, §156.
 - **A to-do's order is a purchase with no price (owner, 2026-10-13):** `TaskPurchase` opens as "🛒 Purchase order" — items,
   quantities, places, 💾 Save order (`todoOrder`). Total paid / paid by / receipt / "close this to-do" appear only after
   "🧾 Bought — record it" (← back to the order returns). The to-do row's link reads "+ 🛒 purchase order".
