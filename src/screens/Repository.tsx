@@ -33,6 +33,7 @@ import { proposeColumns, readBoard, type Board, type ProposedColumn } from '../l
 import { coerce, type ColumnType } from '../lib/repo.ts';
 import { usePhone } from '../components/usePhone.ts';
 import { HostawayCheck } from '../components/HostawayCheck.tsx';
+import { SYNCED_COLUMNS, UNIT_TABLES } from '../lib/repo-checks.ts';
 
 interface Can { reveal: boolean; edit: boolean; structure: boolean }
 type DocEntry = { folderUrl: string; files: RepoFile[]; truncated?: boolean };
@@ -462,6 +463,8 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
 }) {
   const cols = userColumns(table);
   const primary = primaryKey(table);
+  const { slots, runs, isOpen, toggle } = useSections(table, cols);
+  const synced = UNIT_TABLES.includes(table.key);
   const [dragCol, setDragCol] = useState<string | null>(null);
   const [dropCol, setDropCol] = useState<string | null>(null);
   const shown = useMemo(() => {
@@ -497,9 +500,24 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
     <div className="rb-board">
       <table className="rb-grid">
         <thead>
+          {runs.some(r => r.section) && (
+            <tr className="rb-grouprow">
+              <th className="rb-sticky rb-idcol" />
+              {runs.map(r => !r.section
+                ? r.cols.map(c => <th key={c.key} className={c.key === primary ? 'rb-sticky rb-primary' : ''} />)
+                : <th key={r.group} colSpan={isOpen(r.group) ? r.cols.length : 1} className={`rb-sec ${isOpen(r.group) ? 'rb-sec-open' : ''}`}>
+                    <button className="rb-sec-btn" onClick={() => toggle(r.group)} title={isOpen(r.group) ? `Fold ${r.group}` : `Show the ${r.cols.length} columns of ${r.group}`}>
+                      {isOpen(r.group) ? '◂' : '▸'} {r.group}{!isOpen(r.group) && ` · ${r.cols.length}`}
+                    </button>
+                  </th>)}
+              <th />
+            </tr>
+          )}
           <tr>
             <th className="rb-sticky rb-idcol">ID</th>
-            {cols.map(c => (
+            {slots.map(c => 'stub' in c
+              ? <th key={c.stub} className="rb-stub" onClick={() => toggle(c.stub)}>{c.cols.length} columns</th>
+              : (
               <th key={c.key} className={`${c.key === primary ? 'rb-sticky rb-primary' : ''} ${dropCol === c.key ? 'rb-drop' : ''}`}
                   draggable={can.structure}
                   onDragStart={() => setDragCol(c.key)}
@@ -509,6 +527,7 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
                   onDragEnd={() => { setDragCol(null); setDropCol(null); }}>
                 <span className="rb-th">
                   <span className="rb-th-title" title={`${c.title} · ${TYPE_LABEL[c.type] ?? c.type}`}>{c.title}</span>
+                  {synced && SYNCED_COLUMNS.has(c.key) && <span className="rb-sync" title="Kept in step with the Hostaway listing — see ⇄ Check against Hostaway">⇄ sync</span>}
                   {can.structure && <button className="rb-th-menu" title="Column options"
                     onClick={e => setPop({ kind: 'colmenu', rect: e.currentTarget.getBoundingClientRect(), col: c })}>▾</button>}
                 </span>
@@ -526,7 +545,9 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
             return (
               <tr key={id} className={openId === id ? 'rb-open' : undefined}>
                 <td className="rb-sticky rb-idcol"><button className="rb-idlink" onClick={() => onOpen(id)} title="Open the record">{id}</button></td>
-                {cols.map(c => (
+                {slots.map(c => 'stub' in c
+                  ? <td key={c.stub} className="rb-stub" onClick={() => toggle(c.stub)} title={`Show ${c.stub}`}>{c.cols.filter(x => text(row[x.key])).length}/{c.cols.length}</td>
+                  : (
                   <Cell key={c.key} table={table} row={row} col={c} can={can} primary={c.key === primary}
                         docs={docs[`${table.key}|${c.key}|${id}`]} editing={editing === `${id}|${c.key}`}
                         setEditing={v => setEditing(v ? `${id}|${c.key}` : null)} setPop={setPop}
@@ -536,8 +557,8 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
               </tr>
             );
           })}
-          {filter && !shown.length && <tr><td className="rb-empty" colSpan={cols.length + 2}>Nothing in {table.title} matches “{filter}” — use “Search all tables” above.</td></tr>}
-          {can.edit && !filter && <GhostRow cols={cols} primary={primary} setPop={setPop} onCreate={onCreate} />}
+          {filter && !shown.length && <tr><td className="rb-empty" colSpan={slots.length + 2}>Nothing in {table.title} matches “{filter}” — use “Search all tables” above.</td></tr>}
+          {can.edit && !filter && <GhostRow cols={slots} primary={primary} setPop={setPop} onCreate={onCreate} />}
         </tbody>
       </table>
       {!rows.length && !can.edit && <p className="rb-empty">No records yet.</p>}
@@ -633,14 +654,46 @@ function InlineInput({ col, value, onDone }: { col: RepoColumn; value: RepoRow[s
 }
 
 /** The empty last row: typing in it creates the record, with its ID and folders. */
+/* ── sections: a column group other than Details folds into one column (§155) ── */
+
+type Slot = RepoColumn | { stub: string; cols: RepoColumn[] };
+interface Run { group: string; section: boolean; cols: RepoColumn[] }
+const UNFOLDED = 'kaizen.repo.unfolded';
+
+/** The columns in their runs by group, and what shows: a folded section is one stub column. Unfolded ones are remembered per browser. */
+function useSections(table: RepoTable, cols: RepoColumn[]) {
+  const [open, setOpen] = useState<Set<string>>(() => {
+    try { return new Set(JSON.parse(localStorage.getItem(UNFOLDED) ?? '[]') as string[]); } catch { return new Set(); }
+  });
+  const runs = useMemo(() => {
+    const out: Run[] = [];
+    for (const c of cols) {
+      const g = c.group || 'Details', last = out[out.length - 1];
+      if (last && last.group === g) last.cols.push(c);
+      else out.push({ group: g, section: g !== 'Details', cols: [c] });
+    }
+    return out;
+  }, [cols]);
+  const isOpen = (g: string) => open.has(`${table.key}|${g}`);
+  const toggle = (g: string) => setOpen(prev => {
+    const next = new Set(prev), k = `${table.key}|${g}`;
+    if (next.has(k)) next.delete(k); else next.add(k);
+    try { localStorage.setItem(UNFOLDED, JSON.stringify([...next])); } catch { /* private window: forgets on reload */ }
+    return next;
+  });
+  const slots = runs.flatMap((r): Slot[] => !r.section || isOpen(r.group) ? r.cols : [{ stub: r.group, cols: r.cols }]);
+  return { slots, runs, isOpen, toggle };
+}
+
 function GhostRow({ cols, primary, setPop, onCreate }: {
-  cols: RepoColumn[]; primary: string; setPop: (p: Pop) => void; onCreate: (values: Record<string, unknown>) => Promise<void>;
+  cols: Slot[]; primary: string; setPop: (p: Pop) => void; onCreate: (values: Record<string, unknown>) => Promise<void>;
 }) {
   const [at, setAt] = useState<string | null>(null);
   return (
     <tr className="rb-ghost">
       <td className="rb-sticky rb-idcol rb-hint">new</td>
       {cols.map(c => {
+        if ('stub' in c) return <td key={c.stub} />;
         const typable = c.editable && !['secret', 'doc', 'checkbox'].includes(c.type);
         if (at === c.key) {
           return <td key={c.key} className={`rb-editing ${c.key === primary ? 'rb-sticky rb-primary' : ''}`}>

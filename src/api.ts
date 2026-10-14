@@ -723,15 +723,15 @@ export const repoStructure = (body: Record<string, unknown>) =>
   call<{ ok: true; data: any } | { ok: false; message?: string }>('/api/repository-structure', {
     method: 'POST', body: JSON.stringify(body)
   });
-/* §149: Repository → Units against the live Hostaway listings. */
-export interface RepoCheckDef { key: string; label: string; note: string; fields: string[] }
+/* §149, §155: Repository → Units against the live Hostaway listings, by section. */
+export interface RepoCheckDef { key: string; label: string; section: import('./lib/repo-checks.ts').SectionKey; note: string; send: boolean; fields: string[]; long: boolean }
 export interface RepoCheckUnit {
   unitId: string; unit: string; table: string | null; recordId: string | null; record: string | null;
   checks: import('./lib/repo-checks.ts').CheckResult[];
 }
 export const getRepoCheck = () =>
-  call<{ ok: true; checks: RepoCheckDef[]; units: RepoCheckUnit[] } | { ok: false; message?: string }>('/api/repository-check');
-export const fixRepoCheck = (body: { unitId: string; check: string; to: 'repository' | 'hostaway' }) =>
+  call<{ ok: true; sections: typeof import('./lib/repo-checks.ts').SECTIONS; checks: RepoCheckDef[]; units: RepoCheckUnit[] } | { ok: false; message?: string }>('/api/repository-check');
+export const fixRepoCheck = (body: { unitId: string; checks?: string[]; to?: 'repository' | 'hostaway'; op?: 'draft-adds' }) =>
   call<{ ok: true; unit: RepoCheckUnit } | { ok: false; message?: string }>('/api/repository-check', {
     method: 'POST', body: JSON.stringify(body)
   });

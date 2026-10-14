@@ -366,6 +366,14 @@ export async function fetchListings(creds: HostawayCredentials, token?: string):
   }));
 }
 
+/**
+ * The listings exactly as Hostaway sends them, every field (texts, rules, custom fees) — for the
+ * Repository's field-by-field check (§155). Never hand one to a browser whole: it holds codes and passwords.
+ */
+export async function fetchListingsRaw(creds: HostawayCredentials): Promise<Record<string, unknown>[]> {
+  return withToken(creds, t => apiGet<Record<string, unknown>>('/listings', t));
+}
+
 /** Reservation statuses that never occupied a night and never paid out. */
 const NON_COUNTING = new Set([
   'cancelled', 'declined', 'expired', 'inquiry', 'inquirypreapproved',

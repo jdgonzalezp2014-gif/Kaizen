@@ -13,7 +13,7 @@ records, encrypted secrets, files in Drive. Tab **Repository**.
 - Server libs: `repo-store.ts`, `gdrive.ts`, `repository.ts` (old Apps Script API — only for the
   one-time import).
 - Pure libs: `src/lib/repo.ts` (IDs, validation, `coerce`), `repo-import.ts` (Monday export parsing),
-  `repo-checks.ts` (CHECKS, runCheck, writePlan — §149).
+  `repo-checks.ts` (SECTIONS, CHECKS, runCheck, writePlan, composeRules/splitRules, draftAdds — §149, §155).
 - Script: `scripts/import-repository.mjs` (`npm run import:repository`, `--dry`, `--replace`).
 
 ## Tables
@@ -83,15 +83,30 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   portal) — their POC is the manager or landlord.
 
 - **`?repo=<table>/<ROW-id>`** opens that record (Setup → Inventory's map links here, §150).
-- **Check against Hostaway (§149):** sidebar "⇄ Check against Hostaway" → per active unit and check, the
-  Repository value beside the live listing (● same · ◐ capitals differ · ▲ different · ○ missing). Editors:
-  "← Use Hostaway's" (writes the record, audited by field name, never the values) or "Send to Hostaway →"
-  (asked in place — guests see it; PUT, read back, before/after in `listing_text_changes`; Wi-Fi also
-  refreshes `units.wifi_*` so cleaners get it before the next sync). Checks today: Wi-Fi (`wifi_network` +
-  `password_2` ↔ wifiUsername/wifiPassword) and guest cleaning fee (`cleaning_fee` ↔ cleaningFee, for
-  accounting; baseline copied from Hostaway 2026-10-13). **A new check = one entry in `CHECKS`** (+ its
-  Hostaway field in `HOSTAWAY_FIELD` and the column in the three Units tables). GET `repository`, POST
-  `repository.edit`. Owner rule: Hostaway is right unless said otherwise.
+- **Check against Hostaway (§149, §155):** sidebar "⇄ Check against Hostaway" → five sections (House settings ·
+  House description · House rules · Fees · Hostaway settings), viewed **One unit** (every field of a section) or
+  **One field, all units**. Statuses ● same · ◐ capitals differ · ▲ different · ○ missing. Editors: per field
+  "← Use Hostaway's" / "Send to Hostaway →", or a whole section ("← Copy all … from Hostaway" / "Send all … to
+  Hostaway →") — **both ways confirmed with a Now → After box**. Hostaway writes: partial PUT, read back raw,
+  before/after per field in `listing_text_changes`; Wi-Fi also refreshes `units.wifi_*`. Reads the RAW listings
+  (`fetchListingsRaw`, hostaway.ts — every field; never sent to the browser whole). **A new check = one entry in
+  `CHECKS`** (`src/lib/repo-checks.ts`: section, Repository column, Hostaway field name — read and written under
+  the same name, `fee:<type>` = a custom fee in `listingFeeSetting` — and kind text/longtext/money/number/hour/
+  bool/rules) + its column in the three Units tables with the section's name as `grp`. GET `repository`, POST
+  `repository.edit`. Owner rule: Hostaway is right unless said otherwise; fill Repository from Hostaway first.
+  - **Columns (079):** 50 per Units table, `grp` = the section. Hours are a select ("4 PM" ↔ Hostaway 16);
+    Hostaway 1/0 ↔ checkbox. `cleaning_fee` moved into Fees; `password_2` is titled "Wifi password". Wi-Fi stays in
+    Details, marked **⇄ sync** in the header like every compared column (`SYNCED_COLUMNS`).
+  - **House rules = original + Adds** (owner): `house_rules` (the original) + `rule_add_pet_fee`, `rule_add_lost_fob`,
+    `rule_add_extra_guest`, `rule_add_other`, appended in that order and numbered on (`composeRules`). Copying from
+    Hostaway strips the Adds the record already has off the end (`splitRules`) so they are not doubled.
+    "✎ Draft the Adds from the fees" (`draftAdds`) words only EMPTY Adds from the record's fees — Repository only.
+    The fees' explanation for guests IS their Add.
+  - **Hostaway settings** (`hw_*`) and the Insurance custom fee: copy-only (`send: false`), mapped for later.
+  - **Grid sections:** any group other than Details folds into one column (▸ Fees · 10, cells "filled/total");
+    click unfolds sideways, remembered per browser (`localStorage kaizen.repo.unfolded`). The record panel
+    already shows groups as headings.
+  - SOP 33 "Keep a unit's record and its Hostaway listing in step" — **draft**, for the owner to publish.
 
 ## Open items — Units data (owner, 2026-10-13; first two first)
 
@@ -107,8 +122,12 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
    1406/4304/4308; P2-4315 fixed in Hostaway (4315WiFi). P2-4212 left as is (capitals differ: the owner's
    call). Bobcat has no guest cleaning fee in Hostaway.
 7. **Parking and lost key/fob fee per house** — no rush.
+8. **Sections filled (§155): only Preston Vineyard** (2026-10-13, all 42 fields from Hostaway + 3 Adds drafted).
+   The other 20 units: "← Copy all … from Hostaway" section by section, then read the Adds. Preston's Adds
+   repeat its own rules 4 (pets, tiered $100–$300 vs Airbnb pet fee $150) and 16 ($600 lost key/fob):
+   owner to choose original or Add before sending House rules.
 - The old Apps Script link/key in Settings can be cleared now the import is confirmed.
 
 ## History
 
-§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147, §148, §149, §150.
+§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147, §148, §149, §150, §155.

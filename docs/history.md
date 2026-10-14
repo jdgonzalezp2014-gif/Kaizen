@@ -4054,3 +4054,36 @@ line and the board's ⇄ / ⚠ / "not yet" beside the time; ⚠ offers "Send aga
 
 Tested on Amber Valley 66089538 (checkout 2026-10-14, late check-out the owner gave): Hostaway `checkOutTime` 10 → 16,
 dates unchanged, log "⇄ Hostaway: check-out 4 PM". A 4:30 PM was refused with the whole-hours message.
+
+## §155 — Repository ⇄ Hostaway by section; house rules = original + Adds (2026-10-13)
+
+**Owner:** each unit's record in Repository should hold its Hostaway listing in sections — House settings, House
+description, House rules, Fees — to compare and send either way; fill the Repository from Hostaway first, one
+unit to test. Then, on the field map: the fees' explanations are not a Kaizen-only note but **Adds**: slots appended
+at the end of the original house rules (pet fee, lost fob — "genera un texto que explique y lo añades"); everything
+else the API has is mapped too, into a fifth section **Hostaway settings**, "por el futuro"; sections **unfold
+sideways** in the table; Wi-Fi stays where it is, marked sync in the column title.
+
+**Shape.** `CHECKS` grew from 2 to 50 (`src/lib/repo-checks.ts`), each with a section, and the section's name is the
+column's `grp` (079) — so one word decides where a field sits in the check view, in the record panel (which
+already headed groups) and in the grid (any group but Details folds into one column). The Hostaway side is now
+the raw listing (`fetchListingsRaw`: `/listings` already carries texts, rules and `listingFeeSetting`, 1 MB / 1.3 s
+for 29), read and written under Hostaway's own field names — the old mapped `HostawayListing` had none of the
+texts. Kinds keep comparisons honest: hours (Hostaway 16 = "4 PM", a select in the Repository), bool ("0" is a
+No, not empty), long texts (line endings and trailing spaces ignored; "they part at line N").
+
+**House rules.** Hostaway has ONE text. The record keeps the original (`house_rules`) and four Adds; Hostaway should
+hold original + Adds, numbered on from the original's last number. Copying back strips the Adds already in the
+record off the end, so a round trip does not double them (if an Add was edited after it was sent, the old wording
+lands in the original — fix by hand). Adds are drafted from the record's fees only where empty, into the
+Repository; nothing reaches guests without the Now → After confirmation, which now guards BOTH directions
+(the original instruction: guests see Hostaway; the record is what the team trusts).
+
+**Not sent from here:** Hostaway settings (channel titles, policies, sizes — mapped to keep, `send: false`) and the
+Insurance fee (a custom fee with its own endpoint, two rows: all channels + channel 2002). Markups and price stay
+with Finance.
+
+**Filled:** Preston Vineyard only — 42 fields copied through the endpoint (audited as local-dev, the visibly fake
+dev identity), then 3 Adds drafted. They duplicate its rules 4 and 16 (pets — tiered in the rule, $150 in
+Airbnb's pet fee — and the $600 lost fob): the owner picks which wording stays before House rules is sent.
+SOP 33 written as a draft.
