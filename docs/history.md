@@ -4169,3 +4169,5 @@ refund first, then negotiate") should become an SOP so nobody asks again.
 - **Search words (082 `sops.keywords`):** the AI chain writes 12–25 per SOP (synonyms, shorthand, English and Spanish) when an
   SOP is saved in Kaizen or from Slack (`writeKeywords`, after the answer); written for all 27 on 2026-10-14. `rankSops`:
   title 3, keyword 2, text 1 — "el huésped se va antes" finds "Early departure or mid-stay clean".
+- **Add to… confirms in the thread (same day):** on Add the private question is deleted and one quiet context line goes in the
+  message's own thread ("📎 Saved to <x> in Kaizen by @who — replies in this thread are saved there too"); a failure stays private.

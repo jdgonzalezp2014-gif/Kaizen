@@ -873,8 +873,12 @@ class Kaizen {
       // After the answer: reading the message, its link and its files takes longer than Slack waits.
       this.ctx.waitUntil((async () => {
         const r = await this.addMessageTo(value, src);
-        await this.reply(url, { replace_original: true, response_type: 'ephemeral',
-          text: r.ok ? `✓ Added to ${label} — later replies in this thread are saved too.` : `Not added: ${r.message}` });
+        if (!r.ok) { await this.reply(url, { replace_original: true, response_type: 'ephemeral', text: `Not added: ${r.message}` }); return; }
+        // Owner, 2026-10-14: the question goes, and one quiet line in the message's own thread says where it went.
+        await this.reply(url, { delete_original: true });
+        await slackApi(this.s.token!, 'chat.postMessage', { channel: src.channel, thread_ts: src.thread ?? src.ts, unfurl_links: false,
+          text: `📎 Saved to ${label} in Kaizen`, blocks: [{ type: 'context', elements: [{ type: 'mrkdwn',
+            text: `📎 Saved to *${label.replace(/[<>&*]/g, '')}* in Kaizen by <@${this.slackUser}> — replies in this thread are saved there too.` }] }] });
       })().catch(() => {}));
       return ack();
     }
