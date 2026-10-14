@@ -31,6 +31,9 @@ export interface SlackConfig {
   /** One channel per cleaner (prepared, §99): no message goes there on a clock. */
   cleaners?: Record<string, { channelId: string; channelName: string; slackUserId?: string | null; email?: string | null }>;
   team?: string;
+  /** The bot's own Slack user id (§153), from auth.test — so a thread reply that @-mentions Kaizen
+   *  (already handled as an app_mention) is not also saved a second time as a plain comment. */
+  botUserId?: string;
   /** Hostaway user id → Slack user id (§100): who a task's owner is in Slack, and who "Take it" makes the owner. */
   people?: Record<string, string>;
   /** The tasks' check-in and check-out (§107): local times in `tz` ("HH:MM"); null = off. */

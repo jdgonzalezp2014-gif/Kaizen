@@ -22,8 +22,9 @@ both ways. Settings → Slack (`SlackPanel.tsx`). SOP id 8 "Kaizen in Slack" is 
 
 `accounts.slack_bot_token_enc`, `slack_signing_secret_enc`, `slack_config` (channels, events,
 digest hours, taskCheck {tz, checkin null, checkout '23:55'}, people {hostawayUserId: slackId},
-dm {mode test|on|off, testUser}, helpSopId '8', appUrl), `slack_sent` (dedup keys
-`digest:<kind>:<day>`, `taskcheck:<kind>:<day>`, `overdue:<day>`), `slack_threads`
+dm {mode test|on|off, testUser}, helpSopId '8', appUrl, **botUserId (§153)** — the bot's own Slack
+user id, read from `auth.test` the first time a thread reply is handled and cached), `slack_sent`
+(dedup keys `digest:<kind>:<day>`, `taskcheck:<kind>:<day>`, `overdue:<day>`), `slack_threads`
 (channel+ts → task|claim).
 
 ## Workspace facts
@@ -40,9 +41,16 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - `/kaizen help|tasks|task|repair|claims|claim|today|cleans`; ⚡ New task / Report a repair /
   New claim; ⋯ Create task from message.
 - `@Kaizen new|repair <words>` → made at once (listing guessed, ✎ Add details in the thread);
-  `claim` → form; `tasks`, `claims`, `today` (private, in the asker's thread behind a
-  "🔒 Answered privately" stub); `all` (public, in thread); `help` (buttons to every pop-up);
-  in a task/claim thread: text = comment (✅), `comments` = the list.
+  `claim` → form; `tasks`, `claims`, `today`, `all`, the to-do offer, `comments`, save failures
+  — all **public**, posted in the asker's thread like a normal message (§152, so the team can
+  manage/comment on what Kaizen answers). Only `help` and "not a Kaizen member" stay private,
+  behind a "🔒 Answered privately" stub; in a task/claim thread: text = comment (✅).
+- **A plain reply in a task's or claim's own thread is a comment too (§153)** — no `@Kaizen` needed.
+  `message.channels`/`message.groups` events (new, alongside `app_mention`) reach `threadReply()`:
+  only a threaded reply (`thread_ts !== ts`), not the bot's own post, and only when the thread is
+  one Kaizen already knows (`slack_threads`) — everything else is left alone, no-op. An `@Kaizen …`
+  reply is still the `app_mention` event's job; `threadReply` skips it (by the bot's own user id,
+  `slack_config.botUserId`) so it is not saved twice.
 - Costs (§117): `@Kaizen cost …` (button), `/kaizen cost …` and the help's **+ Cost** open
   `costModal` — what, amount, category, listing or shared, date, all required, prefilled from
   the words — and save to Costs → One-offs via /api/expenses as the member. Never at once.
@@ -103,6 +111,12 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 
 ## Open items
 
+- **§152/§153 need a manifest reinstall to take effect.** Code is deployed, but Slack only sends
+  `message.channels`/`message.groups` once the app's manifest is updated and reinstalled: Settings →
+  Slack → "Show the manifest" → copy → Slack → the app → App Manifest → paste → Save → Reinstall to
+  Workspace (token stays the same). Until then, mention replies are already public (§152, no manifest
+  change needed), but a plain thread reply still is not saved as a comment (§153).
+
 - **Cleaners' channels built, off (§134).** No cleaner has a channel in production yet: Settings → Slack →
   6 → their Slack email → Create channel, then tick the reminders / helper notices and Save. Tested on
   the Neon branch with K&M's channel pointed at #kaizen-task.
@@ -121,7 +135,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 
 ## History
 
-§99–§102, §107–§117, §119, §134.
+§99–§102, §107–§117, §119, §134, §152, §153.
 - **Orders closed unbought (§150, operations):** ✓ Complete on a cleaner's or an inspection's request with no purchase
   recorded opens `unboughtModal` (callback `task_unbought`; views.open from a message, views.push inside the Tasks
   pop-up): a link to record the purchase in Kaizen, or a required reason → `/api/todos` done with `closeReason`.

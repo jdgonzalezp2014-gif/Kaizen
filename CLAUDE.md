@@ -72,3 +72,9 @@ git push origin master   # deploys
 - Conventions: comments say *why*; verify on real data ("deployed" ≠ "works"); colour never
   carries meaning alone (icon + word); state limitations in the UI; delete what nothing reads;
   agents draft, humans send.
+- **SOP format (§151):** purpose/trigger/owner/steps/doneWhen are the DB fields; `body` gets
+  "## Rules" (if → then, only if there are any) and "## What the system does" (only if
+  something happens on its own) as its last headers, in that order, when they apply — so an
+  assistant answering from SOPs can always find them by name. A screen or flow that changes
+  updates its SOP in the same session (a new `sop_versions` row); no SOP yet → write a draft
+  in this format. A new screen is added to `FEATURES` in `src/lib/sops.ts`.

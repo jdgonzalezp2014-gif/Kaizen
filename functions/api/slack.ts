@@ -46,7 +46,8 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
   if (!(await verifySlack(s.secret, request.headers.get('X-Slack-Request-Timestamp'), raw, request.headers.get('X-Slack-Signature')))) {
     return new Response('Bad signature.', { status: 401 });
   }
-  // §107: the Events API — a JSON body. Only app_mention is subscribed: Kaizen sees the messages that name it, nothing else.
+  // §107/§153: the Events API — a JSON body. app_mention is "@Kaizen …"; message.channels/message.groups
+  // (§153) is every other message, used only for a plain reply inside a task/claim's own thread.
   if (raw.trimStart().startsWith('{')) {
     const body = JSON.parse(raw) as { type?: string; challenge?: string; event?: Record<string, any> }; // eslint-disable-line @typescript-eslint/no-explicit-any
     if (body.type === 'url_verification') return json({ challenge: body.challenge });
@@ -54,6 +55,10 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
     if (body.type === 'event_callback' && !request.headers.get('X-Slack-Retry-Num')) {
       const ev = body.event ?? {};
       if (ev.type === 'app_mention' && !ev.bot_id) ctx.waitUntil(mention(ctx, sql, s, ev).catch(() => {}));
+      // A threaded reply, not the thread's own first message, and not itself an @-mention (app_mention above owns that one).
+      else if (ev.type === 'message' && !ev.bot_id && !ev.subtype && ev.thread_ts && ev.thread_ts !== ev.ts) {
+        ctx.waitUntil(threadReply(ctx, sql, s, ev).catch(() => {}));
+      }
     }
     return ack();
   }
@@ -80,9 +85,11 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
 };
 
 /**
- * "@Kaizen …" (§107, §108). A mention cannot open a pop-up — Slack gives no
- * trigger for one — so Kaizen answers with buttons that do, seen only by
- * whoever wrote it; this works the same in the Slack phone app.
+ * "@Kaizen …" (§107, §108, §152). A mention cannot open a pop-up — Slack gives no
+ * trigger for one — so Kaizen answers with buttons that do; posted in the thread
+ * of the asking message, visible to everyone (§152 — the team manages and comments
+ * on what's there), except *help* and "you're not a member" which stay private
+ * (nothing there for the team to act on).
  *   @Kaizen new|repair|claim <title> → the button to that form, title filled in
  *   @Kaizen tasks / today / help     → the list, the day, what it does
  *   in a task's or claim's thread: @Kaizen comments → the comments so far;
@@ -91,24 +98,27 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
  */
 async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
   const inThread = !!ev.thread_ts && ev.thread_ts !== ev.ts;
-  // §115: private answers go in the thread of the asking message, so the channel loses nothing. Slack shows a private reply
-  // only in a thread that exists — one line, "🔒 Answered privately", opens it first (once per mention).
-  let threadTs: string | null = inThread ? String(ev.thread_ts) : null;
-  const say = async (text: string, blocks?: unknown[]) => {
-    if (!threadTs) {
+  const threadTsOf = String(inThread ? ev.thread_ts : ev.ts);
+  const say = async (text: string, blocks?: unknown[]) =>
+    slackApi(s.token!, 'chat.postMessage', { channel: ev.channel, thread_ts: threadTsOf, text, ...(blocks ? { blocks } : {}), unfurl_links: false });
+  // §115/§152: only help and access errors stay private — nothing there for the team to manage or comment on.
+  // Slack shows a private reply only in a thread that exists — one line, "🔒 Answered privately", opens it first.
+  let privateTs: string | null = inThread ? String(ev.thread_ts) : null;
+  const sayPrivate = async (text: string, blocks?: unknown[]) => {
+    if (!privateTs) {
       const stub = await slackApi<{ ts?: string }>(s.token!, 'chat.postMessage', { channel: ev.channel, thread_ts: ev.ts, text: `🔒 Answered <@${ev.user}> privately`,
         blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: `🔒 Answered <@${ev.user}> privately here` }] }] });
-      threadTs = stub.ok ? String(ev.ts) : '';
+      privateTs = stub.ok ? String(ev.ts) : '';
     }
-    return slackApi(s.token!, 'chat.postEphemeral', { channel: ev.channel, user: ev.user, text, ...(blocks ? { blocks } : {}), ...(threadTs ? { thread_ts: threadTs } : {}) });
+    return slackApi(s.token!, 'chat.postEphemeral', { channel: ev.channel, user: ev.user, text, ...(blocks ? { blocks } : {}), ...(privateTs ? { thread_ts: privateTs } : {}) });
   };
   const { verb, arg } = parseMention(String(ev.text ?? ''));
   const from = { channel: String(ev.channel), ts: String(inThread ? ev.thread_ts : ev.ts) };
-  if (verb === 'help') { await say('What Kaizen does in Slack', mentionHelpBlocks()); return; }
+  if (verb === 'help') { await sayPrivate('What Kaizen does in Slack', mentionHelpBlocks()); return; }
   // §110: "@Kaizen new <what>" is made at once — the reply in its thread has ✎ Add details. No words: the form.
   if ((verb === 'new' || verb === 'repair') && arg) {
     const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
-    if (!member.ok) { await say(member.why); return; }
+    if (!member.ok) { await sayPrivate(member.why); return; }
     const r = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user))
       .quickCreate(verb === 'repair' ? 'work_order' : 'task', arg, from, String(ev.ts));
     if (!r.ok) await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`);
@@ -123,16 +133,11 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     return;
   }
   const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
-  if (!member.ok) { await say(member.why); return; }
+  if (!member.ok) { await sayPrivate(member.why); return; }
   const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
   if (verb === 'tasks' || verb === 'today' || verb === 'claims') { const m = await k.forMention(verb); await say(m.text, m.blocks); return; }
   // §114: "@Kaizen all" — the reminder now, for everyone, in the thread of the asking message (the channel stays short).
-  if (verb === 'all') {
-    const m = await k.forMention('all');
-    const r = await slackApi(s.token!, 'chat.postMessage', { channel: ev.channel, thread_ts: inThread ? ev.thread_ts : ev.ts, text: m.text, blocks: m.blocks, unfurl_links: false });
-    if (!r.ok) await say(m.text, m.blocks);
-    return;
-  }
+  if (verb === 'all') { const m = await k.forMention('all'); await say(m.text, m.blocks); return; }
 
   const [t] = inThread ? await sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}` as
     { subject: 'task' | 'claim'; subject_id: string }[] : [];
@@ -154,6 +159,38 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   if (!r.ok) { await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`); return; }
   const re = await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
   if (!re.ok) await say('✓ Saved as a comment in Kaizen.');
+}
+
+/** The bot's own Slack user id, cached in slack_config — fetched once (auth.test) and saved if missing. */
+async function botUserIdOf(sql: SqlFn, s: SlackSetup): Promise<string | null> {
+  if (s.config.botUserId) return s.config.botUserId;
+  const r = await slackApi<{ user_id?: string }>(s.token!, 'auth.test');
+  if (!r.ok || !r.user_id) return null;
+  await sql`UPDATE accounts SET slack_config = slack_config || ${JSON.stringify({ botUserId: r.user_id })}::jsonb WHERE id = 1`;
+  s.config.botUserId = r.user_id;
+  return r.user_id;
+}
+
+/**
+ * A reply inside a task's or claim's own thread that does not mention @Kaizen (§153) — the same
+ * comment "@Kaizen …" already saves, without asking everyone to remember the mention. Only a
+ * thread Kaizen already knows (`slack_threads`) is touched; ordinary conversation is left alone.
+ * The @-mention case is still the app_mention event's — skipped here so it is not saved twice.
+ */
+async function threadReply(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
+  const text = String(ev.text ?? '');
+  const botId = await botUserIdOf(sql, s);
+  if (botId && text.includes(`<@${botId}>`)) return;
+  const [t] = await sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}` as
+    { subject: 'task' | 'claim'; subject_id: string }[];
+  if (!t) return;
+  const body = commentFromMention(text);
+  if (!body) return;
+  const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
+  if (!member.ok) return;
+  const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
+  const r = await k.comment(t.subject, t.subject_id, body);
+  if (r.ok) await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
 }
 
 /** The Slack user, as the Kaizen member with the same email — or why not. */

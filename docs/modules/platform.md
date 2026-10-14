@@ -47,6 +47,11 @@ Hostaway client, sync, crypto, migrations.
   docked panel that persists across tabs and minimizes; step-by-step mode; every content
   change = a new `sop_versions` row with a note; review cadence (§92, §96–§98).
   SOPs edited outside the API must also insert `sop_versions`.
+  **Fixed format for an AI assistant (§151):** no schema change — `body`'s last headers, in
+  order, when they apply: "## Rules" (if → then) and "## What the system does" (automatic
+  behaviour). Everything else already has its own field (purpose/trigger/owner/steps/doneWhen).
+  A screen with no real SOP yet, or a fictitious one (no matching screen/feature), hurts an
+  assistant more than a gap does — don't write one.
   The panel also shows "🧪 Practice · Practicar" links on the screens in `PRACTICE_FOR` (§139, operations module).
   Feature `crew.page` (§128) is the cleaner's own page: cleaners have no SOP access, so its published SOPs
   reach them through /api/crew (`help`), not the library.
@@ -57,9 +62,24 @@ Hostaway client, sync, crypto, migrations.
 
 ## Open items
 
-- SOP drafts 1–6 await the owner's review and publishing.
+- SOP library cleaned up for an AI assistant (§151, 2026-10-13): deleted the TEST SOP, two
+  test sections, and 6 drafts superseded by the current crew flow (pre-§150 model). Rewrote
+  #10, #14, #15 to match current behaviour; rewrote #22/#23 (the crew step-by-step) to the
+  real report menu (⚠️ wrong · 🧴 request · 🛒 bought). Wrote 8 new drafts for screens that had
+  none: Calendar (#24), Notes log (#25), Rates & rules (#26), Costs (#27), Units/Revenue
+  pricing (#28), vendor work orders (#29), Settings members (#30), Setup overview (#31).
+  **Owner published all 24 the same day** (incl. the pre-existing #1–#6, #11–#13 backlog).
+  Coverage now: 24/24 live SOPs published, every FEATURES screen covered except `vendor`
+  (no such feature key — see §151) and `crew.page`/`crew.page.es` (covered by #12/13/22/23).
+  **#1 Check-in readiness still carries its own "## To confirm before publishing" note** (the
+  exact cut-off time for a missing signature) — published anyway at the owner's instruction;
+  worth a look next time that module is open.
+- Still to decide: whether @Kaizen in Slack should answer "how do I…" questions from
+  **published** SOPs only (moot now that all are published, but the rule still matters the
+  next time a draft is written) — the Slack module's call, flagged here because it's the
+  reason this cleanup happened.
 - Offered: Google login privacy page; Autohost background checks.
 
 ## History
 
-§1–§3, §8, §10–§13, §20, §27–§29, §49, §51–§52, §55, §65, §67, §75, §80–§81, §91–§92, §96–§98, §137.
+§1–§3, §8, §10–§13, §20, §27–§29, §49, §51–§52, §55, §65, §67, §75, §80–§81, §91–§92, §96–§98, §137, §151.

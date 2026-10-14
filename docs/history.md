@@ -3947,3 +3947,96 @@ and requested at once; the team validates the stock and/or orders.
 
 Then: checklist items bought on failure carry a preset supply (071) so the inspector only says how many;
 and Practice gained 📦 Inventory — the real Inventory screen over an in-browser transport, for the team.
+
+## §151 — SOP library cleaned up and extended for an AI assistant (2026-10-13)
+
+**Owner's goal:** get the SOP library ready for an assistant (@Kaizen in Slack, eventually) to answer
+"how do I…" from it, so he asked for: remove TEST / anything that could mislead a future AI; add format
+only where it actually helps the assistant; draft the SOPs that were missing.
+
+**Deleted (soft, `deleted_at`/`deleted_by`, kept in the DB):** SOP 7 "TEST — delete me" (published, in
+Claims and Home); sections `test-section-n` and `check-in-test` (no SOP used them); SOPs 16–21 — two
+drafts ("Supplies, problems and your team's link" EN/ES) and four never-published duplicate iterations of
+the crew step-by-step, all stale against the §150 model (single "Bought", no Request supplies, no
+per-place "What I took from…", no ❗ chips).
+
+**Rewritten** (version bumped, a `sop_versions` row each, still `draft`): #14 Inspect a unit (069/071:
+purchase now carries a supply + quantity); #15 Keep the supplies counted and ordered (full rewrite —
+places not one storage, Order ≠ Purchase, 🧾 Record a purchase, per-place minimums, field-purchase
+approval); #10 Cleaners' pages (added the "Approve — record in inventory" step the team was missing);
+#22/#23 Your clean step by step EN/ES (the real report menu — ⚠️ Something is wrong · 🧴 Request supplies ·
+🛒 I bought something — and the per-place "What I took" + ❗ chips, instead of the old single "Bought").
+
+**Format, no schema change.** Considered a migration (two new columns, `rules` and `system`) vs. two
+fixed headers inside the existing `body` field — chose the headers: an assistant reading `purpose`,
+`trigger`, `steps` (already structured) plus `body`'s last two sections, in a fixed order and only when
+they apply — "## Rules" (if → then) and "## What the system does" (automatic behaviour) — gets the same
+answer without a schema/API/UI change across the parallel sessions sharing this tree. Rule added to
+CLAUDE.md and `docs/modules/platform.md`.
+
+**8 new drafts**, one per screen that had none, grounded in the actual code (not invented): #24 Read the
+month's cleaning record (`operations.calendar`), #25 Read the Notes log (`operations.notes`), #26 Rates
+& rules (`operations.rates` — read-only; the numbers live in Setup), #27 Record a cost (`costs`), #28
+Review pricing and apply a suggestion (`units`, `revenue`), #29 The handyman's work orders
+(`operations.setup`, for the team — a vendor has no `sops` permission, same as a cleaner), #30 Add a team
+member and set their role (`settings`), #31 Operations → Setup overview (`operations.setup`). Dropped two
+of the owner's eleven candidates for having no matching screen or feature: "Inspector's field link" (the
+`/report` link is the cleaner's *helper* link, already in #22/#23 — there is no separate inspector link)
+and "Guest lifecycle" (nothing beyond #1 Check-in readiness exists for it today) — a fictitious SOP would
+mislead an assistant more than the gap does.
+
+**Published same day, all 24, at the owner's instruction** ("tu tienes acceso al código y el flujo,
+publícalos para todos") — including the pre-existing backlog #1–#6 and #11–#13 that had waited since
+§92/§96. Reviewed as published (`reviewed_at`/`reviewed_by` set), no content change, no new
+`sop_versions` row (status-only, same as the API's own save logic). #1 Check-in readiness still carries
+its own "## To confirm before publishing" note (the exact cut-off time for a missing signature) —
+published anyway; flagged in the module doc for next time.
+**Open for the Slack module:** @Kaizen should answer only from `status = 'published'` SOPs, filtered in
+the SQL — moot today (all 24 are published) but matters the next time a draft is written.
+
+## §152 — Mention replies went public (2026-10-13)
+
+Reverted the §115 default. The owner saw a case in #kaizen-ops: Laura mentioned @Kaizen with text that
+matched no command ("Alissa mid stay cleaning 2450 tomorrow"); Kaizen answered with the usual
+"🔒 Answered privately" stub and an ephemeral "Make it a to-do?" only Laura could see, so nobody else in
+the thread — including Juan, who replied "No" right under it — could act on it. Worse: a plain-text reply
+in a thread (no `@Kaizen`) is never read by the bot at all (only `app_mention` is subscribed), so that
+"No" was never saved anywhere, not even as a comment.
+
+The owner's call: "la idea es que los demas podamos gestionar y comentar lo que se necesite pero pues
+cosas como all help no" — everything the team can act on (tasks, today, claims, comments, the to-do
+offer, new/repair/claim/cost forms, save failures) now posts as a normal message in the thread, same as
+`all` always did. Only `help` and "you're not a Kaizen member" stay private (ephemeral, behind the
+"🔒 Answered privately" stub) — nothing there for anyone but the asker to do.
+
+`functions/api/slack.ts`'s `mention()`: split the old single `say()` into `say` (public, `chat.postMessage`
+in the thread) and `sayPrivate` (the old ephemeral-with-stub, now only for `help` and the two `member.why`
+checks). `all` no longer needs its own postMessage + ephemeral-fallback — it's just `say()` now. Buttons
+(`newButtons`, `mention_new_*`) already key off whoever clicks, not the original asker, so making them
+public is safe — anyone can open the form. No schema change, no tests changed shape (277 still pass).
+
+## §153 — A plain thread reply is a comment too, no @Kaizen needed (2026-10-13)
+
+Follow-up to §152 the same session: the owner, told that a reply under Kaizen's answer ("No", no
+mention) is never saved anywhere — only `app_mention` was subscribed — said that's not what he wants:
+"la idea es que si sea un comment" (he wants it to be one).
+
+Added `message.channels`/`message.groups` to the bot's event subscriptions (new scopes
+`channels:history`, `groups:history`), handled in a new `threadReply()` alongside `mention()`. It only
+acts on a genuine threaded reply (`thread_ts !== ts`, no subtype, not the bot's own post) in a thread
+Kaizen already knows (a `slack_threads` row for a task or claim) — anything else, including ordinary
+chatter in a channel or in the cleaners' private channels, is a silent no-op. Text runs through the same
+`commentFromMention()` the mention path uses (strips any `<@…>` and a leading "update:"/"comment:"),
+saved via the same `k.comment()` → `via: 'slack-thread'` already used for mention-comments, so nothing
+echoes back into the thread Kaizen just read from.
+
+**Avoiding a double save:** a message that @-mentions Kaizen fires *both* `app_mention` and
+`message.channels`/`message.groups` for the same event. `threadReply` skips any text containing
+`<@botUserId>`, deferring to `mention()`. The bot's own user id wasn't stored anywhere (`auth.test` was
+only ever used for the team name) — added `slack_config.botUserId`, fetched once on first use and
+cached (`botUserIdOf()`), also captured on Settings → Slack → Test connection from here on.
+
+**Needs the owner to reinstall the Slack app manifest** — new scopes and events only apply after
+Slack → the app → App Manifest → paste → Save → Reinstall to Workspace (flagged in the module doc's
+Open items). Until then nothing changes for §153; §152 (public mention replies) needed no manifest
+change and is already live. No schema change; 277 tests still pass, `tsc`/build clean.

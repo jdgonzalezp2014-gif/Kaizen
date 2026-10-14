@@ -89,9 +89,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!s.token) return bad('Add the bot token first.', 409);
 
   if (b.action === 'test') {
-    const r = await slackApi<{ team?: string; user?: string; bot_id?: string; url?: string }>(s.token, 'auth.test');
+    const r = await slackApi<{ team?: string; user?: string; user_id?: string; bot_id?: string; url?: string }>(s.token, 'auth.test');
     if (!r.ok) return bad(`Slack said: ${r.error}`);
-    await saveConfig({ ...s.config, team: r.team });
+    await saveConfig({ ...s.config, team: r.team, botUserId: r.user_id ?? s.config.botUserId });
     return Response.json({ ok: true, team: r.team, bot: r.user, url: r.url });
   }
 
