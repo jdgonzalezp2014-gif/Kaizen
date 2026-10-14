@@ -177,6 +177,8 @@ key had no SOPs.
   Maintenance needed). Repairs/purchases are mirrored to Hostaway (pushWork after the response); not
   announced in Slack. Inspections view: Inspect now / Schedule, month calendar (○ ◐ ✓ ▲), ▶ Start/Continue,
   View report; the old log form is folded ("past inspection without the checklist").
+  **Inspect now reuses an overdue plan** (2026-10-14): a unit with an open plan dated ≤ today (e.g. the monthly
+  auto-schedule) runs that plan, moved to today, instead of a new row that left the plan open (4308: #25 vs #16).
 - **The inspector's link (§135).** Operations → Inspections → a scheduled row → **🔗 Link** (WhatsApp / copy):
   `/report#i=<token>`, no account — the helpers' field door (§134), so no new Access bypass: `/api/report-link`
   with `X-Inspect-Token` goes to `functions/_lib/inspect-link.ts` (team side: `/api/inspection-run` action `link`,

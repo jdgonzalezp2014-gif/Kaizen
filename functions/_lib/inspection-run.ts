@@ -139,6 +139,17 @@ export async function startRun(sql: SqlFn, who: string, b: { inspectionId?: unkn
   const [unit] = await sql`SELECT id, name FROM units WHERE account_id = 1 AND id = ${unitId}` as { id: string; name: string }[];
   if (!unit) throw new Error('Which unit?');
   await auditsOwnClean(sql, unit.id, date, inspector);
+  // "Inspect now" on a unit that already has an overdue plan (e.g. the monthly auto-schedule) runs
+  // THAT plan, moved to today — a new row left the plan open and the unit read as never inspected.
+  const [plan] = await sql`
+    UPDATE inspections SET inspected_on = ${date}, started_at = COALESCE(started_at, now()),
+           inspector = COALESCE(${inspector}, inspector), updated_at = now()
+     WHERE id = (SELECT id FROM inspections WHERE account_id = 1 AND unit_id = ${unit.id} AND result IS NULL
+                   AND inspected_on <= ${date} ORDER BY inspected_on DESC, id DESC LIMIT 1)
+       AND NOT EXISTS (SELECT 1 FROM inspections o WHERE o.account_id = 1 AND lower(o.unit_name) = lower(${unit.name})
+                         AND o.inspected_on = ${date} AND o.id <> inspections.id)
+    RETURNING id::text` as { id: string }[];
+  if (plan) return plan.id;
   const [row] = await sql`
     INSERT INTO inspections (account_id, unit_id, unit_name, inspected_on, inspector, started_at, created_by)
     VALUES (1, ${unit.id}, ${unit.name}, ${date}, ${inspector}, now(), ${who})
