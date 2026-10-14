@@ -30,7 +30,8 @@ user id, read from `auth.test` the first time a thread reply is handled and cach
 ## Workspace facts
 
 Workspace "Kaizen"; bot U0C5NJS538B; Juan U0C5CQSSVQV. All topics → **#kaizen-ops**
-(C0C72JDKZ53, the team). **#kaizen-task** (C0C5NL9H5UK, private) = tests. Manifest reinstalled
+(C0C72JDKZ53, the team). **#kaizen-task** (C0C5NL9H5UK, private) = tests. "Add to…" listens in #kaizen-ops,
+**#kgp-team** (C0C91GDLXL2, private) and #kaizen-task — the last on purpose, to test it (owner, 2026-10-14). Manifest reinstalled
 with im:write, app_mentions:read, reactions:write, **channels:history (§144)** and the
 `app_mention` event. DM mode `test`.
 
@@ -114,8 +115,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 ## Open items
 
 
-- **#kaizen-task is still in the "Add to…" channels** (added for testing, 2026-10-14) — take it out in Settings → Slack → 3
-  when testing ends. Manifest with §157 + 📎 is installed (reactions:read verified).
+- Manifest with §157 + 📎 is installed (reactions:read verified, 2026-10-14).
 
 - **§152/§153 need a manifest reinstall to take effect.** Code is deployed, but Slack only sends
   `message.channels`/`message.groups` once the app's manifest is updated and reinstalled: Settings →
