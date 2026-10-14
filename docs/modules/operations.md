@@ -181,7 +181,7 @@ key had no SOPs.
   auto-schedule) runs that plan, moved to today, instead of a new row that left the plan open (4308: #25 vs #16).
   **📅 Move** (2026-10-14): `/api/inspections` action `reschedule` {id, date, inspector?} — plans only, refused if the
   unit already has one that day; a sent link's `link_expires_on` follows (day after). Form `MoveInspection` in Operations.tsx.
-  Open: SOP #14 v3 not written (permission) — add Move, Inspect-now reuse, free-text purchase, photos optional.
+  SOP #14 v3 says so (plus free-text purchases, photos optional). Plan #16 (empty) deleted.
 - **The inspector's link (§135).** Operations → Inspections → a scheduled row → **🔗 Link** (WhatsApp / copy):
   `/report#i=<token>`, no account — the helpers' field door (§134), so no new Access bypass: `/api/report-link`
   with `X-Inspect-Token` goes to `functions/_lib/inspect-link.ts` (team side: `/api/inspection-run` action `link`,
