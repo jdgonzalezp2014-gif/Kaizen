@@ -198,5 +198,6 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - **Clean photos in Drive: admins + each cleaner (owner, 2026-10-14).** The root "Kaizen — clean photos" was "anyone with the
   link"; now `functions/_lib/clean-access.ts`: link access off, members with role admin get writer on the root, each clean's
   folder is shared (reader, no Google email) with its cleaner's email (`cleaners.email`) when it is made (`addPhotos`).
-  `syncCleanPhotoAccess` does all at once (run 2026-10-14). Manager/ops are not given it (owner: admins and the cleaner).
+  `syncCleanPhotoAccess` does all at once (run 2026-10-14). Every Kaizen member gets the root: admins writer, the rest
+  reader (owner, same day: Derek, Amanda, Laura, Juan, Shannon).
   A cleaner's channel photo line now has "Open in Drive / Abrir en Drive" (`folderUrl`, from the clean's `drive_folder`).

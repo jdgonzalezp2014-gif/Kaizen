@@ -1,6 +1,6 @@
 /**
- * Who sees the clean photos in Drive (owner, 2026-10-14): not anyone with the link — the admins (Kaizen
- * members with the admin role) on the root folder, and each cleaner on their own cleans' folders only
+ * Who sees the clean photos in Drive (owner, 2026-10-14): not anyone with the link — Kaizen's members on the
+ * root folder (admins as writers, the rest as readers), and each cleaner on their own cleans' folders only
  * (what their helpers sent for that clean included). Shared quietly: no email from Google. Kaizen's own
  * pages read photos through the app and need none of this.
  */
@@ -37,13 +37,12 @@ export async function ensureAccess(token: string, file: string, emails: string[]
   return changed;
 }
 
-/** The admins' emails (Kaizen members with the admin role). */
-const adminEmails = async (sql: SqlFn) =>
-  (await sql`SELECT email FROM members WHERE account_id = 1 AND role = 'admin'` as { email: string }[]).map(r => r.email);
-
-/** The root folder: admins can open and organize everything; nobody else by link. */
+/** The root folder: every Kaizen member sees it all — admins organize (writer), the rest read
+ *  (owner, 2026-10-14: Derek, Amanda, Laura, Juan, Shannon); nobody else, not by link. */
 export async function shareRoot(sql: SqlFn, token: string, root: string) {
-  return ensureAccess(token, root, await adminEmails(sql), 'writer');
+  const m = await sql`SELECT email, role FROM members WHERE account_id = 1` as { email: string; role: string }[];
+  return [...await ensureAccess(token, root, m.filter(x => x.role === 'admin').map(x => x.email), 'writer'),
+          ...await ensureAccess(token, root, m.filter(x => x.role !== 'admin').map(x => x.email), 'reader')];
 }
 
 /** One clean's folder: its cleaner can see it (a cleaner with no email: nothing to share). */
