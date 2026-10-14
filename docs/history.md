@@ -4111,4 +4111,8 @@ generalizes the rules: main column + prefixed footer columns in column order, th
 pop-up (`units.addPart`, all three Units tables). And drag-to-fill in the grid, as in Excel. On data: "no cambies
 nada fuera de lo duplicado" — only Preston's duplicates went (lost-fob Add; rule 13's repeat of rule 16); the
 fill of the other 20 units was stopped by the owner.
+Then: footer parts are no longer numbered ("no numeres las reglas… no se pierde el orden") — appended as written.
+And the owner asked to fill every unit and check both sides: empty fields copied from Hostaway (nothing overwritten);
+after, 827 checks same, 179 empty on both, 2 on purpose (P2-4212 Wi-Fi capitals; Preston's rules with duplicates
+removed in Kaizen). Amenities: not wanted.
 

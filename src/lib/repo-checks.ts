@@ -15,7 +15,7 @@ export type SectionKey = 'settings' | 'description' | 'rules' | 'fees' | 'hostaw
 export const SECTIONS: { key: SectionKey; label: string; note: string }[] = [
   { key: 'settings', label: 'House settings', note: 'Wi-Fi, check-in / check-out hours and guests — what guests and cleaners are told.' },
   { key: 'description', label: 'House description', note: 'The listing\'s texts, as guests read them. The Description is the main text plus its footer parts (Add: …), appended at the end.' },
-  { key: 'rules', label: 'House rules', note: 'Hostaway keeps one text: the original rules, then the additions (Add: …) appended at the end, numbered on.' },
+  { key: 'rules', label: 'House rules', note: 'Hostaway keeps one text: the original rules, then the additions (Add: …) appended at the end as written — never renumbered, so the original order stays.' },
   { key: 'fees', label: 'Fees', note: 'What the guest is charged. Each fee is explained to guests by its Add in House rules.' },
   { key: 'hostaway', label: 'Hostaway settings', note: 'Mapped for later: copied into the Repository to keep, never sent from here.' },
 ];
@@ -38,9 +38,9 @@ export const RULE_ADDS = ['rule_add_pet_fee', 'rule_add_lost_fob', 'rule_add_ext
  * (every column of the table whose key has the prefix, in column order), appended at the end (owner, §155).
  * The team adds footer columns from the text's pop-up.
  */
-export const COMPOSED: Record<string, { prefix: string; numbered: boolean; part: string }> = {
-  house_rules: { prefix: 'rule_add_', numbered: true, part: 'rule' },
-  description: { prefix: 'desc_add_', numbered: false, part: 'description' },
+export const COMPOSED: Record<string, { prefix: string; part: string }> = {
+  house_rules: { prefix: 'rule_add_', part: 'rule' },
+  description: { prefix: 'desc_add_', part: 'description' },
 };
 export const isPart = (key: string) => Object.values(COMPOSED).some(c => key.startsWith(c.prefix));
 /** The main column a footer column belongs to. */
@@ -155,11 +155,6 @@ export function hostawayValue(listing: Record<string, unknown>, field: string): 
 
 /* ── composed texts: the main text + footer parts (§155) ────────────── */
 
-const lastNumber = (text: string) => {
-  const all = [...text.matchAll(/^\s*(\d+)\s*\./gm)];
-  return all.length ? Number(all[all.length - 1]![1]) : 0;
-};
-
 /**
  * The footer columns of a main text, in order: as the table orders its columns (`order`), else the
  * known rules Adds first and any other in key order.
@@ -171,12 +166,10 @@ export function partKeys(base: string, vals: Record<string, unknown>, order?: st
   return [...known, ...Object.keys(vals).filter(k => k.startsWith(prefix) && !known.includes(k)).sort()];
 }
 
-/** Each piece as it lands in the text: the main one, then each filled footer part (numbered on, for rules). */
+/** Each piece as it lands in the text: the main one, then each filled footer part as written (owner: no numbering — the order stays). */
 export function composeParts(base: string, vals: Record<string, unknown>, order?: string[]): { key: string; text: string; main: boolean }[] {
   const main = norm('composed', vals[base]);
-  let n = COMPOSED[base]!.numbered ? lastNumber(main) : 0;
-  const parts = partKeys(base, vals, order).map(k => ({ key: k, add: norm('composed', vals[k]) })).filter(p => p.add)
-    .map(p => ({ key: p.key, main: false, text: n && !/^\d+\s*\./.test(p.add) ? `${++n}. ${p.add}` : p.add }));
+  const parts = partKeys(base, vals, order).map(k => ({ key: k, main: false, text: norm('composed', vals[k]) })).filter(p => p.text);
   return [...(main ? [{ key: base, text: main, main: true }] : []), ...parts];
 }
 
@@ -191,7 +184,7 @@ export function splitText(base: string, text: string, vals: Record<string, unkno
     const add = norm('composed', vals[k]);
     if (!add || !rest.endsWith(add)) continue;
     const before = rest.slice(0, rest.length - add.length);
-    const m = before.match(/(^|\n\n)(\d+\.\s*)?$/);
+    const m = /(^|\n\n)$/.exec(before);
     if (m) rest = before.slice(0, before.length - m[0].length).trim();
   }
   return rest;

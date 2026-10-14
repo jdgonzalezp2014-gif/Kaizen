@@ -98,7 +98,8 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
     Hostaway 1/0 ↔ checkbox. `cleaning_fee` moved into Fees; `password_2` is titled "Wifi password". Wi-Fi stays in
     Details, marked **⇄ sync** in the header like every compared column (`SYNCED_COLUMNS`).
   - **Composed texts = main + footer parts** (owner; `COMPOSED`): `house_rules` + every `rule_add_*` column
-    (numbered on) and `description` + every `desc_add_*` column (not numbered), appended in COLUMN order
+    and `description` + every `desc_add_*` column, appended as written (owner: never renumbered — the original
+    order stays) in COLUMN order
     (`composeText`, order from `repo_columns.position`). Copying from Hostaway strips the record's parts off the end
     (`splitText`). A click on the text — the main cell, a part's cell, or the folded section — opens the pop-up
     (`ComposedEditor`): main text + each footer part (marked), "Whole text" as Hostaway gets it, "+ Add a footer
@@ -128,13 +129,11 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
    1406/4304/4308; P2-4315 fixed in Hostaway (4315WiFi). P2-4212 left as is (capitals differ: the owner's
    call). Bobcat has no guest cleaning fee in Hostaway.
 7. **Parking and lost key/fob fee per house** — no rush.
-8. **Sections filled (§155): only Preston Vineyard** (owner: change nothing else for now). Its duplicates were
-   removed in Kaizen only: the pet and lost-fob Adds (its rules already say them) and rule 13's "$600 penalty for
-   lost keys/clicker/fob" (rule 16 says it, with more). Not sent to Hostaway. The other units' Hostaway rules
-   use the same template — rules 13 and 16 likely repeat there too; no literal repeated sentence in any
-   description or rules (read-only scan, 2026-10-13).
-9. **"Inventory" checkmark pop-up** (owner, unclear): descriptions "based on what is in the inventory", as a pop-up
-   of checkmarks — Kaizen's inventory is supplies only; probably the listing's amenities. Ask before building.
+8. **Sections filled (§155), every active unit** (2026-10-13, owner: "llena todas"): empty fields copied from
+   Hostaway (82+1 copies; nothing that already had a value was overwritten). Check after: 827 same, 179 empty on
+   both, 2 left on purpose — P2-4212 Wi-Fi (capitals, owner's call) and Preston Vineyard's House rules (Kaizen has
+   its duplicates removed — rule 13's lost-fob sentence; pet and fob Adds cleared — and the extra-guests Add;
+   not sent to Hostaway). The other units' rules use the same template: rules 13 and 16 likely repeat there too.
 - The old Apps Script link/key in Settings can be cleared now the import is confirmed.
 
 ## History

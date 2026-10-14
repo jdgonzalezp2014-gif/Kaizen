@@ -750,7 +750,6 @@ function ComposedEditor({ table, row, base, focus, can, onClose, onSave, onAddPa
   const val = (k: string) => draft[k] ?? text(row[k]);
   const changed = keys.filter(k => val(k) !== text(row[k]));
   const parts = composeParts(base, Object.fromEntries(keys.map(k => [k, val(k)])), order);
-  const num = (k: string) => /^(\d+)\./.exec(parts.find(p => p.key === k && !p.main)?.text ?? '')?.[1];
   const close = () => { if (!changed.length || window.confirm('Close without saving your changes?')) onClose(); };
   useEffect(() => {
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
@@ -776,7 +775,7 @@ function ComposedEditor({ table, row, base, focus, can, onClose, onSave, onAddPa
           <div className="rb-modal-body">
             {keys.map((k, i) => (
               <label key={k} className={`rb-part ${i ? 'rb-part-foot' : ''}`}>
-                <span className="rb-part-name">{i ? <>Footer · {title(k)}{num(k) && <span className="rb-hint"> — appears as {num(k)}.</span>}</> : `${title(base)} — main text`}</span>
+                <span className="rb-part-name">{i ? `Footer · ${title(k)}` : `${title(base)} — main text`}</span>
                 <textarea className="rb-input" rows={i ? 3 : 14} autoFocus={k === focus} readOnly={!can.edit}
                           value={val(k)} onChange={e => setDraft(d => ({ ...d, [k]: e.target.value }))} />
               </label>
@@ -791,7 +790,7 @@ function ComposedEditor({ table, row, base, focus, can, onClose, onSave, onAddPa
           </div>
         )}
         <div className="rb-modal-foot">
-          <span className="rb-hint">Footer parts go at the end of the main text, in this order{COMPOSED[base]!.numbered ? ', numbered on' : ''}. Hostaway gets it from ⇄ Check against Hostaway.</span>
+          <span className="rb-hint">Footer parts go at the end of the main text, in this order, as written. Hostaway gets it from ⇄ Check against Hostaway.</span>
           <span className="rb-spacer" />
           <button className="secondary small" onClick={close}>{changed.length ? 'Cancel' : 'Close'}</button>
           {can.edit && <button className="small" disabled={busy || !changed.length}

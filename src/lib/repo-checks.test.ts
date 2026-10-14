@@ -80,16 +80,16 @@ test('custom fees read from listingFeeSetting, the all-channels row', () => {
 
 const RULES = 'House Rules:\n\n1. Sign the agreement.\n\n2. No parties.';
 
-test('house rules = the original + the Adds, numbered on', () => {
+test('house rules = the original + the Adds as written, never renumbered', () => {
   const vals = { house_rules: RULES, rule_add_pet_fee: 'Pet fee: $150 per pet.', rule_add_other: 'Quiet hours 10pm.' };
-  assert.equal(composeText('house_rules', vals), `${RULES}\n\n3. Pet fee: $150 per pet.\n\n4. Quiet hours 10pm.`);
+  assert.equal(composeText('house_rules', vals), `${RULES}\n\nPet fee: $150 per pet.\n\nQuiet hours 10pm.`);
   assert.equal(composeText('house_rules', { house_rules: 'Be nice.', rule_add_pet_fee: 'Pets $50.' }), 'Be nice.\n\nPets $50.');
   assert.equal(composeText('house_rules', { rule_add_pet_fee: 'Pets $50.' }), 'Pets $50.');
 });
 
 test('copying Hostaway\'s rules back keeps the Adds out of the original', () => {
   const vals = { house_rules: 'old', rule_add_pet_fee: 'Pet fee: $150 per pet.', rule_add_other: 'Quiet hours 10pm.' };
-  const hostaway = `${RULES}\n\n3. Pet fee: $150 per pet.\n\n4. Quiet hours 10pm.`;
+  const hostaway = `${RULES}\n\nPet fee: $150 per pet.\n\nQuiet hours 10pm.`;
   assert.equal(splitText('house_rules', hostaway, vals), RULES);
   assert.equal(splitText('house_rules', RULES, vals), RULES, 'Adds not in Hostaway yet: the whole text is the original');
   const d = check('house_rules');
