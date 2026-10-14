@@ -105,4 +105,4 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   / **This week** (≤7 d or high) / **Later** — only the first non-empty bucket open, 5 rows then "Show more". Rows on Home have
   no checkbox: ✕ (cancel) and ✓ (done) at the right. A URL in a description shows as 🔗 (`Linked`). Approvals come from
   `getCrewAdmin` (review in Operations → Cleaners); purchase orders = `getInventory().orders` to-dos, moved out of Tasks.
-  `TodoList` props `extraTabs` / `orderIds`; Operations → To-do is unchanged (lanes).
+  `TodoList` props `extraTabs` / `orderIds`. Operations → To-do uses the same tabs and buckets (no row cap; kind chips gone; no checkbox anywhere).

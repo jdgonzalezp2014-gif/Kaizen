@@ -2087,7 +2087,7 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .bucket-head .count { font-size: 11px; padding: 0 7px; border-radius: 999px; background: var(--tint); color: var(--muted); }
 .bucket-hint { font-size: 11.5px; color: var(--muted); }
 .bucket-now .bucket-head b { color: var(--warn); }
-.todos.compact .todo-desc { margin-left: 0; }
-.todos.compact .todo-quick { opacity: .75; }
-.todos.compact .todo-quick button { padding: 2px 8px; font-size: 13px; min-width: 28px; }
+.todos .todo-desc { margin-left: 0; }
+.todos .todo-quick { opacity: .75; }
+.todos .todo-quick button { padding: 2px 8px; font-size: 13px; min-width: 28px; }
 .desc-link { text-decoration: none; margin-left: 2px; }

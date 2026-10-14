@@ -15,7 +15,7 @@
  */
 import { Modal } from './Modal.tsx';
 import { TaskPurchase } from '../screens/Inventory.tsx';
-import { vendorLink, getVendors } from '../api.ts';
+import { vendorLink, getVendors, getInventory } from '../api.ts';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
@@ -267,8 +267,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
             <span aria-hidden="true">{on ? '▾' : '▸'}</span> <b>{label}</b> <span className="count">{by[b].length}</span>
             <span className="bucket-hint">{hint}</span>
           </button>
-          {on && <ul className="todo-list">{(laneAll[k] ? by[b] : by[b].slice(0, 5)).map(taskRow)}</ul>}
-          {on && by[b].length > 5 && (
+          {on && <ul className="todo-list">{(laneAll[k] ? by[b] : by[b].slice(0, cap)).map(taskRow)}</ul>}
+          {on && by[b].length > cap && (
             <button className="link tiny home-more" onClick={() => setLaneAll(m => ({ ...m, [k]: !m[k] }))}>
               {laneAll[k] ? 'Show less ▴' : `Show ${by[b].length - 5} more ▾`}</button>
           )}
@@ -276,7 +276,9 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
       );
     });
   };
-  const homeTabs: (WorkTab & { add?: TaskKind | 'claim' })[] = compact && lanesOn ? [
+  // Owner, Oct 2026: Operations → To-do looks the same as Home — tabs and buckets — only without a cap on rows.
+  const cap = compact ? 5 : Infinity;
+  const homeTabs: (WorkTab & { add?: TaskKind | 'claim' })[] = lanesOn ? [
     { key: 'task', label: 'Tasks', count: taskItems.filter(t => !isOrder(t)).length, alert: late(taskItems) > 0, add: 'task',
       body: taskItems.some(t => !isOrder(t)) ? bucketed('task', taskItems.filter(t => !isOrder(t))) : <p className="note">Nothing to do. ✓</p> },
     { key: 'work_order', label: '🔧 Repairs', count: repairItems.length, alert: late(repairItems) > 0, add: 'work_order',
@@ -284,8 +286,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     ...(showClaims ? [{ key: 'claims', label: '⚑ Claims', count: cases.length, alert: noWork > 0, add: 'claim' as const,
       body: cases.length ? <>
         {noWork > 0 && <p className="note"><span className="breach">▲ {noWork} with no work yet</span></p>}
-        <ul className="todo-list cases">{(laneAll.claims ? cases : cases.slice(0, 5)).map(caseRow)}</ul>
-        {cases.length > 5 && <button className="link tiny home-more" onClick={() => setLaneAll(m => ({ ...m, claims: !m.claims }))}>
+        <ul className="todo-list cases">{(laneAll.claims ? cases : cases.slice(0, cap)).map(caseRow)}</ul>
+        {cases.length > cap && <button className="link tiny home-more" onClick={() => setLaneAll(m => ({ ...m, claims: !m.claims }))}>
           {laneAll.claims ? 'Show less ▴' : `Show ${cases.length - 5} more ▾`}</button>}
       </> : <p className="note">No open claims. ✓</p> }] : []),
     ...extraTabs,
@@ -316,10 +318,6 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
       ))}
       {!compact && !claim && (
         <div className="row-controls">
-          {([['', 'Everything'], ['task', 'To-dos'], ['work_order', '🔧 Repairs'],
-             ...(showClaims ? [['claims', '⚑ Claims']] : [])] as ['' | TaskKind | 'claims', string][]).map(([k, l]) => (
-            <button key={k} className={kindFilter === k ? 'chip active' : 'chip'} onClick={() => { setKindFilter(k); setAdding(null); }}>{l}</button>
-          ))}
           <select value={prioFilter} aria-label="Urgency" onChange={e => setPrioFilter(e.target.value as '' | 'high' | 'urgent')}>
             <option value="">Any urgency</option>
             <option value="high">▲ High or urgent</option>
@@ -461,9 +459,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
   return (
     <li className={`todo due-${due} ${closed ? 'is-done' : ''} prio-${t.priority}`}>
       <div className="todo-line">
-        {/* owner, Oct 2026: on Home the ✓ and ✕ at the right are enough — no box. */}
-        {!compact && <input type="checkbox" checked={closed} disabled={busy} onChange={() => void tick()}
-               aria-label={closed ? `Reopen: ${t.title}` : `Done: ${t.title}`} />}
+        {/* Owner, Oct 2026: the ✓ and ✕ at the right are enough — no box. */}
         {t.kind === 'work_order' && <span title="Work order">🔧</span>}
         {flat && parent && <span className="sub-n" title="Sub-task of">↳ {parent.title} ·</span>}
         {renaming ? (
@@ -509,9 +505,9 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void })
             ? <button type="button" className="q-reopen" disabled={busy} onClick={() => void tick()} title="Reopen">↺ Reopen</button>
             : <>
                 <button type="button" className="q-cancel" disabled={busy} onClick={() => void cancel()} title="Cancel it — kept, closed as cancelled"
-                        aria-label={`Cancel: ${t.title}`}>{compact ? '✕' : 'Cancel'}</button>
+                        aria-label={`Cancel: ${t.title}`}>✕</button>
                 <button type="button" className="q-done" disabled={busy} onClick={() => void tick()} title="Mark as done"
-                        aria-label={`Done: ${t.title}`}>{compact ? '✓' : '✓ Done'}</button>
+                        aria-label={`Done: ${t.title}`}>✓</button>
               </>}
         </span>
         {/* A sub-task is removed from its own line, naming itself — never
@@ -1295,13 +1291,16 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
  */
 export function WorkView({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
   const [mode, setMode] = useState<'open' | 'log'>('open');
+  // The open purchase orders: their own tab, as on Home (owner, Oct 2026).
+  const [orderIds, setOrderIds] = useState<Set<string>>(new Set());
+  useEffect(() => { getInventory().then(r => { if (r.ok) setOrderIds(new Set(r.orders.map(o => o.todoId))); }).catch(() => {}); }, []);
   return (
     <>
       <div className="row-controls work-mode">
         <button className={mode === 'open' ? 'chip active' : 'chip'} onClick={() => setMode('open')}>Open work</button>
         <button className={mode === 'log' ? 'chip active' : 'chip'} onClick={() => setMode('log')}>✓ Done log</button>
       </div>
-      {mode === 'open' ? <TodoList today={today} canClaims={canClaims} /> : <DoneLog today={today} canClaims={canClaims} />}
+      {mode === 'open' ? <TodoList today={today} canClaims={canClaims} orderIds={orderIds} /> : <DoneLog today={today} canClaims={canClaims} />}
     </>
   );
 }
