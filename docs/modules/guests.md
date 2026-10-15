@@ -58,3 +58,10 @@ Check-in: unit BR / guest ↗ · nights · guests | pills: the agreement pill on
 dashed amber — clickable to upload the agreement when the person has `guests.documents`), plus `○ ID` only where the
 building keeps an ID copy (as on the board). "✓ ID verified" and the separate Agreement chip are gone from Home.
 "Open the board" sits top right; the panel's summary goes under the title.
+
+Round 2 (same day, owner: save space): one line a row — time | unit BR ↗ | icons. The stay (guest · nights ·
+guests · channel · total) is the ↗'s hover; the ↗ still opens Hostaway. Check-out: the cleaner and pay are a
+person icon's hover (amber when unassigned). Check-in today: a brush icon says prepped by / clean not assigned.
+Open work on the unit as icon-only chips (wrench work orders, cart purchase orders, list to-dos — no counts, titles
+on hover, click → Operations → To-do filtered to the unit). Agreement is `▲ 📄`/`✓ 📄` (file icon), "signed / not
+signed" on hover. Right column wider (3fr / 2fr, min 360px).
