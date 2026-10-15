@@ -2617,6 +2617,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .home-todos .work-tab-body, .home-slide { max-height: var(--feed-h); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
 .home-todos .work-tab-body::-webkit-scrollbar, .home-slide::-webkit-scrollbar { display: none; }
 .todos-head { margin-bottom: var(--s-2); }
+.todos-head-actions { display: contents; }
 .todos-head h3 { flex: 1; }
 .todos-head .lane-add { font-weight: 650; }
 /* Pills: one row, never wrapping; on a phone they swipe. */
@@ -2628,6 +2629,15 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
   .home-todos { border: 0; background: none; box-shadow: none; padding: 0; }
   .home-todos .work-tab { min-height: 44px; padding: 0 var(--s-4); }
   .todos-head .lane-add { min-height: 44px; padding: 0 var(--s-2); }
+  /* Phone: the pills own the header row; + / All / ? float at the right of the first bucket's line ("Now"). */
+  .todos-head { gap: var(--s-2); }
+  .todos-head .work-tabs { flex: 1 1 0; min-width: 0; }
+  .home-todos .work-tab-body { position: relative; }
+  .todos-aside { position: absolute; top: 0; right: 0; z-index: 2; display: flex; align-items: center; gap: var(--s-3); height: 36px; }
+  .lane-add-plus { flex: 0 0 auto; width: 30px; height: 30px; padding: 0; border-radius: var(--r-pill); border: 0; background: var(--series-1); color: #fff; font-size: 20px; line-height: 1; font-weight: 500; }
+  .todos-aside .hint { margin-left: 0; }
+  .todos-aside .hint-pop { left: auto; right: -8px; }
+  .home-todos .bucket-hint { display: none; }
   .todo-quick button { min-width: 44px; height: 44px; }
   .todo { padding-right: 112px; }
 }

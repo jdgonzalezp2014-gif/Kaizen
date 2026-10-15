@@ -33,6 +33,7 @@ import { Hint, Peek } from './Hint.tsx';
 import { SlideOver, NoDock, useDock } from './SlideOver.tsx';
 import { createPortal } from 'react-dom';
 import { Popover } from './Popover.tsx';
+import { usePhone } from './usePhone.ts';
 import { Icon, ic } from './Icon.tsx';
 import { hostawayReservationUrl } from '../lib/operations.ts';
 import { SlackMark } from './ChannelMark.tsx';
@@ -445,13 +446,30 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
     </Popover>
   );
 
+  // Phone (owner, Oct 2026): the kind pills share the card's header row — pills, All, + Add, then the "?".
+  const phone = usePhone();
+  const tabsInHead = !!head && phone && !!cur;
+  const tabButtons = cur && (<>
+              {homeTabs.map(x => (
+                <button key={x.key} type="button" role="tab" aria-selected={x === cur}
+                        className={`work-tab ${x === cur ? 'active' : ''} ${x.count ? '' : 'is-zero'}`}
+                        onClick={() => { setTab(x.key); setAdding(null); }}>
+                  {x.label} <span className="count">{x.count}</span>
+                  {x.alert && <span className="work-tab-alert" title="Needs attention">▲</span>}
+                </button>
+              ))}
+</>);
+
   return (
     <div className={`todos ${compact ? 'compact' : ''}`}>
       {head && (
         <div className="home-card-head todos-head">
-          <h3><span className="todos-title">{head.title}</span>{todos !== null && <span className="count">{openTotal}</span>}<Hint>{head.hint}</Hint></h3>
-          {head.onAll && <button className="link tiny todos-all" onClick={head.onAll} title="Open the full list in Operations → To-dos">All ↗</button>}
-          {cur?.add && <button className="link lane-add" onClick={() => { setAdding(cur.add!); }}>+ Add</button>}
+          {tabsInHead && <div className="work-tabs" role="tablist">{tabButtons}</div>}
+          {!tabsInHead && <div className="todos-head-actions">
+            <h3><span className="todos-title">{head.title}</span>{todos !== null && <span className="count">{openTotal}</span>}<Hint>{head.hint}</Hint></h3>
+            {head.onAll && <button className="link tiny todos-all" onClick={head.onAll} title="Open the full list in Operations → To-dos">All ↗</button>}
+            {cur?.add && <button className="link lane-add" onClick={() => { setAdding(cur.add!); }}>+ Add</button>}
+          </div>}
         </div>
       )}
       {/* Outside the lanes (a claim's own list, a kind filter): one row of adds. */}
@@ -509,21 +527,23 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
       {todos === null ? <p className="note loading-dot">Reading</p>
         : cur ? (
           <div className="work-tabs-wrap">
-            <div className="work-tabs" role="tablist">
-              {homeTabs.map(x => (
-                <button key={x.key} type="button" role="tab" aria-selected={x === cur}
-                        className={`work-tab ${x === cur ? 'active' : ''} ${x.count ? '' : 'is-zero'}`}
-                        onClick={() => { setTab(x.key); setAdding(null); }}>
-                  {x.label} <span className="count">{x.count}</span>
-                  {x.alert && <span className="work-tab-alert" title="Needs attention">▲</span>}
-                </button>
-              ))}
+            {!tabsInHead && <div className="work-tabs" role="tablist">
+              {tabButtons}
               {!head && <span className="rb-spacer" />}
               {!head && cur.add && adding !== cur.add && <button className="link tiny lane-add" onClick={() => setAdding(cur.add!)}>+ Add</button>}
               {!compact && !claim && !lead && filtersPop}
-            </div>
+            </div>}
             {cur.add && addForm(cur.add)}
-            <div role="tabpanel" className="work-tab-body">{cur.body}</div>
+            <div role="tabpanel" className="work-tab-body">
+              {tabsInHead && (
+                <div className="todos-aside">
+                  {cur.add && <button className="lane-add-plus" aria-label="Add" title="Add" onClick={() => setAdding(cur.add!)}>+</button>}
+                  {head?.onAll && <button className="link tiny todos-all" onClick={head.onAll} title="Open the full list in Operations → To-dos">All ↗</button>}
+                  <Hint>{head!.hint}</Hint>
+                </div>
+              )}
+              {cur.body}
+            </div>
           </div>
         )
         : lanesOn ? (

@@ -86,6 +86,7 @@ Hostaway client, sync, crypto, migrations.
 ## History
 
 §1–§3, §8, §10–§13, §20, §27–§29, §49, §51–§52, §55, §65, §67, §75, §80–§81, §91–§92, §96–§98, §137, §151, §158.
+- **Home to-dos on a phone (owner, 2026-10-15):** the Tasks / Repairs / Claims pills take the card's header row alone (swipe); + / All ↗ / "?" sit at the right of the first bucket's line ("Now"), absolutely placed inside the tab body (`.todos-aside`); desktop unchanged (`Todos.tsx` `tabsInHead`, `usePhone`). Tried and dropped: tinted "islands" in the header row (the pills read as a toggle).
 - **Home's "Units in red" cached (owner, 2026-10-13, migration 077 `api_cache`):** `/api/forward?cache=1` (Home only) keeps
   the answer 10 min for everyone (`forward:<asOf>:<days>`); *.pages.dev has no usable Cache API. The card says when it
   was read. Units asks without `cache` — live.
