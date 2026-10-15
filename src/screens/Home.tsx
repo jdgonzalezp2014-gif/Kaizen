@@ -34,6 +34,7 @@ import { money, money2 } from '../lib/format.ts';
 import { hostawayReservationUrl, type BoardRow } from '../lib/operations.ts';
 import { Hint, IconFlag } from '../components/Hint.tsx';
 import { usePhone } from '../components/usePhone.ts';
+import { useLive } from '../components/useLive.ts';
 import { Icon } from '../components/Icon.tsx';
 import { ChannelMark } from '../components/ChannelMark.tsx';
 
@@ -45,13 +46,13 @@ const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', '
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 const short = (d: string) => { const t = new Date(`${d}T12:00:00Z`); return `${DOW[t.getUTCDay()]!.slice(0, 3)} ${MON[t.getUTCMonth()]} ${t.getUTCDate()}`; };
 
-function useLoad<T>(enabled: boolean, fn: () => Promise<T>): Load<T> {
+function useLoad<T>(enabled: boolean, fn: () => Promise<T>, again = 0): Load<T> {
   const [s, set] = useState<Load<T>>(idle);
   useEffect(() => {
     if (!enabled) { set({ data: null, err: '', busy: false }); return; }
     fn().then(data => set({ data, err: '', busy: false }))
       .catch(e => set({ data: null, err: e instanceof Error ? e.message : String(e), busy: false }));
-  }, [enabled]);
+  }, [enabled, again]);
   return s;
 }
 
@@ -103,13 +104,15 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     return r.ok ? new Set(r.orders.map(o => o.todoId)) : new Set<string>();
   });
 
-  // Open to-dos per unit, for the work chips on each check-in/out row — as on the board (§159).
+  // Open to-dos per unit, for the work chips on each check-in/out row — as on the board (§159). §166: again when work moves.
+  const [workMoved, setWorkMoved] = useState(0);
+  useLive(n => { if (n.todos) setWorkMoved(x => x + 1); }, canOps && canTodos);
   const work = useLoad(canOps && canTodos, async () => {
     const r = await getTodos();
     const m = new Map<string, Todo[]>();
     if (r.ok) for (const t of r.todos) if (!t.doneAt) for (const u of t.unitIds) m.set(u, [...(m.get(u) ?? []), t]);
     return m;
-  });
+  }, workMoved);
 
   const tomorrow = addDays(today, 1);
   const todays = useMemo(() => {

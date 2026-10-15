@@ -66,6 +66,7 @@ interface Row {
   assignee_user_id?: number | null; supervisor_user_id?: number | null; supervisor?: string | null;
   start_time?: string | null; due_time?: string | null; resolution_note?: string | null;
   charge_owner?: boolean; hostaway_expense_id?: string | null;
+  rev?: string | number;
   clean_group?: string | null; purchases?: number; files?: number; purchase_total?: string | null; is_order?: boolean; urgency_pending?: boolean;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
@@ -83,17 +84,19 @@ const out = (r: Row) => ({
   chargeOwner: !!r.charge_owner, hostawayExpenseId: r.hostaway_expense_id ?? null,
   // §150: a cleaner's supplies request, and whether anything was bought for it — closing it unbought is asked.
   cleanGroup: r.clean_group ?? null, purchases: Number(r.purchases ?? 0), files: Number(r.files ?? 0),
-  purchaseTotal: Number(r.purchase_total ?? 0), order: !!r.is_order, urgencyPending: !!r.urgency_pending
+  purchaseTotal: Number(r.purchase_total ?? 0), order: !!r.is_order, urgencyPending: !!r.urgency_pending,
+  // Live work (§166): the row's version — a save says which one it edited.
+  rev: String(r.rev ?? '')
 });
 
-async function list(sql: SqlFn, claim?: string) {
+async function list(sql: SqlFn, claim?: string, only?: string) {
   const rows = await sql`
     SELECT t.id, t.title, t.unit_ids, t.due_on::text AS due_on, t.created_at, t.created_by, t.done_at, t.done_by,
            t.kind, t.status, t.priority, t.assignee, t.claim_id, t.vendor, t.scheduled_on::text AS scheduled_on,
            t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
            t.reservation_id, t.reservation_label, t.hostaway_task_id, t.hostaway_error, t.source,
            t.assignee_user_id, t.supervisor_user_id, t.supervisor, to_char(t.start_time, 'HH24:MI') AS start_time,
-           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note, t.charge_owner, t.hostaway_expense_id, t.clean_group, t.urgency_pending,
+           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note, t.charge_owner, t.hostaway_expense_id, t.clean_group, t.urgency_pending, t.rev,
            (SELECT count(*)::int FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id) AS purchases,
            (SELECT sum(p.total) FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id) AS purchase_total,
            -- §162: a purchase order wherever it is listed (a claim's work too) — the same rule as openOrders.
@@ -104,10 +107,10 @@ async function list(sql: SqlFn, claim?: string) {
              WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
       FROM todos t
      WHERE t.account_id = 1 AND t.deleted_at IS NULL
-       AND (${claim ?? null}::text IS NULL AND (t.done_at IS NULL OR t.done_at > now() - interval '14 days'
+       AND (${only ?? null}::text IS NOT NULL AND t.id::text = ${only ?? null} OR ${only ?? null}::text IS NULL AND (${claim ?? null}::text IS NULL AND (t.done_at IS NULL OR t.done_at > now() - interval '14 days'
               -- A sub-task closed long ago still belongs under its open parent.
               OR t.parent_id IN (SELECT p.id FROM todos p WHERE p.account_id = 1 AND p.deleted_at IS NULL AND p.done_at IS NULL))
-            OR t.claim_id = ${claim ?? null})
+            OR t.claim_id = ${claim ?? null}))
      ORDER BY t.created_at` as Row[];
   return rows.map(out);
 }
@@ -123,6 +126,33 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!who) return unauthorised();
   const sql = db(env) as unknown as SqlFn;
   const url = new URL(request.url);
+  // Live work (§166): what every open screen asks every few seconds — has anything moved? One cheap line, no rows:
+  // the sums move on any insert or update (the database bumps rev, migration 091), the counts on a new comment.
+  // The screen reloads its list only when the answer differs from the last one it got.
+  if (url.searchParams.get('live')) {
+    const [r] = await sql`SELECT
+        (SELECT concat(count(*), '.', COALESCE(sum(rev), 0)) FROM todos WHERE account_id = 1) AS todos,
+        (SELECT concat(count(*), '.', COALESCE(sum(rev), 0)) FROM claims WHERE account_id = 1) AS claims,
+        (SELECT concat(count(*), '.', COALESCE(max(id), 0)) FROM work_updates WHERE account_id = 1 AND subject = 'task') AS task_notes,
+        (SELECT concat(count(*), '.', COALESCE(max(id), 0)) FROM work_updates WHERE account_id = 1 AND subject = 'claim') AS claim_notes` as
+      { todos: string; claims: string; task_notes: string; claim_notes: string }[];
+    // New work for the bell: top-level to-dos after the last one this screen saw, made by someone else (from any door).
+    const after = url.searchParams.get('after') ?? '';
+    const [top] = await sql`SELECT COALESCE(max(id), 0)::text AS id FROM todos WHERE account_id = 1` as { id: string }[];
+    const fresh = ID.test(after) ? await sql`
+      SELECT t.id::text AS id, t.title, t.kind, t.priority, t.created_by, t.created_at, t.clean_group,
+             (SELECT string_agg(u.name, ', ') FROM units u WHERE u.id = ANY(t.unit_ids)) AS units
+        FROM todos t
+       WHERE t.account_id = 1 AND t.id > ${after}::bigint AND t.parent_id IS NULL AND t.deleted_at IS NULL
+         AND t.created_by IS DISTINCT FROM ${who.email}
+       ORDER BY t.id LIMIT 20` as { id: string; title: string; kind: string; priority: string; created_by: string | null;
+                                    created_at: string | Date; clean_group: string | null; units: string | null }[] : [];
+    return Response.json({ ok: true, todos: `${r!.todos}|${r!.task_notes}`, claims: `${r!.claims}|${r!.claim_notes}`, top: top!.id,
+                           fresh: fresh.map(x => ({ id: x.id, title: x.title, kind: x.kind, priority: x.priority, createdBy: x.created_by,
+                                                    createdAt: iso(x.created_at), order: x.clean_group === 'request' || x.clean_group === 'inspection',
+                                                    units: x.units })) },
+                         { headers: { 'Cache-Control': 'no-store' } });
+  }
   const updates = url.searchParams.get('updates');
   if (updates) {
     if (!ID.test(updates)) return bad('Which task?');
@@ -331,10 +361,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const before = (await sql`SELECT title, status, priority, assignee, supervisor, due_on::text AS due_on, claim_id, vendor,
                                    to_char(start_time, 'HH24:MI') AS start_time, to_char(due_time, 'HH24:MI') AS due_time, resolution_note, charge_owner,
                                    scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids, description,
-                                   reservation_id, reservation_label, parent_id, clean_group, urgency_pending
+                                   reservation_id, reservation_label, parent_id, clean_group, urgency_pending, rev::text AS rev, done_by
                               FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`)[0] as Record<string, any> | undefined;
   if (!before) return Response.json({ ok: false, message: 'That task is gone — someone removed it.' }, { status: 404 });
   const scope = b.claimScope ? String(b.claimScope) : undefined;
+  // Live work (§166): a save from an open screen says which version it edited. Moved since → refused with the row as it
+  // is now, and who touched it last; the screen keeps what does not collide and asks about what does. Doors without a
+  // version (Slack, the field links, Hostaway's pull) write as before.
+  const baseRev = b.baseRev == null || b.baseRev === '' ? null : String(b.baseRev);
+  if (baseRev !== null && !/^\d{1,19}$/.test(baseRev)) return bad('Which version?');
+  const conflict = async (error: 'conflict' | 'already', message: string) => {
+    const [last] = await sql`SELECT created_by, created_at FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id}
+                             ORDER BY id DESC LIMIT 1` as { created_by: string | null; created_at: string | Date }[];
+    const [current] = await list(sql, undefined, id);
+    return Response.json({ ok: false, error, message, current: current ?? null,
+                           by: last?.created_by ?? null, at: last ? iso(last.created_at) : null, todos: await list(sql, scope) }, { status: 409 });
+  };
+  if (baseRev !== null && before.rev !== baseRev) {
+    // ✓ Done / ↺ Reopen on something already there: say so instead of doing it twice.
+    if (b.action === 'done') {
+      const want = b.done === false ? 'open' : 'closed';
+      if ((want === 'closed') === CLOSED.includes(before.status))
+        return conflict('already', want === 'closed' ? `Already ${STATUS_WORD[before.status]!.toLowerCase()}${before.done_by ? ` by ${before.done_by}` : ''}.` : 'Already reopened.');
+    } else if (b.action === 'update') return conflict('conflict', 'Someone changed this while you were editing.');
+  }
 
   // §162 (owner, 2026-10-15): the team answers a field report's urgency — Slack's buttons on its message, or Kaizen.
   // Priority, deadline (urgent today; high the checkout of the stay ahead, attached) and its check sub-task closed.
@@ -459,7 +509,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       message: 'Nothing was bought for this request — record the purchase, or say why it is closed.' }, { status: 409 });
     if (!pu!.n) await note(sql, 'task', id, 'note', `Closed without buying: ${reason}`, who.email);
   }
-  await sql`UPDATE todos SET
+  const wrote = await sql`UPDATE todos SET
       title         = COALESCE(${f.title ?? null}, title),
       unit_ids      = COALESCE(${unitIds ?? null}::text[], unit_ids),
       due_on        = CASE WHEN ${f.dueOn !== undefined} THEN ${f.dueOn ?? null}::date ELSE due_on END,
@@ -485,7 +535,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       done_at       = CASE WHEN ${status === undefined} THEN done_at WHEN ${closedNow} THEN COALESCE(done_at, now()) ELSE NULL END,
       done_by       = CASE WHEN ${status === undefined} THEN done_by WHEN ${closedNow} THEN COALESCE(done_by, ${who.email}) ELSE NULL END,
       updated_at    = now()
-    WHERE account_id = 1 AND id = ${id}`;
+    WHERE account_id = 1 AND id = ${id} AND (${b.action === 'update' ? baseRev : null}::bigint IS NULL OR rev = ${baseRev}::bigint)
+    RETURNING id` as unknown[];
+  // Moved between the check above and this write: the same answer, never a silent overwrite.
+  if (!wrote.length) return conflict('conflict', 'Someone changed this while you were editing.');
 
   // The timeline, in words.
   if (status !== undefined && status !== before.status) {

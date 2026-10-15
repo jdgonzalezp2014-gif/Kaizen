@@ -23,6 +23,7 @@ import { postCleanDay } from '../_lib/clean-slack.ts';
 import { dueCrewReminders } from '../../src/lib/crew-slack.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { loadOps, pushHostNotes } from '../_lib/ops.ts';
+import { pullAll } from '../_lib/hostaway-tasks.ts';
 
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -54,6 +55,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     }
   }
 
+  // §166: tasks written in Hostaway reach Kaizen — and every open screen's bell — within a tick, not only when someone
+  // opens a to-do list. pullAll keeps its own two-minute pace and switch (off = nothing); a failure never costs the rest.
+  let tasks: unknown = null;
+  try { tasks = await pullAll(sql, await getCredentials(sql, env.ENCRYPTION_KEY), false, undefined, env.ENCRYPTION_KEY); }
+  catch (e) { tasks = { error: e instanceof Error ? e.message : String(e) }; }
+
   // Owner, 2026-10-14: Kaizen's Drive folders to the whole team — once a day, so a new member gets them too.
   const driveKey = `drivesync:${new Date().toISOString().slice(0, 10)}`;
   if ((await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${driveKey}) ON CONFLICT DO NOTHING RETURNING key`).length) {
@@ -62,7 +69,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   }
 
   const s = await slackSetup(sql, env.ENCRYPTION_KEY);
-  if (!s.token) return Response.json({ ok: true, sent: [], notes, skipped: 'slack not set up' });
+  if (!s.token) return Response.json({ ok: true, sent: [], notes, tasks, skipped: 'slack not set up' });
   const out: string[] = [];
 
   // §107: the tasks' check-in and check-out, in the team's own time zone, to the tasks channel.
@@ -156,7 +163,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
     }
   }
-  return Response.json({ ok: true, sent: out, nudged, hour, notes });
+  return Response.json({ ok: true, sent: out, nudged, hour, notes, tasks });
 };
 
 /**

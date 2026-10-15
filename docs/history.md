@@ -4384,3 +4384,29 @@ how many.
   (`transfer`: two `adjust` moves "Moved to / from …", never more than the record once counted). The `#house` look
   suffix is gone (the house key is apart now).
 
+## §166 — Live work: lists that follow everyone's changes, a bell for new work, saves that cannot overwrite (2026-10-15)
+
+Owner: new tasks should notify whoever has Kaizen open, wherever they come from — and the real goal, tasks must not
+stay static on a screen when someone else changes them. Saving over someone's change must be caught, show what they
+changed, and let you merge or drop yours.
+
+- **One counter in the database, not in the code.** To-dos are written by seven doors (app, Slack via the app's
+  handlers, Hostaway's pull, field reports in inventory.ts, inspections, vendor pages, crew links). A trigger bumps
+  `rev` from one sequence on every insert/update of `todos` and `claims` (migration 091) — a door added later cannot
+  forget.
+- **Polling, not sockets.** Pages Functions + Neon over HTTP hold no long connections; a Durable Object would need
+  every door to tell it (the problem again). Every 10 s, only while the tab is visible, one GET returns two
+  signatures (count + sum(rev); comments: count + max id) — sum moves on any update since rev only grows. ~10 s is
+  live enough for this team. Cost note: a visible tab keeps Neon's compute awake.
+- **The bell** shows new top-level to-dos made by someone else (server excludes `created_by = me`), a notice at the
+  bottom with Open, a count until opened. Its list is per browser (localStorage) — a convenience, not a record.
+- **Optimistic concurrency at save.** The open form sends only the fields it changed and the `rev` it was filled
+  from; `UPDATE … AND rev = baseRev` — 0 rows → 409 with the row now and the last timeline author. The client merges
+  three-way: only-mine kept, only-theirs taken, both-changed asked (Theirs / Yours per field) → Merge and save, or
+  Cancel my changes. A version bump that moved no field (the Hostaway mirror writing back ids) merges silently.
+  Done/Reopen on an item already there → "Already done by X" instead of doing it twice. Requests without `baseRev`
+  (Slack, field links, Hostaway) behave as before.
+- An open form not being typed in takes others' changes at once; one being typed in keeps every keystroke.
+- Hostaway: the clock (`slack-cron`) now runs `pullAll` each tick so tasks written there arrive without someone
+  opening a list.
+

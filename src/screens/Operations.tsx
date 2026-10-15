@@ -17,6 +17,7 @@ import { Hint } from '../components/Hint.tsx';
 import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { WorkView } from '../components/Todos.tsx';
+import { useLive } from '../components/useLive.ts';
 import { CrewAdmin } from './Crew.tsx';
 import { InventorySetup, InventoryView } from './Inventory.tsx';
 import { InspectionRun } from '../components/InspectionRun.tsx';
@@ -405,10 +406,11 @@ function Board({ data, range, patch, reload }: {
 
   // Open to-dos per listing (§76), flagged on the unit's rows.
   const [todos, setTodos] = useState<Todo[]>([]);
-  useEffect(() => {
-    if (!can(data.permissions, 'todos')) return;
-    getTodos().then(r => { if (r.ok) setTodos(r.todos.filter(t => !t.doneAt)); }).catch(() => {});
-  }, []);
+  const canTodos = can(data.permissions, 'todos');
+  const readTodos = () => { getTodos().then(r => { if (r.ok) setTodos(r.todos.filter(t => !t.doneAt)); }).catch(() => {}); };
+  useEffect(() => { if (canTodos) readTodos(); }, []);
+  // §166: the board's work flags follow work changed anywhere.
+  useLive(n => { if (n.todos) readTodos(); }, canTodos);
   const todosBy = useMemo(() => {
     const m = new Map<string, Todo[]>();
     for (const t of todos) for (const u of t.unitIds) m.set(u, [...(m.get(u) ?? []), t]);

@@ -79,7 +79,23 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   approving it in Operations → Cleaners sets `cost_actual` = the sum of approved charges and runs
   `settleRepair` → Costs › Repairs (once completed). Denying needs a note the handyman reads.
 
+- **Live work (§166).** `todos.rev` / `claims.rev` come from one sequence (`live_rev`), bumped by a trigger on every
+  insert or update — any door, no code needed (migration 091). Open screens ask `GET /api/todos?live=1&after=<id>`
+  every 10 s while visible (`src/components/useLive.ts`, one poller per page): two signatures (count + sum(rev), comment
+  count + max id) and the new top-level to-dos by someone else (`fresh`) for the header bell (`LiveBell.tsx`). A changed
+  signature reloads TodoList, Home's work chips and the board's flags. **Saves from an open to-do send only the changed
+  fields + `baseRev`**; moved since → 409 `conflict` with the row now and who touched it last (the UPDATE also checks
+  `rev`, so no race). The form merges three-way (`src/lib/merge.ts`): fields only one side changed are kept silently,
+  same field both sides = a "Theirs / Yours" pick → Merge and save, or Cancel my changes. ✓ Done / ↺ Reopen with
+  `baseRev` on something already there → 409 `already` ("Already done by X"). Without `baseRev` (Slack, field links,
+  Hostaway pull, vendor pages) a save writes as before. An untouched open form takes others' changes at once.
+- The Slack clock also runs `pullAll` every tick (its own 2-minute pace) so Hostaway-made tasks arrive without anyone
+  opening a list (§166).
+
 ## Open items
+
+- §166: claims are refreshed live but their edit form has no version check yet (last save wins, as before).
+- §166: the bell's list lives in each browser (localStorage); no "seen" across devices.
 
 - §132: 16 to-dos are done (or cancelled) in Kaizen but still open in Hostaway — they changed in Kaizen
   while unlinked: #19 #20 #21 #25 #27 #28 #30 #33 #34 #35 #37 #38 #39 #40 #43 #44. The owner said leave

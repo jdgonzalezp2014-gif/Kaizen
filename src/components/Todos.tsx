@@ -34,6 +34,8 @@ import { SlideOver, NoDock, useDock } from './SlideOver.tsx';
 import { createPortal } from 'react-dom';
 import { Popover } from './Popover.tsx';
 import { usePhone } from './usePhone.ts';
+import { useLive } from './useLive.ts';
+import { changedKeys, merge3, resolve, type Merge } from '../lib/merge.ts';
 import { Icon, ic } from './Icon.tsx';
 import { hostawayReservationUrl } from '../lib/operations.ts';
 import { SlackMark } from './ChannelMark.tsx';
@@ -108,6 +110,9 @@ export const CategoryOptions = () => <>
 
 type Unit = { id: string; name: string; active: boolean };
 type Act = (b: Record<string, unknown>) => Promise<boolean>;
+/** §166: an edit's save — only the changed fields, and the version they were made on. A conflict hands back the row as it is now. */
+type SaveAnswer = { ok: true } | { ok: false; conflict?: { current: Todo | null; by: string | null; at: string | null } };
+type Save = (id: string, patch: Partial<FormValue>, baseRev: string | undefined) => Promise<SaveAnswer>;
 
 /** What a claim is called: its unit and what happened — the words someone wrote, not the word "claim". */
 const claimWhat = (c: Pick<Claim, 'category' | 'description'>) => {
@@ -189,6 +194,9 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   const loadClaims = () => getClaims().then(r => setClaims(r.claims ?? [])).catch(() => {});
   const loadTodos = () => getTodos(claim?.id).then(r => r.ok ? take(r.todos) : setErr(r.message ?? 'Could not read the list.'))
     .catch(e => setErr(String(e)));
+  // §166: work moved somewhere else (another screen, Slack, Hostaway, a link) — read the list again. An open item
+  // keeps what is being typed in it (TodoForm), and takes the rest.
+  useLive(n => { if (n.todos) void loadTodos(); if (n.claims && showClaims) void loadClaims(); });
   // §93: then whatever the team changed in Hostaway — in the background, so the list never waits on it.
   useEffect(() => {
     if (claim) return;
@@ -220,7 +228,21 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
       if (body.action === 'restore') setRemoved(null);
       return true;
     }
+    // §166: refused because it already moved (Done twice) — the list as it is now, and why.
+    const now = (r as { todos?: Todo[] }).todos;
+    if (now) take(now);
     setErr(r.message ?? 'Not saved.'); return false;
+  };
+  const save: Save = async (id, patch, baseRev) => {
+    const r = await todoAction({ action: 'update', id, ...patch, baseRev, ...(claim ? { claimScope: claim.id } : {}) })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    if (r.ok) { take(r.todos); setErr(''); return { ok: true }; }
+    const c = r as { error?: string; message?: string; todos?: Todo[]; current?: Todo | null; by?: string | null; at?: string | null };
+    if (c.error === 'conflict') {
+      if (c.todos) take(c.todos);
+      return { ok: false, conflict: { current: c.current ?? null, by: c.by ?? null, at: c.at ?? null } };
+    }
+    setErr(r.message ?? 'Not saved.'); return { ok: false };
   };
 
   const wf: WorkFilter = { kind: kindFilter === 'claims' ? '' : kindFilter, priority: prioFilter, due: dueFilter, unitId: unitFilter, assignee: ownerFilter };
@@ -283,7 +305,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
     for (const t of todos ?? []) if (t.claimId && !isClosed(t.status)) m.set(t.claimId, (m.get(t.claimId) ?? 0) + 1);
     return m;
   }, [todos]);
-  const ctx = { today, names, units, claims, claimNames, act, inClaim: !!claim, kids, byId, flat: filtering,
+  const ctx = { today, names, units, claims, claimNames, act, save, inClaim: !!claim, kids, byId, flat: filtering,
                 canClaims: showClaims, onClaimsChanged: () => void loadClaims(), reload: () => void loadTodos(), compact,
                 orderIds: allOrders, openPop: setPop,
                 // §159: a listing or an owner on a row is a link that filters the list by it.
@@ -595,7 +617,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
 
 type RowCtx = {
   today: DateStr; names: Map<string, string>; units: Unit[]; claims: Claim[]; claimNames: Map<string, string>;
-  act: Act; inClaim: boolean;
+  act: Act; save: Save; inClaim: boolean;
   /** Sub-tasks by parent id, and every task by id (§78). */
   kids: Map<string, Todo[]>; byId: Map<string, Todo>;
   /** A filter is on: rows are flat, a sub-task says whose it is. */
@@ -660,7 +682,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   );
   const kidRow = (k: Todo, o: boolean, onO: () => void, inPanel = false) => kidCat(k) !== 'task' && kidCat(k) !== cat ? relLine(k)
     : <TodoRow key={k.id} {...props} flat={false} related={false} inPanel={inPanel} t={k} open={o} onOpen={onO} />;
-  const doTick = async () => { setBusy(true); await act({ action: 'done', id: t.id, done: !closed }); setBusy(false); };
+  const doTick = async () => { setBusy(true); await act({ action: 'done', id: t.id, done: !closed, baseRev: t.rev }); setBusy(false); };
   // §105: the row's own actions — done, cancel, reopen — and renaming in place.
   const doCancel = async () => { setBusy(true); await act({ action: 'update', id: t.id, status: 'cancelled' }); setBusy(false); };
   // §150, owner: closing a cleaner's supplies request with nothing bought for it reads as dismissing it — asked first.
@@ -706,7 +728,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   // Inside a panel the sub-task keeps the old footer; the panel itself has these in its ⋯ menu.
   const editForm = (
     <TodoForm units={units} claims={claims} canClaims={!inClaim && claims.length > 0} initial={t} submitLabel="Save changes" startEditing={!!props.inPanel}
-                    onSubmit={v => act({ action: 'update', id: t.id, ...v })}
+                    onSubmit={v => act({ action: 'update', id: t.id, ...v })} onSave={props.save}
                     middle={<><TodoFiles todoId={t.id} />
                       <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} /></>}
                     after={t.parentId ? null : (
@@ -1006,7 +1028,26 @@ function VendorLink({ id }: { id: string }) {
  * Hostaway's task, field for field (§94); the kind, vendor, estimate, claim
  * and sub-tasks are Kaizen's own.
  */
-function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, startKind = 'task', onCancel, middle, after, startEditing = false }: {
+/** The form's fields as a saved to-do has them. */
+const formOf = (t: Todo): FormValue => ({
+  title: t.title, kind: t.kind, unitIds: t.unitIds, priority: t.priority,
+  scheduledOn: t.scheduledOn, startTime: t.startTime ?? null, dueOn: t.dueOn, dueTime: t.dueTime ?? null,
+  assigneeUserId: t.assigneeUserId ?? null, supervisorUserId: t.supervisorUserId ?? null,
+  claimId: t.claimId, vendor: t.vendor, costEstimate: t.costEstimate, costActual: t.costActual,
+  status: t.status, resolutionNote: t.resolutionNote ?? null, chargeOwner: t.chargeOwner ?? false,
+  description: t.description, reservationId: t.reservationId, reservationLabel: t.reservationLabel
+});
+/** §166: a field's name, in the words the form uses. */
+const FIELD_WORD: Partial<Record<keyof FormValue, string>> = {
+  title: 'Title', kind: 'Kind', unitIds: 'Listing', priority: 'Priority', scheduledOn: 'Start from', startTime: 'Start time',
+  dueOn: 'Finish by', dueTime: 'Finish-by time', assigneeUserId: 'Owner', supervisorUserId: 'Supervisor', claimId: 'Claim',
+  vendor: 'Vendor', costEstimate: 'Estimate', costActual: 'Actual cost', status: 'Status', resolutionNote: 'Resolution',
+  chargeOwner: 'Charge to owner', description: 'Description', reservationId: 'Stay'
+};
+type Clashing = { m: Merge<FormValue>; theirs: FormValue; rev?: string; by: string | null; at: string | null;
+                  pick: Partial<Record<keyof FormValue, 'mine' | 'theirs'>> };
+
+function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, onSave, startKind = 'task', onCancel, middle, after, startEditing = false }: {
   units: Unit[]; claims: Claim[]; canClaims: boolean; initial?: Todo; submitLabel: string;
   /** Editing (§104): what goes between the description and the details — the comments. */
   middle?: ReactNode;
@@ -1017,6 +1058,8 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   /** What the context pre-sets: a claim (and its unit), or a parent task (its listings and claim). */
   fixed?: { claimId?: string | null; unitIds: string[]; parentId?: string; reservationId?: string | null; reservationLabel?: string | null };
   onSubmit: (v: FormValue) => Promise<boolean>;
+  /** §166: editing — saves only what changed, on the version it was made on; a conflict is merged or asked. */
+  onSave?: Save;
   /** Adding: the kind the button chose. */
   startKind?: TaskKind; onCancel?: () => void;
 }) {
@@ -1028,14 +1071,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
     description: null, ...(fixed?.parentId ? { parentId: fixed.parentId } : {}),
     reservationId: fixed?.reservationId ?? null, reservationLabel: fixed?.reservationLabel ?? null
   });
-  const [v, setV] = useState<FormValue>(() => initial ? {
-    title: initial.title, kind: initial.kind, unitIds: initial.unitIds, priority: initial.priority,
-    scheduledOn: initial.scheduledOn, startTime: initial.startTime ?? null, dueOn: initial.dueOn, dueTime: initial.dueTime ?? null,
-    assigneeUserId: initial.assigneeUserId ?? null, supervisorUserId: initial.supervisorUserId ?? null,
-    claimId: initial.claimId, vendor: initial.vendor, costEstimate: initial.costEstimate, costActual: initial.costActual,
-    status: initial.status, resolutionNote: initial.resolutionNote ?? null, chargeOwner: initial.chargeOwner ?? false,
-    description: initial.description, reservationId: initial.reservationId, reservationLabel: initial.reservationLabel
-  } : blank());
+  const [v, setV] = useState<FormValue>(() => initial ? formOf(initial) : blank());
   const [more, setMore] = useState(!!initial);
   // Editing (§104): what was saved, to know what is not — and the details, folded.
   const [base, setBase] = useState<FormValue>(v);
@@ -1043,6 +1079,66 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   // §161: an item reads as one line — status • urgency • listing • dates • owner — and its fields open with ✎ Edit.
   const [fields, setFields] = useState(startEditing);
   const dirty = !!initial && JSON.stringify(v) !== JSON.stringify(base);
+  // §166: the version this form was filled from. Someone else saved meanwhile → an untouched form takes their version
+  // at once; one being typed in keeps every keystroke, and its save merges (only what collides is asked).
+  const [baseRev, setBaseRev] = useState(initial?.rev);
+  const [clash, setClash] = useState<Clashing | null>(null);
+  const [said, setSaid] = useState('');
+  useEffect(() => {
+    if (!initial || initial.rev === baseRev || dirty || clash) return;
+    const f = formOf(initial);
+    setV(f); setBase(f); setBaseRev(initial.rev);
+  }, [initial?.rev, dirty, !!clash]);
+  const nameOf = (k: keyof FormValue, x: unknown): string => {
+    if (x == null || x === '' || (Array.isArray(x) && !x.length)) return '—';
+    if (k === 'assigneeUserId' || k === 'supervisorUserId') return people.find(p => p.id === x)?.name ?? `#${x}`;
+    if (k === 'unitIds') return (x as string[]).map(id => units.find(u => u.id === id)?.name ?? id).join(', ');
+    if (k === 'status') return STATUS_LABEL[x as TaskStatus] ?? String(x);
+    if (k === 'priority') return PRIORITY_LABEL[x as Priority] ?? String(x);
+    if (k === 'claimId') return claims.find(c => String(c.id) === x)?.category ?? `Claim ${x}`;
+    if (k === 'reservationId') return v.reservationId === x ? v.reservationLabel ?? String(x) : clash?.theirs.reservationLabel ?? String(x);
+    if (k === 'chargeOwner') return x ? 'Yes' : 'No';
+    if (k === 'costEstimate' || k === 'costActual') return `$${Number(x).toFixed(2)}`;
+    const t = String(x); return t.length > 160 ? `${t.slice(0, 158)}…` : t;
+  };
+  const who = (e: string | null) => e ? e.split('@')[0] : 'Someone';
+  // Sends what differs from `from`; a conflict that collides with nothing is merged and sent again (twice at most).
+  const send = async (mine: FormValue, from: FormValue, rev: string | undefined, tries = 0): Promise<boolean> => {
+    const keys = changedKeys(from, mine);
+    if (!keys.length) { setBase(mine); return true; }
+    const patch: Partial<FormValue> = {};
+    for (const k of keys) (patch as Record<string, unknown>)[k] = mine[k];
+    if (keys.includes('reservationId')) patch.reservationLabel = mine.reservationLabel;
+    const r = await onSave!(initial!.id, patch, rev);
+    if (r.ok) { setBase(mine); return true; }
+    if (!r.conflict) return false;
+    const cur = r.conflict.current;
+    if (!cur) { setSaid('Someone removed this while you were editing — your changes were not saved.'); return false; }
+    const theirs = formOf(cur);
+    const m = merge3(from, mine, theirs);
+    if (m.clashes.length || tries >= 2) {
+      setClash({ m, theirs, rev: cur.rev, by: r.conflict.by, at: r.conflict.at, pick: {} });
+      return false;
+    }
+    const merged = resolve(theirs, m);
+    setV(merged); setBase(theirs); setBaseRev(cur.rev);
+    const ok = await send(merged, theirs, cur.rev, tries + 1);
+    if (ok && m.theirs.length) setSaid(`Saved — ${who(r.conflict.by)}'s change to ${m.theirs.map(k => FIELD_WORD[k] ?? String(k)).filter((x, i, a) => a.indexOf(x) === i).join(', ')} was kept too.`);
+    return ok;
+  };
+  const settle = async (how: 'merge' | 'theirs') => {
+    if (!clash) return;
+    const { m, theirs, rev } = clash;
+    setClash(null); setBaseRev(rev);
+    if (how === 'theirs') { setV(theirs); setBase(theirs); setSaid('Your changes were set aside — this is the saved version.'); return; }
+    const pick = { ...clash.pick, reservationLabel: clash.pick.reservationId };
+    const merged = resolve(theirs, m, pick);
+    setV(merged); setBase(theirs);
+    setBusy(true);
+    const ok = await send(merged, theirs, rev);
+    setBusy(false);
+    if (ok) setSaid('Saved.');
+  };
   // The description: always there when editing; one click away when adding.
   const [withDesc, setWithDesc] = useState(!!initial);
   const [editDesc, setEditDesc] = useState(false);
@@ -1057,11 +1153,12 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
 
   const submit = async () => {
     if (!v.title.trim() || busy) return;
-    setBusy(true);
-    const ok = await onSubmit({ ...v, title: v.title.trim() });
+    setBusy(true); setSaid('');
+    const ok = initial && onSave ? await send({ ...v, title: v.title.trim() }, base, baseRev)
+                                 : await onSubmit({ ...v, title: v.title.trim() });
     setBusy(false);
     if (ok && !initial) { setV(blank()); setMore(false); }
-    if (ok && initial) setBase(v);
+    if (ok && initial && !onSave) setBase(v);
   };
   const moneyIn = (x: number | null, k: 'costEstimate' | 'costActual') => (
     <input type="number" min={0} step="0.01" value={x ?? ''} placeholder="$"
@@ -1241,7 +1338,34 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
         </div>
         {middle}
         {after}
-        {dirty && (
+        {said && !dirty && !clash && <p className="note" role="status">{said}</p>}
+        {clash && (
+          <div className="live-clash" role="alert">
+            <h4><Icon n="warning" /> {who(clash.by)} changed this{clash.at ? ` at ${new Date(clash.at).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}` : ''} while you were editing
+              <Hint>Two people saved the same item. What only one of you changed is kept without asking. Below is what you
+                both changed: pick which value stays for each, then Merge and save. Cancel my changes keeps their version
+                and drops yours.</Hint></h4>
+            {clash.m.clashes.filter(c => c.key !== 'reservationLabel').map(c => {
+              const on = clash.pick[c.key] ?? 'mine';
+              const choose = (x: 'mine' | 'theirs') => setClash({ ...clash, pick: { ...clash.pick, [c.key]: x } });
+              return (
+                <div className="live-clash-row" key={String(c.key)}>
+                  <b>{FIELD_WORD[c.key] ?? String(c.key)}</b>
+                  <label className={on === 'theirs' ? 'on' : ''}><input type="radio" checked={on === 'theirs'} onChange={() => choose('theirs')} />
+                    <span><small className="note">{who(clash.by)}</small><br />{nameOf(c.key, c.theirs)}</span></label>
+                  <label className={on === 'mine' ? 'on' : ''}><input type="radio" checked={on === 'mine'} onChange={() => choose('mine')} />
+                    <span><small className="note">Yours</small><br />{nameOf(c.key, c.mine)}</span></label>
+                </div>
+              );
+            })}
+            {clash.m.theirs.length > 0 && <p className="note">Also kept from {who(clash.by)}: {[...new Set(clash.m.theirs.map(k => FIELD_WORD[k]).filter(Boolean))].join(', ')}.</p>}
+            <div className="live-clash-actions">
+              <button type="button" className="small" disabled={busy} onClick={() => void settle('merge')}>{busy ? 'Saving…' : 'Merge and save'}</button>
+              <button type="button" className="link" disabled={busy} onClick={() => void settle('theirs')}>Cancel my changes</button>
+            </div>
+          </div>
+        )}
+        {dirty && !clash && (
           <div className="task-savebar" role="status">
             <span>Unsaved changes</span>
             <span className="rb-spacer" />

@@ -20,6 +20,7 @@ import { ThemeToggle } from './components/ThemeToggle.tsx';
 import { TabIcon } from './components/TabIcon.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Icon } from './components/Icon.tsx';
+import { LiveBell } from './components/LiveBell.tsx';
 import { ReportsDialog } from './components/Reports.tsx';
 
 type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor';
@@ -224,6 +225,9 @@ function TeamApp() {
             space on a screen whose job is a list. */}
         <div className="brand"><span className="brand-mark" aria-hidden="true" /><h1>Kaizen OS</h1></div>
         <Today compact />
+        {/* §166: new work from anyone, while the app is open — for whoever can see the to-dos. */}
+        {allowed && can(permissions, 'todos') && allowed.includes('operations') &&
+          <LiveBell onOpen={id => { setWorkFocus({ todo: id }); goOps('todos'); }} />}
         <span className="phone-theme"><ThemeToggle /></span>
       </header>}
       {!crewOnly && allowed && <SideNav tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab}

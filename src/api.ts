@@ -823,6 +823,12 @@ export const getDoneLog = (from: string, to: string, removed: boolean) =>
 export const todoAction = (body: Record<string, unknown>) =>
   call<TodosResult & { id?: string }>('/api/todos', { method: 'POST', body: JSON.stringify(body) });
 
+/** §166: has any work moved? Two signatures to compare with the last answer, and the new to-dos after `after`. */
+export interface LiveFresh { id: string; title: string; kind: string; priority: string; createdBy: string | null; createdAt: string; order: boolean; units: string | null }
+export const getLive = (after?: string) =>
+  call<{ ok: true; todos: string; claims: string; top: string; fresh: LiveFresh[] } | { ok: false; message?: string }>(
+    `/api/todos?live=1${after ? `&after=${encodeURIComponent(after)}` : ''}`);
+
 /* ── updates — the timeline of a task or a claim (§77) ──────────────── */
 
 export type { WorkUpdate } from './lib/todos.ts';
