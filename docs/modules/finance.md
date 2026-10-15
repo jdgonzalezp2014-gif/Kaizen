@@ -61,8 +61,6 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
 
 ## Open items
 
-- **§167:** claims money — income will be dated `received_on` (Revenue and Revenue → Claims & upselling on one rule),
-  result per case signed, Kaizen's share only the difference when the repair was charged to the owner. Phases 1–6 pending.
 
 - Market / comp data: an intentional empty slot ("not connected").
 - QUO SMS still staged.
@@ -93,3 +91,8 @@ UI only; tokens and shared components from `docs/design-system.md`.
   `expenses` through its work orders and purchases — shown in Revenue → Claims & upselling to net a claim, never added.
   That view (`src/screens/Claims.tsx` `ClaimsMoney`, `/api/claims-money`) needs `claims.money`. Alterations are not
   upselling unless collected through the Resolution Center or unpriced on the reservation.
+- **§167 (owner, 2026-10-15):** claims & upsells income is dated `received_on` and is Kaizen's part only — when the repair
+  was charged to the owner the reimbursement is the owner's up to that cost (`caseResult`); Revenue's "Claims & upsells"
+  equals "In net" in Revenue → Claims & upselling. That view: received by day, recovery and result over the cases raised,
+  By listing, and Finance can correct the team's figures (same rules, `saveCaseMoney`). A repair charged to the owner is
+  not in Costs (`settleRepair`). The team enters the money in Operations (work module).

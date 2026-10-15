@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cleanDayMessage, cleanEventMessage, fieldWho, cleanMarkMessage, eventsOf, costModal, costFromWords, readCostForm, cleanContext, claimCard, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
+import { cleanDayMessage, cleanEventMessage, fieldWho, cleanMarkMessage, eventsOf, costModal, costFromWords, readCostForm, cleanContext, claimCard, claimMoneyFields, claimList, sectionButtons, mentionHelpBlocks, pickTask, guessUnit, quickTitle, trackedReply, parseMention, newButtons, commentsBlocks, commentFromMention, dayRange, dueTaskChecks, localNow, taskCheckMessage, checkinsModal, claimsModal, tasksModal, cleansModal, helpBlocks, helpUrlOf, cleanAssignModal, dmTarget, hostawayUserOf, suggestPeople, taskCard, claimMessage, digestMessage, dueDigests, esc, parseCommand, readClaimForm, readTaskForm, taskList, taskMessage, taskModal,
          type DigestInput } from './slack.ts';
 
 test('/kaizen: verbs, and plain text is a new to-do', () => {
@@ -366,6 +366,22 @@ test("a claim's card lists its work (each opens) and adds a to-do; a reply made 
                  '"block_id":"files"', '"type":"file_input"']) assert.ok(s.includes(k), k);
   assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'task' }, 'sub-task')), /sub-task of this task/);
   assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'work_order' }, 'claim')), /repair for this claim/);
+});
+
+test("a claim's private card shows its money; an upsell one amount; nothing when there is none (§167)", () => {
+  const base = { id: '4', unit: 'P2-4308', severity: 'High', status: 'Open', description: 'Missing fob', days: 17, updates: [] };
+  const claim = JSON.stringify(claimCard({ ...base, category: 'Damage', money: { requested: 150, received: 80, result: -40 } }));
+  for (const k of ['*Requested*\\n$150.00', '*Received*\\n$80.00', '*Result*\\n−$40.00 loss']) assert.ok(claim.includes(k), k);
+  assert.deepEqual(claimMoneyFields({ category: 'Damage', money: { requested: 100, received: 130, result: 40 } }).map(x => x.value),
+    ['$100.00', '$130.00', '+$40.00 gain']);
+  assert.deepEqual(claimMoneyFields({ category: 'Pet fee', money: { requested: 75, received: 75, result: 75 } }),
+    [{ label: 'Price charged', value: '$75.00' }]);
+  assert.deepEqual(claimMoneyFields({ category: 'Damage', money: { requested: 150, received: 0, result: 0 } }).map(x => x.label),
+    ['Requested', 'Received']);
+  assert.deepEqual(claimMoneyFields({ category: 'Damage', money: { requested: 0, received: 0, result: 0 } }), []);
+  assert.deepEqual(claimMoneyFields({ category: 'Damage' }), []);
+  // a channel message never carries it
+  assert.doesNotMatch(JSON.stringify(claimMessage({ ...base, category: 'Damage' }, 'opened', 'juan')), /\$150/);
 });
 
 test('@Kaizen all asks for the whole reminder', () => {

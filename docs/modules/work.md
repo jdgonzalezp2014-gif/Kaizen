@@ -61,6 +61,11 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   reachable only by id, which is why the note matters (§132).
 - A completed repair with a cost is an expense in Costs › Repairs (`settleRepair`) — unless "Charge to owner":
   then it is only a Hostaway expense on the listing (negative amount), the owner's cost, not Kaizen's (§95, §167).
+- **A case's money is the team's (§167):** Requested (an estimate) and Received are entered on the case
+  (`/api/claims` action `money` → `saveCaseMoney`, functions/_lib/claim-money.ts; Finance corrects the same through
+  `/api/claims-money`). Received is dated `received_on`. Statuses Open / In progress / Resolved / **Paid** / Dismissed:
+  closed with money = Paid, Paid needs money (`checkClaim`). Repair work = view `claim_work`; result = `caseResult`
+  (owner's share when the repair was charged to the owner). A closed case keeps its `resolved_on` on edits (`closeDate`).
 - A claim is a case: `occurred_on` never moves; soft delete with undo; open cases first;
   can stand alone (late checkout) (§46, §77, §86).
 - Times in timelines and the done log are New York (§87).
@@ -94,9 +99,8 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 
 ## Open items
 
-- **§167 claims money plan (approved 2026-10-15):** phases 1–6 pending — `received_on` + 'Paid' (migration 092), Ops
-  enters Requested/Received and sees Gain/Loss, Finance edits too, owner's share when the repair was charged to the owner.
-  Phase 0 (close date kept, NY day; owner-charged repairs out of Costs) is in `redesign`.
+- §167: reconciliation of received money with platform payouts / Hostaway — later, read-only, owner to decide.
+  Claims #4 ($150), #7 ($200), #8 ($50) are with the platforms (2026-10-15).
 
 - §166: claims are refreshed live but their edit form has no version check yet (last save wins, as before).
 - §166: the bell's list lives in each browser (localStorage); no "seen" across devices.

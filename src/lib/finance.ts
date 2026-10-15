@@ -144,7 +144,7 @@ export function prorateCosts(rows: CostRow[], listingIds: string[], p: Period): 
 /**
  * §162: money that came in outside a reservation's price — what a platform or a guest paid on a claim (a
  * reimbursement: the repair it pays for is already a cost) or an upsell (a pet fee, a late check-in collected
- * through the Resolution Center). Dated the day the case was resolved, else the day it was raised.
+ * through the Resolution Center). §167: dated the day it was entered as received (`received_on`); Kaizen's part only.
  */
 export interface IncomeRow { unitId: string | null; on: string; amount: number; kind: 'claim' | 'upsell' }
 export const incomeIn = (rows: IncomeRow[], p: Period, unitId?: string | null) =>

@@ -124,10 +124,10 @@ export function stageOf(status: TaskStatus | string, order = false): { key: Stag
     : status === 'in_progress' ? 'in_progress' : 'new';
   return { key, label: STAGE_WORD[key] };
 }
-/** A claim's status (Open, In progress, Resolved, Refunded, Dismissed) in the same words. */
+/** A claim's status (Open, In progress, Resolved, Paid, Dismissed) in the same words. */
 export function claimStage(status: string): { key: Stage; label: string } {
   if (status === 'Resolved') return { key: 'done', label: 'Done' };
-  if (status === 'Refunded') return { key: 'done', label: 'Done · refunded' };
+  if (status === 'Paid') return { key: 'done', label: 'Done · paid' };
   if (status === 'Dismissed') return { key: 'cancelled', label: 'Cancelled' };
   if (status === 'In progress') return { key: 'in_progress', label: 'In progress' };
   return { key: 'new', label: 'New' };
@@ -221,8 +221,8 @@ export function sortTodos(list: Todo[]): Todo[] {
 }
 
 /** What a claim's work has cost so far: actual where known, else the estimate. */
-export function workCost(list: Todo[]): { actual: number; estimated: number; bought: number; open: number } {
-  let actual = 0, estimated = 0, bought = 0, open = 0;
+export function workCost(list: Todo[]): { actual: number; estimated: number; bought: number; open: number; owner: number } {
+  let actual = 0, estimated = 0, bought = 0, open = 0, owner = 0;
   for (const t of list) {
     if (t.status === 'cancelled') continue;
     if (!isClosed(t.status)) open++;
@@ -230,8 +230,10 @@ export function workCost(list: Todo[]): { actual: number; estimated: number; bou
     // §162: an estimate stands in only for a work order — a to-do has no cost of its own.
     else if (t.costEstimate != null && t.kind === 'work_order') estimated += t.costEstimate;
     bought += t.purchaseTotal ?? 0;
+    // §167: a work order charged to the owner (§95: it needs a listing) is the owner's cost — as the claim_work view.
+    if (t.kind === 'work_order' && t.chargeOwner && t.unitIds.length) owner += t.costActual ?? t.costEstimate ?? 0;
   }
-  return { actual, estimated, bought, open };
+  return { actual, estimated, bought, open, owner };
 }
 
 /* ── the done log (§87) ─────────────────────────────────────────────── */

@@ -72,7 +72,15 @@ test('what a claim’s work costs: actual where known, the estimate otherwise, c
     t('e', { status: 'completed', purchaseTotal: 42.5, order: true }),
     t('f', { status: 'pending', costEstimate: 70 })
   ]);
-  assert.deepEqual(c, { actual: 280, estimated: 150, bought: 42.5, open: 3 });
+  assert.deepEqual(c, { actual: 280, estimated: 150, bought: 42.5, open: 3, owner: 0 });
+  // §167: the part charged to the owner — a work order with a listing; its cost, else its estimate
+  const o = workCost([
+    t('g', { kind: 'work_order', status: 'completed', costActual: 100, chargeOwner: true, unitIds: ['u1'] }),
+    t('h', { kind: 'work_order', status: 'in_progress', costEstimate: 40, chargeOwner: true, unitIds: ['u1'] }),
+    t('i', { kind: 'work_order', status: 'completed', costActual: 25, chargeOwner: true, unitIds: [] }),
+    t('j', { kind: 'work_order', status: 'cancelled', costActual: 999, chargeOwner: true, unitIds: ['u1'] })
+  ]);
+  assert.equal(o.owner, 140);
 });
 
 test('a purchase order is its own category, from the server flag or the order list', () => {
@@ -106,8 +114,8 @@ test('one life cycle in the same words (§159)', () => {
   assert.equal(stageOf('in_progress', true).label, 'Ordered');
   assert.equal(stageOf('completed', true).label, 'Purchased');
   assert.equal(stageOf('cancelled', true).label, 'Cancelled');
-  assert.deepEqual(['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'].map(s => claimStage(s).label),
-    ['New', 'In progress', 'Done', 'Done · refunded', 'Cancelled']);
+  assert.deepEqual(['Open', 'In progress', 'Resolved', 'Paid', 'Dismissed'].map(s => claimStage(s).label),
+    ['New', 'In progress', 'Done', 'Done · paid', 'Cancelled']);
   assert.equal(categoryOf({ kind: 'task' }, true), 'order');
   assert.equal(categoryOf({ kind: 'work_order' }), 'work_order');
 });

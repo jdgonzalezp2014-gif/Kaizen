@@ -264,7 +264,7 @@ export function taskList(list: TaskLite[], appUrl?: string): Block[] {
 /* ── claims ─────────────────────────────────────────────────────────── */
 
 export interface ClaimLite { id: string; unit?: string | null; category?: string | null; severity: string; status: string; description?: string | null; days?: number; caseUrl?: string | null }
-export const CLAIM_STATUSES = ['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'];
+export const CLAIM_STATUSES = ['Open', 'In progress', 'Resolved', 'Paid', 'Dismissed'];
 const claimTitle = (c: ClaimLite) => `${c.unit ?? 'Portfolio'} · ${(c.description || c.category || 'Claim').slice(0, 80)}`;
 const sevMark = (s: string) => s === 'Critical' || s === 'High' ? '🔴' : s === 'Medium' ? '🟠' : '⚪';
 
@@ -307,6 +307,20 @@ export interface ClaimCard extends ClaimLite {
   updates: { who: string; when: string; body: string }[];
   /** Owner, Oct 2026: the claim's work, as in Kaizen — each opens its own card. */
   work?: { id: string; title: string; status: string; kind: string }[];
+  /** §167: requested, received and the result (kept − spent, signed) — on the private card only, never in a channel. */
+  money?: { requested: number; received: number; result: number };
+}
+const usd = (n: number) => `${n < 0 ? '−' : ''}$${Math.abs(n).toFixed(2)}`;
+/** The money fields of a claim's card (§167): an upsell is one amount; a claim says requested, received and the result. */
+export function claimMoneyFields(c: Pick<ClaimCard, 'category' | 'money'>): { label: string; value: string }[] {
+  const m = c.money;
+  if (!m || (!m.requested && !m.received && !m.result)) return [];
+  if (isUpsell(c.category)) return [{ label: 'Price charged', value: usd(m.received || m.requested) }];
+  return [
+    { label: 'Requested', value: usd(m.requested) },
+    { label: 'Received', value: usd(m.received) },
+    ...(m.received || m.result ? [{ label: 'Result', value: `${m.result > 0 ? '+' : ''}${usd(m.result)} ${m.result > 0 ? 'gain' : m.result < 0 ? 'loss' : 'even'}` }] : [])
+  ];
 }
 
 /**
@@ -318,6 +332,7 @@ export function claimCard(c: ClaimCard, note?: string, root?: 'claims', focus = 
   const f = (label: string, v: string | null | undefined) => v ? mrk(`*${label}*\n${esc(v)}`) : null;
   const fields = [f('Status', c.status), f('Severity', c.severity), f('Category', c.category), f('Listing', c.unit ?? 'Portfolio'),
     f('Source', c.source), f('Open for', c.days != null ? `${c.days} day${c.days === 1 ? '' : 's'}` : null),
+    ...claimMoneyFields(c).map(x => f(x.label, x.value))
   ].filter(Boolean).slice(0, 10);
   return {
     type: 'modal', callback_id: 'claim_card', private_metadata: JSON.stringify({ id: c.id, ...(root ? { root } : {}) }),

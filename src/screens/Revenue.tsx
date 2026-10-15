@@ -172,8 +172,9 @@ function Profit() {
           <div><dt>Revenue</dt><dd>{money(board.portfolio.revenue)}</dd></div>
           {board.portfolio.otherIncome > 0 && (
             <div><dt>Claims &amp; upsells <Hint>Received on claims and upsells (pet fees, late check-ins collected outside the
-              reservation), on the day the case closed. Counted in net; not in revenue, ADR or RevPAN, which are the
-              reservations'.</Hint></dt><dd>{money(board.portfolio.otherIncome)}</dd></div>
+              reservation), on the day it was entered as received. Counted in net; not in revenue, ADR or RevPAN, which are the
+              reservations'. When a repair was charged to the owner, the reimbursement is the owner's up to it — only the
+              rest is counted here.</Hint></dt><dd>{money(board.portfolio.otherIncome)}</dd></div>
           )}
           <div><dt>Costs</dt><dd>{money(board.portfolio.costs.total)}</dd></div>
           <div><dt>Occupancy</dt><dd>{board.portfolio.occupancy == null ? '—'

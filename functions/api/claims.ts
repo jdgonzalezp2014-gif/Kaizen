@@ -14,11 +14,12 @@ import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { commentToThread, notifyClaim } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
-import { closeDate } from '../../src/lib/claims.ts';
+import { CLAIM_STATUS, checkClaim, closeDate } from '../../src/lib/claims.ts';
+import { saveCaseMoney } from '../_lib/claim-money.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 
 const SEVERITY = ['Low', 'Medium', 'High', 'Critical'];
-const STATUS = ['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'];
+const STATUS = CLAIM_STATUS;
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -36,15 +37,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const claims = await sql`
     SELECT c.id, c.unit_id, c.occurred_on, c.category, c.severity, c.status,
            c.source, c.description, c.resolved_on,
-           -- §162: what was requested and received is Finance's (/api/claims-money, its own permission) — not here.
-           -- §162: the repair work is what its work cost — a work order's cost (its estimate until there is one) and
-           -- what was bought on a purchase order, sub-tasks included (they carry the claim). Cancelled work costs nothing.
-           (SELECT COALESCE(sum(COALESCE(t.cost_actual, CASE WHEN t.kind = 'work_order' THEN t.cost_estimate END, 0)
-                                + (SELECT COALESCE(sum(p.total), 0) FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id)), 0)
-              FROM todos t WHERE t.account_id = 1 AND t.claim_id = c.id::text AND t.deleted_at IS NULL AND t.status <> 'cancelled') AS repair_work,
+           -- §167: the team enters and sees a case's money (the owner); Finance can correct it (/api/claims-money).
+           c.requested::float8 AS requested, c.refund::float8 AS received, c.received_on::text AS received_on, c.collected_via,
+           -- The repair work: its work orders' cost (estimate until there is one) and purchases — the claim_work view (092).
+           COALESCE(w.repair_work, 0)::float8 AS repair_work, COALESCE(w.owner_work, 0)::float8 AS owner_work,
            c.created_by, c.created_at, u.name AS unit_name, c.reservation_id, c.reservation_label, c.case_url
       FROM claims c
       LEFT JOIN units u ON u.account_id = c.account_id AND u.id = c.unit_id
+      LEFT JOIN claim_work w ON w.account_id = c.account_id AND w.claim_id = c.id::text
      WHERE c.account_id = 1 AND c.deleted_at IS NULL
      ORDER BY
        -- Open cases first regardless of age: a three-month-old open
@@ -101,6 +101,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     return Response.json({ ok: true });
   }
 
+  // §167: the money on a case — requested, received (its day), how an upsell was collected. Its own action: the
+  // case's save below sends every field of the case but not these, so a form without them never clears them.
+  if (b.action === 'money') {
+    const r = await saveCaseMoney(sql as unknown as SqlFn, String(b.id ?? ''), b as Record<string, unknown>, who.email);
+    return r.ok ? Response.json({ ok: true }) : Response.json({ ok: false, error: r.error }, { status: r.status });
+  }
+
   const resId = b.reservationId && /^\d{1,20}$/.test(String(b.reservationId)) ? String(b.reservationId) : null;
   const resLabel = resId && typeof b.reservationLabel === 'string' ? b.reservationLabel.trim().slice(0, 160) || null : null;
   const caseUrl = typeof b.caseUrl === 'string' && /^https:\/\/\S+$/.test(b.caseUrl.trim()) ? b.caseUrl.trim().slice(0, 1000) : null;
@@ -116,9 +123,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const today = todayIn('America/New_York');
 
   if (b.id) {
-    const before = (await sql`SELECT status, resolved_on::text AS resolved_on FROM claims WHERE account_id = 1 AND id = ${b.id}`)[0] as
-      { status: string; resolved_on: string | null } | undefined;
+    const before = (await sql`SELECT status, resolved_on::text AS resolved_on, refund::float8 AS received FROM claims
+                               WHERE account_id = 1 AND id = ${b.id}`)[0] as { status: string; resolved_on: string | null; received: number } | undefined;
     const resolvedOn = closeDate(String(status), b.resolvedOn, before ?? null, today);
+    // §167: closed with money is Paid; Paid needs money.
+    const wrong = before && checkClaim({ status: String(status), category: b.category ?? null, received: before.received });
+    if (wrong) return Response.json({ ok: false, error: wrong }, { status: 400 });
     if (before && before.status !== status) {
       await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
                 VALUES (1, 'claim', ${String(b.id)}, 'status', ${`${before.status} → ${status}`}, ${who.email})`;
@@ -146,6 +156,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     return Response.json({ ok: rows.length > 0, id: rows[0]?.id });
   }
 
+  const wrong = checkClaim({ status: String(status), category: b.category ?? null, received: 0 });
+  if (wrong) return Response.json({ ok: false, error: wrong }, { status: 400 });
   const rows = await sql`
     INSERT INTO claims
       (account_id, unit_id, occurred_on, category, severity, status, source,

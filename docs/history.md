@@ -4447,3 +4447,37 @@ payouts: later, read-only, nothing written to Hostaway without the owner.
   the owner's statement in Hostaway, so Kaizen's net carried a cost the owner pays. Now Hostaway only; ticking the box
   on a completed repair takes it out of Costs ("Removed from Costs — charged to the owner"). No repair was charged to
   the owner (checked), so no row to clean. The checkbox's words say so. SOP #4 v3 at deploy.
+
+**Phases 1–6, done the same day (owner: "go ahead … make sure it works"):**
+- **Migration 092** (`092_claim_received.sql`): `claims.received_on` (filled for money already in: #9 → 10-14),
+  `claims.collected_via` (Resolution Center / Not priced on the reservation / Direct), status 'Refunded' → 'Paid' (the
+  CHECK too; a closed case with money became Paid — #9, with a line on its log), and the view **`claim_work`**
+  (`repair_work`, `owner_work` per claim) — the repair-work sum had been written three times; /api/claims,
+  /api/claims-money, /api/portfolio and Slack read the view. Dropping a todos column it reads needs the view first.
+- **One way in for the money:** `saveCaseMoney` (`functions/_lib/claim-money.ts`) — Ops through `/api/claims`
+  `action: 'money'` (permission `claims`), Finance through `/api/claims-money` POST (`claims.money`). Same rules
+  (`checkClaim`): Paid needs received > 0; Resolved/Dismissed with money refused ("close it as Paid"); amounts ≥ 0.
+  The day follows the money (changed → today NY, or the day sent; 0 → none). Every change is an activity line
+  "Received $0.00 → $80.00 (2026-10-15)" — the team sees money now. The case's full save never touches the money.
+- **The result** (`caseResult`, src/lib/claims.ts): owner's share = min(received, owner_work); kept = received − it;
+  spent = repair work − owner_work; result = kept − spent, signed. Revenue's income is `kept`, dated `received_on`
+  (`/api/portfolio`), so Revenue's "Claims & upsells" = Finance's "In net".
+- **Ops (Todos.tsx `CaseMoneyBlock`):** a claim: Requested · Received (its day, "over requested") · Repair work ·
+  Result ("so far" while open; Gain/Loss in words and sign, a loss in red; "to the owner"); "Close as Paid" when money
+  is in and the case is open. An upsell: Price charged (= requested and received) · Collected how. The row's context
+  line says "$80.00 of $150.00" / "$150.00 requested" / an upsell's price. `ClaimEdit`: the status/money mismatch
+  shown before saving; a claim closed with nothing of what was requested asks "Why nothing came in" (a comment).
+  `workCost` gives `owner` like the view.
+- **Finance (`ClaimsMoney`):** strip Claims received (by received day; to the owner) · Recovery (cases raised) ·
+  Claims result · Upselling · In net (= Revenue). Views Claims / Upselling / **By listing**. Rows: raised or paid in
+  range, or open; inputs + the received day; result with the owner's share.
+- **Slack:** the claim card (private) shows Requested / Received / Result, an upsell its price (`claimMoneyFields`);
+  channel messages carry no amounts and a money change posts nothing (the owner's "mucho spam", §162).
+- **Tested:** 358 unit tests (`closeDate`, `caseResult`, `checkClaim`, `workCost.owner`, `claimMoneyFields`, settleRepair
+  with a fake database — an owner-charged repair writes no expense). End to end on Neon branch `claims-money-test`
+  (credentials nulled) against `wrangler pages dev`: 22 scenarios (partial payment, refused closes, close day kept on
+  edit and cleared on reopen, over-requested, upsell, owner-charged repair $100 + $120 received → $20 counted on its
+  day, Finance's correction, Revenue income $325 = Finance "In net" $325, activity lines). Screens checked.
+- SOP #3 v5 (steps: Ops enters Requested/Received; closing Paid/Resolved/Dismissed; Rules and What the system does) and
+  SOP #4 v3 (owner-charged repairs) written at deploy.
+

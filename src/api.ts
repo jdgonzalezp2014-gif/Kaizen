@@ -240,8 +240,9 @@ export interface Claim {
   occurred_on: string; category: string | null; severity: string; status: string;
   source: string | null; description: string | null;
   /** §162: the repair work — the sum of the work orders' and purchase orders' costs on the case, computed by the
-   *  server. What was requested and received is Finance's (`getClaimsMoney`). */
-  repair_work: string; resolved_on: string | null;
+   *  server; `owner_work` the part of it charged to the owner. §167: the team enters requested / received. */
+  repair_work: number; owner_work: number; resolved_on: string | null;
+  requested: number; received: number; received_on: string | null; collected_via: string | null;
   created_by: string; created_at: string;
   /** The stay it is about, when there is one (§84). */
   reservation_id: string | null; reservation_label: string | null;
@@ -249,20 +250,25 @@ export interface Claim {
   case_url: string | null;
 }
 export const getClaims = () => call<{ ok: boolean; claims: Claim[] }>('/api/claims');
+/** §167: a case's money — requested, received (its day), how an upsell was collected — from Operations. */
+export interface CaseMoneyChange { requested?: number; received?: number; receivedOn?: string; collectedVia?: string | null; category?: string | null }
+export const saveCaseMoney = (id: string, change: CaseMoneyChange) =>
+  call<{ ok: boolean; error?: string }>('/api/claims', { method: 'POST', body: JSON.stringify({ action: 'money', id, ...change }) });
 export const saveClaim = (body: Record<string, unknown>) =>
   call<{ ok: boolean; id?: string; error?: string }>('/api/claims', {
     method: 'POST', body: JSON.stringify(body)
   });
-/** §162: Claims & upselling as money — Finance only (`claims.money`). */
+/** §162: Claims & upselling as money — Finance's view (`claims.money`); §167: Finance can correct the same fields. */
 export interface ClaimMoney {
   id: string; unit_id: string | null; unit_name: string | null; occurred_on: string; resolved_on: string | null;
   category: string | null; status: string; source: string | null; description: string | null;
   reservation_label: string | null; case_url: string | null;
-  requested: number; received: number; repair_work: number;
+  requested: number; received: number; received_on: string | null; collected_via: string | null;
+  repair_work: number; owner_work: number;
 }
 export const getClaimsMoney = (from: string, to: string) =>
   call<{ ok: true; cases: ClaimMoney[] } | { ok: false; message?: string }>(`/api/claims-money?from=${from}&to=${to}`);
-export const saveClaimMoney = (body: { id: string; requested?: number; received?: number; category?: string | null }) =>
+export const saveClaimMoney = (body: { id: string } & CaseMoneyChange) =>
   call<{ ok: boolean; message?: string }>('/api/claims-money', { method: 'POST', body: JSON.stringify(body) });
 export const deleteClaim = (id: string) =>
   call<{ ok: boolean }>(`/api/claims?id=${id}`, { method: 'DELETE' });

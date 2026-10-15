@@ -8,8 +8,9 @@
  * work to do.
  */
 export const CLAIM_SEVERITY = ['Low', 'Medium', 'High', 'Critical'];
-export const CLAIM_STATUS = ['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'];
-export const isClosedClaim = (status: string | null | undefined) => status === 'Resolved' || status === 'Refunded' || status === 'Dismissed';
+/** §167: 'Paid' = closed with money received (it was 'Refunded', which read as money going back to the guest). */
+export const CLAIM_STATUS = ['Open', 'In progress', 'Resolved', 'Paid', 'Dismissed'];
+export const isClosedClaim = (status: string | null | undefined) => status === 'Resolved' || status === 'Paid' || status === 'Dismissed';
 
 /**
  * The day a case closed (§167, owner 2026-10-15). Kept while the case stays closed: the edit form and Slack save
@@ -34,6 +35,36 @@ export const CASE_CATEGORIES = ['Damage', 'Cleanliness', 'Maintenance', 'Noise',
 export const CLAIM_CATEGORIES = [...CASE_CATEGORIES, ...UPSELL_CATEGORIES];
 export const isUpsell = (category: string | null | undefined) => !!category && UPSELL_CATEGORIES.includes(category);
 export const CLAIM_SOURCES = ['Airbnb', 'Booking.com', 'Vrbo', 'Expedia', 'Direct', 'In person'];
+/** How an upsell was collected (§167, SOP #3): an alteration counts only through the Resolution Center or unpriced. */
+export const COLLECTED_VIA = ['Resolution Center', 'Not priced on the reservation', 'Direct'];
+
+/**
+ * A case as money (§167, owner 2026-10-15). Requested is an estimate — what was asked for. Received is what came in.
+ * Repair work is what its work orders and purchases cost (`claim_work`), already in Costs on their own. When the
+ * repair was charged to the owner, it is the owner's cost and the reimbursement is the owner's up to it — Kaizen
+ * keeps only the difference. Result = what Kaizen kept − what Kaizen spent: a gain or a loss, signed.
+ */
+export interface CaseMoney { requested: number; received: number; repairWork: number; ownerWork: number }
+export function caseResult(m: CaseMoney) {
+  const ownerShare = Math.min(m.received, Math.max(0, m.ownerWork));
+  const kept = m.received - ownerShare;
+  const spent = Math.max(0, m.repairWork - Math.max(0, m.ownerWork));
+  return { ownerShare, kept, spent, result: round2(kept - spent), overRequested: m.requested > 0 ? round2(m.received - m.requested) : 0 };
+}
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/**
+ * What a case's status and money must agree on (§167) — null when they do. Closed with money is Paid; Paid needs
+ * money. Money while the case is open is fine (a partial payment, more to come).
+ */
+export function checkClaim(c: { status: string; category: string | null; received: number }): string | null {
+  const what = isUpsell(c.category) ? 'the price charged' : 'what was received';
+  if (c.status === 'Paid' && !(c.received > 0)) return `Paid needs ${what} — enter it first.`;
+  if ((c.status === 'Resolved' || c.status === 'Dismissed') && c.received > 0) {
+    return `It received $${c.received.toFixed(2)} — close it as Paid.`;
+  }
+  return null;
+}
 
 /** "↗ Airbnb case" — the platform a case link points at, by its host (§88). */
 export function caseHost(url: string | null | undefined): string | null {

@@ -1305,6 +1305,9 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 .claim-money dt { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
 .claim-money dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
 .claim-money small { font-weight: 400; color: var(--muted); }
+/* §167: a loss reads in red — with its minus sign and the word "Loss", never the colour alone. */
+.claim-money dd.neg, .money-table td.neg { color: var(--red); }
+.claim-money dd select { max-width: 220px; }
 @media (max-width: 640px) { .timeline-list li { grid-template-columns: 1fr; gap: 0; } }
 /* Claims in the work list: cases above the work, worst first. */
 .case-flag { color: var(--crit); }

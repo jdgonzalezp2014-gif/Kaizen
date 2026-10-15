@@ -12,7 +12,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { addDays, today } from '../../src/lib/dates.ts';
-import { isUpsell } from '../../src/lib/claims.ts';
+import { caseResult, isUpsell } from '../../src/lib/claims.ts';
 
 interface CostRowDb {
   unit_id: string | null; shared: boolean;
@@ -58,12 +58,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     fetchReservationsTouching(creds, from, to),
     sql`SELECT unit_id, shared, start_date, end_date, category, frequency, amount
         FROM expenses WHERE (end_date IS NULL OR end_date >= ${from}) AND start_date <= ${to}` as unknown as Promise<CostRowDb[]>,
-    // §162: what came in on claims and upsells — income beside the reservations, dated when the case closed (else
-    // when it was raised). Only the received amount: what was requested is not money, and the repair work a claim
-    // pays for is already in `expenses` (work orders and purchases write their own).
-    sql`SELECT unit_id, COALESCE(resolved_on, occurred_on)::text AS on_day, category, refund
-        FROM claims WHERE account_id = 1 AND deleted_at IS NULL AND refund > 0
-         AND COALESCE(resolved_on, occurred_on) BETWEEN ${from} AND ${to}`,
+    // §162: what came in on claims and upsells — income beside the reservations. §167: dated the day it was entered
+    // (`received_on`, the same rule as Revenue → Claims & upselling), and only Kaizen's part: when the repair was
+    // charged to the owner, the reimbursement is the owner's up to it (caseResult). What was requested is an
+    // estimate, and the repair work is already in `expenses` (work orders and purchases write their own).
+    sql`SELECT c.unit_id, c.received_on::text AS on_day, c.category, c.refund::float8 AS received, COALESCE(w.owner_work, 0)::float8 AS owner_work
+        FROM claims c LEFT JOIN claim_work w ON w.account_id = c.account_id AND w.claim_id = c.id::text
+       WHERE c.account_id = 1 AND c.deleted_at IS NULL AND c.refund > 0 AND c.received_on BETWEEN ${from} AND ${to}`,
     // The parked verdict, computed at sync time. Reading it costs one
     // cheap query; recomputing it would cost 27 calendar requests on
     // every dashboard load.
@@ -114,7 +115,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       amount: Number(e.amount),
       source: e.frequency === 'Monthly' ? 'fixed' : 'variable'
     })),
-    income: (claims as { unit_id: string | null; on_day: string; category: string | null; refund: string }[]).map(c => ({
-      unitId: c.unit_id, on: c.on_day, amount: Number(c.refund), kind: isUpsell(c.category) ? 'upsell' : 'claim' }))
+    income: (claims as { unit_id: string | null; on_day: string; category: string | null; received: number; owner_work: number }[])
+      .map(c => ({ unitId: c.unit_id, on: c.on_day, amount: caseResult({ requested: 0, received: c.received, repairWork: 0, ownerWork: c.owner_work }).kept,
+                   kind: isUpsell(c.category) ? 'upsell' as const : 'claim' as const }))
+      .filter(c => c.amount > 0)
   });
 };

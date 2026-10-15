@@ -18,7 +18,8 @@ import { TaskPurchase } from '../screens/Inventory.tsx';
 import { vendorLink, getVendors, getInventory, getTodoFiles, uploadTodoFiles, removeTodoFile, type TodoFile } from '../api.ts';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
+  deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveCaseMoney, saveClaim, todoAction,
+  type CaseMoneyChange,
   type Claim, type StayOnDay, type Todo, type WorkUpdate, syncHostawayTasks, getPeople, type Person } from '../api.ts';
 import {
   KIND_LABEL, PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, CATEGORY_LABEL, categoryOf, sourceOf, rowTitle, stageOf, claimStage, auditCsv, childrenBy, daysTaken, nyParts, outcomeOf, stayLabel,
@@ -28,7 +29,8 @@ import {
 } from '../lib/todos.ts';
 import { addDays, type DateStr } from '../lib/dates.ts';
 import { money2 } from '../lib/format.ts';
-import { CASE_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS, UPSELL_CATEGORIES, caseHost, cleanCaseUrl } from '../lib/claims.ts';
+import { CASE_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS, COLLECTED_VIA, UPSELL_CATEGORIES, caseHost, caseResult, checkClaim,
+  cleanCaseUrl, isClosedClaim, isUpsell } from '../lib/claims.ts';
 import { Hint, Peek } from './Hint.tsx';
 import { SlideOver, NoDock, useDock } from './SlideOver.tsx';
 import { createPortal } from 'react-dom';
@@ -339,6 +341,9 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
         <span className={`m m-stage st-${claimStage(c.status).key}`}>{claimStage(c.status).label}</span>
         {['High', 'Critical'].includes(c.severity) && <span className="m m-attn">{c.severity}</span>}
         {c.category && c.description && <span className="m">{c.category}</span>}
+        {/* §167: the money at a glance — an upsell's price; a claim's received of requested. */}
+        {(c.requested > 0 || c.received > 0) && <span className="m"><Icon n="dollar" />{isUpsell(c.category) ? money2(c.received || c.requested)
+          : c.received > 0 ? `${money2(c.received)} of ${money2(c.requested)}` : `${money2(c.requested)} requested`}</span>}
         {c.reservation_label && <StayPeek id={c.reservation_id} label={c.reservation_label} />}
         <span className="m"><Icon n="clock" />{ageDays(c, today) ? `${ageDays(c, today)}d open` : 'new today'}</span>
         {openWorkBy.get(String(c.id)) ? <span className="m"><Icon n="list" />{openWorkBy.get(String(c.id))} open inside</span>
@@ -1657,13 +1662,21 @@ function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) =
   const [err, setErr] = useState('');
   useEffect(() => { void getUnits().then(r => setUnits((r.units ?? []).map(u => ({ id: u.id, name: u.name, active: u.active })))); }, []);
   const set = (p: Partial<Claim>) => setC(x => ({ ...x, ...p }));
+  // §167: closed with money is Paid, Paid needs money (the server says the same); a claim closed with nothing of
+  // what was requested says why — that is a loss someone will ask about.
+  const mismatch = checkClaim({ status: c.status, category: c.category, received: claim.received });
+  const nothingCame = isClosedClaim(c.status) && c.status !== claim.status && !isUpsell(c.category)
+    && claim.requested > 0 && !(claim.received > 0);
+  const [why, setWhy] = useState('');
   const save = async () => {
     if (c.case_url && !cleanCaseUrl(c.case_url)) { setErr('The case link is the https:// address of the case.'); return; }
+    if (nothingCame && !why.trim()) { setErr(`Nothing came in of the ${money2(claim.requested)} requested — say why.`); return; }
     setBusy(true); setErr('');
     const r = await saveClaim({ id: c.id, unitId: c.unit_id, occurredOn: c.occurred_on.slice(0, 10), category: c.category,
       severity: c.severity, status: c.status, source: c.source, description: c.description,
       reservationId: c.reservation_id, reservationLabel: c.reservation_label,
       caseUrl: c.case_url ?? '' }).catch(e => ({ ok: false, error: String(e) }));
+    if (r.ok && nothingCame) await postClaimNote(String(c.id), `Closed with nothing received: ${why.trim()}`).catch(() => {});
     setBusy(false);
     if (r.ok) onDone(true); else setErr(r.error ?? 'Not saved.');
   };
@@ -1699,12 +1712,100 @@ function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) =
                       onChange={x => set({ reservation_id: x?.id ?? null, reservation_label: x?.label ?? null })} />
         </div>
       </div>
+      {nothingCame && (
+        <label>Why nothing came in
+          <textarea rows={2} value={why} placeholder="Denied by Airbnb, the guest disputed it…" onChange={e => setWhy(e.target.value)} /></label>
+      )}
+      {mismatch && <p className="banner warn">▲ {mismatch}</p>}
       {err && <p className="banner warn">▲ {err}</p>}
       <div className="button-row">
-        <button className="small" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save claim'}</button>
+        <button className="small" disabled={busy || !!mismatch} onClick={() => void save()}>{busy ? 'Saving…' : 'Save claim'}</button>
         <button className="link tiny" onClick={() => onDone(false)}>Cancel</button>
       </div>
     </div>
+  );
+}
+
+/**
+ * A case's money (§167, owner 2026-10-15) — the team enters it here; Finance sees it in Revenue → Claims & upselling
+ * and can correct it there. A claim: Requested (an estimate), Received (and the day), Repair work (computed), and the
+ * Result — what Kaizen kept minus what Kaizen spent, a gain or a loss. An upsell: one amount, the price charged, and
+ * how it was collected.
+ */
+function CaseMoneyBlock({ claim, repairWork, estimated, ownerWork, onSaved }: {
+  claim: Claim; repairWork: number; estimated: number; ownerWork: number; onSaved?: () => void;
+}) {
+  const up = isUpsell(claim.category);
+  const shown = (n: number) => n ? String(n) : '';
+  const [req, setReq] = useState(shown(claim.requested));
+  const [rec, setRec] = useState(shown(claim.received));
+  const [err, setErr] = useState('');
+  useEffect(() => { setReq(shown(claim.requested)); setRec(shown(claim.received)); }, [claim.requested, claim.received]);
+  const save = async (change: CaseMoneyChange) => {
+    const r = await saveCaseMoney(String(claim.id), change).catch(e => ({ ok: false, error: String(e) }));
+    setErr(r.ok ? '' : r.error ?? 'Not saved.');
+    if (r.ok) onSaved?.(); else { setReq(shown(claim.requested)); setRec(shown(claim.received)); }
+  };
+  const field = (v: string, set: (s: string) => void, key: 'requested' | 'received', label: string) => (
+    <input type="number" min={0} step="0.01" className="money-in" value={v} placeholder="$" aria-label={label}
+           onChange={e => set(e.target.value)}
+           onBlur={() => {
+             const n = Math.round((Number(v) || 0) * 100) / 100;
+             if (Math.abs(n - claim[key]) > 0.004) void save(up ? { received: n, requested: n } : { [key]: n });
+           }} />
+  );
+  const closeAsPaid = async () => {
+    const r = await saveClaim({ id: claim.id, unitId: claim.unit_id, occurredOn: claim.occurred_on.slice(0, 10), category: claim.category,
+      severity: claim.severity, status: 'Paid', source: claim.source, description: claim.description,
+      caseUrl: claim.case_url ?? '' }).catch(e => ({ ok: false, error: String(e) }));
+    setErr(r.ok ? '' : r.error ?? 'Not saved.');
+    if (r.ok) onSaved?.();
+  };
+  const res = caseResult({ requested: claim.requested, received: claim.received, repairWork, ownerWork });
+  const open = !isClosedClaim(claim.status);
+  const signed = (n: number) => `${n > 0 ? '+' : n < 0 ? '−' : ''}${money2(Math.abs(n))}`;
+  return (
+    <>
+      <dl className="claim-money">
+        {up ? <>
+          <div><dt>Price charged<Hint>What the guest paid for it — one amount; it counts as income in Revenue on the day it is
+            entered. A reservation alteration is not upselling (its price is in the reservation) unless it was collected through
+            the Resolution Center or the reservation carries no price for it.</Hint></dt>
+            <dd>{field(rec, setRec, 'received', 'Price charged')}{claim.received_on && <small> on {shortDay(claim.received_on)}</small>}</dd></div>
+          <div><dt>Collected how</dt>
+            <dd><select value={claim.collected_via ?? ''} aria-label="Collected how"
+                        onChange={e => void save({ collectedVia: e.target.value || null })}>
+              <option value="">—</option>{COLLECTED_VIA.map(x => <option key={x}>{x}</option>)}
+            </select></dd></div>
+        </> : <>
+          <div><dt>Requested<Hint>What was asked of the platform or the guest — an estimate; the case is measured against it.
+            Received is what came in, counted as income in Revenue on the day it is entered (a partial payment: update the total).
+            Closed with money is <b>Paid</b>.</Hint></dt>
+            <dd>{field(req, setReq, 'requested', 'Requested')}</dd></div>
+          <div><dt>Received</dt>
+            <dd>{field(rec, setRec, 'received', 'Received')}
+              {claim.received_on && <small> on {shortDay(claim.received_on)}</small>}
+              {res.overRequested > 0 && <small> · {money2(res.overRequested)} over requested</small>}</dd></div>
+        </>}
+        {(!up || repairWork > 0) && (
+          <div><dt>Repair work<Hint>Not typed: the sum of this case's work orders (their cost, or the estimate until there is one)
+            and what was bought on its purchase orders. Cancelled work counts nothing. Each already reaches Costs on its own.</Hint></dt>
+            <dd>{money2(repairWork)}{estimated > 0 && <small> incl. ~{money2(estimated)} estimated</small>}</dd></div>
+        )}
+        {(claim.received > 0 || repairWork > 0) && (
+          <div><dt>{open ? 'Result so far' : 'Result'}<Hint>What Kaizen kept of what was received, minus what Kaizen spent on the
+            repair. When the repair was charged to the owner, the reimbursement is the owner's up to that cost — Kaizen keeps
+            only the difference.</Hint></dt>
+            <dd className={res.result < 0 ? 'neg' : undefined}>{signed(res.result)}
+              <small> {res.result > 0 ? 'Gain' : res.result < 0 ? 'Loss' : 'Even'}</small>
+              {res.ownerShare > 0 && <small> · {money2(res.ownerShare)} to the owner</small>}</dd></div>
+        )}
+      </dl>
+      {open && claim.received > 0 && (
+        <p className="note">Received {money2(claim.received)}. <button className="link tiny" onClick={() => void closeAsPaid()}>Close as Paid</button></p>
+      )}
+      {err && <p className="banner warn">▲ {err}</p>}
+    </>
   );
 }
 
@@ -1750,13 +1851,8 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
               <button className="link tiny" onClick={() => setConfirmDel(false)}>Keep</button></>}
       </div>
       {editing && <ClaimEdit claim={claim} onDone={saved => { setEditing(false); if (saved) onSaved?.(); }} />}
-      {/* §162: Operations sees what the maintenance costs — what was requested and received is Finance's. */}
-      <dl className="claim-money">
-        <div><dt>Repair work<Hint>Not typed: the sum of this case's work orders (their cost, or the estimate until there is one)
-          and what was bought on its purchase orders. Cancelled work counts nothing. Each already reaches Costs on its own.
-          What was requested and received is kept by Finance (Revenue → Claims &amp; upselling).</Hint></dt>
-          <dd>{money2(repairWork)}{cost.estimated > 0 && <small> incl. ~{money2(cost.estimated)} estimated</small>}</dd></div>
-      </dl>
+      <CaseMoneyBlock claim={claim} repairWork={repairWork} estimated={cost.estimated}
+                      ownerWork={work.length ? cost.owner : claim.owner_work} onSaved={onSaved} />
       {canWork && (
         <div className="claim-case-work">
           <div className="claim-case-head">

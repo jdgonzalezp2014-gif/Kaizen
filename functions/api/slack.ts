@@ -40,7 +40,7 @@ import {
 import * as turnover from './turnover.ts';
 import { opsConfig } from '../_lib/ops.ts';
 import { nyParts } from '../../src/lib/todos.ts';
-import { CLAIM_CATEGORIES, CLAIM_SOURCES } from '../../src/lib/claims.ts';
+import { CLAIM_CATEGORIES, CLAIM_SOURCES, caseResult } from '../../src/lib/claims.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
 
 type Ctx = Parameters<PagesFunction<Env>>[0];
@@ -428,9 +428,11 @@ class Kaizen {
                  costActual: t.cost_actual == null ? null : Number(t.cost_actual) } : null;
   }
   private async claimRow(id: string) {
-    const [c] = await this.sql`SELECT id::text, unit_id, occurred_on::text AS occurred_on, category, severity, status, source, description,
-                                      case_url
-                                 FROM claims WHERE account_id = 1 AND id::text = ${id} AND deleted_at IS NULL` as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
+    const [c] = await this.sql`SELECT c.id::text, c.unit_id, c.occurred_on::text AS occurred_on, c.category, c.severity, c.status, c.source,
+                                      c.description, c.case_url, c.requested::float8 AS requested, c.refund::float8 AS received,
+                                      COALESCE(w.repair_work, 0)::float8 AS repair_work, COALESCE(w.owner_work, 0)::float8 AS owner_work
+                                 FROM claims c LEFT JOIN claim_work w ON w.account_id = c.account_id AND w.claim_id = c.id::text
+                                WHERE c.account_id = 1 AND c.id::text = ${id} AND c.deleted_at IS NULL` as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     return c;
   }
   /** A claim saved with every field as it is, but the ones changed — the claims route saves the whole case. */
@@ -823,7 +825,11 @@ class Kaizen {
                 ORDER BY status IN ('completed', 'cancelled'), created_at` as Promise<{ id: string; title: string; status: string; kind: string }[]>
     ]);
     if (!c || !row) return null;
-    return { ...c, work, source: row.source, appUrl: this.s.config.appUrl,
+    // §167: the card is private to whoever opens it, and the team enters the money — it shows it (channel messages don't).
+    const money = { requested: Number(row.requested) || 0, received: Number(row.received) || 0,
+      result: caseResult({ requested: Number(row.requested) || 0, received: Number(row.received) || 0,
+                           repairWork: Number(row.repair_work) || 0, ownerWork: Number(row.owner_work) || 0 }).result };
+    return { ...c, work, source: row.source, appUrl: this.s.config.appUrl, money,
       updates: ups.map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
   }
   private async openClaimCard(trigger: string, id: string, push = false) {
