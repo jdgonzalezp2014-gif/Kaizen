@@ -274,11 +274,13 @@ key had no SOPs.
   to the cleaner (`edited_by/at`, `edit_note`). Today and ahead are changed on the board.
 
 - **Storage and Houses (§165, owner 2026-10-15):** Inventory has two views — Storage · supplies (storages + houses'
-  closets) and Houses · furniture (every active unit with a Repository record, key = that record). A self-closet house is
-  one key in both views; `kind` separates them. A view lists its kind + anything of the other kind recorded there. "Goes
-  to" a unit = furniture to the house, supplies to its supplies place (`destFor`); every place check is `findPlace`;
-  text via `placeWord`. A receipt's new line is corrected before it is added (how many, counted in, type); matched lines'
-  quantities are editable; "✎ new item" (`editItem`, only while the item has no moves).
+  closets) and Houses · furniture (every active unit with a Repository record). **A house's place = `<record>#house`**
+  (`houseKey`); its closet = the record key. **Supplies live only in a storage or a closet** (outside one they are used
+  up): the server refuses a supply into a house (`fitsPlace`, every write); a supply's picker has no houses. Furniture
+  can be in the house and in a storage/closet ("Furniture here" section) and **⇄ moves** between them (`transfer`, two
+  `adjust` moves). "Goes to" a unit = furniture to the house, supplies to its supplies place (`destFor`); place checks
+  `findPlace`, text `placeWord`. A receipt's new line is corrected before it is added (how many, counted in, type);
+  matched quantities editable; "✎ new item" (`editItem`, only while the item has no moves). Migration 089.
 - **Inventory (§134, §150): by PLACE, never by unit.** A place = a Repository record (`table/ROW-id`): a Storage
   row (S13, S1105…) or a house's own record (its closet). Which place a unit draws from = the Repository's
   `storage` column, the ONLY source (a house names itself; blank = ▲ no place), read every time by
@@ -492,8 +494,7 @@ key had no SOPs.
 - Not built: Sheets mirror with the crew's Spanish tabs; crew cleaning sessions.
 - Cleaner Slack channels: prepared, sent by hand only (see slack module).
 
-- **§165 not deployed yet** (branch `redesign`). After the push: SOP #15 (Inventory) needs a new version — the two views,
-  furniture counted in the house, "Goes to" a unit, correcting a receipt's new line. Not exercised end to end: a real
+- **§165** deployed 2026-10-15 (089 applied). Not exercised end to end: a real
   receipt with a new line through ✨ (the AI's `measure`/`furniture` fields) — try it on the next purchase.
 
 ## History

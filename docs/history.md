@@ -4374,3 +4374,13 @@ how many.
 - Count sheet: "+ count X here" for an item of the other type (e.g. furniture in "S2101 Storage (furniture)").
 - Checked read-only on production: 11 storage views at 15 supplies each (were 45 items), 21 houses; Napa Valley's 21
   furniture counts now under its house, its 9 supply counts under its closet.
+- **Round 2 (owner, same day): supplies only in a storage; furniture moves.** Supplies outside a closet do not exist
+  (used up); furniture can be in the house AND in a storage/closet. So a house's furniture got its own place key,
+  `<record>#house` (`houseKey`), apart from its closet (the record key, supplies). Migration 089 moved what furniture had
+  at a house record to `#house` (Napa Valley's 21 counts; order #69's two lines). The server refuses a supply into a
+  house anywhere (`fitsPlace`: count, correction, order, to-do order, purchase, move); a supply's place picker has no
+  houses; "Goes to" a house sends supplies to its storage or closet ('' if it has none). Storages and closets list their
+  supplies plus a **"Furniture here"** section (what has a record there). **⇄ move** on any item with stock
+  (`transfer`: two `adjust` moves "Moved to / from …", never more than the record once counted). The `#house` look
+  suffix is gone (the house key is apart now).
+
