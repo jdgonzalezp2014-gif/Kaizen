@@ -473,14 +473,20 @@ function inventoryPractice(): InvTransport {
     upload: async f => {
       // A count with storage photos: the count is kept, the photos stay in the browser (nothing leaves it).
       if (f.get('action') === 'count') return act({ action: 'count', place: f.get('place'), counts: JSON.parse(String(f.get('counts') ?? '[]')) });
+      // The receipt would go to the AI — it never leaves the browser here.
+      if (f.get('action') === 'readReceipt') return fail('Practice: ✨ Read receipt works on the real screen only — nothing leaves the browser here. Fill it in by hand.');
       await sleep();
-      const lines = JSON.parse(String(f.get('lines') ?? '[]')) as { itemId: string; place: string; qty: number }[];
-      if (!(Number(f.get('total')) > 0)) return fail('Write the total you paid.');
-      for (const l of lines) moves.push({ ...mv('purchase', l.itemId, l.place, l.qty, today), note: String(f.get('note') ?? '') || undefined });
+      type Part = { todoId?: string; total: number; lines: { itemId: string; place: string; qty: number }[] };
+      const parts: Part[] = f.get('splits') ? JSON.parse(String(f.get('splits')))
+        : [{ todoId: String(f.get('todoId') ?? ''), total: Number(f.get('total')), lines: JSON.parse(String(f.get('lines') ?? '[]')) }];
+      if (parts.some(p => !(Number(p.total) > 0))) return fail('Write the total you paid.');
       const paidBy = String(f.get('paidBy') ?? '').trim();
-      if (paidBy) payBack.unshift({ id: String(payBack.length + 1), paidBy, total: Number(f.get('total')), note: String(f.get('note') ?? '') || null, todo: null, at: today, photos: [] });
-      const o = orders.find(x => x.todoId === f.get('todoId'));
-      if (o) o.purchases++;
+      for (const p of parts) {
+        for (const l of p.lines) moves.push({ ...mv('purchase', l.itemId, l.place, l.qty, today), note: String(f.get('note') ?? '') || undefined });
+        if (paidBy) payBack.unshift({ id: String(payBack.length + 1), paidBy, total: Number(p.total), note: String(f.get('note') ?? '') || null, todo: null, at: today, photos: [] });
+        const o = orders.find(x => x.todoId === p.todoId);
+        if (o) o.purchases++;
+      }
       return view();
     }
   };

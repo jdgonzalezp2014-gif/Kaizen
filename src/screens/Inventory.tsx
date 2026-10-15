@@ -14,6 +14,7 @@ import { Hint } from '../components/Hint.tsx';
 import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getInventory, inventoryAction, inventoryItemAction, inventoryUpload, type InvItemRow, type InvPlace, type Inventory } from '../api.ts';
 import { CATEGORIES, reconcile } from '../lib/inventory.ts';
+import { orderFor, receiptSum, similarItems, splitTotal, type Receipt, type ReceiptLine } from '../lib/receipt.ts';
 import { Sheet } from '../components/InspectionRun.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { TX } from '../lib/crew-i18n.ts';
@@ -83,7 +84,7 @@ function InventoryBody({ canEdit }: { canEdit: boolean }) {
       </div>
       {current && <PlaceStock key={pk(current.place)} inv={inv} p={current} canEdit={canEdit} onSaved={setInv} />}
       <OrderPlan inv={inv} canEdit={canEdit} onSaved={setInv} />
-      {canEdit && <PurchaseForm inv={inv} onSaved={setInv} />}
+      {canEdit && <RecordPurchase inv={inv} onSaved={setInv} />}
       <RecentMoves inv={inv} />
     </div>
   );
@@ -371,10 +372,16 @@ type Part = { place: string; qty: string };
 type Lines = Map<string, Part[]>;
 const flat = (m: Lines) => [...m].flatMap(([itemId, parts]) => parts.map(p => ({ itemId, place: p.place, qty: Math.ceil(Number(p.qty) || 0) })))
   .filter(l => l.qty > 0 && l.place);
-function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv }: {
+/** Where lines go when nobody said: the place most units draw from. */
+const busiestPlace = (inv: Inventory) => [...inv.places.filter(p => p.place)].sort((a, b) => b.units.length - a.units.length)[0]?.place ?? '';
+function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, tags, orderCol }: {
   inv: Inventory; value: Lines; onChange: (m: Lines) => void; hints?: Lines; canEdit: boolean; defaultPlace?: string | null;
   /** §150, owner: a supply not on the list is added from the 🔍 — the caller takes the new inventory. */
   onInv?: (i: Inventory) => void;
+  /** A word under an item's name — "✨ from the receipt", "▲ not on the receipt". */
+  tags?: Map<string, string[]>;
+  /** One receipt, several orders: which order each item is for. */
+  orderCol?: { options: { id: string; label: string }[]; value: Map<string, string>; onChange: (id: string, order: string) => void };
 }) {
   const api = useContext(InvApi);
   const [creating, setCreating] = useState(false);
@@ -384,7 +391,7 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv }
   const item = (id: string) => inv.items.find(i => i.id === id);
   const placeName = (key: string) => { const p = places.find(x => x.place === key); return p ? placeTitle(p) : key; };
   // Everything goes where it was asked for, else where most units draw from — until someone says otherwise.
-  const [allTo, setAllTo] = useState(defaultPlace ?? [...places].sort((a, b) => b.units.length - a.units.length)[0]?.place ?? '');
+  const [allTo, setAllTo] = useState(defaultPlace ?? busiestPlace(inv));
   const busiest = allTo;
   const set = (id: string, parts: Part[] | null) => { const n = new Map(value); if (parts?.length) n.set(id, parts); else n.delete(id); onChange(n); };
   // Lines not split follow "Everything goes to"; a split line keeps its parts.
@@ -430,7 +437,7 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv }
     {value.size > 0 && (
       <div className="grid-scroll">
         <table className="units compact">
-          <thead><tr><th>Item</th><th className="n">Total</th><th>Goes to</th><th></th></tr></thead>
+          <thead><tr><th>Item</th><th className="n">Total</th><th>Goes to</th>{orderCol && <th>For the order</th>}<th></th></tr></thead>
           <tbody>
             {[...value].map(([id, parts]) => {
               const total = parts.reduce((a, p) => a + Math.ceil(Number(p.qty) || 0), 0);
@@ -438,7 +445,8 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv }
               return (
                 <tr key={id}>
                   <td><b>{item(id)?.name}</b> <span className="sub-n">{item(id)?.measure}</span>
-                    {hint && <div className="sub-n">suggested: {hint.map(h => `${h.place ? placeName(h.place) : '▲ no place'} ${h.qty}`).join(' · ')}</div>}</td>
+                    {hint && <div className="sub-n">suggested: {hint.map(h => `${h.place ? placeName(h.place) : '▲ no place'} ${h.qty}`).join(' · ')}</div>}
+                    {tags?.get(id)?.map(t => <div key={t} className="sub-n">{t}</div>)}</td>
                   <td className="n"><b>{total || '—'}</b></td>
                   <td>
                     {parts.map((p, k) => (
@@ -453,6 +461,9 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv }
                       </div>))}
                     {canEdit && parts.length > 1 && <button className="link tiny" onClick={() => set(id, [{ place: parts[0]!.place, qty: String(total) }])}>⇢ one place</button>}
                   </td>
+                  {orderCol && <td><select aria-label="For the order" value={orderCol.value.get(id) ?? ''} onChange={e => orderCol.onChange(id, e.target.value)}>
+                    <option value="">no order</option>
+                    {orderCol.options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select></td>}
                   <td className="n">{canEdit && <button className="link tiny danger" onClick={() => set(id, null)}>remove</button>}</td>
                 </tr>
               );
@@ -532,63 +543,276 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
 }
 
 /**
- * The PURCHASE (§150, owner): what was really bought — from an open order
- * (its lines come filled in, the inspector's too) or from scratch. It adds to
- * each place's stock and reaches Costs (Restock) with the receipt.
+ * The PURCHASE form (§150, owner) — ONE form for the three places a purchase is
+ * recorded (owner, 2026-10-14): Inventory → 🧾 Record a purchase, a to-do's 🛒
+ * purchase order, and a cleaner's purchase approved by recording it. Items and
+ * where each went, total, paid by, note, receipt. Each caller keeps what is its
+ * own (`head`, `extra`, the buttons beside Record) and says what recording does.
+ *
+ * ✨ Read receipt: the AI reads the attached receipt (Gemini; nothing else can
+ * read a photo) and FILLS IN the form — supplies it is sure of, the total, the
+ * store, the date; a line it is not sure of asks the person. Everything it
+ * filled reads "✨ from the receipt" until someone touches it, and nothing is
+ * saved until the usual button.
  */
-function PurchaseForm({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory) => void }) {
+export type PurchaseOut = {
+  lines: { itemId: string; place: string; qty: number }[]; total: string; paidBy: string; note: string; files: File[]; date: string;
+  /** One receipt, several orders: a purchase each, its share of the total. */
+  splits?: { todoId: string; lines: { itemId: string; place: string; qty: number }[]; total: number }[];
+  /** Every line moved to another order: the purchase is that order's. */
+  forTodo?: string;
+};
+type Row = { line: ReceiptLine; got: string | null; skip: boolean; open: boolean; name: string };
+const AI = '✨ from the receipt';
+const money = (n: number) => `$${n.toFixed(2)}`;
+
+function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal, fieldExpenseId, hasReceipt, canSplit, head, extra,
+                        recordLabel = '🧾 Record the purchase', onRecord, buttons }: {
+  inv: Inventory; onInv: (i: Inventory) => void;
+  /** The order this purchase is for, if any ('' = none). */
+  todoId?: string; start?: Lines; defaultPlace?: string | null;
+  /** A cleaner's purchase: what they paid is the total, their receipt is the receipt. */
+  fixedTotal?: number; fieldExpenseId?: string; hasReceipt?: boolean;
+  /** Whether one receipt may be split across the open orders. */
+  canSplit?: boolean;
+  head?: React.ReactNode; extra?: React.ReactNode; recordLabel?: string;
+  /** Records it; a message back = not saved. `true` = clear the form for the next one. */
+  onRecord: (p: PurchaseOut) => Promise<string | true | null>;
+  buttons?: (p: { lines: PurchaseOut['lines']; busy: boolean }) => React.ReactNode;
+}) {
   const api = useContext(InvApi);
-  const [todoId, setTodoId] = useState('');
-  const [lines, setLines] = useState<Lines>(new Map());
+  const [lines, setLinesRaw] = useState<Lines>(start ?? new Map());
   const [total, setTotal] = useState('');
   const [paidBy, setPaidBy] = useState('');
   const [note, setNote] = useState('');
+  const [date, setDate] = useState('');
   const [files, setFiles] = useState<File[]>([]);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
-  const pick = (id: string) => {
-    setTodoId(id);
-    const o = inv.orders.find(x => x.todoId === id);
-    setLines(o ? linesOf(o.lines) : new Map());
+  // What the AI filled and nobody has touched since: 'total', 'note', 'date', 'item:<id>'.
+  const [ai, setAi] = useState<Set<string>>(new Set());
+  const [rows, setRows] = useState<Row[] | null>(null);
+  const [receipt, setReceipt] = useState<Receipt | null>(null);
+  const [reading, setReading] = useState(false);
+  const [readMsg, setReadMsg] = useState('');
+  const [orderOf, setOrderOf] = useState<Map<string, string>>(new Map());
+  const [shares, setShares] = useState<Map<string, string>>(new Map());
+  // A new order picked (Inventory) starts the lines over from it — unless the receipt already filled them in.
+  useEffect(() => { if (!receipt) setLinesRaw(start ?? new Map()); }, [todoId]);
+  const untouch = (...keys: string[]) => setAi(a => { if (!keys.some(k => a.has(k))) return a; const n = new Set(a); keys.forEach(k => n.delete(k)); return n; });
+  // A line someone changes is theirs now — its ✨ goes.
+  const setLines = (m: Lines) => {
+    untouch(...[...new Set([...m.keys(), ...lines.keys()])].filter(id => JSON.stringify(m.get(id)) !== JSON.stringify(lines.get(id))).map(id => `item:${id}`));
+    setLinesRaw(m);
   };
-  const out = flat(lines);
-  const unplaced = [...lines.values()].some(ps => ps.some(p => !p.place && Number(p.qty) > 0));
-  const save = async () => {
-    setBusy(true); setMsg('');
+  const place0 = defaultPlace ?? busiestPlace(inv);
+  const name = (id: string) => inv.items.find(i => i.id === id)?.name ?? id;
+  /** Adds (or takes back) a receipt line's quantity on its supply. */
+  const addQty = (m: Lines, id: string, q: number) => {
+    const parts = m.get(id) ?? [];
+    const first = parts[0] ?? { place: place0, qty: '' };
+    const n = Math.max(0, Math.round(((Number(first.qty) || 0) + q) * 100) / 100);
+    if (!n && parts.length <= 1) m.delete(id); else m.set(id, [{ ...first, qty: String(n) }, ...parts.slice(1)]);
+  };
+  const qtyOf = (l: ReceiptLine) => l.itemQty ?? l.qty ?? 1;
+
+  const read = async () => {
+    setReading(true); setReadMsg('');
     try {
       const f = new FormData();
-      f.append('action', 'purchase'); f.append('lines', JSON.stringify(out)); f.append('total', total); f.append('note', note);
-      f.append('paidBy', paidBy);
-      if (todoId) f.append('todoId', todoId);
-      for (const x of files) f.append('file', x);
-      const r = await api.upload(f);
-      if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
-      onSaved(r); setMsg('✓ Purchase recorded: in the stock and in Costs (Restock).');
-      setTodoId(''); setLines(new Map()); setTotal(''); setNote(''); setFiles([]); setPaidBy('');
+      f.append('action', 'readReceipt');
+      if (!canSplit) f.append('orders', 'no');
+      if (fieldExpenseId) f.append('fieldExpenseId', fieldExpenseId);
+      for (const x of files) f.append('file', x.type.startsWith('image/') ? await shrink(x) : x);
+      const r = await api.upload(f) as unknown as { ok: true; receipt: Receipt; by: string } | { ok: false; message?: string };
+      if (!r.ok) { setReadMsg(`Could not read the receipt — fill it in by hand. (${r.message ?? 'no answer'})`); return; }
+      const rc = r.receipt;
+      if (!rc.lines.length && rc.total == null) { setReadMsg('Could not read the receipt — fill it in by hand. (nothing found on it)'); return; }
+      // The receipt says what was bought: its supplies replace the order's quantities for them.
+      const m = new Map(lines);
+      const sure = rc.lines.filter(l => l.itemId);
+      for (const id of new Set(sure.map(l => l.itemId!))) m.delete(id);
+      for (const l of sure) addQty(m, l.itemId!, qtyOf(l));
+      setLinesRaw(m);
+      const marks = new Set(sure.map(l => `item:${l.itemId}`));
+      if (fixedTotal == null && rc.total != null) { setTotal(String(rc.total)); marks.add('total'); }
+      if (!note.trim() && rc.store) { setNote(rc.store); marks.add('note'); }
+      if (rc.date) { setDate(rc.date); marks.add('date'); }
+      setAi(marks);
+      setRows(rc.lines.map(l => ({ line: l, got: l.itemId, skip: l.kind !== 'item', open: l.kind === 'item' && !l.itemId, name: l.text })));
+      setReceipt(rc);
+      setOrderOf(new Map(sure.map(l => [l.itemId!, l.orderId ?? todoId])));
+      setShares(new Map());
+      setReadMsg(`✨ Read by ${r.by} — check every line before recording.`);
+    } catch (e) { setReadMsg(`Could not read the receipt — fill it in by hand. (${String(e)})`); } finally { setReading(false); }
+  };
+  const setRow = (k: number, row: Row) => setRows(rs => rs!.map((x, j) => j === k ? row : x));
+  /** A doubtful line answered: that supply (its quantity added), or skipped. */
+  const choose = (k: number, id: string | null, i2?: Inventory) => {
+    const row = rows![k]!;
+    const m = new Map(lines);
+    if (row.got) addQty(m, row.got, -qtyOf(row.line));
+    if (id) addQty(m, id, qtyOf(row.line));
+    setLinesRaw(m);
+    if (i2) onInv(i2);
+    setAi(a => { const n = new Set(a); if (row.got) n.delete(`item:${row.got}`); if (id) n.add(`item:${id}`); return n; });
+    if (id && !orderOf.has(id)) setOrderOf(new Map(orderOf).set(id, orderFor(id, inv.orders) ?? todoId));
+    setRow(k, { ...row, got: id, skip: !id, open: false });
+  };
+  const addNew = async (k: number) => {
+    const row = rows![k]!;
+    setBusy(true); setMsg('');
+    try {
+      const r = await api.act({ action: 'newItem', name: row.name.trim(), measure: 'unit', category: 'other', place: place0 || undefined });
+      if (!r.ok || !r.itemId) { setMsg(r.ok ? 'Not added.' : r.message ?? 'Not added.'); return; }
+      choose(k, r.itemId, r);
     } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
   };
+
+  const out = flat(lines);
+  const unplaced = [...lines.values()].some(ps => ps.some(p => !p.place && Number(p.qty) > 0));
+  const totalN = fixedTotal ?? Number(total);
+  // The receipt's own lines (tax and fees too) against the total it says was paid.
+  const sumLines = receipt ? receiptSum(receipt) : null;
+  const off = sumLines != null && totalN > 0 && Math.abs(sumLines - totalN) >= 0.01 ? Math.round((totalN - sumLines) * 100) / 100 : null;
+  // One receipt, several orders — offered once the receipt was read and some line fits another open order.
+  const others = inv.orders.filter(o => o.todoId !== todoId);
+  const splitting = !!canSplit && !!receipt && inv.orders.length > 0 && (rows ?? []).some(r => r.got && orderFor(r.got, others));
+  const orderKey = (id: string) => orderOf.get(id) ?? todoId;
+  const groups = splitting ? [...new Set(out.map(l => orderKey(l.itemId)))] : [];
+  const amountOf = (id: string) => (rows ?? []).filter(r => r.got === id).reduce((a, r) => a + (r.line.amount ?? 0), 0);
+  const auto = splitTotal(totalN > 0 ? totalN : 0, groups.map(g => ({ key: g, amount: [...new Set(out.filter(l => orderKey(l.itemId) === g).map(l => l.itemId))].reduce((a, id) => a + amountOf(id), 0) })));
+  const shareOf = (g: string) => shares.get(g) ?? String(auto.find(x => x.key === g)?.share ?? 0);
+  const shareSum = Math.round(groups.reduce((a, g) => a + (Number(shareOf(g)) || 0), 0) * 100) / 100;
+  const shareLeft = groups.length > 1 && totalN > 0 ? Math.round((totalN - shareSum) * 100) / 100 : 0;
+  const orderTitle = (g: string) => g ? inv.orders.find(o => o.todoId === g)?.title ?? `to-do #${g}` : 'no order';
+  const pending = (rows ?? []).filter(r => r.open).length;
+
+  const record = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const splits = groups.length > 1 ? groups.map(g => ({ todoId: g, lines: out.filter(l => orderKey(l.itemId) === g), total: Number(shareOf(g)) || 0 })) : undefined;
+      // One order left after the split → the purchase is that order's.
+      const r = await onRecord({ lines: out, total: fixedTotal != null ? String(fixedTotal) : total, paidBy, note, files, date, splits,
+                                 ...(groups.length === 1 && groups[0] !== todoId ? { forTodo: groups[0] } : {}) });
+      if (typeof r === 'string') { setMsg(r); return; }
+      if (r === true) {
+        setLinesRaw(new Map()); setTotal(''); setNote(''); setDate(''); setFiles([]); setPaidBy(''); setAi(new Set());
+        setRows(null); setReceipt(null); setReadMsg(''); setOrderOf(new Map()); setShares(new Map());
+        setMsg('✓ Purchase recorded: in the stock and in Costs (Restock).');
+      }
+    } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
+  };
+  const canRead = files.length > 0 || !!hasReceipt;
+  const tags = new Map<string, string[]>();
+  for (const id of lines.keys()) {
+    if (ai.has(`item:${id}`)) tags.set(id, [AI]);
+    else if (receipt && !(rows ?? []).some(r => r.got === id)) tags.set(id, ['▲ not on the receipt']);
+  }
+  const mark = (k: string) => ai.has(k) ? <span className="sub-n"> {AI}</span> : null;
+  return <>
+    {head}
+    {rows && rows.length > 0 && <div className="receipt-lines">
+      <p className="note"><b>On the receipt</b>{receipt?.store ? ` — ${receipt.store}` : ''}{receipt?.date ? ` · ${receipt.date}` : ''}
+        {pending > 0 && <> · <span className="breach">▲ {pending} line{pending === 1 ? '' : 's'} to decide</span></>}</p>
+      <div className="grid-scroll"><table className="units compact"><tbody>
+        {rows.map((r, k) => (
+          <tr key={k}>
+            <td>{r.line.text}{r.line.qty != null && r.line.qty !== 1 ? <span className="sub-n"> ×{r.line.qty}</span> : null}</td>
+            <td className="n">{r.line.amount != null ? money(r.line.amount) : '—'}</td>
+            <td>
+              {r.got && !r.open && <>→ <b>{name(r.got)}</b> {qtyOf(r.line)} <button className="link tiny" onClick={() => setRow(k, { ...r, open: true })}>change</button></>}
+              {r.skip && !r.open && <span className="sub-n">{r.line.kind === 'item' ? 'skipped' : r.line.kind} — not a supply{' '}
+                <button className="link tiny" onClick={() => setRow(k, { ...r, open: true })}>it is one</button></span>}
+              {r.open && <div>
+                {(() => { const c = [...new Set([...r.line.candidates, ...similarItems(r.line.text, inv.items, 6)])]; return c.length > 0 && <div className="button-row">
+                  <span className="note">Is it one of these?</span>
+                  {c.filter(id => id !== r.got).slice(0, 4).map(id => <button key={id} className="secondary small" onClick={() => choose(k, id)}>{name(id)}</button>)}
+                </div>; })()}
+                <div className="button-row">
+                  <input value={r.name} maxLength={80} aria-label="New item name" onChange={e => setRow(k, { ...r, name: e.target.value })} />
+                  <button className="secondary small" disabled={busy || !r.name.trim()} onClick={() => void addNew(k)}>+ Add “{r.name.trim()}” as a new item</button>
+                  <button className="link tiny" onClick={() => choose(k, null)}>Skip (tax, bag…)</button>
+                  {r.got && <button className="link tiny" onClick={() => setRow(k, { ...r, open: false })}>keep {name(r.got)}</button>}
+                </div>
+                <span className="sub-n">or 🔍 below for any other supply</span>
+              </div>}
+            </td>
+          </tr>))}
+      </tbody></table></div>
+    </div>}
+    <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={defaultPlace} onInv={onInv} tags={tags}
+               orderCol={splitting ? { options: inv.orders.map(o => ({ id: o.todoId, label: o.title })), value: new Map(out.map(l => [l.itemId, orderKey(l.itemId)])),
+                                       onChange: (id, o) => { setOrderOf(new Map(orderOf).set(id, o)); setShares(new Map()); } } : undefined} />
+    <div className="row">
+      {fixedTotal == null
+        ? <label>Total paid ($){mark('total')}<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => { setTotal(e.target.value); untouch('total'); setShares(new Map()); }} /></label>
+        : <label>Total paid ($)<input value={fixedTotal.toFixed(2)} disabled /><span className="sub-n">what they paid</span></label>}
+      {fixedTotal == null && <PaidBy value={paidBy} onChange={setPaidBy} />}
+      <label>Note{mark('note')}<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => { setNote(e.target.value); untouch('note'); }} /></label>
+      {receipt && fixedTotal == null && <label>Bought on{mark('date')}<input type="date" value={date} onChange={e => { setDate(e.target.value); untouch('date'); }} /></label>}
+      {fixedTotal == null && <label className="chip">📎 {files.length ? `${files.length} file${files.length === 1 ? '' : 's'}` : 'Receipt'}
+        <input type="file" accept="image/*,application/pdf" multiple hidden onChange={e => setFiles([...(e.target.files ?? [])].slice(0, 5))} /></label>}
+      {canRead && <button className="secondary" disabled={reading || busy} onClick={() => void read()}>{reading ? 'Reading…' : receipt ? '✨ Read it again' : '✨ Read receipt'}</button>}
+    </div>
+    {readMsg && <p className={readMsg.startsWith('✨') ? 'note' : 'breach'} role="status">{readMsg}</p>}
+    {off != null && <p className="note">▲ The receipt's lines add up to {money(sumLines!)} — {money(Math.abs(off))} {off > 0 ? 'less' : 'more'} than the total.</p>}
+    {groups.length > 1 && <div className="receipt-split">
+      <p className="note"><b>One receipt, {groups.length} purchases</b> — each order gets its share of the total (by what its lines cost; tax spread the same way).</p>
+      {groups.map(g => <label key={g}>{orderTitle(g)} ($)
+        <input type="number" inputMode="decimal" min="0" step="0.01" value={shareOf(g)} onChange={e => setShares(new Map(shares).set(g, e.target.value))} /></label>)}
+      <p className={shareLeft ? 'breach' : 'note'}>{shareLeft ? `▲ ${money(Math.abs(shareLeft))} ${shareLeft > 0 ? 'left to assign' : 'too much'} — the parts must add up to the total.` : '✓ The parts add up to the total.'}
+        {shares.size > 0 && <> <button className="link tiny" onClick={() => setShares(new Map())}>↺ split by the lines again</button></>}</p>
+    </div>}
+    {extra}
+    <div className="button-row">
+      {buttons?.({ lines: out, busy })}
+      <button disabled={busy || !out.length || unplaced || !(totalN > 0) || pending > 0 || !!shareLeft} onClick={() => void record()}>{busy ? 'Saving…' : recordLabel}</button>
+      {unplaced && <span className="note">▲ Say which place each item went to.</span>}
+      {pending > 0 && <span className="note">▲ Decide the receipt's lines first.</span>}
+      {lines.size > 0 && !out.length && <span className="note">Write how many of each item.</span>}
+      {out.length > 0 && !(totalN > 0) && <span className="note">The total paid is needed to record it.</span>}
+    </div>
+    {msg && <p className={msg.startsWith('✓') ? 'note' : 'breach'} role="status">{msg}</p>}
+  </>;
+}
+
+/** The form's purchase to the server: one, or one per order from one receipt (uploaded once). */
+async function sendPurchase(api: InvTransport, p: PurchaseOut, todoId: string) {
+  const f = new FormData();
+  f.append('action', 'purchase'); f.append('note', p.note); f.append('paidBy', p.paidBy);
+  if (p.date) f.append('date', p.date);
+  if (p.splits) f.append('splits', JSON.stringify(p.splits));
+  else {
+    f.append('lines', JSON.stringify(p.lines)); f.append('total', p.total);
+    const forTodo = p.forTodo ?? todoId;
+    if (forTodo) f.append('todoId', forTodo);
+  }
+  for (const x of p.files) f.append('file', x);
+  return await api.upload(f);
+}
+
+/** Inventory → 🧾 Record a purchase: from an open order (its lines filled in) or from scratch. */
+function RecordPurchase({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory) => void }) {
+  const api = useContext(InvApi);
+  const [todoId, setTodoId] = useState('');
+  const o = inv.orders.find(x => x.todoId === todoId);
   return (
     <div className="card">
       <h2>🧾 Record a purchase <Hint>What was really bought: it adds to each place's stock and goes to Costs as one Restock expense with its receipt.
-        Start from an open order (its lines come filled in) or add the items with 🔍. Close the order in To-do once everything is bought.</Hint></h2>
-      <label>For the order
-        <select value={todoId} onChange={e => pick(e.target.value)}>
-          <option value="">— none (a purchase on its own)</option>
-          {inv.orders.map(o => <option key={o.todoId} value={o.todoId}>{o.at} · {o.title}{o.purchases ? ` · ${o.purchases} purchase${o.purchases === 1 ? '' : 's'} so far` : ''}</option>)}
-        </select></label>
-      <ItemLines inv={inv} value={lines} onChange={setLines} canEdit onInv={onSaved} />
-      <div className="row">
-        <label>Total paid ($)<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} /></label>
-        <PaidBy value={paidBy} onChange={setPaidBy} />
-        <label>Note<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => setNote(e.target.value)} /></label>
-        <label className="chip">📎 {files.length ? `${files.length} file${files.length === 1 ? '' : 's'}` : 'Receipt'}
-          <input type="file" accept="image/*,application/pdf" multiple hidden onChange={e => setFiles([...(e.target.files ?? [])].slice(0, 5))} /></label>
-      </div>
-      <div className="button-row">
-        <button disabled={busy || !out.length || unplaced || !(Number(total) > 0)} onClick={() => void save()}>{busy ? 'Saving…' : 'Record the purchase'}</button>
-        {unplaced && <span className="note">▲ Say which place each item went to.</span>}
-        {msg && <span className="note">{msg}</span>}
-      </div>
+        Start from an open order (its lines come filled in) or add the items with 🔍. ✨ Read receipt fills the form in from the receipt's photo or PDF —
+        check it, then record it. Close the order in To-do once everything is bought.</Hint></h2>
+      <PurchaseForm inv={inv} onInv={onSaved} todoId={todoId} start={o ? linesOf(o.lines) : undefined} canSplit recordLabel="Record the purchase"
+        head={<label>For the order
+          <select value={todoId} onChange={e => setTodoId(e.target.value)}>
+            <option value="">— none (a purchase on its own)</option>
+            {inv.orders.map(o => <option key={o.todoId} value={o.todoId}>{o.at} · {o.title}{o.purchases ? ` · ${o.purchases} purchase${o.purchases === 1 ? '' : 's'} so far` : ''}</option>)}
+          </select></label>}
+        onRecord={async p => {
+          const r = await sendPurchase(api, p, todoId);
+          if (!r.ok) return r.message ?? 'Not saved.';
+          onSaved(r); setTodoId(''); return true;
+        }} />
     </div>
   );
 }
@@ -736,66 +960,43 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
   todoId: string; unitIds: string[]; onClose: () => void; onBought: (closeIt: boolean) => void;
 }) {
   const [inv, setInv] = useState<Inventory | null>(null);
-  const [lines, setLines] = useState<Lines>(new Map());
-  const [total, setTotal] = useState('');
-  const [note, setNote] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
+  const [start, setStart] = useState<Lines | undefined>();
   const [closeIt, setCloseIt] = useState(true);
-  const [paidBy, setPaidBy] = useState('');
-  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   // Owner, 2026-10-14: the to-do's order IS the "Record a purchase" form — items, total, paid by, note,
   // receipt in one place; 💾 Save order keeps it as a draft (no price needed) until it is bought.
   useEffect(() => { void getInventory().then(r => {
     if (!r.ok) { setMsg(r.message ?? 'Could not load the inventory.'); return; }
-    setInv(r);
     const o = r.orders.find(x => x.todoId === todoId);
-    if (o) setLines(linesOf(o.lines));
+    if (o) setStart(linesOf(o.lines));
+    setInv(r);
   }); }, [todoId]);
   if (!inv) return <p className={msg ? 'breach' : 'note loading-dot'}>{msg || 'Loading the supplies…'}</p>;
-  const out = flat(lines);
   const home = inv.places.find(p => p.units.some(u => unitIds.includes(u.id)))?.place ?? null;
   const hadOrder = inv.orders.some(o => o.todoId === todoId);
-  // Not finished? Kept as this to-do's order — a draft it carries, replaced on every save, until it is bought.
-  const draft = async () => {
-    setBusy(true); setMsg('');
-    try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines: out }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onBought(false); }
-    catch (e) { setMsg(String(e)); } finally { setBusy(false); }
-  };
-  const bought = async () => {
-    setBusy(true); setMsg('');
-    try {
-      const f = new FormData();
-      f.append('action', 'purchase'); f.append('lines', JSON.stringify(out)); f.append('total', total); f.append('note', note); f.append('todoId', todoId);
-      f.append('paidBy', paidBy);
-      for (const x of files) f.append('file', x);
-      const r = await inventoryUpload(f);
-      if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
-      onBought(closeIt);
-    } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
-  };
   return (
     <div className="card task-buy">
       <h3>🛒 Purchase order</h3>
       <p className="note">{hadOrder ? 'The order as it was left. ' : ''}💾 Save order keeps it on this to-do, with or without a price;
-        once it is bought, the total and 🧾 Record the purchase put it into each place's stock and into Costs (Restock).</p>
-      <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={home} onInv={setInv} />
-      <div className="row">
-        <label>Total paid ($)<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => setTotal(e.target.value)} /></label>
-        <PaidBy value={paidBy} onChange={setPaidBy} />
-        <label>Note<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => setNote(e.target.value)} /></label>
-        <label className="chip">📎 {files.length ? `${files.length} file${files.length === 1 ? '' : 's'}` : 'Receipt'}
-          <input type="file" accept="image/*,application/pdf" multiple hidden onChange={e => setFiles([...(e.target.files ?? [])].slice(0, 5))} /></label>
-      </div>
-      <label className="check"><input type="checkbox" checked={closeIt} onChange={e => setCloseIt(e.target.checked)} /> ✓ and close this to-do when recorded</label>
-      <div className="button-row">
-        <button className="secondary" disabled={busy || (!out.length && !hadOrder)} onClick={() => void draft()}>{busy ? 'Saving…' : '💾 Save order'}</button>
-        <button disabled={busy || !out.length || !(Number(total) > 0)} onClick={() => void bought()}>{busy ? 'Saving…' : '🧾 Record the purchase'}</button>
-        <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
-        {lines.size > 0 && !out.length && <span className="note">Write how many of each item.</span>}
-        {out.length > 0 && !(Number(total) > 0) && <span className="note">The total paid is needed to record it.</span>}
-      </div>
-      {msg && <p className={msg.startsWith('✓') ? 'note' : 'breach'} role="status">{msg}</p>}
+        once it is bought, the total and 🧾 Record the purchase put it into each place's stock and into Costs (Restock).
+        ✨ Read receipt fills it in from the receipt — check it before recording.</p>
+      <PurchaseForm inv={inv} onInv={setInv} todoId={todoId} start={start} defaultPlace={home} canSplit
+        extra={<label className="check"><input type="checkbox" checked={closeIt} onChange={e => setCloseIt(e.target.checked)} /> ✓ and close this to-do when recorded</label>}
+        onRecord={async p => {
+          const r = await sendPurchase(REAL, p, todoId);
+          if (!r.ok) return r.message ?? 'Not saved.';
+          onBought(closeIt); return null;
+        }}
+        buttons={({ lines, busy }) => <>
+          {/* Not finished? Kept as this to-do's order — a draft it carries, replaced on every save, until it is bought. */}
+          <button className="secondary" disabled={busy || (!lines.length && !hadOrder)} onClick={async () => {
+            setMsg('');
+            try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onBought(false); }
+            catch (e) { setMsg(String(e)); }
+          }}>💾 Save order</button>
+          <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
+        </>} />
+      {msg && <p className="breach" role="status">{msg}</p>}
     </div>
   );
 }
@@ -803,28 +1004,24 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
 /**
  * A cleaner's "I bought something" approved by recording it (§150, owner):
  * they said it in their own words; the team says which items and where each
- * went — new lines start at the place of the unit it was for.
+ * went — new lines start at the place of the unit it was for. Their amount is
+ * the total and their receipt the receipt (✨ reads it from Drive).
  */
-export function FieldPurchaseLines({ unitId, said, onSave, onCancel }: {
-  unitId: string | null; said: string; onSave: (lines: { itemId: string; place: string; qty: number }[]) => Promise<void>; onCancel: () => void;
+export function FieldPurchaseLines({ id, unitId, said, amount, hasReceipt, onSave, onCancel }: {
+  id: string; unitId: string | null; said: string; amount: number; hasReceipt: boolean;
+  onSave: (lines: { itemId: string; place: string; qty: number }[]) => Promise<void>; onCancel: () => void;
 }) {
   const [inv, setInv] = useState<Inventory | null>(null);
-  const [lines, setLines] = useState<Lines>(new Map());
-  const [busy, setBusy] = useState(false);
   useEffect(() => { void getInventory().then(r => { if (r.ok) setInv(r); }); }, []);
   if (!inv) return <p className="note loading-dot">Loading the supplies…</p>;
-  const out = flat(lines);
   const home = inv.places.find(p => p.units.some(u => u.id === unitId))?.place ?? null;
   return (
     <div className="card">
       <p className="note">They wrote: <b>“{said.replace(/^Bought: /, '')}”</b>. Record it in the inventory to approve it — the items and
         where each went. That purchase adds to the stock and goes to Costs (Restock) with their receipt.</p>
-      <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={home} onInv={setInv} />
-      <div className="button-row">
-        <button className="small" disabled={busy || !out.length} onClick={async () => { setBusy(true); try { await onSave(out); } finally { setBusy(false); } }}>
-          {busy ? 'Saving…' : '✓ Approve and record'}</button>
-        <button className="small secondary" disabled={busy} onClick={onCancel}>Cancel</button>
-      </div>
+      <PurchaseForm inv={inv} onInv={setInv} defaultPlace={home} fixedTotal={amount} fieldExpenseId={id} hasReceipt={hasReceipt}
+        recordLabel="✓ Approve and record" onRecord={async p => { await onSave(p.lines); return null; }}
+        buttons={({ busy }) => <button className="secondary" disabled={busy} onClick={onCancel}>Cancel</button>} />
     </div>
   );
 }

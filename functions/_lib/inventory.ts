@@ -565,6 +565,29 @@ export async function openOrders(sql: SqlFn) {
  */
 export async function recordPurchase(sql: SqlFn, by: string, b: Record<string, unknown>, photos: { name: string; url: string }[] = [],
                                      fieldExpenseId: string | null = null) {
+  return await writePurchase(sql, by, await checkPurchase(sql, b), photos, fieldExpenseId);
+}
+
+/**
+ * One receipt paying for several orders (owner, 2026-10-14): one purchase per
+ * order, each with its share of the total and the same receipt. Every part is
+ * checked before any is saved — never half a receipt recorded.
+ */
+export async function recordPurchases(sql: SqlFn, by: string, b: Record<string, unknown>, photos: { name: string; url: string }[] = []) {
+  const raw = typeof b.splits === 'string' ? JSON.parse(b.splits || '[]') : b.splits;
+  const parts = (Array.isArray(raw) ? raw : []) as Record<string, unknown>[];
+  if (parts.length < 2 || parts.length > 10) throw new Error('Split into 2 to 10 parts.');
+  const checked = [];
+  for (const [k, p] of parts.entries()) {
+    const note = [String(b.note ?? '').trim(), `part ${k + 1} of ${parts.length} of one receipt`].filter(Boolean).join(' — ');
+    checked.push(await checkPurchase(sql, { ...p, note, paidBy: b.paidBy, date: b.date }));
+  }
+  const ids: string[] = [];
+  for (const c of checked) ids.push(await writePurchase(sql, by, c, photos, null));
+  return { ids, todoIds: checked.map(c => c.todoId).filter((x): x is number => !!x).map(String) };
+}
+
+async function checkPurchase(sql: SqlFn, b: Record<string, unknown>) {
   const raw = typeof b.lines === 'string' ? JSON.parse(b.lines || '[]') : b.lines;
   const lines = (Array.isArray(raw) ? raw : []).map((l: { itemId?: unknown; place?: unknown; qty?: unknown }) =>
     ({ itemId: String(l.itemId ?? ''), place: String(l.place ?? ''), qty: Math.round(Number(l.qty) * 100) / 100 })).filter(l => l.qty > 0);
@@ -589,6 +612,15 @@ export async function recordPurchase(sql: SqlFn, by: string, b: Record<string, u
   const note = String(b.note ?? '').trim().slice(0, 500) || null;
   // §150, owner: who paid — blank = the company; a name = brought with their own money, to be paid back.
   const paidBy = String(b.paidBy ?? '').trim().slice(0, 120) || null;
+  // The receipt's date (read from it, 2026-10-14) dates the expense in Costs — never ahead, at most 60 days back.
+  const today = todayIn(TZ), d = String(b.date ?? '');
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today && d >= addDays(today, -60) ? d : today;
+  return { named, total, todoId, note, paidBy, date };
+}
+
+async function writePurchase(sql: SqlFn, by: string, c: Awaited<ReturnType<typeof checkPurchase>>, photos: { name: string; url: string }[],
+                             fieldExpenseId: string | null) {
+  const { named, total, todoId, note, paidBy, date } = c;
   const [pu] = await sql`INSERT INTO inventory_purchases (account_id, todo_id, total, note, photos, by_name, field_expense_id, paid_by)
                          VALUES (1, ${todoId}, ${total}, ${note}, ${JSON.stringify(photos)}::jsonb, ${by}, ${fieldExpenseId ? Number(fieldExpenseId) : null}, ${paidBy})
                          RETURNING id::text` as { id: string }[];
@@ -599,7 +631,7 @@ export async function recordPurchase(sql: SqlFn, by: string, b: Record<string, u
   const only = places.size === 1 ? named[0]!.place : null;
   const unit = only?.self && only.units.length === 1 ? only.units[0]!.id : null;
   await sql`INSERT INTO expenses (account_id, unit_id, shared, start_date, category, frequency, amount, label, notes, source, external_ref, created_by)
-            VALUES (1, ${unit}, ${!unit}, ${todayIn(TZ)}, 'Restock', 'One-time', ${total}, ${what.title.replace(/^Buy supplies/, 'Supplies bought').slice(0, 120)},
+            VALUES (1, ${unit}, ${!unit}, ${date}, 'Restock', 'One-time', ${total}, ${what.title.replace(/^Buy supplies/, 'Supplies bought').slice(0, 120)},
                     ${[...(paidBy ? [`Paid by ${paidBy} — to pay back`] : []), ...what.items.map(i => i.replace(/^Buy: /, '')), ...photos.map(p => `Receipt: ${p.url}`)].join('\n')}, 'inventory', ${`purchase-${pu!.id}`}, ${by})
             ON CONFLICT (source, external_ref) WHERE external_ref IS NOT NULL DO NOTHING`;
   if (todoId) await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)

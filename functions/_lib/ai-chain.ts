@@ -4,6 +4,8 @@
  * (its own capacity), then Cloudflare Workers AI (free, no key — a binding). Each gets one
  * short retry on 503/429. Only called when a person asks (✨ Suggest): nothing reads every
  * message. Who answered is kept in accounts.ai_last, for Settings.
+ * With `files` (a receipt's photo or PDF, owner 2026-10-14) only Gemini can read
+ * them — Workers AI's text model cannot see images, so it is not asked.
  */
 import type { SqlFn } from './accounts.ts';
 import { decrypt } from './crypto.ts';
@@ -15,6 +17,16 @@ const WORKERS_MODEL = '@cf/meta/llama-3.3-70b-instruct-fp8-fast';
 
 export interface AiAnswer { ok: true; json: Record<string, unknown>; by: string }
 export interface AiFailure { ok: false; error: string }
+/** A photo or PDF for the model to read, base64 (Gemini `inlineData`). */
+export interface AiFile { mimeType: string; data: string }
+
+/** Bytes → base64, in chunks (a whole receipt photo overflows String.fromCharCode's arguments). */
+export function toBase64(buf: ArrayBuffer): string {
+  const b = new Uint8Array(buf);
+  let s = '';
+  for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode(...b.subarray(i, i + 0x8000));
+  return btoa(s);
+}
 
 const wait = (ms: number) => new Promise(r => setTimeout(r, ms));
 
@@ -26,11 +38,11 @@ export function firstJson(text: string): Record<string, unknown> | null {
   try { const v = JSON.parse(t.slice(a, b + 1)); return v && typeof v === 'object' && !Array.isArray(v) ? v : null; } catch { return null; }
 }
 
-async function gemini(key: string, model: string, system: string, user: string): Promise<{ json?: Record<string, unknown>; busy?: boolean; error?: string }> {
+async function gemini(key: string, model: string, system: string, user: string, files: AiFile[] = []): Promise<{ json?: Record<string, unknown>; busy?: boolean; error?: string }> {
   for (let attempt = 0; attempt < 2; attempt++) {
     const r = await fetch(`${GEMINI}/${model}:generateContent?key=${encodeURIComponent(key)}`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [{ text: user }] }],
+      body: JSON.stringify({ systemInstruction: { parts: [{ text: system }] }, contents: [{ role: 'user', parts: [...files.map(f => ({ inlineData: f })), { text: user }] }],
                              generationConfig: { responseMimeType: 'application/json', temperature: 0.2 } })
     }).catch(() => null);
     if (!r) return { error: 'no answer' };
@@ -54,7 +66,7 @@ async function workers(env: Env, system: string, user: string): Promise<{ json?:
   } catch (e) { return { error: `Workers AI: ${e instanceof Error ? e.message.slice(0, 120) : String(e)}` }; }
 }
 
-export async function askJson(sql: SqlFn, env: Env, system: string, user: string): Promise<AiAnswer | AiFailure> {
+export async function askJson(sql: SqlFn, env: Env, system: string, user: string, files: AiFile[] = []): Promise<AiAnswer | AiFailure> {
   const [a] = await sql`SELECT gemini_api_key_enc, gemini_model FROM accounts WHERE id = 1` as { gemini_api_key_enc: string | null; gemini_model: string | null }[];
   const key = a?.gemini_api_key_enc ? await decrypt(a.gemini_api_key_enc, env.ENCRYPTION_KEY).catch(() => null) : null;
   const errors: string[] = [];
@@ -64,14 +76,15 @@ export async function askJson(sql: SqlFn, env: Env, system: string, user: string
   };
   if (key) {
     for (const model of [...new Set([a?.gemini_model || 'gemini-3.6-flash', LITE])]) {
-      const r = await gemini(key, model, system, user);
+      const r = await gemini(key, model, system, user, files);
       if (r.json) return done(model, r.json);
       errors.push(r.error ?? model);
     }
   } else errors.push('no Gemini key');
-  const w = await workers(env, system, user);
-  if (w.json) return done(`Workers AI (${WORKERS_MODEL.split('/').pop()})`, w.json);
-  errors.push(w.error ?? 'Workers AI');
+  if (files.length) errors.push('Workers AI cannot read images or PDFs');
+  const w = files.length ? null : await workers(env, system, user);
+  if (w?.json) return done(`Workers AI (${WORKERS_MODEL.split('/').pop()})`, w.json);
+  if (w) errors.push(w.error ?? 'Workers AI');
   await sql`UPDATE accounts SET ai_last = ${JSON.stringify({ at: new Date().toISOString(), by: null, errors })}::jsonb WHERE id = 1`.catch(() => {});
   return { ok: false, error: errors.join(' · ') };
 }

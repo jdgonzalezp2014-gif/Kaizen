@@ -37,6 +37,11 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   pure `src/lib/inventory.ts` (stockLevels, reconcile, unitUses, perClean, needByPlace, toOrder, orderList) and the
   places in `src/lib/unit-access.ts` (supplyPlace, placeLabel, inventoryPlaces); server `recordPurchase`, `fieldPurchase`,
   `cleanTodo`, `setMins` (functions/_lib/inventory.ts); `FieldPurchaseLines` (Inventory.tsx) in the approval.
+- Purchase form + ✨ Read receipt (2026-10-14): ONE `PurchaseForm` (Inventory.tsx) under `RecordPurchase` (Inventory card),
+  `TaskPurchase` (to-do) and `FieldPurchaseLines` (cleaner's purchase); `sendPurchase` posts it. Server
+  `functions/_lib/receipt-read.ts` (`receiptFiles`, `readReceiptFiles`), `askJson(…, files)` in `ai-chain.ts` (Gemini
+  `inlineData`); `recordPurchase` = `checkPurchase` + `writePurchase`, `recordPurchases` (splits); pure `src/lib/receipt.ts`
+  (readReceipt, similarItems, orderFor, receiptSum, splitTotal).
 - Script: `scripts/whatsapp-cleanings.mjs` (crew chat history, one-off).
 
 ## Tables
@@ -485,4 +490,18 @@ key had no SOPs.
   "🧾 Bought — record it" (← back to the order returns). The to-do row's link reads "+ 🛒 purchase order".
 - **A to-do's purchase order = the Record-a-purchase form (owner, 2026-10-14):** `TaskPurchase` shows items, total, paid by,
   note, receipt at once; 💾 Save order = the order (draft, no price), 🧾 Record the purchase = the order processed. The
-  two-step "Bought — record it" is gone. Open: SOPs that describe the two steps still need the new wording.
+  two-step "Bought — record it" is gone. SOP #15 v13 has the new wording.
+- **✨ Read receipt (owner, 2026-10-14):** the three purchase entries are one `PurchaseForm`. With a receipt attached (or a
+  cleaner's own, read from Drive by `fieldExpenseId`) "✨ Read receipt" → `/api/inventory` `readReceipt` → Gemini reads it
+  with the supplies list (id | name | measure) and the open orders → `{store, date, total, tax, lines}`; `readReceipt` (pure)
+  keeps a supply only when the model says `sure` AND it exists, else the line asks "Is it one of these?" (model's alternatives
+  + look-alikes), "+ Add “…” as a new item" (editable name, `newItem`) or Skip. Workers AI cannot read images: no Gemini →
+  "Could not read the receipt — fill it in by hand" (`ai_last` records who answered / the errors). Filled fields read
+  "✨ from the receipt" until touched; order lines not on it "▲ not on the receipt"; total vs Σ lines (+ tax if no tax line)
+  shows the difference. Saves nothing. **One receipt, several orders:** if a line fits another open order, each item gets
+  "For the order"; ≥2 orders → `splits` (shares by `splitTotal`, editable, must sum to the total) → `recordPurchases`
+  (all checked before any write; one Drive upload; note "part k of n of one receipt"). The receipt's date (≤60 d back)
+  dates the Restock expense ("Bought on"). Cleaner's approval: total fixed to what they paid, no split. Practice refuses
+  ✨ (nothing leaves the browser). Tested 2026-10-14 locally with a generated store receipt (JPG + PDF; no real store
+  receipt was at hand), nothing recorded: 9/10 lines matched, microfiber cloths → doubt, extinguisher → Napa's order #69.
+  Open: test with a real phone photo of a receipt; a cleaner's approval was not exercised in the browser.

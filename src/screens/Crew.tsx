@@ -178,7 +178,7 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
                 <div><b>{money2(f.amount)}</b> — {f.description} <Files files={f.photos.map((p, i) => ({ id: String(i), ...p }))} />
                   {!f.photos.length && <span className="breach"> no receipt</span>}</div>
                 {canEdit && <Decide id={f.id} kind="decideField" onDone={load}
-                  record={f.source === 'vendor' ? undefined : { unitId: f.unitId, said: f.description }} />}
+                  record={f.source === 'vendor' ? undefined : { unitId: f.unitId, said: f.description, amount: f.amount, hasReceipt: f.photos.length > 0 }} />}
               </div>
             ))}
           </div>
@@ -228,7 +228,7 @@ function ConfirmRow({ t, roster, canEdit, onDone }: { t: ToConfirm; roster: Clea
 
 /** `record`: a cleaner's purchase — approved only by recording it in the inventory (§150). */
 function Decide({ id, onDone, kind = 'decideExtra', record }: {
-  id: string; onDone: () => void; kind?: 'decideExtra' | 'decideField'; record?: { unitId: string | null; said: string };
+  id: string; onDone: () => void; kind?: 'decideExtra' | 'decideField'; record?: { unitId: string | null; said: string; amount: number; hasReceipt: boolean };
 }) {
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState('');
@@ -239,7 +239,7 @@ function Decide({ id, onDone, kind = 'decideExtra', record }: {
     onDone();
   };
   if (recording && record) return <>
-    <FieldPurchaseLines unitId={record.unitId} said={record.said} onSave={lines => go('approved', lines)} onCancel={() => setRecording(false)} />
+    <FieldPurchaseLines id={id} {...record} onSave={lines => go('approved', lines)} onCancel={() => setRecording(false)} />
     {msg && <span className="breach">{msg}</span>}
   </>;
   return (

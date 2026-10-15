@@ -14,7 +14,9 @@
  *   POST { action: 'newItem', name, measure?, category? }               a supply added on the spot
  * A count, a correction or a take may leave a place below its minimum → "Low stock" to-do, if Setup has it on.
  *   POST { action: 'order', lines: [{ itemId, place, qty }], forTodo? }  the ORDER: ONE to-do (or onto a field to-do), a line per item
- *   POST { action: 'purchase', lines, total, todoId?, note? } + receipt  what was BOUGHT: stock per place + one Restock expense
+ *   POST { action: 'purchase', lines, total, todoId?, note?, paidBy?, date? } + receipt  what was BOUGHT: stock per place + one Restock expense
+ *   POST { action: 'purchase', splits: [{ todoId?, lines, total }], … } + receipt  one receipt, several orders: a purchase each
+ *   POST { action: 'readReceipt', orders? } + receipt (or fieldExpenseId)   ✨ the AI reads it — the form is filled in, nothing saved
  *
  * GET with `operations`, POST with `operations.edit` (roles.ts). To-dos made
  * here are mirrored to Hostaway after the response.
@@ -23,7 +25,8 @@ import { db, type Env } from '../_lib/db.ts';
 import { commentToThread } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, fieldPhotos, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
+import { createOrder, fieldPhotos, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
+import { readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -55,14 +58,21 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       await recordLook(sql, who.email, b.place, look, photos, given.length);
       for (const c of given) await recordMove(sql, me, { kind: 'count', itemId: c.itemId, place: b.place, qty: c.qty, note: b.note });
       waitUntil(lowStock(sql, [String(b.place ?? '')]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
+    } else if (b.action === 'readReceipt') {
+      // Owner, 2026-10-14: the AI only fills the form in — this saves nothing.
+      const r = await readReceiptFiles(sql, env, await receiptFiles(sql, env, files, b.fieldExpenseId), b.orders !== 'no');
+      return Response.json(r.ok ? r : { ok: false, error: 'unreadable', message: r.message });
     } else if (b.action === 'purchase') {
+      // One receipt for several orders: uploaded once, every part checked before any is saved, a purchase per order.
+      const split = typeof b.splits === 'string' && b.splits !== '';
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, 'inventory purchase');
-      await recordPurchase(sql, who.email, b, photos);
+      const todoIds = split ? (await recordPurchases(sql, who.email, b, photos)).todoIds
+                            : (await recordPurchase(sql, who.email, b, photos), b.todoId ? [String(b.todoId)] : []);
       // Owner, Oct 2026: an order's news is told in its to-do's Slack thread — what was bought, and for how much.
-      if (b.todoId) {
-        const [n] = await sql`SELECT body FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${String(b.todoId)} AND kind = 'note'
+      for (const id of todoIds) {
+        const [n] = await sql`SELECT body FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id} AND kind = 'note'
                                ORDER BY id DESC LIMIT 1` as { body: string }[];
-        if (n) waitUntil(commentToThread(sql, env.ENCRYPTION_KEY, 'task', String(b.todoId), `🧾 ${n.body}${b.note ? `\n— ${String(b.note)}` : ''}`, who.email).catch(() => {}));
+        if (n) waitUntil(commentToThread(sql, env.ENCRYPTION_KEY, 'task', id, `🧾 ${n.body}${b.note ? `\n— ${String(b.note)}` : ''}`, who.email).catch(() => {}));
       }
     } else if (b.action === 'adjusts') {
       // §150: − / + on "On record", saved together with why.
