@@ -1,7 +1,7 @@
 /**
  * Live work (§166): one quiet question every few seconds — "has any work moved?" — shared by every screen that
- * shows work, so two lists on screen still ask once. Only while the page is visible (a hidden tab costs nothing,
- * and asks again the moment it is back). The answer is two signatures; a screen reloads its list only when one
+ * shows work, so two lists on screen still ask once. A hidden tab asks once a minute (so the bell can still ring
+ * and show a desktop notice), and again the moment it is back. The answer is two signatures; a screen reloads its list only when one
  * differs from the last answer, whoever moved it: the app, Slack, Hostaway's pull, a cleaner's or a vendor's link.
  */
 import { useEffect, useRef } from 'react';
@@ -11,22 +11,24 @@ export interface LiveNews { todos: boolean; claims: boolean; fresh: LiveFresh[] 
 type Listener = (n: LiveNews) => void;
 
 const EVERY_MS = 10_000;
+const HIDDEN_MS = 60_000;
+let askedAt = 0;
 const listeners = new Set<Listener>();
-let last: { todos: string; claims: string; top: string } | null = null;
+let last: { todos: string; claims: string; top: string; at: string } | null = null;
 let timer: number | undefined;
 let asking = false;
 
 async function ask() {
-  if (asking || document.hidden) return;
-  asking = true;
+  if (asking || (document.hidden && Date.now() - askedAt < HIDDEN_MS)) return;
+  asking = true; askedAt = Date.now();
   try {
-    const r = await getLive(last?.top);
+    const r = await getLive(last?.top, last?.at);
     if (!r.ok) return;
     // The first answer is where this page starts: nothing has "moved" yet.
     const news: LiveNews | null = last && {
       todos: r.todos !== last.todos, claims: r.claims !== last.claims, fresh: r.fresh
     };
-    last = { todos: r.todos, claims: r.claims, top: r.top };
+    last = { todos: r.todos, claims: r.claims, top: r.top, at: r.at };
     if (news && (news.todos || news.claims || news.fresh.length)) for (const f of listeners) f(news);
   } catch { /* offline for a moment: the next tick asks again */ }
   finally { asking = false; }

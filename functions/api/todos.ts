@@ -135,8 +135,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         (SELECT concat(count(*), '.', COALESCE(sum(rev), 0)) FROM todos WHERE account_id = 1) AS todos,
         (SELECT concat(count(*), '.', COALESCE(sum(rev), 0)) FROM claims WHERE account_id = 1) AS claims,
         (SELECT concat(count(*), '.', COALESCE(max(id), 0)) FROM work_updates WHERE account_id = 1 AND subject = 'task') AS task_notes,
-        (SELECT concat(count(*), '.', COALESCE(max(id), 0)) FROM work_updates WHERE account_id = 1 AND subject = 'claim') AS claim_notes` as
-      { todos: string; claims: string; task_notes: string; claim_notes: string }[];
+        (SELECT concat(count(*), '.', COALESCE(max(id), 0)) FROM work_updates WHERE account_id = 1 AND subject = 'claim') AS claim_notes,
+        now() AS at` as
+      { todos: string; claims: string; task_notes: string; claim_notes: string; at: string | Date }[];
     // New work for the bell: top-level to-dos after the last one this screen saw, made by someone else (from any door).
     const after = url.searchParams.get('after') ?? '';
     const [top] = await sql`SELECT COALESCE(max(id), 0)::text AS id FROM todos WHERE account_id = 1` as { id: string }[];
@@ -148,10 +149,22 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
          AND t.created_by IS DISTINCT FROM ${who.email}
        ORDER BY t.id LIMIT 20` as { id: string; title: string; kind: string; priority: string; created_by: string | null;
                                     created_at: string | Date; clean_group: string | null; units: string | null }[] : [];
-    return Response.json({ ok: true, todos: `${r!.todos}|${r!.task_notes}`, claims: `${r!.claims}|${r!.claim_notes}`, top: top!.id,
-                           fresh: fresh.map(x => ({ id: x.id, title: x.title, kind: x.kind, priority: x.priority, createdBy: x.created_by,
-                                                    createdAt: iso(x.created_at), order: x.clean_group === 'request' || x.clean_group === 'inspection',
-                                                    units: x.units })) },
+    // Closed by someone else since the last answer (the database's clock both ways, so no skew).
+    const since = url.searchParams.get('since') ?? '';
+    const closed = since && !Number.isNaN(Date.parse(since)) ? await sql`
+      SELECT t.id::text AS id, t.title, t.kind, t.priority, t.status, t.done_by, t.done_at, t.clean_group,
+             (SELECT string_agg(u.name, ', ') FROM units u WHERE u.id = ANY(t.unit_ids)) AS units
+        FROM todos t
+       WHERE t.account_id = 1 AND t.status IN ('completed', 'cancelled') AND t.done_at > ${since}::timestamptz
+         AND t.parent_id IS NULL AND t.deleted_at IS NULL AND t.done_by IS DISTINCT FROM ${who.email}
+       ORDER BY t.done_at LIMIT 20` as { id: string; title: string; kind: string; priority: string; status: string; done_by: string | null;
+                                         done_at: string | Date; clean_group: string | null; units: string | null }[] : [];
+    const order = (g: string | null) => g === 'request' || g === 'inspection';
+    return Response.json({ ok: true, todos: `${r!.todos}|${r!.task_notes}`, claims: `${r!.claims}|${r!.claim_notes}`, top: top!.id, at: iso(r!.at),
+                           fresh: [...fresh.map(x => ({ id: x.id, event: 'new', title: x.title, kind: x.kind, priority: x.priority, createdBy: x.created_by,
+                                                        createdAt: iso(x.created_at), order: order(x.clean_group), units: x.units })),
+                                   ...closed.map(x => ({ id: x.id, event: x.status, title: x.title, kind: x.kind, priority: x.priority, createdBy: x.done_by,
+                                                         createdAt: iso(x.done_at), order: order(x.clean_group), units: x.units }))] },
                          { headers: { 'Cache-Control': 'no-store' } });
   }
   const updates = url.searchParams.get('updates');

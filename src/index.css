@@ -2798,4 +2798,14 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .side-foot .live-bell { margin: 0; align-self: flex-start; }
 /* The button spans the rail's inner width so the bell lands on the rail's centre, in line with the icons above it. */
 .side-foot .live-bell .pop-btn { width: 44px; padding: 0; }
-.side-foot .live-bell .pop-panel { left: calc(100% + 8px); right: auto; top: auto; bottom: 0; }
+/* Fixed, because the rail clips what overflows it (overflow: hidden); beside the rail as it is while hovered (248px). */
+.side-foot .live-bell .pop-panel { position: fixed; left: 256px; right: auto; top: auto; bottom: 14px; }
+.live-gear { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0;
+  background: none; border: 0; border-radius: var(--r-sm); color: var(--muted); cursor: pointer; }
+.live-gear:hover, .live-gear[aria-expanded="true"] { background: var(--hover); color: var(--ink); }
+.live-sound { display: flex; flex-direction: column; gap: 8px; margin: 0 6px; padding: 8px 10px; border-radius: var(--r-sm); background: var(--tint); }
+.live-row { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; }
+.live-row label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.live-row input[type=range] { flex: 1; min-width: 80px; }
+.live-pct { width: 34px; text-align: right; font-variant-numeric: tabular-nums; }
+.live-warn { color: var(--warn); }
