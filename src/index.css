@@ -2519,6 +2519,8 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
   .side-sublink.active { color: var(--ink); font-weight: 650; background: var(--tint); }
   .side-foot { margin-top: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .side-foot .theme-toggle { width: 100%; justify-content: flex-start; gap: 16px; padding: 0 12px; min-height: 40px; border: 0; background: none; }
+  /* The moon sits in the same 20px slot as the rail's icons, so it lines up on the rail's centre. */
+  .side-foot .theme-toggle > span[aria-hidden] { display: inline-flex; justify-content: center; width: 20px; flex: none; }
   .side-foot .theme-word { opacity: 0; transition: opacity .12s ease; }
   .side-nav:hover .side-foot .theme-word, .side-nav:has(:focus-visible) .side-foot .theme-word { opacity: 1; }
   /* The rail lists Operations' views; the strip on the page would say it twice. A one-line crumb says where you are. */
