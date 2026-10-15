@@ -1502,11 +1502,15 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 .home-flags .ops-doc .icon { vertical-align: -2px; }
 /* The ↗ after the unit: the stay on hover, opening to the right of the arrow. */
 .home-unit .home-hostaway { position: relative; }
-.home-unit .home-hostaway::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: -8px; z-index: 50;
+.home-unit .home-tip { position: absolute; top: calc(100% + 6px); left: -8px; z-index: 50;
   width: max-content; max-width: min(280px, 80vw); padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--line);
   background: var(--card); color: var(--ink); box-shadow: var(--shadow-2); font-size: var(--fs-footnote); font-weight: 400;
-  white-space: pre-line; opacity: 0; visibility: hidden; transition: opacity .1s ease; pointer-events: none; }
-.home-unit .home-hostaway:hover::after, .home-unit .home-hostaway:focus-visible::after { opacity: 1; visibility: visible; }
+  white-space: normal; opacity: 0; visibility: hidden; transition: opacity .1s ease; pointer-events: none; }
+.home-unit .home-hostaway:hover .home-tip, .home-unit .home-hostaway:focus-visible .home-tip { opacity: 1; visibility: visible; }
+/* A booking platform's symbol (ChannelMark): one colour, the size of the text. */
+.ch-mark { display: inline-flex; align-items: center; vertical-align: -2px; }
+.ch-mark .icon { width: 1em; height: 1em; }
+.ch-letter { font-weight: 800; font-size: .9em; line-height: 1; }
 .home-flags [data-tip]:hover::after, .home-flags [data-tip]:focus-within::after { opacity: 1; visibility: visible; }
 
 /* §90: the reservation in Hostaway, and the ID to Drive from Home. */
@@ -2276,7 +2280,14 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: var(--
 .todo-files { margin: 8px 0; display: flex; flex-direction: column; gap: 4px; }
 .todo-files-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .todo-files-head .chip { cursor: pointer; }
-.todo-files-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-body); }
+.todo-files-list { list-style: none; margin: 0; padding: 2px 0 6px; display: flex; flex-wrap: nowrap; gap: 6px; overflow-x: auto;
+  scroll-snap-type: x proximity; -webkit-overflow-scrolling: touch; scrollbar-width: thin; font-size: var(--fs-caption); }
+.todo-files-list li { flex: 0 0 auto; scroll-snap-align: start; display: inline-flex; align-items: center; gap: 2px;
+  padding: 1px 4px 1px 8px; border: 1px solid var(--line-strong); border-radius: var(--r-pill); }
+.todo-files-list a { display: inline-flex; align-items: center; gap: 4px; color: var(--ink); text-decoration: none; }
+.todo-files-list a .icon { width: 12px; height: 12px; color: var(--muted); }
+.todo-files-list .file-name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.todo-files-list li button { min-height: 0; padding: 0 4px; }
 /* §156: a time change asks for the cleaner's yes before it is saved. */
 .ops-time-check { margin: 8px 0 12px; padding: 10px 12px; border: 1px solid var(--line); border-left: 3px solid var(--series-1);
   border-radius: var(--r-sm); background: color-mix(in srgb, var(--series-1) 5%, transparent); }
@@ -2721,3 +2732,18 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .report-comment { margin: var(--s-2) 0; padding: 6px 10px; background: var(--tint); border-radius: var(--r-sm); font-size: var(--fs-footnote); white-space: pre-wrap; }
 .report-reply { display: flex; gap: var(--s-2); margin-top: var(--s-2); }
 .report-reply input { flex: 1; min-width: 0; }
+/* The ? beside a to-do's or claim's title: its description on hover (owner, 2026-10-15). */
+.todo-about .peek-label { color: color-mix(in srgb, var(--muted) 55%, transparent); font-weight: 800; padding: 0 4px; min-height: 0; }
+.todo-about .peek-label:hover { color: var(--accent); }
+.todo-about .hint-pop { white-space: pre-line; max-width: min(360px, 85vw); }
+/* An open item's stay, small, on its summary line. */
+.sheet-summary { align-items: center; }
+/* Left-aligned, wrapping to a second line when there is more (owner, 2026-10-15). */
+.sheet-chips { flex: 1; min-width: 0; display: flex; flex-wrap: wrap; justify-content: flex-start; gap: 6px; }
+.slack-link .icon { width: 13px; height: 13px; vertical-align: -2px; }
+.sheet-chip { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-caption); padding: 1px 8px;
+  border-radius: var(--r-pill); border: 1px solid var(--line-strong); color: var(--ink); white-space: nowrap; text-decoration: none; }
+.sheet-chip .icon { width: 12px; height: 12px; color: var(--muted); }
+.sheet-chip.attn, .sheet-chip.attn .icon { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 45%, transparent); }
+.sheet-chip.muted { color: var(--muted); }
+.sheet-chip.stay { border-color: color-mix(in srgb, var(--series-1) 40%, transparent); }

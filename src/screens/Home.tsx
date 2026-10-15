@@ -35,6 +35,7 @@ import { hostawayReservationUrl, type BoardRow } from '../lib/operations.ts';
 import { Hint, IconFlag } from '../components/Hint.tsx';
 import { usePhone } from '../components/usePhone.ts';
 import { Icon } from '../components/Icon.tsx';
+import { ChannelMark } from '../components/ChannelMark.tsx';
 
 const TZ = 'America/New_York';
 const WEEK = 7;
@@ -424,12 +425,14 @@ function DayGroup({ label, empty, children }: { label: string; empty: string; ch
  */
 function UnitCell({ r }: { r: BoardRow }) {
   const stay = [r.guest || 'guest', `${r.nights} night${r.nights === 1 ? '' : 's'}`, r.guests ? `${r.guests} guests` : '',
-    r.channel ? channelLabel(r.channel) : '', r.total ? money(r.total) : ''].filter(Boolean).join(' · ');
+    r.total ? money(r.total) : ''].filter(Boolean).join(' · ');
   return (
     <span className="home-main home-unit">
       <b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}
       {' '}<a className="home-hostaway" href={hostawayReservationUrl(r.resId)} target="_blank" rel="noreferrer"
-              aria-label={`${stay} — open the reservation in Hostaway`} data-tip={`${stay}\nOpen the reservation in Hostaway`}>↗</a>
+              aria-label={`${stay}${r.channel ? ` · ${channelLabel(r.channel)}` : ''} — open the reservation in Hostaway`}>↗
+        {/* The platform as its symbol, before the stay (owner, 2026-10-15). */}
+        <span className="home-tip" aria-hidden="true">{r.channel && <ChannelMark channel={r.channel} />} {stay}<br /><span className="sub-n">Open the reservation in Hostaway</span></span></a>
     </span>
   );
 }

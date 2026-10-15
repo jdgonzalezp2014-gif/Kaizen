@@ -175,3 +175,11 @@ UI only; tokens and shared components from `docs/design-system.md`.
   where a kid row has nothing else marking it as nested. Inside the panel's "Inside" section it sat inside `.task-fold`
   — already a box — so the line read as a short stray segment, not attached to anything above or below. Zeroed for
   `.task-fold-body .todo-kids` (`index.css`); the board's flat view keeps the line.
+
+## To-do rows and the open item (2026-10-15, owner)
+Every lane (to-dos, repairs, purchase orders, claims) shares it. Row: title ✎ then a light-grey `!` whose hover is the
+description ("Details" is gone); a stay is a bed icon on the meta line (guest · dates on hover, link to Hostaway).
+Slack as a source is Slack's logo linking to the message everywhere — row, description (`From Slack: <url>` folds
+into it), comment ends; the open item's "From Slack" eyebrow is gone. Open item: the summary is small chips (symbol +
+few words: stage, priority, unit, dates, owner, vendor, cost, stay ↗), left-aligned, wrapping. Files are chips on one
+row that slides sideways. Brand marks: `components/ChannelMark.tsx` (Font Awesome Free, CC BY 4.0).

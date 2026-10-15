@@ -34,14 +34,42 @@ import { SlideOver, NoDock, useDock } from './SlideOver.tsx';
 import { createPortal } from 'react-dom';
 import { Popover } from './Popover.tsx';
 import { Icon, ic } from './Icon.tsx';
+import { hostawayReservationUrl } from '../lib/operations.ts';
+import { SlackMark } from './ChannelMark.tsx';
+
+/**
+ * What a to-do or claim is about, beside its title (owner, 2026-10-15): a light grey ! whose hover is the
+ * description — instead of a "Details" word on the meta line.
+ */
+const AboutPeek = ({ text, source }: { text: string; source?: string | null }) => (
+  <Peek className="todo-about" ariaLabel="Description" label="!">
+    {source && source !== 'Details' && <><b>{source}</b><br /></>}<Linked text={text} />
+  </Peek>
+);
+/** The stay it is tied to: a bed on the meta line, the guest and dates on hover, and the way to Hostaway. */
+const StayPeek = ({ id, label }: { id: string | null; label: string }) => (
+  <span className="m"><Peek ariaLabel={`Reservation: ${label}`} label={<Icon n="bed" />}>
+    <b>Reservation</b><br />{label}
+    {id && <><br /><a href={hostawayReservationUrl(id)} target="_blank" rel="noreferrer">Open in Hostaway ↗</a></>}
+  </Peek></span>
+);
 
 /** The claim's case on the platform, one tap away (§88). */
 const CaseLink = ({ url }: { url: string | null }) => url
   ? <a className="case-link" href={url} target="_blank" rel="noreferrer" title={url}>↗ {caseHost(url)} case</a> : null;
 
-/** owner, Oct 2026: a pasted link (a Slack thread) is a 🔗, not 80 characters of URL. */
-export const Linked = ({ text }: { text: string }) => <>{text.split(/(https?:\/\/\S+)/).map((p, i) => i % 2
-  ? <a key={i} className="desc-link" href={p} target="_blank" rel="noreferrer" title={p} onClick={e => e.stopPropagation()}
+/** Slack, everywhere it is a source (owner, 2026-10-15): its logo, a link to the message. */
+export const SlackLink = ({ url }: { url: string }) => (
+  <a className="desc-link slack-link" href={url} target="_blank" rel="noreferrer" title="From Slack — open the message"
+     aria-label="From Slack — open the message" onClick={e => e.stopPropagation()}><SlackMark /></a>
+);
+const SLACK_URL = /https?:\/\/\S*slack\.com\S*/i;
+/** The Slack message a to-do came from, out of its description ("From Slack: <url>"). */
+export const slackUrlOf = (text: string | null | undefined) => SLACK_URL.exec(text ?? '')?.[0] ?? null;
+
+/** owner, Oct 2026: a pasted link is a 🔗, not 80 characters of URL; a Slack one is Slack's logo, "From Slack:" folded into it. */
+export const Linked = ({ text }: { text: string }) => <>{text.replace(/From Slack:\s*(?=https?:\/\/\S*slack\.com)/gi, '').split(/(https?:\/\/\S+)/).map((p, i) => i % 2
+  ? /slack\.com/i.test(p) ? <SlackLink key={i} url={p} /> : <a key={i} className="desc-link" href={p} target="_blank" rel="noreferrer" title={p} onClick={e => e.stopPropagation()}
        aria-label={`Open the link (${p.includes('slack.com') ? 'Slack' : p.replace(/^https?:\/\/([^/]+).*/, '$1')})`}><Icon n="link" /></a>
   : p)}</>;
 
@@ -63,11 +91,11 @@ const NoteBody = ({ text }: { text: string }) => {
   </>;
 };
 
-/** A comment from Slack ends "— From Slack: <url>": shown as a short "↗ Slack" link, not the URL (owner, 2026-10-14: noise). */
+/** A comment from Slack ends "— From Slack: <url>": shown as Slack's logo, a link, not the URL (owner, 2026-10-14: noise). */
 const NoteText = ({ text }: { text: string }) => {
   const m = /\n?— From Slack: (https?:\/\/\S+)\s*$/.exec(text);
   return m ? <><NoteBody text={text.slice(0, m.index)} />{' '}
-    <a className="desc-link" href={m[1]} target="_blank" rel="noreferrer" title={m[1]} onClick={e => e.stopPropagation()}>↗ Slack</a></>
+    <SlackLink url={m[1]!} /></>
     : <NoteBody text={text} />;
 };
 
@@ -279,6 +307,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
         <button className="todo-title" onClick={() => setOpenClaim(openClaim === String(c.id) ? null : String(c.id))}
                 aria-expanded={openClaim === String(c.id)} title="Open the claim">
           <span className="todo-caret" aria-hidden="true">{openClaim === String(c.id) ? '▾' : '▸'}</span>{c.unit_name ?? 'Portfolio'} · {claimWhat(c)}</button>
+        {c.description?.trim() && openClaim !== String(c.id) && <AboutPeek text={c.description} />}
         <CaseLink url={c.case_url} />
       </div>
       {/* §159: the same quiet line as a to-do — stage, what matters, how long, what is inside. */}
@@ -286,6 +315,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
         <span className={`m m-stage st-${claimStage(c.status).key}`}>{claimStage(c.status).label}</span>
         {['High', 'Critical'].includes(c.severity) && <span className="m m-attn">{c.severity}</span>}
         {c.category && c.description && <span className="m">{c.category}</span>}
+        {c.reservation_label && <StayPeek id={c.reservation_id} label={c.reservation_label} />}
         <span className="m"><Icon n="clock" />{ageDays(c, today) ? `${ageDays(c, today)}d open` : 'new today'}</span>
         {openWorkBy.get(String(c.id)) ? <span className="m"><Icon n="list" />{openWorkBy.get(String(c.id))} open inside</span>
           : <span className="m m-attn">No work yet</span>}
@@ -731,6 +761,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           <button className={`todo-title ${props.inPanel ? 'is-static' : ''}`} onClick={props.inPanel ? undefined : onOpen} aria-expanded={props.inPanel ? undefined : open}
                   aria-haspopup={props.inPanel ? undefined : 'dialog'} title={props.inPanel ? undefined : 'Open it'}>{shown}</button>
           <button type="button" className="todo-pencil" title="Rename" aria-label={`Rename ${t.title}`} onClick={() => { setName(t.title); setRenaming(true); }}>✎</button>
+          {!open && t.description?.trim() && <AboutPeek text={t.description} source={sourceOf(t)} />}
         </>}
         {/* §105: how a task ends, on its own row, at the right — faint until the row is pointed at. */}
         <span className="todo-quick">
@@ -777,9 +808,11 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                     title={talk ? 'Hide the comments' : 'Comments — read or leave one'}><Icon n="message" />{t.updates > 1 ? t.updates : 'Comment'}</button>
           : t.updates > 1 && <span className="m" title="Comments and updates"><Icon n="message" />{t.updates}</span>}
         {!!t.files && <button type="button" className="m m-btn" title="Files — open it to see them" onClick={onOpen}><Icon n="clip" />{t.files}</button>}
-        {!open && sourceOf(t) && <span className="m">{t.description?.trim()
-          ? <Peek label={<><Icon n="note" />{sourceOf(t)}</>}><Linked text={t.description} /></Peek>
-          : <><Icon n="note" />{sourceOf(t)}</>}</span>}
+        {t.reservationLabel && !(parent && !flat && parent.reservationId === t.reservationId) && <StayPeek id={t.reservationId} label={t.reservationLabel} />}
+        {/* Where it came from, in words; the description itself is the ? by the title. */}
+        {!open && sourceOf(t) === 'From Slack'
+          ? <span className="m m-src">{slackUrlOf(t.description) ? <SlackLink url={slackUrlOf(t.description)!} /> : <span title="From Slack"><SlackMark /></span>}</span>
+          : !open && sourceOf(t) && sourceOf(t) !== 'Details' && <span className="m"><Icon n="note" />{sourceOf(t)}</span>}
         {/* §159: what it belongs to opens in a pop-up — the list stays where it is. */}
         {parent && (flat || props.related) && <button type="button" className="m m-btn m-rel" title="Open what this is part of" onClick={() => openPop?.({ todo: parent.id })}>Part of › {rowTitle(parent.title, parent.unitIds.map(id => names.get(id) ?? ''))}</button>}
         {t.claimId && !inClaim && !(parent && !flat && parent.claimId === t.claimId) && (!claims.length || claimNames.has(t.claimId)) &&
@@ -1082,7 +1115,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
     return (
       <div className="task-edit task-sheet">
         <section className="sheet-about">
-          {src && src !== 'Details' && <div className="sheet-eyebrow"><Icon n="note" />{src}</div>}
+          {src && src !== 'Details' && src !== 'From Slack' && <div className="sheet-eyebrow"><Icon n="note" />{src}</div>}
           {editDesc || !(v.description ?? '').trim() ? (
             <textarea className="task-desc" value={v.description ?? ''} maxLength={4000} aria-label="Description"
                       rows={Math.min(8, Math.max(2, (v.description ?? '').split('\n').length + 1))}
@@ -1095,15 +1128,20 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
           )}
         </section>
         <div className="sheet-summary">
-          <span className="sheet-sum-text">{[
-            v.status ? STATUS_LABEL[v.status] : '', v.priority !== 'none' ? PRIORITY_LABEL[v.priority] : '',
-            v.unitIds.map(id => units.find(u => u.id === id)?.name).filter(Boolean).join(', '),
-            v.scheduledOn || v.dueOn ? [v.scheduledOn, v.dueOn].map(d => d ? shortDay(d) : '').filter(Boolean).join(' – ') : '',
-            initial.assignee ?? '',
-            // §162: a work order says who does it and what it costs on the same line.
-            wo ? (v.vendor ? `Vendor ${v.vendor}` : 'No vendor yet') : '',
-            wo && (v.costActual ?? v.costEstimate) != null ? `${v.costActual != null ? '' : '~'}${money2((v.costActual ?? v.costEstimate)!)}` : ''
-          ].filter(Boolean).join(' • ')}</span>
+          {/* Owner, 2026-10-15: each fact a small chip — a symbol and few words — centred, like the stay. */}
+          <span className="sheet-chips">
+            {v.status && <span className="sheet-chip">{STATUS_LABEL[v.status]}</span>}
+            {v.priority !== 'none' && <span className={`sheet-chip ${v.priority === 'urgent' || v.priority === 'high' ? 'attn' : ''}`}><Icon n="alert" />{PRIORITY_LABEL[v.priority]}</span>}
+            {v.unitIds.map(id => units.find(u => u.id === id)?.name).filter(Boolean).map(n => <span key={n} className="sheet-chip"><Icon n="home" />{n}</span>)}
+            {(v.scheduledOn || v.dueOn) && <span className="sheet-chip"><Icon n="calendar" />{[v.scheduledOn, v.dueOn].map(d => d ? shortDay(d) : '').filter(Boolean).join(' – ')}</span>}
+            {initial.assignee && <span className="sheet-chip"><Icon n="user" />{initial.assignee}</span>}
+            {/* §162: a work order says who does it and what it costs on the same line. */}
+            {wo && <span className={`sheet-chip ${v.vendor ? '' : 'muted'}`}><Icon n="wrench" />{v.vendor ?? 'No vendor yet'}</span>}
+            {wo && (v.costActual ?? v.costEstimate) != null && <span className="sheet-chip"><Icon n="dollar" />{`${v.costActual != null ? '' : '~'}${money2((v.costActual ?? v.costEstimate)!)}`}</span>}
+            {v.reservationLabel && (v.reservationId
+              ? <a className="sheet-chip stay" href={hostawayReservationUrl(v.reservationId)} target="_blank" rel="noreferrer" title="Open the reservation in Hostaway"><Icon n="bed" />{v.reservationLabel} ↗</a>
+              : <span className="sheet-chip stay"><Icon n="bed" />{v.reservationLabel}</span>)}
+          </span>
           <button type="button" className="link tiny" aria-expanded={fields} onClick={() => setFields(f => !f)}>{fields ? '▴ Hide fields' : '✎ Edit'}</button>
         </div>
         <div className="sheet-groups" hidden={!fields}>
@@ -1613,10 +1651,13 @@ function TodoFiles({ todoId }: { todoId: string }) {
       </div>
       {msg && <p className="breach" role="status">{msg}</p>}
       {files && files.length > 0 && (
-        <ul className="todo-files-list">
+        // Owner, 2026-10-15: the files are chips on one row that slides sideways, however many there are.
+        <ul className="todo-files-list" aria-label="Files">
           {files.map(f => (
             <li key={f.id}>
-              <a href={f.url} target="_blank" rel="noreferrer" title={`Added by ${f.by.split('@')[0]}${f.source === 'slack' ? ', from Slack' : ''}`}>{ic(f.mime?.startsWith('image/') ? '🖼' : f.mime === 'application/pdf' ? '📄' : '📎')} {f.name}</a>
+              <a href={f.url} target="_blank" rel="noreferrer" title={`${f.name} — added by ${f.by.split('@')[0]}${f.source === 'slack' ? ', from Slack' : ''}`}>
+                {f.source === 'slack' ? <SlackMark /> : <Icon n={f.mime?.startsWith('image/') ? 'image' : f.mime === 'application/pdf' ? 'file' : 'clip'} />}
+                <span className="file-name">{f.name}</span></a>
               <button type="button" className="link tiny" aria-label={`Remove ${f.name}`} title="Take it off the to-do (the Drive copy stays)"
                       onClick={() => void removeTodoFile(f.id).then(take)}>✕</button>
             </li>
