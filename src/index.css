@@ -2185,3 +2185,18 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: 8px; o
 .crew-opt { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; grid-column: 1 / -1; padding: 4px 0; }
 .crew-opt input[type=time] { width: auto; }
 .crew-opt .crew-and { font-size: 13px; color: var(--muted); }
+
+/* ✨ Read receipt: a line the AI was not sure of — the choice in its own panel under the line (owner, 2026-10-14). */
+tr.rc-open > td { border-bottom: 0; }
+.rc-decide { background: var(--tint); border: 1px solid var(--line); border-radius: var(--r); padding: 12px 14px; display: grid; gap: 10px; margin: 2px 0 8px; }
+.rc-step { display: grid; grid-template-columns: 140px 1fr; gap: 10px; align-items: center; }
+.rc-label { color: var(--muted); font-size: 13px; }
+.rc-picks { display: flex; flex-wrap: wrap; gap: 6px; }
+.rc-picks button { border-radius: 999px; padding: 5px 12px; background: var(--card); }
+.rc-new { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rc-new input { flex: 1 1 200px; min-width: 0; }
+.rc-new input.rc-size { flex: 0 1 140px; }
+.rc-foot { display: flex; justify-content: flex-end; gap: 14px; font-size: 13px; }
+.rc-foot button.link { color: var(--muted); font-weight: 400; text-decoration: underline; }
+.warn-text { color: var(--amber); font-size: 13px; }
+@media (max-width: 640px) { .rc-step { grid-template-columns: 1fr; gap: 6px; } }

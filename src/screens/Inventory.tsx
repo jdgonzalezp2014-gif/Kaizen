@@ -732,7 +732,6 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     else if (read1 && !rows.some(r => r.got === id)) tags.set(id, ['▲ not on the receipt']);
   }
   const mark = (k: string) => ai.has(k) ? <span className="sub-n"> {AI}</span> : null;
-  const newLabel = (r: Row) => r.size.trim() ? `${r.name.trim()} — ${r.size.trim()}` : r.name.trim();
   return <>
     {head}
     {read1 && <div className="receipt-lines">
@@ -743,31 +742,42 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
             return n > 0 && <> · <span className="breach">▲ {n} line{n === 1 ? '' : 's'} to decide</span></>; })()}</p>
         <div className="grid-scroll"><table className="units compact"><tbody>
           {rows.map((r, k) => r.rc !== i ? null : (
-            <tr key={k}>
+            <Fragment key={k}>
+            <tr className={r.open ? 'rc-open' : undefined}>
               <td>{r.line.text}
                 {r.line.size && <span className="chip tiny"> {r.line.size}</span>}
                 {r.line.qty != null && r.line.qty !== 1 && <div className="sub-n">{r.line.qty} × {r.line.unitPrice != null ? money(r.line.unitPrice)
                   : r.line.amount != null ? money(Math.round(r.line.amount / r.line.qty * 100) / 100) : '—'}</div>}</td>
               <td className="n">{r.line.amount != null ? money(r.line.amount) : '—'}</td>
-              <td>
+              <td className="nowrap">
                 {r.got && !r.open && <>→ <b>{name(r.got)}</b> {qtyOf(r.line)} <button className="link tiny" onClick={() => setRow(k, { ...r, open: true })}>change</button></>}
                 {r.skip && !r.open && <span className="sub-n">{r.line.kind === 'item' ? 'skipped' : r.line.kind} — not a supply{' '}
                   <button className="link tiny" onClick={() => setRow(k, { ...r, open: true })}>it is one</button></span>}
-                {r.open && <div>
-                  {(() => { const c = [...new Set([...r.line.candidates, ...similarItems(`${r.line.text} ${r.line.size ?? ''}`, inv.items, 6)])]; return c.length > 0 && <div className="button-row">
-                    <span className="note">Is it one of these?</span>
-                    {c.filter(id => id !== r.got).slice(0, 4).map(id => <button key={id} className="secondary small" onClick={() => choose(k, id)}>{name(id)}</button>)}
-                  </div>; })()}
-                  <div className="button-row">
-                    <input value={r.name} maxLength={80} aria-label="New item name" onChange={e => setRow(k, { ...r, name: e.target.value })} />
-                    <input value={r.size} maxLength={30} placeholder="Size (King…)" aria-label="Size" className="inv-measure" onChange={e => setRow(k, { ...r, size: e.target.value })} />
-                    <button className="secondary small" disabled={busy || !r.name.trim()} onClick={() => void addNew(k)}>+ Add “{newLabel(r)}” as a new item</button>
-                    <button className="link tiny" onClick={() => choose(k, null)}>Skip (tax, bag…)</button>
-                    {r.got && <button className="link tiny" onClick={() => setRow(k, { ...r, open: false })}>keep {name(r.got)}</button>}
-                  </div>
-                </div>}
+                {r.open && <span className="warn-text">▲ which supply?</span>}
               </td>
-            </tr>))}
+            </tr>
+            {r.open && <tr className="rc-open"><td colSpan={3}>
+              <div className="rc-decide">
+                {(() => { const c = [...new Set([...r.line.candidates, ...similarItems(`${r.line.text} ${r.line.size ?? ''}`, inv.items, 6)])].filter(id => id !== r.got).slice(0, 4);
+                  return c.length > 0 && <div className="rc-step">
+                    <span className="rc-label">Is it one of these?</span>
+                    <div className="rc-picks">{c.map(id => <button key={id} className="secondary small" onClick={() => choose(k, id)}>{name(id)}</button>)}</div>
+                  </div>; })()}
+                <div className="rc-step">
+                  <span className="rc-label">{r.line.candidates.length ? 'Or a new item' : 'A new item'}</span>
+                  <div className="rc-new">
+                    <input value={r.name} maxLength={80} placeholder="Name" aria-label="New item name" onChange={e => setRow(k, { ...r, name: e.target.value })} />
+                    <input value={r.size} maxLength={30} placeholder="Size (optional)" aria-label="Size" className="rc-size" onChange={e => setRow(k, { ...r, size: e.target.value })} />
+                    <button className="small" disabled={busy || !r.name.trim()} onClick={() => void addNew(k)}>+ Add as a new item</button>
+                  </div>
+                </div>
+                <div className="rc-foot">
+                  {r.got && <button className="link" onClick={() => setRow(k, { ...r, open: false })}>keep {name(r.got)}</button>}
+                  <button className="link" onClick={() => choose(k, null)}>Skip — not a supply (tax, bag…)</button>
+                </div>
+              </div>
+            </td></tr>}
+            </Fragment>))}
         </tbody></table></div>
       </Fragment>)}
     </div>}
