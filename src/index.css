@@ -2795,5 +2795,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .live-clash-actions { display: flex; gap: var(--s-2); align-items: center; flex-wrap: wrap; }
 @media (max-width: 720px) { .live-clash-row { grid-template-columns: 1fr 1fr; } .live-clash-row > b { grid-column: 1 / -1; } }
 /* §166: on a bigger screen the bell sits at the rail's foot; its list opens beside the rail, upward. */
-.side-foot .live-bell { margin: 0; align-self: flex-start; padding-left: 14px; }
+.side-foot .live-bell { margin: 0; align-self: flex-start; }
+/* The button spans the rail's inner width so the bell lands on the rail's centre, in line with the icons above it. */
+.side-foot .live-bell .pop-btn { width: 44px; padding: 0; }
 .side-foot .live-bell .pop-panel { left: calc(100% + 8px); right: auto; top: auto; bottom: 0; }
