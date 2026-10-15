@@ -168,13 +168,15 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     const what = kind === 'agreement' ? 'rental agreement' : 'ID copy';
     if (done) {
       return have?.folderUrl
-        ? <a key={kind} className="ops-flag ops-doc filed" href={have.folderUrl} target="_blank" rel="noreferrer" title={`The ${what} — open the reservation's Drive folder`}>{text}</a>
-        : <span key={kind} className="ops-flag ops-doc filed" title={`The ${what} is in`}>{text}</span>;
+        ? <a key={kind} className="ops-flag ops-doc filed" href={have.folderUrl} target="_blank" rel="noreferrer"
+             data-tip={`The ${what} — open the reservation's Drive folder`}>{text}</a>
+        : <span key={kind} className="ops-flag ops-doc filed" data-tip={`The ${what} is in.`}>{text}</span>;
     }
     const cls = `ops-flag ops-doc missing ${kind === 'agreement' ? 'urgent' : ''}`;
-    if (!canDocs) return <span key={kind} className={cls} title={`No ${what} yet`}>{text}</span>;
+    if (!canDocs) return <span key={kind} className={cls} data-tip={`No ${what} yet.`}>{text}</span>;
     return (
-      <label key={kind} className={`${cls} home-upload`} title={`No ${what} yet — click to upload it to the reservation's Drive folder, or drop the file on this line`}>
+      <label key={kind} className={`${cls} home-upload`}
+             data-tip={`No ${what} yet — click to upload it to the reservation's Drive folder, or drop the file on this line.`}>
         {uploading === `${r.resId}:${kind}` ? 'Uploading…' : text}
         <input type="file" accept="image/*,.pdf" className="sr-file" disabled={!!uploading}
                onChange={e => { void upload(r, kind, e.target.files?.[0]); e.target.value = ''; }} />

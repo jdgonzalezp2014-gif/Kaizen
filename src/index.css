@@ -1485,10 +1485,20 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 .home-two { display: flex; flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 0; }
 .home-who, .home-meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .home-meta { font-size: var(--fs-footnote); }
-.home-flags { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.home-flags { position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
 .home-flags .ops-flag { margin: 0; }
 .home-flags .home-upload { min-height: 0; }
 .home-ready { font-size: var(--fs-footnote); }
+/* The row's icons/pills sit flush against the card's right edge: their hover opens below, growing left
+   so it never spills off the right side of the screen (owner, 2026-10-15). */
+.home-flags .iflag .hint-pop, .home-flags .peek .hint-pop { left: auto; right: -8px; }
+.home-flags [data-tip] { position: relative; cursor: help; }
+.home-flags [data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); right: -8px; left: auto;
+  z-index: 50; width: max-content; max-width: min(260px, 85vw); padding: 8px 10px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--card); color: var(--ink); box-shadow: var(--shadow-2);
+  font-size: var(--fs-footnote); font-weight: 400; white-space: normal; text-align: left; opacity: 0; visibility: hidden;
+  transition: opacity .1s ease; pointer-events: none; }
+.home-flags [data-tip]:hover::after, .home-flags [data-tip]:focus-within::after { opacity: 1; visibility: visible; }
 
 /* §90: the reservation in Hostaway, and the ID to Drive from Home. */
 .home-hostaway, .ops-hostaway { font-size: var(--fs-footnote); color: var(--series-1); font-weight: 600; text-decoration: none; }
