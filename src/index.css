@@ -2528,7 +2528,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .home-card { margin: 0; }
 @media (min-width: 981px) {
   .home-layout:not(.solo) { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: var(--s-5); }
-  .home-side-col { position: sticky; top: var(--s-4); max-height: calc(100vh - var(--s-6)); overflow-y: auto; }
+  .home-side-col { position: sticky; top: var(--s-4); }
   .home-side-col .home-list li { flex-wrap: wrap; }
   .home-side-col .home-side { flex-basis: 100%; max-width: none; text-align: left; padding-left: 84px; display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; }
 }
@@ -2544,3 +2544,86 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 /* The strip scrolls inside itself: as a flex item (display: contents parent) it would grow to its content and push the page sideways. */
 .home-layout > *, .home-rail { min-width: 0; max-width: 100%; }
 @media (min-width: 981px) { .home-chip { padding: 0 var(--s-2); gap: var(--s-1); } }
+
+/* Home, "zero noise": nothing folds into "Show more" — each feed scrolls inside a fixed-height box, scrollbar hidden. */
+.home-todos, .home-slide { --feed-h: calc(100vh - 220px); }
+.home-todos .work-tab-body, .home-slide { max-height: var(--feed-h); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: none; }
+.home-todos .work-tab-body::-webkit-scrollbar, .home-slide::-webkit-scrollbar { display: none; }
+.todos-head { margin-bottom: var(--s-2); }
+.todos-head h3 { flex: 1; }
+.todos-head .lane-add { font-weight: 650; }
+/* Pills: one row, never wrapping; on a phone they swipe. */
+.home-todos .work-tabs { flex-wrap: nowrap; overflow-x: auto; scrollbar-width: none; }
+.home-todos .work-tabs::-webkit-scrollbar { display: none; }
+.home-todos .work-tab { flex: 0 0 auto; white-space: nowrap; }
+@media (max-width: 720px) {
+  .home-todos, .home-slide { --feed-h: calc(100dvh - 300px); }
+  .home-todos { border: 0; background: none; box-shadow: none; padding: 0; }
+  .home-todos .work-tab { min-height: 44px; padding: 0 var(--s-4); }
+  .todos-head .lane-add { min-height: 44px; padding: 0 var(--s-2); }
+  .todo-quick button { min-width: 44px; height: 44px; }
+  .todo { padding-right: 112px; }
+}
+.todos-all { color: var(--muted); font-size: var(--fs-footnote); font-weight: 500; }
+.todos-all:hover { color: var(--ink); }
+@media (max-width: 720px) { .todos-head h3 .todos-title, .todos-head h3 .count { display: none; } .todos-head { margin-bottom: 0; } }
+
+/* §160 — Slide-over, popovers, the one-row filter bar. */
+.slide-backdrop { position: fixed; inset: 0; z-index: 55; background: color-mix(in srgb, var(--ink) 18%, transparent); display: flex; justify-content: flex-end; }
+.slide-over { width: min(50vw, 760px); min-width: 460px; height: 100%; display: flex; flex-direction: column; background: var(--bg);
+  border-left: 1px solid var(--line); box-shadow: var(--shadow-3); animation: slide-in .18s ease-out; }
+@keyframes slide-in { from { transform: translateX(24px); opacity: 0; } to { transform: none; opacity: 1; } }
+.slide-head { position: sticky; top: 0; display: flex; align-items: center; gap: var(--s-3); padding: var(--s-3) var(--s-4);
+  background: var(--card); border-bottom: 1px solid var(--line); }
+.slide-head h2 { flex: 1; min-width: 0; margin: 0; font-size: var(--fs-headline); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.slide-actions { display: flex; align-items: center; gap: var(--s-2); }
+.slide-btn, .pop-btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 36px; height: 36px; padding: 0 10px;
+  border: 1px solid var(--line); border-radius: var(--r-pill); background: var(--card); color: var(--ink); cursor: pointer; font: inherit; font-size: var(--fs-footnote); font-weight: 600; }
+.slide-btn:hover, .pop-btn:hover { background: var(--hover); }
+.slide-btn.done:hover { color: var(--good); border-color: color-mix(in srgb, var(--good) 50%, transparent); }
+.slide-body { flex: 1; overflow-y: auto; padding: var(--s-4); }
+.slide-body .todo-edit { margin: 0; padding: 0; border: 0; }
+.slide-dock { border-top: 1px solid var(--line); background: var(--card); }
+.slide-dock:empty { display: none; }
+.slide-dock .timeline-add { padding: var(--s-3) var(--s-4) calc(var(--s-3) + env(safe-area-inset-bottom)); }
+.slide-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: var(--s-2); padding: var(--s-2) var(--s-4); background: var(--tint); border-bottom: 1px solid var(--line); }
+.slide-added { margin: var(--s-4) 0 0; }
+/* The first group of fields, as a compact grid: label over value, two to a row. */
+.slide-over .sheet-groups { grid-template-columns: 1fr; }
+.slide-over .fl-group:first-child { display: grid; grid-template-columns: 1fr 1fr; }
+.slide-over .fl-group:first-child > label { grid-template-columns: 1fr; gap: 0; padding: 6px 12px; min-height: 0; border-top: 0; }
+.slide-over .fl-group:first-child > label:nth-child(n+3) { border-top: 1px solid var(--line); }
+.slide-over .fl-group:first-child > label:nth-child(even) { border-left: 1px solid var(--line); }
+.todo.is-open { background: color-mix(in srgb, var(--accent) 7%, transparent); box-shadow: inset 3px 0 0 var(--accent); }
+@media (max-width: 720px) {
+  .slide-over { width: 100%; min-width: 0; border-left: 0; }
+  .slide-btn, .pop-btn { min-width: 44px; height: 44px; }
+  .slide-body { padding: var(--s-3); }
+}
+@media (prefers-reduced-motion: reduce) { .slide-over { animation: none; } }
+.pop { position: relative; display: inline-flex; }
+.pop-panel { position: absolute; top: calc(100% + 6px); z-index: 70; min-width: 220px; padding: var(--s-2); display: flex; flex-direction: column; gap: 2px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-3); }
+.pop-panel.left { left: 0; } .pop-panel.right { right: 0; }
+.pop-panel > button { display: flex; align-items: center; gap: 8px; text-align: left; background: none; border: 0; padding: 8px 10px; min-height: 36px;
+  border-radius: var(--r-sm); color: var(--ink); cursor: pointer; font: inherit; font-size: var(--fs-footnote); }
+.pop-panel > button:hover { background: var(--hover); }
+.pop-panel > button.danger { color: var(--crit); }
+.filters-pop .count { font-size: var(--fs-caption); padding: 0 6px; border-radius: var(--r-pill); background: var(--ink); color: var(--bg); }
+.filter-fields { display: flex; flex-direction: column; gap: var(--s-2); min-width: 240px; padding: var(--s-1); }
+.filter-fields label { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-caption); color: var(--muted); }
+.filter-fields select { width: 100%; }
+.work-bar { margin-bottom: var(--s-2); }
+@media (max-width: 720px) { .pop-panel.right { position: fixed; left: var(--s-3); right: var(--s-3); top: auto; bottom: calc(var(--s-3) + env(safe-area-inset-bottom)); } }
+.filter-fields label { text-align: left; align-items: stretch; }
+
+/* §161 — Summary / Edit: an item is one line until ✎ Edit; file hints live in tooltips; the panel closes with Close →. */
+.sheet-groups[hidden] { display: none; }
+.sheet-summary { display: flex; align-items: baseline; justify-content: space-between; gap: var(--s-3); padding: var(--s-2) 0; border-bottom: 1px solid var(--line); }
+.sheet-sum-text { color: var(--ink); font-size: var(--fs-body); min-width: 0; }
+.todo-title.is-static { cursor: default; }
+.todo-quick .q-edit { width: auto; white-space: nowrap; }
+.slide-close { color: var(--muted); font-weight: 500; white-space: nowrap; }
+.slide-btn.cancel:hover { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 40%, transparent); }
+.info-tip { display: inline-grid; place-items: center; width: 22px; height: 22px; color: var(--muted); cursor: help; border-radius: var(--r-pill); font-size: var(--fs-footnote); }
+.info-tip:hover, .info-tip:focus-visible { color: var(--ink); background: var(--hover); }

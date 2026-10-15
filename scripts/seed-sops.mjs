@@ -363,6 +363,65 @@ Cleaners report from each clean on their page (☀️ Today, its tabs): what the
         detail: '- El enlace es solo de esa limpieza y no necesita cuenta. Tu ayudante puede hacer los mismos pasos: fotos, completada, insumos, problemas.\n- Varias personas pueden usar el mismo enlace; cada una escribe su nombre una vez.\n- Deja de funcionar dos días después de la limpieza, o si la limpieza se le da a otra persona.' }
     ],
     doneWhen: 'Cada limpieza tiene sus fotos del antes y el después, está completada, y no se queda sin decir nada que falte.'
+  },
+  {
+    // §160: Home and the to-do side panel, redesigned 2026-10-15.
+    section: 'systems', title: 'Home: the day at a glance',
+    features: ['home'],
+    purpose: 'Open Kaizen and see what needs a person today — the to-dos on the left, the day\'s check-ins, what is coming up and the units in red on the right.',
+    trigger: 'Every morning when you open Kaizen, and whenever you want to know what is next.',
+    owner: 'Everyone',
+    doneWhen: 'Nothing is overdue in To-dos, every arrival is ready, and no unit is red without a plan.',
+    steps: [
+      { text: 'Start with To-dos: the Now group first.', who: 'Everyone',
+        detail: '- Pick a category pill: **Tasks**, **Repairs**, **Claims**, **Approvals**, **Purchase orders**. A **▲** on a pill means something in it is overdue or has no work yet.\n- **Now** holds what is overdue, due today or urgent; **Later** and **Further out** are folded until you open them.\n- On a row, **✓** marks it done and **✕** cancels it. Click the row to open it in a side panel.\n- **+ Add** (top right of the card) adds to the category you are on. **All ↗** opens the full list with filters in Operations.' },
+      { text: 'Switch the right-hand module to see the day.', who: 'Ops',
+        detail: '- **Check-ins/outs**: today and tomorrow, unassigned cleans and unsigned agreements first.\n- **Coming up**: inspections in the next 7 days and what costs money in the next 14.\n- **Units in red**: units the Units analysis flags, worst first.\n- On a phone the same modules are tabs along the top, with **To-dos** first; swipe the strip sideways.' }
+    ],
+    body: `## Rules
+- A module only exists on your Home if your role may open its screen: Check-ins/outs and Coming up need Operations, Units in red needs Units, Expenses in Coming up needs Costs, Approvals needs Operations (edit). If you do not see one, ask an admin — it is not a bug.
+- The **$ Approvals** pill and its **+ Add** appear only for roles that may approve; on Approvals there is no **+ Add** (nothing is added there — review it in Operations → Cleaners).
+- Claims are in the To-dos card when you may see To-dos; otherwise they are listed under Coming up.
+
+## What the system does
+- Nothing folds into "Show more": each list scrolls inside its own box, so the page itself does not scroll for ever. The scroll bar is hidden; swipe or use the wheel.
+- The urgency summary line is gone: urgency is the **▲** on a pill and the **Now** group.
+- Units in red is read once and kept for 10 minutes for everyone; its footer says when. Units itself is always live.`
+  },
+  {
+    section: 'maintenance', title: 'Work a to-do in its side panel',
+    features: ['operations.todos', 'home'],
+    purpose: 'Open a to-do, repair or claim without losing your place in the list: it opens in a panel on the right, the list stays still.',
+    trigger: 'You need to read, change, comment on, or finish a piece of work.',
+    owner: 'Everyone',
+    doneWhen: 'The item shows its real status, owner and date, and the last comment says where it stands.',
+    steps: [
+      { text: 'Click a row to open it.', who: 'Everyone',
+        detail: '- The row you opened is highlighted; the list behind it does not move. A click on the dimmed list closes the panel.\n- The panel header has the title, **Close →**, and the item\'s own buttons: **✕** cancels the item, **✓** marks it done (**↺ Reopen** on a closed one), **⋯** has the rare actions. **✕ and ✓ change the item — they do not close the panel.**\n- To leave the panel without changing anything: **Close →**, **Esc**, or a click on the dimmed list.' },
+      { text: 'Read the summary line; press ✎ Edit to change it.', who: 'Everyone',
+        detail: '- The item reads as one line: *In progress • Urgent • CL2260 • Oct 14 – Oct 16 • owner*. Nothing else takes room.\n- **✎ Edit** opens the fields: **Status**, **Priority**, **Owner**, **Supervisor**, listing, dates, the stay; the rest under **More**. **▴ Hide fields** folds them again.\n- Save with the **Unsaved changes** bar that appears once you edit.' },
+      { text: 'Work the items inside.', who: 'Everyone',
+        detail: '- Sub-tasks, work orders and purchase orders under **Inside** are one line each: title and a quiet line with stage, urgency, date and owner.\n- A sub-task opens its fields only with **its own ✎ Edit** — clicking the line does nothing. **▴ Hide** closes it.\n- **+ sub-task**, **+ work order**, **+ purchase order** add more.' },
+      { text: 'Add files with the file box.', who: 'Everyone',
+        detail: '- **+ Add files** (up to 10 at a time, 15 MB each — hover the **ⓘ** for the reminder). Each file shows its icon, its name and **✕** to take it off the item.\n- Hover a file name to see who added it and where from (e.g. Slack).' },
+      { text: 'Comment at the bottom.', who: 'Everyone',
+        detail: '- The comment box stays at the foot of the panel while you scroll. **Ctrl/⌘ + Enter** sends.\n- **Activity log** shows what the system recorded.' },
+      { text: 'Rare actions are behind ⋯.', who: 'Ops',
+        detail: '- **Register as a claim** (a guest case), **Merge into…** (the same job written twice) and **Remove…** (asked first, with Undo).' },
+      { text: 'Narrow the list with Filters.', who: 'Ops',
+        detail: '- One **Filters** button holds urgency, deadline, listing and owner; its number says how many are on. **Clear filters** is inside it.\n- Switch between **Open work** and **Done log** on the same row.' }
+    ],
+    body: `## Rules
+- Only people who may register claims see **Register as a claim**; a to-do already linked to a claim, or a sub-task, does not offer it.
+- Closing a cleaner's supplies request with nothing bought asks why first.
+- A sub-task opens inside its parent's panel, in place — never a second panel — and only from its own **✎ Edit**.
+- **✕** in the panel header cancels the item (kept, closed as cancelled); it never just closes the panel.
+
+## What the system does
+- The list never expands in place: details always open in the panel (half the screen on a desktop, the whole screen on a phone).
+- The comment box is docked at the bottom of the panel; the header stays at the top; only the middle scrolls.
+- The fields stay folded behind **✎ Edit** until asked, so a long item does not push its comments out of sight.
+- Done, cancelled and removed items are kept in the Done log.`
   }
 ];
 

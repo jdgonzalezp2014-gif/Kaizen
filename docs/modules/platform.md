@@ -108,3 +108,4 @@ Hostaway client, sync, crypto, migrations.
   `mods` in `Home.tsx`) and the chosen module's panel under it. Phone — the same strip is the top tab bar and also carries
   To-dos (default); one module on screen, To-dos stays mounted (hidden) so its count and state survive. A new widget = one more
   entry in `mods`. Cards no longer fold (`useFolded` removed). Check-ins and check-outs are one module. Labels stay in English.
+- **Home, zero noise (owner, 2026-10-14):** no "Show X more" and no urgency summary line. The To-dos card header is title · count · "?" · + Add (`TodoList head`); urgency lives in the Now bucket and the ▲ on a pill. Feeds (`.home-todos .work-tab-body`, `.home-slide`) scroll inside a fixed height (`--feed-h`) with the scrollbar hidden. Phone: pills swipe on one row, 44 px targets. Not yet checked on a screenshot.

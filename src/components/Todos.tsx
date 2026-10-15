@@ -29,7 +29,10 @@ import {
 import { addDays, type DateStr } from '../lib/dates.ts';
 import { money2 } from '../lib/format.ts';
 import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS, caseHost, cleanCaseUrl } from '../lib/claims.ts';
-import { Peek } from './Hint.tsx';
+import { Hint, Peek } from './Hint.tsx';
+import { SlideOver, NoDock, useDock } from './SlideOver.tsx';
+import { createPortal } from 'react-dom';
+import { Popover } from './Popover.tsx';
 import { Icon, ic } from './Icon.tsx';
 
 /** The claim's case on the platform, one tap away (§88). */
@@ -86,12 +89,14 @@ const bucketOf = (t: Todo, today: DateStr): Bucket => {
     : d === 'soon' || t.priority === 'high' ? 'week' : 'later';
 };
 
-export function TodoList({ today, compact = false, onMore, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds, unit }: {
+export function TodoList({ today, compact = false, head, lead, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds, unit }: {
   today: DateStr;
   /** Opened from a unit (the board's "2 to-dos", §159): that listing's work, filter on. */
   unit?: string;
-  /** Home: open work only, the first few, and a door to the full list. */
-  compact?: boolean; onMore?: () => void;
+  /** Home: open work only, in a scrolling feed. `head` puts the card's title, count, "?" and + Add above the pills. */
+  compact?: boolean; head?: { title: string; hint: string; onAll?: () => void };
+  /** The full list's filter row starts with this (the Open work / Done log switch). */
+  lead?: ReactNode;
   /** Whether this person may see claims (to link work to one). */
   canClaims?: boolean;
   /** Inside a claim: only its work, and new work belongs to it (and to its stay, §84). */
@@ -116,8 +121,6 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const [showDone, setShowDone] = useState(!!claim);
   const [openClaim, setOpenClaim] = useState<string | null>(null);
   const [adding, setAdding] = useState<'order' | null | TaskKind | 'claim'>(null);
-  // Home (§81, §85): three lines per lane until asked for more.
-  const [laneAll, setLaneAll] = useState<Record<string, boolean>>({});
   // owner, Oct 2026: Home shows one kind at a time, and inside it the buckets folded but the first.
   const [tab, setTab] = useState('task');
   const [bucketOpen, setBucketOpen] = useState<Record<string, boolean>>({});
@@ -164,6 +167,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
 
   const wf: WorkFilter = { kind: kindFilter === 'claims' ? '' : kindFilter, priority: prioFilter, due: dueFilter, unitId: unitFilter, assignee: ownerFilter };
   const filtering = isFiltering(wf);
+  const nFilters = [prioFilter, dueFilter, unitFilter, ownerFilter].filter(Boolean).length;
   const all = sortTodos(todos ?? []);
   const kids = useMemo(() => childrenBy(todos ?? []), [todos]);
   const byId = useMemo(() => new Map((todos ?? []).map(t => [t.id, t])), [todos]);
@@ -254,6 +258,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   // Everything is in exactly one lane, by what it is; links show as chips
   // (⚑ its claim, 🛏 its stay). A kind filter, or a claim's own list,
   // stays a single list.
+  const openTotal = (todos ?? []).filter(t => !isClosed(t.status) && !t.parentId).length + (showClaims ? claims.filter(claimOpen).length : 0);
   const lanesOn = !claim && kindFilter === '';
   const taskItems = openList.filter(t => t.kind === 'task');
   const repairItems = openList.filter(t => t.kind === 'work_order');
@@ -278,7 +283,6 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
 
   const lane = (key: 'task' | 'work_order' | 'claims', title: string, rows: ReactNode[], alert: ReactNode, empty: string) => {
     const kind = key === 'claims' ? 'claim' : key;
-    const all = !compact || laneAll[key];
     return (
       <section key={key} className={`todo-lane lane-${key} ${rows.length ? '' : 'is-empty'}`}>
         <div className="lane-head">
@@ -289,12 +293,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
           {adding !== kind && <button className="link tiny lane-add" onClick={() => setAdding(kind)}>+ Add</button>}
         </div>
         {addForm(kind)}
-        {rows.length > 0 && <ul className="todo-list">{all ? rows : rows.slice(0, 3)}</ul>}
+        {rows.length > 0 && <ul className="todo-list">{rows}</ul>}
         {!rows.length && !compact && adding !== kind && <p className="note lane-empty">{empty}</p>}
-        {compact && rows.length > 3 && (
-          <button className="link tiny home-more" onClick={() => setLaneAll(m => ({ ...m, [key]: !m[key] }))}>
-            {laneAll[key] ? 'Show less ▴' : `Show ${rows.length - 3} more ▾`}</button>
-        )}
       </section>
     );
   };
@@ -314,17 +314,12 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
             <span aria-hidden="true">{on ? '▾' : '▸'}</span> <b>{label}</b> <span className="count">{by[b].length}</span>
             <span className="bucket-hint">{hint}</span>
           </button>
-          {on && <ul className="todo-list">{(laneAll[k] ? by[b] : by[b].slice(0, cap)).map(t => chat ? chatRow(t) : taskRow(t))}</ul>}
-          {on && by[b].length > cap && (
-            <button className="link tiny home-more" onClick={() => setLaneAll(m => ({ ...m, [k]: !m[k] }))}>
-              {laneAll[k] ? 'Show less ▴' : `Show ${by[b].length - 5} more ▾`}</button>
-          )}
+          {on && <ul className="todo-list">{by[b].map(t => chat ? chatRow(t) : taskRow(t))}</ul>}
         </section>
       );
     });
   };
-  // Owner, Oct 2026: Operations → To-do looks the same as Home — tabs and buckets — only without a cap on rows.
-  const cap = compact ? 5 : Infinity;
+  // Owner, Oct 2026: Operations → To-do looks the same as Home — tabs and buckets. Home's feed scrolls inside its card instead of folding.
   const homeTabs: (WorkTab & { add?: TaskKind | 'claim' | 'order' })[] = lanesOn ? [
     { key: 'task', label: 'Tasks', count: taskItems.filter(t => !isOrder(t)).length, alert: late(taskItems) > 0, add: 'task',
       body: taskItems.some(t => !isOrder(t)) ? bucketed('task', taskItems.filter(t => !isOrder(t))) : <p className="note">Nothing to do. ✓</p> },
@@ -333,9 +328,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     ...(showClaims ? [{ key: 'claims', label: '⚑ Claims', count: cases.length, alert: noWork > 0, add: 'claim' as const,
       body: cases.length ? <>
         {noWork > 0 && <p className="note"><span className="breach">▲ {noWork} with no work yet</span></p>}
-        <ul className="todo-list cases">{(laneAll.claims ? cases : cases.slice(0, cap)).map(caseRow)}</ul>
-        {cases.length > cap && <button className="link tiny home-more" onClick={() => setLaneAll(m => ({ ...m, claims: !m.claims }))}>
-          {laneAll.claims ? 'Show less ▴' : `Show ${cases.length - 5} more ▾`}</button>}
+        <ul className="todo-list cases">{cases.map(caseRow)}</ul>
       </> : <p className="note">No open claims. ✓</p> }] : []),
     ...extraTabs,
     ...(orderIds ? [{ key: 'orders', label: '🛒 Purchase orders', count: openList.filter(isOrder).length, add: 'order' as const,
@@ -346,6 +339,13 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
 
   return (
     <div className={`todos ${compact ? 'compact' : ''}`}>
+      {head && (
+        <div className="home-card-head todos-head">
+          <h3><span className="todos-title">{head.title}</span>{todos !== null && <span className="count">{openTotal}</span>}<Hint>{head.hint}</Hint></h3>
+          {head.onAll && <button className="link tiny todos-all" onClick={head.onAll} title="Open the full list in Operations → To-dos">All ↗</button>}
+          {cur?.add && <button className="link lane-add" onClick={() => { setAdding(cur.add!); }}>+ Add</button>}
+        </div>
+      )}
       {/* Outside the lanes (a claim's own list, a kind filter): one row of adds. */}
       {!lanesOn && (!adding ? (
         <div className="todo-add-buttons">
@@ -363,31 +363,43 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
                                    reservationId: claim.reservationId ?? null, reservationLabel: claim.reservationLabel ?? null } : undefined}
                   onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAdding(null); return ok; }} />
       ))}
+      {/* §160: one quiet row — the mode on the left, every secondary filter behind one button. */}
       {!compact && !claim && (
-        <div className="row-controls">
-          <select value={prioFilter} aria-label="Urgency" onChange={e => setPrioFilter(e.target.value as '' | 'high' | 'urgent')}>
-            <option value="">Any urgency</option>
-            <option value="high">▲ High or urgent</option>
-            <option value="urgent">▲▲ Urgent only</option>
-          </select>
-          <select value={dueFilter} aria-label="Deadline" onChange={e => setDueFilter(e.target.value as typeof dueFilter)}>
-            <option value="">Any date</option>
-            <option value="overdue">▲ Overdue</option>
-            <option value="today">● Due today</option>
-            <option value="week">This week</option>
-            <option value="none">No deadline</option>
-          </select>
-          <select value={unitFilter} aria-label="Listing" onChange={e => setUnitFilter(e.target.value)}>
-            <option value="">Every listing</option>
-            {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-          <select value={ownerFilter} aria-label="Owner" onChange={e => setOwnerFilter(e.target.value)}>
-            <option value="">Anyone</option>
-            {[...new Set((todos ?? []).map(t => t.assignee).filter((x): x is string => !!x))].sort().map(n => <option key={n} value={n}>{n}</option>)}
-          </select>
-          {(filtering || kindFilter !== '') && (
-            <button className="link tiny" onClick={() => { setKindFilter(''); setPrioFilter(''); setDueFilter(''); setUnitFilter(''); setOwnerFilter(''); }}>clear filters</button>
-          )}
+        <div className="row-controls work-bar">
+          {lead}
+          <span className="rb-spacer" />
+          <Popover label="Filters" align="right" className="filters-pop"
+                   button={<><Icon n="filter" /> Filters{nFilters > 0 && <span className="count">{nFilters}</span>}</>}>
+            <div className="filter-fields">
+              <label>Urgency
+                <select value={prioFilter} onChange={e => setPrioFilter(e.target.value as '' | 'high' | 'urgent')}>
+                  <option value="">Any urgency</option>
+                  <option value="high">▲ High or urgent</option>
+                  <option value="urgent">▲▲ Urgent only</option>
+                </select></label>
+              <label>Deadline
+                <select value={dueFilter} onChange={e => setDueFilter(e.target.value as typeof dueFilter)}>
+                  <option value="">Any date</option>
+                  <option value="overdue">▲ Overdue</option>
+                  <option value="today">● Due today</option>
+                  <option value="week">This week</option>
+                  <option value="none">No deadline</option>
+                </select></label>
+              <label>Listing
+                <select value={unitFilter} onChange={e => setUnitFilter(e.target.value)}>
+                  <option value="">Every listing</option>
+                  {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+                </select></label>
+              <label>Owner
+                <select value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
+                  <option value="">Anyone</option>
+                  {[...new Set((todos ?? []).map(t => t.assignee).filter((x): x is string => !!x))].sort().map(n => <option key={n} value={n}>{n}</option>)}
+                </select></label>
+              {(filtering || kindFilter !== '') && (
+                <button className="link tiny" onClick={() => { setKindFilter(''); setPrioFilter(''); setDueFilter(''); setUnitFilter(''); setOwnerFilter(''); }}>Clear filters</button>
+              )}
+            </div>
+          </Popover>
         </div>
       )}
       {/* §159: what a tap on a listing or an owner filtered by — visible everywhere (Home has no filter bar), with its way out. */}
@@ -424,8 +436,8 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
                   {x.alert && <span className="work-tab-alert" title="Needs attention">▲</span>}
                 </button>
               ))}
-              <span className="rb-spacer" />
-              {cur.add && adding !== cur.add && <button className="link tiny lane-add" onClick={() => setAdding(cur.add!)}>+ Add</button>}
+              {!head && <span className="rb-spacer" />}
+              {!head && cur.add && adding !== cur.add && <button className="link tiny lane-add" onClick={() => setAdding(cur.add!)}>+ Add</button>}
             </div>
             {cur.add && addForm(cur.add)}
             <div role="tabpanel" className="work-tab-body">{cur.body}</div>
@@ -486,6 +498,8 @@ type RowCtx = {
   filterBy?: (x: { unit?: string; owner?: string }) => void;
   /** Shown in its own section although it is inside another: it says what it is part of. */
   related?: boolean;
+  /** Inside an open panel: a sub-task opens in place there, not in a second panel (§160). */
+  inPanel?: boolean;
 };
 
 function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; chat?: boolean }) {
@@ -530,8 +544,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
       </button>
     </li>
   );
-  const kidRow = (k: Todo, o: boolean, onO: () => void) => kidCat(k) !== 'task' && kidCat(k) !== cat ? relLine(k)
-    : <TodoRow key={k.id} {...props} flat={false} related={false} t={k} open={o} onOpen={onO} />;
+  const kidRow = (k: Todo, o: boolean, onO: () => void, inPanel = false) => kidCat(k) !== 'task' && kidCat(k) !== cat ? relLine(k)
+    : <TodoRow key={k.id} {...props} flat={false} related={false} inPanel={inPanel} t={k} open={o} onOpen={onO} />;
   const doTick = async () => { setBusy(true); await act({ action: 'done', id: t.id, done: !closed }); setBusy(false); };
   // §105: the row's own actions — done, cancel, reopen — and renaming in place.
   const doCancel = async () => { setBusy(true); await act({ action: 'update', id: t.id, status: 'cancelled' }); setBusy(false); };
@@ -557,22 +571,105 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
     if (ok) { setMsg('Registered as a claim — it is in Claims, and this to-do is linked to it.'); onClaimsChanged(); }
   };
 
+  const canClaim = canClaims && !inClaim && !t.claimId && !t.parentId;
+  const openKids = mine.filter(k => !isClosed(k.status)).length;
+  const mergeUi = merging === null ? null : (
+    <span className="todo-merge">
+      <select value={merging} aria-label="Merge into" onChange={e => setMerging(e.target.value)}>
+        <option value="">Merge into…</option>
+        {[...byId.values()].filter(x => x.id !== t.id && x.parentId !== t.id && !isClosed(x.status))
+          .sort((a, b) => Number(!a.unitIds.some(u => t.unitIds.includes(u))) - Number(!b.unitIds.some(u => t.unitIds.includes(u))) || a.title.localeCompare(b.title))
+          .map(x => <option key={x.id} value={x.id}>{x.unitIds.map(id => names.get(id)).filter(Boolean).join(', ') || 'No listing'} · {x.title.slice(0, 70)}</option>)}
+      </select>
+      <button className="small" disabled={!merging || busy} onClick={async () => { setBusy(true); const ok = await act({ action: 'merge', id: t.id, into: merging }); setBusy(false); if (ok) setMerging(null); }}>Merge</button>
+      <button className="link tiny" onClick={() => setMerging(null)}>Cancel</button>
+    </span>);
+  const removeUi = !confirmDel ? null : (
+    <><span className="note">Remove “{t.title}”{openKids ? <b> and its {openKids} sub-task{openKids === 1 ? '' : 's'}</b> : ''}?</span>
+      <button className="small danger" onClick={() => void act({ action: 'delete', id: t.id })}>Remove</button>
+      <button className="link tiny" onClick={() => setConfirmDel(false)}>Keep</button></>);
+  const panelRows = mergeUi || removeUi ? <div className="slide-confirm">{mergeUi}{removeUi}</div> : null;
+  // Inside a panel the sub-task keeps the old footer; the panel itself has these in its ⋯ menu.
+  const editForm = (
+    <TodoForm units={units} claims={claims} canClaims={!inClaim && claims.length > 0} initial={t} submitLabel="Save changes" startEditing={!!props.inPanel}
+                    onSubmit={v => act({ action: 'update', id: t.id, ...v })}
+                    middle={<><TodoFiles todoId={t.id} />
+                      <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} /></>}
+                    after={t.parentId ? null : (
+                      <section className={`task-fold ${subsOpen ? 'open' : ''}`}>
+                        {mine.length > 0 && (
+                          <button type="button" className="task-fold-head" aria-expanded={subsOpen} onClick={() => setSubsOpen(!subsOpen)}>
+                            <span className="task-fold-caret" aria-hidden="true">{subsOpen ? '▾' : '▸'}</span><b>Inside</b>
+                            <span className="task-fold-sum">{prog.done}/{prog.total} done</span>
+                          </button>
+                        )}
+                        {(subsOpen || !mine.length) && (
+                          <div className={mine.length ? 'task-fold-body' : ''}>
+                            {mine.length > 0 && (
+                              <ul className="todo-list todo-kids">
+                                {mine.map(k => kidRow(k, openSub === k.id, () => setOpenSub(openSub === k.id ? null : k.id), true))}
+                              </ul>
+                            )}
+                            {buying ? (
+                              <TaskPurchase todoId={t.id} unitIds={t.unitIds} onClose={() => setBuying(false)}
+                                            // What was asked: the description, and — on requests from before §159 — the open sub-tasks it was split into.
+                                            asked={[t.description, ...mine.filter(k => !isClosed(k.status)).map(k => k.title)].filter(Boolean).join('\n')}
+                                            onBought={async closeIt => { setBuying(false); if (closeIt && !closed) await doTick(); else reload(); }} />
+                            ) : !addingSub ? (
+                              <div className="todo-add-buttons">
+                                <button className="link tiny" onClick={() => setAddingSub('task')}>+ sub-task</button>
+                                <button className="link tiny" onClick={() => setAddingSub('work_order')}>+ <Icon n="wrench" /> work order</button>
+                                {!closed && <button className="link tiny" onClick={() => setBuying(true)}>+ <Icon n="cart" /> purchase order</button>}
+                              </div>
+                            ) : (
+                              <TodoForm key={addingSub} units={units} claims={claims} canClaims={false} submitLabel="Add" startKind={addingSub}
+                                        onCancel={() => setAddingSub(null)}
+                                        fixed={{ parentId: t.id, claimId: t.claimId, unitIds: t.unitIds, reservationId: t.reservationId, reservationLabel: t.reservationLabel }}
+                                        onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAddingSub(null); return ok; }} />
+                            )}
+                          </div>
+                        )}
+                      </section>
+                    )} />
+  );
+  const editBox = (
+    <div className="todo-edit">
+      {editForm}
+      {msg && <p className="banner ok">{msg}</p>}
+      <div className="button-row">
+        <span className="sub-n">added by {t.createdBy?.split('@')[0] ?? '—'} · {t.createdAt.slice(0, 10)}</span>
+        {canClaim && <button className="link tiny" disabled={busy} onClick={() => void toClaim()}
+                             title="It is a guest case — open a claim for it, linked to this to-do">⚑ Register as a claim</button>}
+        {!closed && (merging === null
+          ? <button className="link tiny" onClick={() => setMerging('')} title="The same job written twice? Keep the other one and bring this one's comments, files and items into it">Merge into…</button>
+          : mergeUi)}
+        <span className="rb-spacer" />
+        {!confirmDel
+          ? <button className="link tiny danger" onClick={() => setConfirmDel(true)}>Remove this {t.parentId ? 'sub-task' : t.kind === 'work_order' ? 'work order' : 'to-do'}…</button>
+          : removeUi}
+      </div>
+    </div>
+  );
+
   return (
-    <li className={`todo cat-${cat} stage-${stage.key} due-${due} ${closed ? 'is-done' : ''} prio-${t.priority}`}>
+    <li className={`todo cat-${cat} stage-${stage.key} due-${due} ${closed ? 'is-done' : ''} prio-${t.priority} ${open && !props.inPanel ? 'is-open' : ''}`}>
       {/* Owner, 2026-10-14: opening a task was not obvious — a ▸ before the title, and a click anywhere on
           the row opens it (its own buttons, links and fields keep their job). §159: the title alone on the
           first line; what describes it is one quiet line under it, always in the same order. */}
-      <div className="todo-line todo-opener" onClick={e => { if (!renaming && !(e.target as HTMLElement).closest('button, a, input, select, textarea, label')) onOpen(); }}>
+      <div className="todo-line todo-opener" onClick={e => { if (!props.inPanel && !renaming && !(e.target as HTMLElement).closest('button, a, input, select, textarea, label')) onOpen(); }}>
         {renaming ? (
           <input className="todo-rename" value={name} autoFocus maxLength={120} aria-label="Title"
                  onChange={e => setName(e.target.value)} onBlur={() => void rename()}
                  onKeyDown={e => { if (e.key === 'Enter') void rename(); if (e.key === 'Escape') { setName(t.title); setRenaming(false); } }} />
         ) : <>
-          <button className="todo-title" onClick={onOpen} aria-expanded={open} title={open ? 'Close it' : 'Open it'}><span className="todo-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>{shown}</button>
+          <button className={`todo-title ${props.inPanel ? 'is-static' : ''}`} onClick={props.inPanel ? undefined : onOpen} aria-expanded={props.inPanel ? undefined : open}
+                  aria-haspopup={props.inPanel ? undefined : 'dialog'} title={props.inPanel ? undefined : 'Open it'}>{shown}</button>
           <button type="button" className="todo-pencil" title="Rename" aria-label={`Rename ${t.title}`} onClick={() => { setName(t.title); setRenaming(true); }}>✎</button>
         </>}
         {/* §105: how a task ends, on its own row, at the right — faint until the row is pointed at. */}
         <span className="todo-quick">
+          {/* §161: a sub-task is one line; its fields open only with its own Edit. */}
+          {props.inPanel && <button type="button" className="q-edit" aria-expanded={open} onClick={onOpen}>{open ? '▴ Hide' : '✎ Edit'}</button>}
           {closed
             ? <button type="button" className="q-reopen" disabled={busy} onClick={() => void tick()} title="Reopen">↺ Reopen</button>
             : <>
@@ -664,82 +761,36 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           {mine.filter(k => !isClosed(k.status)).map(k => kidRow(k, openSub === k.id, () => setOpenSub(openSub === k.id ? null : k.id)))}
         </ul>
       )}
-      {open && (
-        <div className="todo-edit">
-          {/* §104: title and description, the comments, then the details and sub-tasks folded. */}
-          <TodoForm units={units} claims={claims} canClaims={!inClaim && claims.length > 0} initial={t} submitLabel="Save changes"
-                    onSubmit={v => act({ action: 'update', id: t.id, ...v })}
-                    middle={<><TodoFiles todoId={t.id} />
-                      <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} /></>}
-                    after={t.parentId ? null : (
-                      <section className={`task-fold ${subsOpen ? 'open' : ''}`}>
-                        {mine.length > 0 && (
-                          <button type="button" className="task-fold-head" aria-expanded={subsOpen} onClick={() => setSubsOpen(!subsOpen)}>
-                            <span className="task-fold-caret" aria-hidden="true">{subsOpen ? '▾' : '▸'}</span><b>Inside</b>
-                            <span className="task-fold-sum">{prog.done}/{prog.total} done</span>
-                          </button>
-                        )}
-                        {(subsOpen || !mine.length) && (
-                          <div className={mine.length ? 'task-fold-body' : ''}>
-                            {mine.length > 0 && (
-                              <ul className="todo-list todo-kids">
-                                {mine.map(k => kidRow(k, openSub === k.id, () => setOpenSub(openSub === k.id ? null : k.id)))}
-                              </ul>
-                            )}
-                            {buying ? (
-                              <TaskPurchase todoId={t.id} unitIds={t.unitIds} onClose={() => setBuying(false)}
-                                            // What was asked: the description, and — on requests from before §159 — the open sub-tasks it was split into.
-                                            asked={[t.description, ...mine.filter(k => !isClosed(k.status)).map(k => k.title)].filter(Boolean).join('\n')}
-                                            onBought={async closeIt => { setBuying(false); if (closeIt && !closed) await doTick(); else reload(); }} />
-                            ) : !addingSub ? (
-                              <div className="todo-add-buttons">
-                                <button className="link tiny" onClick={() => setAddingSub('task')}>+ sub-task</button>
-                                <button className="link tiny" onClick={() => setAddingSub('work_order')}>+ <Icon n="wrench" /> work order</button>
-                                {!closed && <button className="link tiny" onClick={() => setBuying(true)}>+ <Icon n="cart" /> purchase order</button>}
-                              </div>
-                            ) : (
-                              <TodoForm key={addingSub} units={units} claims={claims} canClaims={false} submitLabel="Add" startKind={addingSub}
-                                        onCancel={() => setAddingSub(null)}
-                                        fixed={{ parentId: t.id, claimId: t.claimId, unitIds: t.unitIds, reservationId: t.reservationId, reservationLabel: t.reservationLabel }}
-                                        onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAddingSub(null); return ok; }} />
-                            )}
-                          </div>
-                        )}
-                      </section>
-                    )} />
-          {msg && <p className="banner ok">{msg}</p>}
-          <div className="button-row">
-            <span className="sub-n">added by {t.createdBy?.split('@')[0] ?? '—'} · {t.createdAt.slice(0, 10)}</span>
-            {canClaims && !inClaim && !t.claimId && !t.parentId &&
-              <button className="link tiny" disabled={busy} onClick={() => void toClaim()}
-                      title="It is a guest case — open a claim for it, linked to this to-do">⚑ Register as a claim</button>}
-            {/* §159: two to-dos that are the same job become one — this one's comments, files and items move over. */}
-            {!closed && (merging === null
-              ? <button className="link tiny" onClick={() => setMerging('')} title="The same job written twice? Keep the other one and bring this one's comments, files and items into it">Merge into…</button>
-              : <span className="todo-merge">
-                  <select value={merging} aria-label="Merge into" onChange={e => setMerging(e.target.value)}>
-                    <option value="">Merge into…</option>
-                    {[...byId.values()].filter(x => x.id !== t.id && x.parentId !== t.id && !isClosed(x.status))
-                      .sort((a, b) => Number(!a.unitIds.some(u => t.unitIds.includes(u))) - Number(!b.unitIds.some(u => t.unitIds.includes(u))) || a.title.localeCompare(b.title))
-                      .map(x => <option key={x.id} value={x.id}>{x.unitIds.map(id => names.get(id)).filter(Boolean).join(', ') || 'No listing'} · {x.title.slice(0, 70)}</option>)}
-                  </select>
-                  <button className="small" disabled={!merging || busy} onClick={async () => { setBusy(true); const ok = await act({ action: 'merge', id: t.id, into: merging }); setBusy(false); if (ok) setMerging(null); }}>Merge</button>
-                  <button className="link tiny" onClick={() => setMerging(null)}>Cancel</button>
-                </span>)}
-            <span className="rb-spacer" />
-            {/* Done / Cancel / Reopen are on the task's own row (§105); removing sits apart, here, and is asked. */}
-            {!confirmDel
-              ? <button className="link tiny danger" onClick={() => setConfirmDel(true)}>
-                  Remove this {t.parentId ? 'sub-task' : t.kind === 'work_order' ? 'work order' : 'to-do'}…</button>
-              : <><span className="note">
-                    Remove “{t.title}”{mine.filter(k => !isClosed(k.status)).length
-                      ? <b> and its {mine.filter(k => !isClosed(k.status)).length} sub-task{mine.filter(k => !isClosed(k.status)).length === 1 ? '' : 's'}</b> : ''}?
-                  </span>
-                  <button className="small danger" onClick={() => void act({ action: 'delete', id: t.id })}>Remove</button>
-                  <button className="link tiny" onClick={() => setConfirmDel(false)}>Keep</button></>}
+      {open && (props.inPanel ? <NoDock>{editBox}</NoDock> : (
+        <SlideOver title={shown} onClose={onOpen} below={panelRows}
+          actions={<>
+            {closed
+              ? <button type="button" className="slide-btn wide" disabled={busy} onClick={() => void tick()}>↺ Reopen</button>
+              : <>
+                  <button type="button" className="slide-btn cancel" disabled={busy} onClick={() => void cancel()} title="Cancel it — kept, closed as cancelled"
+                          aria-label={`Cancel: ${t.title}`}>✕</button>
+                  <button type="button" className="slide-btn done" disabled={busy} onClick={() => void tick()} title={isOrder ? 'Mark as purchased' : 'Mark as done'}
+                          aria-label={`Done: ${t.title}`}>✓</button>
+                </>}
+            {(
+              <Popover label="More actions" align="right" button={<Icon n="dots" />} className="slide-more">
+                {close => <>
+                  {canClaim && <button type="button" role="menuitem" disabled={busy} onClick={() => { close(); void toClaim(); }}
+                                       title="It is a guest case — open a claim for it, linked to this to-do"><Icon n="warning" /> Register as a claim</button>}
+                  {!closed && <button type="button" role="menuitem" onClick={() => { close(); setMerging(''); }}
+                                      title="The same job written twice? Keep the other one and bring this one's comments, files and items into it"><Icon n="layers" /> Merge into…</button>}
+                  <button type="button" role="menuitem" className="danger" onClick={() => { close(); setConfirmDel(true); }}><Icon n="trash" /> Remove this {t.parentId ? 'sub-task' : t.kind === 'work_order' ? 'work order' : 'to-do'}…</button>
+                </>}
+              </Popover>
+            )}
+          </>}>
+          <div className="todo-edit">
+            {editForm}
+            {msg && <p className="banner ok">{msg}</p>}
+            <p className="sub-n slide-added">added by {t.createdBy?.split('@')[0] ?? '—'} · {t.createdAt.slice(0, 10)}</p>
           </div>
-        </div>
-      )}
+        </SlideOver>
+      ))}
     </li>
   );
 }
@@ -827,12 +878,14 @@ function VendorLink({ id }: { id: string }) {
  * Hostaway's task, field for field (§94); the kind, vendor, estimate, claim
  * and sub-tasks are Kaizen's own.
  */
-function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, startKind = 'task', onCancel, middle, after }: {
+function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, startKind = 'task', onCancel, middle, after, startEditing = false }: {
   units: Unit[]; claims: Claim[]; canClaims: boolean; initial?: Todo; submitLabel: string;
   /** Editing (§104): what goes between the description and the details — the comments. */
   middle?: ReactNode;
   /** Editing: what goes after the details — the sub-tasks. */
   after?: ReactNode;
+  /** Editing: open on the full fields, not the one-line summary (a sub-task opened with its own Edit, §161). */
+  startEditing?: boolean;
   /** What the context pre-sets: a claim (and its unit), or a parent task (its listings and claim). */
   fixed?: { claimId?: string | null; unitIds: string[]; parentId?: string; reservationId?: string | null; reservationLabel?: string | null };
   onSubmit: (v: FormValue) => Promise<boolean>;
@@ -859,6 +912,8 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   // Editing (§104): what was saved, to know what is not — and the details, folded.
   const [base, setBase] = useState<FormValue>(v);
   const [details, setDetails] = useState(false);
+  // §161: an item reads as one line — status • urgency • listing • dates • owner — and its fields open with ✎ Edit.
+  const [fields, setFields] = useState(startEditing);
   const dirty = !!initial && JSON.stringify(v) !== JSON.stringify(base);
   // The description: always there when editing; one click away when adding.
   const [withDesc, setWithDesc] = useState(!!initial);
@@ -965,7 +1020,16 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
             </div>
           )}
         </section>
-        <div className="sheet-groups">
+        <div className="sheet-summary">
+          <span className="sheet-sum-text">{[
+            v.status ? STATUS_LABEL[v.status] : '', v.priority !== 'none' ? PRIORITY_LABEL[v.priority] : '',
+            v.unitIds.map(id => units.find(u => u.id === id)?.name).filter(Boolean).join(', '),
+            v.scheduledOn || v.dueOn ? [v.scheduledOn, v.dueOn].map(d => d ? shortDay(d) : '').filter(Boolean).join(' – ') : '',
+            initial.assignee ?? ''
+          ].filter(Boolean).join(' • ')}</span>
+          <button type="button" className="link tiny" aria-expanded={fields} onClick={() => setFields(f => !f)}>{fields ? '▴ Hide fields' : '✎ Edit'}</button>
+        </div>
+        <div className="sheet-groups" hidden={!fields}>
           <div className="fl-group" role="group" aria-label="Status and people">
             <label>Status
               <select value={v.status} onChange={e => set('status', e.target.value as TaskStatus)}>
@@ -1148,6 +1212,8 @@ export function Timeline({ load, post, version = 0, readOnly = false, title, def
     setBusy(false);
     if (ok) { setText(''); await read(); }
   };
+  // In a slide-over the comment box is docked at the panel's foot, always in reach (§160).
+  const dock = useDock();
   const notes = (list ?? []).filter(u => u.kind === 'note');
   const changes = (list ?? []).filter(u => u.kind !== 'note');
 
@@ -1176,14 +1242,14 @@ export function Timeline({ load, post, version = 0, readOnly = false, title, def
               ))}
             </ol>
           )}
-          {!readOnly && (
+          {!readOnly && (() => { const f = (
             <form className="timeline-add" onSubmit={e => { e.preventDefault(); void send(); }}>
               <textarea rows={2} value={text} placeholder="Add a comment — what happened, what's next, who you're waiting on"
                         onChange={e => setText(e.target.value)}
                         onKeyDown={e => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) void send(); }} />
               <button className="small" disabled={!text.trim() || busy}>{busy ? '…' : 'Comment'}</button>
             </form>
-          )}
+          ); return dock ? createPortal(f, dock) : f; })()}
         </div>
       )}
       {log && (
@@ -1488,15 +1554,15 @@ function TodoFiles({ todoId }: { todoId: string }) {
         <b><Icon n="clip" /> Files</b> <span className="sub-n">{files ? files.length : '…'}</span>
         <label className={`chip ${busy ? 'is-busy' : ''}`}>{busy ? 'Uploading…' : '+ Add files'}
           <input type="file" multiple hidden disabled={busy} onChange={e => { void add([...(e.target.files ?? [])]); e.target.value = ''; }} /></label>
-        <span className="sub-n">up to 10 at a time, 15 MB each — photos, PDFs, documents</span>
+        <span className="info-tip" tabIndex={0} role="img" aria-label="Up to 10 at a time, 15 MB each — photos, PDFs, documents"
+              title="Up to 10 at a time, 15 MB each — photos, PDFs, documents">ⓘ</span>
       </div>
       {msg && <p className="breach" role="status">{msg}</p>}
       {files && files.length > 0 && (
         <ul className="todo-files-list">
           {files.map(f => (
             <li key={f.id}>
-              <a href={f.url} target="_blank" rel="noreferrer">{ic(f.mime?.startsWith('image/') ? '🖼' : f.mime === 'application/pdf' ? '📄' : '📎')} {f.name}</a>
-              <span className="sub-n"> · {f.by.split('@')[0]}{f.source === 'slack' ? ' · from Slack' : ''}</span>
+              <a href={f.url} target="_blank" rel="noreferrer" title={`Added by ${f.by.split('@')[0]}${f.source === 'slack' ? ', from Slack' : ''}`}>{ic(f.mime?.startsWith('image/') ? '🖼' : f.mime === 'application/pdf' ? '📄' : '📎')} {f.name}</a>
               <button type="button" className="link tiny" aria-label={`Remove ${f.name}`} title="Take it off the to-do (the Drive copy stays)"
                       onClick={() => void removeTodoFile(f.id).then(take)}>✕</button>
             </li>
@@ -1517,13 +1583,14 @@ export function WorkView({ today, canClaims, unit }: { today: DateStr; canClaims
   // The open purchase orders: their own tab, as on Home (owner, Oct 2026).
   const [orderIds, setOrderIds] = useState<Set<string>>(new Set());
   useEffect(() => { getInventory().then(r => { if (r.ok) setOrderIds(new Set(r.orders.map(o => o.todoId))); }).catch(() => {}); }, []);
+  const modes = <>
+    <button className={mode === 'open' ? 'chip active' : 'chip'} onClick={() => setMode('open')}>Open work</button>
+    <button className={mode === 'log' ? 'chip active' : 'chip'} onClick={() => setMode('log')}>✓ Done log</button>
+  </>;
   return (
     <>
-      <div className="row-controls work-mode">
-        <button className={mode === 'open' ? 'chip active' : 'chip'} onClick={() => setMode('open')}>Open work</button>
-        <button className={mode === 'log' ? 'chip active' : 'chip'} onClick={() => setMode('log')}>✓ Done log</button>
-      </div>
-      {mode === 'open' ? <TodoList key={unit ?? ''} today={today} canClaims={canClaims} orderIds={orderIds} unit={unit} /> : <DoneLog today={today} canClaims={canClaims} />}
+      {mode === 'open' ? <TodoList key={unit ?? ''} today={today} canClaims={canClaims} orderIds={orderIds} unit={unit} lead={modes} />
+        : <><div className="row-controls work-bar">{modes}</div><DoneLog today={today} canClaims={canClaims} /></>}
     </>
   );
 }

@@ -306,14 +306,11 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
       <div className={`home-layout ${canTodos && mods.length ? '' : 'solo'}`}>
         {canTodos && (
           <div className="home-main-col" role={phone ? 'tabpanel' : undefined} id="home-panel-todo" hidden={phone && active !== 'todo'}>
-            <Panel title="To-dos" hint="Everything that needs a person, by category. Overdue, today and urgent come first; Now, Later and Further out group the rest."
-                   count={todoSum?.open} className="home-todos" load={{ data: true, err: '', busy: false }}
-                   summary={todoSum && <WorkSummary s={todoSum} />}
-                   action={canOps ? 'All to-dos' : undefined} onAction={() => onGo('operations:todos')}>
+            <div className="card home-card home-todos">
               <TodoList today={today} compact canClaims={canClaims} onSummary={setTodoSum} extraTabs={approvalTab}
                         orderIds={canOps ? orders.data ?? new Set() : undefined}
-                        onMore={canOps ? () => onGo('operations:todos') : undefined} />
-            </Panel>
+                        head={{ title: 'To-dos', hint: 'Everything that needs a person, by category. Overdue, today and urgent come first; Now, Later and Further out group the rest. "All" opens the full list, with filters, in Operations.', onAll: canOps ? () => onGo('operations:todos') : undefined }} />
+            </div>
           </div>
         )}
 
@@ -367,22 +364,9 @@ function Panel<T>({ title, hint, count, summary, load, action, onAction, foot, b
   );
 }
 
-/**
- * The first three, and the rest one tap away — in place, not on another
- * screen. Three is what a glance holds; the order puts what needs acting
- * on first, so the three shown are the three that matter.
- */
-function ShowMore<T>({ items, render, limit = 3 }: { items: T[]; render: (x: T) => ReactNode; limit?: number }) {
-  const [all, setAll] = useState(false);
-  return (
-    <>
-      <ul className="home-list">{(all ? items : items.slice(0, limit)).map(render)}</ul>
-      {items.length > limit && (
-        <button className="link tiny home-more" onClick={() => setAll(!all)}>
-          {all ? 'Show less ▴' : `Show ${items.length - limit} more ▾`}</button>
-      )}
-    </>
-  );
+/** Every item, in the order that puts what needs acting on first; the module's body scrolls, nothing folds. */
+function ShowMore<T>({ items, render }: { items: T[]; render: (x: T) => ReactNode }) {
+  return <ul className="home-list">{items.map(render)}</ul>;
 }
 
 const Empty = ({ children }: { children: ReactNode }) => <p className="note home-empty">{children}</p>;
@@ -401,16 +385,6 @@ function DayGroup({ label, empty, children }: { label: string; empty: string; ch
       {has ? children : <p className="note home-empty">{empty}</p>}
     </div>
   );
-}
-
-/** The to-do card's line when folded — the counts that say whether to open it. */
-function WorkSummary({ s }: { s: WorkSum }) {
-  const parts: ReactNode[] = [];
-  if (s.overdue) parts.push(<span key="o" className="breach">▲ {s.overdue} overdue</span>);
-  if (s.today) parts.push(<span key="t" className="home-today">● {s.today} today</span>);
-  if (s.urgent) parts.push(<span key="u" className="breach">▲▲ {s.urgent} urgent</span>);
-  if (s.cases) parts.push(<span key="c">⚑ {s.cases} claim{s.cases === 1 ? '' : 's'}</span>);
-  return parts.length ? <>{parts.map((p, i) => <span key={i}>{i > 0 && ' · '}{p}</span>)}</> : <span className="sub-n">nothing urgent</span>;
 }
 
 function CleanItem({ r }: { r: BoardRow }) {
