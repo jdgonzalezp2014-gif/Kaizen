@@ -69,7 +69,19 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   title), products ≠ subtotal (left out), items ≠ "Subtotal (N items)" → ▲ in the read message; also in SOP #15 v17.
   Tested on real data (read-only): Walmart 2000156-31789057 6 lines, 19 items, 38.67 + 3.19 = 41.86; Amazon 113-2518508-6894635;
   against production supplies every line was ≈ with the right supply first (no store products saved yet).
-- Script: `scripts/whatsapp-cleanings.mjs` (crew chat history, one-off).
+- **Store purchases and online returns (2026-10-15, real .md of Sep 11/12 and Oct 5):** a Walmart store purchase prints each
+  scan as its own block (15 towels = 15 pictures) → a new picture of the same product is another block, added up (same pack);
+  its TC# stands for the order number and "Sep 12, 2026 purchase" dates it. An online order lists what was returned
+  ("Return to Walmart store") and never came ("N unavailable items") after what was bought → cut to "How can we help?".
+  Prices skip the list price ("$14.97/ea"), "$2.00 from savings" and "Was $…"; "Multipack Quantity: 6" × the name's count = pack;
+  Walmart's one-product price = line ÷ qty (its "$1.00 ea" on a 6-pack is one mug's).
+- **Store products loaded (owner, 2026-10-15):** 31 of 45 supplies got their ONE store product (one-off script, deleted) — the
+  one bought **most in the last two months across Amazon and Walmart** (orders, then units in the supply's measure, then the most
+  recent, then price per unit): Amazon Business CSV (an order × ASIN once — the file repeats a line per payment), the Walmart .md
+  receipts and an Amazon cart .md. Personal-use buys left out. Packs not printed were left empty (Swirl 49-piece flatware on
+  Forks/Spoons/Knives, Quatish 16-piece set on Plates/Bowls). An Amazon cart saved with MarkDownload kept 2 of ~12 products
+  (the rest lost their links).
+
 
 ## Tables
 
@@ -483,9 +495,15 @@ key had no SOPs.
   fragile), "Share your Amazon Business Cart" (only built by hand in Amazon), "Bulk order products" (quotes, not a list upload).
   Docs: https://docs.business.amazon.com/docs/cart-api-overview · /reference/additems
 - **Store carts & .md receipts (2026-10-15):** Amazon has no working multi-item cart link (add.html opened the old cart; untried:
-  `gp/aws/cart/add-res.html`). Several stores' links per item: later, when the owner asks. No supply has a store product yet: the
-  first .md receipts are all ≈ (one tap each, then matched by number). The UI flow (read → flags → record → product learned) was
-  not run end to end — check it on the first real receipt.
+  `gp/aws/cart/add-res.html`). Several stores' links per item: later, when the owner asks. The UI flow (read → flags → record →
+  product learned) was not run end to end — check it on the first real receipt.
+- **Store products, open (2026-10-15):** no product yet for Coffee pods, Pillowcases, Bath mats (the only recent one was a
+  Walmart substitution), Cooking utensils, Wine glasses and the safety/hardware items. Sizes: Sheet sets / Blankets / Mattress
+  protectors have no size, so their product is one size (Queen sheets, **Twin** comforter, Queen protector) — sized items if the
+  owner wants. Packs to confirm: Swirl flatware (forks/spoons/knives each), Quatish set (plates/bowls).
+- **Later (owner, 2026-10-15): the September–October purchases as Restock** (stock + Costs; Costs has no Restock yet, so no
+  duplicates) — the owner says where each order went; deferred ("no miremos lo del stock ahorita"). With it, a screen to upload a
+  purchase and pick where each thing went.
 - **Access for cleaners (§136):** all 21 active units complete (2026-10-12, after the owner filled Bobcat
   House and the lockboxes of P2-4212 / P2-4315). A new unit shows in Setup → Crew pages → "How cleaners
   get in" with what it lacks.

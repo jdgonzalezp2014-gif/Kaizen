@@ -44,9 +44,12 @@ const PACK_WORDS = 'count|ct|rolls?|bags?|pods?|paks?|pacs?|packets?|pairs?|piec
 /** The pack printed: "Count Per Pack: 40" first, else "42 Count" / "4 Rolls" in the name — never "150 2-Ply Sheets per Roll". */
 function packOf(name: string, block: string): { pack: number | null; packWord: string | null } {
   const per = /Count Per Pack:\s*(\d+)/i.exec(block);
-  if (per && Number(per[1]) > 1) return { pack: Number(per[1]), packWord: 'count' };
+  // Walmart's "(6 pack) … Mug" / "Multipack Quantity: 6": six of the product, each holding what its name says.
+  const multi = Number(/Multipack Quantity:\s*(\d+)/i.exec(block)?.[1] ?? 1) || 1;
+  if (per && Number(per[1]) > 1) return { pack: Number(per[1]) * multi, packWord: 'count' };
   const m = new RegExp(`\\b(\\d{1,4})[\\s-]*(${PACK_WORDS})\\b(?!\\s+per\\b)`, 'i').exec(name);
-  return m && Number(m[1]) > 1 ? { pack: Number(m[1]), packWord: m[2]!.toLowerCase() } : { pack: null, packWord: null };
+  if (m && Number(m[1]) > 1) return { pack: Number(m[1]) * multi, packWord: m[2]!.toLowerCase() };
+  return multi > 1 ? { pack: multi, packWord: 'count' } : { pack: null, packWord: null };
 }
 
 /**
@@ -55,14 +58,23 @@ function packOf(name: string, block: string): { pack: number | null; packWord: s
  * "$0.94 ea"), Amazon the quantity alone on its line ("3") and the price of one.
  */
 export function parseOrderMd(md: string): StoreOrder {
-  const text = md.replace(/\r/g, '');
+  const raw = md.replace(/\r/g, '');
+  // Walmart lists what was returned or never came after what was bought, down to "How can we help?" (seen
+  // 2026-10-05: three returned products and two unavailable ones printed again) — none of it was bought.
+  const gone = /\n\s*(?:Return to Walmart store|\d+ unavailable items?|\d+ canceled items?)\s*\n/i.exec(raw);
+  const help = gone ? /\n(?:#+\s*)?How can we help\?/i.exec(raw.slice(gone.index)) : null;
+  const text = gone ? raw.slice(0, gone.index) + (help ? raw.slice(gone.index + help.index) : '') : raw;
   const linkRe = /\]\((https?:\/\/[^)\s]+)\)/g;
   const firsts: { at: number; product: StoreProduct }[] = [];
   for (const m of text.matchAll(linkRe)) {
     const p = storeProduct(m[1]!);
-    if (p && !firsts.some(f => f.product.store === p.store && f.product.id === p.id)) {
+    const at = text.lastIndexOf('\n', m.index!) + 1;
+    // A Walmart store purchase prints each scan as its own block (15 towels = 15 pictures): a new picture of the
+    // same product is another block, added up below. Elsewhere a product's first link starts its only block.
+    const again = p?.store === 'walmart' && text.startsWith('[![', at) && !firsts.some(f => f.at === at);
+    if (p && (again || !firsts.some(f => f.product.store === p.store && f.product.id === p.id))) {
       // The block starts on the link's own line: Amazon's name is the picture's description, "[![name](img)](url)".
-      firsts.push({ at: text.lastIndexOf('\n', m.index!) + 1, product: p });
+      firsts.push({ at, product: p });
     }
   }
   const store: Store | null = firsts[0]?.product.store ?? (/walmart\.com/i.test(text) ? 'walmart' : /amazon\.com/i.test(text) ? 'amazon' : null);
@@ -82,13 +94,23 @@ export function parseOrderMd(md: string): StoreOrder {
     const qtyA = /^\s*(\d{1,3})\s*$/m.exec(plain);
     const qty = Number(qtyW?.[1] ?? qtyA?.[1] ?? 1) || 1;
     const each = money(/\$([\d,]+\.\d{2})\s*ea\b/i.exec(plain)?.[1]);
-    const price = money([...plain.matchAll(/\$([\d,]+\.\d{2})(?!\s*ea\b)/gi)][0]?.[1]);
+    // Not the list price ("$14.97/ea"), the saving ("$2.00 from savings") nor the old price ("Was $14.96").
+    const price = money([...plain.matchAll(/(?<!Was\s*)\$([\d,]+\.\d{2})(?!\d|\s*(?:\/\s*)?ea\b|\s*from savings)/gi)][0]?.[1]);
     // Walmart's price is the line's; Amazon's is one's.
     const amazon = f.product.store === 'amazon';
     const amount = price == null ? null : amazon ? Math.round(price * qty * 100) / 100 : price;
-    const unitPrice = amazon ? price : each ?? (price != null ? Math.round(price / qty * 100) / 100 : null);
+    // Walmart's "$1.00 ea" on a 6-pack is one mug's: one product's price is the line's ÷ its quantity.
+    const unitPrice = amazon ? price : price != null ? Math.round(price / qty * 100) / 100 : each;
     return { text: name, product: f.product, qty, amount, unitPrice, ...packOf(name, plain) };
-  });
+  }).reduce<OrderLine[]>((all, l) => {
+    // Same product and pack = the same thing scanned again; a 4-pack and an 8-pack of one product stay two lines.
+    const same = all.find(x => x.product.store === l.product.store && x.product.id === l.product.id && x.pack === l.pack);
+    if (!same) return [...all, l];
+    same.qty += l.qty;
+    same.amount = same.amount == null || l.amount == null ? null : Math.round((same.amount + l.amount) * 100) / 100;
+    same.unitPrice = same.amount == null ? same.unitPrice : Math.round(same.amount / same.qty * 100) / 100;
+    return all;
+  }, []);
   const sub = /Subtotal\s*\((\d+)\s*items?\)\s*\$([\d,]+\.\d{2})/i.exec(text);
   const subA = /Item\(s\) Subtotal:?\s*\$([\d,]+\.\d{2})/i.exec(text);
   const tax = /(?:Estimated tax to be collected|Taxes?)\s*:?\s*(?:Taxes?\s*)?\$([\d,]+\.\d{2})/i.exec(text);
@@ -96,8 +118,9 @@ export function parseOrderMd(md: string): StoreOrder {
   const beforeTax = money(/Total before tax:?\s*\$([\d,]+\.\d{2})/i.exec(text)?.[1]);
   const taxN = money(tax?.[1]);
   const total = money(grand?.[1]) ?? (beforeTax != null ? Math.round((beforeTax + (taxN ?? 0)) * 100) / 100 : null);
-  const orderNo = /Order\s*#\s*:?\s*([0-9][0-9-]{8,})/i.exec(text)?.[1] ?? null;
-  const date = isoDate(/Order placed\s+([A-Za-z]+\.? \d{1,2}, \d{4})/i.exec(text)?.[1]) ?? isoDate(/([A-Za-z]{3,9}\.? \d{1,2}, \d{4})\s+order\b/i.exec(text)?.[1]);
+  // A store purchase has no order number: its TC# (the receipt's) stands for it.
+  const orderNo = /(?:Order|TC)\s*#\s*:?\s*([0-9][0-9-]{8,})/i.exec(text)?.[1] ?? null;
+  const date = isoDate(/Order placed\s+([A-Za-z]+\.? \d{1,2}, \d{4})/i.exec(text)?.[1]) ?? isoDate(/([A-Za-z]{3,9}\.? \d{1,2}, \d{4})\s+(?:order|purchase)\b/i.exec(text)?.[1]);
   return { store, orderNo, date, subtotal: money(sub?.[2] ?? subA?.[1]), tax: taxN, total, count: sub ? Number(sub[1]) : null, lines };
 }
 

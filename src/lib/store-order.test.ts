@@ -301,3 +301,136 @@ test('againstOrder: missing, fewer, more, not ordered', () => {
   const r = againstOrder(new Map([['1', 8], ['2', 40], ['3', 2], ['4', 6]]), new Map([['1', 8], ['2', 20], ['4', 10], ['5', 1]]));
   assert.deepEqual(r, { ok: ['1'], missing: ['3'], fewer: ['2'], more: ['4'], extra: ['5'] });
 });
+
+// A store purchase (Sep 12, 2026, shortened): each scan its own block; the TC# stands for the order number.
+const towel = (qty: number, price: string) => `[![](https://i5.walmartimages.com/seo/Towel.jpeg)](https://www.walmart.com/ip/Mainstays-Bath-Towel/1914075718)
+
+[
+
+Mainstays Performance Cotton Bath Towel, White
+
+](https://www.walmart.com/ip/Mainstays-Bath-Towel/1914075718)
+
+Shopped
+
+Qty ${qty}
+
+$${price}
+
+Add to cart
+
+___
+`;
+const STORE = `# Sep 12, 2026 purchase
+
+TC# 9885-6598-6559-6636-4188-2
+
+Store purchase
+
+## Sep 12, 2026 purchase
+
+___
+
+4 items
+
+${towel(1, '3.97')}${towel(1, '3.97')}${towel(2, '7.94')}
+## How can we help?
+
+Subtotal (4 items)$15.88
+
+Taxes
+
+$1.31
+
+Total$17.19`;
+
+test('parseOrderMd: a Walmart store purchase — repeated scans added up, TC# and the purchase date', () => {
+  const o = parseOrderMd(STORE);
+  assert.equal(o.orderNo, '9885-6598-6559-6636-4188-2');
+  assert.equal(o.date, '2026-09-12');
+  assert.equal(o.lines.length, 1);
+  assert.deepEqual([o.lines[0]!.qty, o.lines[0]!.amount, o.lines[0]!.unitPrice], [4, 15.88, 3.97]);
+  assert.deepEqual(orderWarnings(o), []);
+});
+
+test('parseOrderMd: an online order — list price, savings and old price skipped; returned and unavailable left out; multipacks', () => {
+  const o = parseOrderMd(`# Oct 05, 2026 order
+
+Order# 2000153-26443647
+
+[![](https://i5.walmartimages.com/seo/Folgers.jpeg)](https://www.walmart.com/ip/Folgers-Classic-Roast/578550306)
+
+[
+
+Folgers Classic Roast Ground Coffee, 25.9 oz Canister
+
+](https://www.walmart.com/ip/Folgers-Classic-Roast/578550306)
+
+$14.96/ea
+
+Qty 1
+
+$2.00 from savings
+
+$12.96
+
+Was $14.96
+
+$14.96
+
+___
+
+[![](https://i5.walmartimages.com/seo/Mug.jpeg)](https://www.walmart.com/ip/Mainstays-Mug/211142390)
+
+[
+
+(6 pack) Mainstays 12 oz White Glazed Stoneware Mug
+
+](https://www.walmart.com/ip/Mainstays-Mug/211142390)
+
+Multipack Quantity: 6
+
+$1.48/ea
+
+Qty 2
+
+$12.00
+
+$1.00 ea
+
+___
+
+Return to Walmart store
+
+Return details
+
+[![](https://i5.walmartimages.com/seo/Throw.jpeg)](https://www.walmart.com/ip/Mainstays-Fleece-Throw/19427424239)
+
+[
+
+Mainstays Cozy Fleece Throw Blanket
+
+](https://www.walmart.com/ip/Mainstays-Fleece-Throw/19427424239)
+
+Qty 3
+
+$11.91
+
+10 unavailable items
+
+[![](https://i5.walmartimages.com/seo/Folgers.jpeg)](https://www.walmart.com/ip/Folgers-Classic-Roast/578550306)
+
+Qty 4
+
+$59.84
+
+## How can we help?
+
+Taxes
+
+$2.06
+
+Total$27.02`);
+  assert.deepEqual(o.lines.map(l => [l.product.id, l.qty, l.amount, l.unitPrice, l.pack]),
+    [['578550306', 1, 12.96, 12.96, null], ['211142390', 2, 12, 6, 6]]);
+});
