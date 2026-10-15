@@ -50,3 +50,11 @@ UI only; tokens and shared components from `docs/design-system.md`.
   on the label) and the label is a dashed pill (amber when the building needs the copy, muted when optional),
   36 px tall on a phone. Drag-and-drop on the row is unchanged.
 - Signed / Not signed / ID verified already carried a word + shape; unchanged.
+
+## Home check-ins/outs rows (2026-10-15)
+
+Owner: same logic as Movements, two lines a row. Check-out: unit BR / cleaner · pay (small) | flags in one row.
+Check-in: unit BR / guest ↗ · nights · guests | pills: the agreement pill only (`✓ signed` solid green, `▲ not signed`
+dashed amber — clickable to upload the agreement when the person has `guests.documents`), plus `○ ID` only where the
+building keeps an ID copy (as on the board). "✓ ID verified" and the separate Agreement chip are gone from Home.
+"Open the board" sits top right; the panel's summary goes under the title.

@@ -157,7 +157,6 @@ UI only; tokens and shared components from `docs/design-system.md`.
 - **Round 4:** not-started reads **New** (the owner's word: what the system made or someone just wrote is new).
 - **Side panel instead of the accordion (owner, 2026-10-15, §160):** opening a to-do/repair/claim row shows its card in `SlideOver` (`components/SlideOver.tsx`, portal; 50 % wide on desktop, full screen on a phone) — the list never expands. Header: title, ✓ / ↺ Reopen, ⋯ (`Popover`: Register as a claim, Merge into…, Remove…), ✕. The comment box of `Timeline` is portaled into the panel's dock (`useDock`) so it stays at the bottom. A sub-task opens in place inside its parent's panel (`inPanel`, `NoDock`). Operations → To-do header is one row: one **Filters** popover (urgency, deadline, listing, owner; count badge) on the right. *(§163: the Open work / Done log switch is gone — see below.)* Home's card has `All ↗` back beside `+ Add`. Two draft SOPs from `scripts/seed-sops.mjs` inserted 2026-10-15: #36 Home, #37 side panel — **drafts, for the owner to publish**.
 - **Summary / Edit (owner, 2026-10-15, §161):** in the panel an item is one summary line (`status • urgency • listing • dates • owner`) with `✎ Edit` to open the fields; each sub-task is a one-line row that opens only with its own `✎ Edit` (`inPanel`, `startEditing`). The panel header has `✓` (done) and `⋯` (done, cancel, claim, merge, remove — cancel is not one click); the panel closes with `Close →` (top right), Esc or the backdrop. The description is edited by clicking it. Files: size limit in an `ⓘ` tooltip, uploader/source in the file name's tooltip.
-
 - **Claims & upselling (§162, owner 2026-10-15):** a case has `requested` and `refund` ("Received (refunded)") typed, and
   **Repair work** computed (work orders' cost/estimate + purchase orders' purchases; `/api/claims` `repair_work`, `workCost().bought`).
   Kinds grouped Claim / Upselling (`CategoryOptions`). Alterations are not upselling unless collected through the Resolution
@@ -172,3 +171,7 @@ UI only; tokens and shared components from `docs/design-system.md`.
 - **§164 field work (owner, 2026-10-15):** field problems come in at medium flagged `urgency_pending` (migration 088, no sub-task); the team answers
   in Slack (⚑ buttons) or by setting the priority — urgent = today, high = checkout of the stay ahead (attached), via
   `applyUrgency` (functions/_lib/urgency.ts, `/api/todos` action `urgency`). "Make it a work order" in the ⋯ menu. `claims.repair_cost` dropped (087).
+- **"Inside"'s guide line (owner, 2026-10-15):** `.todo-kids`' indent + `border-left` is a nesting cue for the flat board,
+  where a kid row has nothing else marking it as nested. Inside the panel's "Inside" section it sat inside `.task-fold`
+  — already a box — so the line read as a short stray segment, not attached to anything above or below. Zeroed for
+  `.task-fold-body .todo-kids` (`index.css`); the board's flat view keeps the line.

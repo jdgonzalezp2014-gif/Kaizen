@@ -28,6 +28,9 @@ import { gapsInThread, standardFrom, draftFromAi, draftFromThread, helpAnswerBlo
          type SopSectionLite, type SopSource } from '../../src/lib/slack-sops.ts';
 import { addToBlocks, sourceOf, suggestTarget, type AddSource, type AddTarget } from '../../src/lib/slack-addto.ts';
 import { supplyPlaces } from '../_lib/unit-access.ts';
+import * as reportsApi from './reports.ts';
+import { REPORT_STATUS, readReportModal, reportMessage, reportModal, reportOffer, reportVerb, type ReportKind, type ReportStatus } from '../../src/lib/reports.ts';
+import { reportDm, reportLite } from '../_lib/report-slack.ts';
 import {
   claimList, claimMessage, claimModal, cleanAssignModal, cleansModal, day, digestMessage, HELP, helpBlocks, helpUrlOf, hostawayUserOf, loadingModal,
   parseCommand, readClaimForm, readTaskForm, taskCard, taskList, taskMessage, taskModal, unboughtModal, checkinsModal, claimsModal, tasksModal, commentFromMention,
@@ -145,6 +148,17 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   };
   const { verb, arg } = parseMention(String(ev.text ?? ''));
   const from = { channel: String(ev.channel), ts: String(inThread ? ev.thread_ts : ev.ts) };
+  // Owner, 2026-10-15: "@Kaizen bug …" / "@Kaizen pedir …" — the words ready, the form one tap away.
+  const [w0 = '', ...wRest] = commentFromMention(String(ev.text ?? '')).split(/\s+/);
+  const rk = reportVerb(w0);
+  if (rk) {
+    const m = reportOffer(rk, wRest.join(' ').trim(), dm ? 'Slack (DM)' : 'Slack');
+    // The thread it came from: where "Sent as bug #N" lands.
+    const withFrom = m.blocks.map(b => b.type !== 'actions' ? b : { ...b, elements: (b.elements as Record<string, unknown>[]).map(e =>
+      ({ ...e, value: JSON.stringify({ ...JSON.parse(String(e.value)), thread: from }) })) });
+    await say(m.text, withFrom);
+    return;
+  }
   // "@Kaizen help" alone: what Kaizen does. "@Kaizen help <question>": the SOPs answer it (owner, 2026-10-14).
   if (verb === 'help' && !arg.trim()) { await sayPrivate('What Kaizen does in Slack', mentionHelpBlocks()); return; }
   if (verb === 'help') {
@@ -210,6 +224,12 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     return;
   }
   // §162: a reply's photos stay in its comment — not the to-do's Files.
+  if ((t.subject as string) === 'report') {
+    const rr = await k.reportComment(t.subject_id, arg);
+    if (rr.ok) await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
+    else await say(`Not saved: ${String(rr.message ?? 'Kaizen said no.')}`);
+    return;
+  }
   const r = await k.commentWithFiles(t.subject, t.subject_id, arg, ev.files, { channel: String(ev.channel), thread: String(ev.thread_ts) });
   if (!r.ok) { await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`); return; }
   const re = await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
@@ -304,6 +324,10 @@ async function threadReply(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<strin
   const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
   if (!member.ok) return;
   const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
+  if ((t.subject as string) === 'report') {
+    if (body && (await k.reportComment(t.subject_id, body)).ok) await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
+    return;
+  }
   // §162 (owner, 2026-10-15): files posted in the thread stay in that comment (a photo shows there), not in Files.
   const r = await k.commentWithFiles(t.subject, t.subject_id, body, ev.files, { channel: String(ev.channel), thread: String(ev.thread_ts) });
   if (r.ok) await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
@@ -344,6 +368,26 @@ class Kaizen {
     return this.api(todos.onRequestPost, '/api/todos', 'POST', body.action === 'create' && !body.via ? { ...body, via: 'slack' } : body);
   }
   private claimSave(body: Record<string, unknown>) { return this.api(claims.onRequestPost, '/api/claims', 'POST', body); }
+
+  /* ── reports (owner, 2026-10-15) ── */
+  private report(body: Record<string, unknown>) { return this.api(reportsApi.onRequestPost, '/api/reports', 'POST', body); }
+  async reportComment(id: string, body: string) { return this.report({ action: 'comment', id, body, via: 'slack-thread' }); }
+  /** The form; `prefill.thread` is the conversation it was asked from. */
+  private async openReport(trigger: string, prefill: { kind?: ReportKind; body?: string; whereFrom?: string; thread?: { channel: string; ts: string } }) {
+    const view = reportModal(prefill);
+    view.private_metadata = JSON.stringify({ whereFrom: prefill.whereFrom ?? 'Slack', thread: prefill.thread ?? null });
+    await this.open(trigger, view);
+  }
+  /** A Slack file, read with the bot's token, as a data URL /api/reports keeps. Too big or unreadable: no photo. */
+  private async slackPhoto(url: string, type: string): Promise<string | undefined> {
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${this.s.token}` } }).catch(() => null);
+    if (!res?.ok) return undefined;
+    const buf = new Uint8Array(await res.arrayBuffer());
+    if (buf.length > 1_500_000) return undefined;
+    let bin = '';
+    for (let i = 0; i < buf.length; i += 0x8000) bin += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+    return `data:${type.startsWith('image/') ? type : 'image/jpeg'};base64,${btoa(bin)}`;
+  }
 
   private async reply(url: string, msg: Record<string, unknown>) {
     if (!url) return;
@@ -898,6 +942,10 @@ class Kaizen {
       return ephemeral('How to use Kaizen in Slack', [sectionButtons(), ...helpBlocks(sop ?? null, helpUrlOf(this.s.config)),
         { type: 'context', elements: [{ type: 'mrkdwn', text: HELP.split('\n').map(l => l.split(' — ')[0]).join(' · ') }] }]);
     }
+    if (verb === 'bug' || verb === 'request') {
+      await this.openReport(trigger, { kind: verb, body: arg, whereFrom: 'Slack' });
+      return ack();
+    }
     if (verb === 'sop') {
       if (!this.may('/api/sops', 'GET')) return this.deny('SOPs');
       return await this.openSopForm(trigger, arg);
@@ -1178,6 +1226,30 @@ class Kaizen {
     }
 
     // §108: the buttons an @Kaizen mention answers with — the forms, title filled in; saving says so in the mention's thread.
+    if (id === 'report_form' || id === 'report_send') {
+      const v = JSON.parse(value || '{}') as { kind?: ReportKind; body?: string; whereFrom?: string; thread?: { channel: string; ts: string } };
+      if (id === 'report_form') { await this.openReport(p.trigger_id, v); await this.reply(url, { delete_original: true }); return ack(); }
+      const r = await this.report({ action: 'create', kind: v.kind ?? 'bug', body: v.body ?? '', urgency: 'normal', whereFrom: v.whereFrom ?? 'Slack',
+                                    source: 'slack', slackUser: this.slackUser, thread: v.thread });
+      await this.reply(url, r.ok ? { delete_original: true } : { replace_original: false, response_type: 'ephemeral', text: `Not sent: ${String(r.message ?? 'Kaizen said no.')}` });
+      return ack();
+    }
+    if (id.startsWith('report_status_')) {
+      const [rid = '', st = ''] = value.split(':');
+      const r = await this.report({ action: 'status', id: rid, status: st, via: inChannel ? 'slack-message' : 'slack' });
+      if (!r.ok) return ephemeral(`Not changed: ${String(r.message ?? 'Kaizen said no.')}`);
+      // On the card itself: redrawn here, and the line in its thread — /api/reports was told not to (via).
+      if (inChannel && !r.unchanged) {
+        const rep = await reportLite(this.sql, rid);
+        if (rep) await this.reply(url, { replace_original: true, ...reportMessage(rep, this.s.config.appUrl, rep.slackUser) });
+        const ts = String(p.container?.message_ts ?? '');
+        if (ts) await slackApi(this.s.token!, 'chat.postMessage', { channel: p.container?.channel_id, thread_ts: ts,
+          text: `→ ${REPORT_STATUS[st as ReportStatus] ?? st} · <@${this.slackUser}>` });
+        // Closed: the reporter is told by DM, as from Kaizen.
+        if (st === 'done' || st === 'wontfix') this.ctx.waitUntil(reportDm(this.sql, this.ctx.env.ENCRYPTION_KEY, rid, st as ReportStatus).catch(() => {}));
+      }
+      return ack();
+    }
     if (id.startsWith('mention_new_')) {
       const v = JSON.parse(value || '{}') as { kind?: string; title?: string; from?: { channel: string; ts: string } };
       // A to-do or repair with words: made at once, like "@Kaizen new" (§110); the offer goes.
@@ -1276,6 +1348,16 @@ class Kaizen {
     const view = p.view ?? {};
     const meta = JSON.parse(view.private_metadata || '{}') as { id: string | null; kind?: string };
     const state = view.state?.values ?? {};
+    if (view.callback_id === 'report_save') {
+      const f = readReportModal(state);
+      if (!f.body) return json({ response_action: 'errors', errors: { body: 'Say what went wrong, or what you need.' } });
+      const m = JSON.parse(view.private_metadata || '{}') as { whereFrom?: string; thread?: { channel: string; ts: string } | null };
+      const photo = f.fileUrl ? await this.slackPhoto(f.fileUrl, f.fileType ?? '') : undefined;
+      const r = await this.report({ action: 'create', kind: f.kind, body: f.body, urgency: f.urgency, whereFrom: m.whereFrom ?? 'Slack',
+                                    source: 'slack', slackUser: this.slackUser, photo, thread: m.thread ?? undefined });
+      if (!r.ok) return json({ response_action: 'errors', errors: { body: String(r.message ?? 'Not sent.') } });
+      return ack();
+    }
     if (view.callback_id === 'sop_save') {
       // Owner, 2026-10-14: anyone saves a draft; only who edits SOPs (sops.edit) publishes — as in Kaizen.
       const f = readSopForm(state);

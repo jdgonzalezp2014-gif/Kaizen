@@ -12,12 +12,13 @@ import { isUpsell } from './claims.ts';
 import { channelLabel } from './breakdown.ts';
 import { COST_CATEGORIES, amountIn, guessCategory } from './costs.ts';
 
-export type Topic = 'tasks' | 'reservations' | 'claims' | 'escalations';
+export type Topic = 'tasks' | 'reservations' | 'claims' | 'escalations' | 'reports';
 export const TOPICS: { key: Topic; label: string; what: string }[] = [
   { key: 'tasks', label: 'Tasks', what: 'to-dos and repairs: new, assigned, completed, changed in Hostaway' },
   { key: 'reservations', label: 'Reservations', what: 'the reminder: check-ins, cleans, and what is missing' },
   { key: 'claims', label: 'Claims', what: 'opened, status changes' },
-  { key: 'escalations', label: 'Escalations', what: 'Hostaway AI escalations (when connected)' }
+  { key: 'escalations', label: 'Escalations', what: 'Hostaway AI escalations (when connected)' },
+  { key: 'reports', label: 'Reports', what: 'bugs and requests about Kaizen, from the Report button and @Kaizen bug' }
 ];
 
 export interface SlackConfig {
@@ -674,14 +675,14 @@ export function cleanerMessage(name: string, cleans: { date: string; time: strin
 
 /* ── /kaizen ────────────────────────────────────────────────────────── */
 
-export type Verb = 'help' | 'tasks' | 'task' | 'repair' | 'claims' | 'claim' | 'cost' | 'today' | 'cleans' | 'sop' | 'sops';
+export type Verb = 'help' | 'tasks' | 'task' | 'repair' | 'claims' | 'claim' | 'cost' | 'today' | 'cleans' | 'sop' | 'sops' | 'bug' | 'request';
 export function parseCommand(text: string): { verb: Verb; arg: string } {
   const t = (text ?? '').trim();
   const [first = '', ...rest] = t.split(/\s+/);
   const v = first.toLowerCase();
   const map: Record<string, Verb> = { '': 'help', help: 'help', tasks: 'tasks', todos: 'tasks', list: 'tasks', task: 'task', todo: 'task', new: 'task',
     repair: 'repair', claims: 'claims', claim: 'claim', cost: 'cost', expense: 'cost', today: 'today', digest: 'today', cleans: 'cleans', cleanings: 'cleans', cleaning: 'cleans',
-    sop: 'sop', newsop: 'sop', sops: 'sops' };
+    sop: 'sop', newsop: 'sop', sops: 'sops', bug: 'bug', report: 'bug', request: 'request', pedir: 'request', feature: 'request' };
   return map[v] ? { verb: map[v]!, arg: rest.join(' ') } : { verb: 'task', arg: t };
 }
 export const HELP = [
@@ -692,6 +693,7 @@ export const HELP = [
   '*/kaizen help* or *@Kaizen* — buttons to every pop-up: Tasks · Claims · Check-ins · Cleans',
   '*/kaizen today* — check-ins, cleans and what is missing, now',
   '*/kaizen sop* _title_ — write an SOP (a form opens) · */kaizen sops* — the SOP library',
+  '*/kaizen bug* _what happened_ · */kaizen request* _what you need_ — report a problem with Kaizen or ask for something (a form opens)',
   '*/kaizen cleans* (or *cleans tomorrow*) — the day’s cleans, and change who cleans',
   '⚡ *Shortcuts* — New task · Report a repair · New claim from anywhere; *Create task from message* in any message’s ⋯ menu',
   '*@Kaizen new Fix the AC in P2-4308* — in any channel: the to-do is made at once, with *✎ Add details* (also *repair*, *claim*, *tasks*, *today*, *help*)',
@@ -966,6 +968,7 @@ export function newButtons(title = '', only?: 'task' | 'work_order' | 'order' | 
 export const MENTION_HELP = [
   '*@Kaizen new* _Fix the AC in P2-4308_ — made at once (the listing found in the text); *✎ Add details* in the reply if you want',
   '*@Kaizen repair* … — the same, as a repair · *@Kaizen order* _2 boxes of trash bags_ — a purchase order · *@Kaizen claim* … — the claim / upsell form',
+  '*@Kaizen bug* _what happened_ · *@Kaizen pedir* _what you need_ — a problem with Kaizen, or a request, to whoever builds it',
   '*@Kaizen cost* _45 towels P2-4308_ — the cost form, with what it could read filled in; you confirm every field',
   '*@Kaizen tasks* — the open tasks, each with its menu · *@Kaizen claims* — the open claims (status, edit, remove)',
   '*@Kaizen all* — the whole reminder now, in a thread for everyone: check-ins, cleans, tasks, claims, and how the day is going',

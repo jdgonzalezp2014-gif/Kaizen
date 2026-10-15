@@ -96,6 +96,15 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   none; he was then added by hand); "👁 Add me" (`cleanerJoin`) lets anyone of the team join one.
   Michelle has no channel (not in Slack yet).
 
+- **Reports (owner, 2026-10-15)** — bugs and requests about Kaizen itself. App: "Report / request" at the rail's foot
+  (computer) and in the phone's More menu (`src/components/Reports.tsx`; More is now always shown). Slack: `/kaizen bug|request …`
+  opens `reportModal`; `@Kaizen bug|fallo|pedir|request …` answers with `reportOffer` (Complete the report → modal, Send as is).
+  `/api/reports` (every member, in `ALWAYS`): own reports, or all for who holds Settings, who alone changes status. Tables
+  `reports`, `report_comments` (087); one photo kept in the row (bytea, resized in the browser, ≤1.5 MB), shown by `?photo=<id>`.
+  Topic **`reports` → #kaizen-reportes** (C0C9EG8G2RY, private, Juan only for now). The card (`reportMessage`) has the status
+  buttons; its thread is the report's (`slack_threads` subject `report`): a reply there is a comment, a comment/status in Kaizen
+  is a reply there. Done / won't do → DM to the reporter (`reportDm`, DM mode respected). Server: `functions/_lib/report-slack.ts`.
+
 ## Slack API rules that bite
 
 - Web API **form-encoded** (read methods refuse JSON). ≤5 overflow options. **No duplicate
@@ -113,6 +122,8 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - `@Kaizen new`'s task thread is the mention's thread (no channel notice since §119).
 
 ## Open items
+
+- Reports: SOP 8 "Kaizen in Slack" not yet updated for `/kaizen bug` / `@Kaizen bug` (the in-Slack help is).
 
 
 - Manifest with §157 + 📎 is installed (reactions:read verified, 2026-10-14).

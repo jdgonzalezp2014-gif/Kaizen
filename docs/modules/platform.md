@@ -57,7 +57,7 @@ Hostaway client, sync, crypto, migrations.
   reach them through /api/crew (`help`), not the library.
 - **Design system: `docs/design-system.md`** (redesign, §158) — tokens at the top of `src/index.css`; a screen's
   rule reads tokens (`--fs-*`, `--r-*`, `--s-*`, `--shadow*`, colours), never its own px/hex. Phone (≤720):
-  bottom tab bar (`TabBar` in App.tsx, `TabIcon.tsx`), 4 + More past five tabs; `--tabbar-h` lifts fixed things.
+  bottom tab bar (`TabBar` in App.tsx, `TabIcon.tsx`), always 4 + More (More also holds "Report a bug / request", 2026-10-15); `--tabbar-h` lifts fixed things.
 - Design: day theme by default via `data-theme` (never prefers-color-scheme); status shapes
   ● ▲ ■ ○; colour means one thing (red failure, amber attention, green confirmed, blue
   action); no modals over the thing being compared; Home folds, three items per card;
@@ -98,6 +98,8 @@ Hostaway client, sync, crypto, migrations.
   Operations' views inside it (`goOps` → Operations `nav` {v, n}); no top bar ≥ 721 px. Phone = header + bottom bar.
   Home: no summary pills (they repeated the cards); centred 1120 px with equal-height cards on a big screen; no uploads or
   Hostaway links on a phone. `scripts/screenshot.mjs` clicks `.side-link` (big) or the bottom bar / More (phone).
+- **Reports (owner, 2026-10-15):** "Report / request" at the rail's foot (above day/night) and in the phone's More — the
+  bug / request form and what was sent (`src/components/Reports.tsx`, `/api/reports`, open to every member). Details: slack module.
 - **Round 4 (§159):** the rail opens on hover or keyboard focus (`:has(:focus-visible)`) — not after a click (it stayed
   stuck open). The day is in the menu (`Today` in App.tsx: a calendar leaf in the rail, a chip in the phone header); Home has
   no heading. Home ≥ 1280 px: three columns (check-outs · check-ins · coming up / to-do ×2 · units in red, `data-card`).
@@ -108,4 +110,14 @@ Hostaway client, sync, crypto, migrations.
   `mods` in `Home.tsx`) and the chosen module's panel under it. Phone — the same strip is the top tab bar and also carries
   To-dos (default); one module on screen, To-dos stays mounted (hidden) so its count and state survive. A new widget = one more
   entry in `mods`. Cards no longer fold (`useFolded` removed). Check-ins and check-outs are one module. Labels stay in English.
-- **Home, zero noise (owner, 2026-10-14):** no "Show X more" and no urgency summary line. The To-dos card header is title · count · "?" · + Add (`TodoList head`); urgency lives in the Now bucket and the ▲ on a pill. Feeds (`.home-todos .work-tab-body`, `.home-slide`) scroll inside a fixed height (`--feed-h`) with the scrollbar hidden. Phone: pills swipe on one row, 44 px targets. Not yet checked on a screenshot.
+- **Home, zero noise (owner, 2026-10-14):** no "Show X more" and no urgency summary line. The To-dos card header is title · count · "?" · + Add (`TodoList head`); urgency lives in the Now bucket and the ▲ on a pill. Feeds (`.home-todos .work-tab-body`, `.home-slide`) scroll inside a fixed height (`--feed-h`) with the scrollbar hidden. Phone: pills swipe on one row, 44 px targets.
+- **Home strip + panel, one box (owner, 2026-10-15):** on the desktop screenshot the chip strip floated on the page
+  background above a separate white panel, sitting lower than the To-dos card's top. ≥721 px, `.home-side-col` now
+  carries the card look itself (white, border, radius, shadow, padding) so it is level with `.home-main-col`'s To-dos
+  card; `.home-rail` sits inside it with a hairline under it, and the nested `.home-card` (the Panel) goes transparent/borderless
+  so there's one box, not two. Phone is untouched (`.home-side-col { display: contents }` there, so none of this applies).
+- **The menu's date, CST, foot of the rail (owner, 2026-10-15):** the boxed "OCT 15" at the top of the desktop rail
+  (`App.tsx` `Today`) read as ugly and was in New York, not the team's zone. Moved to `.side-foot` (after `ThemeToggle`,
+  right-aligned, plain footnote-size text reusing `.side-word`'s hover fade) and switched to `America/Chicago`
+  (CST/CDT) — the same zone as `teamTz`'s default. This settles the menu part of the §159 "Open" item above; the
+  board/ops/timelines' 43 places still compute "today" in New York — still a separate, asked-for change.

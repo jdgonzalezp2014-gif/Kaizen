@@ -1224,7 +1224,9 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 .home-head h2 { margin: 0; font-size: var(--fs-title2); font-weight: 650; letter-spacing: -.02em; }
 .home-head .note { margin: 2px 0 0; }
 .home-card { margin: 0; }
-.home-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
+.home-card-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 2px 10px; margin-bottom: 6px; }
+.home-card-head > .link { margin-left: auto; white-space: nowrap; }
+.home-card-head > .home-summary { order: 1; flex-basis: 100%; }
 .home-card-head h3 { margin: 0; font-size: var(--fs-headline); font-weight: 650; display: flex; align-items: center; gap: 8px; }
 .home-card-head .count { font-size: var(--fs-footnote); font-weight: 600; color: var(--muted); background: var(--tint);
   border: 1px solid var(--line); border-radius: var(--r-pill); padding: 0 8px; }
@@ -1476,9 +1478,27 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 /* §89: today and tomorrow on Home; the agreement and the ID per arrival. */
 .home-day + .home-day { margin-top: 10px; }
 .home-day h4 { margin: 0 0 2px; font-size: var(--fs-caption); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 650; }
-.home-docs { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 8px; white-space: nowrap; font-size: var(--fs-footnote); }
-.home-docs .doc-ok { color: var(--good); font-weight: 600; }
+/* A check-in/out row (owner, 2026-10-15): time | unit over a small second line (cleaner · pay, or guest ↗ · stay) |
+   its flags in one row at the right — two lines, never three. */
+.home-list li { align-items: center; padding: 6px 0; }
+.home-time { flex-basis: 64px; padding-top: 0; }
+.home-two { display: flex; flex-direction: column; align-items: flex-start; flex-wrap: nowrap; gap: 0; }
+.home-who, .home-meta { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-meta { font-size: var(--fs-footnote); }
+.home-flags { position: relative; flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.home-flags .ops-flag { margin: 0; }
+.home-flags .home-upload { min-height: 0; }
 .home-ready { font-size: var(--fs-footnote); }
+/* The row's icons/pills sit flush against the card's right edge: their hover opens below, growing left
+   so it never spills off the right side of the screen (owner, 2026-10-15). */
+.home-flags .iflag .hint-pop, .home-flags .peek .hint-pop { left: auto; right: -8px; }
+.home-flags [data-tip] { position: relative; cursor: help; }
+.home-flags [data-tip]::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); right: -8px; left: auto;
+  z-index: 50; width: max-content; max-width: min(260px, 85vw); padding: 8px 10px; border-radius: var(--r-sm);
+  border: 1px solid var(--line); background: var(--card); color: var(--ink); box-shadow: var(--shadow-2);
+  font-size: var(--fs-footnote); font-weight: 400; white-space: normal; text-align: left; opacity: 0; visibility: hidden;
+  transition: opacity .1s ease; pointer-events: none; }
+.home-flags [data-tip]:hover::after, .home-flags [data-tip]:focus-within::after { opacity: 1; visibility: visible; }
 
 /* §90: the reservation in Hostaway, and the ID to Drive from Home. */
 .home-hostaway, .ops-hostaway { font-size: var(--fs-footnote); color: var(--series-1); font-weight: 600; text-decoration: none; }
@@ -1520,7 +1540,6 @@ button.link.lane-add, button.link.home-more { opacity: 1; }
   /* An arrival's flags go under the guest, not beside it: side by side
      squeezed the guest into a one-word column. */
   .home-list li { flex-wrap: wrap; }
-  .home-list li > .home-docs { flex: 1 1 100%; max-width: none; justify-content: flex-start; margin-left: 84px; }
 }
 
 /* ══ §92: SOPs — the library, the reader, the editor, each screen's button ══ */
@@ -1819,6 +1838,9 @@ button.sop-num { cursor: pointer; }
 .task-fold-descin { display: block; margin-bottom: 10px; }
 .task-fold.open .task-fold-head { border-bottom: 1px solid var(--line); border-radius: var(--r-md) var(--r-md) 0 0; }
 .task-fold-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+/* owner, 2026-10-15: the kids' guide line is for the flat board, where nothing else marks the nesting — inside
+   the panel, .task-fold already is the box, so the indent + border-left just floated, unattached top and bottom. */
+.task-fold-body .todo-kids { margin: 0; padding-left: 0; border-left: 0; }
 .task-fold > div:not(.task-fold-body) { padding: 6px 12px; }
 .task-fold-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .task-fold-row select, .task-fold-row input[type=date] { width: auto; font-size: var(--fs-footnote); padding: 3px 6px; }
@@ -2442,7 +2464,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
    grid, the same height side by side — so the eye is not dragged across a 1440 px screen. */
 @media (min-width: 721px) { .home { max-width: 1120px; margin: 0 auto; } }
 /* A phone reads Home; uploading documents and opening Hostaway are desk work. */
-@media (max-width: 720px) { .home .home-upload, .home .home-hostaway { display: none; } }
+
 
 /* §159 (owner, 2026-10-14): tablet and desktop navigate from a rail of icons on the left that slides open on
    hover or focus, Operations' views under it, day / night at its foot. The screen is the work alone: no top bar. */
@@ -2472,7 +2494,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
     font: inherit; font-size: var(--fs-footnote); font-weight: 500; cursor: pointer; white-space: nowrap; }
   .side-sublink:hover { background: var(--hover); color: var(--ink); }
   .side-sublink.active { color: var(--ink); font-weight: 650; background: var(--tint); }
-  .side-foot { margin-top: auto; }
+  .side-foot { margin-top: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .side-foot .theme-toggle { width: 100%; justify-content: flex-start; gap: 16px; padding: 0 12px; min-height: 40px; border: 0; background: none; }
   .side-foot .theme-word { opacity: 0; transition: opacity .12s ease; }
   .side-nav:hover .side-foot .theme-word, .side-nav:has(:focus-visible) .side-foot .theme-word { opacity: 1; }
@@ -2505,12 +2527,9 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
   .ops-gear .live-dot { top: 6px; right: 6px; border-color: var(--tint); }
 }
 @media (prefers-reduced-motion: reduce) { .ops-gear, .ops-gear .icon { transition: none; } .ops-gear:hover .icon { transform: none; } }
-/* The day in the menu: a small calendar leaf in the rail, the words when it opens; a chip in the phone's header. */
-.side-today { display: flex; align-items: center; gap: 16px; padding: 0 6px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
-.side-cal { flex: none; display: grid; place-items: center; width: 32px; height: 34px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
-  font-size: var(--fs-callout); font-weight: 700; line-height: 1; padding-top: 1px; background: var(--card); }
-.side-cal b { display: block; width: 100%; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); font-weight: 700; }
-.side-today .side-word { font-weight: 600; font-size: var(--fs-body); }
+/* The day in the menu: plain text at the foot of the rail, right-aligned, fading in with the other labels
+   when it opens; a chip in the phone's header. */
+.side-today { padding: 0 12px; font-weight: 500; font-size: var(--fs-footnote); color: var(--muted); white-space: nowrap; }
 .today-chip { margin-left: auto; font-size: var(--fs-footnote); color: var(--muted); font-weight: 600; white-space: nowrap; }
 .today-chip + .phone-theme { margin-left: 8px; }
 @media (min-width: 1280px) { .home { max-width: 1360px; } }
@@ -2551,8 +2570,14 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 @media (min-width: 981px) {
   .home-layout:not(.solo) { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: var(--s-5); }
   .home-side-col { position: sticky; top: var(--s-4); }
-  .home-side-col .home-list li { flex-wrap: wrap; }
-  .home-side-col .home-side { flex-basis: 100%; max-width: none; text-align: left; padding-left: 84px; display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; }
+}
+/* owner, 2026-10-15: the strip and its panel read as one box, the same white as To-dos and level with it —
+   not a row of chips floating above a separate card. */
+@media (min-width: 721px) {
+  .home-side-col { gap: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
+    box-shadow: var(--shadow); padding: var(--s-4) var(--s-5); }
+  .home-side-col .home-rail { margin: 0 0 var(--s-3); padding: 2px 1px var(--s-3); border-bottom: 1px solid var(--line); }
+  .home-side-col .home-card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
 }
 @media (min-width: 721px) and (max-width: 980px) { .home-rail { flex-wrap: wrap; overflow: visible; } }
 @media (max-width: 720px) {
@@ -2669,3 +2694,21 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .closed-modes .chip { font-size: var(--fs-footnote); }
 .done-bar { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; margin: var(--s-2) 0; }
 .done-bar input[type="date"] { width: auto; }
+
+/* Reports (owner, 2026-10-15): the bug / request form and the list of what was sent. */
+.report-switch, .report-kinds { display: flex; gap: var(--s-2); align-items: center; flex-wrap: wrap; margin-bottom: var(--s-3); }
+.report-kinds .chip { display: inline-flex; align-items: center; gap: 6px; }
+.report-photo { display: block; max-width: 100%; max-height: 240px; margin-top: var(--s-2); border-radius: var(--r-sm); border: 1px solid var(--line); }
+.report-list { list-style: none; margin: var(--s-2) 0; padding: 0; }
+.report-list li { border-bottom: 1px solid var(--line); }
+.report-list li.closed .report-title { color: var(--muted); }
+.report-row { display: flex; align-items: center; gap: var(--s-2); width: 100%; min-height: 44px; padding: 6px 4px; background: none; border: 0;
+  color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.report-row:hover { background: var(--hover); }
+.report-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-status { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-footnote); color: var(--muted); white-space: nowrap; }
+.report-detail { padding: 0 4px var(--s-3); }
+.report-body { white-space: pre-wrap; margin: var(--s-2) 0; }
+.report-comment { margin: var(--s-2) 0; padding: 6px 10px; background: var(--tint); border-radius: var(--r-sm); font-size: var(--fs-footnote); white-space: pre-wrap; }
+.report-reply { display: flex; gap: var(--s-2); margin-top: var(--s-2); }
+.report-reply input { flex: 1; min-width: 0; }

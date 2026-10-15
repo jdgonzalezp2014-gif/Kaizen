@@ -66,7 +66,7 @@ export async function postTo(s: SlackSetup, topic: Topic, msg: { text: string; b
 }
 
 /** Which task or claim a posted message is about (§107) — so "@Kaizen …" in its thread lands on it. */
-export async function rememberThread(sql: SqlFn, posted: { ok: boolean; ts?: string; channel?: string } | null, subject: 'task' | 'claim', id: string) {
+export async function rememberThread(sql: SqlFn, posted: { ok: boolean; ts?: string; channel?: string } | null, subject: 'task' | 'claim' | 'report', id: string) {
   if (!posted?.ok || !posted.ts || !posted.channel) return;
   await sql`INSERT INTO slack_threads (account_id, channel, ts, subject, subject_id) VALUES (1, ${posted.channel}, ${posted.ts}, ${subject}, ${id})
             ON CONFLICT DO NOTHING`;

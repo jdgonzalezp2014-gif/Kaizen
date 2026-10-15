@@ -157,20 +157,27 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     setUploading(null);
     if (x.ok) setDocs(m => ({ ...m, [r.resId]: docsOf(x.docs) })); else setUpErr(`${r.unit}: ${x.message ?? 'not uploaded'}`);
   };
-  /** One document chip: ✓ (opens the Drive folder) when it is there, ⇪ to pick a file when not — amber where the building needs it. */
-  const docChip = (r: BoardRow, kind: 'id' | 'agreement') => {
+  /**
+   * A document pill, the board's DocChip logic: solid green once it is there (signed in Hostaway's portal, or filed
+   * in Drive — the agreement — §89), dashed while missing; dashed and clickable to upload when this person may file it.
+   */
+  const docPill = (r: BoardRow, kind: 'id' | 'agreement') => {
     const have = docs[r.resId];
-    if (!have) return null;
-    const word = kind === 'id' ? 'ID' : 'Agreement';
-    if (have[kind]) {
-      return have.folderUrl
-        ? <a className="doc-ok" href={have.folderUrl} target="_blank" rel="noreferrer" title={`The ${word.toLowerCase()} is in the reservation's Drive folder`}>✓ {word}</a>
-        : <span className="doc-ok">✓ {word}</span>;
+    const done = kind === 'agreement' ? signed(r) || !!have?.agreement : !!have?.id;
+    const text = kind === 'agreement' ? (done ? '✓ signed' : '▲ not signed') : (done ? '✓ ID' : '○ ID');
+    const what = kind === 'agreement' ? 'rental agreement' : 'ID copy';
+    if (done) {
+      return have?.folderUrl
+        ? <a key={kind} className="ops-flag ops-doc filed" href={have.folderUrl} target="_blank" rel="noreferrer"
+             data-tip={`The ${what} — open the reservation's Drive folder`}>{text}</a>
+        : <span key={kind} className="ops-flag ops-doc filed" data-tip={`The ${what} is in.`}>{text}</span>;
     }
-    const needed = kind === 'id' && needsCopy.has(r.unitId);
+    const cls = `ops-flag ops-doc missing ${kind === 'agreement' ? 'urgent' : ''}`;
+    if (!canDocs) return <span key={kind} className={cls} data-tip={`No ${what} yet.`}>{text}</span>;
     return (
-      <label className={`home-upload ${needed ? '' : 'optional'}`} title={`Upload the ${word.toLowerCase()} to the reservation's Drive folder — or drop the file on this line`}>
-        {uploading === `${r.resId}:${kind}` ? 'Uploading…' : `⇪ ${word}`}
+      <label key={kind} className={`${cls} home-upload`}
+             data-tip={`No ${what} yet — click to upload it to the reservation's Drive folder, or drop the file on this line.`}>
+        {uploading === `${r.resId}:${kind}` ? 'Uploading…' : text}
         <input type="file" accept="image/*,.pdf" className="sr-file" disabled={!!uploading}
                onChange={e => { void upload(r, kind, e.target.files?.[0]); e.target.value = ''; }} />
       </label>
@@ -182,17 +189,20 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     return (
       <DropRow key={r.resId} enabled={canDocs} label={`${r.unit} · ${r.guest || 'guest'}`} onDrop={(kind, file) => void upload(r, kind, file)}>
         <span className="home-time">{r.time}</span>
-        <span className="home-main"><b>{r.unit}</b> <span className="sub-n">· {r.guest || 'guest'} · {r.nights} night{r.nights === 1 ? '' : 's'}{r.guests ? ` · ${r.guests} guests` : ''}</span>
-          {ready && <span className={`home-ready ${ready.startsWith('▲') ? 'breach' : 'sub-n'}`}> · {ready}</span>}</span>
-        <span className="home-side home-docs">
-          {r.agreement && <span className={signed(r) ? 'doc-ok' : 'breach'}>{signed(r) ? '✓ Signed' : '▲ Not signed'}</span>}
-          {/* Hostaway's own check, only when it says so (§90). */}
-          {r.idVerified && <span className="doc-ok" title="ID verified in Hostaway">✓ ID verified</span>}
-          {/* What Drive holds, and the way to add it (§106). */}
-          {canDocs && docChip(r, 'id')}
-          {canDocs && docChip(r, 'agreement')}
-          <a className="home-hostaway" href={hostawayReservationUrl(r.resId)} target="_blank" rel="noreferrer"
-             title="Open the reservation in Hostaway — the ID and the agreement are there">↗ Hostaway</a>
+        <span className="home-main home-two">
+          <span className="home-who"><b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}</span>
+          <span className="home-meta sub-n">
+            {r.guest || 'guest'}
+            {/* Same arrow as the Operations board: the reservation in Hostaway. */}
+            {' '}<a className="home-hostaway" href={hostawayReservationUrl(r.resId)} target="_blank" rel="noreferrer" title="Open the reservation in Hostaway">↗</a>
+            {` · ${r.nights}n`}{r.guests ? ` · ${r.guests}g` : ''}
+            {ready && <span className={ready.startsWith('▲') ? 'breach' : undefined}> · {ready}</span>}
+          </span>
+        </span>
+        <span className="home-flags">
+          {(r.agreement || docs[r.resId]) && docPill(r, 'agreement')}
+          {/* The ID copy only where the building keeps one (§73, §106) — as on the board. */}
+          {canDocs && needsCopy.has(r.unitId) && docPill(r, 'id')}
         </span>
       </DropRow>
     );
@@ -393,15 +403,18 @@ function CleanItem({ r }: { r: BoardRow }) {
   return (
     <li className={r.assignment === 'not_needed' ? 'muted' : undefined}>
       <span className="home-time">{r.time}</span>
-      <span className="home-main">
-        <b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}
+      {/* Unit on top, who cleans and the pay under it, the flags in one row at the right. */}
+      <span className="home-main home-two">
+        <span className="home-who"><b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}</span>
+        <span className={`home-meta ${who?.startsWith('▲') ? 'breach' : 'sub-n'}`}>
+          {who}{r.price != null && <span className="sub-n"> · {money2(r.price)}</span>}
+        </span>
+      </span>
+      <span className="home-flags">
         {r.urgency === 'turnover' && <IconFlag tone="attn" icon={<Icon n="zap" />} label="Same-day turnover" detail="The next guest arrives the same day" />}
         {r.deep && <IconFlag icon={<Icon n="brush" />} label="Deep clean" />}
         {(r.inspection.key === 'req' || r.inspection.key === 'due') && <IconFlag tone={r.inspection.key === 'req' ? 'attn' : undefined} icon={<Icon n="search" />}
           label={r.inspection.key === 'req' ? 'Inspection required' : 'Monthly inspection due'} detail={r.inspection.reason} />}
-      </span>
-      <span className={`home-side ${who?.startsWith('▲') ? 'breach' : ''}`}>
-        {who}{r.price != null && <span className="sub-n"> · {money2(r.price)}</span>}
       </span>
     </li>
   );
