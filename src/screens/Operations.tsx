@@ -14,7 +14,7 @@
  * decision is compared against.
  */
 import { Hint } from '../components/Hint.tsx';
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { WorkView } from '../components/Todos.tsx';
 import { CrewAdmin } from './Crew.tsx';
@@ -565,6 +565,7 @@ function Board({ data, range, patch, reload }: {
                                  todos={todosBy.get(r.unitId)} flag={r.kind === 'out' ? flags[r.resId] : undefined}
                                  cleanTasks={r.kind === 'out' ? data.cleanTasks?.[r.resId] : undefined}
                                  sync={timeSync(r, data)}
+                                 onDocs={canDocs && r.kind === 'in' ? d => setDocs(m => ({ ...m, [r.resId]: d })) : undefined}
                                  open={open === key} onToggle={() => {
                                    // Read-only roles see the board; the editor is not offered.
                                    if (can(data.permissions, 'operations.edit')) setOpen(open === key ? null : key);
@@ -594,7 +595,9 @@ function Board({ data, range, patch, reload }: {
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, today, flag, seen, cleanTasks, sync }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, today, flag, seen, cleanTasks, sync, onDocs }: {
+  /** Given when this role may file guest documents: the chips take a dropped file. */
+  onDocs?: (d: StayDocs) => void;
   /** Whether this time is the one on the Hostaway reservation. */
   sync?: SyncState;
   /** §133: what an inspection asked this clean to do. */
@@ -646,7 +649,13 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
               {r.assignment === 'tbd' ? '▲ ' : ''}{r.assignment === 'assigned' ? r.cleaner : r.assignment === 'not_needed' ? 'no clean needed' : 'unassigned'}
             </span>
             {seen && <span title={`${r.cleaner} sees this on their crew page`}> <Icon n="eye" /></span>}
-            {r.manual.cleaner && <span className="sub-n"> · set by hand</span>}
+            {/* Set by hand, and what levels would pick, read on hover — not on screen (owner, 2026-10-15). */}
+            {(() => {
+              const lv = !byLevels && r.levels && r.assignment !== 'not_needed' && r.levels.cleaner !== r.cleaner
+                ? `By levels: ${r.levels.cleaner ?? (r.levels.waiting ? 'TBD (waiting)' : 'TBD')} — ${r.levels.why}` : '';
+              const tip = [r.manual.cleaner ? 'Set by hand' : '', lv].filter(Boolean).join('\n');
+              return tip ? <span className="sub-n ops-hover" title={tip}> <Icon n={r.manual.cleaner ? 'hand' : 'layers'} /></span> : null;
+            })()}
             {r.carried && <div className="sub-n" title={r.auto.reason}>↪ kept from the {short(r.carried.fromDate)} checkout — a booking came in between</div>}
             {/* "★4 · Veronica ★5 ✓": what the clean needs against what the cleaner has. */}
             {/* The level the clean needs, or why it waits (§125). */}
@@ -654,9 +663,6 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
               r.levels.required ? <div className="sub-n" title={r.levels.why}>{LEVEL_LABEL[r.levels.required]}</div>
               : r.date <= addDays(today, 1) ? <div className="breach" title={r.levels.why}>▲ assign by hand — {r.levels.why}</div>
               : <div className="sub-n" title={r.levels.why}>○ waiting for a booking — TBD until {short(addDays(r.date, -1))}</div>
-            )}
-            {!byLevels && r.levels && r.assignment !== 'not_needed' && r.levels.cleaner !== r.cleaner && (
-              <div className="ops-diff" title={`${r.levels.why} — ${r.levels.reason}`}>by levels: {r.levels.cleaner ?? (r.levels.waiting ? 'TBD (waiting)' : 'TBD')}</div>
             )}
             {r.sameDayOf && !r.manual.cleaner && <div className="sub-n">another stay leaves today — one clean</div>}
             {r.declined.length > 0 && (
@@ -704,14 +710,16 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
             {/* The agreement: signed in Hostaway's guest portal, or its PDF filed in Drive (§89). */}
             {r.kind === 'in' && (r.agreement || docs) && (() => {
               const signed = r.agreement === 'signed' || !!docs?.agreement.length;
-              return <span className={`ops-flag ${signed ? 'ok' : 'urgent'}`} title={signed ? 'Rental agreement signed' : 'Rental agreement not signed yet'}>
-                {signed ? '✓ signed' : '▲ not signed'}</span>;
+              return <DocChip resId={r.resId} kind="agreement" done={signed} onDocs={onDocs}
+                              title={signed ? 'Rental agreement signed' : 'Rental agreement not signed yet'}>
+                {signed ? '✓ signed' : '▲ not signed'}</DocChip>;
             })()}
             {/* The ID: verified in Hostaway for every guest; a copy in Drive where the building needs one (§89). */}
             {r.kind === 'in' && r.idVerified && <span className="ops-flag ok" title="ID verified in Hostaway">✓ ID verified</span>}
             {docs !== undefined && (docs === null ? <span className="ops-flag ok">… Drive</span>
-              : <span className={`ops-flag ${docs.id.length ? 'ok' : 'missing'}`} title="A copy of the ID in the reservation's Drive folder">
-                  {docs.id.length ? '✓' : '○'} ID in Drive</span>)}
+              : <DocChip resId={r.resId} kind="id" done={!!docs.id.length} onDocs={onDocs}
+                         title="A copy of the ID in the reservation's Drive folder">
+                  {docs.id.length ? '✓' : '○'} ID in Drive</DocChip>)}
           </span>
         </div>
         {r.cancelled && <span className="ops-flag urgent" title={r.auto.reason}>▲ cancelled {r.cancelled} — {r.manual.cleaner ? 'confirmed' : 'confirm who cleaned'}</span>}
@@ -724,6 +732,42 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
         {flag && <div className="breach">⚑ Flagged: {flag}</div>}
       </td>
     </tr>
+  );
+}
+
+/**
+ * An arrival's ID / agreement chip on the board: dashed while missing, solid green once filed.
+ * A file dropped on it (or picked with a click) goes to the reservation's Drive folder (owner,
+ * 2026-10-15) — no need to open the row.
+ */
+function DocChip({ resId, kind, done, title, onDocs, children }: {
+  resId: string; kind: 'id' | 'agreement'; done: boolean; title: string;
+  onDocs?: (d: StayDocs) => void; children: ReactNode;
+}) {
+  const [hot, setHot] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const picker = useRef<HTMLInputElement>(null);
+  const upload = async (list: FileList | null) => {
+    if (!onDocs || busy) return;
+    setBusy(true); setErr('');
+    for (const f of [...(list ?? [])]) {
+      const x = await uploadGuestDoc(resId, kind, f).catch(e => ({ ok: false as const, message: String(e) }));
+      if (x.ok) onDocs(x.docs); else { setErr(`${f.name}: ${x.message ?? 'failed'}`); break; }
+    }
+    setBusy(false);
+  };
+  const cls = `ops-flag ops-doc ${done ? 'filed' : 'missing'} ${kind === 'agreement' && !done ? 'urgent' : ''} ${hot ? 'hot' : ''}`;
+  if (!onDocs) return <span className={cls} title={title}>{children}</span>;
+  return (
+    <span className={`${cls} drop`} title={err ? `▲ ${err}` : `${title} — drop a file here, or click, to file it in Drive`}
+          onClick={e => { e.stopPropagation(); if (!busy) picker.current?.click(); }}
+          onDragOver={e => { e.preventDefault(); e.stopPropagation(); setHot(true); }} onDragLeave={() => setHot(false)}
+          onDrop={e => { e.preventDefault(); e.stopPropagation(); setHot(false); void upload(e.dataTransfer.files); }}>
+      {busy ? 'Uploading…' : err ? `▲ ${kind === 'id' ? 'ID' : 'agreement'} upload failed` : children}
+      <input ref={picker} type="file" multiple hidden onClick={e => e.stopPropagation()}
+             onChange={e => { void upload(e.target.files); e.target.value = ''; }} />
+    </span>
   );
 }
 
@@ -896,13 +940,12 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag, r
           </label>
         )}
         {out && (
-          <label>Deep clean
+          <label><span>Deep clean <Hint>A deep clean is paid only once someone confirms it here.</Hint></span>
             <select disabled={busy} value={r.deep ? 'yes' : 'rule'}
                     onChange={e => void send({ deep: e.target.value === 'yes' ? true : null })}>
               <option value="rule">Regular (default){r.deepSuggested ? ` — deep suggested: ${r.nights}-night stay` : ''}</option>
               <option value="yes">Deep — confirmed</option>
             </select>
-            <span className="sub-n">A deep clean is paid only once someone confirms it here.</span>
           </label>
         )}
         <label>{out ? 'Checkout time' : 'Check-in time'}

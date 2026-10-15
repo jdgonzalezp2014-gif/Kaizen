@@ -991,6 +991,11 @@ table.ops-board { margin: 0; min-width: 980px; }
 .docunits label > input[type=checkbox] { display: inline-block; width: auto; margin: 0; }
 .docunits-unit { padding-left: 22px; color: var(--muted); }
 .ops-flag.missing { color: var(--muted); border-style: dashed; }
+.ops-flag.ops-doc.missing { border-style: dashed; border-width: 1.5px; }
+.ops-flag.ops-doc.filed { color: var(--good); border-color: var(--good); background: color-mix(in srgb, var(--good) 10%, transparent); }
+.ops-flag.ops-doc.drop { cursor: copy; }
+.ops-flag.ops-doc.hot { outline: 2px solid var(--series-1); outline-offset: 1px; }
+.ops-hover { cursor: help; }
 .ops-docs { margin-top: 12px; padding-top: 10px; border-top: 1px solid var(--line); }
 .ops-docs-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px; }
 .ops-docs-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }

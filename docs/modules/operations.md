@@ -117,6 +117,9 @@ key had no SOPs.
 - "Not needed" / "TBD" are states, not cleaners; match on words, not emoji (§57).
 - Bulk writes with `unnest`, never one INSERT per row (§62).
 - Ops role sees the board without booking values (`money` permission) (§63, §65).
+- Board chips (2026-10-15, owner): an arrival's "ID in Drive" / "signed" chips take a dropped file (or click) and file it
+  in Drive (`DocChip`, same `uploadGuestDoc` as the row's Guest documents) — dashed while missing, solid green once filed.
+  "Set by hand" and "by levels: …" are a hover on a ✎ / ⇄ beside the 👁, not text; the deep-clean pay note is a "?".
 
 - Crew page (§122): a cleaner = an Access sign-in whose email is on the roster → role `cleaner`,
   permission `crew` (not assignable; opens /api/crew + /api/settings only); exempt from the
