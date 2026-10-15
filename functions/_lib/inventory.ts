@@ -11,9 +11,8 @@ import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { mirrorOn, pushWork } from './hostaway-tasks.ts';
 import { notifyTask } from './slack.ts';
 import { addFieldExpense } from './field-costs.ts';
-import type { Priority } from '../../src/lib/todos.ts';
+import { URGENCY_CHECK, type Priority } from '../../src/lib/todos.ts';
 
-const FIELD_PRIORITY = new Set(['urgent', 'high', 'low']);
 import { todayIn, addDays } from '../../src/lib/dates.ts';
 import { itemLabel, needByPlace, orderList, perClean, placeKey, stockLevels, toOrder, unitUses, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
 import { supplyPlaces } from './unit-access.ts';
@@ -170,18 +169,24 @@ async function unitName(sql: SqlFn, unitId: string | null) {
   return u.name;
 }
 
-async function newTodo(sql: SqlFn, title: string, description: string | null, unitId: string | null, by: string, sub: string[] = [],
-                       priority: Priority = 'none') {
+async function newTodo(sql: SqlFn, title: string, description: string | null, unitId: string | null, by: string, priority: Priority = 'none') {
   const [t] = await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority)
                         VALUES (1, ${title.slice(0, 300)}, ${description}, ${unitId ? [unitId] : []}, ${by}, 'task', 'pending', ${priority})
                         RETURNING id::text` as { id: string }[];
   await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
             VALUES (1, 'task', ${t!.id}, 'status', ${`To-do created by ${by}.`}, ${by})`;
-  for (const s of sub) {
-    await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id)
-              VALUES (1, ${s.slice(0, 300)}, ${unitId ? [unitId] : []}, ${by}, 'task', 'pending', 'none', ${Number(t!.id)})`;
-  }
   return t!.id;
+}
+
+/**
+ * §162 (owner, 2026-10-15): the field no longer says how urgent — the team does. A report comes in high (so it is
+ * seen today) with a high "Validate the urgency" sub-task due today; its Slack message carries the answer buttons,
+ * and setting the priority in Kaizen answers it too (functions/_lib/urgency.ts).
+ */
+async function askUrgency(sql: SqlFn, id: string, unitId: string | null, by: string) {
+  await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, due_on, parent_id)
+            VALUES (1, ${URGENCY_CHECK}, ${'Urgent = due today · High = due the checkout of the stay in the unit now or next (attached) · Medium / Low = no date. Answer with the buttons on its Slack message, or set the priority here.'},
+                    ${unitId ? [unitId] : []}, ${by}, 'task', 'pending', 'high', ${todayIn(TZ)}, ${Number(id)})`;
 }
 
 const RANK: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, urgent: 4 };
@@ -208,7 +213,8 @@ async function cleanTodo(sql: SqlFn, who: Who, cleaningKey: unknown, group: 'req
     // §159: a clean's request is its purchase order — what was asked is its description, line by line, in the
     // cleaner's words; the cart is built from it (✨) or filled when the receipt is read. Bought stays as it was.
     const id = await newTodo(sql, head, group === 'request' ? 'Asked for on this clean:'
-      : `What ${who.name} reported on this clean — each one is a sub-task.`, c.unit_id, by, [], priority);
+      : `What ${who.name} reported on this clean — each one is a sub-task.`, c.unit_id, by, priority);
+    if (group === 'request') await askUrgency(sql, id, c.unit_id, by);
     await sql`UPDATE todos SET clean_key = ${String(cleaningKey)}, clean_group = ${group} WHERE account_id = 1 AND id = ${Number(id)}`;
     t = { id, priority };
   }
@@ -294,7 +300,7 @@ export async function recordMove(sql: SqlFn, who: Who, b: Record<string, unknown
     // §150: from a clean, a sub-task of that clean's to-do; from the team, its own.
     const ct = who.source !== 'team' ? await cleanTodo(sql, who, b.cleaningKey, 'request', title, description, 'medium') : null;
     if (ct) ({ todoId, fresh } = ct);
-    else todoId = await newTodo(sql, title, description, unitId, who.email ?? who.name, [], 'medium');
+    else todoId = await newTodo(sql, title, description, unitId, who.email ?? who.name, 'medium');
   }
   const [mv] = await sql`INSERT INTO inventory_moves (account_id, item_id, place, unit_id, kind, qty, cleaning_key, note, photos, by_name, source, todo_id)
             VALUES (1, ${item.id}, ${at.key}, ${unitId}, ${kind}, ${qty}, ${b.cleaningKey ? String(b.cleaningKey) : null}, ${note},
@@ -339,15 +345,17 @@ export async function fieldTodo(sql: SqlFn, who: Who, b: Record<string, unknown>
   if (!text) throw new Error('Say what it is.');
   const unitId = b.unitId ? String(b.unitId) : null;
   const place = unitId ? await unitName(sql, unitId) : null;
-  // §134: the reporter says how urgent (required on the form); urgent = before the next guest.
-  const priority = FIELD_PRIORITY.has(String(b.priority)) ? String(b.priority) as Priority : 'medium';
+  // §162: the reporter is not asked how urgent — a problem comes in high until the team validates it (askUrgency); a
+  // request joins its clean's order at medium, so a second request never raises an order the team already rated.
+  const priority: Priority = b.kind === 'request' ? 'medium' : 'high';
   const description = `Reported by ${who.name}.${photos.map(p => `\nPhoto: ${p.url}`).join('')}`;
   // §150: a need joins its clean's to-do as a sub-task; "something is wrong" is always its own to-do.
   if (b.kind === 'request') {
     const ct = await cleanTodo(sql, who, b.cleaningKey, 'request', `${what}: ${text}`, description, priority);
     if (ct) return ct;
   }
-  const id = await newTodo(sql, place ? `${what} at ${place}: ${text}` : `${what}: ${text}`, description, unitId, who.email ?? who.name, [], priority);
+  const id = await newTodo(sql, place ? `${what} at ${place}: ${text}` : `${what}: ${text}`, description, unitId, who.email ?? who.name, priority);
+  await askUrgency(sql, id, unitId, who.email ?? who.name);
   // Each problem is its own to-do; marked with its clean so a purchase order can be attached to it.
   if (b.kind !== 'request' && b.cleaningKey) await sql`UPDATE todos SET clean_key = ${String(b.cleaningKey)}, clean_group = 'problem' WHERE account_id = 1 AND id = ${Number(id)}`;
   // §159: a request outside a clean (a helper, a link) is a purchase order too.
@@ -389,14 +397,13 @@ export async function createOrder(sql: SqlFn, by: string, lines: { itemId: strin
   const list = orderList(named);
   if (!list) throw new Error('Nothing to order.');
   const data = lines.filter(l => l.qty > 0).map(l => ({ itemId: String(l.itemId), place: l.place, qty: Math.ceil(l.qty) }));
-  // §150: an order can belong to a to-do from the field (a request, a problem) — its lines become that
-  // to-do's sub-tasks, and a second order on it adds to the first. Else it is a to-do of its own.
+  // §150: an order can belong to a to-do from the field (a request, a problem); a second order on it adds to the
+  // first. Else it is a to-do of its own. §162 (owner, 2026-10-15): the lines are the ORDER's — never a sub-task per
+  // item (sub-tasks are other work, like installing what is bought), as an inspection's order already does (§159).
   if (forTodo) {
     const [t] = await sql`SELECT id::text, unit_ids FROM todos WHERE account_id = 1 AND id = ${Number(forTodo)} AND parent_id IS NULL
                             AND status NOT IN ('completed', 'cancelled')` as { id: string; unit_ids: string[] }[];
     if (!t) throw new Error('That to-do is closed or gone.');
-    for (const item of list.items) await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id)
-                                             VALUES (1, ${item.slice(0, 300)}, ${t.unit_ids}, ${by}, 'task', 'pending', 'none', ${Number(t.id)})`;
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
               VALUES (1, 'task', ${t.id}, 'change', ${`Purchase order added:\n${list.items.map(i => i.replace(/^Buy: /, '• ')).join('\n')}`}, ${by})`;
     await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(data)}::jsonb, ${by})
@@ -405,7 +412,8 @@ export async function createOrder(sql: SqlFn, by: string, lines: { itemId: strin
     return { id: t.id, fresh: false };
   }
   await sql`DELETE FROM inventory_order_drafts WHERE account_id = 1`;
-  const id = await newTodo(sql, list.title, `From Operations → Inventory, ${todayIn(TZ)}. When it is bought: Inventory → 🧾 Record a purchase.`, null, by, list.items);
+  const id = await newTodo(sql, list.title, [`From Operations → Inventory, ${todayIn(TZ)}. When it is bought: Inventory → 🧾 Record a purchase.`,
+    ...list.items.map(i => i.replace(/^Buy: /, '• '))].join('\n'), null, by);
   // The lines as data: the purchase that executes this order starts from them.
   await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(id)}, ${JSON.stringify(data)}::jsonb, ${by})`;
   return { id, fresh: true };
@@ -528,19 +536,25 @@ export async function lowStock(sql: SqlFn, places: (string | null)[]): Promise<s
     const name = p.self ? `${p.name} closet` : p.name;
     let [t] = await sql`SELECT id::text FROM todos WHERE account_id = 1 AND low_stock_place = ${key} AND parent_id IS NULL
                           AND status NOT IN ('completed', 'cancelled') ORDER BY id DESC LIMIT 1` as { id: string }[];
-    const listed = t ? new Set((await sql`SELECT title FROM todos WHERE account_id = 1 AND parent_id = ${Number(t.id)}` as { title: string }[]).map(r => r.title)) : new Set<string>();
+    // §162: what is low is listed in the order's description (and its lines), not as a sub-task per item —
+    // read back from there (and from sub-tasks, for an order made before), so an item is listed once.
+    const listed = t ? [
+      ...((await sql`SELECT title FROM todos WHERE account_id = 1 AND parent_id = ${Number(t.id)}` as { title: string }[]).map(r => r.title)),
+      ...(((await sql`SELECT description FROM todos WHERE account_id = 1 AND id = ${Number(t.id)}` as { description: string | null }[])[0]?.description ?? '')
+        .split('\n').map(l => l.replace(/^• /, '')))
+    ] : [];
     const item = (id: string) => inv.items.find(i => i.id === id)!;
-    const fresh = low.filter(l => ![...listed].some(x => x.startsWith(`Low: ${item(l.itemId).name} —`)));
+    const fresh = low.filter(l => !listed.some(x => x.startsWith(`Low: ${item(l.itemId).name} —`)));
     if (!fresh.length) continue;
     if (!t) {
       const id = await newTodo(sql, `Low stock at ${name}`, `Below the minimum to keep — counted places only. Buy it: Inventory → 🧾 Record a purchase, ` +
-        `starting from this order. Switch these to-dos off in Setup → Inventory.`, p.units.length === 1 && p.self ? p.units[0]!.id : null, 'Kaizen', [], 'high');
+        `starting from this order. Switch these to-dos off in Setup → Inventory.`, p.units.length === 1 && p.self ? p.units[0]!.id : null, 'Kaizen', 'high');
       await sql`UPDATE todos SET low_stock_place = ${key} WHERE account_id = 1 AND id = ${Number(id)}`;
       t = { id };
       made.push(id);
     }
-    for (const l of fresh) await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id)
-      VALUES (1, ${`Low: ${item(l.itemId).name} — ${l.qty} left, keep ${l.min}${l.toOrder ? `; buy ${l.toOrder}` : ''}`.slice(0, 300)}, '{}', 'Kaizen', 'task', 'pending', 'high', ${Number(t.id)})`;
+    const said = fresh.map(l => `• Low: ${item(l.itemId).name} — ${l.qty} left, keep ${l.min}${l.toOrder ? `; buy ${l.toOrder}` : ''}`).join('\n');
+    await sql`UPDATE todos SET description = concat_ws(E'\n', NULLIF(description, ''), ${said}), updated_at = now() WHERE account_id = 1 AND id = ${Number(t.id)}`;
     const lines = fresh.filter(l => l.toOrder > 0).map(l => ({ itemId: l.itemId, place: key, qty: l.toOrder }));
     if (lines.length) await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(lines)}::jsonb, 'Kaizen')
                                 ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = inventory_orders.lines || EXCLUDED.lines`;

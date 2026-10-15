@@ -1098,6 +1098,16 @@ class Kaizen {
       if (c) await slackApi(this.s.token!, 'views.push', { trigger_id: p.trigger_id, view: taskCard(c) });
       return ack();
     }
+    // §162: the team answers a field report's urgency on its message (the cleaner is no longer asked) — or calls it a repair.
+    // The answer is a line in its thread and the message is redrawn without the question (notifyTask).
+    if (id.startsWith('task_urgency_') || id === 'task_make_repair') {
+      if (!this.may('/api/todos', 'POST')) return this.deny('the to-do list');
+      const [prio = '', tid = ''] = id === 'task_make_repair' ? ['', value] : value.split('|');
+      const r = await this.todo(id === 'task_make_repair' ? { action: 'update', id: tid, kind: 'work_order', via: 'slack-kind' } : { action: 'urgency', id: tid, priority: prio });
+      if (!r.ok) await this.reply(url, { replace_original: false, response_type: 'ephemeral', text: `Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}` });
+      else if (id === 'task_make_repair') this.ctx.waitUntil(notifyTask(this.sql, this.ctx.env.ENCRYPTION_KEY, tid, 'kind', this.email).catch(() => {}));
+      return ack();
+    }
     // §100: the task card — opened from a message or a list, worked inside the pop-up.
     if (id === 'task_open' || (id === 'task_menu' && value.startsWith('open:'))) {
       if (!this.may('/api/todos', 'GET')) return this.deny('the to-do list');

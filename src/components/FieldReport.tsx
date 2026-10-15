@@ -45,14 +45,13 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
   const [done, setDone] = useState<null | { task: boolean }>(null);
   const [cost, setCost] = useState('');
   const [text, setText] = useState('');
-  // §134: how urgent a problem or a need is — asked every time, never assumed.
-  const [prio, setPrio] = useState<'' | 'urgent' | 'high' | 'low'>('');
+  // §162 (owner, 2026-10-15): the reporter is no longer asked how urgent — the team decides it (Slack / Kaizen).
   const [files, setFiles] = useState<File[]>([]);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
 
   const reset = (k: Kind | null) => {
-    setKind(k); setDone(null); setCost(''); setText(''); setPrio(''); setFiles([]); setErr('');
+    setKind(k); setDone(null); setCost(''); setText(''); setFiles([]); setErr('');
   };
   const back = () => (start || !kind ? onClose?.() : reset(null));
 
@@ -77,7 +76,7 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
   // §137: a purchase reaches Costs only with what it cost — so the total is required (the team approves it).
   // §150: what they bought is said in their own words; the team records it in Inventory when approving it.
   const missing = kind === 'purchase' ? (!text.trim() ? tx.supNeedText : !(Number(cost) > 0) ? tx.supNeedCost : '')
-    : (!text.trim() ? tx.supNeedText : !prio ? tx.urgNeed : '');
+    : (!text.trim() ? tx.supNeedText : '');
 
   async function submit() {
     if (missing || busy) return;
@@ -85,7 +84,7 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
     try {
       const r = kind === 'purchase'
           ? await send({ action: 'supply', kind: 'purchase', text: text.trim(), cost }, await Promise.all(files.map(shrink)))
-          : await send({ action: kind!, kind: kind!, text: text.trim(), priority: prio }, await Promise.all(files.map(shrink)));
+          : await send({ action: kind!, kind: kind!, text: text.trim() }, await Promise.all(files.map(shrink)));
       if (!r.ok) { setErr(r.message ?? tx.notSaved); return; }
       setDone({ task: true });
     } catch (e) { setErr(e instanceof Error ? e.message : String(e)); } finally { setBusy(false); }
@@ -116,14 +115,6 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
         <textarea className="fr-text" rows={4} maxLength={300} value={text} onChange={e => setText(e.target.value)} />
         <p className="fr-tip">{ic(tx.supSpeakTip)}</p>
         {photo(tx.supPhotoBtn)}
-        <p className="fr-q">{ic(tx.urgQ)}</p>
-        <div className="fr-urg" role="radiogroup" aria-label={tx.urgQ}>
-          {(['urgent', 'high', 'low'] as const).map(p => (
-            <button key={p} type="button" role="radio" aria-checked={prio === p}
-                    className={`fr-btn fr-choice urg-${p}${prio === p ? ' on' : ''}`} onClick={() => setPrio(p)}>
-              {ic(prio === p ? '◉' : '○')} {ic(tx.urg[p])}</button>
-          ))}
-        </div>
       </>}
 
       <div className="fr-send">

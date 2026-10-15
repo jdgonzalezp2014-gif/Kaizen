@@ -2020,9 +2020,6 @@ header.mini-head, header.mini-head:is(header) { display: flex; flex-direction: r
   background: var(--ink); color: var(--bg); font-weight: 800; font-size: var(--fs-title3); }
 .fr-done-line { font-size: var(--fs-title2); font-weight: 800; color: var(--good); text-align: center; padding: 6px 0; }
 .fr-confirm { display: flex; flex-direction: column; gap: 10px; border: 2px solid var(--warn); border-radius: var(--r-md); padding: 12px; }
-.fr-urg { display: flex; flex-direction: column; gap: 8px; }
-.fr-urg .on { border-color: var(--ink); border-width: 3px; font-weight: 800; }
-.fr-urg .urg-urgent.on { border-color: var(--warn); }
 /* §135 the inspector's link: the clean's step look, plus where a room stands. Shape and word carry it, colour helps. */
 .ins-item { color: var(--ink); font-size: var(--fs-title2); line-height: 1.3; }
 .ins-dots { display: flex; gap: 6px; flex-wrap: wrap; }

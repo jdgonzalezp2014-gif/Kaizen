@@ -135,17 +135,26 @@ export function overallResult(checks: Check[]): 'OK' | 'Minor issues' | 'Mainten
 }
 
 /** The work a finding becomes: a repair (work order) or a purchase (to-do). */
+/**
+ * §162 (owner, 2026-10-15: "Kitchen: Cabinet doors, drawers, handles and countertop — Missing one knob" did not read as
+ * a work order): a repair is named by what is wrong — the inspector's note — and where; the checklist line it failed
+ * stays in the description. No note: the checklist line is all there is.
+ */
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+export const repairTitle = (c: Check, where: string) => `${c.note?.trim() ? cap(c.note.trim()) : c.label} (${where})`.slice(0, 300);
+
 export function workFor(c: Check, ctx: { unit: string; date: string; inspector: string; sectionTitle: string }):
   { kind: 'work_order' | 'task'; title: string; description: string } | null {
   if (c.outcome !== 'repair' && c.outcome !== 'purchase') return null;
   const what = c.note?.trim() ? `${c.label} — ${c.note.trim()}` : c.label;
   const lines = [
     `Found at the inspection of ${ctx.unit} on ${ctx.date}${ctx.inspector ? ` by ${ctx.inspector}` : ''} — ${ctx.sectionTitle}.`,
+    `Checklist: ${c.label}`,
     c.note?.trim() ? `Note: ${c.note.trim()}` : null,
     ...c.photos.map(p => `Photo: ${p.url}`)
   ].filter(Boolean) as string[];
   return c.outcome === 'repair'
-    ? { kind: 'work_order', title: `${ctx.sectionTitle}: ${what}`.slice(0, 300), description: lines.join('\n') }
+    ? { kind: 'work_order', title: repairTitle(c, ctx.sectionTitle), description: lines.join('\n') }
     : { kind: 'task', title: `Buy: ${what}`.slice(0, 300), description: lines.join('\n') };
 }
 
@@ -173,7 +182,7 @@ export function repairList(cs: Check[], ctx: { unit: string; date: string; inspe
     `From the inspection of ${ctx.unit} on ${ctx.date}${ctx.inspector ? ` by ${ctx.inspector}` : ''}.`,
     ...reps.flatMap(c => [`• ${item(c)}`, ...c.photos.map(p => `  Photo: ${p.url}`)])
   ];
-  return { title: `Repairs at ${ctx.unit}: ${reps.length} items`.slice(0, 300), description: lines.join('\n'), items: reps.map(c => item(c).slice(0, 300)) };
+  return { title: `Repairs at ${ctx.unit}: ${reps.length} items`.slice(0, 300), description: lines.join('\n'), items: reps.map(c => repairTitle(c, titleOf(c))) };
 }
 
 /**

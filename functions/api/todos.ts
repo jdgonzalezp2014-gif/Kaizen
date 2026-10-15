@@ -38,6 +38,8 @@ import { mirrorOn, people, pullAll, pushWork } from '../_lib/hostaway-tasks.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
 import { workLinkFor } from '../_lib/vendor-work.ts';
 import { commentToThread, notifyTask, tellOwner, type TaskEvent } from '../_lib/slack.ts';
+import { applyUrgency } from '../_lib/urgency.ts';
+import { URGENCY_CHECK } from '../../src/lib/todos.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -335,6 +337,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   if (!before) return Response.json({ ok: false, message: 'That task is gone — someone removed it.' }, { status: 404 });
   const scope = b.claimScope ? String(b.claimScope) : undefined;
 
+  // §162 (owner, 2026-10-15): the team answers a field report's urgency — Slack's buttons on its message, or Kaizen.
+  // Priority, deadline (urgent today; high the checkout of the stay ahead, attached) and its check sub-task closed.
+  if (b.action === 'urgency') {
+    const p = String(b.priority ?? '');
+    if (!['urgent', 'high', 'medium', 'low'].includes(p)) return bad('Urgent, high, medium or low?');
+    const r = await applyUrgency(sql, env.ENCRYPTION_KEY, id, p, who.email);
+    mirror(id); tell(id, 'urgency');
+    return Response.json({ ok: true, said: r.said, dueOn: r.dueOn, todos: await list(sql, scope) });
+  }
+
   // §159 (owner, 2026-10-14): two to-dos that are the same job become one. Everything that was said and attached
   // moves to the one that stays; the other closes as cancelled, saying where it went (and Hostaway closes it too).
   if (b.action === 'merge') {
@@ -541,6 +553,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     else tell(id, 'status');
   }
   if (f.assigneeUserId !== undefined && (assigneeName ?? null) !== (before.assignee ?? null) && assigneeName) { tell(id, 'assigned'); dm(id); }
+  // §162: a priority set in Kaizen on a report still waiting for its urgency answers it — the same deadline rule as
+  // Slack's buttons, unless a date was set by hand in the same save.
+  if (f.priority !== undefined && f.priority !== before.priority && f.priority !== 'none') {
+    const [open] = await sql`SELECT 1 AS x FROM todos WHERE account_id = 1 AND parent_id = ${id} AND title = ${URGENCY_CHECK}
+                              AND status NOT IN ('completed', 'cancelled') AND deleted_at IS NULL LIMIT 1` as { x: number }[];
+    if (open) { await applyUrgency(sql, env.ENCRYPTION_KEY, id, f.priority, who.email, f.dueOn !== undefined && f.dueOn !== before.due_on); tell(id, 'urgency'); }
+  }
 
   return Response.json({ ok: true, todos: await list(sql, scope) });
 };

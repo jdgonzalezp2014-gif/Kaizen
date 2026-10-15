@@ -845,6 +845,11 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                   </>}
                   {canClaim && <button type="button" role="menuitem" disabled={busy} onClick={() => { close(); void toClaim(); }}
                                        title="It is a guest case — open a claim for it, linked to this to-do"><Icon n="warning" /> Register as a claim</button>}
+                  {/* §162: a problem from the field that needs a fix becomes a work order (vendor, cost) — the one way a kind changes. */}
+                  {!closed && t.kind === 'task' && !isOrder && (
+                    <button type="button" role="menuitem" disabled={busy} onClick={() => { close(); void act({ action: 'update', id: t.id, kind: 'work_order' }); }}
+                            title="It needs a fix — a work order has its vendor, estimate and cost"><Icon n="wrench" /> Make it a work order</button>
+                  )}
                   {!closed && <button type="button" role="menuitem" onClick={() => { close(); setMerging(''); }}
                                       title="The same job written twice? Keep the other one and bring this one's comments, files and items into it"><Icon n="layers" /> Merge into…</button>}
                   <button type="button" role="menuitem" className="danger" onClick={() => { close(); setConfirmDel(true); }}><Icon n="trash" /> Remove this {t.parentId ? 'sub-task' : t.kind === 'work_order' ? 'work order' : 'to-do'}…</button>

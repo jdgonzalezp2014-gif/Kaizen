@@ -561,3 +561,7 @@ UI only; tokens and shared components from `docs/design-system.md`.
   `request`), opened in a pop-up on its form. Opening any order lands on its form. Closing one unbought still asks why
   (wording now "this purchase order"). Tested: ✨ on a real request (6 lines, 3 marked on hand). **Not exercised: a
   cleaner's new request through the field link** (writes production; try it with the practice page's flow or a test clean).
+
+- **§164 (owner, 2026-10-15):** the field report form no longer asks urgency (the team validates it — work module); purchase
+  orders from Inventory / low stock / a field to-do keep their items as order lines, not sub-tasks; inspection repairs are titled
+  by the inspector's note (`repairTitle`).

@@ -4309,3 +4309,27 @@ strip to its left. And on To-do the Open work / Done log switch took a whole row
 Now: the gear is a light, bordered control (strip style on a phone, sharing its line); the done log is a chip inside the
 "Closed in the last 14 days" section, with its own Filters popover and Export CSV; the open-work Filters moved to the
 tabs' line. Nothing changed in the API or the data.
+
+## §164 — Field work aligned: the team decides urgency; orders hold their lines; repairs named by the finding (2026-10-15)
+
+Owner, after the push of §162/§163: drop the obsolete column, check that what the field creates (cleaners, helpers,
+inspections, inventory) fits how work is shaped now, and stop asking cleaners how urgent a problem is.
+- **`claims.repair_cost` dropped** (migration 087) — checked first: no reader in src/functions/scripts on origin/master
+  (c906e17 deployed), no view depending on it, its 3 values already in `requested` (086).
+- **Urgency is the team's (owner).** The cleaner's/helper's report form no longer asks it (`FieldReport`, i18n strings
+  gone). A problem comes in **high** (a request joins its clean's order at medium) with a high **"Validate the urgency"**
+  sub-task due today (`URGENCY_CHECK`, `askUrgency` in inventory.ts). Its Slack message asks "⚑ How urgent is it?":
+  🔴 Urgent / 🟠 High / Medium / Low (`urgencyAsk`, `task_urgency_<p>`) and "🔧 It is a repair" (`task_make_repair`).
+  `/api/todos` action `urgency` → `applyUrgency` (functions/_lib/urgency.ts): **urgent = due today; high = due the
+  checkout of the stay in the unit now or next** (Hostaway, not the stay leaving today — `urgencyDue`, src/lib/todos.ts),
+  that stay attached to the to-do; medium/low = no date. The check sub-task closes with what was decided; a line in the
+  thread says it and the message is redrawn without the question. Setting the priority in Kaizen answers it the same
+  way (a date set by hand in the same save is kept). Checked on P2-4308's real stays: high → Oct 18, Reimundo Chavez.
+- **A to-do can still become a work order** — "Make it a work order" in the panel's ⋯ (and Slack's button): a field
+  problem that needs a fix gets its vendor and cost. The only kind change left (§162 removed the switch).
+- **Purchase orders hold their lines, not a sub-task per item** — Inventory's "Buy supplies", "Low stock at …" (low
+  items listed in its description, read back to list each once) and an order added to a field to-do. Inspections already
+  did this (§159). Sub-tasks stay for other work (installing what is bought).
+- **Inspection repairs are named by the finding:** "Missing one knob — the pantry door (Kitchen)" instead of
+  "Kitchen: Cabinet doors, drawers, handles and countertop — …" (`repairTitle`); the checklist line is in the description.
+- SOPs: #22/#23 (cleaner page, EN/ES) v3 — "the team decides how urgent"; #8 (Slack) v18 — the urgency buttons.

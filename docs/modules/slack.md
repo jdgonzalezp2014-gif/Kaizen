@@ -231,3 +231,6 @@ The messages Kaizen posts to Slack keep their emoji — they are Slack copy, not
   channel is announced there too (`quickCreate`). `@Kaizen order …` / "+ Purchase order"; 💲 Upsell for upsell kinds;
   "Open in Kaizen ↗" (`kaizenButton`, `/?todo=` `/?claim=` deep links). Money left Slack's claim form and card (Finance's).
   Not yet seen in the real workspace — first real event will show it; check #kaizen-ops after the deploy.
+
+- **§164:** a field report's message asks "⚑ How urgent is it?" (`urgencyAsk`: `task_urgency_<p>`, `task_make_repair`) until
+  answered; the answer is a thread line (`TaskEvent 'urgency'` / `'kind'`) and the message is redrawn without it.

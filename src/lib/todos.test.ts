@@ -139,3 +139,16 @@ test('a row does not repeat its listing in the title (§159)', () => {
   // A name that is the whole title is kept — something has to be said.
   assert.equal(rowTitle('Amber Valley', ['Amber Valley']), 'Amber Valley');
 });
+
+test('§162: urgent is due today; high on the checkout of the stay in the unit now or next — never the one leaving today', async () => {
+  const { urgencyDue } = await import('./todos.ts');
+  const stays = [
+    { id: 'leaving', guest: 'A', arrival: '2026-10-12', departure: '2026-10-15' },
+    { id: 'next', guest: 'B', arrival: '2026-10-15', departure: '2026-10-19' },
+    { id: 'later', guest: 'C', arrival: '2026-10-20', departure: '2026-10-22' }
+  ];
+  assert.deepEqual(urgencyDue('urgent', '2026-10-15', stays), { dueOn: '2026-10-15', stay: stays[1] });
+  assert.deepEqual(urgencyDue('high', '2026-10-15', stays), { dueOn: '2026-10-19', stay: stays[1] });
+  assert.deepEqual(urgencyDue('high', '2026-10-15', []), { dueOn: null, stay: null });
+  assert.deepEqual(urgencyDue('medium', '2026-10-15', stays), { dueOn: null, stay: null });
+});

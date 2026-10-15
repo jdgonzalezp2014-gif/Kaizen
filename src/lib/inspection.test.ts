@@ -77,7 +77,8 @@ test('a finding becomes a repair or a purchase, with where, who and the photos',
   const ctx = { unit: 'CL1250', date: '2026-10-12', inspector: 'Sharon', sectionTitle: 'Bathroom 2' };
   const rep = workFor(check('3', 2, 'attention', { label: 'Grout', note: 'cracked by the tub', outcome: 'repair', photos: [{ name: 'p', url: 'https://x/p' }] }), ctx)!;
   assert.equal(rep.kind, 'work_order');
-  assert.equal(rep.title, 'Bathroom 2: Grout — cracked by the tub');
+  assert.equal(rep.title, 'Cracked by the tub (Bathroom 2)');
+  assert.match(rep.description, /Checklist: Grout/);
   assert.match(rep.description, /inspection of CL1250 on 2026-10-12 by Sharon — Bathroom 2[\s\S]*Photo: https:\/\/x\/p/);
   assert.equal(workFor(check('1', 1, 'attention', { label: 'Coffee', outcome: 'purchase' }), ctx)!.title, 'Buy: Coffee');
   assert.equal(workFor(check('1', 1, 'attention', { outcome: 'clean_next' }), ctx), null);
@@ -101,12 +102,12 @@ test('one repair keeps its own work order; two or more become ONE, a sub-task pe
   const titleOf = (c: Check) => c.area === 'bathroom' ? 'Bathroom' : 'Kitchen';
   const one = check('3', 2, 'attention', { label: 'Grout', note: 'cracked by the tub', outcome: 'repair', area: 'bathroom', photos: [{ name: 'p', url: 'https://x/p' }] });
   const solo = repairList([one], ctx, titleOf)!;
-  assert.equal(solo.title, 'Bathroom: Grout — cracked by the tub');
+  assert.equal(solo.title, 'Cracked by the tub (Bathroom)');
   assert.deepEqual(solo.items, [], 'a single repair is the work order itself — nothing inside it');
   const cs = [one, check('4', 1, 'attention', { label: 'Lock', outcome: 'repair' }), check('5', 1, 'attention', { label: 'Coffee', outcome: 'purchase' })];
   const l = repairList(cs, ctx, titleOf)!;
   assert.equal(l.title, 'Repairs at CL1250: 2 items');
-  assert.deepEqual(l.items, ['Grout — cracked by the tub (Bathroom)', 'Lock (Kitchen)']);
+  assert.deepEqual(l.items, ['Cracked by the tub (Bathroom)', 'Lock (Kitchen)']);
   assert.match(l.description, /• Grout — cracked by the tub \(Bathroom\)\n  Photo: https:\/\/x\/p\n• Lock \(Kitchen\)/);
   assert.equal(repairList([cs[2]!], ctx, titleOf), null);
 });

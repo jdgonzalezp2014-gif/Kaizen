@@ -279,3 +279,22 @@ export function auditCsv(rows: AuditRow[], unitName: (id: string) => string, cla
   ].map(cell).join(','));
   return [head.join(','), ...lines].join('\n');
 }
+
+/* ── a field report's urgency, decided by the team (§162) ──────────────── */
+
+/**
+ * Owner, 2026-10-15: cleaners are no longer asked how urgent a problem is — the team decides. A report arrives with
+ * this sub-task (high), answered in Slack (the buttons on its message) or by setting the priority in Kaizen.
+ */
+export const URGENCY_CHECK = 'Validate the urgency';
+export interface StayWindow { id: string; guest: string; arrival: DateStr; departure: DateStr }
+/**
+ * The deadline an urgency sets: urgent → today; high → the checkout of the stay that holds the unit now or next
+ * (the next time the team can get in without a guest) — that stay is attached, so nobody plans around the wrong one.
+ * Medium and low set no date. A stay leaving today does not count: its turnover is the moment of the report.
+ */
+export function urgencyDue(priority: string, today: DateStr, stays: StayWindow[]): { dueOn: DateStr | null; stay: StayWindow | null } {
+  if (priority !== 'urgent' && priority !== 'high') return { dueOn: null, stay: null };
+  const stay = stays.filter(s => s.departure > today).sort((a, b) => a.arrival.localeCompare(b.arrival))[0] ?? null;
+  return { dueOn: priority === 'urgent' ? today : stay?.departure ?? null, stay };
+}

@@ -104,6 +104,8 @@ export interface TaskLite {
   id: string; title: string; kind: 'task' | 'work_order'; status: string; priority: string;
   /** §162: a purchase order (a request, or a to-do with order lines). */
   isOrder?: boolean;
+  /** §162: a field report whose urgency the team has not answered yet — its message carries the answer buttons. */
+  asksUrgency?: boolean;
   unit?: string | null; assignee?: string | null; dueOn?: string | null; reservationLabel?: string | null; description?: string | null;
 }
 // §159: Slack says what Kaizen says — New → In progress → Done (or Cancelled); an order Ordered → Purchased.
@@ -224,9 +226,24 @@ export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: str
         // Owner, 2026-10-14: "Manage", like the daily message — it opens the whole card, not only comments.
         button('Manage', 'task_open', t.id),
         ...kaizenButton(appUrl, 'todo', t.id)
-      ] }
+      ] },
+      ...(t.asksUrgency && !closed ? urgencyAsk(t) : [])
     ]
   };
+}
+
+/**
+ * §162 (owner, 2026-10-15): a field report's urgency is the team's answer, not the cleaner's — asked on its message.
+ * Urgent = due today; High = due the checkout of the stay in the unit now or next (attached); Medium / Low = no date.
+ * A problem that needs a fix can become a work order from here too.
+ */
+export function urgencyAsk(t: Pick<TaskLite, 'id' | 'kind' | 'isOrder'>): Block[] {
+  const b = (label: string, p: string, style?: 'primary' | 'danger') => button(label, `task_urgency_${p}`, `${p}|${t.id}`, style);
+  return [
+    context('⚑ *How urgent is it?* Urgent = today · High = by the checkout of the stay in the unit now or next · Medium / Low = no date'),
+    { type: 'actions', elements: [b('🔴 Urgent', 'urgent', 'danger'), b('🟠 High', 'high'), b('Medium', 'medium'), b('Low', 'low'),
+      ...(t.kind === 'task' && !t.isOrder ? [button('🔧 It is a repair', 'task_make_repair', t.id)] : [])] }
+  ];
 }
 
 /** /kaizen tasks — every open task, each with a menu. */

@@ -9,7 +9,7 @@
  */
 import type { SqlFn } from './accounts.ts';
 import { decrypt } from './crypto.ts';
-import { STATUS_LABEL } from '../../src/lib/todos.ts';
+import { PRIORITY_LABEL, STATUS_LABEL, URGENCY_CHECK } from '../../src/lib/todos.ts';
 import { caseWord, claimMessage, dmTarget, esc, eventsOf, taskMessage, threadLine, type ClaimLite, type SlackConfig, type TaskLite, type Topic } from '../../src/lib/slack.ts';
 
 export interface SlackSetup { config: SlackConfig; token: string | null; secret: string | null }
@@ -78,16 +78,18 @@ export async function taskLite(sql: SqlFn, id: string): Promise<TaskLite | null>
   const [t] = await sql`SELECT t.id::text, t.title, t.kind, t.status, t.priority, t.assignee, t.due_on::text AS due_on, t.reservation_label,
                                t.description, t.parent_id, u.name AS unit,
                                (EXISTS (SELECT 1 FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id)
-                                 OR (t.parent_id IS NULL AND t.clean_group IN ('request', 'inspection'))) AS is_order
+                                 OR (t.parent_id IS NULL AND t.clean_group IN ('request', 'inspection'))) AS is_order,
+                               EXISTS (SELECT 1 FROM todos k WHERE k.account_id = 1 AND k.parent_id = t.id AND k.title = ${URGENCY_CHECK}
+                                         AND k.status NOT IN ('completed', 'cancelled') AND k.deleted_at IS NULL) AS asks_urgency
                           FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
                          WHERE t.account_id = 1 AND t.id::text = ${id}` as
     { id: string; title: string; kind: TaskLite['kind']; status: string; priority: string; assignee: string | null; due_on: string | null;
-      reservation_label: string | null; description: string | null; parent_id: string | null; unit: string | null; is_order: boolean }[];
+      reservation_label: string | null; description: string | null; parent_id: string | null; unit: string | null; is_order: boolean; asks_urgency: boolean }[];
   return t ? { id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, dueOn: t.due_on,
-               reservationLabel: t.reservation_label, description: t.description, unit: t.unit, isOrder: !!t.is_order } : null;
+               reservationLabel: t.reservation_label, description: t.description, unit: t.unit, isOrder: !!t.is_order, asksUrgency: !!t.asks_urgency } : null;
 }
 
-export type TaskEvent = 'created' | 'assigned' | 'completed' | 'cancelled' | 'reopened' | 'status' | 'hostaway';
+export type TaskEvent = 'created' | 'assigned' | 'completed' | 'cancelled' | 'reopened' | 'status' | 'urgency' | 'kind' | 'hostaway';
 
 /**
  * Where a task's or claim's news goes (owner, Oct 2026): its own thread — else, for work made from
@@ -126,7 +128,9 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
   const app = s.config.appUrl;
   const [p] = await sql`SELECT parent_id::text AS parent_id, claim_id::text AS claim_id FROM todos WHERE id::text = ${id}` as { parent_id: string | null; claim_id: string | null }[];
   const word = event === 'assigned' ? `assigned to ${t.assignee ?? 'nobody'}` : event === 'hostaway' ? `changed in Hostaway${extra ? ` (${extra})` : ''}`
-    : event === 'status' ? `→ ${STATUS_LABEL[t.status as keyof typeof STATUS_LABEL] ?? t.status}` : event;
+    : event === 'status' ? `→ ${STATUS_LABEL[t.status as keyof typeof STATUS_LABEL] ?? t.status}`
+    : event === 'kind' ? (t.kind === 'work_order' ? 'made a work order' : 'made a to-do')
+    : event === 'urgency' ? `urgency set: ${PRIORITY_LABEL[t.priority as keyof typeof PRIORITY_LABEL] ?? t.priority}${t.dueOn ? `, due ${t.dueOn}` : ''}${t.reservationLabel ? ` (stay ${t.reservationLabel})` : ''}` : event;
   const home = await threadFor(sql, 'task', id);
   const reply = (m: { text: string; blocks: unknown[] }) =>
     slackApi(s.token!, 'chat.postMessage', { channel: home!.channel, thread_ts: home!.ts, text: m.text, blocks: m.blocks, unfurl_links: false });
@@ -148,7 +152,7 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
   // New — or news of work that has no thread yet: the one message, and its thread from now on.
   await rememberThread(sql, await postTo(s, 'tasks', taskMessage(t, word, who(by), app)), 'task', id);
 }
-const ICON: Partial<Record<TaskEvent, string>> = { created: '➕', completed: '✓', cancelled: '✕', reopened: '↺', assigned: '🙋', status: '◐', hostaway: '⇄' };
+const ICON: Partial<Record<TaskEvent, string>> = { created: '➕', completed: '✓', cancelled: '✕', reopened: '↺', assigned: '🙋', status: '◐', urgency: '⚑', kind: '🔧', hostaway: '⇄' };
 
 /**
  * The owner hears it directly (§100): a task given to them — on creation

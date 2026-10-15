@@ -453,3 +453,12 @@ test('§162: a purchase order from a mention, an upsell named as such, and the l
   assert.match(JSON.stringify(claimMessage({ id: '9', category: 'Late check-in', severity: 'Low', status: 'Open' }, 'opened', 'juan', 'https://k.dev')), /💲 Upsell opened.*\?claim=9/);
   assert.equal(threadLine('✓ Completed', 'juan').blocks.length, 1);
 });
+
+test('§162: a field report asks the team how urgent on its message — and can become a repair', async () => {
+  const { taskMessage } = await import('./slack.ts');
+  const t = { id: '7', title: 'Problem at P2: leak', kind: 'task' as const, status: 'pending', priority: 'high', asksUrgency: true };
+  const s = JSON.stringify(taskMessage(t, 'created', 'Luz'));
+  for (const k of ['task_urgency_urgent', 'task_urgency_high', 'task_urgency_medium', 'task_urgency_low', 'task_make_repair', 'high|7']) assert.ok(s.includes(k), k);
+  assert.ok(!JSON.stringify(taskMessage({ ...t, asksUrgency: false }, 'created', 'Luz')).includes('task_urgency_'));
+  assert.ok(!JSON.stringify(taskMessage({ ...t, status: 'completed' }, 'created', 'Luz')).includes('task_urgency_'));
+});
