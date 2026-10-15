@@ -2537,6 +2537,14 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
   .home-side-col .home-list li { flex-wrap: wrap; }
   .home-side-col .home-side { flex-basis: 100%; max-width: none; text-align: left; padding-left: 84px; display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; }
 }
+/* owner, 2026-10-15: the strip and its panel read as one box, the same white as To-dos and level with it —
+   not a row of chips floating above a separate card. */
+@media (min-width: 721px) {
+  .home-side-col { gap: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
+    box-shadow: var(--shadow); padding: var(--s-4) var(--s-5); }
+  .home-side-col .home-rail { margin: 0 0 var(--s-3); padding: 2px 1px var(--s-3); border-bottom: 1px solid var(--line); }
+  .home-side-col .home-card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
+}
 @media (min-width: 721px) and (max-width: 980px) { .home-rail { flex-wrap: wrap; overflow: visible; } }
 @media (max-width: 720px) {
   .home-layout { display: flex; flex-direction: column; }
