@@ -73,6 +73,9 @@ git push origin master   # deploys
 - Conventions: comments say *why*; verify on real data ("deployed" ≠ "works"); colour never
   carries meaning alone (icon + word); state limitations in the UI; delete what nothing reads;
   agents draft, humans send.
+- **Instructions go behind a "?"** (`<Hint>`, `src/components/Hint.tsx`) beside the section's title — never as paragraphs
+  of how-to on screen (visual noise). Every new screen, card or form gets its "?" with how it works. What a state, a limit
+  or a warning says stays visible.
 - **SOP format (§151):** purpose/trigger/owner/steps/doneWhen are the DB fields; `body` gets
   "## Rules" (if → then, only if there are any) and "## What the system does" (only if
   something happens on its own) as its last headers, in that order, when they apply — so an
