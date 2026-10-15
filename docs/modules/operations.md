@@ -119,6 +119,7 @@ key had no SOPs.
 - Ops role sees the board without booking values (`money` permission) (§63, §65).
 - Board chips (2026-10-15, owner): an arrival's "ID in Drive" / "signed" chips take a dropped file (or click) and file it
   in Drive (`DocChip`, same `uploadGuestDoc` as the row's Guest documents) — dashed while missing, solid green once filed.
+  The row's "Guest documents" panel is gone; opening an arrival still files Hostaway's signed agreement (`syncAgreement`).
   "Set by hand" and "by levels: …" are a hover on a ✎ / ⇄ beside the 👁, not text; the deep-clean pay note is a "?".
 
 - Crew page (§122): a cleaner = an Access sign-in whose email is on the roster → role `cleaner`,

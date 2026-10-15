@@ -572,10 +572,11 @@ function Board({ data, range, patch, reload }: {
                                  }} />
                       {open === key && (
                         <tr className="ops-edit-row"><td colSpan={9}>
-                          <Editor r={r} data={data} docs={canDocs && r.kind === 'in' ? docs[r.resId] : undefined} reload={reload}
+                          <Editor r={r} data={data} reload={reload}
                                   flag={flags[r.resId] ?? null} onFlag={note => setFlag(r.resId, note)}
                                   onManualClean={kind => setAddingClean({ unitId: r.unitId, resId: r.resId, kind })}
-                                  onDocs={d => setDocs(m => ({ ...m, [r.resId]: d }))} onSaved={(set, note) => {
+                                  onDocs={canDocs && r.kind === 'in' ? d => setDocs(m => ({ ...m, [r.resId]: d })) : undefined}
+                                  onSaved={(set, note) => {
                             patch(r.resId, r.kind, row => {
                               const n = set ? applyEdit(row, set, data.roster, data.rules) : row;
                               return note !== undefined ? { ...n, note } : n;
@@ -862,7 +863,9 @@ function PastLine({ c, open, onToggle }: { c: Cleaning; open: boolean; onToggle:
 }
 
 /** One stay's controls, opened in place under its row. */
-function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag, reload }: {
+function Editor({ r, data, onSaved, onDocs, onManualClean, flag, onFlag, reload }: {
+  /** An arrival's documents changed: opening it files a signed agreement Hostaway already has (§89). */
+  onDocs?: (d: StayDocs) => void;
   r: BoardRow; data: OperationsResponse; onSaved: (set: TurnoverSet | null, note?: string) => void;
   /** Reload the board — after a time is sent, to show whether it reached Hostaway. */
   reload: () => void;
@@ -871,9 +874,16 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag, r
   /** Start a manual clean for this stay (§79): the guest left early, or a mid-stay clean. */
   onManualClean: (kind: ManualCleanKind) => void;
   /** Present only for an arrival, for a role with guests.documents. */
-  docs: StayDocs | undefined; onDocs: (d: StayDocs) => void;
 }) {
   const out = r.kind === 'out';
+  // The Guest documents panel is gone (owner, 2026-10-15: the board's chips take the files); opening an
+  // arrival still files the signed agreement from Hostaway into Drive, as that panel did.
+  useEffect(() => {
+    if (out || !onDocs) return;
+    let live = true;
+    syncAgreement(r.resId).then(x => { if (live && x.ok) onDocs(x.docs); }).catch(() => {});
+    return () => { live = false; };
+  }, [r.resId]);
   const [note, setNote] = useState(r.note);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
@@ -995,7 +1005,6 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag, r
           <button className="link tiny" onClick={() => onManualClean('mid_stay')}>+ Mid-stay clean</button>
         </div>
       )}
-      {!out && can(data.permissions, 'guests.documents') && <GuestDocs r={r} docs={docs} onDocs={onDocs} required={(data.guestDocUnits ?? []).includes(r.unitId)} />}
     </div>
   );
 }
@@ -1224,84 +1233,6 @@ function ManualCleanForm({ data, initial, onDone, onCancel }: {
         <button disabled={busy || !unitId || !date || (needsStay && !resId)} onClick={() => void save()}>{busy ? 'Saving…' : 'Add clean'}</button>
         <button className="secondary" onClick={onCancel}>Cancel</button>
         <span className="note">Paid at the cleaner's rate for the unit's size; it counts in Costs and the calendar like any clean.</span>
-      </div>
-    </div>
-  );
-}
-
-/**
- * An arrival's ID and rental agreement (§73), in the reservation's own
- * Drive folders — the same ones the daily file used. Opening it asks
- * Hostaway about the signed agreement and files the PDF if Hostaway has
- * it and the folder is still empty. The ID only ever arrives by upload:
- * Hostaway never exposes it.
- */
-function GuestDocs({ r, docs, onDocs, required }: {
-  r: BoardRow; docs: StayDocs | undefined; onDocs: (d: StayDocs) => void;
-  /** This unit is set up to ask for them (Setup → Guest documents). */
-  required: boolean;
-}) {
-  const [hostaway, setHostaway] = useState<{ signed: boolean; available: boolean; pulled: boolean } | null>(null);
-  const [busy, setBusy] = useState('');
-  const [err, setErr] = useState('');
-
-  useEffect(() => {
-    let live = true;
-    syncAgreement(r.resId).then(x => {
-      if (!live) return;
-      if (x.ok) { setHostaway(x); onDocs(x.docs); } else setErr(x.message ?? 'Hostaway could not be asked.');
-    }).catch(e => { if (live) setErr(String(e)); });
-    return () => { live = false; };
-  }, [r.resId]);
-
-  const upload = async (kind: 'id' | 'agreement', list: FileList | null) => {
-    const files = [...(list ?? [])];
-    for (const [i, f] of files.entries()) {
-      setBusy(`Uploading ${i + 1} of ${files.length}…`); setErr('');
-      const x = await uploadGuestDoc(r.resId, kind, f).catch(e => ({ ok: false as const, message: String(e) }));
-      if (x.ok) onDocs(x.docs); else { setErr(`${f.name}: ${x.message ?? 'failed'}`); break; }
-    }
-    setBusy('');
-  };
-
-  return (
-    <div className="ops-docs">
-      <div className="ops-docs-head">
-        <b>Guest documents</b>
-        {!required && <span className="note">not asked for at this unit (Setup → Guest documents) — filing is optional</span>}
-        {docs?.folderUrl && <a href={docs.folderUrl} target="_blank" rel="noreferrer">Drive folder ↗</a>}
-        <span className="note">
-          {!hostaway ? 'asking Hostaway about the agreement…'
-            : hostaway.pulled ? '✓ signed agreement filed from Hostaway just now'
-            : hostaway.signed ? (hostaway.available ? '✓ signed in Hostaway' : '✓ signed in Hostaway — PDF not ready yet')
-            : '○ agreement not signed in Hostaway yet'}
-        </span>
-      </div>
-      <div className="ops-docs-cols">
-        <DocDrop title="ID" files={docs?.id} busy={busy} onFiles={l => void upload('id', l)} />
-        <DocDrop title="Rental agreement" files={docs?.agreement} busy={busy} onFiles={l => void upload('agreement', l)} />
-      </div>
-      {err && <p className="banner warn">▲ {err}</p>}
-    </div>
-  );
-}
-
-function DocDrop({ title, files, busy, onFiles }: {
-  title: string; files: StayDocs['id'] | undefined; busy: string; onFiles: (l: FileList | null) => void;
-}) {
-  const [hot, setHot] = useState(false);
-  const picker = useRef<HTMLInputElement>(null);
-  return (
-    <div className="ops-docs-col">
-      <div className="ops-docs-title">{files?.length ? '✓' : '○'} {title}</div>
-      {files === undefined ? <div className="note loading-dot">Reading</div>
-        : !files.length ? <div className="note">Nothing filed.</div>
-        : files.map(f => <a key={f.fileId} className="ops-docs-file" href={f.url} target="_blank" rel="noreferrer" title={f.name}>{f.name}</a>)}
-      <div className={`rb-drop-zone ${hot ? 'hot' : ''}`} onClick={() => !busy && picker.current?.click()}
-           onDragOver={e => { e.preventDefault(); setHot(true); }} onDragLeave={() => setHot(false)}
-           onDrop={e => { e.preventDefault(); setHot(false); if (!busy) onFiles(e.dataTransfer.files); }}>
-        {busy || 'Drop a file, or click'}
-        <input ref={picker} type="file" multiple hidden onChange={e => { onFiles(e.target.files); e.target.value = ''; }} />
       </div>
     </div>
   );
