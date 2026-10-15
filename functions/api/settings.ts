@@ -233,6 +233,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const enc = await encrypt(body.geminiApiKey.trim(), env.ENCRYPTION_KEY);
       await sql`UPDATE accounts SET gemini_api_key_enc = ${enc} WHERE id = 1`;
     }
+    if (typeof body.claudeApiKey === 'string' && body.claudeApiKey.trim()) {
+      const enc = await encrypt(body.claudeApiKey.trim(), env.ENCRYPTION_KEY);
+      await sql`UPDATE accounts SET claude_api_key_enc = ${enc} WHERE id = 1`;
+    }
     if (typeof body.geminiModel === 'string' && body.geminiModel.trim()) {
       await sql`UPDATE accounts SET gemini_model = ${body.geminiModel.trim()} WHERE id = 1`;
     }

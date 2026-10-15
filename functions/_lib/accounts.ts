@@ -18,6 +18,7 @@ export interface Account {
   hostawayAccountId: string | null;
   hasHostawayKey: boolean;
   hasGeminiKey: boolean;
+  hasClaudeKey: boolean;
   hasJinaKey: boolean;
   hasIngestToken: boolean;
   hasQuoKey: boolean;
@@ -54,6 +55,7 @@ interface AccountRow {
   hostaway_account_id: string | null;
   hostaway_api_key_enc: string | null;
   gemini_api_key_enc: string | null;
+  claude_api_key_enc: string | null;
   jina_api_key_enc: string | null;
   ingest_token_enc: string | null;
   quo_api_key_enc: string | null;
@@ -85,7 +87,7 @@ interface AccountRow {
 export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | null> {
   const rows = await sql`
     SELECT id, name, hostaway_account_id, hostaway_api_key_enc,
-           gemini_api_key_enc, gemini_model, jina_api_key_enc, ingest_token_enc,
+           gemini_api_key_enc, gemini_model, claude_api_key_enc, jina_api_key_enc, ingest_token_enc,
            quo_api_key_enc, quo_from, quo_recipients, quo_live,
            target_net_per_unit, occ_floor_pct, stay_nights,
            fwd_study_days, offline_after_days, cleanings_csv_url, feed_csv_url, allowed_emails,
@@ -103,6 +105,7 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
     hostawayAccountId: r.hostaway_account_id,
     hasHostawayKey: Boolean(r.hostaway_api_key_enc),
     hasGeminiKey: Boolean(r.gemini_api_key_enc),
+    hasClaudeKey: Boolean(r.claude_api_key_enc),
     hasJinaKey: Boolean(r.jina_api_key_enc),
     hasIngestToken: Boolean(r.ingest_token_enc),
     hasQuoKey: Boolean(r.quo_api_key_enc),

@@ -5,6 +5,7 @@ export interface Account {
   hostawayAccountId: string | null;
   hasHostawayKey: boolean;
   hasGeminiKey: boolean;
+  hasClaudeKey: boolean;
   hasJinaKey: boolean;
   hasIngestToken: boolean;
   hasQuoKey: boolean; quoFrom: string | null;

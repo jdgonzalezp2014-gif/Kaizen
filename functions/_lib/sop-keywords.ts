@@ -20,7 +20,7 @@ export async function writeKeywords(sql: SqlFn, env: Env, id: string): Promise<s
   if (!s) return null;
   const user = [`Title: ${s.title}`, s.purpose ? `Purpose: ${s.purpose}` : '', s.trigger ? `When: ${s.trigger}` : '',
     s.steps.length ? `Steps: ${s.steps.map(x => x.text).join(' / ')}` : '', s.body ? s.body.slice(0, 3000) : ''].filter(Boolean).join('\n');
-  const r = await askJson(sql, env, SYSTEM, user);
+  const r = await askJson(sql, env, SYSTEM, user, [], { tier: 'chat' });
   if (!r.ok) return null;
   const kw = [...new Set((Array.isArray(r.json.keywords) ? r.json.keywords : []).map(k => String(k).toLowerCase().trim().slice(0, 60)).filter(Boolean))].slice(0, 30);
   if (!kw.length) return null;

@@ -38,38 +38,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return Response.json({ ok: false, error: 'unauthenticated' }, { status: 403 });
     }
   }
-  // The Host Notes on the clock: /api/cron was meant to push them, but nothing calls it (it sits behind
-  // Access), so only stays someone edited got their note. Once an hour, not every 5-minute tick: the board
-  // reads Hostaway, and a reservation whose block is what was last pushed is not even asked about.
-  // Isolated: it must never cost the reminders. A failed pass frees the hour to try again next tick.
-  let notes: unknown = null;
-  const notesKey = `hostnotes:${new Date().toISOString().slice(0, 13)}`;
-  if ((await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${notesKey}) ON CONFLICT DO NOTHING RETURNING key`).length) {
-    try {
-      const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
-      const ops = await loadOps(sql, creds);
-      notes = ops.mode === 'live' ? await pushHostNotes(sql, creds, ops) : 'shadow';
-    } catch (e) {
-      await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${notesKey}`;
-      notes = { error: e instanceof Error ? e.message : String(e) };
-    }
-  }
-
-  // §166: tasks written in Hostaway reach Kaizen — and every open screen's bell — within a tick, not only when someone
-  // opens a to-do list. pullAll keeps its own two-minute pace and switch (off = nothing); a failure never costs the rest.
-  let tasks: unknown = null;
-  try { tasks = await pullAll(sql, await getCredentials(sql, env.ENCRYPTION_KEY), false, undefined, env.ENCRYPTION_KEY); }
-  catch (e) { tasks = { error: e instanceof Error ? e.message : String(e) }; }
-
-  // Owner, 2026-10-14: Kaizen's Drive folders to the whole team — once a day, so a new member gets them too.
-  const driveKey = `drivesync:${new Date().toISOString().slice(0, 10)}`;
-  if ((await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${driveKey}) ON CONFLICT DO NOTHING RETURNING key`).length) {
-    try { await syncTeamDriveAccess(sql, env.ENCRYPTION_KEY); }
-    catch { await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${driveKey}`; }
-  }
-
+  // 2026-10-15: a tick may make 50 subrequests (Cloudflare's free plan; every query and call counts). The 8 AM and 3 PM
+  // ticks ran Host Notes + Hostaway's tasks + the reminders in one and died at 50, leaving the cleans' thread claimed.
+  // So: one heavy job per tick — the reminders first; the housekeeping below runs only on a tick that sent nothing.
   const s = await slackSetup(sql, env.ENCRYPTION_KEY);
-  if (!s.token) return Response.json({ ok: true, sent: [], notes, tasks, skipped: 'slack not set up' });
+  if (!s.token) return Response.json({ ok: true, sent: [], skipped: 'slack not set up' });
   const out: string[] = [];
 
   // §107: the tasks' check-in and check-out, in the team's own time zone, to the tasks channel.
@@ -141,7 +114,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const summaryOut = s.config.digest?.morning === null ||
       (await sql`SELECT 1 FROM slack_sent WHERE account_id = 1 AND key = ${`digest:morning:${today}`}`).length > 0;
     const waitUntilHm = String(Number(from.slice(0, 2)) + 1).padStart(2, '0') + ':00';
-    if (now.hm >= from && now.hm < '20:00' && (summaryOut || now.hm >= waitUntilHm)) {
+    // Never in the tick that just sent something (the summary): the next one, five minutes on, has its own 50.
+    if (!out.length && !nudged && now.hm >= from && now.hm < '20:00' && (summaryOut || now.hm >= waitUntilHm)) {
       const day = todayIn('America/New_York');          // the board's day
       const key = `cleanday:${day}`;
       // 2026-10-15: the 8 AM run claimed the day and no thread came (Concord had a clean). A claim with no
@@ -163,6 +137,39 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
     }
   }
+  if (out.length || nudged) return Response.json({ ok: true, sent: out, nudged, hour, housekeeping: 'next tick' });
+
+  // The Host Notes on the clock: /api/cron was meant to push them, but nothing calls it (it sits behind
+  // Access), so only stays someone edited got their note. Once an hour, not every 5-minute tick: the board
+  // reads Hostaway, and a reservation whose block is what was last pushed is not even asked about.
+  // Isolated: it must never cost the reminders. A failed pass frees the hour to try again next tick.
+  let notes: unknown = null;
+  const notesKey = `hostnotes:${new Date().toISOString().slice(0, 13)}`;
+  if ((await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${notesKey}) ON CONFLICT DO NOTHING RETURNING key`).length) {
+    try {
+      const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
+      const ops = await loadOps(sql, creds);
+      notes = ops.mode === 'live' ? await pushHostNotes(sql, creds, ops) : 'shadow';
+    } catch (e) {
+      await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${notesKey}`;
+      notes = { error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  // §166: tasks written in Hostaway reach Kaizen — and every open screen's bell — within a tick, not only when someone
+  // opens a to-do list. pullAll keeps its own two-minute pace and switch (off = nothing); a failure never costs the rest.
+  let tasks: unknown = null;
+  try { tasks = await pullAll(sql, await getCredentials(sql, env.ENCRYPTION_KEY), false, undefined, env.ENCRYPTION_KEY); }
+  catch (e) { tasks = { error: e instanceof Error ? e.message : String(e) }; }
+
+  // Owner, 2026-10-14: Kaizen's Drive folders to the whole team — once a day, so a new member gets them too.
+  // Not in the hour's Host Notes tick either: it waits for the next quiet one.
+  const driveKey = `drivesync:${new Date().toISOString().slice(0, 10)}`;
+  if (notes === null && (await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${driveKey}) ON CONFLICT DO NOTHING RETURNING key`).length) {
+    try { await syncTeamDriveAccess(sql, env.ENCRYPTION_KEY); }
+    catch { await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${driveKey}`; }
+  }
+
   return Response.json({ ok: true, sent: out, nudged, hour, notes, tasks });
 };
 

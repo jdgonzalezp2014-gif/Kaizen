@@ -622,15 +622,16 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
   const [key, setKey] = useState('');
   const [model, setModel] = useState(account.geminiModel ?? 'gemini-3.6-flash');
   const [jina, setJina] = useState('');
+  const [claude, setClaude] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
 
   const save = async () => {
     setBusy(true); setMsg('');
     const r = await saveSettings({
-      geminiApiKey: key || undefined, geminiModel: model, jinaApiKey: jina || undefined });
+      geminiApiKey: key || undefined, geminiModel: model, jinaApiKey: jina || undefined, claudeApiKey: claude || undefined });
     setBusy(false);
-    setKey(''); setJina('');
+    setKey(''); setJina(''); setClaude('');
     setMsg(r.ok ? 'Saved.' : (r.error ?? 'Failed.'));
     if (r.ok) onSaved();
   };
@@ -653,6 +654,15 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
           <input value={model} onChange={e => setModel(e.target.value)} />
         </label>
       </div>
+      <label>
+        Claude API key <span className="note">— optional, the last resort</span>
+        {account.hasClaudeKey && <span className="ok-tag">one is stored</span>}
+        <Hint>Kaizen's AI asks Gemini first, then Cloudflare's Workers AI, and Claude only when both fail or run out of time —
+          Haiku for Slack questions, Sonnet for receipts, carts and SOP drafts. Use a key from platform.claude.com with prepaid
+          credits and auto-reload off: the credits are the most it can ever spend.</Hint>
+        <input type="password" value={claude} onChange={e => setClaude(e.target.value)}
+               placeholder={account.hasClaudeKey ? 'stored — type to replace' : 'sk-ant-…'} />
+      </label>
       <label>
         Jina reader key <span className="note">— optional</span>
         {account.hasJinaKey && <span className="ok-tag">one is stored</span>}

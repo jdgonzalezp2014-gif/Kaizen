@@ -123,6 +123,20 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 
 ## Open items
 
+- **Waits (audit + fix, 2026-10-15).** Pages analytics: every `scriptThrewException` at 13:00 UTC (8 AM Central) and
+  20:00 UTC (3 PM) used exactly 50 subrequests — Workers Free's cap (each Neon query, Slack, Hostaway, Google call counts);
+  once over, even a `catch`'s DELETE throws, so claims stayed held (cleans' thread at 09:35 on 10-14, 08:50 on 10-15).
+  `@Kaizen all` (57 s, killed — a waitUntil has 30 s) and `@Kaizen help <q>` (Gemini hung, no timeout) left nothing / "Looking…".
+  Fixed: **the clock does one heavy job per tick** — reminders first; Host Notes, Hostaway's tasks pull and the Drive sync
+  only on a tick that sent nothing; the cleans' thread never in the summary's tick. `today`/`all` post "⏳ Putting the day
+  together…" and replace it within 15 s (or say it took too long); `help`'s "Looking…" is always replaced.
+  **AI chain by tier** (`functions/_lib/ai-chain.ts`): `chat` (help, SOP keywords) = flash-lite 4 s → Workers AI 5 s →
+  Claude Haiku 6 s, 15 s budget; `heavy` (receipts, carts, ✨ SOP from a thread with a 24 s budget) = configured Gemini 15 s →
+  lite 8 s → Workers AI 10 s → Claude Sonnet 20 s. No retries; when the first choice failed, `by` says who answered and why (help: "↪ Answered by…"; receipts,
+  carts, ✨ SOP already show `by`). Claude only with `accounts.claude_api_key_enc` (093,
+  Settings → AI). Owner's rule: Claude key from prepaid credits, auto-reload off. Still open: Workers Paid ($5) would lift
+  the 50 cap; `functions/_lib/gemini.ts` (pricing suggestions) has no timeout yet.
+
 - **Cleans' thread missed 2026-10-15** (Concord had a clean): the 8 AM run claimed `cleanday:` and posted nothing, and the
   claim was never retried. Fix in `slack-cron.ts`: 0 cleans releases the claim; a claim with no `day:` message after 10 min
   is dropped and retried. The clock keeps no logs (`wrangler tail` is live only) — the 8 AM run's answer is lost.

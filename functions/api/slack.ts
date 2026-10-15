@@ -23,7 +23,7 @@ import * as claims from './claims.ts';
 import * as expenses from './expenses.ts';
 import { invItems, saveTodoOrder } from '../_lib/inventory.ts';
 import * as sopsApi from './sops.ts';
-import { askJson } from '../_lib/ai-chain.ts';
+import { askJson, within } from '../_lib/ai-chain.ts';
 import { gapsInThread, standardFrom, draftFromAi, draftFromThread, helpAnswerBlocks, helpFromAi, helpMissingBlocks, helpPrompt, rankSops, type SopDoc, partialSopForm, readSopForm, reviewFromAi, reviewNote, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
          type SopSectionLite, type SopSource } from '../../src/lib/slack-sops.ts';
 import { addToBlocks, sourceOf, suggestTarget, type AddSource, type AddTarget } from '../../src/lib/slack-addto.ts';
@@ -146,6 +146,12 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     }
     return slackApi(s.token!, 'chat.postEphemeral', { channel: ev.channel, user: ev.user, text, ...(blocks ? { blocks } : {}), ...(privateTs ? { thread_ts: privateTs } : {}) });
   };
+  // "Putting it together…" then the answer in its place — or what went wrong (2026-10-15: "@Kaizen all" ran 57 s and said nothing).
+  const replaceOrSay = async (wait: { ts?: string }, m: { text: string; blocks: unknown[] }) => {
+    if (wait.ts) await slackApi(s.token!, 'chat.update', { channel: ev.channel, ts: wait.ts, text: m.text, blocks: m.blocks.length ? m.blocks : undefined });
+    else await say(m.text, m.blocks.length ? m.blocks : undefined);
+  };
+  const late = (what: string) => ({ text: `⚠ ${what} took too long — Hostaway or Google did not answer in time. Try again in a minute, or open Kaizen${s.config.appUrl ? `: ${s.config.appUrl}` : ''}.`, blocks: [] as unknown[] });
   const { verb, arg } = parseMention(String(ev.text ?? ''));
   const from = { channel: String(ev.channel), ts: String(inThread ? ev.thread_ts : ev.ts) };
   // Owner, 2026-10-15: "@Kaizen bug …" / "@Kaizen pedir …" — the words ready, the form one tap away.
@@ -166,10 +172,10 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     if (!member.ok) { await sayPrivate(member.why); return; }
     const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
     const wait = await say('🔎 Looking in the SOPs…');
-    const m = await k.helpFromSops(arg, { channel: String(ev.channel), root: threadTsOf });
-    const ts = (wait as { ts?: string }).ts;
-    if (ts) await slackApi(s.token!, 'chat.update', { channel: ev.channel, ts, text: m.text, blocks: m.blocks });
-    else await say(m.text, m.blocks);
+    // 2026-10-15: "Looking…" must never be the last word — a failure says so instead.
+    const m = await k.helpFromSops(arg, { channel: String(ev.channel), root: threadTsOf })
+      .catch(() => ({ text: '⚠ Kaizen could not answer just now — ask again in a minute, or look in Kaizen → SOPs.', blocks: [] as unknown[] }));
+    await replaceOrSay(wait as { ts?: string }, m);
     return;
   }
   // Owner, 2026-10-14: a mention cannot open a pop-up — the button does.
@@ -202,10 +208,19 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
   if (!member.ok) { await sayPrivate(member.why); return; }
   const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
-  if (verb === 'tasks' || verb === 'today' || verb === 'claims') { const m = await k.forMention(verb); await say(m.text, m.blocks); return; }
+  if (verb === 'tasks' || verb === 'claims') { const m = await k.forMention(verb); await say(m.text, m.blocks); return; }
+  if (verb === 'today') {
+    const wait = await say('⏳ Putting the day together…') as { ts?: string };
+    await replaceOrSay(wait, await within(15000, k.forMention('today')).catch(() => late('The day')));
+    return;
+  }
   if (verb === 'sops') { const m = await k.sopsMessage(); await say(m.text, m.blocks); return; }
   // §114: "@Kaizen all" — the reminder now, for everyone, in the thread of the asking message (the channel stays short).
-  if (verb === 'all') { const m = await k.forMention('all'); await say(m.text, m.blocks); return; }
+  if (verb === 'all') {
+    const wait = await say('⏳ Putting the day together…') as { ts?: string };
+    await replaceOrSay(wait, await within(15000, k.forMention('all')).catch(() => late('The day')));
+    return;
+  }
 
   const [t] = inThread ? await sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}` as
     { subject: 'task' | 'claim'; subject_id: string }[] : [];
@@ -750,7 +765,8 @@ class Kaizen {
                                    AND body LIKE '%## What a complete SOP covers%' ORDER BY id LIMIT 1` as { body: string }[];
     const standard = standardFrom(std?.body) ?? undefined;
     const p = sopPrompt(sections, msgs.map(m => ({ who: m.role ? `${m.who} (${m.role})` : m.who, text: m.text })), current, standard);
-    const r = await askJson(this.sql, this.ctx.env, p.system, p.user);
+    // A Slack waitUntil has 30 s in all, and the thread was already read: the chain gets 24.
+    const r = await askJson(this.sql, this.ctx.env, p.system, p.user, [], { tier: 'heavy', budgetMs: 24000 });
     if (!r.ok) { await busy(`⚠ No AI could answer just now — try ✨ again in a minute. (${r.error.slice(0, 200)})`); return; }
     const review = reviewFromAi(r.json);
     await slackApi(this.s.token!, 'views.update', { view_id: view.id,
@@ -776,15 +792,17 @@ class Kaizen {
     const shown = rankSops(question, rows);
     if (!shown.length) return missing;
     const p = helpPrompt(question, shown);
-    const r = await askJson(this.sql, this.ctx.env, p.system, p.user);
+    const r = await askJson(this.sql, this.ctx.env, p.system, p.user, [], { tier: 'chat' });
     if (!r.ok) {
       // No model now: the best matches by words, to read — better than nothing.
       return { text: 'SOPs that may help', blocks: helpAnswerBlocks('No AI could answer just now — these SOPs look closest:', shown.slice(0, 3), this.s.config.appUrl) };
     }
     const h = helpFromAi(r.json, shown);
     if (!h.sops.length) return missing;
-    return { text: h.answer || 'From the SOPs',
-             blocks: helpAnswerBlocks(h.answer, h.sops, this.s.config.appUrl, h.covers === 'partial' ? { missing: h.missing, from } : null) };
+    const blocks: unknown[] = helpAnswerBlocks(h.answer, h.sops, this.s.config.appUrl, h.covers === 'partial' ? { missing: h.missing, from } : null);
+    // The usual model was busy or slow: say who answered instead (owner, 2026-10-15).
+    if (r.switched) blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `↪ Answered by ${r.by.replace(/[<>&]/g, '')}` }] });
+    return { text: h.answer || 'From the SOPs', blocks };
   }
 
   private async sopCounts() {
