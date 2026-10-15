@@ -137,9 +137,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (now.hm >= from && now.hm < '20:00' && (summaryOut || now.hm >= waitUntilHm)) {
       const day = todayIn('America/New_York');          // the board's day
       const key = `cleanday:${day}`;
+      // 2026-10-15: the 8 AM run claimed the day and no thread came (Concord had a clean). A claim with no
+      // day's message 10 minutes on is a run that died or found nothing — let this run try again.
+      await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key} AND sent_at < now() - interval '10 minutes'
+                  AND NOT EXISTS (SELECT 1 FROM clean_slack_posts WHERE account_id = 1 AND key = ${`day:${day}`} AND ts IS NOT NULL)`;
       const claimed = await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${key}) ON CONFLICT DO NOTHING RETURNING key`;
       if (claimed.length) {
-        try { out.push(`cleans thread ${day}: ${await postCleanDay(sql, s, await getCredentials(sql, env.ENCRYPTION_KEY), day)} cleans`); }
+        try {
+          const n = await postCleanDay(sql, s, await getCredentials(sql, env.ENCRYPTION_KEY), day);
+          // No cleans read is not "sent": the board may have come back empty for a moment.
+          if (!n) await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;
+          out.push(`cleans thread ${day}: ${n} cleans`);
+        }
         catch (e) {
           await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;
           out.push(`cleans thread failed: ${e instanceof Error ? e.message : String(e)}`);
