@@ -51,8 +51,10 @@ UI only; tokens and shared components from `docs/design-system.md`.
   36 px tall on a phone. Drag-and-drop on the row is unchanged.
 - Signed / Not signed / ID verified already carried a word + shape; unchanged.
 
-## Home check-ins density (2026-10-15)
+## Home check-ins/outs rows (2026-10-15)
 
-Arrival rows now match the board: one grid, line 1 `unit BR guest ↗`, line 2 stay facts, pills (`ops-flag ops-doc`
-filed/missing, same as Operations) at the right. The "↗ Hostaway" text link is just `↗` beside the guest. The
-rail override that pushed every `.home-side` (cleaner · price) under the unit is gone, so check-outs are one line.
+Owner: same logic as Movements, two lines a row. Check-out: unit BR / cleaner · pay (small) | flags in one row.
+Check-in: unit BR / guest ↗ · nights · guests | pills: the agreement pill only (`✓ signed` solid green, `▲ not signed`
+dashed amber — clickable to upload the agreement when the person has `guests.documents`), plus `○ ID` only where the
+building keeps an ID copy (as on the board). "✓ ID verified" and the separate Agreement chip are gone from Home.
+"Open the board" sits top right; the panel's summary goes under the title.
