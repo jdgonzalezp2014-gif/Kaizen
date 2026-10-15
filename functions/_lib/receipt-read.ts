@@ -10,7 +10,7 @@ import type { Env } from './db.ts';
 import { askJson, toBase64, type AiFile } from './ai-chain.ts';
 import { driveToken, fileIdFromUrl } from './gdrive.ts';
 import { invItems, openOrders } from './inventory.ts';
-import { readReceipt, type Receipt } from '../../src/lib/receipt.ts';
+import { aliasKey, readReceipt, type Receipt } from '../../src/lib/receipt.ts';
 
 // Gemini takes ~20 MB per request in all; base64 adds a third.
 const MAX_BYTES = 12 * 1024 * 1024;
@@ -19,10 +19,13 @@ const SYSTEM = `You read store receipts for a short-term-rental cleaning company
 Answer ONLY JSON: {"store": string|null, "date": "YYYY-MM-DD"|null, "total": number|null, "tax": number|null,
 "lines": [{"text": the product as printed (no price, no quantity), "qty": number|null, "unitPrice": number|null, "amount": number|null (the line's price, negative for a discount),
 "kind": "item"|"tax"|"fee"|"discount"|"other", "itemId": a supply id or null, "sure": true|false, "itemQty": number|null,
-"alternatives": [up to 4 supply ids], "orderId": an open order id or null}]}.
+"alternatives": [up to 4 supply ids], "orderId": an open order id or null,
+"size": the size printed that tells products apart (King, Queen, Twin, Full, 13 gal, 30 gal…) or null — not a weight or a count,
+"name": a short generic name for it as a supply (e.g. "Duvet cover set", "Mattress protector") — no brand, no size}]}.
 Rules: one entry per purchased line; tax, bag fees, deposits, discounts and coupons are their own lines with their kind; subtotal/total/payment lines are NOT lines.
 "itemId" + "sure": true ONLY when the line is clearly that same product (brand names are fine: "Bounty" = paper towels) —
-a different product with a similar use (microfiber cloths vs washcloths) is NOT sure. If unsure, "sure": false, "itemId" null,
+a different product with a similar use (microfiber cloths vs washcloths) is NOT sure; a set of different things (a duvet cover set with
+pillowcases) is NOT sure unless the list has that set; a supply with a size (shown after "—") is sure only for that same size. If unsure, "sure": false, "itemId" null,
 and "alternatives" = the likely supplies. Never invent ids. "itemQty" = how many of the supply's own measure (a 12-pack of rolls bought once = 12 rolls).
 "orderId" only when that order asks for that supply. "total" = what was paid in all, tax included.`;
 
@@ -55,7 +58,8 @@ export async function receiptFiles(sql: SqlFn, env: Env, files: File[], fieldExp
 }
 
 export async function readReceiptFiles(sql: SqlFn, env: Env, files: AiFile[], withOrders: boolean): Promise<ReadResult> {
-  const [items, orders] = await Promise.all([invItems(sql), withOrders ? openOrders(sql) : Promise.resolve([])]);
+  const [items, orders, learned] = await Promise.all([invItems(sql), withOrders ? openOrders(sql) : Promise.resolve([]),
+    sql`SELECT text, item_id::text AS "itemId" FROM inventory_receipt_aliases WHERE account_id = 1` as Promise<{ text: string; itemId: string }[]>]);
   const active = items.filter(i => i.active);
   const name = new Map(active.map(i => [i.id, i.name]));
   const user = `Supplies list (id | name | measure):\n${active.map(i => `${i.id} | ${i.name} | ${i.measure}`).join('\n')}\n\n` +
@@ -63,5 +67,16 @@ export async function readReceiptFiles(sql: SqlFn, env: Env, files: AiFile[], wi
     'Read the attached receipt.';
   const r = await askJson(sql, env, SYSTEM, user, files);
   if (!r.ok) return { ok: false, message: r.error };
-  return { ok: true, receipt: readReceipt(r.json, items, orders), by: r.by };
+  return { ok: true, receipt: readReceipt(r.json, items, orders, new Map(learned.map(a => [a.text, a.itemId]))), by: r.by };
+}
+
+/** The receipt lines a person decided (picked, changed, added as new): next time that text is that supply. */
+export async function learnAliases(sql: SqlFn, by: string, raw: unknown) {
+  const list = (Array.isArray(raw) ? raw : typeof raw === 'string' && raw ? JSON.parse(raw) as unknown[] : []) as { text?: unknown; itemId?: unknown }[];
+  for (const a of list.slice(0, 80)) {
+    const text = aliasKey(String(a.text ?? '')), itemId = Number(a.itemId);
+    if (text.length < 3 || !itemId) continue;
+    await sql`INSERT INTO inventory_receipt_aliases (account_id, text, item_id, by_name) VALUES (1, ${text}, ${itemId}, ${by})
+              ON CONFLICT (account_id, text) DO UPDATE SET item_id = EXCLUDED.item_id, by_name = EXCLUDED.by_name, updated_at = now()`;
+  }
 }

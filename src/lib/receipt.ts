@@ -9,7 +9,9 @@
  * new item, or skips it. Nothing is guessed on the person's behalf.
  */
 
-export interface ReceiptItem { id: string; name: string; measure: string; active?: boolean }
+export interface ReceiptItem { id: string; name: string; measure: string; active?: boolean;
+  /** The name without its size, and the size (King, Queen, 13 gal…) — two items can share a name. */
+  baseName?: string; size?: string | null }
 export interface ReceiptOrder { todoId: string; lines: { itemId: string }[] }
 
 /** Tax, a bag fee, a discount… — on the receipt, never a supply. */
@@ -25,6 +27,8 @@ export interface ReceiptLine {
   candidates: string[];
   /** The open order it fits, if any. */
   orderId: string | null;
+  /** The size printed (King, 13 gal…), and a short generic name for it as a new item. */
+  size: string | null; newName: string | null;
 }
 
 export interface Receipt { store: string | null; date: string | null; total: number | null; tax: number | null; lines: ReceiptLine[] }
@@ -62,6 +66,25 @@ export function similarItems(text: string, items: ReceiptItem[], n = 4): string[
   return scored.slice(0, n).map(x => x.id);
 }
 
+/** A size compared loosely: "King size" = "king", "13 Gal" = "13gal". */
+export const sizeKey = (s: string | null | undefined) => (s ?? '').toLowerCase().replace(/\bsize\b/g, '').replace(/[^a-z0-9]+/g, '');
+/** A receipt line's text as an alias is kept: lower case, single spaces, no prices. */
+export const aliasKey = (text: string) => text.toLowerCase().replace(/\$?\d+\.\d{2}\b/g, '').replace(/\s+/g, ' ').trim().slice(0, 160);
+
+/**
+ * A supply the receipt's size rules out: it has another size, or it has none
+ * while another item of the same name has this one (King ≠ the plain item when
+ * "Mattress protectors — King" exists).
+ */
+export function wrongSize(item: ReceiptItem, size: string | null, items: ReceiptItem[]): boolean {
+  const want = sizeKey(size);
+  if (!want) return false;
+  const has = sizeKey(item.size);
+  if (has) return has !== want;
+  const base = (item.baseName ?? item.name).toLowerCase();
+  return items.some(o => o.id !== item.id && o.active !== false && (o.baseName ?? o.name).toLowerCase() === base && sizeKey(o.size) === want);
+}
+
 /** The one open order that asks for this supply; two or more → none (the person says). */
 export function orderFor(itemId: string | null, orders: ReceiptOrder[], said?: string | null): string | null {
   if (!itemId) return null;
@@ -76,7 +99,7 @@ export function orderFor(itemId: string | null, orders: ReceiptOrder[], said?: s
  * the model's own first, then the look-alikes — and each matched line the open
  * order it fits.
  */
-export function readReceipt(raw: unknown, items: ReceiptItem[], orders: ReceiptOrder[] = []): Receipt {
+export function readReceipt(raw: unknown, items: ReceiptItem[], orders: ReceiptOrder[] = [], aliases: Map<string, string> = new Map()): Receipt {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const known = new Set(items.filter(i => i.active !== false).map(i => i.id));
   const date = typeof r.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(r.date) ? r.date : null;
@@ -86,15 +109,20 @@ export function readReceipt(raw: unknown, items: ReceiptItem[], orders: ReceiptO
     if (!text) return null;
     const said = KINDS.includes(l.kind as LineKind) ? l.kind as LineKind : null;
     const kind: LineKind = said ?? (NOT_ITEM.test(text) ? 'other' : 'item');
-    const id = l.itemId == null ? null : String(l.itemId);
-    const sure = kind === 'item' && l.sure === true && id != null && known.has(id);
+    const size = typeof l.size === 'string' && l.size.trim() ? l.size.trim().slice(0, 30) : null;
+    const byId = (x: string | null) => x ? items.find(i => i.id === x) : undefined;
+    // A person decided this text before: their supply wins over the model's.
+    const learned = kind === 'item' ? aliases.get(aliasKey(text)) : undefined;
+    const id = learned && known.has(learned) ? learned : l.itemId == null ? null : String(l.itemId);
+    const sure = kind === 'item' && (id === learned || l.sure === true) && id != null && known.has(id) && !wrongSize(byId(id)!, size, items);
     const itemId = sure ? id : null;
-    const own = (Array.isArray(l.alternatives) ? l.alternatives : []).map(String).concat(id && !sure ? [id] : [])
-      .filter(a => known.has(a));
-    const candidates = kind !== 'item' || itemId ? [] : [...new Set([...own, ...similarItems(text, items)])].slice(0, 4);
+    const own = (id && !sure ? [id] : []).concat((Array.isArray(l.alternatives) ? l.alternatives : []).map(String))
+      .filter(a => known.has(a) && !wrongSize(byId(a)!, size, items));
+    const candidates = kind !== 'item' || itemId ? [] : [...new Set([...own, ...similarItems(`${text} ${size ?? ''}`, items, 8).filter(c => !wrongSize(byId(c)!, size, items))])].slice(0, 4);
     const qty = num(l.qty), itemQty = num(l.itemQty);
     return { text, qty, unitPrice: num(l.unitPrice), amount: num(l.amount), kind, itemId, itemQty: itemQty && itemQty > 0 ? itemQty : qty,
-             candidates, orderId: orderFor(itemId, orders, l.orderId == null ? null : String(l.orderId)) };
+             candidates, orderId: orderFor(itemId, orders, l.orderId == null ? null : String(l.orderId)), size,
+             newName: typeof l.name === 'string' && l.name.trim() ? l.name.trim().slice(0, 80) : null };
   }).filter((l): l is ReceiptLine => !!l);
   return { store: typeof r.store === 'string' && r.store.trim() ? r.store.trim().slice(0, 80) : null, date,
            total: num(r.total), tax: num(r.tax), lines };

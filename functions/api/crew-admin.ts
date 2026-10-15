@@ -29,6 +29,7 @@ import { todayIn } from '../../src/lib/dates.ts';
 import { rateFor } from '../../src/lib/operations.ts';
 import { opsConfig } from '../_lib/ops.ts';
 import { decideFieldExpense, pendingFieldExpenses, syncCleaningCosts } from '../_lib/field-costs.ts';
+import { learnAliases } from '../_lib/receipt-read.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
 import { getCredentials } from '../_lib/accounts.ts';
 
@@ -110,6 +111,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     let f: Awaited<ReturnType<typeof decideFieldExpense>>;
     try { f = await decideFieldExpense(sql, String(body.id ?? ''), status, note || null, who.email, body.lines); }
     catch (e) { return refuse(409, 'already_decided', e instanceof Error ? e.message : String(e)); }
+    // The receipt lines the team decided while recording it (✨ Read receipt) are learned for the next receipt.
+    if (status === 'approved' && body.aliases) await learnAliases(sql, who.email, body.aliases).catch(() => {});
     // §137: a handyman's charge decided → the repair's cost follows, and its expense if it is completed.
     if (f.todo_id) await settleRepair(sql, f.todo_id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY)).catch(() => {});
     return Response.json({ ok: true });

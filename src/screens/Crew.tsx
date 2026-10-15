@@ -233,13 +233,13 @@ function Decide({ id, onDone, kind = 'decideExtra', record }: {
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState('');
   const [recording, setRecording] = useState(false);
-  const go = async (status: 'approved' | 'denied', lines?: unknown[]) => {
-    const r = await crewAdminAction({ action: kind, id, status, note, ...(lines ? { lines } : {}) }).catch(e => ({ ok: false as const, message: String(e) }));
+  const go = async (status: 'approved' | 'denied', lines?: unknown[], aliases?: unknown[]) => {
+    const r = await crewAdminAction({ action: kind, id, status, note, ...(lines ? { lines } : {}), ...(aliases?.length ? { aliases } : {}) }).catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
     onDone();
   };
   if (recording && record) return <>
-    <FieldPurchaseLines id={id} {...record} onSave={lines => go('approved', lines)} onCancel={() => setRecording(false)} />
+    <FieldPurchaseLines id={id} {...record} onSave={(lines, aliases) => go('approved', lines, aliases)} onCancel={() => setRecording(false)} />
     {msg && <span className="breach">{msg}</span>}
   </>;
   return (

@@ -15,19 +15,20 @@ import type { Priority } from '../../src/lib/todos.ts';
 
 const FIELD_PRIORITY = new Set(['urgent', 'high', 'low']);
 import { todayIn, addDays } from '../../src/lib/dates.ts';
-import { needByPlace, orderList, perClean, placeKey, stockLevels, toOrder, unitUses, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
+import { itemLabel, needByPlace, orderList, perClean, placeKey, stockLevels, toOrder, unitUses, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
 import { supplyPlaces } from './unit-access.ts';
 
 const TZ = 'America/New_York';
 const WINDOW_DAYS = 60, AHEAD_DAYS = 14;
 
 export async function invItems(sql: SqlFn): Promise<InvItem[]> {
-  const rows = await sql`SELECT id::text, name, category, measure, per_clean::float AS per_clean, reorder_at::float AS reorder_at, active, kind, buy_options
-                           FROM inventory_items WHERE account_id = 1 ORDER BY active DESC, kind DESC, category, lower(name)` as
-    { id: string; name: string; category: string; measure: string; per_clean: number | null; reorder_at: number | null; active: boolean;
+  const rows = await sql`SELECT id::text, name, size, category, measure, per_clean::float AS per_clean, reorder_at::float AS reorder_at, active, kind, buy_options
+                           FROM inventory_items WHERE account_id = 1 ORDER BY active DESC, kind DESC, category, lower(name), lower(coalesce(size, ''))` as
+    { id: string; name: string; size: string | null; category: string; measure: string; per_clean: number | null; reorder_at: number | null; active: boolean;
       kind: 'supply' | 'furniture'; buy_options: { label: string; url: string }[] | null }[];
-  return rows.map(r => ({ id: r.id, name: r.name, category: r.category, measure: r.measure, perClean: r.per_clean, reorderAt: r.reorder_at, active: r.active,
-                          kind: r.kind, buyOptions: r.buy_options ?? [] }));
+  // `name` is what every screen, order and expense shows — with the size; `baseName` is what is edited.
+  return rows.map(r => ({ id: r.id, name: itemLabel(r.name, r.size), baseName: r.name, size: r.size, category: r.category, measure: r.measure,
+                          perClean: r.per_clean, reorderAt: r.reorder_at, active: r.active, kind: r.kind, buyOptions: r.buy_options ?? [] }));
 }
 
 export async function activeUnits(sql: SqlFn) {
@@ -97,7 +98,7 @@ export async function overview(sql: SqlFn) {
     })
   }));
   const recent = (await sql`
-    SELECT m.id::text, i.name AS item, m.place, u.name AS unit, m.kind, m.qty::float AS qty, m.note, m.by_name AS "byName",
+    SELECT m.id::text, concat_ws(' — ', i.name, i.size) AS item, m.place, u.name AS unit, m.kind, m.qty::float AS qty, m.note, m.by_name AS "byName",
            m.source, m.photos, to_char(m.created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS at
       FROM inventory_moves m JOIN inventory_items i ON i.id = m.item_id
       LEFT JOIN units u ON u.account_id = m.account_id AND u.id = m.unit_id
@@ -401,15 +402,16 @@ export async function saveSettings(sql: SqlFn, by: string, place: unknown, raw: 
   const plan = list.map(e => {
     const it = items.find(i => i.id === String(e.itemId));
     if (!it) throw new Error('Which item?');
-    const name = e.name === undefined ? it.name : String(e.name).trim().slice(0, 120);
+    const base = it.baseName ?? it.name;
+    const name = e.name === undefined ? base : String(e.name).trim().slice(0, 120);
     const measure = e.measure === undefined ? it.measure : String(e.measure).trim().slice(0, 20) || 'unit';
     const perClean = e.perClean === undefined ? it.perClean : e.perClean === '' ? null : Number(e.perClean);
     if (!name) throw new Error('An item needs a name.');
     if (perClean !== null && !(perClean >= 0)) throw new Error('Amounts are numbers, 0 or more.');
-    if (items.some(o => o.id !== it.id && o.name.toLowerCase() === name.toLowerCase())) throw new Error(`There is already an item called "${name}".`);
+    if (items.some(o => o.id !== it.id && o.name.toLowerCase() === itemLabel(name, it.size).toLowerCase())) throw new Error(`There is already an item called "${itemLabel(name, it.size)}".`);
     return { it, name, measure, perClean, min: e.min };
   });
-  for (const x of plan) if (x.name !== x.it.name || x.measure !== x.it.measure || x.perClean !== x.it.perClean)
+  for (const x of plan) if (x.name !== (x.it.baseName ?? x.it.name) || x.measure !== x.it.measure || x.perClean !== x.it.perClean)
     await sql`UPDATE inventory_items SET name = ${x.name}, measure = ${x.measure}, per_clean = ${x.perClean}, updated_at = now() WHERE account_id = 1 AND id = ${Number(x.it.id)}`;
   const mins = plan.filter(x => x.min !== undefined).map(x => ({ itemId: x.it.id, qty: x.min }));
   if (mins.length) await setMins(sql, by, place, mins);
@@ -434,14 +436,16 @@ export async function newItem(sql: SqlFn, b: Record<string, unknown>) {
   const name = String(b.name ?? '').trim().slice(0, 120);
   const measure = String(b.measure ?? 'unit').trim().slice(0, 20) || 'unit';
   const category = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'].includes(String(b.category)) ? String(b.category) : 'other';
+  const size = String(b.size ?? '').trim().slice(0, 30) || null;
   if (!name) throw new Error('An item needs a name.');
-  const [had] = await sql`SELECT id::text, active FROM inventory_items WHERE account_id = 1 AND lower(name) = lower(${name})` as { id: string; active: boolean }[];
+  const [had] = await sql`SELECT id::text, active FROM inventory_items WHERE account_id = 1 AND lower(name) = lower(${name})
+                             AND lower(coalesce(size, '')) = lower(${size ?? ''})` as { id: string; active: boolean }[];
   if (had) {
     // Switched off once: switched back on rather than refused.
     if (!had.active) await sql`UPDATE inventory_items SET active = true, updated_at = now() WHERE id = ${Number(had.id)}`;
     return had.id;
   }
-  const [r] = await sql`INSERT INTO inventory_items (account_id, name, category, measure) VALUES (1, ${name}, ${category}, ${measure}) RETURNING id::text` as { id: string }[];
+  const [r] = await sql`INSERT INTO inventory_items (account_id, name, size, category, measure) VALUES (1, ${name}, ${size}, ${category}, ${measure}) RETURNING id::text` as { id: string }[];
   return r!.id;
 }
 

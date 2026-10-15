@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { linesTotal, orderFor, receiptSum, readReceipt, similarItems, splitTotal, words, type ReceiptItem } from './receipt.ts';
+import { aliasKey, linesTotal, orderFor, receiptSum, wrongSize, readReceipt, similarItems, splitTotal, words, type ReceiptItem } from './receipt.ts';
 
 const ITEMS: ReceiptItem[] = [
   { id: '1', name: 'Toilet paper', measure: 'roll' }, { id: '2', name: 'Paper towels', measure: 'roll' },
@@ -33,7 +33,7 @@ test('readReceipt: a sure, existing supply is matched; anything else is a doubt 
   assert.equal(r.store, 'Costco'); assert.equal(r.date, '2026-10-12'); assert.equal(r.total, 54.3); assert.equal(r.tax, 3.1);
   assert.equal(r.lines.length, 5);
   assert.equal(r.lines[0]!.itemId, '1'); assert.equal(r.lines[0]!.itemQty, 30); assert.deepEqual(r.lines[0]!.candidates, []);
-  assert.equal(r.lines[1]!.itemId, null); assert.deepEqual(r.lines[1]!.candidates.slice(0, 2), ['1', '2']);
+  assert.equal(r.lines[1]!.itemId, null); assert.deepEqual(r.lines[1]!.candidates.slice(0, 2), ['2', '1']);
   assert.equal(r.lines[2]!.itemId, null);
   assert.equal(r.lines[3]!.itemId, null);
   assert.equal(r.lines[4]!.kind, 'other'); assert.deepEqual(r.lines[4]!.candidates, []);
@@ -74,4 +74,34 @@ test('receiptSum: every line, plus the tax when no line carries it', () => {
   assert.equal(receiptSum({ tax: 1.5, lines: [l(10), l(0.1, 'fee')] as never }), 11.6);
   assert.equal(receiptSum({ tax: 1.5, lines: [l(10), l(1.5, 'tax')] as never }), 11.5);
   assert.equal(receiptSum({ tax: null, lines: [] }), 0);
+});
+
+const BED: ReceiptItem[] = [
+  { id: 'p', name: 'Mattress protector', baseName: 'Mattress protector', size: null, measure: 'unit' },
+  { id: 'pk', name: 'Mattress protector — King', baseName: 'Mattress protector', size: 'King', measure: 'unit' },
+  { id: 'pq', name: 'Mattress protector — Queen', baseName: 'Mattress protector', size: 'Queen', measure: 'unit' },
+];
+
+test('wrongSize: another size, or no size when a sized twin exists', () => {
+  assert.equal(wrongSize(BED[2]!, 'King size', BED), true);
+  assert.equal(wrongSize(BED[1]!, 'king', BED), false);
+  assert.equal(wrongSize(BED[0]!, 'King', BED), true);
+  assert.equal(wrongSize(BED[0]!, 'Twin', BED), false);
+  assert.equal(wrongSize(BED[2]!, null, BED), false);
+});
+
+test('readReceipt: the size decides — a wrong-size match is a doubt with the right size first', () => {
+  const r = readReceipt({ lines: [{ text: 'King Size Mattress Protector', size: 'King', itemId: 'pq', sure: true, name: 'Mattress protector' }] }, BED);
+  assert.equal(r.lines[0]!.itemId, null);
+  assert.equal(r.lines[0]!.candidates[0], 'pk');
+  assert.ok(!r.lines[0]!.candidates.includes('pq'));
+  assert.equal(r.lines[0]!.size, 'King'); assert.equal(r.lines[0]!.newName, 'Mattress protector');
+  assert.equal(readReceipt({ lines: [{ text: 'KING PROTECTOR', size: 'King', itemId: 'pk', sure: true }] }, BED).lines[0]!.itemId, 'pk');
+});
+
+test('readReceipt: a learned alias wins over the model and needs no "sure"', () => {
+  const aliases = new Map([[aliasKey('UTOPIA DUVET SET  $89.24'), 'pq']]);
+  assert.equal(aliasKey('UTOPIA DUVET SET  $89.24'), 'utopia duvet set');
+  const r = readReceipt({ lines: [{ text: 'Utopia duvet set', itemId: 'p', sure: false }] }, BED, [], aliases);
+  assert.equal(r.lines[0]!.itemId, 'pq');
 });

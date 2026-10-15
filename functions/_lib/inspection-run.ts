@@ -240,7 +240,7 @@ export async function addFinding(sql: SqlFn, who: string, b: Record<string, unkn
   // §150: a purchase can be a supply from the list (🔍) and how many — it goes on the order filled in.
   let supply: { id: number; name: string } | undefined, supplyQty: number | null = null;
   if (outcome === 'purchase' && b.supplyId) {
-    [supply] = await sql`SELECT id, name FROM inventory_items WHERE account_id = 1 AND id = ${Number(b.supplyId)} AND active` as { id: number; name: string }[];
+    [supply] = await sql`SELECT id, concat_ws(' — ', name, size) AS name FROM inventory_items WHERE account_id = 1 AND id = ${Number(b.supplyId)} AND active` as { id: number; name: string }[];
     if (!supply) throw new Error('Which item?');
     supplyQty = Math.ceil(Number(b.supplyQty) || 1);
     if (supplyQty < 1 || supplyQty > 10000) throw new Error('How many?');

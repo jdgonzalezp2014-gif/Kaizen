@@ -529,9 +529,9 @@ class Kaizen {
       // Owner, Oct 2026: Slack shows what Kaizen does — the activity log's latest lines and the purchase order.
       this.sql`SELECT body, created_by, created_at FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id} AND kind <> 'note'
                 ORDER BY created_at DESC, id DESC LIMIT 3` as Promise<{ body: string; created_by: string | null; created_at: string }[]>,
-      this.sql`SELECT i.name, sum((l->>'qty')::numeric)::int AS qty FROM inventory_orders o CROSS JOIN jsonb_array_elements(o.lines) l
+      this.sql`SELECT concat_ws(' — ', i.name, i.size) AS name, sum((l->>'qty')::numeric)::int AS qty FROM inventory_orders o CROSS JOIN jsonb_array_elements(o.lines) l
                  JOIN inventory_items i ON i.account_id = o.account_id AND i.id::text = l->>'itemId'
-                WHERE o.account_id = 1 AND o.todo_id::text = ${id} GROUP BY i.name ORDER BY i.name` as Promise<{ name: string; qty: number }[]>
+                WHERE o.account_id = 1 AND o.todo_id::text = ${id} GROUP BY i.name, i.size ORDER BY 1` as Promise<{ name: string; qty: number }[]>
     ]);
     const line = (u: { body: string; created_by: string | null; created_at: string }) =>
       ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short });

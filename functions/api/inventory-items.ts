@@ -1,7 +1,7 @@
 /**
  * /api/inventory-items — the supplies catalog (§134).
  *
- *   POST { action: 'save', id?, name, category, measure, perClean?, reorderAt?, active?, kind?, buyOptions? }
+ *   POST { action: 'save', id?, name, size?, category, measure, perClean?, reorderAt?, active?, kind?, buyOptions? }
  *        kind 'supply' | 'furniture' (§150); buyOptions [{ label, url }] — where to buy it
  *   POST { action: 'delete', id }        switched off, never erased: the moves name it
  *   POST { action: 'lowStock', on }      §150: a "Low stock at <place>" to-do on its own, or not
@@ -27,6 +27,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const num = (v: unknown) => v === '' || v == null ? null : Number(v);
   if (b.action === 'save') {
     const name = String(b.name ?? '').trim().slice(0, 120);
+    // Owner, 2026-10-14: King and Queen are two items of one name — the size tells them apart.
+    const size = String(b.size ?? '').trim().slice(0, 30) || null;
     const category = String(b.category ?? 'other');
     const measure = String(b.measure ?? 'unit').trim().slice(0, 20) || 'unit';
     const perClean = num(b.perClean), reorderAt = num(b.reorderAt);
@@ -39,13 +41,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (buy.some(o => !/^https?:\/\/\S+$/i.test(o.url))) return bad('Each buying option needs a link that starts with https://');
     const buyJson = JSON.stringify(buy.map(o => ({ label: o.label || new URL(o.url).hostname.replace(/^www\./, ''), url: o.url })));
     try {
-      if (b.id) await sql`UPDATE inventory_items SET name = ${name}, category = ${category}, measure = ${measure}, per_clean = ${perClean},
+      if (b.id) await sql`UPDATE inventory_items SET name = ${name}, size = ${size}, category = ${category}, measure = ${measure}, per_clean = ${perClean},
                                  kind = ${kind}, buy_options = ${buyJson}::jsonb,
                                  reorder_at = ${reorderAt}, active = ${b.active !== false}, updated_at = now()
                            WHERE account_id = 1 AND id = ${Number(b.id)}`;
-      else await sql`INSERT INTO inventory_items (account_id, name, category, measure, per_clean, reorder_at, kind, buy_options)
-                     VALUES (1, ${name}, ${category}, ${measure}, ${perClean}, ${reorderAt}, ${kind}, ${buyJson}::jsonb)`;
-    } catch { return bad(`There is already an item called "${name}".`); }
+      else await sql`INSERT INTO inventory_items (account_id, name, size, category, measure, per_clean, reorder_at, kind, buy_options)
+                     VALUES (1, ${name}, ${size}, ${category}, ${measure}, ${perClean}, ${reorderAt}, ${kind}, ${buyJson}::jsonb)`;
+    } catch { return bad(`There is already an item called "${size ? `${name} — ${size}` : name}".`); }
   } else if (b.action === 'delete') {
     await sql`UPDATE inventory_items SET active = false, updated_at = now() WHERE account_id = 1 AND id = ${Number(b.id)}`;
   } else if (b.action === 'assign') {

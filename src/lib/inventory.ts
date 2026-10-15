@@ -19,10 +19,15 @@
 export type MoveKind = 'count' | 'used' | 'purchase' | 'adjust' | 'missing' | 'taken';
 export const CATEGORIES = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'] as const;
 
+/** How an item reads everywhere: its name, and its size when it has one. */
+export const itemLabel = (name: string, size?: string | null) => size ? `${name} — ${size}` : name;
+
 export interface InvItem {
   id: string; name: string; category: string; measure: string; perClean: number | null; reorderAt: number | null; active: boolean;
   /** §150: 'supply' is consumed by cleans (what cleaners take); 'furniture' is the house's things (counted only). */
   kind?: 'supply' | 'furniture';
+  /** Owner, 2026-10-14: a size tells two items of one name apart; `name` then reads "Name — Size", `baseName` is the name alone. */
+  baseName?: string; size?: string | null;
   /** Where to buy it. */
   buyOptions?: { label: string; url: string }[];
 }

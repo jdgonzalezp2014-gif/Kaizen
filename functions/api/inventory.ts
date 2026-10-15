@@ -17,6 +17,8 @@
  *   POST { action: 'purchase', lines, total, todoId?, note?, paidBy?, date? } + receipt  what was BOUGHT: stock per place + one Restock expense
  *   POST { action: 'purchase', splits: [{ todoId?, lines, total }], … } + receipt  one receipt, several orders: a purchase each
  *   POST { action: 'readReceipt', orders? } + receipt (or fieldExpenseId)   ✨ the AI reads it — the form is filled in, nothing saved
+ *        (a purchase's `aliases` [{ text, itemId }] = receipt lines a person decided: learned for the next receipt)
+ *   POST { action: 'newItem', name, size?, … }                         a supply added on the spot (also from a receipt line)
  *
  * GET with `operations`, POST with `operations.edit` (roles.ts). To-dos made
  * here are mirrored to Hostaway after the response.
@@ -26,7 +28,7 @@ import { commentToThread } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { createOrder, fieldPhotos, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
-import { readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
+import { learnAliases, readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -68,6 +70,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, 'inventory purchase');
       const todoIds = split ? (await recordPurchases(sql, who.email, b, photos)).todoIds
                             : (await recordPurchase(sql, who.email, b, photos), b.todoId ? [String(b.todoId)] : []);
+      await learnAliases(sql, who.email, b.aliases).catch(() => {});
       // Owner, Oct 2026: an order's news is told in its to-do's Slack thread — what was bought, and for how much.
       for (const id of todoIds) {
         const [n] = await sql`SELECT body FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id} AND kind = 'note'

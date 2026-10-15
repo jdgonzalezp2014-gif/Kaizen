@@ -41,7 +41,7 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   `TaskPurchase` (to-do) and `FieldPurchaseLines` (cleaner's purchase); `sendPurchase` posts it. Server
   `functions/_lib/receipt-read.ts` (`receiptFiles`, `readReceiptFiles`), `askJson(…, files)` in `ai-chain.ts` (Gemini
   `inlineData`); `recordPurchase` = `checkPurchase` + `writePurchase`, `recordPurchases` (splits); pure `src/lib/receipt.ts`
-  (readReceipt, similarItems, orderFor, receiptSum, splitTotal).
+  (readReceipt, similarItems, orderFor, receiptSum, splitTotal, sizeKey, aliasKey, wrongSize).
 - Script: `scripts/whatsapp-cleanings.mjs` (crew chat history, one-off).
 
 ## Tables
@@ -53,7 +53,7 @@ rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `ema
 `cleanings.flag_note/flagged_by/at`, `cleaning_extras` (+ `cleaning_extra_files`), `crew_declines`,
 `crew_schedule_confirms` (snapshot jsonb), `accounts.ops_rules` / `ops_mode`, `stay_notes`, `inspections`,
 `extra_inspectors`, `host_note_pushes`, `stay_time_pushes` (078, 080), `inventory_items`, `inventory_moves` (057; kind `taken` 061; `place` 068, `purchase_id` 069),
-`inventory_place_mins` (068), `inventory_orders`, `inventory_purchases` (069), `todos.clean_key` (069) + `clean_group` (070), `inspection_checks.supply_id/qty` (069),
+`inventory_place_mins` (068), `inventory_orders`, `inventory_purchases` (069), `inventory_items.size` + `inventory_receipt_aliases` (085), `todos.clean_key` (069) + `clean_group` (070), `inspection_checks.supply_id/qty` (069),
 `accounts.field_reports_folder`, `clean_links` (058), `clean_records` (+ `supplies_at/by/none` 061) / `clean_photos` /
 `clean_marks`, `accounts.clean_photos_folder` (059), `clean_slack_posts` (060). (057's `cleaners.report_token_*`
 were dropped in 058.)
@@ -505,3 +505,15 @@ key had no SOPs.
   ✨ (nothing leaves the browser). Tested 2026-10-14 locally with a generated store receipt (JPG + PDF; no real store
   receipt was at hand), nothing recorded: 9/10 lines matched, microfiber cloths → doubt, extinguisher → Napa's order #69.
   Open: test with a real phone photo of a receipt; a cleaner's approval was not exercised in the browser.
+- **Sizes, several receipts, learned lines (owner, 2026-10-14, 085):** `inventory_items.size` — one item per size, same name
+  (unique on name + size); `invItems` returns `name` = "Name — Size" (`itemLabel`, so every screen, order, expense and the
+  crew page show it), `baseName`/`size` for editing (Items list → Size column; ✎ Edit settings edits the base name).
+  The AI returns each line's `size` and a short generic `name`; `wrongSize` (pure) never matches another size, nor the
+  plain item when a sized twin exists. A doubt's "+ Add" has name + size filled in. A line a person decides is learned in
+  `inventory_receipt_aliases` (`aliasKey` text → item; sent as `aliases` with the purchase or the field approval) and wins
+  over the model next time. **More than one receipt per purchase:** 📎 adds files; "✨ Read the new receipt" reads only the
+  unread ones and ADDS lines and total (note "A + B" while untouched; the first date stays); "Read it again" restarts from
+  the lines before the first read. Lines show "qty × unit price". Instructions moved behind "?" (to-do order, cleaner's
+  approval, split). Tested locally 2026-10-14 with two generated receipts (store + online order): totals added, King /
+  Queen shown, bundle and King protector asked. flash-lite still marked microfiber → washcloths sure once — the learned
+  lines fix it after the first correction.
