@@ -1476,8 +1476,16 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 /* §89: today and tomorrow on Home; the agreement and the ID per arrival. */
 .home-day + .home-day { margin-top: 10px; }
 .home-day h4 { margin: 0 0 2px; font-size: var(--fs-caption); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 650; }
-.home-docs { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 2px 8px; white-space: nowrap; font-size: var(--fs-footnote); }
-.home-docs .doc-ok { color: var(--good); font-weight: 600; }
+/* An arrival is two lines in one grid, like the board's row: unit · guest ↗ / stay facts, pills at the right. */
+.home-list li { align-items: center; padding: 6px 0; }
+.home-time { flex-basis: 64px; padding-top: 0; }
+.home-arrival { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 8px; }
+.home-who { grid-column: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home-meta { grid-column: 1; min-width: 0; }
+.home-guest { color: var(--ink); }
+.home-docs { grid-column: 2; grid-row: 1 / span 2; display: inline-flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 3px 4px; max-width: 220px; }
+.home-docs .ops-flag { margin: 0; }
+.home-docs .ops-flag.ops-doc.missing { border-width: 1px; }
 .home-ready { font-size: var(--fs-footnote); }
 
 /* §90: the reservation in Hostaway, and the ID to Drive from Home. */
@@ -1520,7 +1528,8 @@ button.link.lane-add, button.link.home-more { opacity: 1; }
   /* An arrival's flags go under the guest, not beside it: side by side
      squeezed the guest into a one-word column. */
   .home-list li { flex-wrap: wrap; }
-  .home-list li > .home-docs { flex: 1 1 100%; max-width: none; justify-content: flex-start; margin-left: 84px; }
+  .home-arrival { grid-template-columns: 1fr; }
+  .home-docs { grid-column: 1; grid-row: auto; justify-content: flex-start; max-width: none; margin-top: 3px; }
 }
 
 /* ══ §92: SOPs — the library, the reader, the editor, each screen's button ══ */
@@ -2448,7 +2457,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
    grid, the same height side by side — so the eye is not dragged across a 1440 px screen. */
 @media (min-width: 721px) { .home { max-width: 1120px; margin: 0 auto; } }
 /* A phone reads Home; uploading documents and opening Hostaway are desk work. */
-@media (max-width: 720px) { .home .home-upload, .home .home-hostaway { display: none; } }
+@media (max-width: 720px) { .home .home-upload { display: none; } }
 
 /* §159 (owner, 2026-10-14): tablet and desktop navigate from a rail of icons on the left that slides open on
    hover or focus, Operations' views under it, day / night at its foot. The screen is the work alone: no top bar. */
@@ -2554,8 +2563,6 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 @media (min-width: 981px) {
   .home-layout:not(.solo) { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: var(--s-5); }
   .home-side-col { position: sticky; top: var(--s-4); }
-  .home-side-col .home-list li { flex-wrap: wrap; }
-  .home-side-col .home-side { flex-basis: 100%; max-width: none; text-align: left; padding-left: 84px; display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; }
 }
 /* owner, 2026-10-15: the strip and its panel read as one box, the same white as To-dos and level with it —
    not a row of chips floating above a separate card. */

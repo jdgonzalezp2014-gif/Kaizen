@@ -164,12 +164,12 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     const word = kind === 'id' ? 'ID' : 'Agreement';
     if (have[kind]) {
       return have.folderUrl
-        ? <a className="doc-ok" href={have.folderUrl} target="_blank" rel="noreferrer" title={`The ${word.toLowerCase()} is in the reservation's Drive folder`}>✓ {word}</a>
-        : <span className="doc-ok">✓ {word}</span>;
+        ? <a className="ops-flag ops-doc filed" href={have.folderUrl} target="_blank" rel="noreferrer" title={`The ${word.toLowerCase()} is in the reservation's Drive folder`}>✓ {word}</a>
+        : <span className="ops-flag ops-doc filed">✓ {word}</span>;
     }
     const needed = kind === 'id' && needsCopy.has(r.unitId);
     return (
-      <label className={`home-upload ${needed ? '' : 'optional'}`} title={`Upload the ${word.toLowerCase()} to the reservation's Drive folder — or drop the file on this line`}>
+      <label className={`ops-flag ops-doc missing home-upload ${needed ? '' : 'optional'}`} title={`Upload the ${word.toLowerCase()} to the reservation's Drive folder — or drop the file on this line`}>
         {uploading === `${r.resId}:${kind}` ? 'Uploading…' : `⇪ ${word}`}
         <input type="file" accept="image/*,.pdf" className="sr-file" disabled={!!uploading}
                onChange={e => { void upload(r, kind, e.target.files?.[0]); e.target.value = ''; }} />
@@ -182,17 +182,21 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     return (
       <DropRow key={r.resId} enabled={canDocs} label={`${r.unit} · ${r.guest || 'guest'}`} onDrop={(kind, file) => void upload(r, kind, file)}>
         <span className="home-time">{r.time}</span>
-        <span className="home-main"><b>{r.unit}</b> <span className="sub-n">· {r.guest || 'guest'} · {r.nights} night{r.nights === 1 ? '' : 's'}{r.guests ? ` · ${r.guests} guests` : ''}</span>
-          {ready && <span className={`home-ready ${ready.startsWith('▲') ? 'breach' : 'sub-n'}`}> · {ready}</span>}</span>
-        <span className="home-side home-docs">
-          {r.agreement && <span className={signed(r) ? 'doc-ok' : 'breach'}>{signed(r) ? '✓ Signed' : '▲ Not signed'}</span>}
-          {/* Hostaway's own check, only when it says so (§90). */}
-          {r.idVerified && <span className="doc-ok" title="ID verified in Hostaway">✓ ID verified</span>}
-          {/* What Drive holds, and the way to add it (§106). */}
-          {canDocs && docChip(r, 'id')}
-          {canDocs && docChip(r, 'agreement')}
-          <a className="home-hostaway" href={hostawayReservationUrl(r.resId)} target="_blank" rel="noreferrer"
-             title="Open the reservation in Hostaway — the ID and the agreement are there">↗ Hostaway</a>
+        <span className="home-main home-arrival">
+          <span className="home-who"><b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null} <span className="home-guest">{r.guest || 'guest'}</span>
+            {/* Same arrow as the Operations board: the reservation in Hostaway, where the ID and the agreement are. */}
+            {' '}<a className="home-hostaway" href={hostawayReservationUrl(r.resId)} target="_blank" rel="noreferrer"
+                    title="Open the reservation in Hostaway — the ID and the agreement are there">↗</a></span>
+          <span className="home-meta sub-n">{r.nights} night{r.nights === 1 ? '' : 's'}{r.guests ? ` · ${r.guests} guests` : ''}
+            {ready && <span className={ready.startsWith('▲') ? 'breach' : undefined}> · {ready}</span>}</span>
+          <span className="home-docs">
+            {r.agreement && <span className={`ops-flag ops-doc ${signed(r) ? 'filed' : 'missing urgent'}`}>{signed(r) ? '✓ signed' : '▲ not signed'}</span>}
+            {/* Hostaway's own check, only when it says so (§90). */}
+            {r.idVerified && <span className="ops-flag ok" title="ID verified in Hostaway">✓ ID verified</span>}
+            {/* What Drive holds, and the way to add it (§106). */}
+            {canDocs && docChip(r, 'id')}
+            {canDocs && docChip(r, 'agreement')}
+          </span>
         </span>
       </DropRow>
     );

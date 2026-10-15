@@ -50,3 +50,9 @@ UI only; tokens and shared components from `docs/design-system.md`.
   on the label) and the label is a dashed pill (amber when the building needs the copy, muted when optional),
   36 px tall on a phone. Drag-and-drop on the row is unchanged.
 - Signed / Not signed / ID verified already carried a word + shape; unchanged.
+
+## Home check-ins density (2026-10-15)
+
+Arrival rows now match the board: one grid, line 1 `unit BR guest ↗`, line 2 stay facts, pills (`ops-flag ops-doc`
+filed/missing, same as Operations) at the right. The "↗ Hostaway" text link is just `↗` beside the guest. The
+rail override that pushed every `.home-side` (cleaner · price) under the unit is gone, so check-outs are one line.
