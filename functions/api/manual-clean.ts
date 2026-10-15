@@ -5,6 +5,7 @@
  *   POST { action: 'create', unitId, date, kind, reservationId?, cleaner?, deep?, note? }
  *        kind: 'early_departure' | 'mid_stay' | 'extra'
  *   POST { action: 'cancel', key }
+ *   POST { action: 'update', key, cleaner?, deep?, note?, date? }   (§159; not the day of an early departure)
  *
  * A manual clean is a row in the cleanings record (key MAN-<n>), paid like
  * any other at the cleaner's rate for the unit's size.
@@ -93,6 +94,35 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     }
     if (cfg.mode === 'live' && restored) syncInBackground(sql, env, waitUntil, row.for_reservation!);
     return Response.json({ ok: true, restored });
+  }
+
+  // §159 (owner, 2026-10-14: "the mid-stay and other cleans can't be fixed"): who, deep, the note and — except an
+  // early departure, whose day is its stay's — the day. The price follows the cleaner and deep as on create; when
+  // neither changes, a price corrected through a flag stays as it is.
+  if (b.action === 'update') {
+    const key = String(b.key ?? '');
+    if (!/^MAN-\d+$/.test(key)) return bad('Which manual clean?');
+    const row = (await sql`SELECT kind, cleaner, deep, beds, checkout_on::text AS day, reservation_note FROM cleanings
+                            WHERE account_id = 1 AND key = ${key} AND void_reason IS NULL`)[0] as
+      { kind: string; cleaner: string | null; deep: boolean; beds: number | null; day: string; reservation_note: string | null } | undefined;
+    if (!row) return bad('That clean is cancelled, or gone.');
+    const cleaner = b.cleaner === undefined ? row.cleaner : (b.cleaner ? String(b.cleaner) : null);
+    const deep = b.deep === undefined ? row.deep : b.deep === true;
+    const note = b.note === undefined ? row.reservation_note : (typeof b.note === 'string' ? b.note.trim().slice(0, 500) || null : null);
+    const date = b.date === undefined ? row.day : String(b.date);
+    if (!DAY.test(date)) return bad('Which day?');
+    if (date !== row.day && row.kind === 'early_departure') return bad('An early departure is tied to its stay — cancel it and add it again on the right day.');
+    if (cleaner && cleaner !== row.cleaner && !cfg.roster.some(c => c.active && c.name === cleaner)) return bad(`"${cleaner}" is not on the active roster.`);
+    const repriced = cleaner !== row.cleaner || deep !== row.deep;
+    const changed = [cleaner !== row.cleaner && `cleaner ${row.cleaner ?? 'none'} → ${cleaner ?? 'none'}`, deep !== row.deep && (deep ? 'deep' : 'not deep'),
+                     date !== row.day && `day ${row.day} → ${date}`, note !== row.reservation_note && 'note'].filter(Boolean).join(', ');
+    if (!changed) return Response.json({ ok: true });
+    await sql`UPDATE cleanings SET cleaner = ${cleaner}, assignment = ${cleaner ? 'assigned' : 'tbd'}, deep = ${deep},
+                     price = CASE WHEN ${repriced} THEN ${rateFor(cfg.roster, cleaner, row.beds, deep)} ELSE price END,
+                     reservation_note = ${note}, checkout_on = ${date}, imported_at = now(),
+                     decided_by = ${`manual:${who.email} (changed: ${changed})`}
+               WHERE account_id = 1 AND key = ${key} AND void_reason IS NULL`;
+    return Response.json({ ok: true });
   }
 
   if (b.action !== 'create') return bad('Unknown action.');

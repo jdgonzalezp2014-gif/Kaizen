@@ -529,3 +529,10 @@ UI only; tokens and shared components from `docs/design-system.md`.
 - Phone: Operations' eight views keep scrolling sideways (they cannot fit 390), with a faded right edge.
 - Open: the crew page's unit title is large on a phone (title1, 28 px) — kept, it is what the cleaner
   scans for; revisit with a cleaner if it wraps on long unit names.
+- **Round 2 (§159):** inspection repairs: one work order with a smaller **work order** per repair inside (were "task"
+  sub-tasks) and no "Assign and schedule" (the empty Owner says it). Board and Home: inspection / same-day / deep are
+  icons with the word on hover (`IconFlag`, Hint.tsx); the rule's reasoning in an open row is behind "The rule says X"
+  (Peek); a flag's explanation behind a "?"; "n to-dos / work orders" open Operations → To-do filtered by that unit
+  (`kaizen:work-for` event → `WorkView unit`). **Manual cleans can be changed** (owner: "mid-stay cleans can't be fixed"):
+  `/api/manual-clean` `update` (cleaner, deep, note, day — not an early departure's day), price re-rated only when the
+  cleaner or deep change; "Change…" on the row. Old "Assign and schedule" sub-tasks already in production stay as they are.

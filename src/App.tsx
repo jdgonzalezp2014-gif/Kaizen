@@ -219,18 +219,8 @@ function TeamApp() {
             argument about, and a slogan nobody reads is pure vertical
             space on a screen whose job is a list. */}
         <div className="brand"><span className="brand-mark" aria-hidden="true" /><h1>Kaizen OS</h1></div>
-        <nav ref={navRef} aria-label="Sections">
-          {/* Nothing until the role is known. A tab that appears and then
-              vanishes has already told the reader it exists. */}
-          {allowed?.map(t => {
-            const label = TABS.find(x => x[0] === t)?.[1];
-            return label ? (
-              <button key={t} className={tab === t ? 'tab active' : 'tab'} aria-current={tab === t ? 'page' : undefined}
-                      onClick={() => setTab(t as Tab)}>{label}</button>
-            ) : null;
-          })}
-        </nav>
-        <ThemeToggle />
+        <DeskNav tabs={(allowed ?? []).filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab} navRef={navRef} />
+        <span className="phone-theme"><ThemeToggle /></span>
       </header>}
       {!crewOnly && allowed && <TabBar tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab} />}
 
@@ -322,5 +312,49 @@ function TabBar({ tabs, tab, onTab }: { tabs: Tab[]; tab: Tab | null; onTab: (t:
         </Modal>
       )}
     </>
+  );
+}
+
+/**
+ * The desktop's navigation (owner, 2026-10-14 — "like the phone's menu, less noise on top"): the first four
+ * sections with their icons, and "More" — a menu with the rest and day / night. Hidden at 720 px and below,
+ * where the bottom bar does the same job.
+ */
+function DeskNav({ tabs, tab, onTab, navRef }: { tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void; navRef: React.RefObject<HTMLElement> }) {
+  const [open, setOpen] = useState(false);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    addEventListener('mousedown', away); addEventListener('keydown', esc);
+    return () => { removeEventListener('mousedown', away); removeEventListener('keydown', esc); };
+  }, [open]);
+  const shown = tabs.length <= 5 ? tabs : tabs.slice(0, 4);
+  const rest = tabs.length <= 5 ? [] : tabs.slice(4);
+  const label = (t: Tab) => TABS.find(x => x[0] === t)?.[1] ?? t;
+  const restOpen = tab !== null && rest.includes(tab);
+  return (
+    <nav ref={navRef} className="desk-nav" aria-label="Sections">
+      {shown.map(t => (
+        <button key={t} className={tab === t ? 'tab active' : 'tab'} aria-current={tab === t ? 'page' : undefined}
+                onClick={() => onTab(t)}><TabIcon name={t} />{label(t)}</button>
+      ))}
+      <div className="desk-more" ref={box}>
+        <button className={restOpen ? 'tab active' : 'tab'} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+          <TabIcon name={restOpen ? tab! : 'more'} />{restOpen ? label(tab!) : 'More'}<span className="caret" aria-hidden="true">▾</span>
+        </button>
+        {open && (
+          <div className="desk-menu" role="menu">
+            {rest.map(t => (
+              <button key={t} role="menuitem" className={tab === t ? 'more-item active' : 'more-item'} aria-current={tab === t ? 'page' : undefined}
+                      onClick={() => { onTab(t); setOpen(false); }}><TabIcon name={t} /><span>{label(t)}</span></button>
+            ))}
+            <div className="desk-menu-sep" role="separator" />
+            <div className="desk-menu-theme"><ThemeToggle /></div>
+          </div>
+        )}
+      </div>
+    </nav>
   );
 }

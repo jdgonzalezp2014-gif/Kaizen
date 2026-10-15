@@ -58,7 +58,7 @@ test('a task message carries the buttons that act on it', () => {
   // and "Kaizen ↗" led to the front door rather than the task.
   assert.doesNotMatch(s, /task_start|open_kaizen/);
   assert.match(s, /task_open/);
-  assert.match(s, / High · Scheduled/);  // §159: the shared words
+  assert.match(s, / High · Open/);  // §159: the shared words
   const done = JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'completed', priority: 'none' }, 'completed', '').blocks);
   assert.match(done, /task_reopen/);
   assert.doesNotMatch(done, /task_complete/);

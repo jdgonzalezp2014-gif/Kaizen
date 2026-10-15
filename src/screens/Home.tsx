@@ -31,6 +31,7 @@ import { todayIn, addDays } from '../lib/dates.ts';
 import { TodoList, type WorkSum, type WorkTab } from '../components/Todos.tsx';
 import { money, money2 } from '../lib/format.ts';
 import { hostawayReservationUrl, type BoardRow } from '../lib/operations.ts';
+import { IconFlag } from '../components/Hint.tsx';
 import { Icon } from '../components/Icon.tsx';
 
 const TZ = 'America/New_York';
@@ -246,19 +247,16 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
         {/* The day in one line, each figure a door to its screen (§91). Colour
             only where something needs a person; a zero steps back. */}
         <div className="home-pulses">
-          {canOps && <Pulse n={cleans.length} one="clean" many="cleans" busy={ops.busy} onClick={() => onGo('operations')}
+          {/* §159 (owner, 2026-10-14: "this can go"): only what needs a person — the cards below say the rest. */}
+          {canOps && unassigned.length > 0 && <Pulse n={cleans.length} one="clean" many="cleans" busy={ops.busy} onClick={() => onGo('operations')}
                             tone={unassigned.length ? 'bad' : undefined}
                             note={unassigned.length ? `▲ ${unassigned.length} unassigned` : cleans.length ? '✓ all assigned' : ''} />}
-          {canOps && <Pulse n={todays.ins.length} one="check-in" many="check-ins" busy={ops.busy} onClick={() => onGo('operations')}
+          {canOps && unsignedToday > 0 && <Pulse n={todays.ins.length} one="check-in" many="check-ins" busy={ops.busy} onClick={() => onGo('operations')}
                             tone={unsignedToday ? 'warn' : undefined}
                             note={unsignedToday ? `▲ ${unsignedToday} not signed` : todays.ins.length && todays.ins.every(signed) ? '✓ all signed' : ''} />}
-          {canUnits && <Pulse n={red.data?.list.length ?? 0} one="unit in red" many="units in red" busy={red.busy}
-                              onClick={() => onGo('units')} tone={red.data?.list.length ? 'bad' : undefined} />}
-          {canOps && <Pulse n={inspections.length} one="inspection this week" many="inspections this week" busy={ops.busy}
-                            onClick={() => onGo('operations')} />}
           {/* §137 approvals do not surface anywhere else on Home: a $ paid in the field
               is unpaid until a person says yes, and extras do not reach the invoice. */}
-          {canApprove && <Pulse n={approvals.data?.count ?? 0} one="approval waiting" many="approvals waiting"
+          {canApprove && (approvals.data?.count ?? 0) > 0 && <Pulse n={approvals.data?.count ?? 0} one="approval waiting" many="approvals waiting"
                                 busy={approvals.busy} onClick={() => onGo('operations:crew')}
                                 tone={approvals.data?.count ? 'warn' : undefined}
                                 note={approvals.data?.count && can(permissions, 'money') ? `${money(approvals.data.total)} at stake` : ''} />}
@@ -465,9 +463,10 @@ function CleanItem({ r }: { r: BoardRow }) {
       <span className="home-time">{r.time}</span>
       <span className="home-main">
         <b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}
-        {r.urgency === 'turnover' && <span className="ops-flag urgent"><Icon n="zap" /> same-day</span>}
-        {r.deep && <span className="ops-flag deep"><Icon n="brush" /> deep</span>}
-        {(r.inspection.key === 'req' || r.inspection.key === 'due') && <span className="ops-flag req"><Icon n="search" /> inspection</span>}
+        {r.urgency === 'turnover' && <IconFlag tone="attn" icon={<Icon n="zap" />} label="Same-day turnover" detail="The next guest arrives the same day" />}
+        {r.deep && <IconFlag icon={<Icon n="brush" />} label="Deep clean" />}
+        {(r.inspection.key === 'req' || r.inspection.key === 'due') && <IconFlag tone={r.inspection.key === 'req' ? 'attn' : undefined} icon={<Icon n="search" />}
+          label={r.inspection.key === 'req' ? 'Inspection required' : 'Monthly inspection due'} detail={r.inspection.reason} />}
       </span>
       <span className={`home-side ${who?.startsWith('▲') ? 'breach' : ''}`}>
         {who}{r.price != null && <span className="sub-n"> · {money2(r.price)}</span>}

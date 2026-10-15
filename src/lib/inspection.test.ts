@@ -102,7 +102,7 @@ test('one repair keeps its own work order; two or more become ONE, a sub-task pe
   const one = check('3', 2, 'attention', { label: 'Grout', note: 'cracked by the tub', outcome: 'repair', area: 'bathroom', photos: [{ name: 'p', url: 'https://x/p' }] });
   const solo = repairList([one], ctx, titleOf)!;
   assert.equal(solo.title, 'Bathroom: Grout — cracked by the tub');
-  assert.deepEqual(solo.items, [], 'a single repair gets no extra sub-task — "Assign and schedule" is the only one');
+  assert.deepEqual(solo.items, [], 'a single repair is the work order itself — nothing inside it');
   const cs = [one, check('4', 1, 'attention', { label: 'Lock', outcome: 'repair' }), check('5', 1, 'attention', { label: 'Coffee', outcome: 'purchase' })];
   const l = repairList(cs, ctx, titleOf)!;
   assert.equal(l.title, 'Repairs at CL1250: 2 items');

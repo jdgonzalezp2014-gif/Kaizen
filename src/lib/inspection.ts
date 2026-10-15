@@ -149,16 +149,13 @@ export function workFor(c: Check, ctx: { unit: string; date: string; inspector: 
     : { kind: 'task', title: `Buy: ${what}`.slice(0, 300), description: lines.join('\n') };
 }
 
-/** The sub-task every repair from an inspection starts with: nobody is on it yet. */
-export const ASSIGN_SUBTASK = 'Assign and schedule';
-
 /** What a clean is asked to do, from a finding. */
 export const cleanTaskText = (c: Check, sectionTitle: string) =>
   `${sectionTitle}: ${c.note?.trim() ? `${c.label} — ${c.note.trim()}` : c.label}`.slice(0, 500);
 
 /**
- * Every repair of an inspection as ONE work order — unassigned — with one
- * sub-task per item plus "Assign and schedule" (§146, the owner: one visit
+ * Every repair of an inspection as ONE work order — unassigned — with a smaller
+ * work order per item inside it (§146, §159 — the owner: one visit
  * can cover several small fixes; split a repair out afterward if it needs
  * its own vendor). One finding alone keeps today's single work order,
  * unchanged — only two or more group.

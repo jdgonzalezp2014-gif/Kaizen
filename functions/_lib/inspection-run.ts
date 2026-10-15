@@ -3,7 +3,7 @@
  * given (a phone that loses signal loses nothing), keep photos in Drive, and
  * at the end turn what needs attention into work.
  *
- *   repair    → a work order, unassigned, with an "Assign and schedule" sub-task
+ *   repair    → a work order, unassigned (two or more: one work order, a smaller one per repair inside)
  *   purchase  → a to-do "Buy: …"
  *   clean_next→ a task on the unit's next clean (board row + the cleaner's page)
  *   clean_new → one new clean for the unit, unassigned, carrying those tasks
@@ -23,7 +23,7 @@ import { eligibleInspectors } from '../../src/lib/operations.ts';
 import { supplyPlaces, unitTypes } from './unit-access.ts';
 import { invItems } from './inventory.ts';
 import {
-  ASSIGN_SUBTASK, areaTitle, checklistFor, cleanTaskText, overallResult, purchaseList, readyToFinish, repairList, roomsOf, suggestedOutcome,
+  areaTitle, checklistFor, cleanTaskText, overallResult, purchaseList, readyToFinish, repairList, roomsOf, suggestedOutcome,
   type Area, type AreaDef, type Check, type CheckResult, type InspectionItem, type Outcome, type UnitShape
 } from '../../src/lib/inspection.ts';
 
@@ -369,15 +369,13 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
       RETURNING id::text` as { id: string }[];
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
               VALUES (1, 'task', ${t!.id}, 'status', ${`Work order created from the inspection of ${ins.unit_name} on ${ins.date}${repWork.items.length ? ` — ${repWork.items.length} repairs` : ''}.`}, ${who})`;
+    // §159 (owner, 2026-10-14): each repair is a smaller work order inside the visit's work order — the work
+    // itself, not a to-do about it. No "Assign and schedule" step: the work order's empty Owner and date already
+    // say nobody is on it yet, and the extra to-do was the same job written twice.
     for (const item of repWork.items) {
       await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id, inspection_id)
-                VALUES (1, ${item}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
+                VALUES (1, ${item}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'work_order', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
     }
-    // Nobody is on a repair yet: its first step is to find someone and a day.
-    await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id, inspection_id)
-              VALUES (1, ${ASSIGN_SUBTASK}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
-    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
-              VALUES (1, 'task', ${t!.id}, 'change', ${`Sub-task added: ${ASSIGN_SUBTASK}`}, ${who})`;
     await sql`UPDATE inspection_checks SET todo_id = ${Number(t!.id)} WHERE account_id = 1 AND id = ANY(${reps.map(c => Number(c.id))}::bigint[])`;
     toPush.push(t!.id);
     made.push({ kind: 'repair', title: repWork.title, id: t!.id });

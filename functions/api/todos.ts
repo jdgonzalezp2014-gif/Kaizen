@@ -49,7 +49,8 @@ const CLOSED = ['completed', 'cancelled'];
 const UNSTARTED = ['pending', 'confirmed'];
 const PRIORITIES = ['none', 'low', 'medium', 'high', 'urgent'];
 const STATUS_WORD: Record<string, string> = {
-  pending: 'Pending', confirmed: 'Confirmed', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled'
+  // §159: the timeline speaks the app's words (Hostaway's values stay what is stored).
+  pending: 'Open', confirmed: 'Open · confirmed', in_progress: 'In progress', completed: 'Done', cancelled: 'Cancelled'
 };
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 
@@ -326,6 +327,46 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   if (!before) return Response.json({ ok: false, message: 'That task is gone — someone removed it.' }, { status: 404 });
   const scope = b.claimScope ? String(b.claimScope) : undefined;
 
+  // §159 (owner, 2026-10-14): two to-dos that are the same job become one. Everything that was said and attached
+  // moves to the one that stays; the other closes as cancelled, saying where it went (and Hostaway closes it too).
+  if (b.action === 'merge') {
+    const into = String(b.into ?? '');
+    if (!ID.test(into) || into === id) return bad('Merge into which to-do?');
+    const tgt = (await sql`SELECT id::text, title, parent_id::text AS parent_id, claim_id, status FROM todos
+                           WHERE account_id = 1 AND id = ${into} AND deleted_at IS NULL`)[0] as
+      { id: string; title: string; parent_id: string | null; claim_id: string | null; status: string } | undefined;
+    if (!tgt) return bad('That to-do is gone.');
+    if (CLOSED.includes(tgt.status)) return bad('Reopen it first — work is not merged into a closed to-do.');
+    if (tgt.parent_id === id) return bad('That is inside this one — merge the other way round.');
+    const [kc] = await sql`SELECT count(*)::int AS n FROM todos WHERE account_id = 1 AND parent_id = ${id} AND deleted_at IS NULL` as { n: number }[];
+    const kidsN = kc?.n ?? 0;
+    if (kidsN && tgt.parent_id) return bad('This one has items inside, and the other is itself inside a to-do — merge into its parent instead.');
+    await sql`UPDATE todos SET parent_id = ${into} WHERE account_id = 1 AND parent_id = ${id} AND deleted_at IS NULL`;
+    await sql`UPDATE work_updates SET subject_id = ${into} WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id} AND kind = 'note'`;
+    await sql`UPDATE todo_files SET todo_id = ${Number(into)} WHERE account_id = 1 AND todo_id = ${Number(id)}`;
+    await sql`UPDATE work_photos SET todo_id = ${Number(into)} WHERE account_id = 1 AND todo_id = ${Number(id)}`;
+    await sql`UPDATE inventory_moves SET todo_id = ${Number(into)} WHERE account_id = 1 AND todo_id = ${Number(id)}`;
+    await sql`UPDATE inventory_purchases SET todo_id = ${Number(into)} WHERE account_id = 1 AND todo_id = ${Number(id)}`;
+    await sql`UPDATE inspection_checks SET todo_id = ${Number(into)} WHERE account_id = 1 AND todo_id = ${Number(id)}`;
+    await sql`UPDATE field_expenses SET todo_id = ${Number(into)} WHERE account_id = 1 AND todo_id = ${Number(id)}`;
+    // An order on both: one order with both lists of lines.
+    await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by)
+              SELECT account_id, ${Number(into)}, lines, created_by FROM inventory_orders WHERE account_id = 1 AND todo_id = ${Number(id)}
+              ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = inventory_orders.lines || EXCLUDED.lines`;
+    await sql`DELETE FROM inventory_orders WHERE account_id = 1 AND todo_id = ${Number(id)}`;
+    if (!tgt.claim_id && before.claim_id) await sql`UPDATE todos SET claim_id = ${before.claim_id} WHERE account_id = 1 AND id = ${into}`;
+    if ((before.description ?? '').trim())
+      await sql`UPDATE todos SET description = concat_ws(E'\n\n', NULLIF(description, ''), ${`From “${before.title}”: ${before.description}`}), updated_at = now()
+                WHERE account_id = 1 AND id = ${into}`;
+    await sql`UPDATE todos SET status = 'cancelled', done_at = now(), done_by = ${who.email},
+                               resolution_note = ${`Merged into #${into} — ${tgt.title}`.slice(0, 2000)}, updated_at = now()
+              WHERE account_id = 1 AND id = ${id}`;
+    await note(sql, 'task', into, 'change', `Merged in: “${before.title}” (#${id}) — its comments, files and items are here now`, who.email);
+    await note(sql, 'task', id, 'status', `Merged into #${into} — “${tgt.title}”`, who.email);
+    mirror(id); mirror(into);
+    return Response.json({ ok: true, todos: await list(sql, scope) });
+  }
+
   if (b.action === 'note') {
     const body = typeof b.body === 'string' ? b.body.trim().slice(0, 4000) : '';
     if (!body) return bad('An update needs words.');
@@ -473,6 +514,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   if (changed.length) await note(sql, 'task', id, 'change', changed.join(' · '), who.email);
   await settle(id);
   mirror(id);
+  // §159 (owner, 2026-10-14): something done inside a to-do is work on it — an Open parent moves to In progress,
+  // as the first comment already does (§143). Only on completing, only an unstarted parent, said on its timeline.
+  if (status === 'completed' && before.status !== 'completed' && before.parent_id) {
+    const [par] = await sql`UPDATE todos SET status = 'in_progress', updated_at = now()
+                            WHERE account_id = 1 AND id = ${before.parent_id} AND status = ANY(${UNSTARTED}) AND deleted_at IS NULL
+                            RETURNING id::text, status` as { id: string }[];
+    if (par) {
+      await note(sql, 'task', par.id, 'status', `${STATUS_WORD.pending} → ${STATUS_WORD.in_progress} — “${before.title}” was done`, who.email);
+      mirror(par.id);
+    }
+  }
   // via 'slack-message': done from a button on the channel's own message, which Slack updates in place.
   if (status !== undefined && status !== before.status && b.via !== 'slack-message') {
     if (CLOSED.includes(status)) tell(id, status === 'completed' ? 'completed' : 'cancelled');

@@ -87,6 +87,7 @@ decorative.
 | Component | Class / file | Notes |
 |---|---|---|
 | Shell | `header`, `.brand`, `nav .tab` — `App.tsx` | Sticky with blur (solid under *reduced transparency*). Current tab = white raised segment, `aria-current="page"` |
+| Desktop nav | `DeskNav` in `App.tsx` | Four sections with icons + "More ▾" menu (the rest, day / night) |
 | Phone tab bar | `.tabbar` + `TabBar` in `App.tsx`, icons in `components/TabIcon.tsx` | ≤ 720 px. Up to 5 tabs; more → 4 + **More** (sheet with the rest). Never scrolls sideways. `--tabbar-h` lifts the SOP button, toasts and the minimised SOP sheet |
 | Buttons | `button` (primary), `.secondary`/`.ghost`, `.danger`, `.small`, `.link` | Only these roles get `--control-h`; chips, day cells and row headers keep their own size |
 | Fields | `input`, `select`, `textarea`, `label > input` | Border `--line-strong`, focus = accent border + 3 px ring |
@@ -127,7 +128,7 @@ ochre, order teal, claim violet). Colour is spent only on words: "In progress"/"
 "Purchased" in green, late or urgent in amber.
 
 Life cycle, the same in Kaizen, Slack and the SOPs (`stageOf` / `claimStage` in `src/lib/todos.ts`):
-Scheduled → In progress → Done · Cancelled; a purchase order Ordered → Purchased; a claim Open → In progress →
+Open → In progress → Done · Cancelled (a comment, or something done inside it, starts it); a purchase order Ordered → Purchased; a claim Open → In progress →
 Done (Refunded → "Done · refunded", Dismissed → Cancelled). Hostaway keeps its statuses; only the word changes.
 
 **What opens how** — the rule for every screen:
@@ -135,6 +136,7 @@ Done (Refunded → "Done · refunded", Dismissed → Cancelled). Hostaway keeps 
 | It is… | It opens as | Examples |
 |---|---|---|
 | Detail that explains | **Hover / tap (Peek)** — a short label, the text behind it | "Request from a cleaner", "From Slack", "Details", a reason |
+| A flag | **Icon only, word on hover** (`IconFlag`) | inspection, same-day, deep |
 | A thing you might want more of | **A link that filters** the list, with a "✕" chip to undo | a listing, an owner |
 | A related item you act on | **A pop-up** with its whole card — the list stays where it was | the work order inside a to-do, the claim a repair belongs to |
 | A child of the same kind | **In place**, unfolded under its parent | a sub-task, a smaller work order |

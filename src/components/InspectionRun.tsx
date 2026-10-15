@@ -140,7 +140,7 @@ export function InspectionRun({ id, onClose, canEdit, transport, link = false }:
           {made.length > 0 && <>
             <h3>What it made</h3>
             <ul className="insp-made">{made.map((m, i) => <li key={i}>{ic(m.kind === 'repair' ? '🔧' : m.kind === 'purchase' ? '🛒' : '🧽')} {ic(m.title)}</li>)}</ul>
-            <p className="note">Repairs and purchases are in Operations → To-do (and Hostaway). Each repair starts with “Assign and schedule”.
+            <p className="note">Repairs and purchases are in Operations → To-do (and Hostaway).
               Cleaning tasks show on the board's row and on the cleaner's page.</p>
           </>}
           <div className="button-row"><button onClick={() => onClose(true)}>Close</button></div>
@@ -418,10 +418,10 @@ function Review({ data, tr, onBack, onSave, onPhotos, onFinished }: {
   };
   const count = (f: (c: RunCheck) => boolean) => findings.filter(f).length;
   // §146: one repair becomes its own work order, same as always; two or more become ONE,
-  // nobody on it yet, a sub-task per repair plus "Assign and schedule" — split one out later if it needs its own vendor.
+  // nobody on it yet, a smaller work order per repair inside it — split one out later if it needs its own vendor.
   const repairNote = group.length > 1
-    ? `All ${group.length} become ONE work order — nobody on it yet — a sub-task per repair plus “Assign and schedule”.`
-    : 'Becomes a work order — nobody on it yet — with the sub-task “Assign and schedule”.';
+    ? `All ${group.length} become ONE work order — nobody on it yet — with a smaller work order per repair inside.`
+    : 'Becomes a work order — nobody on it yet.';
   const HEAD: Record<string, [string, string]> = {
     repair: ['🔧 Repairs', repairNote],
     purchase: ['🛒 Purchases', 'All of them become ONE to-do: a shopping list, an item per sub-task to tick off.'],
@@ -452,8 +452,8 @@ function Review({ data, tr, onBack, onSave, onPhotos, onFinished }: {
           {!findings.length ? <p className="banner ok">✓ Nothing needs attention.</p> : (
             <ul className="insp-made">
               {count(c => c.outcome === 'repair') > 0 && <li><Icon n="wrench" /> {ic(count(c => c.outcome === 'repair') === 1
-                ? '1 work order, with “Assign and schedule”'
-                : `1 work order for ${count(c => c.outcome === 'repair')} repairs, with “Assign and schedule”`)}</li>}
+                ? '1 work order'
+                : `1 work order for ${count(c => c.outcome === 'repair')} repairs, one inside it per repair`)}</li>}
               {count(c => c.outcome === 'purchase') > 0 && <li><Icon n="cart" /> 1 to-do: buy {count(c => c.outcome === 'purchase')} item{ic(count(c => c.outcome === 'purchase') === 1 ? '' : 's')}</li>}
               {count(isClean) > 0 && <li><Icon n="brush" /> {ic(cleanMode === 'next' && data.nextClean
                 ? `${count(isClean)} task${count(isClean) === 1 ? '' : 's'} for the next clean (${data.nextClean.date})`

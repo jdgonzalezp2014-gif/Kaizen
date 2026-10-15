@@ -21,7 +21,7 @@ import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
   type Claim, type StayOnDay, type Todo, type WorkUpdate, syncHostawayTasks, getPeople, type Person } from '../api.ts';
 import {
-  KIND_LABEL, PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, CATEGORY_LABEL, categoryOf, sourceOf, stageOf, claimStage, auditCsv, childrenBy, daysTaken, nyParts, outcomeOf, stayLabel,
+  KIND_LABEL, PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, CATEGORY_LABEL, categoryOf, sourceOf, rowTitle, stageOf, claimStage, auditCsv, childrenBy, daysTaken, nyParts, outcomeOf, stayLabel,
   type AuditRow, dueLabel, dueOf, isClosed, isFiltering, matchesFilter,
   progress, shortDay, sortTodos, workCost,
   type Priority, type TaskKind, type TaskStatus, type WorkFilter
@@ -86,8 +86,10 @@ const bucketOf = (t: Todo, today: DateStr): Bucket => {
     : d === 'soon' || t.priority === 'high' ? 'week' : 'later';
 };
 
-export function TodoList({ today, compact = false, onMore, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds }: {
+export function TodoList({ today, compact = false, onMore, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds, unit }: {
   today: DateStr;
+  /** Opened from a unit (the board's "2 to-dos", §159): that listing's work, filter on. */
+  unit?: string;
   /** Home: open work only, the first few, and a door to the full list. */
   compact?: boolean; onMore?: () => void;
   /** Whether this person may see claims (to link work to one). */
@@ -106,7 +108,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const [claims, setClaims] = useState<Claim[]>([]);
   const [err, setErr] = useState('');
   const [open, setOpen] = useState<string | null>(null);
-  const [unitFilter, setUnitFilter] = useState('');
+  const [unitFilter, setUnitFilter] = useState(unit ?? '');
   const [ownerFilter, setOwnerFilter] = useState('');
   const [kindFilter, setKindFilter] = useState<'' | TaskKind | 'claims'>('');
   const [prioFilter, setPrioFilter] = useState<'' | 'high' | 'urgent'>('');
@@ -168,7 +170,9 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   // §159: a child of another kind (a work order inside a to-do, an order inside a repair) is also listed in
   // its own section, saying what it is part of; one of the same kind lives only inside its parent.
   const catOf = (t: Todo) => categoryOf(t, !!orderIds?.has(t.id));
-  const crossCat = (t: Todo) => { const p = t.parentId ? byId.get(t.parentId) : undefined; return !!p && catOf(p) !== catOf(t); };
+  // Owner, same day: sub-tasks are born inside their parent and stay there; only a work order or an order inside
+  // something of another kind is also listed in its own section.
+  const crossCat = (t: Todo) => { const p = t.parentId ? byId.get(t.parentId) : undefined; return !!p && catOf(t) !== 'task' && catOf(p) !== catOf(t); };
   const [pop, setPop] = useState<{ todo?: string; claim?: string } | null>(null);
   // No filter: tasks at the top, their sub-tasks inside them. A filter:
   // every match, flat, each sub-task saying whose it is (§78).
@@ -484,12 +488,15 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   const [openSub, setOpenSub] = useState<string | null>(null);
   const [kidsShown, setKidsShown] = useState(false);
   const [msg, setMsg] = useState('');
+  const [merging, setMerging] = useState<string | null>(null);
   const closed = isClosed(t.status);
   const due = closed ? 'none' : dueOf(t, today);
   const mine = sortTodos(kids.get(t.id) ?? []);
   const prog = progress(mine);
   const parent = t.parentId ? byId.get(t.parentId) : undefined;
   const isOrder = !!props.orderIds?.has(t.id);
+  // §159: the listing is on the context line — the title does not say it again (the stored title stays whole).
+  const shown = rowTitle(t.title, t.unitIds.map(id => names.get(id) ?? '').concat(parent ? parent.unitIds.map(id => names.get(id) ?? '') : []));
   const cat = categoryOf(t, isOrder);
   const stage = stageOf(t.status, isOrder);
   const openPop = props.openPop;
@@ -499,12 +506,12 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
     <li key={k.id} className={`rel-line cat-${kidCat(k)} ${isClosed(k.status) ? 'is-done' : ''}`}>
       <button type="button" onClick={() => openPop?.({ todo: k.id })} title="Open it">
         <span className="rel-cat">{CATEGORY_LABEL[kidCat(k)]}</span>
-        <span className="rel-title">{k.title}</span>
+        <span className="rel-title">{rowTitle(k.title, k.unitIds.map(id => names.get(id) ?? ''))}</span>
         <span className={`rel-stage st-${stageOf(k.status, !!props.orderIds?.has(k.id)).key}`}>{stageOf(k.status, !!props.orderIds?.has(k.id)).label}</span>
       </button>
     </li>
   );
-  const kidRow = (k: Todo, o: boolean, onO: () => void) => kidCat(k) !== cat ? relLine(k)
+  const kidRow = (k: Todo, o: boolean, onO: () => void) => kidCat(k) !== 'task' && kidCat(k) !== cat ? relLine(k)
     : <TodoRow key={k.id} {...props} flat={false} related={false} t={k} open={o} onOpen={onO} />;
   const doTick = async () => { setBusy(true); await act({ action: 'done', id: t.id, done: !closed }); setBusy(false); };
   // §105: the row's own actions — done, cancel, reopen — and renaming in place.
@@ -543,7 +550,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                  onChange={e => setName(e.target.value)} onBlur={() => void rename()}
                  onKeyDown={e => { if (e.key === 'Enter') void rename(); if (e.key === 'Escape') { setName(t.title); setRenaming(false); } }} />
         ) : <>
-          <button className="todo-title" onClick={onOpen} aria-expanded={open} title={open ? 'Close it' : 'Open it'}><span className="todo-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>{t.title}</button>
+          <button className="todo-title" onClick={onOpen} aria-expanded={open} title={open ? 'Close it' : 'Open it'}><span className="todo-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>{shown}</button>
           <button type="button" className="todo-pencil" title="Rename" aria-label={`Rename ${t.title}`} onClick={() => { setName(t.title); setRenaming(true); }}>✎</button>
         </>}
         {/* §105: how a task ends, on its own row, at the right — faint until the row is pointed at. */}
@@ -567,7 +574,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
       <div className="todo-meta">
         {!compact && cat !== 'task' && <span className="m m-cat">{CATEGORY_LABEL[cat]}</span>}
         <span className={`m m-stage st-${stage.key}`}>{stage.label}
-          {!closed && stage.key === 'scheduled' && t.scheduledOn && t.scheduledOn > today ? ` · ${shortDay(t.scheduledOn)}${t.startTime ? ` ${t.startTime}` : ''}` : ''}
+          {!closed && stage.key === 'open' && t.scheduledOn && t.scheduledOn > today ? ` · ${shortDay(t.scheduledOn)}${t.startTime ? ` ${t.startTime}` : ''}` : ''}
           {closed && t.doneAt ? ` · ${t.doneBy?.split('@')[0] ?? ''} ${t.doneAt.slice(5, 10)}` : ''}</span>
         {!closed && (t.priority === 'urgent' || t.priority === 'high') && <span className="m m-attn">{PRIORITY_LABEL[t.priority]}</span>}
         {!closed && t.dueOn && <span className={`m ${due === 'overdue' || due === 'today' ? 'm-attn' : ''}`}><Icon n="calendar" />{dueLabel(t, today)}{t.dueTime ? ` · ${t.dueTime}` : ''}</span>}
@@ -591,7 +598,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           ? <Peek label={<><Icon n="note" />{sourceOf(t)}</>}><Linked text={t.description} /></Peek>
           : <><Icon n="note" />{sourceOf(t)}</>}</span>}
         {/* §159: what it belongs to opens in a pop-up — the list stays where it is. */}
-        {parent && (flat || props.related) && <button type="button" className="m m-btn m-rel" title="Open what this is part of" onClick={() => openPop?.({ todo: parent.id })}>Part of › {parent.title}</button>}
+        {parent && (flat || props.related) && <button type="button" className="m m-btn m-rel" title="Open what this is part of" onClick={() => openPop?.({ todo: parent.id })}>Part of › {rowTitle(parent.title, parent.unitIds.map(id => names.get(id) ?? ''))}</button>}
         {t.claimId && !inClaim && !(parent && !flat && parent.claimId === t.claimId) && (!claims.length || claimNames.has(t.claimId)) &&
           <button type="button" className="m m-btn m-rel" title="Open the claim" onClick={() => openPop?.({ claim: t.claimId! })}>Claim › {claimNames.get(t.claimId) ?? 'claim'}</button>}
         {t.hostawayError && <span className="m m-attn" title={`Not yet in Hostaway: ${t.hostawayError} — retried on the next sync`}><Icon n="warning" />Not in Hostaway yet</span>}
@@ -686,6 +693,19 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
             {canClaims && !inClaim && !t.claimId && !t.parentId &&
               <button className="link tiny" disabled={busy} onClick={() => void toClaim()}
                       title="It is a guest case — open a claim for it, linked to this to-do">⚑ Register as a claim</button>}
+            {/* §159: two to-dos that are the same job become one — this one's comments, files and items move over. */}
+            {!closed && (merging === null
+              ? <button className="link tiny" onClick={() => setMerging('')} title="The same job written twice? Keep the other one and bring this one's comments, files and items into it">Merge into…</button>
+              : <span className="todo-merge">
+                  <select value={merging} aria-label="Merge into" onChange={e => setMerging(e.target.value)}>
+                    <option value="">Merge into…</option>
+                    {[...byId.values()].filter(x => x.id !== t.id && x.parentId !== t.id && !isClosed(x.status))
+                      .sort((a, b) => Number(!a.unitIds.some(u => t.unitIds.includes(u))) - Number(!b.unitIds.some(u => t.unitIds.includes(u))) || a.title.localeCompare(b.title))
+                      .map(x => <option key={x.id} value={x.id}>{x.unitIds.map(id => names.get(id)).filter(Boolean).join(', ') || 'No listing'} · {x.title.slice(0, 70)}</option>)}
+                  </select>
+                  <button className="small" disabled={!merging || busy} onClick={async () => { setBusy(true); const ok = await act({ action: 'merge', id: t.id, into: merging }); setBusy(false); if (ok) setMerging(null); }}>Merge</button>
+                  <button className="link tiny" onClick={() => setMerging(null)}>Cancel</button>
+                </span>)}
             <span className="rb-spacer" />
             {/* Done / Cancel / Reopen are on the task's own row (§105); removing sits apart, here, and is asked. */}
             {!confirmDel
@@ -1472,7 +1492,7 @@ function TodoFiles({ todoId }: { todoId: string }) {
 /**
  * Operations → To-do: the open work, or the done log — one switch.
  */
-export function WorkView({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
+export function WorkView({ today, canClaims, unit }: { today: DateStr; canClaims: boolean; unit?: string }) {
   const [mode, setMode] = useState<'open' | 'log'>('open');
   // The open purchase orders: their own tab, as on Home (owner, Oct 2026).
   const [orderIds, setOrderIds] = useState<Set<string>>(new Set());
@@ -1483,7 +1503,7 @@ export function WorkView({ today, canClaims }: { today: DateStr; canClaims: bool
         <button className={mode === 'open' ? 'chip active' : 'chip'} onClick={() => setMode('open')}>Open work</button>
         <button className={mode === 'log' ? 'chip active' : 'chip'} onClick={() => setMode('log')}>✓ Done log</button>
       </div>
-      {mode === 'open' ? <TodoList today={today} canClaims={canClaims} orderIds={orderIds} /> : <DoneLog today={today} canClaims={canClaims} />}
+      {mode === 'open' ? <TodoList key={unit ?? ''} today={today} canClaims={canClaims} orderIds={orderIds} unit={unit} /> : <DoneLog today={today} canClaims={canClaims} />}
     </>
   );
 }

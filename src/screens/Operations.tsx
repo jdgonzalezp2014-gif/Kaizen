@@ -45,9 +45,12 @@ import { HOURS, hourOf, hourWord, nightToBlock, syncState, timeOfHour, type Sync
 import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
+import { IconFlag, Peek } from '../components/Hint.tsx';
 import { Icon, ic } from '../components/Icon.tsx';
 
 type View = 'board' | 'todos' | 'calendar' | 'crew' | 'inspections' | 'inventory' | 'notes' | 'rates' | 'setup';
+/** §159: "2 to-dos" on the board opens To-do with that unit's work — a window event, so the board's rows need no prop. */
+const workFor = (unitId: string) => dispatchEvent(new CustomEvent('kaizen:work-for', { detail: unitId }));
 const VIEWS: View[] = ['board', 'todos', 'calendar', 'crew', 'inspections', 'inventory', 'notes', 'rates', 'setup'];
 
 /** Setup, by section (§134, the owner: one long page was a mess); each view's ⚙ opens its own. */
@@ -137,6 +140,12 @@ export function Operations({ permissions, initialView, onView }: {
   const [view, setView] = useState<View>(VIEWS.includes(initialView as View) ? initialView as View : 'board');
   const [setupSec, setSetupSec] = useState<SetupSection>('general');
   const openSetup = (sec: SetupSection) => { setSetupSec(sec); setView('setup'); };
+  const [workUnit, setWorkUnit] = useState<string | undefined>(undefined);
+  useEffect(() => {
+    const go = (e: Event) => { setWorkUnit((e as CustomEvent<string>).detail); setView('todos'); scrollTo(0, 0); };
+    addEventListener('kaizen:work-for', go);
+    return () => removeEventListener('kaizen:work-for', go);
+  }, []);
   useEffect(() => { onView?.(view); }, [view]);
   const canTodos = can(permissions, 'todos');
   const nyToday = todayIn('America/New_York');
@@ -211,7 +220,7 @@ export function Operations({ permissions, initialView, onView }: {
 
       <div className={busy && data ? 'is-stale' : undefined}>
         {data && view === 'board' && <Board data={data} range={range} patch={patch} reload={() => load()} />}
-        {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} />}
+        {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} unit={workUnit} />}
         {(view === 'crew' || view === 'calendar') && (
           <nav className="setup-secs" aria-label="Cleaners sections">
             <button className={view === 'crew' ? 'chip active' : 'chip'} onClick={() => setView('crew')}><Icon n="users" /> Pages & approvals</button>
@@ -534,7 +543,7 @@ function Board({ data, range, patch, reload }: {
                   </td>
                 </tr>
                 {!dayRows.length && !manual.length && <tr><td colSpan={9} className="note ops-quiet">no arrivals or departures</td></tr>}
-                {manual.map(c => <ManualLine key={c.key} c={c} canEdit={canEdit} onChanged={reload} cleanTasks={data.cleanTasks?.[c.key]} today={data.today}
+                {manual.map(c => <ManualLine key={c.key} c={c} roster={data.roster} canEdit={canEdit} onChanged={reload} cleanTasks={data.cleanTasks?.[c.key]} today={data.today}
                                              flag={flags[c.key] ?? null} onFlag={note => setFlag(c.key, note)} />)}
                 {dayRows.map(r => {
                   const key = `${r.resId}-${r.kind}`;
@@ -658,23 +667,26 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
       <td>
         {r.cancelled && <span className="ops-flag urgent" title={r.auto.reason}>▲ cancelled {r.cancelled} — {r.manual.cleaner ? 'confirmed' : 'confirm who cleaned'}</span>}
         {cleanTasks?.length ? <span className="ops-flag due" title={cleanTasks.map(t => `${t}`).join('\n')}><Icon n="receipt" /> {cleanTasks.length} from the inspection</span> : null}
-        {r.deep && <span className="ops-flag deep"><Icon n="brush" /> deep · confirmed</span>}
+        {r.deep && <IconFlag icon={<Icon n="brush" />} label="Deep clean" detail="Confirmed" />}
         {r.kind === 'out' && !r.deep && r.deepSuggested && !r.manual.deep &&
           <span className="sub-n" title="A long stay — confirm it in the row if it will be cleaned as deep">○ deep suggested ({r.nights} nights)</span>}
         {shadow && r.differs.includes('deep') && <span className="ops-diff">sheet: {r.sheet?.deep ? 'deep' : 'not deep'}</span>}
-        {r.urgency && URGENCY[r.urgency] && <span className="ops-flag urgent">{ic(URGENCY[r.urgency])}</span>}
-        {r.inspection.key === 'req' && <span className="ops-flag req" title={r.inspection.reason}><Icon n="search" /> required</span>}
-        {r.inspection.key === 'due' && <span className="ops-flag due" title={r.inspection.reason}><Icon n="search" /> monthly</span>}
+        {r.urgency && URGENCY[r.urgency] && (r.urgency === 'turnover'
+          ? <IconFlag tone="attn" icon={<Icon n="zap" />} label="Same-day turnover" detail="The next guest arrives the same day" />
+          : <span className="ops-flag urgent">{ic(URGENCY[r.urgency])}</span>)}
+        {r.inspection.key === 'req' && <IconFlag tone="attn" icon={<Icon n="search" />} label="Inspection required" detail={r.inspection.reason} />}
+        {r.inspection.key === 'due' && <IconFlag icon={<Icon n="search" />} label="Monthly inspection due" detail={r.inspection.reason} />}
         {r.inspection.key === 'ok' && <span className="ops-flag ok" title={r.inspection.reason}>✓ inspected</span>}
         {(() => {
           // Open work on this unit: repairs said apart from to-dos, the titles on hover.
           const wo = (todos ?? []).filter(t => t.kind === 'work_order');
           const td = (todos ?? []).filter(t => t.kind !== 'work_order');
           return <>
-            {wo.length > 0 && <span className="ops-flag urgent" title={wo.map(t => `${t.title}`).join('\n')}>
-              <Icon n="wrench" /> {wo.length} work order{wo.length === 1 ? '' : 's'}</span>}
-            {td.length > 0 && <span className="ops-flag due" title={td.map(t => `☐ ${t.title}`).join('\n')}>
-              ☐ {td.length} to-do{td.length === 1 ? '' : 's'}</span>}
+            {/* §159: a door, not a label — To-do opens with this unit's work, its filter on. */}
+            {wo.length > 0 && <button type="button" className="ops-flag urgent ops-flag-btn" title={`${wo.map(t => t.title).join('\n')}\n— open them`} onClick={e => { e.stopPropagation(); workFor(r.unitId); }}>
+              <Icon n="wrench" /> {wo.length} work order{wo.length === 1 ? '' : 's'}</button>}
+            {td.length > 0 && <button type="button" className="ops-flag due ops-flag-btn" title={`${td.map(t => t.title).join('\n')}\n— open them`} onClick={e => { e.stopPropagation(); workFor(r.unitId); }}>
+              <Icon n="list" /> {td.length} to-do{td.length === 1 ? '' : 's'}</button>}
           </>;
         })()}
         {/* The agreement: signed in Hostaway's guest portal, or its PDF filed in Drive (§89). */}
@@ -734,7 +746,7 @@ function FlagControl({ cleanKey, flag, onChanged, date, today, price, onPrice }:
         ? <><span className="breach">⚑ Flagged: {flag}</span>
             <button className="link tiny" disabled={busy} onClick={() => void send(null)}>Remove flag</button></>
         : !editing && <><button className="link tiny" onClick={() => setEditing(true)}>⚑ Flag this clean…</button>
-            <span className="note">the cleaner reads it on their crew page{canPay ? '; you can correct the pay with it' : ''}</span></>}
+            <Hint label="What a flag does">The cleaner reads it on their crew page{canPay ? '; you can correct the pay with it' : ''}.</Hint></>}
       {editing && (
         <form className="stay-work" onSubmit={e => { e.preventDefault(); if (text.trim()) void send(text.trim()); }}>
           <input autoFocus value={text} maxLength={500} placeholder="What the cleaner should know (they read this)"
@@ -836,14 +848,17 @@ function Editor({ r, data, onSaved, docs, onDocs, onManualClean, flag, onFlag, r
   return (
     <div className="ops-editor" onClick={e => e.stopPropagation()}>
       {!r.listed && <div className="note">○ This listing is archived in Hostaway. Changes are kept in Kaizen; Hostaway refuses notes on an archived listing, so none is sent.</div>}
+      {/* §159 (owner: the rule's reasoning was a paragraph on every open row): who the rule picks, the why behind a hover. */}
       {out && (
         <div className="ops-editor-why">
-          <b>The rule says {r.auto.cleaner ?? 'nobody'}</b> — {r.auto.reason}.
+          <Peek label={<><Icon n="note" />The rule says <b>{r.auto.cleaner ?? 'nobody'}</b>{r.sheet ? <> · the daily file has <b>{sheetText(r.sheet)}</b></> : null}</>}>
+          {r.auto.reason}.
           {r.sheet && <> The daily file has <b>{sheetText(r.sheet)}</b>{r.sheet.price != null ? ` at ${money2(r.sheet.price)}` : ''}.</>}
           {data.assignRule !== 'levels' && r.levels && (
             <div>By levels (not deciding yet): <b>{r.levels.cleaner ?? 'TBD'}</b> — {r.levels.required ? LEVEL_LABEL[r.levels.required] : 'no level yet'}
               ({r.levels.why}) — {r.levels.reason}.</div>
           )}
+          </Peek>
         </div>
       )}
       <div className="row">
@@ -981,8 +996,10 @@ const MANUAL_WORD: Record<ManualCleanKind, string> = {
 };
 
 /** A manual clean on its day: what, who, what it pays — and a way to undo it. */
-function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks, today }: {
+function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks, today, roster }: {
   c: ManualClean; canEdit: boolean; onChanged: () => void; today: string;
+  /** §159: who it can be given to when it is changed. */
+  roster: Cleaner[];
   /** §133: what an inspection asked this clean to do. */
   cleanTasks?: string[];
   /** Flagged by hand (§124): the note the cleaner reads. */
@@ -991,13 +1008,23 @@ function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks, today }: 
   const [confirm, setConfirm] = useState(false);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
+  // §159 (owner: "these cleans can't be fixed"): change who, the day, deep and the note in place.
+  const [edit, setEdit] = useState<null | { cleaner: string; date: string; deep: boolean; note: string }>(null);
+  const save = async () => {
+    if (!edit) return;
+    setBusy(true); setErr('');
+    const r = await manualClean({ action: 'update', key: c.key, cleaner: edit.cleaner || null, date: edit.date, deep: edit.deep, note: edit.note })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
+    if (r.ok) { setEdit(null); onChanged(); } else setErr(r.message ?? 'Not saved.');
+  };
   const cancel = async () => {
     setBusy(true); setErr('');
     const r = await manualClean({ action: 'cancel', key: c.key }).catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (r.ok) onChanged(); else setErr(r.message ?? 'Not cancelled.');
   };
-  return (
+  return (<>
     <tr className="ops-line ops-manual">
       <td><span className="ops-kind clean">CLEAN</span></td>
       <td><b>{c.unit}</b></td>
@@ -1013,15 +1040,40 @@ function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks, today }: 
         {canEdit && c.cleaner ? <FlagControl cleanKey={c.key} flag={flag} onChanged={onFlag}
                                          date={c.date} today={today} price={c.price} onPrice={() => onChanged()} />
           : flag && <div className="breach">⚑ Flagged: {flag}</div>}
-        {canEdit && (!confirm
-          ? <div><button className="link tiny danger" onClick={() => setConfirm(true)}>cancel…</button></div>
-          : <div><span className="note">Cancel this clean{c.kind === 'early_departure' ? ' (the checkout clean comes back)' : ''}? </span>
+        {canEdit && !edit && !confirm && <div className="ops-manual-btns">
+          <button className="link tiny" onClick={() => setEdit({ cleaner: c.cleaner ?? '', date: c.date, deep: !!c.deep, note: c.note ?? '' })}>Change…</button>
+          <button className="link tiny danger" onClick={() => setConfirm(true)}>Cancel…</button></div>}
+        {canEdit && confirm && <div><span className="note">Cancel this clean{c.kind === 'early_departure' ? ' (the checkout clean comes back)' : ''}? </span>
               <button className="small danger" disabled={busy} onClick={() => void cancel()}>Cancel it</button>{' '}
-              <button className="link tiny" onClick={() => setConfirm(false)}>keep</button></div>)}
+              <button className="link tiny" onClick={() => setConfirm(false)}>keep</button></div>}
         {err && <div className="breach">▲ {err}</div>}
       </td>
     </tr>
-  );
+    {edit && (
+      <tr className="ops-edit-row"><td colSpan={9}>
+        <div className="ops-editor ops-manual-edit">
+          <div className="row">
+            <label>Cleaner
+              <select value={edit.cleaner} onChange={e => setEdit({ ...edit, cleaner: e.target.value })}>
+                <option value="">Unassigned</option>
+                {roster.filter(x => x.active || x.name === c.cleaner).map(x => <option key={x.name} value={x.name}>{x.name}</option>)}
+              </select></label>
+            <label>Day
+              <input type="date" value={edit.date} disabled={c.kind === 'early_departure'}
+                     title={c.kind === 'early_departure' ? 'Tied to its stay — cancel it and add it again for another day' : ''}
+                     onChange={e => setEdit({ ...edit, date: e.target.value })} /></label>
+            <label className="check"><input type="checkbox" checked={edit.deep} onChange={e => setEdit({ ...edit, deep: e.target.checked })} /> Deep clean</label>
+          </div>
+          <label>Note — the cleaner reads it
+            <input value={edit.note} maxLength={500} onChange={e => setEdit({ ...edit, note: e.target.value })} /></label>
+          <div className="button-row">
+            <button className="small" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save changes'}</button>
+            <button className="link tiny" onClick={() => setEdit(null)}>Discard</button>
+          </div>
+        </div>
+      </td></tr>
+    )}
+  </>);
 }
 
 /**

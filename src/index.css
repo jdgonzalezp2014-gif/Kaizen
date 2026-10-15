@@ -2357,7 +2357,7 @@ tr.rc-open > td { border-bottom: 0; }
 .st-in_progress, .st-ordered { color: var(--accent); }
 .st-done, .st-purchased { color: var(--green); }
 .st-cancelled { color: var(--muted); }
-.st-scheduled, .st-open { color: var(--ink); }
+.st-open { color: var(--ink); }
 .todo-meta .m-attn { color: var(--amber); font-weight: 600; }
 .todo-meta .m-btn { background: none; border: 0; padding: 2px 0; min-height: 0; color: inherit; font: inherit; cursor: pointer; }
 .todo-meta .m-btn:hover { color: var(--accent); }
@@ -2422,3 +2422,37 @@ tr.rc-open > td { border-bottom: 0; }
 .filter-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 var(--s-3); }
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 .claims-list { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 4px 8px; margin: 0; }
+/* §159: a flag that is only its icon — the word on hover or a tap. */
+.iflag .peek-label { width: 24px; height: 24px; justify-content: center; border-radius: var(--r-pill); color: var(--muted);
+  border: 1px solid var(--line); text-decoration: none; vertical-align: middle; margin: 0 2px; }
+.iflag.attn .peek-label { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, transparent); }
+.iflag .peek-label:hover { background: var(--hover); }
+@media (max-width: 720px) { .iflag .peek-label { width: 30px; height: 30px; } }
+/* §159 (owner: "Show 3 more" went unseen): a full-width row in the action colour, so more is never missed. */
+button.link.home-more, button.link.tiny.home-more { display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;
+  margin: 4px 0 2px; padding: 8px 12px; min-height: 36px; border: 1px dashed color-mix(in srgb, var(--accent) 45%, transparent);
+  border-radius: var(--r-sm); background: color-mix(in srgb, var(--accent) 5%, var(--card)); color: var(--accent);
+  font-size: var(--fs-footnote); font-weight: 600; }
+button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, var(--card)); text-decoration: none; }
+@media (max-width: 720px) { button.link.home-more, button.link.tiny.home-more { min-height: 44px; } }
+.todo-merge { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.todo-merge select { max-width: 360px; }
+
+/* Desktop navigation (owner, 2026-10-14): four sections with icons, the rest and day / night under "More". */
+.desk-nav { display: flex; gap: 2px; align-items: center; margin-left: auto; }
+.desk-nav .tab .tab-icon { display: block; width: 18px; height: 18px; opacity: .85; }
+.desk-nav .caret { font-size: 10px; margin-left: 2px; color: var(--muted); }
+.desk-more { position: relative; }
+.desk-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; min-width: 220px; padding: 6px;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-3); }
+.desk-menu .more-item { min-height: 40px; padding: 0 10px; border-bottom: 0; border-radius: var(--r-sm); font-size: var(--fs-body); }
+.desk-menu .more-item .tab-icon { width: 18px; height: 18px; }
+.desk-menu-sep { height: 1px; background: var(--line); margin: 6px 4px; }
+.desk-menu-theme .theme-toggle { width: 100%; justify-content: flex-start; padding: 8px 10px; }
+.phone-theme { display: none; }
+@media (max-width: 720px) { .phone-theme { display: inline-flex; margin-left: auto; } .desk-nav { display: none; } }
+.ops-flag-btn { cursor: pointer; font: inherit; font-size: var(--fs-caption); font-weight: 600; min-height: 0; }
+.ops-flag-btn:hover { border-color: var(--accent); color: var(--accent); }
+.ops-editor-why .peek-label { color: var(--ink); }
+.ops-manual-btns { display: flex; gap: 12px; margin-top: 4px; }
+.ops-manual-edit { margin: 4px 0 8px; }

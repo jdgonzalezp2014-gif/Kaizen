@@ -4211,4 +4211,9 @@ related items of another kind open in a pop-up, same-kind children stay in place
 entities (listing, owner) as links that filter. A cleaner's request becoming a purchase order is the same item
 moving from Tasks to Purchase orders (already how it worked) — no second row. UI and words only; Hostaway
 statuses unchanged. See `docs/design-system.md` › Work items.
+Round 2, same day (owner): "Scheduled" → **Open** (moves to In progress on a comment or when something inside is done);
+the listing is not repeated in titles; sub-tasks are born and stay inside their parent; an inspection's repairs are work
+orders inside a work order, with no "Assign and schedule" to-do (it was the same job written twice); to-dos can be
+**merged**; manual cleans can be changed; flags are icons with the word on hover; "n to-dos" on the board opens that
+unit's work; the desktop navigation is four sections and "More", like the phone.
 

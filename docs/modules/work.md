@@ -146,3 +146,11 @@ UI only; tokens and shared components from `docs/design-system.md`.
   category stays nested. Listing and owner on a row filter the list (`filterBy`, `WorkFilter.assignee`), shown as
   a ✕ chip. The open card is a sheet (`task-sheet`, `fl-group`). Claims screen rows use the same anatomy.
   Bucket "Scheduled" renamed "Further out" (Scheduled is a stage now). No data or API change except Slack's words.
+- **Round 2 (§159, owner 2026-10-14):** not-started reads **Open** (not "Scheduled"); completing a child moves an Open
+  parent to In progress (server, `todos.ts` update — like the first comment, §143); timeline words follow (Open/Done).
+  Titles drop the listing's name when the row shows it (`rowTitle`, display only). Sub-tasks always live inside their
+  parent — only a work order or an order inside another kind is also listed in its own tab. "Show N more" is a full-width
+  row. **Merge** (`action: 'merge', id, into`): comments, files, photos, children, order lines, purchases, moves,
+  inspection checks and field charges move to `into`; the claim if it has none; the description is appended; the other
+  is cancelled "Merged into #N" (Hostaway closes it). Refused into a closed one, into its own child, or children under a
+  sub-task. **Not exercised against real data** (the Hostaway mirror is on) — try it first on two test to-dos.

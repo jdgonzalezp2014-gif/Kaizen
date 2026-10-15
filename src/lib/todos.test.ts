@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { auditCsv, isFiltering, sourceOf, categoryOf, claimStage, stageOf, childrenBy, daysTaken, dueLabel, dueOf, matchesFilter, outcomeOf, progress, sortTodos, stayLabel, workCost,
+import { auditCsv, rowTitle, isFiltering, sourceOf, categoryOf, claimStage, stageOf, childrenBy, daysTaken, dueLabel, dueOf, matchesFilter, outcomeOf, progress, sortTodos, stayLabel, workCost,
          type AuditRow, type Todo } from './todos.ts';
 
 test('a stay is named by its guest and dates', () => {
@@ -88,8 +88,8 @@ test('the done log: how it ended, how long it took, and a CSV an auditor can ope
 });
 
 test('one life cycle in the same words (§159)', () => {
-  assert.equal(stageOf('pending').label, 'Scheduled');
-  assert.equal(stageOf('confirmed').label, 'Scheduled');
+  assert.equal(stageOf('pending').label, 'Open');
+  assert.equal(stageOf('confirmed').label, 'Open');
   assert.equal(stageOf('in_progress').label, 'In progress');
   assert.equal(stageOf('completed').label, 'Done');
   assert.equal(stageOf('cancelled').label, 'Cancelled');
@@ -119,4 +119,14 @@ test('filter by who handles it (§159)', () => {
   assert.equal(matchesFilter(t('Juan'), { assignee: 'Juan' }, '2026-10-14'), true);
   assert.equal(matchesFilter(t(null), { assignee: 'Juan' }, '2026-10-14'), false);
   assert.equal(isFiltering({ assignee: 'Juan' }), true);
+});
+
+test('a row does not repeat its listing in the title (§159)', () => {
+  assert.equal(rowTitle('Supplies requested — clean of Amber Valley on 2026-10-14', ['Amber Valley']), 'Supplies requested — clean on Oct 14');
+  assert.equal(rowTitle('Buy for Napa Valley: 3 items', ['Napa Valley']), 'Buy: 3 items');
+  assert.equal(rowTitle('Repairs at Napa Valley: 3 items', ['Napa Valley']), 'Repairs: 3 items');
+  assert.equal(rowTitle('CL2260: fix the door', ['CL2260']), 'fix the door');
+  assert.equal(rowTitle('Fix the door', ['CL2260']), 'Fix the door');
+  // A name that is the whole title is kept — something has to be said.
+  assert.equal(rowTitle('Amber Valley', ['Amber Valley']), 'Amber Valley');
 });
