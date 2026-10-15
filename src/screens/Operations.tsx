@@ -195,20 +195,21 @@ export function Operations({ permissions, initialView, nav, onView, focus }: {
   return (
     <section>
       {/* §159: on a big screen the side bar lists the views; this line says which one is open — and the gear,
-          dark and alone (owner: "everyone knows the gear"), the only control most views need on top. */}
+          the only control most views need on top. §163: on a phone the views' strip shares the line, the gear at
+          its right in the strip's own style (owner: one family of controls, not a dark disc floating alone). */}
       <div className="ops-top">
         <h2 className="screen-crumb">Operations <span>› {views.find(([k]) => k === view || (k === 'crew' && view === 'calendar'))?.[1] ?? ''}</span></h2>
+        <nav className="subtabs ops-subtabs">
+          {views.map(([k, label]) => (
+            <button key={k} className={view === k || (k === 'crew' && view === 'calendar') ? 'tab active' : 'tab'} onClick={() => setView(k)}>{label}</button>
+          ))}
+        </nav>
         {view !== 'setup' && can(data?.permissions, 'operations.setup') && (
           <button className="ops-gear" onClick={() => openSetup(SETUP_OF[view])} aria-label="Settings for this section"
                   title={`Settings for this section${data?.mode === 'live' ? ' — Live: Kaizen decides the cleans and writes the Host Note in Hostaway' : ''}`}>
             <Icon n="gear" />{data?.mode === 'live' && <span className="live-dot" aria-hidden="true" />}</button>
         )}
       </div>
-      <nav className="subtabs ops-subtabs">
-        {views.map(([k, label]) => (
-          <button key={k} className={view === k || (k === 'crew' && view === 'calendar') ? 'tab active' : 'tab'} onClick={() => setView(k)}>{label}</button>
-        ))}
-      </nav>
 
       {(view === 'board' || (data?.sheetUrl && data.mode === 'shadow')) && (
         <div className="row-controls">

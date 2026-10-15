@@ -113,15 +113,17 @@ const bucketOf = (t: Todo, today: DateStr): Bucket => {
     : d === 'soon' || t.priority === 'high' ? 'week' : 'later';
 };
 
-export function TodoList({ today, compact = false, head, lead, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds, unit, focus }: {
+export function TodoList({ today, compact = false, head, lead, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds, unit, focus, doneLog = false }: {
   today: DateStr;
+  /** §163: Operations → To-do — the closed section also opens the full done log (audit, CSV). */
+  doneLog?: boolean;
   /** §162: open this one as soon as it is loaded (a link from Slack). */
   focus?: { todo?: string; claim?: string };
   /** Opened from a unit (the board's "2 to-dos", §159): that listing's work, filter on. */
   unit?: string;
   /** Home: open work only, in a scrolling feed. `head` puts the card's title, count, "?" and + Add above the pills. */
   compact?: boolean; head?: { title: string; hint: string; onAll?: () => void };
-  /** The full list's filter row starts with this (the Open work / Done log switch). */
+  /** The full list's filter row starts with this. */
   lead?: ReactNode;
   /** Whether this person may see claims (to link work to one). */
   canClaims?: boolean;
@@ -145,6 +147,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   const [prioFilter, setPrioFilter] = useState<'' | 'high' | 'urgent'>('');
   const [dueFilter, setDueFilter] = useState<'' | 'overdue' | 'today' | 'week' | 'none'>('');
   const [showDone, setShowDone] = useState(!!claim);
+  const [closedLog, setClosedLog] = useState(false);
   const [openClaim, setOpenClaim] = useState<string | null>(null);
   const [adding, setAdding] = useState<'order' | null | TaskKind | 'claim'>(null);
   // owner, Oct 2026: Home shows one kind at a time, and inside it the buckets folded but the first.
@@ -324,7 +327,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
 
   const lane = (key: 'task' | 'work_order' | 'claims', title: string, rows: ReactNode[], alert: ReactNode, empty: string) => {
     const kind = key === 'claims' ? 'claim' : key;
-    return (
+  return (
       <section key={key} className={`todo-lane lane-${key} ${rows.length ? '' : 'is-empty'}`}>
         <div className="lane-head">
           <h4>{title}</h4>
@@ -377,6 +380,40 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
         : <p className="note">No purchase order open. ✓</p> }] : [])
   ] : [];
   const cur = homeTabs.find(x => x.key === tab) ?? homeTabs[0];
+  const filtersPop = (
+    <Popover label="Filters" align="right" className="filters-pop"
+             button={<><Icon n="filter" /> Filters{nFilters > 0 && <span className="count">{nFilters}</span>}</>}>
+      <div className="filter-fields">
+        <label>Urgency
+          <select value={prioFilter} onChange={e => setPrioFilter(e.target.value as '' | 'high' | 'urgent')}>
+            <option value="">Any urgency</option>
+            <option value="high">▲ High or urgent</option>
+            <option value="urgent">▲▲ Urgent only</option>
+          </select></label>
+        <label>Deadline
+          <select value={dueFilter} onChange={e => setDueFilter(e.target.value as typeof dueFilter)}>
+            <option value="">Any date</option>
+            <option value="overdue">▲ Overdue</option>
+            <option value="today">● Due today</option>
+            <option value="week">This week</option>
+            <option value="none">No deadline</option>
+          </select></label>
+        <label>Listing
+          <select value={unitFilter} onChange={e => setUnitFilter(e.target.value)}>
+            <option value="">Every listing</option>
+            {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+          </select></label>
+        <label>Owner
+          <select value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
+            <option value="">Anyone</option>
+            {[...new Set((todos ?? []).map(t => t.assignee).filter((x): x is string => !!x))].sort().map(n => <option key={n} value={n}>{n}</option>)}
+          </select></label>
+        {(filtering || kindFilter !== '') && (
+          <button className="link tiny" onClick={() => { setKindFilter(''); setPrioFilter(''); setDueFilter(''); setUnitFilter(''); setOwnerFilter(''); }}>Clear filters</button>
+        )}
+      </div>
+    </Popover>
+  );
 
   return (
     <div className={`todos ${compact ? 'compact' : ''}`}>
@@ -408,43 +445,13 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
                                    reservationId: claim.reservationId ?? null, reservationLabel: claim.reservationLabel ?? null } : undefined}
                   onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAdding(null); return ok; }} />
       ))}
-      {/* §160: one quiet row — the mode on the left, every secondary filter behind one button. */}
-      {!compact && !claim && (
+      {/* §160: one quiet row — the mode on the left, every secondary filter behind one button. §163: with nothing
+          to lead it, the button joins the tabs' line instead of taking a row of its own. */}
+      {!compact && !claim && (lead || !cur) && (
         <div className="row-controls work-bar">
           {lead}
           <span className="rb-spacer" />
-          <Popover label="Filters" align="right" className="filters-pop"
-                   button={<><Icon n="filter" /> Filters{nFilters > 0 && <span className="count">{nFilters}</span>}</>}>
-            <div className="filter-fields">
-              <label>Urgency
-                <select value={prioFilter} onChange={e => setPrioFilter(e.target.value as '' | 'high' | 'urgent')}>
-                  <option value="">Any urgency</option>
-                  <option value="high">▲ High or urgent</option>
-                  <option value="urgent">▲▲ Urgent only</option>
-                </select></label>
-              <label>Deadline
-                <select value={dueFilter} onChange={e => setDueFilter(e.target.value as typeof dueFilter)}>
-                  <option value="">Any date</option>
-                  <option value="overdue">▲ Overdue</option>
-                  <option value="today">● Due today</option>
-                  <option value="week">This week</option>
-                  <option value="none">No deadline</option>
-                </select></label>
-              <label>Listing
-                <select value={unitFilter} onChange={e => setUnitFilter(e.target.value)}>
-                  <option value="">Every listing</option>
-                  {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                </select></label>
-              <label>Owner
-                <select value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
-                  <option value="">Anyone</option>
-                  {[...new Set((todos ?? []).map(t => t.assignee).filter((x): x is string => !!x))].sort().map(n => <option key={n} value={n}>{n}</option>)}
-                </select></label>
-              {(filtering || kindFilter !== '') && (
-                <button className="link tiny" onClick={() => { setKindFilter(''); setPrioFilter(''); setDueFilter(''); setUnitFilter(''); setOwnerFilter(''); }}>Clear filters</button>
-              )}
-            </div>
-          </Popover>
+          {filtersPop}
         </div>
       )}
       {/* §159: what a tap on a listing or an owner filtered by — visible everywhere (Home has no filter bar), with its way out. */}
@@ -483,6 +490,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
               ))}
               {!head && <span className="rb-spacer" />}
               {!head && cur.add && adding !== cur.add && <button className="link tiny lane-add" onClick={() => setAdding(cur.add!)}>+ Add</button>}
+              {!compact && !claim && !lead && filtersPop}
             </div>
             {cur.add && addForm(cur.add)}
             <div role="tabpanel" className="work-tab-body">{cur.body}</div>
@@ -501,11 +509,22 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
         : kindFilter === 'claims' ? (cases.length ? <ul className="todo-list cases">{cases.map(caseRow)}</ul> : <p className="note">No open claims. ✓</p>)
         : !openList.length ? <p className="note">{claim ? 'No open work on this claim.' : filtering ? 'Nothing matches these filters.' : 'Nothing open. ✓'}</p>
         : <ul className="todo-list">{openList.map(taskRow)}</ul>}
-      {!compact && doneList.length > 0 && (
+      {/* §163 (owner): the done log is for auditing, not daily work — it lives here, folded, with its own filters,
+          instead of a switch on top of the open work. */}
+      {!compact && (doneList.length > 0 || doneLog) && (
         <>
-          <button className="link tiny" onClick={() => setShowDone(!showDone)}>
-            {showDone ? '▾' : '▸'} {claim ? 'Closed' : 'Closed in the last 14 days'} ({doneList.length})</button>
-          {showDone && <ul className="todo-list done">{doneList.map(taskRow)}</ul>}
+          <div className="closed-head">
+            <button className="link tiny" onClick={() => setShowDone(!showDone)}>
+              {showDone ? '▾' : '▸'} {claim ? 'Closed' : 'Closed in the last 14 days'} ({doneList.length})</button>
+            {doneLog && showDone && (
+              <span className="closed-modes">
+                <button className={closedLog ? 'chip' : 'chip active'} onClick={() => setClosedLog(false)}>Last 14 days</button>
+                <button className={closedLog ? 'chip active' : 'chip'} onClick={() => setClosedLog(true)}><Icon n="done" /> Done log</button>
+              </span>
+            )}
+          </div>
+          {showDone && (doneLog && closedLog ? <DoneLog today={today} canClaims={canClaims} />
+            : doneList.length ? <ul className="todo-list done">{doneList.map(taskRow)}</ul> : <p className="note">Nothing closed in the last 14 days.</p>)}
         </>
       )}
       {/* §159: a related item opens over the list, whole — the same card as in its own section. */}
@@ -1604,23 +1623,13 @@ function TodoFiles({ todoId }: { todoId: string }) {
 /* ── the done log (§87) ─────────────────────────────────────────────── */
 
 /**
- * Operations → To-do: the open work, or the done log — one switch.
+ * Operations → To-do: the open work; the done log is folded into its closed section (§163).
  */
 export function WorkView({ today, canClaims, unit, focus }: { today: DateStr; canClaims: boolean; unit?: string; focus?: { todo?: string; claim?: string } }) {
-  const [mode, setMode] = useState<'open' | 'log'>('open');
   // The open purchase orders: their own tab, as on Home (owner, Oct 2026).
   const [orderIds, setOrderIds] = useState<Set<string>>(new Set());
   useEffect(() => { getInventory().then(r => { if (r.ok) setOrderIds(new Set(r.orders.map(o => o.todoId))); }).catch(() => {}); }, []);
-  const modes = <>
-    <button className={mode === 'open' ? 'chip active' : 'chip'} onClick={() => setMode('open')}>Open work</button>
-    <button className={mode === 'log' ? 'chip active' : 'chip'} onClick={() => setMode('log')}>✓ Done log</button>
-  </>;
-  return (
-    <>
-      {mode === 'open' ? <TodoList key={unit ?? ''} today={today} canClaims={canClaims} orderIds={orderIds} unit={unit} lead={modes} focus={focus} />
-        : <><div className="row-controls work-bar">{modes}</div><DoneLog today={today} canClaims={canClaims} /></>}
-    </>
-  );
+  return <TodoList key={unit ?? ''} today={today} canClaims={canClaims} orderIds={orderIds} unit={unit} focus={focus} doneLog />;
 }
 
 const OUTCOME_WORD = { completed: '✓ Completed', cancelled: '✕ Cancelled', removed: '🗑 Removed' } as const;
@@ -1664,6 +1673,7 @@ function DoneLog({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
   const people = [...new Set((rows ?? []).map(t => t.deletedBy ?? t.doneBy ?? '').filter(Boolean))].sort();
   const shown = (rows ?? []).filter(t => (!who || (t.deletedBy ?? t.doneBy) === who) && (!kind || t.kind === kind)
     && (!unit || t.unitIds.includes(unit)));
+  const nLog = [who, kind, unit, withRemoved ? 'x' : ''].filter(Boolean).length;
   const count = (o: string) => shown.filter(t => outcomeOf(t) === o).length;
   const taken = shown.filter(t => outcomeOf(t) === 'completed').map(t => daysTaken(t) ?? 0).sort((a, b) => a - b);
   const median = taken.length ? taken[Math.floor(taken.length / 2)] : null;
@@ -1680,20 +1690,29 @@ function DoneLog({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
 
   return (
     <div className="done-log">
-      <div className="row-controls">
+      {/* §163: the range stays in sight (it is what the summary counts); who, what, where and removed go behind one button. */}
+      <div className="done-bar">
         <label className="todo-inline">From <input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} /></label>
         <label className="todo-inline">to <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)} /></label>
-        <select value={kind} aria-label="Kind" onChange={e => setKind(e.target.value as '' | TaskKind)}>
-          <option value="">To-dos and repairs</option><option value="task">To-dos</option><option value="work_order">Repairs</option>
-        </select>
-        <select value={who} aria-label="Closed by" onChange={e => setWho(e.target.value)}>
-          <option value="">Anyone</option>{people.map(p => <option key={p} value={p}>{p.split('@')[0]}</option>)}
-        </select>
-        <select value={unit} aria-label="Listing" onChange={e => setUnit(e.target.value)}>
-          <option value="">Every listing</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-        </select>
-        <label className="check done-removed"><input type="checkbox" checked={withRemoved} onChange={e => setWithRemoved(e.target.checked)} /> include removed</label>
         <span className="rb-spacer" />
+        <Popover label="Log filters" align="right" className="filters-pop"
+                 button={<><Icon n="filter" /> Filters{nLog > 0 && <span className="count">{nLog}</span>}</>}>
+          <div className="filter-fields">
+            <label>Kind
+              <select value={kind} onChange={e => setKind(e.target.value as '' | TaskKind)}>
+                <option value="">To-dos and repairs</option><option value="task">To-dos</option><option value="work_order">Repairs</option>
+              </select></label>
+            <label>Closed by
+              <select value={who} onChange={e => setWho(e.target.value)}>
+                <option value="">Anyone</option>{people.map(p => <option key={p} value={p}>{p.split('@')[0]}</option>)}
+              </select></label>
+            <label>Listing
+              <select value={unit} onChange={e => setUnit(e.target.value)}>
+                <option value="">Every listing</option>{units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select></label>
+            <label className="check done-removed"><input type="checkbox" checked={withRemoved} onChange={e => setWithRemoved(e.target.checked)} /> Include removed</label>
+          </div>
+        </Popover>
         <button className="small secondary" disabled={!shown.length} onClick={exportCsv}>Export CSV</button>
       </div>
       {err && <p className="banner warn">▲ {err}</p>}

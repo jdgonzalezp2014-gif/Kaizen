@@ -4301,3 +4301,11 @@ Owner, from a claim card (P2-4308 · Missing Fob) and a to-do's "More: kind, cla
   on every task/claim message and card, and the unbought modal, links `/?todo=N` / `/?claim=N`: App opens Operations →
   To-do, the item's tab and its side panel (a closed one in the pop-up) — for what Slack cannot do. "Add to…" unchanged.
   Validated with a fake Slack + database (`functions/_lib/slack.test.ts`), not against the workspace. SOP #8 v17.
+
+## §163 — The gear joins the views' line; the done log folds into Closed (2026-10-15)
+
+Owner: on a phone the dark gear floated alone over the views' strip — it should look like the other controls, with the
+strip to its left. And on To-do the Open work / Done log switch took a whole row for something used only to audit.
+Now: the gear is a light, bordered control (strip style on a phone, sharing its line); the done log is a chip inside the
+"Closed in the last 14 days" section, with its own Filters popover and Export CSV; the open-work Filters moved to the
+tabs' line. Nothing changed in the API or the data.

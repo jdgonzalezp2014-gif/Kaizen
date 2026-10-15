@@ -2488,15 +2488,26 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 @media (min-width: 721px) and (prefers-reduced-motion: reduce) { .side-nav, .side-word { transition: none; } }
 .phone-theme { display: inline-flex; margin-left: auto; }
 @media (min-width: 721px) { .side-nav .side-list { align-items: stretch; margin-left: 0; } .side-item { width: 100%; } }
-/* §159: Operations' top line — where you are, and the gear, dark and alone. */
-.ops-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-3); }
+/* §159: Operations' top line — where you are, and the gear. §163: the gear wears the controls' own style (card, hairline,
+   ink icon) instead of a dark disc; on a phone the views' strip shares the line and the gear closes it on the right. */
+.ops-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); margin-bottom: var(--s-3); }
 .ops-top .screen-crumb { margin: 0; }
-.ops-gear { position: relative; display: inline-grid; place-items: center; width: 38px; height: 38px; padding: 0; margin-left: auto;
-  border-radius: var(--r-pill); background: var(--ink); color: var(--bg); border: 0; }
-.ops-gear:hover { background: color-mix(in srgb, var(--ink) 85%, var(--bg)); }
-.ops-gear .icon { width: 20px; height: 20px; }
-.ops-gear .live-dot { position: absolute; top: 3px; right: 3px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--bg); }
-@media (max-width: 720px) { .ops-gear { width: 44px; height: 44px; } }
+.ops-top .subtabs { margin: 0; flex: 1 1 auto; min-width: 0; }
+.ops-gear { position: relative; display: inline-grid; place-items: center; width: 40px; height: 40px; padding: 0; margin-left: auto;
+  flex: 0 0 auto; border-radius: var(--r-pill); background: var(--card); color: var(--ink); border: 1px solid var(--line-strong);
+  transition: background .12s ease, transform .12s ease; }
+.ops-gear:hover { background: var(--tint); }
+.ops-gear:hover .icon { transform: rotate(45deg); }
+.ops-gear .icon { width: 19px; height: 19px; transition: transform .25s ease; }
+.ops-gear:active { transform: scale(.95); }
+.ops-gear .live-dot { position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--card); }
+@media (max-width: 720px) {
+  .ops-top { align-items: stretch; margin-bottom: 16px; }
+  .ops-gear { width: 56px; height: auto; border-radius: var(--r); background: var(--tint); border-color: var(--line); }
+  .ops-gear .icon { width: 20px; height: 20px; }
+  .ops-gear .live-dot { top: 6px; right: 6px; border-color: var(--tint); }
+}
+@media (prefers-reduced-motion: reduce) { .ops-gear, .ops-gear .icon { transition: none; } .ops-gear:hover .icon { transform: none; } }
 /* The day in the menu: a small calendar leaf in the rail, the words when it opens; a chip in the phone's header. */
 .side-today { display: flex; align-items: center; gap: 16px; padding: 0 6px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
 .side-cal { flex: none; display: grid; place-items: center; width: 32px; height: 34px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
@@ -2655,3 +2666,9 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .money-table select { max-width: 150px; }
 .money-in { width: 96px; text-align: right; }
 .seg { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+/* §163: the closed section — its toggle, and (Operations) the switch to the full done log, on one line. */
+.closed-head { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; margin-top: var(--s-2); }
+.closed-modes { display: inline-flex; gap: 6px; margin-left: auto; }
+.closed-modes .chip { font-size: var(--fs-footnote); }
+.done-bar { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; margin: var(--s-2) 0; }
+.done-bar input[type="date"] { width: auto; }

@@ -546,6 +546,7 @@ UI only; tokens and shared components from `docs/design-system.md`.
   on other views, no "Live" banner while live and healthy (a green dot on the gear, the sentence on its hover; failures
   and shadow mode still take a banner). On a big screen the view strip is replaced by the side rail + "Operations › View".
 - **Round 4:** Operations' top is one line — "Operations › View" and a dark gear alone (icon only, a green dot while live); the control bar shows only on Movements (its days).
+- **§163 (2026-10-15):** the gear is no longer a dark disc — card + hairline + ink icon (turns 45° on hover). On a phone the views' strip moves into `.ops-top` and the gear closes that line on the right (56 px, tint, `--r`, same height as the strip); on desktop the strip stays hidden and the line is crumb + gear.
 - **Purchase orders (§159 round 5, owner 2026-10-14):** what a cleaner or an inspector asks to buy IS a purchase order
   from the moment it is asked. `openOrders` also lists open `clean_group IN ('request','inspection')` to-dos with no lines
   yet (so they sit under Purchase orders and the receipt reader can match them). A clean's request: each thing asked is
