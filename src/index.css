@@ -1810,6 +1810,9 @@ button.sop-num { cursor: pointer; }
 .task-fold-descin { display: block; margin-bottom: 10px; }
 .task-fold.open .task-fold-head { border-bottom: 1px solid var(--line); border-radius: var(--r-md) var(--r-md) 0 0; }
 .task-fold-body { padding: 10px 12px 12px; display: flex; flex-direction: column; gap: 10px; }
+/* owner, 2026-10-15: the kids' guide line is for the flat board, where nothing else marks the nesting — inside
+   the panel, .task-fold already is the box, so the indent + border-left just floated, unattached top and bottom. */
+.task-fold-body .todo-kids { margin: 0; padding-left: 0; border-left: 0; }
 .task-fold > div:not(.task-fold-body) { padding: 6px 12px; }
 .task-fold-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
 .task-fold-row select, .task-fold-row input[type=date] { width: auto; font-size: var(--fs-footnote); padding: 3px 6px; }
