@@ -123,6 +123,10 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 
 ## Open items
 
+- **Cleans' thread missed 2026-10-15** (Concord had a clean): the 8 AM run claimed `cleanday:` and posted nothing, and the
+  claim was never retried. Fix in `slack-cron.ts`: 0 cleans releases the claim; a claim with no `day:` message after 10 min
+  is dropped and retried. The clock keeps no logs (`wrangler tail` is live only) — the 8 AM run's answer is lost.
+
 - Reports: SOP 8 "Kaizen in Slack" not yet updated for `/kaizen bug` / `@Kaizen bug` (the in-Slack help is).
 
 
