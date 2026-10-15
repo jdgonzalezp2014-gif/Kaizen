@@ -5,6 +5,7 @@
  * is in Operations → To-do), and keeps the last 30.
  */
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import type { LiveFresh } from '../api.ts';
 import { useLive } from './useLive.ts';
 import { Icon } from './Icon.tsx';
@@ -75,7 +76,8 @@ export function LiveBell({ onOpen }: { onOpen: (todoId: string) => void }) {
           </div>
         )}
       </Popover>
-      {toast && (
+      {/* On the body: inside the side rail it would sit under an open panel (the rail's own stacking). */}
+      {toast && createPortal(
         <div className="live-toast" role="status">
           <Icon n="bell" />
           <span>{toast.length === 1
@@ -83,7 +85,7 @@ export function LiveBell({ onOpen }: { onOpen: (todoId: string) => void }) {
             : <>{toast.length} new to-dos</>}</span>
           {toast.length === 1 && <button type="button" className="link" onClick={() => { setInbox(p => ({ ...p, unread: Math.max(0, p.unread - 1) })); open(toast[0]!.id); }}>Open</button>}
           <button type="button" className="link" aria-label="Dismiss" onClick={() => setToast(null)}>✕</button>
-        </div>
+        </div>, document.body
       )}
     </>
   );

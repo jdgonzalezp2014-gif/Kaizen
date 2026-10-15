@@ -16,7 +16,7 @@
 import { Modal } from './Modal.tsx';
 import { TaskPurchase } from '../screens/Inventory.tsx';
 import { vendorLink, getVendors, getInventory, getTodoFiles, uploadTodoFiles, removeTodoFile, type TodoFile } from '../api.ts';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
   type Claim, type StayOnDay, type Todo, type WorkUpdate, syncHostawayTasks, getPeople, type Person } from '../api.ts';
@@ -187,6 +187,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   // owner, Oct 2026: Home shows one kind at a time, and inside it the buckets folded but the first.
   const [tab, setTab] = useState('task');
   const [bucketOpen, setBucketOpen] = useState<Record<string, boolean>>({});
+  const openAt = useRef<{ id: string; b: Bucket } | null>(null);
   // Open claims sit in the list as cases (§77), above the work — not inside a claim.
   const showClaims = canClaims && !claim;
 
@@ -401,10 +402,16 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   const chatRow = (t: Todo) => <TodoRow key={t.id} t={t} chat related={crossCat(t)} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
   const bucketed = (key: string, list: Todo[], chat = false) => {
     const by: Record<Bucket, Todo[]> = { now: [], week: [], later: [], scheduled: [] };
-    for (const t of list) by[bucketOf(t, today)].push(t);
+    for (const t of list) {
+      let b = bucketOf(t, today);
+      // §166: the open item stays where it was opened — a date changed by someone else (or by this save) must not
+      // move it to another bucket under the person's hands, which would also drop what they are typing.
+      if (t.id === open) { if (openAt.current?.id === open) b = openAt.current.b; else openAt.current = { id: open, b }; }
+      by[b].push(t);
+    }
     const first = BUCKETS.find(([b]) => by[b].length)?.[0];
     return BUCKETS.filter(([b]) => by[b].length).map(([b, label, hint]) => {
-      const k = `${key}:${b}`, on = bucketOpen[k] ?? b === first;
+      const k = `${key}:${b}`, on = (bucketOpen[k] ?? b === first) || (!!open && by[b].some(t => t.id === open));
       return (
         <section key={b} className={`todo-bucket bucket-${b}`}>
           <button type="button" className="bucket-head" aria-expanded={on} onClick={() => setBucketOpen(m => ({ ...m, [k]: !on }))}>

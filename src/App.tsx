@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Revenue } from './screens/Revenue.tsx';
 import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
@@ -21,6 +21,7 @@ import { TabIcon } from './components/TabIcon.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Icon } from './components/Icon.tsx';
 import { LiveBell } from './components/LiveBell.tsx';
+import { usePhone } from './components/usePhone.ts';
 import { ReportsDialog } from './components/Reports.tsx';
 
 type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor';
@@ -217,6 +218,11 @@ function TeamApp() {
 
   // A cleaner signed in sees only their page, which has its own one-line top (§134).
   const crewOnly = allowed?.length === 1 && (allowed[0] === 'crew' || allowed[0] === 'vendor');
+  // §166: new work from anyone, while the app is open — for whoever can see the to-dos. One bell: the header on a
+  // phone, the side rail's foot on a bigger screen (the header is hidden there).
+  const phone = usePhone();
+  const bell = allowed && can(permissions, 'todos') && allowed.includes('operations')
+    ? <LiveBell onOpen={id => { setWorkFocus({ todo: id }); goOps('todos'); }} /> : null;
   return (
     <main>
       {!crewOnly && <header className="app-header">
@@ -225,13 +231,11 @@ function TeamApp() {
             space on a screen whose job is a list. */}
         <div className="brand"><span className="brand-mark" aria-hidden="true" /><h1>Kaizen OS</h1></div>
         <Today compact />
-        {/* §166: new work from anyone, while the app is open — for whoever can see the to-dos. */}
-        {allowed && can(permissions, 'todos') && allowed.includes('operations') &&
-          <LiveBell onOpen={id => { setWorkFocus({ todo: id }); goOps('todos'); }} />}
+        {phone && bell}
         <span className="phone-theme"><ThemeToggle /></span>
       </header>}
       {!crewOnly && allowed && <SideNav tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab}
-                                         opsNow={opsNow} onOps={goOps} permissions={permissions} onReport={() => setReporting('new')} />}
+                                         opsNow={opsNow} onOps={goOps} permissions={permissions} onReport={() => setReporting('new')} bell={phone ? null : bell} />}
       {!crewOnly && allowed && <TabBar tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab} onReport={() => setReporting('new')} />}
       {reporting && <ReportsDialog initial={reporting} where={whereNow(tab, opsNow)} onClose={() => setReporting(null)} />}
 
@@ -348,8 +352,9 @@ function Today({ compact = false }: { compact?: boolean }) {
  * keyboard focus, with Operations' views under it; day / night at the foot. The screen above is the work
  * alone. Hidden at 720 px and below, where the bottom bar does this.
  */
-function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions, onReport }: {
+function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions, onReport, bell }: {
   tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void; opsNow?: string; onOps: (v: string) => void; permissions: string[]; onReport: () => void;
+  bell?: ReactNode;
 }) {
   const label = (t: Tab) => TABS.find(x => x[0] === t)?.[1] ?? t;
   // The same views, words and permissions as Operations' own strip (which the rail replaces on a big screen).
@@ -377,6 +382,7 @@ function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions, onReport }: {
         ))}
       </nav>
       <div className="side-foot">
+        {bell}
         <button className="side-link" onClick={onReport} title="Report a bug / request">
           <TabIcon name="report" /><span className="side-word">Report / request</span>
         </button>
