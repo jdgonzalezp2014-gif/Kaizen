@@ -20,6 +20,7 @@ import { ThemeToggle } from './components/ThemeToggle.tsx';
 import { TabIcon } from './components/TabIcon.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Icon } from './components/Icon.tsx';
+import { ReportsDialog } from './components/Reports.tsx';
 
 type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor';
 
@@ -151,6 +152,8 @@ function TeamApp() {
   // Only decides which controls are DRAWN. The server refuses anything
   // the role does not permit regardless; this just avoids offering it.
   const [permissions, setPermissions] = useState<string[]>([]);
+  /** Reports (owner, 2026-10-15): the bug / request form, from the rail's foot or the phone's menu. Slack's card links ?report=N. */
+  const [reporting, setReporting] = useState<'new' | 'list' | null>(() => new URLSearchParams(location.search).has('report') ? 'list' : null);
 
   useEffect(() => {
     getSettings()
@@ -224,8 +227,9 @@ function TeamApp() {
         <span className="phone-theme"><ThemeToggle /></span>
       </header>}
       {!crewOnly && allowed && <SideNav tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab}
-                                         opsNow={opsNow} onOps={goOps} permissions={permissions} />}
-      {!crewOnly && allowed && <TabBar tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab} />}
+                                         opsNow={opsNow} onOps={goOps} permissions={permissions} onReport={() => setReporting('new')} />}
+      {!crewOnly && allowed && <TabBar tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab} onReport={() => setReporting('new')} />}
+      {reporting && <ReportsDialog initial={reporting} where={whereNow(tab, opsNow)} onClose={() => setReporting(null)} />}
 
       {/* Only shown to someone who can act on it. Telling an ops account
           to go to Settings → Sync listings names a screen they cannot
@@ -279,11 +283,12 @@ function TeamApp() {
  * half the app. Five fit; past five, four and "More", which lists the rest.
  * Hidden by CSS above 720px, where the header's tabs are shown instead.
  */
-function TabBar({ tabs, tab, onTab }: { tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void }) {
+function TabBar({ tabs, tab, onTab, onReport }: { tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void; onReport: () => void }) {
   const [more, setMore] = useState(false);
   if (tabs.length < 2) return null;
-  const shown = tabs.length <= 5 ? tabs : tabs.slice(0, 4);
-  const rest = tabs.length <= 5 ? [] : tabs.slice(4);
+  // "More" is always there now: it also holds "Report / request" (owner, 2026-10-15) — so four tabs, then More.
+  const shown = tabs.slice(0, 4);
+  const rest = tabs.slice(4);
   const label = (t: Tab) => TABS.find(x => x[0] === t)?.[1] ?? t;
   const restOpen = tab !== null && rest.includes(tab);
   return (
@@ -293,11 +298,9 @@ function TabBar({ tabs, tab, onTab }: { tabs: Tab[]; tab: Tab | null; onTab: (t:
           <button key={t} className={tab === t ? 'tab active' : 'tab'} aria-current={tab === t ? 'page' : undefined}
                   onClick={() => onTab(t)}><TabIcon name={t} />{label(t)}</button>
         ))}
-        {rest.length > 0 && (
-          <button className={restOpen ? 'tab active' : 'tab'} aria-haspopup="dialog" onClick={() => setMore(true)}>
-            <TabIcon name="more" />{restOpen ? label(tab!) : 'More'}
-          </button>
-        )}
+        <button className={restOpen ? 'tab active' : 'tab'} aria-haspopup="dialog" onClick={() => setMore(true)}>
+          <TabIcon name="more" />{restOpen ? label(tab!) : 'More'}
+        </button>
       </nav>
       {more && (
         <Modal title="More" onClose={() => setMore(false)}>
@@ -310,6 +313,11 @@ function TabBar({ tabs, tab, onTab }: { tabs: Tab[]; tab: Tab | null; onTab: (t:
                 </button>
               </li>
             ))}
+            <li>
+              <button className="more-item" onClick={() => { setMore(false); onReport(); }}>
+                <TabIcon name="report" /><span>Report a bug / request</span>
+              </button>
+            </li>
           </ul>
         </Modal>
       )}
@@ -336,8 +344,8 @@ function Today({ compact = false }: { compact?: boolean }) {
  * keyboard focus, with Operations' views under it; day / night at the foot. The screen above is the work
  * alone. Hidden at 720 px and below, where the bottom bar does this.
  */
-function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions }: {
-  tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void; opsNow?: string; onOps: (v: string) => void; permissions: string[];
+function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions, onReport }: {
+  tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void; opsNow?: string; onOps: (v: string) => void; permissions: string[]; onReport: () => void;
 }) {
   const label = (t: Tab) => TABS.find(x => x[0] === t)?.[1] ?? t;
   // The same views, words and permissions as Operations' own strip (which the rail replaces on a big screen).
@@ -364,7 +372,18 @@ function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions }: {
           </div>
         ))}
       </nav>
-      <div className="side-foot"><ThemeToggle /><Today /></div>
+      <div className="side-foot">
+        <button className="side-link" onClick={onReport} title="Report a bug / request">
+          <TabIcon name="report" /><span className="side-word">Report / request</span>
+        </button>
+        <ThemeToggle /><Today />
+      </div>
     </aside>
   );
+}
+
+/** Where a report was sent from, in words (owner, 2026-10-15): the tab, and Operations' view when there. */
+function whereNow(tab: Tab | null, opsNow?: string): string {
+  const t = TABS.find(x => x[0] === tab)?.[1] ?? tab ?? 'Kaizen';
+  return tab === 'operations' && opsNow ? `${t} › ${opsNow}` : t;
 }

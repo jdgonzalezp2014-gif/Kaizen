@@ -2680,3 +2680,21 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .closed-modes .chip { font-size: var(--fs-footnote); }
 .done-bar { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; margin: var(--s-2) 0; }
 .done-bar input[type="date"] { width: auto; }
+
+/* Reports (owner, 2026-10-15): the bug / request form and the list of what was sent. */
+.report-switch, .report-kinds { display: flex; gap: var(--s-2); align-items: center; flex-wrap: wrap; margin-bottom: var(--s-3); }
+.report-kinds .chip { display: inline-flex; align-items: center; gap: 6px; }
+.report-photo { display: block; max-width: 100%; max-height: 240px; margin-top: var(--s-2); border-radius: var(--r-sm); border: 1px solid var(--line); }
+.report-list { list-style: none; margin: var(--s-2) 0; padding: 0; }
+.report-list li { border-bottom: 1px solid var(--line); }
+.report-list li.closed .report-title { color: var(--muted); }
+.report-row { display: flex; align-items: center; gap: var(--s-2); width: 100%; min-height: 44px; padding: 6px 4px; background: none; border: 0;
+  color: var(--ink); font: inherit; text-align: left; cursor: pointer; }
+.report-row:hover { background: var(--hover); }
+.report-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.report-status { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-footnote); color: var(--muted); white-space: nowrap; }
+.report-detail { padding: 0 4px var(--s-3); }
+.report-body { white-space: pre-wrap; margin: var(--s-2) 0; }
+.report-comment { margin: var(--s-2) 0; padding: 6px 10px; background: var(--tint); border-radius: var(--r-sm); font-size: var(--fs-footnote); white-space: pre-wrap; }
+.report-reply { display: flex; gap: var(--s-2); margin-top: var(--s-2); }
+.report-reply input { flex: 1; min-width: 0; }

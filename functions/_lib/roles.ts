@@ -119,7 +119,9 @@ const VENDOR_ROUTES = [{ path: '/api/vendor', methods: ['GET', 'POST'] }, { path
  */
 const ALWAYS: { path: string; methods: string[] }[] = [
   { path: '/api/settings', methods: ['GET'] },
-  { path: '/api/units', methods: ['GET'] }
+  { path: '/api/units', methods: ['GET'] },
+  // Reports (owner, 2026-10-15): anyone reports a bug or asks for something; the handler limits who sees all.
+  { path: '/api/reports', methods: ['GET', 'POST'] }
 ];
 
 export const PERMISSION_KEYS = new Set(PERMISSIONS.map(p => p.key));

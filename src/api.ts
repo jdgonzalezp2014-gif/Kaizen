@@ -910,3 +910,9 @@ export const vendorAct = (todoId: string, fields: Record<string, string>, files:
 export const vendorLink = (id: string) =>
   call<({ ok: true; link: string; vendor: string; phone: string | null; title: string; unit: string | null; day: string; expires: string }) | Fail>(
     '/api/todos', { method: 'POST', body: JSON.stringify({ action: 'vendorLink', id }) });
+
+/* Reports (owner, 2026-10-15): bugs and requests about Kaizen. */
+import type { ReportRow } from './lib/reports.ts';
+export const getReports = () => call<{ ok: boolean; all: boolean; me: string; reports: ReportRow[]; message?: string }>('/api/reports');
+export const postReport = (body: Record<string, unknown>) =>
+  call<{ ok: boolean; id?: string; message?: string }>('/api/reports', { method: 'POST', body: JSON.stringify(body) });
