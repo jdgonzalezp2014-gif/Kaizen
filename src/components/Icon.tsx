@@ -121,7 +121,8 @@ export function ic<T>(s: T): T | ReactNode {
     last = m.index! + m[0].length;
   }
   if (last < s.length) out.push(s.slice(last));
-  return out;
+  // One inline box: loose pieces inside a flex row (a label.check, a chip) would each become a column.
+  return <span className="ic-text">{out}</span>;
 }
 
 /** The same string with its emoji taken out — for places an icon cannot go (a title, a placeholder, an <option>). */

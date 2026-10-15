@@ -216,3 +216,12 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   `via: 'slack-dm'` → announced in the tasks channel like app work, and the DM is NOT remembered as its thread.
   **Needs in the Slack app:** bot event `message.im`, scope `im:history`, App Home → Messages tab on +
   "Allow users to send … messages from the messages tab"; then reinstall.
+
+## Redesign (§158, 2026-10-14, branch `redesign`)
+
+UI only (Settings → Slack, `SlackPanel.tsx`); tokens and shared components from `docs/design-system.md`.
+The messages Kaizen posts to Slack keep their emoji — they are Slack copy, not this app's UI
+(`src/lib/slack*.ts`, `crew-slack.ts`, `sms.ts` untouched).
+- Emoji in the panel's copy → one-colour icons (phase 0b); a label with an icon in it stays one line of text
+  (`ic()` returns one inline span — loose pieces became columns inside `label.check`).
+- Checkboxes no longer shrink beside a two-line label; a card's title (h2) outranks its numbered steps (h3).

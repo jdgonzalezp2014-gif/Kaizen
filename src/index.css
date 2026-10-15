@@ -171,7 +171,7 @@ nav { display: flex; gap: 2px; align-items: center; margin-left: auto; }
 /* ── cards ───────────────────────────────────────────────────────── */
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
   padding: var(--s-4) var(--s-5); margin-bottom: var(--s-4); box-shadow: var(--shadow); }
-.card h2 { font-size: var(--fs-headline); margin: 0 0 var(--s-2); font-weight: 650; }
+.card h2 { font-size: var(--fs-title3); margin: 0 0 var(--s-2); font-weight: 650; }  /* a card's title outranks its sections' (§158) */
 @media (max-width: 720px) { .card { padding: var(--s-4); } }
 
 /* ── fields ──────────────────────────────────────────────────────── */
@@ -196,7 +196,7 @@ label > input, label > select, label > textarea { display: block; width: 100%; m
 input:focus-visible, select:focus-visible, textarea:focus-visible {
   outline: none; border-color: var(--accent); box-shadow: var(--focus);
 }
-label.check input { width: 18px; margin: 0; }
+label.check input { width: 18px; margin: 0; flex: none; }
 label.check.inline { display: inline-flex; margin: 0 var(--s-3) 0 0; }
 textarea { font-family: var(--mono); font-size: var(--fs-footnote); margin-top: var(--s-3); line-height: 1.5; }
 .row { display: flex; gap: var(--s-3); flex-wrap: wrap; align-items: flex-end; margin-top: var(--s-3); }
