@@ -109,7 +109,7 @@ export function supplyPlace(rec: RepoRow | null, records: RepoRow[]): SupplyPlac
 export const placeLabel = (name: string) => /\bS\d+\b/i.exec(name)?.[0].toUpperCase() ?? name;
 
 export interface PlaceRow { key: string; name: string; self: boolean; units: { id: string; name: string; recordId: string | null }[];
-  /** A house's own place (owner, 2026-10-15): its furniture and equipment — never in a storage. */
+  /** A house's own place (owner, 2026-10-15): its furniture and equipment only — supplies live in a storage or a closet. */
   house?: boolean;
   /** A house: where its supplies come from (a storage, or itself when it keeps its own closet). */
   supplies?: string | null }
@@ -137,37 +137,47 @@ export function inventoryPlaces(units: { id: string; name: string; active: boole
   }
   // Storages first, then the houses' closets.
   const list = [...places.values()].sort((a, b) => Number(a.self) - Number(b.self) || a.name.localeCompare(b.name));
-  // Owner, 2026-10-15: furniture is in the house, not in the storage — every active unit with a record is a
-  // place of its own (its Repository record, the same key as its closet when it keeps its supplies itself).
+  // Owner, 2026-10-15: furniture is in the house — every active unit with a record has a house place of its own,
+  // "<record>#house", apart from its closet (the record key, which holds supplies). Furniture can also sit in a
+  // storage or a closet and move between them; supplies never live in a house (outside a closet they are used up).
   const houses: PlaceRow[] = [];
   for (const u of units) {
     const rec = repoMatch(u.name, records);
-    if (!rec) continue;
-    const key = `${rec.table}/${rec.id}`;
-    if (!u.active) continue;
-    houses.push({ key, name: String(rec.vals.name ?? u.name).trim() || u.name, self: byUnit.get(u.id)?.key === key, house: true,
-                                supplies: byUnit.get(u.id)?.key ?? null, units: [{ id: u.id, name: u.name, recordId: key }] });
+    if (!rec || !u.active) continue;
+    const recordId = `${rec.table}/${rec.id}`;
+    houses.push({ key: houseKey(recordId), name: String(rec.vals.name ?? u.name).trim() || u.name, self: false, house: true,
+                  supplies: byUnit.get(u.id)?.key ?? null, units: [{ id: u.id, name: u.name, recordId }] });
   }
   houses.sort((a, b) => a.name.localeCompare(b.name));
   return { places: list, unassigned, byUnit, houses };
 }
+
+/** A house's furniture place: its Repository record + "#house" (the record alone is its closet). */
+export const houseKey = (recordId: string) => `${recordId}#house`;
+export const isHouseKey = (key: string | null | undefined) => !!key && key.endsWith('#house');
 
 /** Any place a line can go to (owner, 2026-10-15): a storage, a house's closet, or a house itself. */
 export function findPlace(sp: { places: PlaceRow[]; houses: PlaceRow[] }, key: string): PlaceRow | null {
   return sp.places.find(p => p.key === key) ?? sp.houses.find(p => p.key === key) ?? null;
 }
 
-/** A place in an order or an expense: furniture is "the house", a supply in a house's own place is its closet. */
-export function placeWord(p: Pick<PlaceRow, 'name' | 'self'>, kind: 'supply' | 'furniture' | undefined) {
-  return p.self && kind !== 'furniture' ? `${p.name} closet` : p.name;
+/** A place in an order or an expense: a house's closet says "closet", the house says "house". */
+export function placeWord(p: Pick<PlaceRow, 'name' | 'self' | 'house'>) {
+  return p.house ? `${p.name} (house)` : p.self ? `${p.name} closet` : p.name;
+}
+
+/** Supplies live only in a storage or a closet (owner, 2026-10-15): outside one they are used up. */
+export function fitsPlace(p: Pick<PlaceRow, 'house'>, kind: 'supply' | 'furniture' | undefined) {
+  return !p.house || kind === 'furniture';
 }
 
 /**
  * Where an item for a unit goes when nobody says (owner, 2026-10-15): furniture to the house, a supply to
- * the place the house draws its supplies from (its storage, or its own closet). Unknown → ''.
+ * the place the house draws its supplies from (its storage, or its own closet); none → ''.
  */
 export function destFor(target: string, kind: 'supply' | 'furniture' | undefined, houses: Pick<PlaceRow, 'key' | 'supplies'>[]) {
   const h = houses.find(x => x.key === target);
   if (!h) return target;
-  return kind === 'furniture' ? h.key : h.supplies ?? h.key;
+  // A supply never goes into a house: to its supplies place, or nowhere yet ('' = choose).
+  return kind === 'furniture' ? h.key : h.supplies ?? '';
 }

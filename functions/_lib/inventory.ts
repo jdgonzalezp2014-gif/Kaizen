@@ -16,7 +16,7 @@ import type { Priority } from '../../src/lib/todos.ts';
 import { todayIn, addDays } from '../../src/lib/dates.ts';
 import { itemLabel, needByPlace, orderList, perClean, placeKey, stockLevels, toOrder, unitUses, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
 import { supplyPlaces } from './unit-access.ts';
-import { findPlace, placeWord } from '../../src/lib/unit-access.ts';
+import { findPlace, fitsPlace, placeWord } from '../../src/lib/unit-access.ts';
 
 const TZ = 'America/New_York';
 const WINDOW_DAYS = 60, AHEAD_DAYS = 14;
@@ -85,17 +85,13 @@ export async function overview(sql: SqlFn) {
     return { ...perClean(i, t.qty, t.cleans), cleans: t.cleans };
   };
   /**
-   * Which items a view of a place lists: a storage (or a house's closet) its supplies, a house its furniture —
-   * plus anything of the other kind that has a record there (bought or counted there before), so nothing
-   * recorded ever disappears. A house that keeps its own closet shows its supplies under the closet only.
+   * Which items a place lists (owner, 2026-10-15): a house its furniture only — supplies never live in a house;
+   * a storage or a closet its supplies, plus the furniture that is there (has a record: moved, bought or counted
+   * there) — furniture moves between the house and a storage.
    */
   const recorded = new Set(moveRows.map(m => `${m.itemId}|${placeKey(m.place)}`));
-  const listed = (p: Row, i: InvItem) => {
-    const own = p.view === 'house' ? i.kind === 'furniture' : i.kind !== 'furniture';
-    if (own) return true;
-    const both = p.view === 'house' ? p.self : sp.houses.some(h => h.self && h.key === p.key);
-    return !both && recorded.has(`${i.id}|${placeKey(p.key)}`);
-  };
+  const listed = (p: Row, i: InvItem) => p.view === 'house' ? i.kind === 'furniture'
+    : i.kind !== 'furniture' || recorded.has(`${i.id}|${placeKey(p.key)}`);
   const places = rows.map(p => ({
     place: p.key, name: p.name, self: p.self, view: p.view, ...(p.view === 'house' ? { supplies: p.supplies ?? null } : {}),
     units: p.units.map(u => ({ ...u, cleansAhead: ahead.get(u.id) ?? 0 })),
@@ -130,7 +126,7 @@ export async function overview(sql: SqlFn) {
                                           to_char(created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS at
                                      FROM inventory_place_looks WHERE account_id = 1 ORDER BY place, id DESC` as
     ({ place: string } & PlaceLook)[]).map(({ place, ...l }) => [place, l]));
-  return { items, places: places.map(p => ({ ...p, look: (p.place && looks.get(p.view === 'house' ? `${p.place}#house` : p.place)) || null })), unassigned, recent, orders: await openOrders(sql), fieldTodos: await fieldTodos(sql),
+  return { items, places: places.map(p => ({ ...p, look: (p.place && looks.get(p.place)) || null })), unassigned, recent, orders: await openOrders(sql), fieldTodos: await fieldTodos(sql),
            draft: draft ?? null, lowStockTasks: !!acc?.low, toPayBack: await toPayBack(sql), aheadDays: AHEAD_DAYS, windowDays: WINDOW_DAYS };
 }
 
@@ -161,6 +157,7 @@ const KINDS = new Set(['count', 'used', 'purchase', 'adjust', 'missing', 'taken'
 export type Who = { name: string; source: 'team' | 'cleaner' | 'link'; email?: string };
 
 type Places = Awaited<ReturnType<typeof supplyPlaces>>;
+const NOT_IN_HOUSE = 'Supplies are kept in a storage or a closet — not in the house.';
 
 /**
  * Where a move happens (§150). The team names the place (a count, a purchase
@@ -168,10 +165,11 @@ type Places = Awaited<ReturnType<typeof supplyPlaces>>;
  * place the unit is assigned to in the Repository at that moment. A unit with
  * no place still records (null, shown ▲): the cleaner's step is never blocked.
  */
-function placeOf(sp: Places, who: Who, unitId: string | null, unit: string | null, asked: unknown) {
+function placeOf(sp: Places, who: Who, unitId: string | null, unit: string | null, asked: unknown, kind?: 'supply' | 'furniture') {
   if (who.source === 'team' && asked) {
     const p = findPlace(sp, String(asked));
     if (!p) throw new Error('Which place?');
+    if (!fitsPlace(p, kind)) throw new Error(NOT_IN_HOUSE);
     return { key: p.key as string | null, name: p.name };
   }
   if (!unitId) throw new Error('Which place?');
@@ -295,12 +293,12 @@ export async function recordMove(sql: SqlFn, who: Who, b: Record<string, unknown
   const qty = Math.round(Number(b.qty) * 100) / 100;
   if (!Number.isFinite(qty) || (kind === 'adjust' ? qty === 0 : qty < 0) || Math.abs(qty) > 10000) throw new Error('How many?');
   if ((kind === 'used' || kind === 'taken') && qty === 0) throw new Error('How many?');
-  const [item] = await sql`SELECT id, name, measure FROM inventory_items WHERE account_id = 1 AND id = ${Number(b.itemId)} AND active` as
-    { id: number; name: string; measure: string }[];
+  const [item] = await sql`SELECT id, name, measure, kind FROM inventory_items WHERE account_id = 1 AND id = ${Number(b.itemId)} AND active` as
+    { id: number; name: string; measure: string; kind: 'supply' | 'furniture' }[];
   if (!item) throw new Error('Which item?');
   const unitId = b.unitId ? String(b.unitId) : null;
   const unit = unitId ? await unitName(sql, unitId) : null;
-  const at = placeOf(known ?? await supplyPlaces(sql), who, unitId, unit, b.place);
+  const at = placeOf(known ?? await supplyPlaces(sql), who, unitId, unit, b.place, item.kind);
   const place = at.name;
   const note = String(b.note ?? '').trim().slice(0, 500) || null;
   let todoId: string | null = null, fresh = true;
@@ -406,7 +404,8 @@ export async function createOrder(sql: SqlFn, by: string, lines: { itemId: strin
     const item = items.find(i => i.id === String(l.itemId));
     const p = findPlace(sp, l.place);
     if (!p) throw new Error('Which place?');
-    return item ? [{ item, place: placeWord(p, item.kind), qty: Math.ceil(l.qty) }] : [];
+    if (item && !fitsPlace(p, item.kind)) throw new Error(`${item.name}: ${NOT_IN_HOUSE}`);
+    return item ? [{ item, place: placeWord(p), qty: Math.ceil(l.qty) }] : [];
   });
   const list = orderList(named);
   if (!list) throw new Error('Nothing to order.');
@@ -535,7 +534,8 @@ export async function saveTodoOrder(sql: SqlFn, by: string, todoId: unknown, lin
     const p = findPlace(sp, l.place);
     if (!item) throw new Error('Which item?');
     if (!p) throw new Error('Which place?');
-    return { item, place: placeWord(p, item.kind), qty: l.qty };
+    if (!fitsPlace(p, item.kind)) throw new Error(`${item.name}: ${NOT_IN_HOUSE}`);
+    return { item, place: placeWord(p), qty: l.qty };
   });
   await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(keep)}::jsonb, ${by})
             ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = EXCLUDED.lines, created_by = EXCLUDED.created_by, created_at = now()`;
@@ -569,13 +569,11 @@ export async function lowStock(sql: SqlFn, places: (string | null)[]): Promise<s
   const inv = await overview(sql);
   const made: string[] = [];
   for (const key of keys) {
-    // A house that keeps its own closet is two views of one key: its supplies and its furniture.
-    const views = inv.places.filter(x => x.place === key);
-    const p = views.find(x => x.view === 'house') ?? views[0];
+    const p = inv.places.find(x => x.place === key);
     if (!p) continue;
-    const low = views.flatMap(v => v.items).filter(l => l.countedAt && l.qty !== null && l.min !== null && l.qty < l.min);
+    const low = p.items.filter(l => l.countedAt && l.qty !== null && l.min !== null && l.qty < l.min);
     if (!low.length) continue;
-    const name = p.view === 'house' ? p.name : p.self ? `${p.name} closet` : p.name;
+    const name = placeWord({ name: p.name, self: p.self, house: p.view === 'house' });
     let [t] = await sql`SELECT id::text FROM todos WHERE account_id = 1 AND low_stock_place = ${key} AND parent_id IS NULL
                           AND status NOT IN ('completed', 'cancelled') ORDER BY id DESC LIMIT 1` as { id: string }[];
     // §162: what is low is listed in the order's description (and its lines), not as a sub-task per item —
@@ -691,6 +689,7 @@ async function checkPurchase(sql: SqlFn, b: Record<string, unknown>) {
     const place = findPlace(sp, l.place);
     if (!item) throw new Error('Which item?');
     if (!place) throw new Error('Which place?');
+    if (!fitsPlace(place, item.kind)) throw new Error(`${item.name}: ${NOT_IN_HOUSE}`);
     if (!Number.isFinite(l.qty) || l.qty > 10000) throw new Error('How many?');
     return { ...l, item, place };
   });
@@ -717,7 +716,7 @@ async function writePurchase(sql: SqlFn, by: string, c: Awaited<ReturnType<typeo
                          RETURNING id::text` as { id: string }[];
   for (const l of named) await sql`INSERT INTO inventory_moves (account_id, item_id, place, kind, qty, note, by_name, source, purchase_id)
                                    VALUES (1, ${Number(l.itemId)}, ${l.place.key}, 'purchase', ${l.qty}, ${note}, ${by}, 'team', ${Number(pu!.id)})`;
-  const what = orderList(named.map(l => ({ item: l.item, place: placeWord(l.place, l.item.kind), qty: l.qty })))!;
+  const what = orderList(named.map(l => ({ item: l.item, place: placeWord(l.place), qty: l.qty })))!;
   const places = new Set(named.map(l => l.place.key));
   const only = places.size === 1 ? named[0]!.place : null;
   // Into one house (its closet or the house itself): the expense is that unit's.
@@ -729,6 +728,33 @@ async function writePurchase(sql: SqlFn, by: string, c: Awaited<ReturnType<typeo
   if (todoId) await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
                         VALUES (1, 'task', ${String(todoId)}, 'note', ${`Bought ($${total.toFixed(2)}):\n${what.items.map(i => i.replace(/^Buy: /, '• ')).join('\n')}`}, ${by})`;
   return pu!.id;
+}
+
+/**
+ * Something moved from one place to another (owner, 2026-10-15: furniture goes between the house and a storage):
+ * out of one, into the other — two `adjust` moves that say where. Never more than the record has, once counted;
+ * a supply never into a house. The team only.
+ */
+export async function transfer(sql: SqlFn, by: string, b: Record<string, unknown>) {
+  const qty = Math.round(Number(b.qty) * 100) / 100;
+  if (!(qty > 0) || qty > 10000) throw new Error('How many?');
+  const [items, sp] = await Promise.all([invItems(sql), supplyPlaces(sql)]);
+  const item = items.find(i => i.id === String(b.itemId) && i.active);
+  if (!item) throw new Error('Which item?');
+  const from = findPlace(sp, String(b.from ?? '')), to = findPlace(sp, String(b.to ?? ''));
+  if (!from || !to) throw new Error('Which place?');
+  if (from.key === to.key) throw new Error('Pick another place to move it to.');
+  if (!fitsPlace(to, item.kind)) throw new Error(NOT_IN_HOUSE);
+  const levels = stockLevels(await sql`SELECT item_id::text AS "itemId", place, unit_id AS "unitId", kind, qty::float AS qty,
+                                             to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') AS at
+                                        FROM inventory_moves WHERE account_id = 1 AND item_id = ${Number(item.id)}` as Move[]);
+  const have = levels.get(`${item.id}|${placeKey(from.key)}`)?.qty;
+  if (have != null && qty > have) throw new Error(`${placeWord(from)} has ${have} on record — count it first if there are more.`);
+  const note = String(b.note ?? '').trim().slice(0, 300);
+  await sql`INSERT INTO inventory_moves (account_id, item_id, place, kind, qty, note, by_name, source)
+            VALUES (1, ${Number(item.id)}, ${from.key}, 'adjust', ${-qty}, ${`Moved to ${placeWord(to)}${note ? ` — ${note}` : ''}`}, ${by}, 'team'),
+                   (1, ${Number(item.id)}, ${to.key}, 'adjust', ${qty}, ${`Moved from ${placeWord(from)}${note ? ` — ${note}` : ''}`}, ${by}, 'team')`;
+  return [from.key, to.key];
 }
 
 /** The minimum to keep of items in one place (§150); a blank goes back to the item's own. */
@@ -753,8 +779,7 @@ export type PlaceLook = { note: string | null; photos: { name: string; url: stri
 export async function recordLook(sql: SqlFn, by: string, place: unknown, note: unknown, photos: { name: string; url: string }[], counted: number) {
   const n = String(note ?? '').trim().slice(0, 1000) || null;
   if (!photos.length && !n) return;
-  // A house's look is kept apart from its closet's ("<key>#house", owner 2026-10-15): two different rooms.
-  if (!findPlace(await supplyPlaces(sql), String(place).replace(/#house$/, ''))) throw new Error('Which place?');
+  if (!findPlace(await supplyPlaces(sql), String(place))) throw new Error('Which place?');
   await sql`INSERT INTO inventory_place_looks (place, note, photos, by_name, counted)
             VALUES (${String(place)}, ${n}, ${JSON.stringify(photos)}::jsonb, ${by}, ${counted})`;
 }

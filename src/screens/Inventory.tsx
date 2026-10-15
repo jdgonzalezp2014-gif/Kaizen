@@ -37,29 +37,28 @@ const viewOf = (p: Pick<InvPlace, 'view'>): View => p.view === 'house' ? 'house'
 const vk = (p: InvPlace) => `${viewOf(p)}|${pk(p.place)}`;
 const housesOf = (inv: Inventory) => inv.places.filter(p => p.place && p.view === 'house').map(p => ({ key: p.place!, supplies: p.supplies ?? null }));
 /**
- * Where a line can go (owner, 2026-10-15: "not such a long list"): the storages, then the houses — one row per
- * place. A house that keeps its own closet is one row: its supplies go to the closet, its furniture to the house.
+ * Where a line can go (owner, 2026-10-15: "not such a long list"): the storages and closets, then the houses.
+ * Supplies live only in a storage or a closet — a supply's own picker has no houses.
  */
 function destinations(inv: Inventory) {
-  const houses = inv.places.filter(p => p.place && p.view === 'house');
-  const storages = inv.places.filter(p => p.place && p.view !== 'house' && !(p.self && houses.some(h => h.place === p.place)));
-  return { storages, houses };
+  return { storages: inv.places.filter(p => p.place && p.view !== 'house'), houses: inv.places.filter(p => p.place && p.view === 'house') };
 }
-/** A place as a line shows it: furniture in a house is the house; a supply there is its closet. */
-function lineTitle(inv: Inventory, key: string, kind?: string) {
-  const h = inv.places.find(p => p.place === key && p.view === 'house');
-  const st = inv.places.find(p => p.place === key && p.view !== 'house');
-  if (h && (kind === 'furniture' || !st)) return h.name;
-  return st ? placeTitle(st) : key;
+/** A place as a line shows it: "Napa Valley — closet", "Napa Valley (house)", "S13…". */
+function lineTitle(inv: Inventory, key: string) {
+  const p = inv.places.find(x => x.place === key);
+  return p ? p.view === 'house' ? `${p.name} (house)` : placeTitle(p) : key;
 }
-const shortPlace = (inv: Inventory, key: string) => { const p = inv.places.find(x => x.place === key && x.view !== 'house'); return p ? p.self ? 'its own closet' : p.name : key; };
-const houseOption = (inv: Inventory, h: InvPlace) => h.self ? `${h.name} (house + closet)` : h.supplies ? `${h.name} · supplies at ${shortPlace(inv, h.supplies)}` : h.name;
-function PlaceSelect({ inv, value, onChange, label }: { inv: Inventory; value: string; onChange: (key: string) => void; label: string }) {
+const shortPlace = (inv: Inventory, key: string) => { const p = inv.places.find(x => x.place === key && x.view !== 'house'); return p ? p.self ? 'its closet' : p.name : key; };
+const houseOption = (inv: Inventory, h: InvPlace) => `${h.name} (house)${h.supplies ? ` · supplies at ${shortPlace(inv, h.supplies)}` : ''}`;
+/** `kind` 'supply' leaves the houses out; none (the "Goes to" for every line) keeps them — a house routes by type. */
+function PlaceSelect({ inv, value, onChange, label, kind, except }: {
+  inv: Inventory; value: string; onChange: (key: string) => void; label: string; kind?: 'supply' | 'furniture'; except?: string | null }) {
   const d = destinations(inv);
+  const houses = kind === 'supply' ? [] : d.houses.filter(h => h.place !== except);
   return <select value={value} aria-label={label} onChange={e => onChange(e.target.value)}>
     {!value && <option value="">▲ choose a place</option>}
-    <optgroup label="Storage">{d.storages.map(p => <option key={p.place} value={p.place!}>{placeTitle(p)}</option>)}</optgroup>
-    {d.houses.length > 0 && <optgroup label="Houses">{d.houses.map(h => <option key={h.place} value={h.place!}>{houseOption(inv, h)}</option>)}</optgroup>}
+    <optgroup label="Storage & closets">{d.storages.filter(p => p.place !== except).map(p => <option key={p.place} value={p.place!}>{placeTitle(p)}</option>)}</optgroup>
+    {houses.length > 0 && <optgroup label="Houses">{houses.map(h => <option key={h.place} value={h.place!}>{kind === 'furniture' ? `${h.name} (house)` : houseOption(inv, h)}</option>)}</optgroup>}
   </select>;
 }
 /** The Repository record that holds the assignment: the link opens it (§150). */
@@ -145,7 +144,12 @@ type ItemEdit = { name?: string; measure?: string; perClean?: string; min?: stri
 function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace; canEdit: boolean; onSaved: (i: Inventory) => void }) {
   const api = useContext(InvApi);
   // What this place keeps — "not kept here" items are off its list (§150).
-  const items = p.items.map(l => inv.items.find(i => i.id === l.itemId)).filter((i): i is InvItemRow => !!i);
+  // Supplies first; in a storage or a closet, the furniture kept there after them (owner, 2026-10-15).
+  const items = p.items.map(l => inv.items.find(i => i.id === l.itemId)).filter((i): i is InvItemRow => !!i)
+    .sort((a, b) => Number(a.kind === 'furniture') - Number(b.kind === 'furniture'));
+  const firstFurniture = p.view !== 'house' ? items.find(i => i.kind === 'furniture')?.id : undefined;
+  // ⇄ Move: furniture between the house and a storage (a supply only between storages and closets).
+  const [moving, setMoving] = useState<{ id: string; qty: string; to: string } | null>(null);
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   // §150, owner: counting is done onsite, on a phone — a sheet like the inspection's.
   const [onsite, setOnsite] = useState(false);
@@ -191,7 +195,7 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
       <p className="note">
         {!p.place ? <>▲ What cleaners took for units that had no place at the time. Give those units a place in the Repository; these
           moves stay here.</>
-          : house ? <>The house's furniture and equipment.{p.supplies ? <> Its supplies are under Storage → {lineTitle(inv, p.supplies, 'supply')}.</> : <> ▲ It has no supplies place.</>}</>
+          : house ? <>The house's furniture and equipment.{p.supplies ? <> Its supplies are under Storage → {lineTitle(inv, p.supplies)}.</> : <> ▲ It has no supplies place.</>}</>
           : !p.units.length ? <>No active unit draws from here now.</>
           : <>Supplies {p.units.map(u => u.name).join(', ')} — {ahead} clean{ahead === 1 ? '' : 's'} in the next {inv.aheadDays} days.</>}
         {' '}{house ? <Hint label="What the columns mean"><b>Keep at least</b> is what the house should have (8 towels, 6 glasses…); <b>To order</b> = that minus
@@ -213,13 +217,28 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
               const e = eds[i.id] ?? {};
               const now = l?.qty ?? 0;
               const val = now + (fix[i.id] ?? 0);
+              const mv = moving?.id === i.id ? moving : null;
               return (
-                <tr key={i.id}>
+                <Fragment key={i.id}>
+                {i.id === firstFurniture && <tr><td colSpan={9} className="sub-n"><b>Furniture here</b> — kept in this {p.self ? 'closet' : 'storage'}; ⇄ moves it to a house or elsewhere.</td></tr>}
+                <tr>
                   <td>{mode === 'edit' ? <span className="inv-edit">
                       <input value={e.name ?? i.baseName ?? i.name} maxLength={120} aria-label="Name" onChange={x => ed(i.id, 'name', x.target.value)} />
                       <input value={e.measure ?? i.measure} maxLength={20} aria-label="Counted in" className="inv-measure" onChange={x => ed(i.id, 'measure', x.target.value)} />
                     </span> : <><b>{i.name}</b> <span className="sub-n">{i.measure}</span>{(i.kind === 'furniture') !== house && <span className="sub-n"> · {i.kind === 'furniture' ? 'furniture' : 'supply'}</span>}</>}
-                    {l?.missingSince && <div className="breach"><Icon n="warning" /> reported not there {short(l.missingSince)} — count it</div>}</td>
+                    {l?.missingSince && <div className="breach"><Icon n="warning" /> reported not there {short(l.missingSince)} — count it</div>}
+                    {edit && mode === 'view' && !mv && (l?.qty ?? 0) > 0 && <div><button className="link tiny" disabled={busy}
+                      onClick={() => setMoving({ id: i.id, qty: '', to: '' })}>⇄ move</button></div>}
+                    {mv && <div className="row" style={{ gap: 6, alignItems: 'center' }}>
+                      <input className="inv-qty" type="number" min="0" step="1" placeholder="How many" aria-label="How many to move" value={mv.qty}
+                             onChange={x => setMoving({ ...mv, qty: x.target.value })} />
+                      <PlaceSelect inv={inv} value={mv.to} label="Move to" kind={i.kind ?? 'supply'} except={p.place} onChange={v => setMoving({ ...mv, to: v })} />
+                      <button className="small" disabled={busy || !mv.to || !(Number(mv.qty) > 0)} onClick={async () => {
+                        if (await send({ action: 'transfer', itemId: i.id, from: p.place, to: mv.to, qty: Number(mv.qty) },
+                                       `${i.name}: ${mv.qty} moved to ${lineTitle(inv, mv.to)}.`)) setMoving(null);
+                      }}>Move</button>
+                      <button className="link tiny" onClick={() => setMoving(null)}>Cancel</button>
+                    </div>}</td>
                   <td className="n">{edit && mode === 'view' ? (
                     <span className="inv-adj">
                       <button type="button" aria-label={`One less ${i.name}`} disabled={busy || val <= 0} onClick={() => setTo(i.id, val - 1, now)}>−</button>
@@ -247,6 +266,7 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
                       : <button className="link tiny danger" onClick={() => setSure(i.id)}><Icon n="trash" /> Remove</button>}
                   </td>}
                 </tr>
+                </Fragment>
               );
             })}
           </tbody>
@@ -324,7 +344,7 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
   const extra = Object.keys(counts).filter(id => !p.items.some(l => l.itemId === id)).map(id => inv.items.find(i => i.id === id)!).filter(Boolean);
   const shown = [...p.items.map(l => inv.items.find(i => i.id === l.itemId)!).filter(Boolean), ...extra];
   // Already on the list elsewhere (the other type): count it here, not a new item.
-  const other = q.trim() ? inv.items.filter(i => i.active && !shown.includes(i) && !p.hidden.includes(i.id) && i.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 5) : [];
+  const other = q.trim() ? inv.items.filter(i => i.active && !shown.includes(i) && !p.hidden.includes(i.id) && (p.view !== 'house' || i.kind === 'furniture') && i.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 5) : [];
   const list = q.trim() ? shown.filter(i => i.name.toLowerCase().includes(q.trim().toLowerCase())) : shown;
   const done = Object.keys(counts).length;
   const act = async (body: Record<string, unknown>, photos: File[] = []) => {
@@ -467,7 +487,8 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
   };
   const splitPart = (id: string, parts: Part[], k: number) => {
     const p = parts[k]!, n = Math.ceil(Number(p.qty) || 0);
-    const other = keys.find(x => !parts.some(q => q.place === x)) ?? p.place;
+    const fits = kindOf(id) === 'furniture' ? keys : d.storages.map(x => x.place!);
+    const other = fits.find(x => !parts.some(q => q.place === x)) ?? p.place;
     const half = Math.floor(n / 2);
     set(id, [...parts.slice(0, k), { ...p, qty: n ? String(n - half) : p.qty }, { place: other, qty: n ? String(half) : '' }, ...parts.slice(k + 1)]);
   };
@@ -505,7 +526,7 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
     <datalist id="inv-measures">{MEASURES.map(m => <option key={m} value={m} />)}</datalist>
     {canEdit && keys.length > 1 && <label>Goes to
       <PlaceSelect inv={inv} value={allTo} onChange={sendAll} label="Everything goes to" />
-      <span className="sub-n">a house: its furniture there, its supplies to the place it draws from · ⑂ splits a part to another place</span></label>}
+      <span className="sub-n">a house: its furniture there, its supplies to its storage or closet (supplies never stay in a house) · ⑂ splits a part</span></label>}
     {canEdit && <label><Icon n="search" /> Add an item
       <input value={q} placeholder="Search the supplies and furniture…" onChange={e => setQ(e.target.value)} /></label>}
     {found.length > 0 && <div className="button-row">{found.map(i => (
@@ -540,13 +561,13 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
                     : <><b>{it?.name}</b> <span className="sub-n">{it?.measure}{it?.kind === 'furniture' ? ' · furniture' : ''}</span>
                       {canEdit && isNew(id) && it && <> <button className="link tiny" title="New item: correct its name, how it is counted, its type"
                         onClick={() => setEditing({ id, name: it.baseName ?? it.name, size: it.size ?? '', measure: it.measure, kind: it.kind ?? 'supply' })}>✎ new item</button></>}</>}
-                    {hint && <div className="sub-n">suggested: {hint.map(h => `${h.place ? lineTitle(inv, h.place, it?.kind) : '▲ no place'} ${h.qty}`).join(' · ')}</div>}
+                    {hint && <div className="sub-n">suggested: {hint.map(h => `${h.place ? lineTitle(inv, h.place) : '▲ no place'} ${h.qty}`).join(' · ')}</div>}
                     {tags?.get(id)?.map(t => <div key={t} className="sub-n">{t}</div>)}</td>
                   <td className="n"><b>{total || '—'}</b></td>
                   <td>
                     {parts.map((p, k) => (
                       <div key={k} className="row" style={{ gap: 6, alignItems: 'center' }}>
-                        <PlaceSelect inv={inv} value={p.place} label="Place" onChange={v => set(id, parts.map((x, j) => j === k ? { ...x, place: v } : x))} />
+                        <PlaceSelect inv={inv} value={p.place} label="Place" kind={it?.kind ?? 'supply'} onChange={v => set(id, parts.map((x, j) => j === k ? { ...x, place: v } : x))} />
                         <input className="inv-qty" type="number" min="0" step="1" value={p.qty} aria-label="Quantity"
                                onChange={e => set(id, parts.map((x, j) => j === k ? { ...x, qty: e.target.value } : x))} />
                         {canEdit && <button className="link tiny" title="Split this part: half to another place" onClick={() => splitPart(id, parts, k)}>⑂ split</button>}
