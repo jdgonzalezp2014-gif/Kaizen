@@ -1498,6 +1498,15 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
   border: 1px solid var(--line); background: var(--card); color: var(--ink); box-shadow: var(--shadow-2);
   font-size: var(--fs-footnote); font-weight: 400; white-space: normal; text-align: left; opacity: 0; visibility: hidden;
   transition: opacity .1s ease; pointer-events: none; }
+.home-flags .home-work::after { white-space: pre-line; }
+.home-flags .ops-doc .icon { vertical-align: -2px; }
+/* The ↗ after the unit: the stay on hover, opening to the right of the arrow. */
+.home-unit .home-hostaway { position: relative; }
+.home-unit .home-hostaway::after { content: attr(data-tip); position: absolute; top: calc(100% + 6px); left: -8px; z-index: 50;
+  width: max-content; max-width: min(280px, 80vw); padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); box-shadow: var(--shadow-2); font-size: var(--fs-footnote); font-weight: 400;
+  white-space: pre-line; opacity: 0; visibility: hidden; transition: opacity .1s ease; pointer-events: none; }
+.home-unit .home-hostaway:hover::after, .home-unit .home-hostaway:focus-visible::after { opacity: 1; visibility: visible; }
 .home-flags [data-tip]:hover::after, .home-flags [data-tip]:focus-within::after { opacity: 1; visibility: visible; }
 
 /* §90: the reservation in Hostaway, and the ID to Drive from Home. */
@@ -2568,7 +2577,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .home-sub:first-of-type { margin-top: 0; }
 .home-card { margin: 0; }
 @media (min-width: 981px) {
-  .home-layout:not(.solo) { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: var(--s-5); }
+  .home-layout:not(.solo) { grid-template-columns: minmax(0, 3fr) minmax(360px, 2fr); gap: var(--s-5); }
   .home-side-col { position: sticky; top: var(--s-4); }
 }
 /* owner, 2026-10-15: the strip and its panel read as one box, the same white as To-dos and level with it —

@@ -23,8 +23,8 @@
  */
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import {
-  can, getClaims, getCrewAdmin, getForward, getInventory, getGuestDocs, getOperations, getVariable, uploadGuestDoc,
-  type Claim, type OperationsResponse, type StayDocs, type VariableExpense
+  can, getClaims, getCrewAdmin, getForward, getInventory, getGuestDocs, getOperations, getTodos, getVariable, uploadGuestDoc,
+  type Claim, type Todo, type OperationsResponse, type StayDocs, type VariableExpense
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
 import { todayIn, addDays } from '../lib/dates.ts';
@@ -101,6 +101,14 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     return r.ok ? new Set(r.orders.map(o => o.todoId)) : new Set<string>();
   });
 
+  // Open to-dos per unit, for the work chips on each check-in/out row — as on the board (§159).
+  const work = useLoad(canOps && canTodos, async () => {
+    const r = await getTodos();
+    const m = new Map<string, Todo[]>();
+    if (r.ok) for (const t of r.todos) if (!t.doneAt) for (const u of t.unitIds) m.set(u, [...(m.get(u) ?? []), t]);
+    return m;
+  });
+
   const tomorrow = addDays(today, 1);
   const todays = useMemo(() => {
     const rows = ops.data?.rows ?? [];
@@ -164,19 +172,20 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   const docPill = (r: BoardRow, kind: 'id' | 'agreement') => {
     const have = docs[r.resId];
     const done = kind === 'agreement' ? signed(r) || !!have?.agreement : !!have?.id;
-    const text = kind === 'agreement' ? (done ? '✓ signed' : '▲ not signed') : (done ? '✓ ID' : '○ ID');
+    // The agreement is a sheet with ✓ or ▲ — "signed / not signed" is on hover (owner, 2026-10-15).
+    const text = kind === 'agreement' ? <>{done ? '✓' : '▲'} <Icon n="file" /></> : (done ? '✓ ID' : '○ ID');
     const what = kind === 'agreement' ? 'rental agreement' : 'ID copy';
     if (done) {
       return have?.folderUrl
         ? <a key={kind} className="ops-flag ops-doc filed" href={have.folderUrl} target="_blank" rel="noreferrer"
-             data-tip={`The ${what} — open the reservation's Drive folder`}>{text}</a>
-        : <span key={kind} className="ops-flag ops-doc filed" data-tip={`The ${what} is in.`}>{text}</span>;
+             data-tip={`${kind === 'agreement' ? 'Signed — t' : 'T'}he ${what} — open the reservation's Drive folder`}>{text}</a>
+        : <span key={kind} className="ops-flag ops-doc filed" data-tip={`${kind === 'agreement' ? 'Signed — t' : 'T'}he ${what} is in.`}>{text}</span>;
     }
     const cls = `ops-flag ops-doc missing ${kind === 'agreement' ? 'urgent' : ''}`;
-    if (!canDocs) return <span key={kind} className={cls} data-tip={`No ${what} yet.`}>{text}</span>;
+    if (!canDocs) return <span key={kind} className={cls} data-tip={`Not signed — no ${what} yet.`}>{text}</span>;
     return (
       <label key={kind} className={`${cls} home-upload`}
-             data-tip={`No ${what} yet — click to upload it to the reservation's Drive folder, or drop the file on this line.`}>
+             data-tip={`${kind === 'agreement' ? 'Not signed — n' : 'N'}o ${what} yet — click to upload it to the reservation's Drive folder, or drop the file on this line.`}>
         {uploading === `${r.resId}:${kind}` ? 'Uploading…' : text}
         <input type="file" accept="image/*,.pdf" className="sr-file" disabled={!!uploading}
                onChange={e => { void upload(r, kind, e.target.files?.[0]); e.target.value = ''; }} />
@@ -189,23 +198,34 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     return (
       <DropRow key={r.resId} enabled={canDocs} label={`${r.unit} · ${r.guest || 'guest'}`} onDrop={(kind, file) => void upload(r, kind, file)}>
         <span className="home-time">{r.time}</span>
-        <span className="home-main home-two">
-          <span className="home-who"><b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}</span>
-          <span className="home-meta sub-n">
-            {r.guest || 'guest'}
-            {/* Same arrow as the Operations board: the reservation in Hostaway. */}
-            {' '}<a className="home-hostaway" href={hostawayReservationUrl(r.resId)} target="_blank" rel="noreferrer" title="Open the reservation in Hostaway">↗</a>
-            {` · ${r.nights}n`}{r.guests ? ` · ${r.guests}g` : ''}
-            {ready && <span className={ready.startsWith('▲') ? 'breach' : undefined}> · {ready}</span>}
-          </span>
-        </span>
+        <UnitCell r={r} />
         <span className="home-flags">
+          {workChips(r.unitId)}
+          {ready && <IconFlag tone={ready.startsWith('▲') ? 'attn' : undefined} icon={<Icon n="brush" />}
+            label={ready.startsWith('▲') ? 'Clean not assigned' : 'Prepped'} detail={ready.startsWith('▲') ? 'The departure before this guest has no cleaner yet' : ready} />}
           {(r.agreement || docs[r.resId]) && docPill(r, 'agreement')}
           {/* The ID copy only where the building keeps one (§73, §106) — as on the board. */}
           {canDocs && needsCopy.has(r.unitId) && docPill(r, 'id')}
         </span>
       </DropRow>
     );
+  };
+  /**
+   * Open work on the unit, as the board shows it (§159) but only that there is some: a wrench for work orders,
+   * a list for to-dos, a cart for purchase orders — the titles on hover, a click opens them (owner, 2026-10-15).
+   */
+  const workChips = (unitId: string) => {
+    const all = work.data?.get(unitId) ?? [];
+    const po = orders.data ?? new Set<string>();
+    const open = () => { onGo('operations:todos'); setTimeout(() => dispatchEvent(new CustomEvent('kaizen:work-for', { detail: unitId })), 0); };
+    return ([
+      ['wrench', 'Work orders', all.filter(t => t.kind === 'work_order')],
+      ['cart', 'Purchase orders', all.filter(t => t.kind !== 'work_order' && po.has(t.id))],
+      ['list', 'To-dos', all.filter(t => t.kind !== 'work_order' && !po.has(t.id))]
+    ] as const).filter(([, , ts]) => ts.length).map(([n, label, ts]) => (
+      <button key={n} type="button" className="ops-flag due ops-flag-btn home-work" aria-label={label} onClick={open}
+              data-tip={`${label}:\n${ts.map(t => `· ${t.title}`).join('\n')}`}><Icon n={n} /></button>
+    ));
   };
   // Not signed first — the three shown are the three to chase.
   const bySigned = (list: BoardRow[]) => [...list].sort((a, b) => Number(signed(a)) - Number(signed(b)));
@@ -259,10 +279,10 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
         {upErr && <p className="banner warn">▲ {upErr}</p>}
         <h4 className="home-sub">Check-outs</h4>
         <DayGroup label={`Today · ${dayWord(today)}`} empty="No departures today.">
-          {todays.outs.length > 0 && <ShowMore items={[...todays.outs].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))} render={r => <CleanItem key={r.resId} r={r} />} />}
+          {todays.outs.length > 0 && <ShowMore items={[...todays.outs].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))} render={r => <CleanItem key={r.resId} r={r} work={workChips(r.unitId)} />} />}
         </DayGroup>
         <DayGroup label={`Tomorrow · ${dayWord(tomorrow)}`} empty="No departures tomorrow.">
-          {todays.outs2.length > 0 && <ShowMore items={[...todays.outs2].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))} render={r => <CleanItem key={r.resId} r={r} />} />}
+          {todays.outs2.length > 0 && <ShowMore items={[...todays.outs2].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))} render={r => <CleanItem key={r.resId} r={r} work={workChips(r.unitId)} />} />}
         </DayGroup>
         <h4 className="home-sub">Check-ins</h4>
         <DayGroup label={`Today · ${dayWord(today)}`} empty="No arrivals today.">
@@ -397,20 +417,34 @@ function DayGroup({ label, empty, children }: { label: string; empty: string; ch
   );
 }
 
-function CleanItem({ r }: { r: BoardRow }) {
+/**
+ * Time | unit ↗ | icons — one line (owner, 2026-10-15). The stay (guest, nights, what it pays) is the arrow's
+ * hover, the arrow still opens the reservation in Hostaway, as on the board.
+ */
+function UnitCell({ r }: { r: BoardRow }) {
+  const stay = [r.guest || 'guest', `${r.nights} night${r.nights === 1 ? '' : 's'}`, r.guests ? `${r.guests} guests` : '',
+    r.channel, r.total ? money(r.total) : ''].filter(Boolean).join(' · ');
+  return (
+    <span className="home-main home-unit">
+      <b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}
+      {' '}<a className="home-hostaway" href={hostawayReservationUrl(r.resId)} target="_blank" rel="noreferrer"
+              aria-label={`${stay} — open the reservation in Hostaway`} data-tip={`${stay}\nOpen the reservation in Hostaway`}>↗</a>
+    </span>
+  );
+}
+
+function CleanItem({ r, work }: { r: BoardRow; work: ReactNode }) {
   const who = r.assignment === 'assigned' ? r.cleaner
-    : r.assignment === 'not_needed' ? 'no clean needed' : '▲ unassigned';
+    : r.assignment === 'not_needed' ? 'No clean needed' : 'Unassigned';
   return (
     <li className={r.assignment === 'not_needed' ? 'muted' : undefined}>
       <span className="home-time">{r.time}</span>
-      {/* Unit on top, who cleans and the pay under it, the flags in one row at the right. */}
-      <span className="home-main home-two">
-        <span className="home-who"><b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}</span>
-        <span className={`home-meta ${who?.startsWith('▲') ? 'breach' : 'sub-n'}`}>
-          {who}{r.price != null && <span className="sub-n"> · {money2(r.price)}</span>}
-        </span>
-      </span>
+      <UnitCell r={r} />
       <span className="home-flags">
+        {work}
+        {/* Who cleans and the pay, on hover; amber when nobody does yet. */}
+        <IconFlag tone={r.assignment === 'assigned' || r.assignment === 'not_needed' ? undefined : 'attn'} icon={<Icon n="user" />}
+          label={who ?? 'Unassigned'} detail={r.price != null ? `Pays ${money2(r.price)}` : null} />
         {r.urgency === 'turnover' && <IconFlag tone="attn" icon={<Icon n="zap" />} label="Same-day turnover" detail="The next guest arrives the same day" />}
         {r.deep && <IconFlag icon={<Icon n="brush" />} label="Deep clean" />}
         {(r.inspection.key === 'req' || r.inspection.key === 'due') && <IconFlag tone={r.inspection.key === 'req' ? 'attn' : undefined} icon={<Icon n="search" />}
