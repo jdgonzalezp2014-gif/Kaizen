@@ -9,6 +9,20 @@
  */
 export const CLAIM_SEVERITY = ['Low', 'Medium', 'High', 'Critical'];
 export const CLAIM_STATUS = ['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'];
+export const isClosedClaim = (status: string | null | undefined) => status === 'Resolved' || status === 'Refunded' || status === 'Dismissed';
+
+/**
+ * The day a case closed (§167, owner 2026-10-15). Kept while the case stays closed: the edit form and Slack save
+ * the whole case without it, and stamping today on every edit moved a closed case's income into the month of the
+ * edit. A date sent wins; a case closing now gets `today` (New York's — the caller's); an open case has none.
+ */
+export function closeDate(status: string, sent: string | null | undefined,
+                          before: { status: string; resolved_on: string | null } | null, today: string): string | null {
+  if (!isClosedClaim(status)) return null;
+  if (sent && /^\d{4}-\d{2}-\d{2}$/.test(sent)) return sent;
+  if (before && isClosedClaim(before.status) && before.resolved_on) return before.resolved_on;
+  return today;
+}
 /**
  * §162 (owner, 2026-10-15): Claims & upselling — a pet fee or a late check-in is the same case (asked, received,
  * sometimes work behind it). A reservation ALTERATION is not upselling: its price is part of the reservation and

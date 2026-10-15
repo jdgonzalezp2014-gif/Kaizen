@@ -4410,3 +4410,40 @@ changed, and let you merge or drop yours.
 - Hostaway: the clock (`slack-cron`) now runs `pullAll` each tick so tasks written there arrive without someone
   opening a list.
 
+
+## §167 — Claims & upselling joined to Operations and Finance: the plan, and phase 0 (2026-10-15)
+
+**Owner:** the case card in Operations showed only Repair work — requested and received had moved to Revenue
+(`claims.money`, §162 round 2) — "if Ops can't enter it, it doesn't work". Upsells showed no price. Claims pay less or
+more than asked: the system must hold a gain or a loss.
+
+**The model (owner):** Requested is an estimate. The cost is the case's work orders plus its purchases (`repair_work`,
+as §162). Received is one field (`claims.refund`). Finance gets the difference: result = received − repair work, signed.
+No double count: verified on production 2026-10-15 — no claim has costed work, no to-do has both a typed cost and a
+purchase. Only a person typing the same money twice could make one; a warning is planned, not a formula change.
+
+**Decided (owner's answers):** Ops (`claims`) enters Requested and Received on the case and sees its Gain / Loss;
+Finance (`claims.money`) sees totals per unit and portfolio and can also edit, just in case — one source, no
+confirmation mark. 'Refunded' becomes 'Paid'. When the repair was charged to the owner, the reimbursement is the
+owner's except the difference: Kaizen's share = max(0, received − work charged to the owner). Claims #4 ($150), #7
+($200), #8 ($50) are in progress with the platforms — left open.
+
+**Phases:** 0 (this) the close date and the owner's repairs · 1 migration 092: `received_on` (income dated the day the
+money was entered — Revenue and Finance's table on one rule; partial: the field is updated, the day moves with it;
+reopening moves nothing), 'Refunded' → 'Paid' · 2 API: `/api/claims` reads/writes the money, rules in `src/lib/claims.ts`
+(Paid needs received > 0; Dismissed with money refused; Resolved with requested > 0 and nothing received asks why) ·
+3 Ops card (claim: Requested / Received / Repair work / Result; upsell: one "Price charged", "Collected how?" for an
+alteration, SOP #3 rule) · 4 Finance (`ClaimsMoney` by `received_on`, per unit, signed result, owed to owner) ·
+5 Slack (figures in the private card, none in channel messages) · 6 SOP #3 v5, docs. Reconciliation with platform
+payouts: later, read-only, nothing written to Hostaway without the owner.
+
+**Phase 0, done:**
+- **The close day stayed put only by luck.** `/api/claims` filled `resolved_on = b.resolvedOn ?? today`, and neither
+  `ClaimEdit` nor Slack's `claimUpdate` sends it — every edit of a closed case stamped today, moving its income into the
+  edit's month (none moved yet: #9 was closed and edited the same day). `closeDate` (`src/lib/claims.ts`, tested) keeps
+  the day while the case stays closed; a date sent wins; reopening clears it. Today is New York's (`todayIn`), not UTC's
+  (after 8 PM UTC is tomorrow) — also for a new case's `occurred_on` and a to-do turned into a claim.
+- **A repair charged to the owner is not Kaizen's cost** (owner, option a). `settleRepair` wrote it in Costs AND on
+  the owner's statement in Hostaway, so Kaizen's net carried a cost the owner pays. Now Hostaway only; ticking the box
+  on a completed repair takes it out of Costs ("Removed from Costs — charged to the owner"). No repair was charged to
+  the owner (checked), so no row to clean. The checkbox's words say so. SOP #4 v3 at deploy.

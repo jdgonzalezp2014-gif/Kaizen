@@ -49,7 +49,7 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
   `cleaning` (every clean done and priced — key = clean key, its unit and day, category Cleaning),
   `cleaning_extra` (approved extras), both kept in step nightly by `syncCleaningCosts`
   (`functions/_lib/field-costs.ts`, run by /api/cron and after an extra is approved; a voided or
-  re-priced clean follows); `repair` (a work order — or §137 any to-do — completed with a cost:
+  re-priced clean follows); `repair` (a work order — or §137 any to-do — completed with a cost, except a repair charged to the owner, §167:
   `settleRepair`; Repairs, "Buy…" = Restock, else the title's category); `inventory` (the team's
   purchase with a cost, Restock); `field` (money paid in the field — a cleaner's, helper's or
   handyman's — once a person approves it: `field_expenses`, Operations → Cleaners). Before §137 Costs
@@ -60,6 +60,9 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
 - Money formatting pinned to `en-US` (§20). Dates: an optional filter is `null`, never `''` (§54).
 
 ## Open items
+
+- **§167:** claims money — income will be dated `received_on` (Revenue and Revenue → Claims & upselling on one rule),
+  result per case signed, Kaizen's share only the difference when the repair was charged to the owner. Phases 1–6 pending.
 
 - Market / comp data: an intentional empty slot ("not connected").
 - QUO SMS still staged.

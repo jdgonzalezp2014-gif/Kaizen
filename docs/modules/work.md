@@ -59,8 +59,8 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   to-do — its "Sent to Hostaway as task #N" note (verified with getTask + footer), else its listing's
   tasks — and updates that task instead of creating one. GET /tasks still fails (403); unit-less tasks are
   reachable only by id, which is why the note matters (§132).
-- A completed repair with a cost is always an expense in Costs › Repairs (`settleRepair`);
-  "Charge to owner" also writes a Hostaway expense (negative amount) (§95).
+- A completed repair with a cost is an expense in Costs › Repairs (`settleRepair`) — unless "Charge to owner":
+  then it is only a Hostaway expense on the listing (negative amount), the owner's cost, not Kaizen's (§95, §167).
 - A claim is a case: `occurred_on` never moves; soft delete with undo; open cases first;
   can stand alone (late checkout) (§46, §77, §86).
 - Times in timelines and the done log are New York (§87).
@@ -94,6 +94,10 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 
 ## Open items
 
+- **§167 claims money plan (approved 2026-10-15):** phases 1–6 pending — `received_on` + 'Paid' (migration 092), Ops
+  enters Requested/Received and sees Gain/Loss, Finance edits too, owner's share when the repair was charged to the owner.
+  Phase 0 (close date kept, NY day; owner-charged repairs out of Costs) is in `redesign`.
+
 - §166: claims are refreshed live but their edit form has no version check yet (last save wins, as before).
 - §166: the bell's list lives in each browser (localStorage); no "seen" across devices.
 
@@ -107,7 +111,7 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 
 ## History
 
-§46, §76–§78, §82–§88, §93–§95, §103–§105, §120, §132, §137, §162.
+§46, §76–§78, §82–§88, §93–§95, §103–§105, §120, §132, §137, §162, §167.
 
 - **+ 🛒 purchase on a to-do (§150, operations module):** an open top-level to-do can record what was bought for it
   (inventory stock per place + one Restock expense) and close, or save its order as sub-tasks — `TaskPurchase` from

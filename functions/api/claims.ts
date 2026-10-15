@@ -14,6 +14,8 @@ import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { commentToThread, notifyClaim } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
+import { closeDate } from '../../src/lib/claims.ts';
+import { todayIn } from '../../src/lib/dates.ts';
 
 const SEVERITY = ['Low', 'Medium', 'High', 'Critical'];
 const STATUS = ['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'];
@@ -109,12 +111,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const status = STATUS.includes(String(b.status)) ? b.status : 'Open';
 
   // Closing a case without a date leaves a resolved claim that cannot be
-  // aged, so the date is filled rather than left to whoever remembers.
-  const closing = status === 'Resolved' || status === 'Refunded' || status === 'Dismissed';
-  const resolvedOn = b.resolvedOn ?? (closing ? new Date().toISOString().slice(0, 10) : null);
+  // aged, so the date is filled rather than left to whoever remembers —
+  // New York's day (UTC's is tomorrow after 8 PM), and kept on later edits (closeDate, §167).
+  const today = todayIn('America/New_York');
 
   if (b.id) {
-    const before = (await sql`SELECT status FROM claims WHERE account_id = 1 AND id = ${b.id}`)[0] as { status: string } | undefined;
+    const before = (await sql`SELECT status, resolved_on::text AS resolved_on FROM claims WHERE account_id = 1 AND id = ${b.id}`)[0] as
+      { status: string; resolved_on: string | null } | undefined;
+    const resolvedOn = closeDate(String(status), b.resolvedOn, before ?? null, today);
     if (before && before.status !== status) {
       await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
                 VALUES (1, 'claim', ${String(b.id)}, 'status', ${`${before.status} → ${status}`}, ${who.email})`;
@@ -127,7 +131,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         source = ${b.source ?? null}, description = ${b.description ?? null},
         -- Cleared when a case is reopened, so a claim never carries a
         -- resolution date while it is open.
-        resolved_on = ${closing ? resolvedOn : null},
+        resolved_on = ${resolvedOn},
         -- The stay changes only when it is sent: a form that does not show
         -- it must not clear it.
         reservation_id = CASE WHEN ${b.reservationId !== undefined} THEN ${resId} ELSE reservation_id END,
@@ -147,9 +151,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       (account_id, unit_id, occurred_on, category, severity, status, source,
        description, resolved_on, created_by, reservation_id, reservation_label, case_url)
     VALUES (1, ${b.unitId || null},
-            ${b.occurredOn || new Date().toISOString().slice(0, 10)},
+            ${b.occurredOn || today},
             ${b.category ?? null}, ${severity}, ${status}, ${b.source ?? null},
-            ${b.description ?? null}, ${resolvedOn}, ${who.email}, ${resId}, ${resLabel}, ${caseUrl})
+            ${b.description ?? null}, ${closeDate(String(status), b.resolvedOn, null, today)}, ${who.email}, ${resId}, ${resLabel}, ${caseUrl})
     RETURNING id`;
   if (rows[0]?.id != null) {
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)

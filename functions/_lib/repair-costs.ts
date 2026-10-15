@@ -9,7 +9,8 @@
  *     the New York day it was completed;
  *   · §137: any other to-do completed with a cost too (a shopping list, a
  *     purchase) — "Buy…" is Restock, else the category its title names;
- *   · anything else (reopened, cancelled, removed, no cost) → no expense.
+ *   · anything else (reopened, cancelled, removed, no cost) → no expense;
+ *   · §167: a repair charged to the owner → no expense in Costs (it is the owner's), only Hostaway's.
  * Idempotent: the Costs row is keyed by the task (source 'repair',
  * external_ref = id) and the Hostaway expense id is kept on the task.
  */
@@ -53,24 +54,28 @@ export async function settleRepair(sql: SqlFn, id: string, by: string, creds: ()
   const unit = r.unit_ids?.[0] ?? null;
   const day = nyDay(r.done_at ?? new Date());
   const what = `🔧 ${r.title}${r.vendor ? ` — ${r.vendor}` : ''}`;
+  // §167 (owner, 2026-10-15): a repair charged to the owner is the owner's cost — Hostaway puts it on their statement —
+  // so it stays out of Kaizen's Costs. It used to be in both: Kaizen's net carried a cost the owner pays.
+  const owners = repair && r.charge_owner && !!unit;
+  const inCosts = counts && !owners;
 
   // ── Costs ──
   const [e] = await sql`SELECT id, amount::float AS amount, start_date::text AS day, unit_id, label
                           FROM expenses WHERE account_id = 1 AND source = 'repair' AND external_ref = ${id}` as
     { id: string; amount: number; day: string; unit_id: string | null; label: string | null }[];
-  if (counts && !e) {
+  if (inCosts && !e) {
     await sql`INSERT INTO expenses (account_id, unit_id, shared, start_date, category, frequency, amount, label, notes, source, external_ref, created_by)
               VALUES (1, ${unit}, ${!unit}, ${day}, ${category}, 'One-time', ${cost}, ${r.title.slice(0, 120)},
                       ${`${repair ? 'Repair' : 'To-do'} #${id}${r.vendor ? ` · ${r.vendor}` : ''}`}, 'repair', ${id}, ${by})`;
     await note(sql, id, `Recorded in Costs: ${money(cost)} · ${category} · ${day}${unit ? '' : ' · portfolio-wide'}`, by);
-  } else if (counts && e && (e.amount !== cost || e.day !== day || (e.unit_id ?? null) !== unit || e.label !== r.title.slice(0, 120))) {
+  } else if (inCosts && e && (e.amount !== cost || e.day !== day || (e.unit_id ?? null) !== unit || e.label !== r.title.slice(0, 120))) {
     await sql`UPDATE expenses SET amount = ${cost}, start_date = ${day}, unit_id = ${unit}, shared = ${!unit}, label = ${r.title.slice(0, 120)},
                                   category = ${category}, notes = ${`${repair ? 'Repair' : 'To-do'} #${id}${r.vendor ? ` · ${r.vendor}` : ''}`}
                WHERE account_id = 1 AND id = ${e.id}`;
     if (e.amount !== cost) await note(sql, id, `Costs updated: ${money(e.amount)} → ${money(cost)}`, by);
-  } else if (!counts && e) {
+  } else if (!inCosts && e) {
     await sql`DELETE FROM expenses WHERE account_id = 1 AND id = ${e.id}`;
-    await note(sql, id, `Removed from Costs (${money(e.amount)}) — no longer completed with a cost.`, by);
+    await note(sql, id, `Removed from Costs (${money(e.amount)}) — ${counts ? 'charged to the owner' : 'no longer completed with a cost'}.`, by);
   }
 
   // ── The owner's charge, in Hostaway ──

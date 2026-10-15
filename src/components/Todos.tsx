@@ -1218,7 +1218,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
           {wo && (
             <label className="check todo-charge" title={v.unitIds.length ? '' : 'Needs a listing — the expense goes on it'}>
               <input type="checkbox" checked={v.chargeOwner} disabled={!v.unitIds.length} onChange={e => set('chargeOwner', e.target.checked)} />
-              Charge to owner <span className="sub-n">— when completed, the cost is also an expense on the listing in Hostaway (owner statements)</span>
+              Charge to owner <span className="sub-n">— when completed, the cost is the owner's: an expense on the listing in Hostaway (owner statements), not in Kaizen's Costs</span>
             </label>
           )}
           {wo && <p className="note todo-costnote">A completed repair's cost is recorded in Costs → Repairs, with or without a claim.</p>}
@@ -1315,7 +1315,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
               <VendorOptions />
               <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
               <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
-              <label className="check todo-charge" title={v.unitIds.length ? 'When completed, the cost is also an expense on the listing in Hostaway (owner statements)' : 'Needs a listing — the expense goes on it'}>
+              <label className="check todo-charge" title={v.unitIds.length ? 'When completed, the cost is the owner\'s: an expense on the listing in Hostaway (owner statements), not in Kaizen\'s Costs' : 'Needs a listing — the expense goes on it'}>
                 <input type="checkbox" checked={v.chargeOwner} disabled={!v.unitIds.length} onChange={e => set('chargeOwner', e.target.checked)} />
                 Charge to owner
               </label>

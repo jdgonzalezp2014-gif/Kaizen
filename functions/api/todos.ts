@@ -39,6 +39,7 @@ import { settleRepair } from '../_lib/repair-costs.ts';
 import { workLinkFor } from '../_lib/vendor-work.ts';
 import { commentToThread, notifyTask, tellOwner, type TaskEvent } from '../_lib/slack.ts';
 import { applyUrgency } from '../_lib/urgency.ts';
+import { todayIn } from '../../src/lib/dates.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -466,7 +467,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     const c = (await sql`
       INSERT INTO claims (account_id, unit_id, occurred_on, category, severity, status, description, refund, created_by,
                           reservation_id, reservation_label)
-      VALUES (1, ${(before.unit_ids ?? [])[0] ?? null}, ${new Date().toISOString().slice(0, 10)}, ${category}, ${severity}, 'Open',
+      VALUES (1, ${(before.unit_ids ?? [])[0] ?? null}, ${todayIn('America/New_York')}, ${category}, ${severity}, 'Open',
               ${[before.title, detail].filter(Boolean).join(' — ').slice(0, 2000)}, 0, ${who.email},
               ${before.reservation_id ?? null}, ${before.reservation_label ?? null})
       RETURNING id`)[0] as { id: string | number };
