@@ -11,6 +11,7 @@ import { askJson, toBase64, type AiFile } from './ai-chain.ts';
 import { driveToken, fileIdFromUrl } from './gdrive.ts';
 import { invItems, openOrders } from './inventory.ts';
 import { aliasKey, readReceipt, type Receipt } from '../../src/lib/receipt.ts';
+import { parseOrderMd, readOrder, storeProduct, withProduct, type BuyOption } from '../../src/lib/store-order.ts';
 
 // Gemini takes ~20 MB per request in all; base64 adds a third. A long screenshot arrives as several parts (the browser cuts it).
 const MAX_BYTES = 12 * 1024 * 1024;
@@ -68,16 +69,15 @@ export async function receiptFiles(sql: SqlFn, env: Env, files: File[], fieldExp
 }
 
 /**
- * `texts`: a PDF's own text, taken out in the browser (exact numbers, and any model can read text).
- * The same files read again come from receipt_reads, not the AI; the reading is re-checked against today's supplies.
+ * A cleaner's receipt photos (from Drive). The same files read again come from receipt_reads, not the AI; the
+ * reading is re-checked against today's supplies. The team's Walmart/Amazon orders are Markdown: `readOrderMds`.
  */
-export async function readReceiptFiles(sql: SqlFn, env: Env, files: AiFile[], withOrders: boolean, texts: string[] = []): Promise<ReadResult> {
-  const said = texts.map(t => t.trim()).filter(Boolean).map(t => t.slice(0, 20000));
-  if (!files.length && !said.length) return { ok: false, message: 'Attach the receipt first — a photo, a screenshot or a PDF.' };
+export async function readReceiptFiles(sql: SqlFn, env: Env, files: AiFile[], withOrders: boolean): Promise<ReadResult> {
+  if (!files.length) return { ok: false, message: 'Their receipt could not be found in Drive.' };
   const [items, orders, learned] = await Promise.all([invItems(sql), withOrders ? openOrders(sql) : Promise.resolve([]),
     sql`SELECT text, item_id::text AS "itemId" FROM inventory_receipt_aliases WHERE account_id = 1` as Promise<{ text: string; itemId: string }[]>]);
   const aliases = new Map(learned.map(a => [a.text, a.itemId]));
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([files.map(f => f.data), said])));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([files.map(f => f.data), []])));
   const hash = [...new Uint8Array(digest)].map(x => x.toString(16).padStart(2, '0')).join('');
   const [seen] = await sql`SELECT raw, by, created_at::text AS at, order_no FROM receipt_reads WHERE account_id = 1 AND hash = ${hash}` as
     { raw: Record<string, unknown>; by: string; at: string; order_no: string | null }[];
@@ -89,8 +89,7 @@ export async function readReceiptFiles(sql: SqlFn, env: Env, files: AiFile[], wi
   const name = new Map(active.map(i => [i.id, i.name]));
   const user = `Supplies list (id | name | measure):\n${active.map(i => `${i.id} | ${i.name} | ${i.measure}`).join('\n')}\n\n` +
     (orders.length ? `Open orders (id | title | supplies asked for):\n${orders.map(o => `${o.todoId} | ${o.title} | ${o.lines.map(l => name.get(l.itemId) ?? '').filter(Boolean).join(', ')}`).join('\n')}\n\n` : '') +
-    (said.length ? `The receipt's text (from its PDF):\n${said.join('\n\n---\n\n')}\n\n` : '') +
-    (files.length ? `Read the attached receipt${files.length > 1 ? ` (${files.length} images, in order)` : ''}.` : 'Read the receipt above.');
+    `Read the attached receipt${files.length > 1 ? ` (${files.length} images, in order)` : ''}.`;
   const r = await askJson(sql, env, SYSTEM, user, files);
   if (!r.ok) return { ok: false, message: r.error };
   const receipt = readReceipt(r.json, items, orders, aliases);
@@ -109,5 +108,57 @@ export async function learnAliases(sql: SqlFn, by: string, raw: unknown) {
     if (text.length < 3 || !itemId) continue;
     await sql`INSERT INTO inventory_receipt_aliases (account_id, text, item_id, by_name) VALUES (1, ${text}, ${itemId}, ${by})
               ON CONFLICT (account_id, text) DO UPDATE SET item_id = EXCLUDED.item_id, by_name = EXCLUDED.by_name, updated_at = now()`;
+  }
+}
+
+/** What reading Markdown orders answers: one receipt per file, in order, and which were read before. */
+export type OrdersResult = { ok: true; receipts: Receipt[]; repeats: ({ at: string; orderNo: string | null } | null)[] } | { ok: false; message: string };
+
+/**
+ * The team's Walmart/Amazon orders saved with MarkDownload (owner, 2026-10-15): read as printed, no AI
+ * (store-order.ts). Each file is one order; an order (or the same text) read before is said, so it is not
+ * recorded twice — the same receipt_reads as the AI's, `by` = 'Markdown'.
+ */
+export async function readOrderMds(sql: SqlFn, mds: string[], withOrders: boolean): Promise<OrdersResult> {
+  const list = mds.map(t => t.slice(0, 200_000)).filter(t => t.trim()).slice(0, 5);
+  if (!list.length) return { ok: false, message: 'Attach the order saved as Markdown (.md) first.' };
+  const [items, orders, learned] = await Promise.all([invItems(sql), withOrders ? openOrders(sql) : Promise.resolve([]),
+    sql`SELECT text, item_id::text AS "itemId" FROM inventory_receipt_aliases WHERE account_id = 1` as Promise<{ text: string; itemId: string }[]>]);
+  const aliases = new Map(learned.map(a => [a.text, a.itemId]));
+  const receipts: Receipt[] = [], repeats: ({ at: string; orderNo: string | null } | null)[] = [];
+  for (const md of list) {
+    const o = parseOrderMd(md);
+    if (!o.lines.length) {
+      return { ok: false, message: o.store === 'walmart' || o.total != null
+        ? 'No products in that file — the whole page was saved. On the order page, select from the order\'s title down to its Total and save the selection with MarkDownload.'
+        : 'That file is not a Walmart or Amazon order page saved with MarkDownload.' };
+    }
+    const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(md));
+    const hash = [...new Uint8Array(digest)].map(x => x.toString(16).padStart(2, '0')).join('');
+    const [seen] = await sql`SELECT created_at::text AS at, order_no FROM receipt_reads WHERE account_id = 1
+                              AND (hash = ${hash} OR (${o.orderNo}::text IS NOT NULL AND order_no = ${o.orderNo})) ORDER BY created_at LIMIT 1` as { at: string; order_no: string | null }[];
+    const receipt = readOrder(o, items, orders, aliases);
+    receipts.push(receipt);
+    repeats.push(seen ? { at: seen.at, orderNo: seen.order_no ?? o.orderNo } : null);
+    await sql`INSERT INTO receipt_reads (account_id, hash, raw, by, store, order_no) VALUES (1, ${hash}, ${JSON.stringify(o)}::jsonb, 'Markdown', ${receipt.store}, ${o.orderNo})
+              ON CONFLICT DO NOTHING`.catch(() => {});
+  }
+  return { ok: true, receipts, repeats };
+}
+
+/**
+ * The store products a recorded purchase confirmed (owner, 2026-10-15): each goes first among its supply's
+ * buying options with how many of the supply's measure come in one — the next receipt matches it by number and
+ * the next order opens it in the store's cart.
+ */
+export async function learnProducts(sql: SqlFn, raw: unknown) {
+  const list = (Array.isArray(raw) ? raw : typeof raw === 'string' && raw ? JSON.parse(raw) as unknown[] : []) as { itemId?: unknown; url?: unknown; pack?: unknown }[];
+  for (const p of list.slice(0, 80)) {
+    const itemId = Number(p.itemId), url = String(p.url ?? ''), pack = Number(p.pack);
+    if (!itemId || !storeProduct(url)) continue;
+    const [it] = await sql`SELECT buy_options FROM inventory_items WHERE account_id = 1 AND id = ${itemId}` as { buy_options: BuyOption[] | null }[];
+    if (!it) continue;
+    const next = withProduct(it.buy_options ?? [], url, pack > 0 ? Math.round(pack * 100) / 100 : null);
+    await sql`UPDATE inventory_items SET buy_options = ${JSON.stringify(next)}::jsonb, updated_at = now() WHERE account_id = 1 AND id = ${itemId}`;
   }
 }

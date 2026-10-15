@@ -847,7 +847,8 @@ export async function fieldPhotos(sql: SqlFn, encryptionKey: string, files: File
   if (files.length > 5) throw new Error('At most 5 photos at a time.');
   for (const f of files) {
     if (f.size > MAX_FILE_BYTES) throw new DriveError(`${f.name} is over 15 MB.`);
-    if (!/^(image\/|application\/pdf$)/.test(f.type || '')) throw new DriveError(`${f.name}: a photo or a PDF, please.`);
+    // A Walmart/Amazon order saved as Markdown is a purchase's receipt too (owner, 2026-10-15).
+    if (!/^(image\/|application\/pdf$|text\/markdown$)/.test(f.type || '')) throw new DriveError(`${f.name}: a photo or a PDF, please.`);
   }
   const token = await driveToken(sql, encryptionKey);
   const [acc] = await sql`SELECT field_reports_folder FROM accounts WHERE id = 1` as { field_reports_folder: string | null }[];

@@ -28,8 +28,8 @@ export interface InvItem {
   kind?: 'supply' | 'furniture';
   /** Owner, 2026-10-14: a size tells two items of one name apart; `name` then reads "Name — Size", `baseName` is the name alone. */
   baseName?: string; size?: string | null;
-  /** Where to buy it. */
-  buyOptions?: { label: string; url: string }[];
+  /** Where to buy it; `pack` = how many of its measure come in one (store-order.ts). */
+  buyOptions?: { label: string; url: string; pack?: number | null }[];
 }
 export interface Move {
   itemId: string; place: string | null; unitId: string | null; kind: MoveKind; qty: number; at: string;

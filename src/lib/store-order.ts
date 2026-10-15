@@ -1,0 +1,198 @@
+/**
+ * Walmart and Amazon orders, as the team saves them with MarkDownload (owner, 2026-10-15) — pure.
+ *
+ * A receipt is the order page saved as Markdown: on walmart.com/orders/<n> select from the order's title to its
+ * Total and "Download selection" (the whole page loses the items), on Amazon the order details page. Every product
+ * comes with its link, so the store's own product number (Walmart item id, Amazon ASIN) is read as printed — no AI,
+ * nothing guessed — and remembered on the supply as a buying option (`buy_options`, 075) with how many of the
+ * supply's measure come in one (`pack`). The next receipt matches by that number; an order opens the store's cart
+ * from those numbers (`cartLinks`). Kaizen never pays: the person checks the cart and pays in the store.
+ */
+import { aliasKey, orderFor, similarItems, wrongSize, type Receipt, type ReceiptItem, type ReceiptLine, type ReceiptOrder } from './receipt.ts';
+
+export type Store = 'walmart' | 'amazon';
+export interface StoreProduct { store: Store; id: string; url: string }
+export interface BuyOption { label: string; url: string; pack?: number | null }
+
+/** A product page's store and number — walmart.com/ip/<name>/<id>, amazon.com/dp/<ASIN> (or /gp/product/<ASIN>). */
+export function storeProduct(url: string): StoreProduct | null {
+  const w = /^https?:\/\/(?:www\.)?walmart\.com\/ip\/(?:([^/?#\s]+)\/)?(\d{5,})/i.exec(url.trim());
+  if (w) return { store: 'walmart', id: w[2]!, url: `https://www.walmart.com/ip/${w[1] ? `${w[1]}/` : ''}${w[2]}` };
+  const a = /^https?:\/\/(?:www\.|smile\.)?amazon\.com\/(?:[^?#\s]*\/)?(?:dp|gp\/product)\/([A-Z0-9]{10})(?=[/?#]|$)/i.exec(url.trim());
+  if (a) return { store: 'amazon', id: a[1]!.toUpperCase(), url: `https://www.amazon.com/dp/${a[1]!.toUpperCase()}` };
+  return null;
+}
+export const STORE_NAME: Record<Store, string> = { walmart: 'Walmart', amazon: 'Amazon' };
+
+/** One product line of the order, as printed. `amount` = what the line cost (Amazon prints the price of one). */
+export interface OrderLine { text: string; product: StoreProduct; qty: number; amount: number | null; unitPrice: number | null;
+  /** How many come in one, when printed ("Count Per Pack: 40", "42 Count", "4 Rolls"), and the word it counts. */
+  pack: number | null; packWord: string | null }
+export interface StoreOrder { store: Store | null; orderNo: string | null; date: string | null; subtotal: number | null; tax: number | null;
+  total: number | null; /** "Subtotal (19 items)" — the quantities should add up to it. */ count: number | null; lines: OrderLine[] }
+
+const money = (s: string | undefined) => s == null ? null : Math.round(Number(s.replace(/,/g, '')) * 100) / 100;
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+/** "Oct 15, 2026" / "October 5, 2026" → 2026-10-15. */
+function isoDate(s: string | undefined): string | null {
+  const m = /([A-Za-z]{3})[a-z]*\.?\s+(\d{1,2}),\s*(\d{4})/.exec(s ?? '');
+  const k = m ? MONTHS.indexOf(m[1]!.toLowerCase()) : -1;
+  return m && k >= 0 ? `${m[3]}-${String(k + 1).padStart(2, '0')}-${m[2]!.padStart(2, '0')}` : null;
+}
+const PACK_WORDS = 'count|ct|rolls?|bags?|pods?|paks?|pacs?|packets?|pairs?|pieces?|pcs|sheets?|wipes?|filters?|bars?|bottles?|cans?|tablets?|batteries';
+/** The pack printed: "Count Per Pack: 40" first, else "42 Count" / "4 Rolls" in the name — never "150 2-Ply Sheets per Roll". */
+function packOf(name: string, block: string): { pack: number | null; packWord: string | null } {
+  const per = /Count Per Pack:\s*(\d+)/i.exec(block);
+  if (per && Number(per[1]) > 1) return { pack: Number(per[1]), packWord: 'count' };
+  const m = new RegExp(`\\b(\\d{1,4})[\\s-]*(${PACK_WORDS})\\b(?!\\s+per\\b)`, 'i').exec(name);
+  return m && Number(m[1]) > 1 ? { pack: Number(m[1]), packWord: m[2]!.toLowerCase() } : { pack: null, packWord: null };
+}
+
+/**
+ * The order read from its Markdown, as printed. Each product's block runs from its first link to the next
+ * product's (its picture and its name both link to it); Walmart prints "Qty 4" and the line's price ("$3.76",
+ * "$0.94 ea"), Amazon the quantity alone on its line ("3") and the price of one.
+ */
+export function parseOrderMd(md: string): StoreOrder {
+  const text = md.replace(/\r/g, '');
+  const linkRe = /\]\((https?:\/\/[^)\s]+)\)/g;
+  const firsts: { at: number; product: StoreProduct }[] = [];
+  for (const m of text.matchAll(linkRe)) {
+    const p = storeProduct(m[1]!);
+    if (p && !firsts.some(f => f.product.store === p.store && f.product.id === p.id)) {
+      // The block starts on the link's own line: Amazon's name is the picture's description, "[![name](img)](url)".
+      firsts.push({ at: text.lastIndexOf('\n', m.index!) + 1, product: p });
+    }
+  }
+  const store: Store | null = firsts[0]?.product.store ?? (/walmart\.com/i.test(text) ? 'walmart' : /amazon\.com/i.test(text) ? 'amazon' : null);
+  const endAt = (() => {
+    const m = /\n(?:#+\s*)?(?:How can we help\?|Subtotal \(|Item\(s\) Subtotal|Order Summary)/i.exec(text.slice(firsts.at(-1)?.at ?? 0));
+    return m ? (firsts.at(-1)?.at ?? 0) + m.index : text.length;
+  })();
+  const lines = firsts.map((f, i): OrderLine => {
+    const block = text.slice(f.at, i + 1 < firsts.length ? firsts[i + 1]!.at : endAt);
+    // The name: the link's own words, else the picture's description; a link's words may sit on their own lines.
+    const named = [...block.matchAll(/\[(?!!)\s*([^[\]]+?)\s*\]\(([^)\s]+)\)/g)].find(m => storeProduct(m[2]!)?.id === f.product.id)?.[1];
+    const alt = /!\[([^\]]+)\]/.exec(block)?.[1];
+    const name = (named ?? alt ?? '').replace(/\s+/g, ' ').trim().slice(0, 160) || f.product.id;
+    // Prices outside the links (a picture's address can hold digits) — and not the "5.9¢/fl oz" unit price.
+    const plain = block.replace(/\[[^\]]*\]\([^)]*\)|!\[[^\]]*\]\([^)]*\)/g, ' ');
+    const qtyW = /\bQty\s*(\d+)/i.exec(plain);
+    const qtyA = /^\s*(\d{1,3})\s*$/m.exec(plain);
+    const qty = Number(qtyW?.[1] ?? qtyA?.[1] ?? 1) || 1;
+    const each = money(/\$([\d,]+\.\d{2})\s*ea\b/i.exec(plain)?.[1]);
+    const price = money([...plain.matchAll(/\$([\d,]+\.\d{2})(?!\s*ea\b)/gi)][0]?.[1]);
+    // Walmart's price is the line's; Amazon's is one's.
+    const amazon = f.product.store === 'amazon';
+    const amount = price == null ? null : amazon ? Math.round(price * qty * 100) / 100 : price;
+    const unitPrice = amazon ? price : each ?? (price != null ? Math.round(price / qty * 100) / 100 : null);
+    return { text: name, product: f.product, qty, amount, unitPrice, ...packOf(name, plain) };
+  });
+  const sub = /Subtotal\s*\((\d+)\s*items?\)\s*\$([\d,]+\.\d{2})/i.exec(text);
+  const subA = /Item\(s\) Subtotal:?\s*\$([\d,]+\.\d{2})/i.exec(text);
+  const tax = /(?:Estimated tax to be collected|Taxes?)\s*:?\s*(?:Taxes?\s*)?\$([\d,]+\.\d{2})/i.exec(text);
+  const grand = /(?:Grand Total|Order Total)\s*:?\s*\$([\d,]+\.\d{2})/i.exec(text) ?? /(?:^|[^A-Za-z(])Total\s*:?\s*\$([\d,]+\.\d{2})/.exec(text.replace(/Total before tax/gi, ''));
+  const beforeTax = money(/Total before tax:?\s*\$([\d,]+\.\d{2})/i.exec(text)?.[1]);
+  const taxN = money(tax?.[1]);
+  const total = money(grand?.[1]) ?? (beforeTax != null ? Math.round((beforeTax + (taxN ?? 0)) * 100) / 100 : null);
+  const orderNo = /Order\s*#\s*:?\s*([0-9][0-9-]{8,})/i.exec(text)?.[1] ?? null;
+  const date = isoDate(/Order placed\s+([A-Za-z]+\.? \d{1,2}, \d{4})/i.exec(text)?.[1]) ?? isoDate(/([A-Za-z]{3,9}\.? \d{1,2}, \d{4})\s+order\b/i.exec(text)?.[1]);
+  return { store, orderNo, date, subtotal: money(sub?.[2] ?? subA?.[1]), tax: taxN, total, count: sub ? Number(sub[1]) : null, lines };
+}
+
+const single = (w: string) => w.toLowerCase().replace(/(?<=[a-z]{3})(es|s)$/, '').replace(/^pak$|^pac$/, 'pack');
+/** How many of the supply's measure one bought product is — remembered first, else the pack printed when it counts the same thing. */
+export function packFor(line: Pick<OrderLine, 'pack' | 'packWord'>, measure: string, remembered?: number | null): number {
+  if (remembered && remembered > 0) return remembered;
+  if (!line.pack) return 1;
+  const m = single(measure);
+  if (['pack', 'box', 'case', 'set', 'kit'].includes(m)) return 1;
+  return line.packWord === 'count' || line.packWord === 'ct' || single(line.packWord ?? '') === m ? line.pack : 1;
+}
+
+/** A supply's buying options for one store's product. */
+const optionOf = (it: ReceiptItem & { buyOptions?: BuyOption[] }, p: StoreProduct) =>
+  (it.buyOptions ?? []).find(o => { const q = storeProduct(o.url); return q?.store === p.store && q.id === p.id; });
+
+/** How a line was matched: its product number on a supply · a text a person decided before · a look-alike to confirm · nothing. */
+export type Match = 'product' | 'alias' | 'guess' | 'none';
+
+/**
+ * The order's lines as receipt lines for the purchase form: a supply only when SURE — its product number is on
+ * exactly one supply, or a person decided that text before. Otherwise the look-alikes are offered (≈ not exact) or
+ * nothing (✕ no match), and the person decides. Fees and savings the lines do not explain become one line, so the
+ * lines plus tax add up to the total.
+ */
+export function readOrder(o: StoreOrder, items: (ReceiptItem & { buyOptions?: BuyOption[] })[], orders: ReceiptOrder[] = [],
+                          aliases: Map<string, string> = new Map()): Receipt {
+  const active = items.filter(i => i.active !== false);
+  const lines: ReceiptLine[] = o.lines.map(l => {
+    const owners = active.filter(i => optionOf(i, l.product));
+    const learned = aliases.get(aliasKey(l.text));
+    const byAlias = learned ? active.find(i => i.id === learned) : undefined;
+    const it = owners.length === 1 ? owners[0]! : byAlias;
+    const match: Match = owners.length === 1 ? 'product' : byAlias ? 'alias' : 'none';
+    const candidates = it ? [] : [...new Set([...owners.map(i => i.id), ...similarItems(l.text, active, 8).filter(c => !wrongSize(active.find(i => i.id === c)!, null, active))])].slice(0, 4);
+    const pack = it ? packFor(l, it.measure, optionOf(it, l.product)?.pack) : null;
+    return { text: l.text, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount, kind: 'item', itemId: it?.id ?? null,
+             itemQty: it ? Math.round(l.qty * pack! * 100) / 100 : l.qty, candidates, orderId: orderFor(it?.id ?? null, orders), size: null, newName: null,
+             product: l.product, match: it ? match : candidates.length ? 'guess' : 'none', pack: l.pack, packWord: l.packWord };
+  });
+  const sum = Math.round(lines.reduce((a, l) => a + (l.amount ?? 0), 0) * 100) / 100;
+  const rest = o.total != null ? Math.round((o.total - sum - (o.tax ?? 0)) * 100) / 100 : 0;
+  if (Math.abs(rest) >= 0.01 && o.lines.length) {
+    lines.push({ text: rest < 0 ? 'Savings and promotions' : 'Fees (shipping, bag, delivery)', qty: null, unitPrice: null, amount: rest,
+                 kind: rest < 0 ? 'discount' : 'fee', itemId: null, itemQty: null, candidates: [], orderId: null, size: null, newName: null });
+  }
+  return { store: o.store ? STORE_NAME[o.store] : null, date: o.date, total: o.total, tax: o.tax, orderNo: o.orderNo, lines };
+}
+
+/** The bought product remembered on its supply: first among its options (the store it was last bought at), with its pack. */
+export function withProduct(options: BuyOption[], url: string, pack: number | null): BuyOption[] {
+  const p = storeProduct(url);
+  if (!p) return options;
+  const same = (o: BuyOption) => { const q = storeProduct(o.url); return q?.store === p.store && q.id === p.id; };
+  const old = options.find(same);
+  const kept: BuyOption = { label: old?.label || STORE_NAME[p.store], url: old?.url ?? p.url, ...(pack && pack > 0 ? { pack } : old?.pack ? { pack: old.pack } : {}) };
+  return [kept, ...options.filter(o => !same(o))].slice(0, 10);
+}
+
+/**
+ * The store carts for an order (verified 2026-10-15): Amazon's "add to cart" form
+ * (amazon.com/gp/aws/cart/add.html?ASIN.1=…&Quantity.1=…) and Walmart's add-to-cart link
+ * (affil.walmart.com/cart/addToCart?items=<item id>|<qty>,…). Each supply goes to the store of its FIRST
+ * Walmart/Amazon option (the one it was last bought at), as many as cover the order: ⌈qty ÷ pack⌉.
+ * Supplies with neither are named, never dropped silently.
+ */
+export function cartLinks(lines: { itemId: string; qty: number }[], items: { id: string; name: string; buyOptions?: BuyOption[] }[]) {
+  const want = new Map<string, number>();
+  for (const l of lines) if (l.qty > 0) want.set(l.itemId, (want.get(l.itemId) ?? 0) + l.qty);
+  const carts: Record<Store, { id: string; qty: number; itemId: string }[]> = { walmart: [], amazon: [] };
+  const none: string[] = [];
+  for (const [itemId, qty] of want) {
+    const it = items.find(i => i.id === itemId);
+    const opt = (it?.buyOptions ?? []).find(o => storeProduct(o.url));
+    const p = opt ? storeProduct(opt.url)! : null;
+    if (!p) { none.push(itemId); continue; }
+    const n = Math.max(1, Math.ceil(Math.round(qty / (opt!.pack && opt!.pack > 0 ? opt!.pack : 1) * 1000) / 1000));
+    const had = carts[p.store].find(x => x.id === p.id);
+    if (had) had.qty += n; else carts[p.store].push({ id: p.id, qty: n, itemId });
+  }
+  const walmart = carts.walmart.length ? `https://affil.walmart.com/cart/addToCart?items=${carts.walmart.map(x => `${x.id}|${x.qty}`).join(',')}` : null;
+  const amazon = carts.amazon.length ? `https://www.amazon.com/gp/aws/cart/add.html?${carts.amazon.map((x, i) => `ASIN.${i + 1}=${x.id}&Quantity.${i + 1}=${x.qty}`).join('&')}` : null;
+  return { walmart, amazon, carts, none };
+}
+
+/**
+ * What the receipt says against what was ordered, per supply (in its measure): ordered and not bought,
+ * bought fewer or more, bought without being ordered.
+ */
+export function againstOrder(ordered: Map<string, number>, bought: Map<string, number>) {
+  const missing: string[] = [], fewer: string[] = [], more: string[] = [], extra: string[] = [], ok: string[] = [];
+  for (const [id, q] of ordered) {
+    const b = bought.get(id) ?? 0;
+    if (!b) missing.push(id); else if (b < q) fewer.push(id); else if (b > q) more.push(id); else ok.push(id);
+  }
+  for (const id of bought.keys()) if (!ordered.has(id) && (bought.get(id) ?? 0) > 0) extra.push(id);
+  return { ok, missing, fewer, more, extra };
+}

@@ -517,7 +517,7 @@ export async function crewUpload(fields: Record<string, string>, files: File[], 
 export interface SupplyItem { id: string; name: string; measure: string; category: string }
 export interface InvItemRow extends SupplyItem { perClean: number | null; reorderAt: number | null; active: boolean;
   /** §150: supplies are what cleans consume; furniture is the house's things. */ kind?: 'supply' | 'furniture';
-  /** Where to buy it. */ buyOptions?: { label: string; url: string }[];
+  /** Where to buy it; `pack` = how many of its measure come in one (a Walmart/Amazon product, owner 2026-10-15). */ buyOptions?: { label: string; url: string; pack?: number | null }[];
   /** Owner, 2026-10-14: `name` reads "Name — Size"; `baseName` and `size` are what is edited. */ baseName?: string; size?: string | null }
 export interface InvLevel {
   itemId: string; qty: number | null; countedAt: string | null; missingSince: string | null;

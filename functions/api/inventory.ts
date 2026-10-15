@@ -22,8 +22,10 @@
  *   POST { action: 'purchase', lines, total, todoId?, note?, paidBy?, date? } + receipt  what was BOUGHT: stock per place + one Restock expense
  *   POST { action: 'purchase', splits: [{ todoId?, lines, total }], … } + receipt  one receipt, several orders: a purchase each
  *   POST { action: 'readRequest', text }   ✨ build the cart from what was asked — nothing saved (§159)
- *   POST { action: 'readReceipt', orders? } + receipt (or fieldExpenseId)   ✨ the AI reads it — the form is filled in, nothing saved
- *        (a purchase's `aliases` [{ text, itemId }] = receipt lines a person decided: learned for the next receipt)
+ *   POST { action: 'readReceipt', orders?, mds? | fieldExpenseId }   the form is filled in, nothing saved: `mds` = Walmart/Amazon
+ *        orders saved as Markdown, read as printed; `fieldExpenseId` = a cleaner's receipt photos, read by the AI
+ *        (a purchase's `aliases` [{ text, itemId }] = receipt lines a person decided: learned for the next receipt;
+ *         `products` [{ itemId, url, pack }] = the store products it confirmed: first among the supply's buying options)
  *   POST { action: 'newItem', name, size?, … }                         a supply added on the spot (also from a receipt line)
  *
  * GET with `operations`, POST with `operations.edit` (roles.ts). To-dos made
@@ -34,7 +36,7 @@ import { commentToThread } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { createOrder, editNewItem, fieldPhotos, refillCloset, setMeasure, transfer, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
-import { learnAliases, readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
+import { learnAliases, learnProducts, readOrderMds, readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
 import { readRequestText } from '../_lib/request-read.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -72,10 +74,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const r = await readRequestText(sql, env, String(b.text ?? ''));
       return Response.json(r.ok ? r : { ok: false, error: 'unreadable', message: r.message });
     } else if (b.action === 'readReceipt') {
-      // Owner, 2026-10-14: the AI only fills the form in — this saves nothing.
-      // A PDF with text comes as its text (`texts`, JSON), taken out in the browser; scans and photos as files.
-      const texts = typeof b.texts === 'string' && b.texts ? (JSON.parse(b.texts) as unknown[]).map(String) : [];
-      const r = await readReceiptFiles(sql, env, await receiptFiles(sql, env, files, b.fieldExpenseId), b.orders !== 'no', texts);
+      // Owner, 2026-10-14: this only fills the form in — it saves nothing. Owner, 2026-10-15: the team's receipts are
+      // Walmart/Amazon orders saved as Markdown (`mds`, JSON), read as printed; a cleaner's photos still go to the AI.
+      if (typeof b.mds === 'string') {
+        const r = await readOrderMds(sql, (JSON.parse(b.mds) as unknown[]).map(String), b.orders !== 'no');
+        return Response.json(r.ok ? r : { ok: false, error: 'unreadable', message: r.message });
+      }
+      const r = await readReceiptFiles(sql, env, await receiptFiles(sql, env, [], b.fieldExpenseId), b.orders !== 'no');
       return Response.json(r.ok ? r : { ok: false, error: 'unreadable', message: r.message });
     } else if (b.action === 'purchase') {
       // One receipt for several orders: uploaded once, every part checked before any is saved, a purchase per order.
@@ -84,6 +89,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const todoIds = split ? (await recordPurchases(sql, who.email, b, photos)).todoIds
                             : (await recordPurchase(sql, who.email, b, photos), b.todoId ? [String(b.todoId)] : []);
       await learnAliases(sql, who.email, b.aliases).catch(() => {});
+      await learnProducts(sql, b.products).catch(() => {});
       // Owner, Oct 2026: an order's news is told in its to-do's Slack thread — what was bought, and for how much.
       for (const id of todoIds) {
         const [n] = await sql`SELECT body FROM work_updates WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id} AND kind = 'note'

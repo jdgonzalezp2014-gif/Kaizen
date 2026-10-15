@@ -31,6 +31,10 @@ export interface ReceiptLine {
   size: string | null; newName: string | null;
   /** Not on the list (owner, 2026-10-15): what the AI thinks a new item is counted in and whether it is furniture — the person corrects it. */
   newMeasure?: string | null; newKind?: 'supply' | 'furniture' | null;
+  /** A Walmart/Amazon order saved as Markdown (store-order.ts): the store's product, how the line was matched, the pack printed. */
+  product?: { store: 'walmart' | 'amazon'; id: string; url: string } | null;
+  match?: 'product' | 'alias' | 'guess' | 'none';
+  pack?: number | null; packWord?: string | null;
 }
 
 /** `orderNo`: the store's order or invoice number, when printed — it tells a receipt read twice. */

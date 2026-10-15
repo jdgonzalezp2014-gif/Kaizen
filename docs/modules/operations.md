@@ -42,13 +42,30 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   `functions/_lib/receipt-read.ts` (`receiptFiles`, `readReceiptFiles`), `askJson(…, files)` in `ai-chain.ts` (Gemini
   `inlineData`); `recordPurchase` = `checkPurchase` + `writePurchase`, `recordPurchases` (splits); pure `src/lib/receipt.ts`
   (readReceipt, similarItems, orderFor, receiptSum, splitTotal, sizeKey, aliasKey, wrongSize).
-- **Walmart/Amazon invoices (owner, 2026-10-15):** `src/components/receipt-prep.ts` — a PDF with text goes as its TEXT
-  (pdf.js, lazy-loaded; field `texts`), a scan as the file; a screenshot taller than 2.2× its width is cut into ≤10 parts
-  (1300 × 1400, 120 px overlap — shrunk whole it was unreadable); Ctrl+V pastes a screenshot as a receipt. Prompt: amounts are
-  line totals as printed ("Qty 4 $3.76" never multiplied), pack counts → itemQty, order date never the pickup date, `orderNo`.
-  `receipt_reads` (094): the same bytes/text are never sent to the AI again (keyed by content, not file name — Walmart's are all
-  "Order details - Walmart.com.pdf"); the same `orderNo` read before → "⚠ already read on … — not recorded twice?".
-  Tested on order 2000156-31789057 (PDF text and screenshot): 6/6 matched, sum 38.67, tax 3.19, total 41.86.
+- **Walmart/Amazon receipts = MarkDownload .md ONLY (owner, 2026-10-15, replaces the PDF/screenshot/Ctrl+V reading of 90340e2 —
+  `receipt-prep.ts` and pdfjs-dist deleted):** the team saves the order page with the MarkDownload extension. Walmart: select from
+  "<date> order" down to Total → "download selection" (the whole page loses the items — Readability drops them; the server says so).
+  Amazon: Order details page. Pure `src/lib/store-order.ts`: `parseOrderMd` (blocks from each product's first link line; Walmart
+  "Qty 4" + LINE price, "$0.94 ea"; Amazon the lone number = qty, price = ONE's → amount = qty × price; totals, `orderNo`, date;
+  pack "Count Per Pack: 40" / "42 Count" / "4 Rolls", never "Sheets per Roll"), `readOrder` → `Receipt` (sure ONLY by the store
+  number on exactly one supply's buy option, or a learned alias; else `match` 'guess' (candidates) or 'none'; leftover
+  fees/savings = one line so lines + tax = total), `packFor`, `withProduct`, `cartLinks`, `againstOrder`. Server
+  `readOrderMds` (no AI; `receipt_reads` by='Markdown', same hash/orderNo repeat warning) and `learnProducts` (purchase's
+  `products` [{itemId,url,pack}] → that option FIRST in `buy_options`, pack = line's qty in the item's measure ÷ store qty).
+  **No migration:** the store product is a `buy_options` entry (075) whose url is walmart.com/ip/…/<id> or amazon.com/dp/<ASIN>,
+  plus `pack` (Setup → Items list → Buy at "×"). `fieldPhotos` accepts `text/markdown` (the .md is the Restock receipt in Drive).
+  A cleaner's receipt photos (FieldPurchaseLines, `fieldExpenseId`) still go to the AI (`readReceiptFiles`, files only now).
+- **Against the order (owner, 2026-10-15):** after a read, `PurchaseForm` shows "Against the order" — `Flag`s (Peek: hover/tap
+  lists the items): ✓ as ordered · ▲ missing · ≠ fewer / more · + not in the order · ≈ not exact · ✕ no match; each receipt row
+  gets a `RowFlag` (✓ exact / ✓ learned / ≈ / ✕ / +). Ordered items on no receipt are taken OFF the lines on the first read (not
+  bought); a line chosen later goes back to the order's place.
+- **Store carts (owner, 2026-10-15; formats checked that day):** `CartLinks` in To order (OrderPlan) and in the purchase form
+  before a read: Walmart `https://affil.walmart.com/cart/addToCart?items=<itemId>|<qty>,…` (→ walmart.com/affil/cart/addToCart;
+  bot wall for curl) and Amazon `https://www.amazon.com/gp/aws/cart/add.html?ASIN.1=<ASIN>&Quantity.1=<n>&…` (owner: opened the
+  cart). qty = ⌈ordered ÷ pack⌉; a supply goes to the store of its FIRST Walmart/Amazon option; the rest are named ("Not in a
+  store cart"). Kaizen never pays.
+  Tested on real data (read-only): Walmart 2000156-31789057 6 lines, 19 items, 38.67 + 3.19 = 41.86; Amazon 113-2518508-6894635;
+  against production supplies every line was ≈ with the right supply first (no store products saved yet).
 - Script: `scripts/whatsapp-cleanings.mjs` (crew chat history, one-off).
 
 ## Tables
@@ -455,6 +472,11 @@ key had no SOPs.
 
 ## Open items
 
+- **Store carts & .md receipts (2026-10-15):** the Walmart cart link is checked only up to Walmart's bot wall (curl) — the owner
+  opens one from a real order to confirm it fills the cart; Amazon's opened the cart. No supply has a store product yet: the first
+  .md receipts are all ≈ (one tap each, then matched by number). The Walmart "download selection" must start at the order's title
+  or the order number and date are lost (only the content hash then tells a repeat). The UI flow (read → flags → record → product
+  learned) was not run end to end — check it on the first real receipt.
 - **Access for cleaners (§136):** all 21 active units complete (2026-10-12, after the owner filled Bobcat
   House and the lockboxes of P2-4212 / P2-4315). A new unit shows in Setup → Crew pages → "How cleaners
   get in" with what it lacks.

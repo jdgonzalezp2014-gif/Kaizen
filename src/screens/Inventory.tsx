@@ -18,7 +18,7 @@ import { destFor, placeLabel } from '../lib/unit-access.ts';
 import { orderFor, receiptSum, similarItems, splitTotal, type Receipt, type ReceiptLine } from '../lib/receipt.ts';
 import { Sheet } from '../components/InspectionRun.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
-import { pastedImages, prepareReceipt } from '../components/receipt-prep.ts';
+import { againstOrder, cartLinks, STORE_NAME, type Store } from '../lib/store-order.ts';
 import { TX } from '../lib/crew-i18n.ts';
 import { Icon, ic } from '../components/Icon.tsx';
 
@@ -686,6 +686,7 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
       {inv.draft && <p className="note"><Icon n="note" /> <b>Draft</b> saved {inv.draft.savedAt} by {inv.draft.savedBy} — it becomes a to-do only when you create the order.</p>}
       {!order.size && <p className="note">Nothing to order from what has been counted. Add an item with <Icon n="search" /> to order it anyway.</p>}
       <ItemLines inv={inv} value={order} onChange={setOrder} hints={suggested} canEdit={canEdit} onInv={onSaved} />
+      <CartLinks inv={inv} lines={lines} />
       {canEdit && order.size > 0 && inv.fieldTodos.length > 0 && <label>For
         <select value={forTodo} onChange={e => setForTodo(e.target.value)}>
           <option value="">a new order to-do</option>
@@ -738,6 +739,8 @@ export type PurchaseOut = {
   forTodo?: string;
   /** Receipt lines a person decided — learned, so the next receipt with that text matches by itself. */
   aliases: { text: string; itemId: string }[];
+  /** The Walmart/Amazon products bought, and how many of the supply's measure come in one — kept on the supply. */
+  products?: { itemId: string; url: string; pack: number | null }[];
 };
 /** A receipt line in the form: which receipt (`rc`), the supply it went to, and whether a person decided it. */
 type Row = { rc: number; line: ReceiptLine; got: string | null; skip: boolean; open: boolean; name: string; size: string; decided: boolean;
@@ -768,19 +771,8 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   const [paidBy, setPaidBy] = useState('');
   const [note, setNote] = useState('');
   const [date, setDate] = useState('');
+  // Owner, 2026-10-15: the team's receipts are Walmart/Amazon orders saved with MarkDownload (.md) — nothing else.
   const [files, setFiles] = useState<File[]>([]);
-  // Owner, 2026-10-15: a screenshot of a Walmart/Amazon order pasted with Ctrl+V is a receipt, like a picked file.
-  useEffect(() => {
-    if (fixedTotal != null) return;
-    const onPaste = (e: ClipboardEvent) => {
-      const imgs = pastedImages(e);
-      if (!imgs.length) return;
-      e.preventDefault();
-      setFiles(f => [...f, ...imgs].slice(0, 5));
-    };
-    document.addEventListener('paste', onPaste);
-    return () => document.removeEventListener('paste', onPaste);
-  }, [fixedTotal]);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   // What the AI filled and nobody has touched since: 'total', 'note', 'date', 'item:<id>'.
@@ -811,62 +803,74 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   /** Adds (or takes back) a receipt line's quantity on its item — a new line goes where its type belongs (furniture: the house). */
   const addQty = (m: Lines, id: string, q: number, kind = inv.items.find(i => i.id === id)?.kind) => {
     const parts = m.get(id) ?? [];
-    const first = parts[0] ?? { place: destFor(place0, kind, housesOf(inv)), qty: '' };
+    const first = parts[0] ?? { place: start?.get(id)?.[0]?.place || destFor(place0, kind, housesOf(inv)), qty: '' };
     const n = Math.max(0, Math.round(((Number(first.qty) || 0) + q) * 100) / 100);
     if (!n && parts.length <= 1) m.delete(id); else m.set(id, [{ ...first, qty: String(n) }, ...parts.slice(1)]);
   };
   const qtyOf = (l: ReceiptLine) => l.itemQty ?? l.qty ?? 1;
   const rowQty = (r: Row) => Math.max(0, Number(r.qty) || 0);
 
-  /** `fresh`: read only the receipts attached since the last read and add them; else read them all again from the start. */
+  /**
+   * `fresh`: read only the receipts attached since the last read and add them; else read them all again from the start.
+   * The team's .md orders are read as printed (one receipt each); a cleaner's receipt photos (from Drive) by the AI.
+   */
   const read = async (fresh: boolean) => {
     setReading(true); setReadMsg('');
     try {
       const f = new FormData();
       f.append('action', 'readReceipt');
       if (!canSplit) f.append('orders', 'no');
-      if (fieldExpenseId) f.append('fieldExpenseId', fieldExpenseId);
-      // Long screenshots cut into readable parts, a PDF's text taken out (receipt-prep.ts).
-      const texts: string[] = [];
-      for (const x of fresh ? files.slice(readN) : files) {
-        const p = await prepareReceipt(x);
-        p.files.forEach(y => f.append('file', y)); texts.push(...p.texts);
+      type Repeat = { at: string; orderNo: string | null } | null;
+      let got: Receipt[], repeats: Repeat[], by: string;
+      if (!files.length && fieldExpenseId) {
+        f.append('fieldExpenseId', fieldExpenseId);
+        const r = await api.upload(f) as unknown as { ok: true; receipt: Receipt; by: string; repeat: Repeat } | { ok: false; message?: string };
+        if (!r.ok) { setReadMsg(`Could not read the receipt — fill it in by hand. (${r.message ?? 'no answer'})`); return; }
+        got = [r.receipt]; repeats = [r.repeat]; by = `✨ Read by ${r.by}`;
+      } else {
+        f.append('mds', JSON.stringify(await Promise.all((fresh ? files.slice(readN) : files).map(x => x.text()))));
+        const r = await api.upload(f) as unknown as { ok: true; receipts: Receipt[]; repeats: Repeat[] } | { ok: false; message?: string };
+        if (!r.ok) { setReadMsg(`Could not read the order — fill it in by hand. (${r.message ?? 'no answer'})`); return; }
+        got = r.receipts; repeats = r.repeats; by = 'Read from the order page as printed';
       }
-      if (texts.length) f.append('texts', JSON.stringify(texts));
-      const r = await api.upload(f) as unknown as { ok: true; receipt: Receipt; by: string; repeat: { at: string; orderNo: string | null } | null } | { ok: false; message?: string };
-      if (!r.ok) { setReadMsg(`Could not read the receipt — fill it in by hand. (${r.message ?? 'no answer'})`); return; }
-      const rc = r.receipt;
-      if (!rc.lines.length && rc.total == null) { setReadMsg('Could not read the receipt — fill it in by hand. (nothing found on it)'); return; }
+      if (!got.some(rc => rc.lines.length || rc.total != null)) { setReadMsg('Could not read the receipt — fill it in by hand. (nothing found on it)'); return; }
       const first = !fresh || !receipts.length;
       const base = first ? before ?? lines : lines;
       if (first) setBefore(base);
       const m = new Map(base);
-      const sure = rc.lines.filter(l => l.itemId);
+      const sure = got.flatMap(rc => rc.lines).filter(l => l.itemId);
       // The first receipt says what was bought: its supplies replace the order's quantities. A later one adds.
-      if (first) for (const id of new Set(sure.map(l => l.itemId!))) m.delete(id);
+      // Owner, 2026-10-15: what was ordered and is on no receipt was not bought — off the lines, named under "Against the order".
+      if (first) for (const id of new Set([...sure.map(l => l.itemId!), ...start?.keys() ?? []])) m.delete(id);
       for (const l of sure) addQty(m, l.itemId!, qtyOf(l));
       setLinesRaw(m);
       const marks = new Set(first ? [] : ai);
       sure.forEach(l => marks.add(`item:${l.itemId}`));
-      if (fixedTotal == null && rc.total != null) {
+      const paid = got.filter(rc => rc.total != null);
+      if (fixedTotal == null && paid.length) {
         // Adding a receipt adds its total — unless someone typed the total themselves.
-        if (first || ai.has('total') || !total) { setTotal(String(Math.round(((first ? 0 : Number(total) || 0) + rc.total) * 100) / 100)); marks.add('total'); }
+        if (first || ai.has('total') || !total) {
+          setTotal(String(Math.round(((first ? 0 : Number(total) || 0) + paid.reduce((a, rc) => a + rc.total!, 0)) * 100) / 100)); marks.add('total');
+        }
       }
-      if (rc.store && (first ? !note.trim() || ai.has('note') : ai.has('note'))) { setNote(first ? rc.store : `${note} + ${rc.store}`); marks.add('note'); }
-      if (rc.date && (first || !date)) { setDate(rc.date); marks.add('date'); }
+      const stores = [...new Set(got.map(rc => rc.orderNo ? `${rc.store ?? 'Order'} #${rc.orderNo}` : rc.store).filter(Boolean))].join(' + ');
+      if (stores && (first ? !note.trim() || ai.has('note') : ai.has('note'))) { setNote(first ? stores : `${note} + ${stores}`); marks.add('note'); }
+      const day = got.find(rc => rc.date)?.date;
+      if (day && (first || !date)) { setDate(day); marks.add('date'); }
       setAi(marks);
-      const k = first ? 0 : receipts.length;
-      const fresh_ = rc.lines.map((l): Row => ({ rc: k, line: l, got: l.itemId, skip: l.kind !== 'item', open: l.kind === 'item' && !l.itemId,
+      const k0 = first ? 0 : receipts.length;
+      const fresh_ = got.flatMap((rc, j) => rc.lines.map((l): Row => ({ rc: k0 + j, line: l, got: l.itemId, skip: l.kind !== 'item', open: l.kind === 'item' && !l.itemId,
                                                  name: l.newName ?? l.text, size: l.size ?? '', decided: false, qty: String(qtyOf(l)),
-                                                 measure: l.newMeasure ?? 'unit', kind: l.newKind ?? 'supply' }));
+                                                 measure: l.newMeasure ?? 'unit', kind: l.newKind ?? 'supply' })));
       setRows(first ? fresh_ : [...rows, ...fresh_]);
-      setReceipts(first ? [rc] : [...receipts, rc]);
+      setReceipts(first ? got : [...receipts, ...got]);
       setReadN(files.length);
       setOrderOf(o => { const n = new Map(first ? [] : o); sure.forEach(l => { if (!n.has(l.itemId!)) n.set(l.itemId!, l.orderId ?? todoId); }); return n; });
       setShares(new Map());
-      // The same order read before (its PDF, then a screenshot of it): said, so it is not recorded twice.
-      const again = r.repeat ? ` ⚠ ${r.repeat.orderNo ? `Order ${r.repeat.orderNo}` : 'This receipt'} was already read on ${r.repeat.at.slice(0, 10)} — make sure it is not recorded twice.` : '';
-      setReadMsg(`✨ Read by ${r.by}${texts.length ? ' from the PDF\'s text' : ''} — check every line before recording.${again}`);
+      // The same order read before: said, so it is not recorded twice.
+      const again = repeats.filter((x): x is NonNullable<Repeat> => !!x)
+        .map(x => ` ⚠ ${x.orderNo ? `Order ${x.orderNo}` : 'This receipt'} was already read on ${x.at.slice(0, 10)} — make sure it is not recorded twice.`).join('');
+      setReadMsg(`${by} — check every line before recording.${again}`);
     } catch (e) { setReadMsg(`Could not read the receipt — fill it in by hand. (${String(e)})`); } finally { setReading(false); }
   };
   const setRow = (k: number, row: Row) => setRows(rs => rs.map((x, j) => j === k ? row : x));
@@ -929,8 +933,11 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     try {
       const splits = groups.length > 1 ? groups.map(g => ({ todoId: g, lines: out.filter(l => orderKey(l.itemId) === g), total: Number(shareOf(g)) || 0 })) : undefined;
       const aliases = rows.filter(r => r.decided && r.got).map(r => ({ text: r.line.text, itemId: r.got! }));
+      // The store's product on each line kept: next time it matches by number and opens in the store's cart.
+      const products = rows.filter(r => r.got && !r.skip && r.line.product).map(r => ({ itemId: r.got!, url: r.line.product!.url,
+        pack: r.line.qty ? Math.round(rowQty(r) / r.line.qty * 100) / 100 : null }));
       // One order left after the split → the purchase is that order's.
-      const r = await onRecord({ lines: out, total: fixedTotal != null ? String(fixedTotal) : total, paidBy, note, files, date, splits, aliases,
+      const r = await onRecord({ lines: out, total: fixedTotal != null ? String(fixedTotal) : total, paidBy, note, files, date, splits, aliases, products,
                                  ...(groups.length === 1 && groups[0] !== todoId ? { forTodo: groups[0] } : {}) });
       if (typeof r === 'string') { setMsg(r); return; }
       if (r === true) { clear(); setMsg('✓ Purchase recorded: in the stock and in Costs (Restock). Attach the next receipt to record another.'); }
@@ -938,10 +945,24 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   };
   const unread = files.length - readN;
   const canRead = files.length > 0 || !!hasReceipt;
+  // Owner, 2026-10-15: the receipt checked against the order — what is missing, short, extra, not exact, not matched.
+  const ordered = new Map<string, number>();
+  for (const [id, ps] of start ?? []) ordered.set(id, ps.reduce((a, p) => a + (Number(p.qty) || 0), 0));
+  const bought = new Map<string, number>();
+  for (const r of rows) if (r.got && !r.skip && !r.open) bought.set(r.got, (bought.get(r.got) ?? 0) + rowQty(r));
+  const vs = againstOrder(ordered, bought);
+  const notExact = rows.filter(r => r.open && r.line.kind === 'item' && r.line.candidates.length > 0);
+  const noMatch = rows.filter(r => r.open && r.line.kind === 'item' && !r.line.candidates.length);
+  const exact = rows.filter(r => r.got && !r.open && (r.line.match === 'product' || r.line.match === 'alias'));
+  const qn = (id: string, q: number | undefined) => `${name(id)} — ${fmt(q ?? 0)} ${measureOf(id)}`;
   const tags = new Map<string, string[]>();
   for (const id of lines.keys()) {
-    if (ai.has(`item:${id}`)) tags.set(id, [AI]);
-    else if (read1 && !rows.some(r => r.got === id)) tags.set(id, ['▲ not on the receipt']);
+    const t: string[] = [];
+    if (ai.has(`item:${id}`)) t.push(AI);
+    else if (read1 && !rows.some(r => r.got === id)) t.push('▲ not on the receipt');
+    if (read1 && ordered.size && !ordered.has(id)) t.push('+ not in the order');
+    else if (read1 && ordered.has(id) && bought.has(id) && bought.get(id) !== ordered.get(id)) t.push(`≠ ordered ${fmt(ordered.get(id))}`);
+    if (t.length) tags.set(id, t);
   }
   const mark = (k: string) => ai.has(k) ? <span className="sub-n"> {ic(AI)}</span> : null;
   return <>
@@ -956,7 +977,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
           {rows.map((r, k) => r.rc !== i ? null : (
             <Fragment key={k}>
             <tr className={r.open ? 'rc-open' : undefined}>
-              <td>{r.line.text}
+              <td><RowFlag r={r} name={name} ordered={ordered} />{r.line.text}
                 {r.line.size && <span className="chip tiny"> {r.line.size}</span>}
                 {r.line.qty != null && r.line.qty !== 1 && <div className="sub-n">{r.line.qty} × {r.line.unitPrice != null ? money(r.line.unitPrice)
                   : r.line.amount != null ? money(Math.round(r.line.amount / r.line.qty * 100) / 100) : '—'}</div>}</td>
@@ -1004,6 +1025,20 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
         </tbody></table></div>
       </Fragment>)}
     </div>}
+    {read1 && <div className="rc-check">
+      <b>{ordered.size ? 'Against the order' : 'Matching'}</b>
+      {ordered.size > 0 && vs.ok.length > 0 && <Flag label={`✓ ${vs.ok.length} as ordered`} title="Bought as ordered" list={vs.ok.map(id => qn(id, bought.get(id)))} />}
+      {vs.missing.length > 0 && <Flag tone="attn" label={`▲ ${vs.missing.length} missing`} title="Ordered, not on the receipt — not recorded as bought; the order stays open for them"
+        list={vs.missing.map(id => qn(id, ordered.get(id)))} />}
+      {vs.fewer.length > 0 && <Flag tone="attn" label={`≠ ${vs.fewer.length} fewer`} title="Fewer than ordered" list={vs.fewer.map(id => `${name(id)} — ordered ${fmt(ordered.get(id))}, bought ${fmt(bought.get(id))}`)} />}
+      {vs.more.length > 0 && <Flag label={`≠ ${vs.more.length} more`} title="More than ordered" list={vs.more.map(id => `${name(id)} — ordered ${fmt(ordered.get(id))}, bought ${fmt(bought.get(id))}`)} />}
+      {ordered.size > 0 && vs.extra.length > 0 && <Flag tone="attn" label={`+ ${vs.extra.length} not in the order`} title="On the receipt, not in the order" list={vs.extra.map(id => qn(id, bought.get(id)))} />}
+      {!ordered.size && exact.length > 0 && <Flag label={`✓ ${exact.length} exact`} title="Matched by the store's product number, or a text decided before" list={exact.map(r => `${r.line.text} → ${name(r.got!)}`)} />}
+      {notExact.length > 0 && <Flag tone="attn" label={`≈ ${notExact.length} not exact`} title="Not an exact match — pick the supply on the line" list={notExact.map(r => r.line.text)} />}
+      {noMatch.length > 0 && <Flag tone="attn" label={`✕ ${noMatch.length} no match`} title="Nothing on the supplies list is like it — add it as a new item, or skip it" list={noMatch.map(r => r.line.text)} />}
+      {!vs.missing.length && !vs.fewer.length && !vs.extra.length && !notExact.length && !noMatch.length && <span className="note">✓ everything checks</span>}
+    </div>}
+    {!read1 && fixedTotal == null && <CartLinks inv={inv} lines={out} />}
     <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={defaultPlace} onInv={onInv} tags={tags} fresh={fresh}
                orderCol={splitting ? { options: inv.orders.map(o => ({ id: o.todoId, label: o.title })), value: new Map(out.map(l => [l.itemId, orderKey(l.itemId)])),
                                        onChange: (id, o) => { setOrderOf(new Map(orderOf).set(id, o)); setShares(new Map()); } } : undefined} />
@@ -1014,10 +1049,19 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
       {fixedTotal == null && <PaidBy value={paidBy} onChange={setPaidBy} />}
       <label>Note{mark('note')}<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => { setNote(e.target.value); untouch('note'); }} /></label>
       {read1 && fixedTotal == null && <label>Bought on{mark('date')}<input type="date" value={date} onChange={e => { setDate(e.target.value); untouch('date'); }} /></label>}
-      {/* Each pick ADDS files (another receipt, a long receipt's second photo) — up to 5. A screenshot can also be pasted (Ctrl+V). */}
-      {fixedTotal == null && <label className="chip"><Icon n="clip" /> {files.length ? `${files.length} file${files.length === 1 ? '' : 's'} · + another receipt` : 'Receipt (or paste a screenshot)'}
-        <input type="file" accept="image/*,application/pdf" multiple hidden
-               onChange={e => { setFiles([...files, ...(e.target.files ?? [])].slice(0, 5)); e.target.value = ''; }} /></label>}
+      {/* Each pick ADDS files (another order) — up to 5. Typed as Markdown: the browser often gives a .md no type at all. */}
+      {fixedTotal == null && <label className="chip"><Icon n="clip" /> {files.length ? `${files.length} order${files.length === 1 ? '' : 's'} · + another` : 'Receipt (.md)'}
+        <input type="file" accept=".md,text/markdown" multiple hidden
+               onChange={e => {
+                 const picked = [...(e.target.files ?? [])];
+                 const bad = picked.filter(x => !/\.(md|markdown)$/i.test(x.name));
+                 setReadMsg(bad.length ? `Only orders saved as Markdown (.md) are read — ${bad.map(x => x.name).join(', ')} left out.` : '');
+                 setFiles([...files, ...picked.filter(x => !bad.includes(x)).map(x => new File([x], x.name, { type: 'text/markdown' }))].slice(0, 5));
+                 e.target.value = '';
+               }} /></label>}
+      {fixedTotal == null && <Hint>On walmart.com → Purchase history → the order: select from its title down to Total, then MarkDownload → download the selection
+        (the whole page leaves the products out). On Amazon: Your orders → Order details → MarkDownload. Each product's link is its store number: the
+        next receipt matches it by itself and the order opens in the store's cart.</Hint>}
       {files.length > 0 && !read1 && <button className="link tiny" onClick={() => { setFiles([]); setReadN(0); }}>✕ files</button>}
       {canRead && (read1 && unread > 0
         ? <button className="secondary" disabled={reading || busy} onClick={() => void read(true)}>{ic(reading ? 'Reading…' : `✨ Read the new receipt${unread > 1 ? 's' : ''}`)}</button>
@@ -1047,12 +1091,49 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   </>;
 }
 
+/** A word whose detail (the items) shows on hover or a tap — the receipt's checks against the order. */
+function Flag({ label, title, list, tone }: { label: string; title: string; list: string[]; tone?: 'attn' }) {
+  return <Peek className={`rc-flag ${tone ?? ''}`} label={label} ariaLabel={`${label}: ${title}`}><b>{title}</b>{list.map(x => <Fragment key={x}><br />{x}</Fragment>)}</Peek>;
+}
+/** How a receipt line was matched, on its row: exact (the store's number), learned, not exact, no match, not in the order. */
+function RowFlag({ r, name, ordered }: { r: Row; name: (id: string) => string; ordered: Map<string, number> }) {
+  if (r.line.kind !== 'item' || r.skip) return null;
+  const p = r.line.product;
+  if (r.open) return r.line.candidates.length
+    ? <Flag tone="attn" label="≈" title="Not an exact match" list={[`Looks like: ${r.line.candidates.map(name).join(', ')}`, 'Pick the supply below — it is remembered.']} />
+    : <Flag tone="attn" label="✕" title="No match" list={['Nothing on the supplies list is like it.', 'Add it as a new item, or skip it.']} />;
+  if (r.got && ordered.size && !ordered.has(r.got)) return <Flag tone="attn" label="+" title="Not in the order" list={[`${name(r.got)} was not ordered.`]} />;
+  if (r.line.match === 'product' && p) return <Flag label="✓" title="Exact" list={[`${STORE_NAME[p.store]} ${p.store === 'amazon' ? 'ASIN' : 'item'} ${p.id} is ${name(r.got!)}'s product.`]} />;
+  if (r.line.match === 'alias') return <Flag label="✓" title="Learned" list={['This text was matched by a person before.']} />;
+  return null;
+}
+
+/**
+ * The order's store carts (owner, 2026-10-15): one link per store with every supply whose first Walmart/Amazon
+ * buying option is there, as many as cover the order. Kaizen never pays — the person checks the cart and pays.
+ */
+function CartLinks({ inv, lines }: { inv: Inventory; lines: { itemId: string; qty: number }[] }) {
+  const c = cartLinks(lines, inv.items);
+  if (!lines.length || (!c.walmart && !c.amazon && !c.none.length)) return null;
+  const name = (id: string) => inv.items.find(i => i.id === id)?.name ?? id;
+  const link = (s: Store, url: string | null) => url && <a className="chip" href={url} target="_blank" rel="noreferrer">
+    <Icon n="cart" /> Open cart at {STORE_NAME[s]} ({c.carts[s].length}) ↗</a>;
+  return <div className="button-row cart-links">
+    {link('walmart', c.walmart)}{link('amazon', c.amazon)}
+    {(c.walmart || c.amazon) && <Hint>Opens the store's cart with these items added — check it there and pay there; Kaizen never pays. How many = what is ordered ÷
+      how many come in one (Setup → Items list → Buy at), rounded up. A supply goes to the store of its first Walmart/Amazon option — the one it was last bought at.</Hint>}
+    {c.none.length > 0 && <Flag tone="attn" label={`Not in a store cart: ${c.none.length}`} title="No Walmart or Amazon product yet — buy them by hand"
+      list={[...c.none.map(name), 'A receipt (.md) that has them remembers their product.']} />}
+  </div>;
+}
+
 /** The form's purchase to the server: one, or one per order from one receipt (uploaded once). */
 async function sendPurchase(api: InvTransport, p: PurchaseOut, todoId: string) {
   const f = new FormData();
   f.append('action', 'purchase'); f.append('note', p.note); f.append('paidBy', p.paidBy);
   if (p.date) f.append('date', p.date);
   if (p.aliases.length) f.append('aliases', JSON.stringify(p.aliases));
+  if (p.products?.length) f.append('products', JSON.stringify(p.products));
   if (p.splits) f.append('splits', JSON.stringify(p.splits));
   else {
     f.append('lines', JSON.stringify(p.lines)); f.append('total', p.total);
@@ -1071,8 +1152,9 @@ function RecordPurchase({ inv, onSaved }: { inv: Inventory; onSaved: (i: Invento
   return (
     <div className="card">
       <h2><Icon n="receipt" /> Record a purchase <Hint>What was really bought: it adds to each place's stock and goes to Costs as one Restock expense with its receipt.
-        Start from an open order (its lines come filled in) or add the items with <Icon n="search" />. <Icon n="sparkles" /> Read receipt fills the form in from the receipt's photo or PDF —
-        check it, then record it. More than one receipt: <Icon n="clip" /> + another receipt → <Icon n="sparkles" /> Read the new receipt adds its lines and total. Close the order in To-do once everything is bought.</Hint></h2>
+        Start from an open order (its lines come filled in) or add the items with <Icon n="search" />. Attach the Walmart/Amazon order saved with MarkDownload (.md) →
+        <Icon n="sparkles" /> Read receipt fills the form in and checks it against the order (missing, fewer, not ordered, not exact) — check it, then record it.
+        More than one order: <Icon n="clip" /> + another → <Icon n="sparkles" /> Read the new receipt adds its lines and total. Close the order in To-do once everything is bought.</Hint></h2>
       <PurchaseForm inv={inv} onInv={onSaved} todoId={todoId} start={o ? linesOf(o.lines) : undefined} canSplit recordLabel="Record the purchase"
         head={<label>For the order
           <select value={todoId} onChange={e => setTodoId(e.target.value)}>
@@ -1288,9 +1370,9 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   return (
     <div className="card task-buy">
       <h3><Icon n="cart" /> Purchase order <Hint><Icon n="sparkles" /> Build the cart reads what was asked and adds the supplies it is sure of.
-        <Icon n="save" /> Save order keeps it on this to-do, with or without a price. Once it is bought, attach the receipt →
-        <Icon n="sparkles" /> Read receipt fills it in (check every line) → <Icon n="receipt" /> Record the purchase puts it into each place's stock and into Costs (Restock).
-        More than one receipt? <Icon n="clip" /> + another receipt, then <Icon n="sparkles" /> Read the new receipt — its lines and total are added.</Hint></h3>
+        <Icon n="save" /> Save order keeps it on this to-do, with or without a price. <Icon n="cart" /> Open cart puts it in the Walmart/Amazon cart — the person pays there.
+        Once it is bought, attach the order saved with MarkDownload (.md) → <Icon n="sparkles" /> Read receipt fills it in and checks it against the order (check every line) →
+        <Icon n="receipt" /> Record the purchase puts it into each place's stock and into Costs (Restock). More than one order? <Icon n="clip" /> + another, then <Icon n="sparkles" /> Read the new receipt.</Hint></h3>
       {(asked ?? '').trim() && (
         <div className="buy-asked">
           <button className="secondary small" disabled={building} onClick={() => void build()}><Icon n="sparkles" /> {building ? 'Reading what was asked…' : 'Build the cart from what was asked'}</button>
@@ -1388,7 +1470,7 @@ const TYPE_WORD: Record<Kind, string> = { supply: '🧴 Supplies', furniture: '�
  */
 function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void }) {
   const blank = { id: '', kind: 'supply' as Kind, name: '', size: '', category: 'other', measure: 'unit', perClean: '', reorderAt: '', active: true,
-                  buyOptions: [] as { label: string; url: string }[] };
+                  buyOptions: [] as { label: string; url: string; pack?: number | string | null }[] };
   const [form, setForm] = useState(blank);
   const [show, setShow] = useState<'all' | Kind>('all');
   const [msg, setMsg] = useState('');
@@ -1400,7 +1482,7 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
   const whole = (i: InvItemRow) => ({ action: 'save', id: i.id, name: i.baseName ?? i.name, size: i.size ?? '', category: i.category, measure: i.measure, perClean: i.perClean ?? '',
                                       reorderAt: i.reorderAt ?? '', active: i.active, kind: i.kind ?? 'supply', buyOptions: i.buyOptions ?? [] });
   const shown = items.filter(i => show === 'all' || (i.kind ?? 'supply') === show);
-  const setOpt = (k: number, patch: Partial<{ label: string; url: string }>) =>
+  const setOpt = (k: number, patch: Partial<{ label: string; url: string; pack: string }>) =>
     setForm(f => ({ ...f, buyOptions: f.buyOptions.map((o, j) => j === k ? { ...o, ...patch } : o) }));
   return (
     <div className="card">
@@ -1420,7 +1502,7 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
                   <option value="supply">Supplies</option><option value="furniture">Furniture</option></select></td>
                 <td><b>{i.baseName ?? i.name}</b>{!i.active && <span className="sub-n"> · off</span>}</td><td>{i.size ?? <span className="sub-n">—</span>}</td><td>{i.category}</td><td>{i.measure}</td>
                 <td className="n">{fmt(i.perClean)}</td><td className="n">{fmt(i.reorderAt)}</td>
-                <td>{(i.buyOptions ?? []).length ? (i.buyOptions ?? []).map((o, k) => <Fragment key={k}>{k ? ' · ' : ''}<a href={o.url} target="_blank" rel="noreferrer">{o.label} ↗</a></Fragment>)
+                <td>{(i.buyOptions ?? []).length ? (i.buyOptions ?? []).map((o, k) => <Fragment key={k}>{k ? ' · ' : ''}<a href={o.url} target="_blank" rel="noreferrer">{o.label} ↗</a>{o.pack ? <span className="sub-n"> ×{o.pack}</span> : null}</Fragment>)
                   : <span className="sub-n">—</span>}</td>
                 <td className="n nowrap">
                   <button className="link tiny" onClick={() => setForm({ id: i.id, kind: i.kind ?? 'supply', name: i.baseName ?? i.name, size: i.size ?? '', category: i.category, measure: i.measure,
@@ -1446,11 +1528,15 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
         <label>Keep at least<input type="number" min="0" step="any" value={form.reorderAt} onChange={e => setForm(f => ({ ...f, reorderAt: e.target.value }))} /></label>
       </div>
       <div className="buy-opts">
-        <b>Buy at</b> <span className="sub-n">— where to buy it; each option with its link</span>
+        <b>Buy at</b> <span className="sub-n">— where to buy it; each option with its link and how many come in one (×)</span>
+        <Hint>A Walmart (walmart.com/ip/…) or Amazon (amazon.com/dp/…) link is the store's product: receipts match it by number and an order opens it
+          in the store's cart — the first Walmart/Amazon option is the one used. Recording a receipt (.md) puts what was bought first, with its ×.</Hint>
         {form.buyOptions.map((o, k) => (
           <div key={k} className="row" style={{ gap: 6, alignItems: 'center' }}>
             <input value={o.label} maxLength={60} placeholder="Store, e.g. Costco" aria-label="Store" onChange={e => setOpt(k, { label: e.target.value })} />
             <input value={o.url} maxLength={500} placeholder="https://…" aria-label="Link" style={{ flex: 1 }} onChange={e => setOpt(k, { url: e.target.value })} />
+            <input className="inv-qty" type="number" min="0" step="any" value={o.pack ?? ''} placeholder="×" aria-label={`How many ${form.measure || 'units'} come in one`}
+                   title={`How many ${form.measure || 'units'} come in one`} onChange={e => setOpt(k, { pack: e.target.value })} />
             <button className="link tiny danger" onClick={() => setForm(f => ({ ...f, buyOptions: f.buyOptions.filter((_, j) => j !== k) }))}>✕</button>
           </div>))}
         <button className="link tiny" onClick={() => setForm(f => ({ ...f, buyOptions: [...f.buyOptions, { label: '', url: '' }] }))}>+ a buying option</button>
