@@ -205,13 +205,22 @@ async function cleanTodo(sql: SqlFn, who: Who, cleaningKey: unknown, group: 'req
   const fresh = !t;
   if (!t) {
     const head = group === 'request' ? `Supplies requested — clean of ${c.unit_name} on ${c.date}` : `Bought on the clean of ${c.unit_name} on ${c.date}`;
-    const id = await newTodo(sql, head, `What ${who.name} reported on this clean — each one is a sub-task.` +
-      (group === 'request' ? ' To buy it: Operations → Inventory → To order → “for this to-do”.' : ''), c.unit_id, by, [], priority);
+    // §159: a clean's request is its purchase order — what was asked is its description, line by line, in the
+    // cleaner's words; the cart is built from it (✨) or filled when the receipt is read. Bought stays as it was.
+    const id = await newTodo(sql, head, group === 'request' ? 'Asked for on this clean:'
+      : `What ${who.name} reported on this clean — each one is a sub-task.`, c.unit_id, by, [], priority);
     await sql`UPDATE todos SET clean_key = ${String(cleaningKey)}, clean_group = ${group} WHERE account_id = 1 AND id = ${Number(id)}`;
     t = { id, priority };
   }
-  await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, parent_id)
-            VALUES (1, ${title.slice(0, 300)}, ${description}, ${c.unit_id ? [c.unit_id] : []}, ${by}, 'task', 'pending', ${priority}, ${Number(t.id)})`;
+  if (group === 'request') {
+    const said = title.replace(/^Supplies requested:\s*/, '');
+    const extra = (description ?? '').split('\n').filter(l => /^(Photo|Receipt):/.test(l)).map(l => `  ${l}`);
+    await sql`UPDATE todos SET description = concat_ws(E'\n', NULLIF(description, ''), ${[`• ${who.name}: ${said}`, ...extra].join('\n')}), updated_at = now()
+              WHERE account_id = 1 AND id = ${Number(t.id)}`;
+  } else {
+    await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, parent_id)
+              VALUES (1, ${title.slice(0, 300)}, ${description}, ${c.unit_id ? [c.unit_id] : []}, ${by}, 'task', 'pending', ${priority}, ${Number(t.id)})`;
+  }
   if ((RANK[priority] ?? 0) > (RANK[t.priority] ?? 0)) await sql`UPDATE todos SET priority = ${priority}, updated_at = now() WHERE account_id = 1 AND id = ${Number(t.id)}`;
   if (!fresh) await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
                         VALUES (1, 'task', ${t.id}, 'change', ${`${who.name} added: ${title}`.slice(0, 4000)}, ${by})`;
@@ -235,10 +244,19 @@ export async function ranOut(sql: SqlFn, who: Who, cleaningKey: string, unitId: 
   const at = placeOf(sp, who, unitId, unitId ? await unitName(sql, unitId) : null, null);
   for (const i of items) await sql`INSERT INTO inventory_moves (account_id, item_id, place, unit_id, kind, qty, cleaning_key, by_name, source)
                                    VALUES (1, ${Number(i.id)}, ${at.key}, ${unitId}, 'missing', 0, ${cleaningKey}, ${who.name}, ${who.source})`;
-  return cleanTodo(sql, who, cleaningKey, 'request',
+  const ct = await cleanTodo(sql, who, cleaningKey, 'request',
     `Supplies requested: not found at ${at.name} — ${items.map(i => i.name).join(', ')}`,
     `${who.name} did not find these at ${at.name}. Check the stock (count it in Operations → Inventory — they may not have seen it, ` +
     `or the record may be wrong) and/or order them.`, 'high');
+  // §159: these are catalogue items already — they go on the order as lines (one each, for that place), so the
+  // order shows what to buy without anyone typing it; the team changes the quantities.
+  // A unit with no supplies place has nowhere to send them: what was asked stays in the description, for ✨.
+  if (ct && at.key) {
+    const lines = items.map(i => ({ itemId: i.id, place: at.key, qty: 1 }));
+    await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(ct.todoId)}, ${JSON.stringify(lines)}::jsonb, ${who.name})
+              ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = inventory_orders.lines || EXCLUDED.lines`;
+  }
+  return ct;
 }
 
 /**
@@ -332,6 +350,8 @@ export async function fieldTodo(sql: SqlFn, who: Who, b: Record<string, unknown>
   const id = await newTodo(sql, place ? `${what} at ${place}: ${text}` : `${what}: ${text}`, description, unitId, who.email ?? who.name, [], priority);
   // Each problem is its own to-do; marked with its clean so a purchase order can be attached to it.
   if (b.kind !== 'request' && b.cleaningKey) await sql`UPDATE todos SET clean_key = ${String(b.cleaningKey)}, clean_group = 'problem' WHERE account_id = 1 AND id = ${Number(id)}`;
+  // §159: a request outside a clean (a helper, a link) is a purchase order too.
+  if (b.kind === 'request') await sql`UPDATE todos SET clean_group = 'request' WHERE account_id = 1 AND id = ${Number(id)}`;
   return { todoId: id, fresh: true };
 }
 
@@ -552,11 +572,22 @@ export async function fieldTodos(sql: SqlFn) {
 }
 
 /** The orders not yet closed, with their lines — what a purchase can start from. */
+// §159 (owner, 2026-10-14): what a cleaner or an inspector asks to buy IS a purchase order from the moment it is
+// asked — listed with the orders even before it has lines (its description says what was asked; ✨ builds the cart,
+// or the receipt's reading fills it). A to-do with lines is an order as before.
 export async function openOrders(sql: SqlFn) {
   return await sql`SELECT o.todo_id::text AS "todoId", t.title, o.lines, to_char(o.created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS at,
                           (SELECT count(*)::int FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = o.todo_id) AS purchases
                      FROM inventory_orders o JOIN todos t ON t.id = o.todo_id
-                    WHERE o.account_id = 1 AND t.status NOT IN ('completed', 'cancelled') ORDER BY o.created_at DESC` as
+                    WHERE o.account_id = 1 AND t.status NOT IN ('completed', 'cancelled') AND t.deleted_at IS NULL
+                   UNION ALL
+                   SELECT t.id::text, t.title, '[]'::jsonb, to_char(t.created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD'),
+                          (SELECT count(*)::int FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id)
+                     FROM todos t
+                    WHERE t.account_id = 1 AND t.clean_group IN ('request', 'inspection') AND t.parent_id IS NULL AND t.deleted_at IS NULL
+                      AND t.status NOT IN ('completed', 'cancelled')
+                      AND NOT EXISTS (SELECT 1 FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id)
+                    ORDER BY 4 DESC` as
     { todoId: string; title: string; lines: { itemId: string; place: string; qty: number }[]; at: string; purchases: number }[];
 }
 

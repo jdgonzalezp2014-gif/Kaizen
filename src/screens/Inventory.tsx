@@ -10,10 +10,10 @@
  * its last count — so every place says when it was counted, and a "not there"
  * report asks for a count instead of changing the number on one person's word.
  */
-import { Hint } from '../components/Hint.tsx';
+import { Hint, Peek } from '../components/Hint.tsx';
 import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getInventory, inventoryAction, inventoryItemAction, inventoryUpload, type InvItemRow, type InvPlace, type Inventory } from '../api.ts';
-import { CATEGORIES, reconcile } from '../lib/inventory.ts';
+import { CATEGORIES, onHand, reconcile } from '../lib/inventory.ts';
 import { orderFor, receiptSum, similarItems, splitTotal, type Receipt, type ReceiptLine } from '../lib/receipt.ts';
 import { Sheet } from '../components/InspectionRun.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
@@ -1005,46 +1005,98 @@ function PaidBy({ value, onChange }: { value: string; onChange: (v: string) => v
  * saved as its order to buy later, or recorded as bought (stock + one Restock
  * expense, receipt) and the to-do closed.
  */
-export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
+export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   todoId: string; unitIds: string[]; onClose: () => void; onBought: (closeIt: boolean) => void;
+  /** §159: what was asked, in the asker's words (the to-do's description) — ✨ builds the cart from it. */
+  asked?: string | null;
 }) {
   const [inv, setInv] = useState<Inventory | null>(null);
-  const [start, setStart] = useState<Lines | undefined>();
+  const [startArr, setStartArr] = useState<{ itemId: string; place: string; qty: number }[]>([]);
+  const [formKey, setFormKey] = useState(0);
   const [closeIt, setCloseIt] = useState(true);
   const [msg, setMsg] = useState('');
+  const [building, setBuilding] = useState(false);
+  const [unsure, setUnsure] = useState<{ text: string; candidates: string[] }[]>([]);
   // Owner, 2026-10-14: the to-do's order IS the "Record a purchase" form — items, total, paid by, note,
   // receipt in one place; 💾 Save order keeps it as a draft (no price needed) until it is bought.
   useEffect(() => { void getInventory().then(r => {
     if (!r.ok) { setMsg(r.message ?? 'Could not load the inventory.'); return; }
     const o = r.orders.find(x => x.todoId === todoId);
-    if (o) setStart(linesOf(o.lines));
+    if (o) setStartArr(o.lines);
     setInv(r);
   }); }, [todoId]);
   if (!inv) return <p className={msg ? 'breach' : 'note loading-dot'}>{msg || 'Loading the supplies…'}</p>;
   const home = inv.places.find(p => p.units.some(u => unitIds.includes(u.id)))?.place ?? null;
-  const hadOrder = inv.orders.some(o => o.todoId === todoId);
+  const hadOrder = inv.orders.some(o => o.todoId === todoId && o.lines.length > 0);
+  const nameOf = (id: string) => inv.items.find(i => i.id === id)?.name ?? 'item';
+  const addLines = (ls: { itemId: string; qty: number }[]) => {
+    setStartArr(a => [...a, ...ls.filter(l => !a.some(x => x.itemId === l.itemId)).map(l => ({ itemId: l.itemId, place: home ?? '', qty: l.qty }))]);
+    setFormKey(k => k + 1);
+  };
+  // §159 (owner): the AI reads what was asked and fills the cart — sure lines in, the rest as "is it one of these?".
+  const build = async () => {
+    setBuilding(true); setMsg('');
+    const r = await inventoryAction({ action: 'readRequest', text: asked ?? '' }).catch(e => ({ ok: false as const, message: String(e) })) as
+      { ok: true; lines: ReceiptLine[] } | { ok: false; message?: string };
+    setBuilding(false);
+    if (!r.ok) { setMsg(`${r.message ?? 'Could not read it'} — build the cart by hand.`); return; }
+    addLines(r.lines.filter(l => l.itemId).map(l => ({ itemId: l.itemId!, qty: Math.max(1, Math.ceil(l.itemQty ?? l.qty ?? 1)) })));
+    setUnsure(r.lines.filter(l => !l.itemId).map(l => ({ text: l.text, candidates: l.candidates })));
+    if (!r.lines.length) setMsg('Nothing in it read as something to buy — build the cart by hand.');
+  };
+  const start = startArr.length ? linesOf(startArr) : undefined;
   return (
     <div className="card task-buy">
-      <h3><Icon n="cart" /> Purchase order <Hint><Icon n="save" /> Save order keeps it on this to-do, with or without a price. Once it is bought, attach the receipt →
+      <h3><Icon n="cart" /> Purchase order <Hint><Icon n="sparkles" /> Build the cart reads what was asked and adds the supplies it is sure of.
+        <Icon n="save" /> Save order keeps it on this to-do, with or without a price. Once it is bought, attach the receipt →
         <Icon n="sparkles" /> Read receipt fills it in (check every line) → <Icon n="receipt" /> Record the purchase puts it into each place's stock and into Costs (Restock).
         More than one receipt? <Icon n="clip" /> + another receipt, then <Icon n="sparkles" /> Read the new receipt — its lines and total are added.</Hint></h3>
+      {(asked ?? '').trim() && (
+        <div className="buy-asked">
+          <button className="secondary small" disabled={building} onClick={() => void build()}><Icon n="sparkles" /> {building ? 'Reading what was asked…' : 'Build the cart from what was asked'}</button>
+          {unsure.length > 0 && (
+            <div className="buy-unsure">
+              <span className="note">Not sure — is it one of these?</span>
+              {unsure.map((u, k) => (
+                <div key={k} className="buy-unsure-line"><b>“{u.text}”</b>
+                  {u.candidates.length ? u.candidates.map(c => <button key={c} className="chip" onClick={() => { addLines([{ itemId: c, qty: 1 }]); setUnsure(x => x.filter((_, n) => n !== k)); }}>{nameOf(c)}</button>)
+                    : <span className="note"> nothing like it in the supplies list — add it from the form</span>}
+                  <button className="link tiny" onClick={() => setUnsure(x => x.filter((_, n) => n !== k))}>Skip</button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
       {hadOrder && <p className="note">The order as it was left.</p>}
-      <PurchaseForm inv={inv} onInv={setInv} todoId={todoId} start={start} defaultPlace={home} canSplit
+      <PurchaseForm key={formKey} inv={inv} onInv={setInv} todoId={todoId} start={start} defaultPlace={home} canSplit
         extra={<label className="check"><input type="checkbox" checked={closeIt} onChange={e => setCloseIt(e.target.checked)} /> ✓ and close this to-do when recorded</label>}
         onRecord={async p => {
           const r = await sendPurchase(REAL, p, todoId);
           if (!r.ok) return r.message ?? 'Not saved.';
           onBought(closeIt); return null;
         }}
-        buttons={({ lines, busy }) => <>
-          {/* Not finished? Kept as this to-do's order — a draft it carries, replaced on every save, until it is bought. */}
-          <button className="secondary" disabled={busy || (!lines.length && !hadOrder)} onClick={async () => {
-            setMsg('');
-            try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onBought(false); }
-            catch (e) { setMsg(String(e)); }
-          }}><Icon n="save" /> Save order</button>
-          <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
-        </>} />
+        buttons={({ lines, busy }) => {
+          // §159: what is already on hand somewhere — ops sends the cleaner to look before anyone buys it.
+          const hand = onHand(lines.map(l => l.itemId), inv.places.map(p => ({ name: p.name, items: p.items })));
+          return <>
+            {hand.size > 0 && (
+              <div className="buy-onhand">
+                {[...hand].map(([id, at]) => (
+                  <Peek key={id} className="onhand" label={<><b className="bang" aria-hidden="true">!</b>{nameOf(id)}</>} ariaLabel={`${nameOf(id)} is already on hand`}>
+                    <b>Already on hand</b><br />{at.map(a => `${a.place}: ${a.qty}`).join(' · ')}<br />Ask the cleaner to look there before buying.
+                  </Peek>))}
+              </div>
+            )}
+            {/* Not finished? Kept as this to-do's order — a draft it carries, replaced on every save, until it is bought. */}
+            <button className="secondary" disabled={busy || (!lines.length && !hadOrder)} onClick={async () => {
+              setMsg('');
+              try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onBought(false); }
+              catch (e) { setMsg(String(e)); }
+            }}><Icon n="save" /> Save order</button>
+            <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
+          </>;
+        }} />
       {msg && <p className="breach" role="status">{msg}</p>}
     </div>
   );

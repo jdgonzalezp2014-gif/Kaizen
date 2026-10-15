@@ -177,15 +177,15 @@ export function repairList(cs: Check[], ctx: { unit: string; date: string; inspe
 }
 
 /**
- * Every purchase of an inspection as ONE to-do — a shopping list — with one
- * sub-task per item to tick off as it is bought (§133, the owner's flow).
+ * Every purchase of an inspection as ONE purchase order (§133, §159) — what to buy in its description, the
+ * supplies picked from the list as its lines.
  */
 export function purchaseList(cs: Check[], ctx: { unit: string; date: string; inspector: string },
                              titleOf: (c: Check) => string): { title: string; description: string; items: string[] } | null {
   const buys = cs.filter(c => c.result === 'attention' && c.outcome === 'purchase');
   if (!buys.length) return null;
   const item = (c: Check) => `${c.label}${c.note?.trim() ? ` — ${c.note.trim()}` : ''} (${titleOf(c)})`;
-  const title = buys.length === 1 ? `Buy for ${ctx.unit}: ${buys[0]!.label}` : `Buy for ${ctx.unit}: ${buys.length} items`;
+  const title = buys.length === 1 ? `Purchase order for ${ctx.unit}: ${buys[0]!.label}` : `Purchase order for ${ctx.unit}: ${buys.length} items`;
   const lines = [
     `From the inspection of ${ctx.unit} on ${ctx.date}${ctx.inspector ? ` by ${ctx.inspector}` : ''}.`,
     ...buys.flatMap(c => [`• ${item(c)}`, ...c.photos.map(p => `  Photo: ${p.url}`)])

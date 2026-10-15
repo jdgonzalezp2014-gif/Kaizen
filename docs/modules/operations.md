@@ -542,3 +542,17 @@ UI only; tokens and shared components from `docs/design-system.md`.
   on other views, no "Live" banner while live and healthy (a green dot on the gear, the sentence on its hover; failures
   and shadow mode still take a banner). On a big screen the view strip is replaced by the side rail + "Operations › View".
 - **Round 4:** Operations' top is one line — "Operations › View" and a dark gear alone (icon only, a green dot while live); the control bar shows only on Movements (its days).
+- **Purchase orders (§159 round 5, owner 2026-10-14):** what a cleaner or an inspector asks to buy IS a purchase order
+  from the moment it is asked. `openOrders` also lists open `clean_group IN ('request','inspection')` to-dos with no lines
+  yet (so they sit under Purchase orders and the receipt reader can match them). A clean's request: each thing asked is
+  appended to the order's description ("• Name: …", photos indented) — no sub-task per request (`cleanTodo`); "not found"
+  items (`ranOut`) also go in as lines (qty 1, the unit's place; none when the unit has no supplies place). A request with
+  no clean (helper/link) is marked `request` too. Inspection purchases: "Purchase order for X: n items", no sub-task per item
+  (lines from the picked supplies as before). **✨ Build the cart** (`/api/inventory` `readRequest` → `functions/_lib/request-read.ts`,
+  the AI chain + `readReceipt`'s checks + learned aliases): sure lines go into the cart, the rest "is it one of these?";
+  it reads the description and, on older requests, the open sub-tasks; nothing is saved until 💾 Save order. **!** beside
+  what is already on hand (`onHand`, src/lib/inventory.ts — places with a counted quantity > 0), the places on hover.
+  **+ Purchase order** (Purchase orders tab, Home and To-do): free text + listing → a to-do created `asOrder` (clean_group
+  `request`), opened in a pop-up on its form. Opening any order lands on its form. Closing one unbought still asks why
+  (wording now "this purchase order"). Tested: ✨ on a real request (6 lines, 3 marked on hand). **Not exercised: a
+  cleaner's new request through the field link** (writes production; try it with the practice page's flow or a test clean).

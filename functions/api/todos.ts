@@ -280,7 +280,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
                 ${f.description ?? null}, ${f.parentId ?? null}, ${stay}, ${stay ? f.reservationLabel : null}, ${f.chargeOwner ?? false})
         RETURNING id`)[0] as { id: string };
       ids.push(String(row.id));
-      const what = (f.kind ?? 'task') === 'work_order' ? 'Work order' : 'To-do';
+      // §159: "+ Purchase order" (Home, To-do) — an order from its first moment, like a cleaner's request: listed
+      // with the orders, built from what was written (✨), closed unbought only with a reason.
+      if (b.asOrder === true && !f.parentId) await sql`UPDATE todos SET clean_group = 'request' WHERE account_id = 1 AND id = ${row.id}`;
+      const what = b.asOrder === true ? 'Purchase order' : (f.kind ?? 'task') === 'work_order' ? 'Work order' : 'To-do';
       await note(sql, 'task', String(row.id), 'status',
         `${what} created${parentTitle ? ` under “${parentTitle}”` : ''}${claimLabel ? ` for the claim ${claimLabel}` : ''}` +
         `${targets.length > 1 ? ` (one of ${targets.length}, one per listing)` : ''}.`, who.email);

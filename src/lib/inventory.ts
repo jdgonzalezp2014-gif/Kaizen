@@ -142,3 +142,18 @@ export function orderList(lines: { item: InvItem; place: string; qty: number }[]
       (e.parts.length === 1 ? e.parts[0]!.place : e.parts.map(p => `${p.place} ${p.qty}`).join(' · ')))
   };
 }
+
+/**
+ * Where something asked for is already on hand (owner, 2026-10-14 — §159): before buying, ops sends the
+ * cleaner to look. Places holding at least one, most first; a place whose count is unknown says nothing.
+ */
+export function onHand(itemIds: string[], places: { name: string; items: { itemId: string; qty: number | null }[] }[]):
+  Map<string, { place: string; qty: number }[]> {
+  const out = new Map<string, { place: string; qty: number }[]>();
+  for (const id of new Set(itemIds)) {
+    const at = places.flatMap(p => p.items.filter(i => i.itemId === id && (i.qty ?? 0) > 0).map(i => ({ place: p.name, qty: i.qty! })))
+      .sort((a, b) => b.qty - a.qty);
+    if (at.length) out.set(id, at);
+  }
+  return out;
+}

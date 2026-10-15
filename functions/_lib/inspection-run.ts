@@ -381,7 +381,7 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
     made.push({ kind: 'repair', title: repWork.title, id: t!.id });
   }
 
-  // Purchases: ONE to-do for all of them, an item per sub-task to tick off as it is bought.
+  // Purchases: ONE purchase order for all of them (§133, §159).
   const buys = checks.filter(x => x.result === 'attention' && x.outcome === 'purchase' && !x.todoId);
   // §150: a supply and how many read on the to-do too ("Toilet paper × 4 — note").
   const names = new Map((await invItems(sql)).map(i => [i.id, i.name]));
@@ -394,11 +394,8 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
       VALUES (1, ${list.title}, ${list.description}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(id)})
       RETURNING id::text` as { id: string }[];
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
-              VALUES (1, 'task', ${t!.id}, 'status', ${`To-do created from the inspection of ${ins.unit_name} on ${ins.date} — ${list.items.length} item${list.items.length === 1 ? '' : 's'} to buy.`}, ${who})`;
-    for (const item of list.items) {
-      await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id, inspection_id)
-                VALUES (1, ${item}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'task', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
-    }
+              VALUES (1, 'task', ${t!.id}, 'status', ${`Purchase order created from the inspection of ${ins.unit_name} on ${ins.date} — ${list.items.length} item${list.items.length === 1 ? '' : 's'} to buy.`}, ${who})`;
+    // §159 (owner): it is a purchase order — what to buy is its description and its lines, not a sub-task per item.
     await sql`UPDATE inspection_checks SET todo_id = ${Number(t!.id)} WHERE account_id = 1 AND id = ANY(${buys.map(c => Number(c.id))}::bigint[])`;
     // §150: the inspector only requests — an order of its own kind, processed as a purchase (closing it unbought asks first).
     await sql`UPDATE todos SET clean_group = 'inspection' WHERE account_id = 1 AND id = ${Number(t!.id)}`;

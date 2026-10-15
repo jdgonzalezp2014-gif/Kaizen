@@ -16,6 +16,7 @@
  *   POST { action: 'order', lines: [{ itemId, place, qty }], forTodo? }  the ORDER: ONE to-do (or onto a field to-do), a line per item
  *   POST { action: 'purchase', lines, total, todoId?, note?, paidBy?, date? } + receipt  what was BOUGHT: stock per place + one Restock expense
  *   POST { action: 'purchase', splits: [{ todoId?, lines, total }], … } + receipt  one receipt, several orders: a purchase each
+ *   POST { action: 'readRequest', text }   ✨ build the cart from what was asked — nothing saved (§159)
  *   POST { action: 'readReceipt', orders? } + receipt (or fieldExpenseId)   ✨ the AI reads it — the form is filled in, nothing saved
  *        (a purchase's `aliases` [{ text, itemId }] = receipt lines a person decided: learned for the next receipt)
  *   POST { action: 'newItem', name, size?, … }                         a supply added on the spot (also from a receipt line)
@@ -29,6 +30,7 @@ import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { createOrder, fieldPhotos, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
 import { learnAliases, readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
+import { readRequestText } from '../_lib/request-read.ts';
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -60,6 +62,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       await recordLook(sql, who.email, b.place, look, photos, given.length);
       for (const c of given) await recordMove(sql, me, { kind: 'count', itemId: c.itemId, place: b.place, qty: c.qty, note: b.note });
       waitUntil(lowStock(sql, [String(b.place ?? '')]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
+    } else if (b.action === 'readRequest') {
+      // §159: ✨ Build the cart — the AI reads what was asked; nothing is saved.
+      const r = await readRequestText(sql, env, String(b.text ?? ''));
+      return Response.json(r.ok ? r : { ok: false, error: 'unreadable', message: r.message });
     } else if (b.action === 'readReceipt') {
       // Owner, 2026-10-14: the AI only fills the form in — this saves nothing.
       const r = await readReceiptFiles(sql, env, await receiptFiles(sql, env, files, b.fieldExpenseId), b.orders !== 'no');

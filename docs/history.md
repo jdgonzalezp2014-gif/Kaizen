@@ -4218,4 +4218,8 @@ orders inside a work order, with no "Assign and schedule" to-do (it was the same
 unit's work; the desktop navigation is four sections and "More", like the phone.
 Round 3, same day: Home's pills removed (they repeated the cards); the board's flags in fixed slots; Operations' top
 reduced to the days and the gear; tablet/desktop navigate from a sliding side rail with Operations' views in it.
+Round 5, same day: purchase orders from the moment something is asked (cleaners, inspectors, anyone from Home); the
+asked words are the description, ✨ builds the cart with the AI, "!" says what is already on hand. Round 4 had made the
+gear an icon alone, put the date in the menu (the owner says the time is Central — the board still computes New York;
+a separate change to agree) and stopped the rail sticking open after a click.
 

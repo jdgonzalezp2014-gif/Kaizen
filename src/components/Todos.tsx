@@ -115,7 +115,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const [dueFilter, setDueFilter] = useState<'' | 'overdue' | 'today' | 'week' | 'none'>('');
   const [showDone, setShowDone] = useState(!!claim);
   const [openClaim, setOpenClaim] = useState<string | null>(null);
-  const [adding, setAdding] = useState<null | TaskKind | 'claim'>(null);
+  const [adding, setAdding] = useState<'order' | null | TaskKind | 'claim'>(null);
   // Home (§81, §85): three lines per lane until asked for more.
   const [laneAll, setLaneAll] = useState<Record<string, boolean>>({});
   // owner, Oct 2026: Home shows one kind at a time, and inside it the buckets folded but the first.
@@ -174,6 +174,20 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   // something of another kind is also listed in its own section.
   const crossCat = (t: Todo) => { const p = t.parentId ? byId.get(t.parentId) : undefined; return !!p && catOf(t) !== 'task' && catOf(p) !== catOf(t); };
   const [pop, setPop] = useState<{ todo?: string; claim?: string } | null>(null);
+  // §159: orders made from here this session (the order list is read by the screen above, once).
+  const [madeOrders, setMadeOrders] = useState<Set<string>>(new Set());
+  const allOrders = useMemo(() => orderIds ? new Set([...orderIds, ...madeOrders]) : undefined, [orderIds, madeOrders]);
+  const newOrder = async (text: string, unitId: string) => {
+    const said = text.trim();
+    const title = `Purchase order: ${said.split(/[\n.,;]/)[0]!.trim().slice(0, 60)}`;
+    const r = await todoAction({ action: 'create', asOrder: true, title, description: said, kind: 'task', unitIds: unitId ? [unitId] : [] })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setErr(r.message ?? 'Not saved.'); return false; }
+    take(r.todos);
+    const id = r.todos.filter(t => t.title === title).map(t => t.id).sort((a, b) => Number(b) - Number(a))[0];
+    if (id) { setMadeOrders(m => new Set(m).add(id)); setTab('orders'); setPop({ todo: id }); }
+    return true;
+  };
   // No filter: tasks at the top, their sub-tasks inside them. A filter:
   // every match, flat, each sub-task saying whose it is (§78).
   const top = kindFilter === 'claims' ? []
@@ -194,7 +208,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   }, [todos]);
   const ctx = { today, names, units, claims, claimNames, act, inClaim: !!claim, kids, byId, flat: filtering,
                 canClaims: showClaims, onClaimsChanged: () => void loadClaims(), reload: () => void loadTodos(), compact,
-                orderIds, openPop: setPop,
+                orderIds: allOrders, openPop: setPop,
                 // §159: a listing or an owner on a row is a link that filters the list by it.
                 filterBy: (x: { unit?: string; owner?: string }) => { if (x.unit) setUnitFilter(x.unit); if (x.owner) setOwnerFilter(x.owner); } };
 
@@ -250,7 +264,9 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const workAlert = (list: Todo[]) => late(list) ? <span className="breach">▲ {late(list)} overdue</span>
     : dueToday(list) ? <span className="home-today">● {dueToday(list)} today</span> : null;
 
-  const addForm = (kind: TaskKind | 'claim') => adding !== kind ? null : kind === 'claim' ? (
+  const addForm = (kind: TaskKind | 'claim' | 'order') => adding !== kind ? null : kind === 'order' ? (
+    <NewOrderForm units={units} onCancel={() => setAdding(null)} onSave={async (text, unitId) => { const ok = await newOrder(text, unitId); if (ok) setAdding(null); return ok; }} />
+  ) : kind === 'claim' ? (
     <QuickClaim units={units} today={today} onCancel={() => setAdding(null)}
                 onSaved={() => { setAdding(null); void loadClaims(); }} />
   ) : (
@@ -283,7 +299,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     );
   };
 
-  const isOrder = (t: Todo) => !!orderIds?.has(t.id);
+  const isOrder = (t: Todo) => !!allOrders?.has(t.id);
   // Purchase orders and work orders (owner, Oct 2026): their comments unfold on the row.
   const chatRow = (t: Todo) => <TodoRow key={t.id} t={t} chat related={crossCat(t)} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
   const bucketed = (key: string, list: Todo[], chat = false) => {
@@ -309,7 +325,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   };
   // Owner, Oct 2026: Operations → To-do looks the same as Home — tabs and buckets — only without a cap on rows.
   const cap = compact ? 5 : Infinity;
-  const homeTabs: (WorkTab & { add?: TaskKind | 'claim' })[] = lanesOn ? [
+  const homeTabs: (WorkTab & { add?: TaskKind | 'claim' | 'order' })[] = lanesOn ? [
     { key: 'task', label: 'Tasks', count: taskItems.filter(t => !isOrder(t)).length, alert: late(taskItems) > 0, add: 'task',
       body: taskItems.some(t => !isOrder(t)) ? bucketed('task', taskItems.filter(t => !isOrder(t))) : <p className="note">Nothing to do. ✓</p> },
     { key: 'work_order', label: '🔧 Repairs', count: repairItems.length, alert: late(repairItems) > 0, add: 'work_order',
@@ -322,7 +338,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
           {laneAll.claims ? 'Show less ▴' : `Show ${cases.length - 5} more ▾`}</button>}
       </> : <p className="note">No open claims. ✓</p> }] : []),
     ...extraTabs,
-    ...(orderIds ? [{ key: 'orders', label: '🛒 Purchase orders', count: openList.filter(isOrder).length,
+    ...(orderIds ? [{ key: 'orders', label: '🛒 Purchase orders', count: openList.filter(isOrder).length, add: 'order' as const,
       body: openList.some(isOrder) ? <ul className="todo-list">{openList.filter(isOrder).map(chatRow)}</ul>
         : <p className="note">No purchase order open. ✓</p> }] : [])
   ] : [];
@@ -340,7 +356,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
       ) : adding === 'claim' ? (
         <QuickClaim units={units} today={today} onCancel={() => setAdding(null)}
                     onSaved={() => { setAdding(null); void loadClaims(); }} />
-      ) : (
+      ) : adding === 'order' ? null : (
         <TodoForm key={adding} units={units} claims={claims} canClaims={canClaims && !claim} submitLabel="Add"
                   startKind={adding} onCancel={() => setAdding(null)}
                   fixed={claim ? { claimId: claim.id, unitIds: claim.unitId ? [claim.unitId] : [],
@@ -481,7 +497,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   const [confirmDel, setConfirmDel] = useState(false);
   const [addingSub, setAddingSub] = useState<null | TaskKind>(null);
   // §150: the to-do's own purchase — its order, or what was bought (stock + Costs), then closed.
-  const [buying, setBuying] = useState(false);
+  // §159: a purchase order opens on its form — that is what there is to do with it.
+  const [buying, setBuying] = useState(() => !!props.orderIds?.has(t.id) && !isClosed(t.status));
   // §104: sub-tasks open while some are still to do; folded once all are done.
   const [subsOpen, setSubsOpen] = useState(() => (kids.get(t.id) ?? []).some(k => !isClosed(k.status)));
   const [lineDel, setLineDel] = useState(false);
@@ -495,6 +512,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   const prog = progress(mine);
   const parent = t.parentId ? byId.get(t.parentId) : undefined;
   const isOrder = !!props.orderIds?.has(t.id);
+  // The order list can arrive after the row: opening an order still lands on its form.
+  useEffect(() => { if (open && isOrder && !isClosed(t.status)) setBuying(true); }, [open, isOrder]);
   // §159: the listing is on the context line — the title does not say it again (the stored title stays whole).
   const shown = rowTitle(t.title, t.unitIds.map(id => names.get(id) ?? '').concat(parent ? parent.unitIds.map(id => names.get(id) ?? '') : []));
   const cat = categoryOf(t, isOrder);
@@ -520,7 +539,6 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   const [dismiss, setDismiss] = useState<null | 'done' | 'cancel'>(null);
   const [why, setWhy] = useState('');
   const unbought = !closed && !t.parentId && (t.cleanGroup === 'request' || t.cleanGroup === 'inspection') && !t.purchases;
-  const asker = t.cleanGroup === 'inspection' ? 'an inspector' : 'a cleaner';
   const tick = async () => { if (unbought) setDismiss('done'); else await doTick(); };
   const cancel = async () => { if (unbought) setDismiss('cancel'); else await doCancel(); };
   const [renaming, setRenaming] = useState(false);
@@ -605,9 +623,9 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
         {closed && t.resolutionNote && <span className="m todo-resolution" title="Resolution">— {t.resolutionNote}</span>}
       </div>
       {dismiss && (
-        <Modal title={`Close ${asker === 'a cleaner' ? 'a cleaner’s' : 'an inspection’s'} request with nothing bought?`} onClose={() => { setDismiss(null); setWhy(''); }}>
-          <p>This is what {asker} asked to buy, and no purchase is recorded for it. Closing it now reads as
-            <b> the request was dismissed</b>.</p>
+        <Modal title="Close this purchase order with nothing bought?" onClose={() => { setDismiss(null); setWhy(''); }}>
+          <p>No purchase is recorded for it{t.cleanGroup === 'inspection' ? ' (an inspector asked for it)' : ''}. Closing it now reads as
+            <b> the order was dismissed</b> — fine if it was not needed or the stock had it; say why.</p>
           <div className="button-row">
             <button onClick={() => { setDismiss(null); if (!open) onOpen(); setSubsOpen(true); setBuying(true); }}><Icon n="cart" /> Record the purchase</button>
             <button className="secondary" onClick={() => { setDismiss(null); setWhy(''); }}>Keep it open</button>
@@ -670,6 +688,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                             )}
                             {buying ? (
                               <TaskPurchase todoId={t.id} unitIds={t.unitIds} onClose={() => setBuying(false)}
+                                            // What was asked: the description, and — on requests from before §159 — the open sub-tasks it was split into.
+                                            asked={[t.description, ...mine.filter(k => !isClosed(k.status)).map(k => k.title)].filter(Boolean).join('\n')}
                                             onBought={async closeIt => { setBuying(false); if (closeIt && !closed) await doTick(); else reload(); }} />
                             ) : !addingSub ? (
                               <div className="todo-add-buttons">
@@ -1640,4 +1660,30 @@ function VendorOptions() {
     void vendorCache.then(setList);
   }, []);
   return <datalist id="kaizen-vendors">{list.map(x => <option key={x.name} value={x.name}>{x.trade ?? ''}</option>)}</datalist>;
+}
+
+/**
+ * "+ Purchase order" (owner, 2026-10-14 — §159): what is needed, in anyone's words, and where. It is created as
+ * an order and opens on its form, where ✨ Build the cart turns the words into supplies.
+ */
+function NewOrderForm({ units, onSave, onCancel }: { units: Unit[]; onSave: (text: string, unitId: string) => Promise<boolean>; onCancel: () => void }) {
+  const [text, setText] = useState('');
+  const [unitId, setUnitId] = useState('');
+  const [busy, setBusy] = useState(false);
+  return (
+    <form className="todo-form new-order" onSubmit={async e => { e.preventDefault(); if (!text.trim() || busy) return; setBusy(true); await onSave(text, unitId); setBusy(false); }}>
+      <b className="todo-adding"><Icon n="cart" /> New purchase order</b>
+      <textarea className="todo-descin" rows={3} value={text} autoFocus maxLength={4000} aria-label="What is needed"
+                placeholder="What is needed — e.g. 2 boxes of trash bags, toilet paper, coffee pods for Napa" onChange={e => setText(e.target.value)} />
+      <div className="row">
+        <select value={unitId} aria-label="Listing" onChange={e => setUnitId(e.target.value)}>
+          <option value="">No listing (stock)</option>
+          {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+        </select>
+        <span className="rb-spacer" />
+        <button type="button" className="link tiny" onClick={onCancel}>Cancel</button>
+        <button className="small" disabled={!text.trim() || busy}>{busy ? 'Creating…' : 'Create and build the cart'}</button>
+      </div>
+    </form>
+  );
 }

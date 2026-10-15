@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { needByPlace, orderList, perClean, reconcile, stockLevels, toOrder, unitUses, type InvItem, type Move } from './inventory.ts';
+import { needByPlace, orderList, perClean, reconcile, stockLevels, toOrder, unitUses, onHand, type InvItem, type Move } from './inventory.ts';
 
 const S1105 = 'the_links/ROW-0010', S4116 = 'the_links/ROW-0011', S13 = 'cortland_legacy/ROW-0021', PRESTON = 'houses/ROW-0002';
 const mv = (kind: Move['kind'], qty: number, at: string, place: string | null = S1105, unitId: string | null = null,
@@ -76,4 +76,13 @@ test('the shopping to-do has a line per item, split between the places it goes t
   assert.deepEqual(orderList([{ item: TP, place: 'S1105', qty: 10 }, { item: CP, place: 'S13', qty: 24 }, { item: TP, place: 'Preston Vineyard closet', qty: 4 }]),
     { title: 'Buy supplies: 2 items', items: ['Buy: Toilet paper × 14 rolls — S1105 10 · Preston Vineyard closet 4', 'Buy: Coffee pods × 24 pods — S13'] });
   assert.equal(orderList([{ item: TP, place: 'S13', qty: 0 }]), null);
+});
+
+test('what is already on hand, before buying (§159)', () => {
+  const places = [{ name: 'S100 Storage', items: [{ itemId: '1', qty: 26 }, { itemId: '2', qty: 0 }] },
+                  { name: 'Napa closet', items: [{ itemId: '1', qty: 3 }, { itemId: '3', qty: null }] }];
+  const h = onHand(['1', '2', '3', '1'], places);
+  assert.deepEqual(h.get('1'), [{ place: 'S100 Storage', qty: 26 }, { place: 'Napa closet', qty: 3 }]);
+  assert.equal(h.has('2'), false);  // none left
+  assert.equal(h.has('3'), false);  // never counted: not a reason to send anyone
 });

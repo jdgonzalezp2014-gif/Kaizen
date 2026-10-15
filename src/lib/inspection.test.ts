@@ -90,7 +90,7 @@ test('all purchases become one shopping list, an item per sub-task', () => {
               check('2', 1, 'attention', { label: 'Towels', outcome: 'purchase', area: 'bathroom' }),
               check('3', 1, 'attention', { label: 'Grout', outcome: 'repair' })];
   const l = purchaseList(cs, { unit: 'CL1250', date: '2026-10-12', inspector: 'Sharon' }, c => c.area === 'bathroom' ? 'Bathroom' : 'Kitchen')!;
-  assert.equal(l.title, 'Buy for CL1250: 2 items');
+  assert.equal(l.title, 'Purchase order for CL1250: 2 items');
   assert.deepEqual(l.items, ['Buy: Coffee — none left (Kitchen)', 'Buy: Towels (Bathroom)']);
   assert.match(l.description, /• Coffee — none left \(Kitchen\)\n  Photo: https:\/\/x\/p\n• Towels/);
   assert.equal(purchaseList([cs[2]!], { unit: 'X', date: 'd', inspector: '' }, () => ''), null);
