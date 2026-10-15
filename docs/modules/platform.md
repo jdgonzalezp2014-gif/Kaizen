@@ -114,3 +114,8 @@ Hostaway client, sync, crypto, migrations.
   carries the card look itself (white, border, radius, shadow, padding) so it is level with `.home-main-col`'s To-dos
   card; `.home-rail` sits inside it with a hairline under it, and the nested `.home-card` (the Panel) goes transparent/borderless
   so there's one box, not two. Phone is untouched (`.home-side-col { display: contents }` there, so none of this applies).
+- **The menu's date, CST, foot of the rail (owner, 2026-10-15):** the boxed "OCT 15" at the top of the desktop rail
+  (`App.tsx` `Today`) read as ugly and was in New York, not the team's zone. Moved to `.side-foot` (after `ThemeToggle`,
+  right-aligned, plain footnote-size text reusing `.side-word`'s hover fade) and switched to `America/Chicago`
+  (CST/CDT) — the same zone as `teamTz`'s default. This settles the menu part of the §159 "Open" item above; the
+  board/ops/timelines' 43 places still compute "today" in New York — still a separate, asked-for change.

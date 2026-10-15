@@ -2466,7 +2466,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
     font: inherit; font-size: var(--fs-footnote); font-weight: 500; cursor: pointer; white-space: nowrap; }
   .side-sublink:hover { background: var(--hover); color: var(--ink); }
   .side-sublink.active { color: var(--ink); font-weight: 650; background: var(--tint); }
-  .side-foot { margin-top: auto; }
+  .side-foot { margin-top: auto; display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
   .side-foot .theme-toggle { width: 100%; justify-content: flex-start; gap: 16px; padding: 0 12px; min-height: 40px; border: 0; background: none; }
   .side-foot .theme-word { opacity: 0; transition: opacity .12s ease; }
   .side-nav:hover .side-foot .theme-word, .side-nav:has(:focus-visible) .side-foot .theme-word { opacity: 1; }
@@ -2488,12 +2488,9 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .ops-gear .icon { width: 20px; height: 20px; }
 .ops-gear .live-dot { position: absolute; top: 3px; right: 3px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--bg); }
 @media (max-width: 720px) { .ops-gear { width: 44px; height: 44px; } }
-/* The day in the menu: a small calendar leaf in the rail, the words when it opens; a chip in the phone's header. */
-.side-today { display: flex; align-items: center; gap: 16px; padding: 0 6px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
-.side-cal { flex: none; display: grid; place-items: center; width: 32px; height: 34px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
-  font-size: var(--fs-callout); font-weight: 700; line-height: 1; padding-top: 1px; background: var(--card); }
-.side-cal b { display: block; width: 100%; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); font-weight: 700; }
-.side-today .side-word { font-weight: 600; font-size: var(--fs-body); }
+/* The day in the menu: plain text at the foot of the rail, right-aligned, fading in with the other labels
+   when it opens; a chip in the phone's header. */
+.side-today { padding: 0 12px; font-weight: 500; font-size: var(--fs-footnote); color: var(--muted); white-space: nowrap; }
 .today-chip { margin-left: auto; font-size: var(--fs-footnote); color: var(--muted); font-weight: 600; white-space: nowrap; }
 .today-chip + .phone-theme { margin-left: 8px; }
 @media (min-width: 1280px) { .home { max-width: 1360px; } }

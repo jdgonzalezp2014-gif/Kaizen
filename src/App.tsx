@@ -309,15 +309,16 @@ function TabBar({ tabs, tab, onTab }: { tabs: Tab[]; tab: Tab | null; onTab: (t:
   );
 }
 
-/** The day, in the menu (owner, 2026-10-14: the date and the city were a heading on Home). The board's day — New York's, for now. */
+/** The day, in the menu (owner, 2026-10-14: the date and the city were a heading on Home). Central (CST/CDT) — the team's zone. */
 function Today({ compact = false }: { compact?: boolean }) {
-  const d = new Date(`${todayIn('America/New_York')}T12:00:00Z`);
+  const d = new Date(`${todayIn('America/Chicago')}T12:00:00Z`);
   const f = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...o }).format(d);
   return compact
     ? <span className="today-chip" title={f({ weekday: 'long', month: 'long', day: 'numeric' })}>{f({ weekday: 'short', month: 'short', day: 'numeric' })}</span>
-    : <span className="side-today" title={f({ weekday: 'long', month: 'long', day: 'numeric' })}>
-        <span className="side-cal" aria-hidden="true"><b>{f({ month: 'short' })}</b>{f({ day: 'numeric' })}</span>
-        <span className="side-word">{f({ weekday: 'long' })}, {f({ month: 'short', day: 'numeric' })}</span>
+    // owner, 2026-10-15: the boxed date at the top read as ugly in a narrow rail — plain text at the foot now,
+    // fading in with the other labels when the rail opens (`.side-word`).
+    : <span className="side-today side-word" title={f({ weekday: 'long', month: 'long', day: 'numeric' })}>
+        {f({ weekday: 'short', month: 'short', day: 'numeric' })}
       </span>;
 }
 
@@ -338,7 +339,6 @@ function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions }: {
   return (
     <aside className="side-nav" aria-label="Sections">
       <div className="side-brand"><span className="brand-mark" aria-hidden="true" /><span className="side-word">Kaizen OS</span></div>
-      <Today />
       <nav className="side-list">
         {tabs.map(t => (
           <div key={t} className={`side-item ${tab === t ? 'active' : ''} ${t === 'operations' ? 'has-sub' : ''}`}>
@@ -356,7 +356,7 @@ function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions }: {
           </div>
         ))}
       </nav>
-      <div className="side-foot"><ThemeToggle /></div>
+      <div className="side-foot"><ThemeToggle /><Today /></div>
     </aside>
   );
 }
