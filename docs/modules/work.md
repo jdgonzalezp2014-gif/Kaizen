@@ -125,3 +125,14 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   the row already shows it) sits under the title; the description is read there when it has text and edited inside Details. Then files, comments, sub-tasks.
 - **Opening a to-do (owner, 2026-10-14):** ▸/▾ before the title, and a click anywhere on the row's line opens/closes it
   (`todo-opener`; clicks on its buttons, links and fields are left to them).
+
+## Redesign (§158, 2026-10-14, branch `redesign`)
+
+UI only; tokens and shared components from `docs/design-system.md`.
+- A to-do's ✕ / ✓ (`.todo-quick`): one set of rules instead of three that overrode each other; 28 px circles
+  on a desktop, 40 px on a phone (were ~24 px). Still faint until the row is pointed at (§105); always shown on touch.
+- Work tabs (Tasks / Repairs / Claims / Purchase orders): selected = ink fill, the system's "selected"
+  (was a blue tint — blue is reserved for actions). A tab with nothing in it is muted, not 60% opacity.
+- Claims keep their shape + word for status; no change needed.
+- Open: the urgent to-do rail is red (priority Urgent). Kept: the owner chose red for High/Critical
+  severity on claims and urgent priority reads the same way; revisit if red starts to mean only "failed".

@@ -1813,10 +1813,13 @@ button.sop-num { cursor: pointer; }
   background: color-mix(in srgb, var(--series-1) 7%, var(--card)); box-shadow: var(--shadow-2); font-size: var(--fs-body); font-weight: 600; }
 @media (max-width: 720px) { .task-fold-sum { white-space: normal; } }
 /* §105: the row's own actions, and renaming in place. Faint until the row is pointed at; always shown on touch. */
-.todo-quick { margin-left: auto; display: inline-flex; gap: 4px; opacity: .4; transition: opacity .12s; }
-.todo-line:hover > .todo-quick, .todo-quick:focus-within { opacity: 1; }
-.todo-quick button { font-size: var(--fs-caption); font-weight: 600; padding: 2px 9px; border-radius: var(--r-pill); background: none;
-  border: 1px solid var(--line); color: var(--muted); cursor: pointer; }
+.todo-quick { margin-left: auto; display: inline-flex; gap: 6px; opacity: .5; transition: opacity .12s; }
+.todo-line:hover > .todo-quick, .todo:hover .todo-quick, .todo-quick:focus-within { opacity: 1; }
+/* One set of rules (there were three): 28 px circles on a desktop, 40 px under a thumb (§158). */
+.todo-quick button { display: inline-grid; place-items: center; min-width: 28px; height: 28px; padding: 0 8px;
+  font-size: var(--fs-footnote); font-weight: 600; border-radius: var(--r-pill); background: var(--card);
+  border: 1px solid var(--line-strong); color: var(--muted); cursor: pointer; }
+@media (max-width: 720px) { .todo-quick button { min-width: 40px; height: 40px; } }
 .todo-quick .q-done:hover { color: var(--good); border-color: color-mix(in srgb, var(--good) 50%, transparent); }
 .todo-quick .q-cancel:hover { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 40%, transparent); }
 .todo-quick + .todo-x { margin-left: 0; }
@@ -2207,8 +2210,10 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: var(--
 .work-tab { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-footnote); font-weight: 600; padding: 4px 11px; border-radius: var(--r-pill);
   background: none; border: 1px solid var(--line); color: var(--muted); cursor: pointer; }
 .work-tab .count { font-size: var(--fs-caption); padding: 0 6px; border-radius: var(--r-pill); background: var(--tint); }
-.work-tab.active { color: var(--ink); border-color: color-mix(in srgb, var(--series-1) 60%, transparent); background: color-mix(in srgb, var(--series-1) 12%, transparent); }
-.work-tab.is-zero:not(.active) { opacity: .6; }
+.work-tab.active { color: var(--bg); border-color: var(--ink); background: var(--ink); }
+.work-tab.active .count { background: color-mix(in srgb, var(--bg) 22%, transparent); color: var(--bg); }
+.work-tab.active .work-tab-alert { color: var(--bg); }
+.work-tab.is-zero:not(.active) { color: var(--muted); }
 .work-tab-alert { color: var(--warn); font-size: var(--fs-caption); }
 .work-tab-body { display: flex; flex-direction: column; gap: 6px; padding-top: 6px; }
 .todo-bucket { display: flex; flex-direction: column; }
@@ -2217,8 +2222,6 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: var(--
 .bucket-hint { font-size: var(--fs-caption); color: var(--muted); }
 .bucket-now .bucket-head b { color: var(--warn); }
 .todos .todo-desc { margin-left: 0; }
-.todos .todo-quick { opacity: .75; }
-.todos .todo-quick button { padding: 2px 8px; font-size: var(--fs-body); min-width: 28px; }
 .desc-link { text-decoration: none; margin-left: 2px; }
 .chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 10px; }
 .buy-opts { display: grid; gap: 6px; margin: 8px 0; }
@@ -2272,7 +2275,7 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: var(--
 .todo-kids .todo { padding-right: 92px; }
 .todo-bucket + .todo-bucket { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); }
 .bucket-head { padding: 6px 0; }
-@media (max-width: 720px) { .todo { padding-right: 84px; } }
+@media (max-width: 720px) { .todo { padding-right: 104px; } }
 
 /* Owner, 2026-10-14: explanations behind a "?" (Hint), so screens show what is, not how it works. */
 .hint { position: relative; display: inline-flex; vertical-align: middle; margin-left: 6px; }
