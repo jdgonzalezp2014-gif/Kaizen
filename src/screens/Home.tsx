@@ -27,6 +27,7 @@ import {
   type Claim, type Todo, type OperationsResponse, type StayDocs, type VariableExpense
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
+import { channelLabel } from '../lib/breakdown.ts';
 import { todayIn, addDays } from '../lib/dates.ts';
 import { TodoList, type WorkSum, type WorkTab } from '../components/Todos.tsx';
 import { money, money2 } from '../lib/format.ts';
@@ -423,7 +424,7 @@ function DayGroup({ label, empty, children }: { label: string; empty: string; ch
  */
 function UnitCell({ r }: { r: BoardRow }) {
   const stay = [r.guest || 'guest', `${r.nights} night${r.nights === 1 ? '' : 's'}`, r.guests ? `${r.guests} guests` : '',
-    r.channel, r.total ? money(r.total) : ''].filter(Boolean).join(' · ');
+    r.channel ? channelLabel(r.channel) : '', r.total ? money(r.total) : ''].filter(Boolean).join(' · ');
   return (
     <span className="home-main home-unit">
       <b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}
