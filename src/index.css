@@ -118,12 +118,17 @@ code { background: var(--tint); padding: 1px 5px; border-radius: var(--r-xs); fo
 /* ── shell ───────────────────────────────────────────────────────────
    One quiet bar: the product name, the tabs, day/night. Sticky, so the
    way out of a long list is always in reach. */
-header { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; gap: var(--s-5);
+/* Any other <header> (Home's date line, the field pages' one-line top, the Repository's bar)
+   keeps the plain look it always had: a row with a hairline under it. */
+header { display: flex; justify-content: space-between; align-items: flex-end; gap: var(--s-3);
+  border-bottom: 1px solid var(--line); padding-bottom: var(--s-4); margin-bottom: var(--s-5); }
+@media (max-width: 640px) { header { flex-direction: column; align-items: flex-start; gap: 14px; } }
+header.app-header { position: sticky; top: 0; z-index: 30; display: flex; flex-direction: row; justify-content: flex-start; align-items: center; gap: var(--s-5);
   margin: calc(-1 * var(--s-5)) calc(-1 * var(--s-5)) var(--s-5); padding: 10px var(--s-5);
   background: color-mix(in srgb, var(--bg) 88%, transparent);
   backdrop-filter: saturate(1.4) blur(12px); -webkit-backdrop-filter: saturate(1.4) blur(12px);
   border-bottom: 1px solid var(--line); }
-@media (prefers-reduced-transparency: reduce) { header { background: var(--bg); backdrop-filter: none; } }
+@media (prefers-reduced-transparency: reduce) { header.app-header { background: var(--bg); backdrop-filter: none; } }
 .brand { display: flex; align-items: center; gap: 10px; flex: none; }
 /* The mark: the status rail itself, three steps rising — the product's
    one recurring shape, also its name tag. */
@@ -144,8 +149,8 @@ nav { display: flex; gap: 2px; align-items: center; margin-left: auto; }
 .tabbar { display: none; }
 @media (max-width: 720px) {
   :root:has(.tabbar) { --tabbar-h: 64px; }
-  header { padding: 10px var(--s-4); margin: calc(-1 * var(--s-4)) calc(-1 * var(--s-4)) var(--s-4); }
-  header nav { display: none; }
+  header.app-header { padding: 10px var(--s-4); margin: calc(-1 * var(--s-4)) calc(-1 * var(--s-4)) var(--s-4); }
+  header.app-header nav { display: none; }
   .tabbar { position: fixed; z-index: 40; left: 0; right: 0; bottom: 0; display: grid;
     grid-auto-flow: column; grid-auto-columns: 1fr;
     padding: 4px 6px calc(4px + env(safe-area-inset-bottom));
@@ -232,7 +237,6 @@ th { text-align: left; color: var(--muted); font-weight: 600; font-size: var(--f
 td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: middle; }
 tbody tr:hover td { background: var(--hover); }
 tbody tr:last-child td { border-bottom: 0; }
-@media (max-width: 640px) { header { gap: 14px; } }
 
 .filters { display: flex; justify-content: space-between; gap: 14px;
   flex-wrap: wrap; align-items: center; margin-bottom: 16px; }
@@ -1051,6 +1055,8 @@ table.ops-board { margin: 0; min-width: 980px; }
 /* toolbar */
 .rb-main { min-width: 0; }
 .rb-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+/* Phone: the title on its line, then search and reload side by side (the reload sat alone on a row). */
+@media (max-width: 640px) { header.rb-bar { flex-direction: row; align-items: center; } .rb-bar h2 { flex-basis: 100%; } .rb-bar .rb-search { flex: 1; } .rb-bar .rb-spacer { display: none; } }
 .rb-bar h2 { margin: 0; font-size: var(--fs-title3); font-weight: 650; letter-spacing: -.01em; }
 .rb-search input { width: 320px; max-width: 60vw; padding: 7px 12px; border-radius: var(--r-pill); font-size: var(--fs-body); }
 
@@ -1099,9 +1105,15 @@ textarea.rb-input { font-family: inherit; resize: vertical; }
 /* values */
 .rb-pill { display: inline-block; padding: 2px 9px; border-radius: var(--r-pill); font-size: var(--fs-footnote); font-weight: 550;
   background: var(--tint); color: var(--ink); max-width: 180px; overflow: hidden; text-overflow: ellipsis; vertical-align: middle; }
-.rb-pill.c0 { background: var(--pill0-bg); color: var(--pill0-fg); } .rb-pill.c1 { background: var(--pill1-bg); color: var(--pill1-fg); }
-.rb-pill.c2 { background: var(--pill2-bg); color: var(--pill2-fg); } .rb-pill.c3 { background: var(--pill3-bg); color: var(--pill3-fg); }
-.rb-pill.c4 { background: var(--pill4-bg); color: var(--pill4-fg); } .rb-pill.c5 { background: var(--pill5-bg); color: var(--pill5-fg); }
+/* An option's colour is a category, not a state (§158): the pill stays neutral and the colour
+   is a dot, so a floor called "Second" no longer looks like a failure. */
+.rb-pill[class*=" c"]::before { content: ''; display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+  margin-right: 6px; vertical-align: 1px; background: var(--dot, var(--muted)); }
+.rb-pill.c0 { --dot: var(--pill0-fg); } .rb-pill.c1 { --dot: var(--pill1-fg); } .rb-pill.c2 { --dot: var(--pill2-fg); }
+.rb-pill.c3 { --dot: var(--pill3-fg); } .rb-pill.c4 { --dot: var(--pill4-fg); } .rb-pill.c5 { --dot: var(--pill5-fg); }
+
+
+
 .rb-selectbox { display: inline-flex; align-items: center; gap: 6px; }
 .rb-caret { color: var(--muted); font-size: var(--fs-caption); }
 .rb-check { display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1.5px solid var(--line);
@@ -1353,7 +1365,7 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
   .chip, .tab { min-height: 36px; }
   .ops-manual-actions .link { font-size: var(--fs-callout); padding: 6px 0; }
   /* Repository: a list to look things up, the record opens full screen. */
-  .rb-phone-list { list-style: none; margin: 8px 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-md); }
+  .rb-phone-list { list-style: none; margin: 8px 0; padding: 0; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); overflow: hidden; }
   .rb-phone-list li + li { border-top: 1px solid var(--line); }
   .rb-phone-row { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 48px; padding: 10px 14px;
     background: none; border: 0; text-align: left; color: var(--ink); font: inherit; cursor: pointer; }

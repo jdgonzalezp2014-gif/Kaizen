@@ -214,7 +214,7 @@ function TeamApp() {
   const crewOnly = allowed?.length === 1 && (allowed[0] === 'crew' || allowed[0] === 'vendor');
   return (
     <main>
-      {!crewOnly && <header>
+      {!crewOnly && <header className="app-header">
         {/* No tagline. It restated a framing the owner had already lost an
             argument about, and a slogan nobody reads is pure vertical
             space on a screen whose job is a list. */}

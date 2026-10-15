@@ -141,3 +141,13 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
 ## History
 
 §63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147, §148, §149, §150, §155.
+
+## Redesign (§158, 2026-10-14, branch `redesign`)
+
+UI only; tokens and shared components from `docs/design-system.md`.
+- A select option's colour (`.rb-pill.cN`) is a category, not a state: the pill is neutral and the colour is a
+  7 px dot. "Second" in red / "First" in green read as failure / confirmed next to the real states.
+  The `--pillN-*` tokens stay (the dot uses the `-fg` step).
+- Phone: search and reload share a row under the title (reload sat alone on a row); the record list has a surface.
+- The app shell's sticky header is now `header.app-header`: it had also caught `.rb-bar` and `.rb-panel-head`
+  (and Home's / the field pages' headers) mid-redesign; they keep the plain header they always had.
