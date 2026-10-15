@@ -120,7 +120,7 @@ function CrewShell({ token }: { token: string | null }) {
 
 const TABS: [Tab, string][] = [
   ['home', 'Home'], ['units', 'Units'], ['revenue', 'Revenue'], ['operations', 'Operations'],
-  ['repository', 'Repository'], ['costs', 'Costs'], ['claims', 'Claims'], ['sops', 'SOPs'], ['settings', 'Settings']
+  ['repository', 'Repository'], ['costs', 'Costs'], ['claims', 'Claims & upselling'], ['sops', 'SOPs'], ['settings', 'Settings']
 ];
 
 function TeamApp() {

@@ -264,7 +264,7 @@ function claimRows(c: ClaimLite): Block[] {
 }
 
 export interface ClaimCard extends ClaimLite {
-  source?: string | null; refund?: number; repairCost?: number;
+  source?: string | null; refund?: number; requested?: number;
   updates: { who: string; when: string; body: string }[];
   /** Owner, Oct 2026: the claim's work, as in Kaizen — each opens its own card. */
   work?: { id: string; title: string; status: string; kind: string }[];
@@ -280,7 +280,7 @@ export function claimCard(c: ClaimCard, note?: string, root?: 'claims', focus = 
   const money = (n?: number) => n ? `$${n.toFixed(2)}` : null;
   const fields = [f('Status', c.status), f('Severity', c.severity), f('Category', c.category), f('Listing', c.unit ?? 'Portfolio'),
     f('Source', c.source), f('Open for', c.days != null ? `${c.days} day${c.days === 1 ? '' : 's'}` : null),
-    f('Refund', money(c.refund)), f('Repair cost', money(c.repairCost))].filter(Boolean).slice(0, 10);
+    f('Requested', money(c.requested)), f('Received', money(c.refund))].filter(Boolean).slice(0, 10);
   return {
     type: 'modal', callback_id: 'claim_card', private_metadata: JSON.stringify({ id: c.id, ...(root ? { root } : {}) }),
     title: plain('Claim'), submit: plain('Save'), close: plain('Close'),
@@ -761,7 +761,7 @@ export function readTaskForm(state: State, meta: { id: string | null; kind: stri
 
 export interface ClaimForm {
   id?: string; unitId?: string | null; occurredOn?: string; category?: string | null; severity?: string; status?: string;
-  source?: string | null; description?: string | null; refund?: number; repairCost?: number; caseUrl?: string | null;
+  source?: string | null; description?: string | null; refund?: number; caseUrl?: string | null;
 }
 export function claimModal(f: ClaimForm, units: Opt[], categories: string[], sources: string[]): Block {
   const o = (xs: string[]) => xs.map(x => ({ value: x, label: x }));

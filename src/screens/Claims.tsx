@@ -1,5 +1,6 @@
 /**
- * Claims — open a case, move it along, see what it cost.
+ * Claims & upselling — open a case, move it along, see what was asked, what came in
+ * and what the work cost. §162: a pet fee or a late check-in is the same shape of case.
  *
  * The only screen here with real CRUD, and the reason is that a claim is
  * a CASE rather than a fact. An expense happened once; a complaint moves
@@ -13,11 +14,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { getClaims, saveClaim, deleteClaim, restoreClaim, type Claim, type UnitRow } from '../api.ts';
 import { money2 } from '../lib/format.ts';
-import { ClaimCase, StayPicker } from '../components/Todos.tsx';
+import { CategoryOptions, ClaimCase, StayPicker } from '../components/Todos.tsx';
 import { caseHost } from '../lib/claims.ts';
-import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
+import { CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
 import { Icon } from '../components/Icon.tsx';
-import { Peek } from '../components/Hint.tsx';
+import { Hint, Peek } from '../components/Hint.tsx';
 import { Linked } from '../components/Todos.tsx';
 import { claimStage, shortDay } from '../lib/todos.ts';
 
@@ -27,7 +28,6 @@ const claimTitle = (c: Claim) =>
 
 const SEVERITY = CLAIM_SEVERITY;
 const STATUS = CLAIM_STATUS;
-const CATEGORIES = CLAIM_CATEGORIES;
 const SOURCES = CLAIM_SOURCES;
 
 /**
@@ -61,14 +61,16 @@ export function Claims({ units, canWork = false }: {
   const stats = useMemo(() => {
     const list = claims ?? [];
     const open = list.filter(OPEN);
-    const cost = list.reduce((a, c) => a + Number(c.refund) + Number(c.repair_cost), 0);
+    const requested = list.reduce((a, c) => a + Number(c.requested), 0);
+    const received = list.reduce((a, c) => a + Number(c.refund), 0);
+    const work = list.reduce((a, c) => a + Number(c.repair_work), 0);
     const weighted = open.reduce((a, c) => a + (WEIGHT[c.severity] ?? 1), 0);
     // Oldest open case, in days. The number that says whether cases are
     // being worked or just recorded.
     const oldest = open.length
       ? Math.max(...open.map(c => Math.round((Date.now() - Date.parse(c.occurred_on)) / 864e5)))
       : 0;
-    return { total: list.length, open: open.length, cost, weighted, oldest };
+    return { total: list.length, open: open.length, requested, received, work, weighted, oldest };
   }, [claims]);
 
   const save = async (c: Partial<Claim> & { unitId?: string | null }) => {
@@ -76,8 +78,7 @@ export function Claims({ units, canWork = false }: {
     const r = await saveClaim({
       id: c.id, unitId: c.unit_id ?? null, occurredOn: c.occurred_on,
       category: c.category, severity: c.severity, status: c.status, source: c.source,
-      description: c.description, refund: Number(c.refund) || 0,
-      repairCost: Number(c.repair_cost) || 0,
+      description: c.description, refund: Number(c.refund) || 0, requested: Number(c.requested) || 0,
       reservationId: c.reservation_id ?? null, reservationLabel: c.reservation_label ?? null,
       caseUrl: c.case_url ?? ''
     });
@@ -90,11 +91,15 @@ export function Claims({ units, canWork = false }: {
   return (
     <section>
       <div className="row-controls">
-        <h2 className="screen-title">Claims</h2>
+        <h2 className="screen-title">Claims &amp; upselling<Hint>A case is anything a guest owes or is owed beyond the stay: damage, a
+          complaint — or an upsell such as a pet fee or a late check-in. Each says how much was requested, how much was received
+          (refunded) and what its repair work cost: the sum of its work orders and purchase orders, never typed. A reservation
+          alteration is not upselling — its price is part of the reservation — unless it was collected through the Resolution
+          Center or no price was recorded on the reservation.</Hint></h2>
         <button className="small" onClick={() => setEditing({
           occurred_on: new Date().toISOString().slice(0, 10),
           severity: 'Medium', status: 'Open'
-        })}>Log a claim</button>
+        })}>Log a case</button>
       </div>
 
       {err && <p className="banner error">{err}</p>}
@@ -112,7 +117,8 @@ export function Claims({ units, canWork = false }: {
           <div><dt>Weighted</dt><dd>{stats.weighted}
             <small>1/2/4/8 by severity</small></dd></div>
           <div><dt>Oldest open</dt><dd>{stats.oldest}<small>days</small></dd></div>
-          <div><dt>Cost to date</dt><dd>{money2(stats.cost)}</dd></div>
+          <div><dt>Received</dt><dd>{money2(stats.received)}<small>of {money2(stats.requested)} requested</small></dd></div>
+          <div><dt>Repair work</dt><dd>{money2(stats.work)}<small>work + purchase orders</small></dd></div>
         </dl>
       )}
 
@@ -132,7 +138,6 @@ export function Claims({ units, canWork = false }: {
         <ul className="todo-list claims-list">
           {claims.filter(c => !unitFilter || c.unit_id === unitFilter).map(c => {
             const st = claimStage(c.status), on = openId === String(c.id), title = claimTitle(c);
-            const cost = Number(c.refund) + Number(c.repair_cost);
             const desc = (c.description ?? '').trim();
             return (
               <li key={c.id} className={`todo case cat-claim ${OPEN(c) ? '' : 'is-done'}`}>
@@ -148,7 +153,8 @@ export function Claims({ units, canWork = false }: {
                   {c.unit_name && <button type="button" className="m m-btn m-link" title={`Show only ${c.unit_name}`} onClick={() => setUnitFilter(c.unit_id ?? '')}><Icon n="home" />{c.unit_name}</button>}
                   {c.category && <span className="m">{c.category}</span>}
                   <span className="m"><Icon n="calendar" />{shortDay(c.occurred_on.slice(0, 10))}{OPEN(c) ? ` · ${Math.round((Date.now() - Date.parse(c.occurred_on)) / 864e5)}d open` : ''}</span>
-                  {cost > 0 && <span className="m">{money2(cost)}</span>}
+                  {Number(c.requested) > 0 && <span className="m" title="Received of requested">{money2(Number(c.refund))} / {money2(Number(c.requested))}</span>}
+                  {Number(c.repair_work) > 0 && <span className="m" title="Repair work: work orders + purchase orders"><Icon n="wrench" />{money2(Number(c.repair_work))}</span>}
                   {c.reservation_label && <span className="m"><Icon n="bed" />{c.reservation_label}</span>}
                   {desc && desc !== title && <span className="m"><Peek label={<><Icon n="note" />{/from slack/i.test(desc) ? 'From Slack' : 'Details'}</>}><Linked text={desc} /></Peek></span>}
                   {c.case_url && <a className="m m-link" href={c.case_url} target="_blank" rel="noreferrer">↗ {caseHost(c.case_url)} case</a>}
@@ -182,7 +188,7 @@ function ClaimForm({ claim, units, busy, onCancel, onSave, onRemoved }: {
 
   return (
     <div className="card claim-form">
-      <h3>{c.id ? 'Edit claim' : 'Log a claim'}</h3>
+      <h3>{c.id ? 'Edit case' : 'Log a claim or upsell'}</h3>
       <div className="entry">
         <label>Raised on
           <input type="date" value={c.occurred_on?.slice(0, 10) ?? ''}
@@ -198,7 +204,7 @@ function ClaimForm({ claim, units, busy, onCancel, onSave, onRemoved }: {
         <label>Category
           <select value={c.category ?? ''} onChange={e => set('category', e.target.value)}>
             <option value="">—</option>
-            {CATEGORIES.map(x => <option key={x}>{x}</option>)}
+            <CategoryOptions />
           </select>
         </label>
         <label>Severity
@@ -217,12 +223,11 @@ function ClaimForm({ claim, units, busy, onCancel, onSave, onRemoved }: {
             {STATUS.map(x => <option key={x}>{x}</option>)}
           </select>
         </label>
-        <label>Refunded
-          <input type="number" value={c.refund ?? ''} onChange={e => set('refund', e.target.value)} />
+        <label>Requested
+          <input type="number" min={0} step="0.01" value={c.requested ?? ''} onChange={e => set('requested', e.target.value)} />
         </label>
-        <label>Repair cost
-          <input type="number" value={c.repair_cost ?? ''}
-                 onChange={e => set('repair_cost', e.target.value)} />
+        <label>Received (refunded)
+          <input type="number" min={0} step="0.01" value={c.refund ?? ''} onChange={e => set('refund', e.target.value)} />
         </label>
       </div>
       <div className="claim-stay">

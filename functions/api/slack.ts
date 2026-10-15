@@ -14,7 +14,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { mayAccess } from '../_lib/roles.ts';
-import { attachTodoFiles, slackFiles, slackMessageFiles, toDrive } from '../_lib/todo-files.ts';
+import { attachTodoFiles, commentFileLines, slackFiles, slackMessageFiles } from '../_lib/todo-files.ts';
 import { commentToThread, rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
 import { cleansFor, digestFacts } from '../_lib/slack-digest.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
@@ -207,9 +207,8 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
       { type: 'context', elements: [{ type: 'mrkdwn', text: 'Type *@Kaizen help* for everything Kaizen does here.' }] }]);
     return;
   }
-  if (t.subject === 'task' && ev.files?.length) k.attachFromSlack(t.subject_id, { channel: String(ev.channel), ts: String(ev.ts), thread: String(ev.thread_ts) }, ev.files);
-  if (!arg.trim() && ev.files?.length) return;
-  const r = await k.comment(t.subject, t.subject_id, arg);
+  // §162: a reply's photos stay in its comment — not the to-do's Files.
+  const r = await k.commentWithFiles(t.subject, t.subject_id, arg, ev.files, { channel: String(ev.channel), thread: String(ev.thread_ts) });
   if (!r.ok) { await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`); return; }
   const re = await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
   if (!re.ok) await say('✓ Saved as a comment in Kaizen.');
@@ -303,10 +302,8 @@ async function threadReply(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<strin
   const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
   if (!member.ok) return;
   const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
-  // Owner, Oct 2026: files posted in a to-do's thread go onto the to-do.
-  if (t.subject === 'task' && ev.files?.length) k.attachFromSlack(t.subject_id, { channel: String(ev.channel), ts: String(ev.ts), thread: String(ev.thread_ts) }, ev.files);
-  if (!body) return;
-  const r = await k.comment(t.subject, t.subject_id, body);
+  // §162 (owner, 2026-10-15): files posted in the thread stay in that comment (a photo shows there), not in Files.
+  const r = await k.commentWithFiles(t.subject, t.subject_id, body, ev.files, { channel: String(ev.channel), thread: String(ev.thread_ts) });
   if (r.ok) await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
 }
 
@@ -386,7 +383,7 @@ class Kaizen {
   }
   private async claimRow(id: string) {
     const [c] = await this.sql`SELECT id::text, unit_id, occurred_on::text AS occurred_on, category, severity, status, source, description,
-                                      refund, repair_cost, case_url
+                                      refund, requested, case_url
                                  FROM claims WHERE account_id = 1 AND id::text = ${id} AND deleted_at IS NULL` as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     return c;
   }
@@ -395,7 +392,7 @@ class Kaizen {
     const c = await this.claimRow(id);
     if (!c) return { ok: false, error: 'That claim is gone.' };
     return this.claimSave({ id, unitId: c.unit_id, occurredOn: c.occurred_on, category: c.category, severity: c.severity, status: c.status,
-      source: c.source, description: c.description, refund: Number(c.refund) || 0, repairCost: Number(c.repair_cost) || 0,
+      source: c.source, description: c.description, refund: Number(c.refund) || 0,
       caseUrl: c.case_url ?? '', ...change });
   }
 
@@ -430,9 +427,27 @@ class Kaizen {
         text: `⚠ ${missed} file${missed === 1 ? '' : 's'} not added to Kaizen — over 15 MB and not a photo. Add ${missed === 1 ? 'it' : 'them'} in Kaizen, or share a smaller copy.` });
       if (!got.length) return;
       if (subject === 'task') { await attachTodoFiles(this.sql, this.ctx.env.ENCRYPTION_KEY, id, got, this.email, 'slack'); return; }
-      const up = await toDrive(this.sql, this.ctx.env.ENCRYPTION_KEY, `claim #${id}`, got);
-      await this.claimSave({ action: 'note', id, body: `📎 ${up.map(u => `${u.name}: ${u.url}`).join('\n')}` });
+      const lines = await commentFileLines(this.sql, this.ctx.env.ENCRYPTION_KEY, `claim #${id}`, got);
+      await this.claimSave({ action: 'note', id, body: lines.join('\n') });
     })().catch(() => {}));
+  }
+
+  /**
+   * A comment and the files posted with it (§162): kept in Drive and written into the comment — a photo shows in it.
+   * Before `footer` ("— From Slack: …"), which must stay last. A file Kaizen cannot keep is said in the thread.
+   */
+  async commentWithFiles(subject: 'task' | 'claim', id: string, words: string, files: unknown[] | undefined,
+                         from: { channel: string; thread: string }, footer = ''): Promise<Record<string, unknown>> {
+    const raw = files ?? [];
+    const got = raw.length ? await slackFiles(this.s.token!, raw) : [];
+    const missed = raw.length - got.length;
+    if (missed) await slackApi(this.s.token!, 'chat.postMessage', { channel: from.channel, thread_ts: from.thread,
+      text: `⚠ ${missed} file${missed === 1 ? '' : 's'} not added to Kaizen — over 15 MB and not a photo, or the app needs the files:read permission.` });
+    const lines = await commentFileLines(this.sql, this.ctx.env.ENCRYPTION_KEY, `${subject === 'task' ? 'to-do' : 'claim'} #${id} comment`, got)
+      .catch(() => [] as string[]);
+    const text = [words.trim(), ...lines].filter(Boolean).join('\n');
+    if (!text) return { ok: false, message: 'Nothing to save.' };
+    return this.comment(subject, id, `${text}${footer}`);
   }
 
   async comment(subject: 'task' | 'claim', id: string, body: string): Promise<Record<string, unknown>> {
@@ -613,13 +628,17 @@ class Kaizen {
     if (!m) return { ok: false, message: 'Kaizen could not read that message (is the bot in the channel?).' };
     const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: src.channel, message_ts: src.ts });
     const words = slackText(m.text).trim();
-    if (words || !m.files.length) {
-      // The author's name only when someone else saves it — the comment already says who saved it (2026-10-14: noise).
-      const by = m.user && m.user === this.slackUser ? '' : `${m.who}: `;
-      const r = await this.comment(subject, id, `${by}${words || '(no text)'}${link.permalink ? `\n— From Slack: ${link.permalink.split('?')[0]}` : ''}`);
+    // The author's name only when someone else saves it — the comment already says who saved it (2026-10-14: noise).
+    const by = m.user && m.user === this.slackUser ? '' : `${m.who}: `;
+    const footer = link.permalink ? `\n— From Slack: ${link.permalink.split('?')[0]}` : '';
+    if (m.files.length) {
+      // §162: the files go into the comment with the words. After the answer — Slack waits 3 s, Drive does not.
+      this.ctx.waitUntil(this.commentWithFiles(subject, id, `${by}${words}`.trim(), m.files, { channel: src.channel, thread: src.thread ?? src.ts }, footer)
+        .then(() => {}).catch(() => {}));
+    } else {
+      const r = await this.comment(subject, id, `${by}${words || '(no text)'}${footer}`);
       if (!r.ok) return { ok: false, message: String(r.message ?? r.error ?? 'Not saved.') };
     }
-    if (m.files.length) this.attachFiles(subject, id, m.files, { channel: src.channel, thread: src.thread ?? src.ts });
     // Its thread is this subject's from now on — as a conversation: a reply is saved when someone reacts 📎 to it
     // (or writes @Kaizen), not every reply (owner, 2026-10-14).
     await this.sql`INSERT INTO slack_threads (account_id, channel, ts, subject, subject_id, via)
@@ -747,7 +766,7 @@ class Kaizen {
                 ORDER BY status IN ('completed', 'cancelled'), created_at` as Promise<{ id: string; title: string; status: string; kind: string }[]>
     ]);
     if (!c || !row) return null;
-    return { ...c, work, source: row.source, refund: Number(row.refund) || 0, repairCost: Number(row.repair_cost) || 0,
+    return { ...c, work, source: row.source, refund: Number(row.refund) || 0, requested: Number(row.requested) || 0,
       updates: ups.map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
   }
   private async openClaimCard(trigger: string, id: string, push = false) {
@@ -1375,7 +1394,7 @@ class Kaizen {
     if (view.callback_id === 'claim_save') {
       if (!this.may('/api/claims', 'POST')) return json({ response_action: 'errors', errors: { description: 'Your role does not include claims.' } });
       const body = readClaimForm(state);
-      const r = meta.id ? await this.claimUpdate(meta.id, body) : await this.claimSave({ ...body, repairCost: 0 });
+      const r = meta.id ? await this.claimUpdate(meta.id, body) : await this.claimSave(body);
       if (!r.ok) return json({ response_action: 'errors', errors: { description: String(r.error ?? 'Not saved.') } });
       // From the Claims pop-up: back to the list, refreshed.
       if ((meta as { root?: string }).root === 'claims' && view.root_view_id) { await this.refreshClaims(view.root_view_id, '✓ Saved'); return ack(); }

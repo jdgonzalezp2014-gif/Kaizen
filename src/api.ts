@@ -239,7 +239,9 @@ export interface Claim {
   id: string; unit_id: string | null; unit_name: string | null;
   occurred_on: string; category: string | null; severity: string; status: string;
   source: string | null; description: string | null;
-  refund: string; repair_cost: string; resolved_on: string | null;
+  /** §162: what was asked for, what came in ("Received", stored as refund), and the repair work — the sum of
+   *  the work orders' and purchase orders' costs on the case, computed by the server. */
+  requested: string; refund: string; repair_work: string; resolved_on: string | null;
   created_by: string; created_at: string;
   /** The stay it is about, when there is one (§84). */
   reservation_id: string | null; reservation_label: string | null;

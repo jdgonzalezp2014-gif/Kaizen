@@ -1,5 +1,5 @@
 /**
- * /api/claims — what guests complained about, and what it cost.
+ * /api/claims — what guests complained about (or paid extra for, §162: upselling), and what it cost.
  *
  * Full CRUD, unlike the money tables, and the difference is deliberate.
  * An expense is a fact that happened once; a claim is a CASE that moves
@@ -33,7 +33,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   }
   const claims = await sql`
     SELECT c.id, c.unit_id, c.occurred_on, c.category, c.severity, c.status,
-           c.source, c.description, c.refund, c.repair_cost, c.resolved_on,
+           c.source, c.description, c.requested, c.refund, c.resolved_on,
+           -- §162: the repair work is what its work cost — a work order's cost (its estimate until there is one) and
+           -- what was bought on a purchase order, sub-tasks included (they carry the claim). Cancelled work costs nothing.
+           (SELECT COALESCE(sum(COALESCE(t.cost_actual, CASE WHEN t.kind = 'work_order' THEN t.cost_estimate END, 0)
+                                + (SELECT COALESCE(sum(p.total), 0) FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id)), 0)
+              FROM todos t WHERE t.account_id = 1 AND t.claim_id = c.id::text AND t.deleted_at IS NULL AND t.status <> 'cancelled') AS repair_work,
            c.created_by, c.created_at, u.name AS unit_name, c.reservation_id, c.reservation_label, c.case_url
       FROM claims c
       LEFT JOIN units u ON u.account_id = c.account_id AND u.id = c.unit_id
@@ -56,8 +61,9 @@ interface Body {
   status?: string;
   source?: string;
   description?: string;
+  /** §162: how much was asked for; `refund` is how much came in. */
+  requested?: number;
   refund?: number;
-  repairCost?: number;
   resolvedOn?: string | null;
   /** The stay it is about (§84), from the stay picker. */
   reservationId?: string | null;
@@ -104,8 +110,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const severity = SEVERITY.includes(String(b.severity)) ? b.severity : 'Medium';
   const status = STATUS.includes(String(b.status)) ? b.status : 'Open';
   const refund = Number(b.refund) || 0;
-  const repair = Number(b.repairCost) || 0;
-  if (refund < 0 || repair < 0) {
+  const requested = Number(b.requested) || 0;
+  if (refund < 0 || requested < 0) {
     return Response.json({ ok: false, error: 'Amounts cannot be negative.' }, { status: 400 });
   }
 
@@ -126,7 +132,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         occurred_on = COALESCE(${b.occurredOn ?? null}, occurred_on),
         category = ${b.category ?? null}, severity = ${severity}, status = ${status},
         source = ${b.source ?? null}, description = ${b.description ?? null},
-        refund = ${refund}, repair_cost = ${repair},
+        refund = ${refund},
+        -- A form that does not send it (Slack's) leaves it as it is.
+        requested = CASE WHEN ${b.requested !== undefined} THEN ${requested} ELSE requested END,
         -- Cleared when a case is reopened, so a claim never carries a
         -- resolution date while it is open.
         resolved_on = ${closing ? resolvedOn : null},
@@ -147,11 +155,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const rows = await sql`
     INSERT INTO claims
       (account_id, unit_id, occurred_on, category, severity, status, source,
-       description, refund, repair_cost, resolved_on, created_by, reservation_id, reservation_label, case_url)
+       description, refund, requested, resolved_on, created_by, reservation_id, reservation_label, case_url)
     VALUES (1, ${b.unitId || null},
             ${b.occurredOn || new Date().toISOString().slice(0, 10)},
             ${b.category ?? null}, ${severity}, ${status}, ${b.source ?? null},
-            ${b.description ?? null}, ${refund}, ${repair}, ${resolvedOn}, ${who.email}, ${resId}, ${resLabel}, ${caseUrl})
+            ${b.description ?? null}, ${refund}, ${requested}, ${resolvedOn}, ${who.email}, ${resId}, ${resLabel}, ${caseUrl})
     RETURNING id`;
   if (rows[0]?.id != null) {
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)

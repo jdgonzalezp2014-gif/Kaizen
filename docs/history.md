@@ -4247,3 +4247,33 @@ as one too many). Files: the size limit is an ⓘ tooltip; who added a file and 
 Owner: ✓ and ✕ in a work header are the item's own done / cancel, so ✕ must never mean "close the panel". The header
 keeps **✓** and **⋯** (Mark as done, Cancel it, Register as a claim, Merge into…, Remove…) — a cancel is two clicks,
 never a stray one — and **Close →** at the far right; Esc and the dimmed list also close it.
+
+## §162 — Claims & upselling; work orders look like work orders; photos stay in their comment (2026-10-15)
+
+Owner, from a claim card (P2-4308 · Missing Fob) and a to-do's "More: kind, claim, cost":
+- **Claims & upselling.** A pet fee or a late check-in is the same case as a claim (asked, received, sometimes work
+  behind it), so the screen, nav and tab are "Claims & upselling" and the kinds are grouped Claim / Upselling
+  (`UPSELL_CATEGORIES`: Pet fee, Early check-in, Late check-in, Late checkout, Extra guest, Other upsell).
+  A reservation **alteration is not upselling** — its price is part of the reservation and counted there — unless it
+  was collected through the Resolution Center or no price was recorded on the reservation (SOP #3 rule, v3).
+- **Money on a case:** `requested` (new column, migration 086) and `refund` (shown "Received (refunded)") are typed;
+  **Repair work** is not: `/api/claims` sums, over the case's to-dos (sub-tasks carry the claim), the cost (or a work
+  order's estimate until there is one) plus `inventory_purchases.total`; cancelled work counts nothing. The client
+  sums the same way from the live list (`workCost` → `bought`). The old typed `repair_cost` was what had been claimed —
+  copied into `requested` (claims 4, 7, 8); the column stays until the deploy, nothing writes it (drop it later).
+  The "use $X" button is gone. Slack's claim card shows Requested / Received.
+- **A purchase order from a claim:** "+ Purchase order" beside "+ To-do / + Repair" in a case's work (`NewOrderForm`
+  with the claim's listing; `asOrder` + `claimId`). `/api/todos` now says per row `order` (the openOrders rule) and
+  `purchaseTotal`, so a claim's list knows its orders without the inventory read.
+- **Purchase orders take sub-tasks** (what is bought may need installing): the order's purchase form and the
+  "+ sub-task / + work order" row show together.
+- **A to-do has no kind and no cost:** the Kind switch and Cost are gone from the open item; "More" keeps Claim and
+  the Hostaway link. A **work order** shows its own group in the fields — Vendor (a registered one from the directory
+  or any name), Estimate, Cost, Charge to owner — and its summary line says vendor and cost. Work orders #67 and #80
+  (made by inspections with the checklist's words as title) renamed "Replace the missing pantry door knob" /
+  "Repair the broken sofa bed"; no vendor set (not required).
+- **Photos stay in their comment.** A Slack reply with files in a task's or claim's thread (and "Add to…" of a message
+  with files) is now ONE comment: the words, then a line per file — `📷 name: <Drive url>` for a photo, `📎 name: <url>`
+  otherwise (`commentFileLines`, `Kaizen.commentWithFiles`). The timeline shows the photo inside the comment through
+  `/api/comment-image?id=` (Drive read with Kaizen's token; only an id a comment names). The to-do's Files are for what
+  is attached to the to-do itself — the message it was made from, the 📎 box.

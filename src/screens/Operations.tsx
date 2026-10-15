@@ -1031,7 +1031,7 @@ function StayWork({ r, data }: { r: BoardRow; data: OperationsResponse }) {
       ? await todoAction({ action: 'create', title: text.trim(), unitIds: [r.unitId], reservationId: r.resId, reservationLabel: label })
           .catch(e => ({ ok: false as const, message: String(e) }))
       : await saveClaim({ unitId: r.unitId, occurredOn: data.today, severity: 'Medium', status: 'Open', description: text.trim(),
-                          refund: 0, repairCost: 0, reservationId: r.resId, reservationLabel: label })
+                          refund: 0, reservationId: r.resId, reservationLabel: label })
           .then(x => x.ok ? { ok: true as const } : { ok: false as const, message: x.error })
           .catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);

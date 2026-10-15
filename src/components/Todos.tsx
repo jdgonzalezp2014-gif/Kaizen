@@ -28,7 +28,7 @@ import {
 } from '../lib/todos.ts';
 import { addDays, type DateStr } from '../lib/dates.ts';
 import { money2 } from '../lib/format.ts';
-import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS, caseHost, cleanCaseUrl } from '../lib/claims.ts';
+import { CASE_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS, UPSELL_CATEGORIES, caseHost, cleanCaseUrl } from '../lib/claims.ts';
 import { Hint, Peek } from './Hint.tsx';
 import { SlideOver, NoDock, useDock } from './SlideOver.tsx';
 import { createPortal } from 'react-dom';
@@ -45,13 +45,37 @@ export const Linked = ({ text }: { text: string }) => <>{text.split(/(https?:\/\
        aria-label={`Open the link (${p.includes('slack.com') ? 'Slack' : p.replace(/^https?:\/\/([^/]+).*/, '$1')})`}><Icon n="link" /></a>
   : p)}</>;
 
+/** §162: a file posted with a comment — "📷 name: <Drive url>" (a photo, shown in the comment) or "📎 name: <url>". */
+const FILE_LINE = /^(📷|📎) (.+?): (https:\/\/drive\.google\.com\/file\/d\/([\w-]+)\S*)$/;
+const NoteBody = ({ text }: { text: string }) => {
+  const lines = text.split('\n');
+  const files = lines.filter(l => FILE_LINE.test(l));
+  if (!files.length) return <Linked text={text} />;
+  return <>
+    <Linked text={lines.filter(l => !FILE_LINE.test(l)).join('\n')} />
+    <span className="note-files">{files.map((l, i) => {
+      const [, kind, name, url, id] = FILE_LINE.exec(l)!;
+      return kind === '📷'
+        ? <a key={i} className="note-photo" href={url} target="_blank" rel="noreferrer" title={`${name} — open in Drive`} onClick={e => e.stopPropagation()}>
+            <img src={`/api/comment-image?id=${id}`} alt={name} loading="lazy" /></a>
+        : <a key={i} className="desc-link" href={url} target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()}><Icon n="clip" /> {name}</a>;
+    })}</span>
+  </>;
+};
+
 /** A comment from Slack ends "— From Slack: <url>": shown as a short "↗ Slack" link, not the URL (owner, 2026-10-14: noise). */
 const NoteText = ({ text }: { text: string }) => {
   const m = /\n?— From Slack: (https?:\/\/\S+)\s*$/.exec(text);
-  return m ? <><Linked text={text.slice(0, m.index)} />{' '}
+  return m ? <><NoteBody text={text.slice(0, m.index)} />{' '}
     <a className="desc-link" href={m[1]} target="_blank" rel="noreferrer" title={m[1]} onClick={e => e.stopPropagation()}>↗ Slack</a></>
-    : <Linked text={text} />;
+    : <NoteBody text={text} />;
 };
+
+/** §162: a case's kinds, claims and upsells apart. */
+export const CategoryOptions = () => <>
+  <optgroup label="Claim">{CASE_CATEGORIES.map(c => <option key={c}>{c}</option>)}</optgroup>
+  <optgroup label="Upselling">{UPSELL_CATEGORIES.map(c => <option key={c}>{c}</option>)}</optgroup>
+</>;
 
 type Unit = { id: string; name: string; active: boolean };
 type Act = (b: Record<string, unknown>) => Promise<boolean>;
@@ -184,7 +208,10 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   const newOrder = async (text: string, unitId: string) => {
     const said = text.trim();
     const title = `Purchase order: ${said.split(/[\n.,;]/)[0]!.trim().slice(0, 60)}`;
-    const r = await todoAction({ action: 'create', asOrder: true, title, description: said, kind: 'task', unitIds: unitId ? [unitId] : [] })
+    // §162: inside a claim, the order is the claim's work (its purchases are the claim's repair work).
+    const r = await todoAction({ action: 'create', asOrder: true, title, description: said, kind: 'task', unitIds: unitId ? [unitId] : [],
+                                 ...(claim ? { claimId: claim.id, claimScope: claim.id, reservationId: claim.reservationId ?? null,
+                                               reservationLabel: claim.reservationLabel ?? null } : {}) })
       .catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setErr(r.message ?? 'Not saved.'); return false; }
     take(r.todos);
@@ -299,7 +326,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
     );
   };
 
-  const isOrder = (t: Todo) => !!allOrders?.has(t.id);
+  const isOrder = (t: Todo) => !!allOrders?.has(t.id) || !!t.order;
   // Purchase orders and work orders (owner, Oct 2026): their comments unfold on the row.
   const chatRow = (t: Todo) => <TodoRow key={t.id} t={t} chat related={crossCat(t)} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
   const bucketed = (key: string, list: Todo[], chat = false) => {
@@ -325,7 +352,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
       body: taskItems.some(t => !isOrder(t)) ? bucketed('task', taskItems.filter(t => !isOrder(t))) : <p className="note">Nothing to do. ✓</p> },
     { key: 'work_order', label: '🔧 Repairs', count: repairItems.length, alert: late(repairItems) > 0, add: 'work_order',
       body: repairItems.length ? bucketed('work_order', repairItems, true) : <p className="note">No repairs open. ✓</p> },
-    ...(showClaims ? [{ key: 'claims', label: '⚑ Claims', count: cases.length, alert: noWork > 0, add: 'claim' as const,
+    ...(showClaims ? [{ key: 'claims', label: '⚑ Claims & upselling', count: cases.length, alert: noWork > 0, add: 'claim' as const,
       body: cases.length ? <>
         {noWork > 0 && <p className="note"><span className="breach">▲ {noWork} with no work yet</span></p>}
         <ul className="todo-list cases">{cases.map(caseRow)}</ul>
@@ -351,12 +378,16 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
         <div className="todo-add-buttons">
           {kindFilter !== 'work_order' && kindFilter !== 'claims' && <button className="small secondary" onClick={() => setAdding('task')}>+ To-do</button>}
           {kindFilter !== 'task' && kindFilter !== 'claims' && <button className="small secondary" onClick={() => setAdding('work_order')}>+ <Icon n="wrench" /> Repair</button>}
+          {claim && <button className="small secondary" onClick={() => setAdding('order')}>+ <Icon n="cart" /> Purchase order</button>}
           {showClaims && kindFilter === 'claims' && <button className="small secondary" onClick={() => setAdding('claim')}>+ ⚑ Claim</button>}
         </div>
       ) : adding === 'claim' ? (
         <QuickClaim units={units} today={today} onCancel={() => setAdding(null)}
                     onSaved={() => { setAdding(null); void loadClaims(); }} />
-      ) : adding === 'order' ? null : (
+      ) : adding === 'order' ? (claim ? (
+        <NewOrderForm units={units} unitId={claim.unitId ?? ''} onCancel={() => setAdding(null)}
+                      onSave={async (text, unitId) => { const ok = await newOrder(text, unitId); if (ok) setAdding(null); return ok; }} />
+      ) : null) : (
         <TodoForm key={adding} units={units} claims={claims} canClaims={canClaims && !claim} submitLabel="Add"
                   startKind={adding} onCancel={() => setAdding(null)}
                   fixed={claim ? { claimId: claim.id, unitIds: claim.unitId ? [claim.unitId] : [],
@@ -447,7 +478,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
           <div className="todo-lanes">
             {lane('task', 'To-dos', taskItems.map(taskRow), workAlert(taskItems), filtering ? 'None match.' : 'Nothing to do. ✓')}
             {lane('work_order', '🔧 Repairs', repairItems.map(taskRow), workAlert(repairItems), filtering ? 'None match.' : 'No repairs open. ✓')}
-            {showClaims && lane('claims', '⚑ Claims', cases.map(caseRow),
+            {showClaims && lane('claims', '⚑ Claims & upselling', cases.map(caseRow),
               noWork ? <span className="breach">▲ {noWork} with no work yet</span>
                 : serious ? <span className="breach">{serious} high or critical</span> : null,
               'No open claims. ✓')}
@@ -512,7 +543,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   const [addingSub, setAddingSub] = useState<null | TaskKind>(null);
   // §150: the to-do's own purchase — its order, or what was bought (stock + Costs), then closed.
   // §159: a purchase order opens on its form — that is what there is to do with it.
-  const [buying, setBuying] = useState(() => !!props.orderIds?.has(t.id) && !isClosed(t.status));
+  const [buying, setBuying] = useState(() => (!!props.orderIds?.has(t.id) || !!t.order) && !isClosed(t.status));
   // §104: sub-tasks open while some are still to do; folded once all are done.
   const [subsOpen, setSubsOpen] = useState(() => (kids.get(t.id) ?? []).some(k => !isClosed(k.status)));
   const [lineDel, setLineDel] = useState(false);
@@ -525,7 +556,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   const mine = sortTodos(kids.get(t.id) ?? []);
   const prog = progress(mine);
   const parent = t.parentId ? byId.get(t.parentId) : undefined;
-  const isOrder = !!props.orderIds?.has(t.id);
+  const isOrder = !!props.orderIds?.has(t.id) || !!t.order;
   // The order list can arrive after the row: opening an order still lands on its form.
   useEffect(() => { if (open && isOrder && !isClosed(t.status)) setBuying(true); }, [open, isOrder]);
   // §159: the listing is on the context line — the title does not say it again (the stored title stays whole).
@@ -540,7 +571,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
       <button type="button" onClick={() => openPop?.({ todo: k.id })} title="Open it">
         <span className="rel-cat">{CATEGORY_LABEL[kidCat(k)]}</span>
         <span className="rel-title">{rowTitle(k.title, k.unitIds.map(id => names.get(id) ?? ''))}</span>
-        <span className={`rel-stage st-${stageOf(k.status, !!props.orderIds?.has(k.id)).key}`}>{stageOf(k.status, !!props.orderIds?.has(k.id)).label}</span>
+        <span className={`rel-stage st-${stageOf(k.status, (!!props.orderIds?.has(k.id) || !!k.order)).key}`}>{stageOf(k.status, (!!props.orderIds?.has(k.id) || !!k.order)).label}</span>
       </button>
     </li>
   );
@@ -610,16 +641,18 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                                 {mine.map(k => kidRow(k, openSub === k.id, () => setOpenSub(openSub === k.id ? null : k.id), true))}
                               </ul>
                             )}
-                            {buying ? (
+                            {buying && (
                               <TaskPurchase todoId={t.id} unitIds={t.unitIds} onClose={() => setBuying(false)}
                                             // What was asked: the description, and — on requests from before §159 — the open sub-tasks it was split into.
                                             asked={[t.description, ...mine.filter(k => !isClosed(k.status)).map(k => k.title)].filter(Boolean).join('\n')}
                                             onBought={async closeIt => { setBuying(false); if (closeIt && !closed) await doTick(); else reload(); }} />
-                            ) : !addingSub ? (
+                            )}
+                            {/* §162 (owner, 2026-10-15): a purchase order takes sub-tasks too — what is bought may need installing. */}
+                            {!addingSub ? (
                               <div className="todo-add-buttons">
-                                <button className="link tiny" onClick={() => setAddingSub('task')}>+ sub-task</button>
+                                <button className="link tiny" onClick={() => setAddingSub('task')}>+ sub-task{isOrder ? ' (e.g. install it)' : ''}</button>
                                 <button className="link tiny" onClick={() => setAddingSub('work_order')}>+ <Icon n="wrench" /> work order</button>
-                                {!closed && <button className="link tiny" onClick={() => setBuying(true)}>+ <Icon n="cart" /> purchase order</button>}
+                                {!closed && !buying && <button className="link tiny" onClick={() => setBuying(true)}>+ <Icon n="cart" /> purchase order</button>}
                               </div>
                             ) : (
                               <TodoForm key={addingSub} units={units} claims={claims} canClaims={false} submitLabel="Add" startKind={addingSub}
@@ -983,8 +1016,8 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
             <VendorOptions />
             <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
             {initial?.id && <VendorLink id={initial.id} />}
+            <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
           </>}
-          <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
           {wo && (
             <label className="check todo-charge" title={v.unitIds.length ? '' : 'Needs a listing — the expense goes on it'}>
               <input type="checkbox" checked={v.chargeOwner} disabled={!v.unitIds.length} onChange={e => set('chargeOwner', e.target.checked)} />
@@ -1026,7 +1059,10 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
             v.status ? STATUS_LABEL[v.status] : '', v.priority !== 'none' ? PRIORITY_LABEL[v.priority] : '',
             v.unitIds.map(id => units.find(u => u.id === id)?.name).filter(Boolean).join(', '),
             v.scheduledOn || v.dueOn ? [v.scheduledOn, v.dueOn].map(d => d ? shortDay(d) : '').filter(Boolean).join(' – ') : '',
-            initial.assignee ?? ''
+            initial.assignee ?? '',
+            // §162: a work order says who does it and what it costs on the same line.
+            wo ? (v.vendor ? `Vendor ${v.vendor}` : 'No vendor yet') : '',
+            wo && (v.costActual ?? v.costEstimate) != null ? `${v.costActual != null ? '' : '~'}${money2((v.costActual ?? v.costEstimate)!)}` : ''
           ].filter(Boolean).join(' • ')}</span>
           <button type="button" className="link tiny" aria-expanded={fields} onClick={() => setFields(f => !f)}>{fields ? '▴ Hide fields' : '✎ Edit'}</button>
         </div>
@@ -1068,39 +1104,38 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
               </div>
             )}
           </div>
-          <details className="fl-more" open={details} onToggle={e => setDetails((e.target as HTMLDetailsElement).open)}>
-            <summary>More <span className="sub-n">kind{canClaims ? ', claim' : ''}{wo ? ', vendor' : ''}, cost</span></summary>
-            <div className="fl-group" role="group" aria-label="More">
-              <div className="fl-row"><span className="fl-k">Kind</span>
-                <span className="todo-kind seg" role="group" aria-label="Kind">
-                  {(['task', 'work_order'] as TaskKind[]).map(k => (
-                    <button key={k} type="button" className={v.kind === k ? 'chip active' : 'chip'} onClick={() => set('kind', k)}>{KIND_LABEL[k]}</button>
-                  ))}
-                </span></div>
-              {canClaims && (
-                <label>Claim
-                  <select value={v.claimId ?? ''} onChange={e => set('claimId', e.target.value || null)}>
-                    <option value="">None</option>
-                    {openClaims.map(c => <option key={c.id} value={String(c.id)}>{claimLabel(c)}</option>)}
-                  </select></label>
-              )}
-              {wo && <>
-                <label>Vendor
-                  <input value={v.vendor ?? ''} placeholder="Plumber, handyman…" list="kaizen-vendors" onChange={e => set('vendor', e.target.value || null)} /></label>
-                <VendorOptions />
-                <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
-              </>}
+          {/* §162 (owner, 2026-10-15): a work order shows what makes it one — who does it, what it costs — in sight,
+              not under "More". The vendor is a registered one or any name typed. */}
+          {wo && (
+            <div className="fl-group" role="group" aria-label="Work order">
+              <label>Vendor
+                <input value={v.vendor ?? ''} placeholder="A registered vendor, or any name" list="kaizen-vendors" onChange={e => set('vendor', e.target.value || null)} /></label>
+              <VendorOptions />
+              <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
               <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
-              {wo && (
-                <label className="check todo-charge" title={v.unitIds.length ? 'When completed, the cost is also an expense on the listing in Hostaway (owner statements)' : 'Needs a listing — the expense goes on it'}>
-                  <input type="checkbox" checked={v.chargeOwner} disabled={!v.unitIds.length} onChange={e => set('chargeOwner', e.target.checked)} />
-                  Charge to owner
-                </label>
-              )}
-              {initial.hostawayTaskId && <div className="fl-row"><span className="fl-k">Hostaway</span><span className="sub-n">Task #{initial.hostawayTaskId}</span></div>}
+              <label className="check todo-charge" title={v.unitIds.length ? 'When completed, the cost is also an expense on the listing in Hostaway (owner statements)' : 'Needs a listing — the expense goes on it'}>
+                <input type="checkbox" checked={v.chargeOwner} disabled={!v.unitIds.length} onChange={e => set('chargeOwner', e.target.checked)} />
+                Charge to owner
+              </label>
             </div>
-            {wo && <VendorLink id={initial.id} />}
-          </details>
+          )}
+          {wo && <VendorLink id={initial.id} />}
+          {/* §162: a to-do has no kind to switch and no cost of its own (work orders and purchase orders carry the money). */}
+          {(canClaims || initial.hostawayTaskId) && (
+            <details className="fl-more" open={details} onToggle={e => setDetails((e.target as HTMLDetailsElement).open)}>
+              <summary>More <span className="sub-n">{[canClaims && 'claim', initial.hostawayTaskId && 'Hostaway'].filter(Boolean).join(', ')}</span></summary>
+              <div className="fl-group" role="group" aria-label="More">
+                {canClaims && (
+                  <label>Claim
+                    <select value={v.claimId ?? ''} onChange={e => set('claimId', e.target.value || null)}>
+                      <option value="">None</option>
+                      {openClaims.map(c => <option key={c.id} value={String(c.id)}>{claimLabel(c)}</option>)}
+                    </select></label>
+                )}
+                {initial.hostawayTaskId && <div className="fl-row"><span className="fl-k">Hostaway</span><span className="sub-n">Task #{initial.hostawayTaskId}</span></div>}
+              </div>
+            </details>
+          )}
           {closing && (
             <label className="todo-resolution-in">How it was resolved
               <textarea rows={2} value={v.resolutionNote ?? ''} maxLength={2000} onChange={e => set('resolutionNote', e.target.value || null)} /></label>
@@ -1123,14 +1158,8 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   return (
     <form className="todo-form" onSubmit={e => { e.preventDefault(); void submit(); }}>
       <div className="todo-first">
-        {/* The kind is chosen by the button when adding; it can still be changed when editing. */}
-        {initial ? (
-          <div className="todo-kind" role="group" aria-label="Kind">
-            {(['task', 'work_order'] as TaskKind[]).map(k => (
-              <button key={k} type="button" className={v.kind === k ? 'chip active' : 'chip'} onClick={() => set('kind', k)}>{ic(KIND_LABEL[k])}</button>
-            ))}
-          </div>
-        ) : <b className="todo-adding">{ic(wo ? '🔧 New work order' : 'New to-do')}</b>}
+        {/* The kind is chosen by the button when adding (§162: and not changed after). */}
+        <b className="todo-adding">{ic(wo ? '🔧 New work order' : 'New to-do')}</b>
         <input className="todo-text" value={v.title} maxLength={120} autoFocus={!initial}
                placeholder={initial ? '' : wo ? 'Short title — e.g. Fix the AC' : 'Short title — e.g. Text the HOA'}
                onChange={e => set('title', e.target.value)}
@@ -1349,7 +1378,7 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
     if (link.trim() && !cleanCaseUrl(link)) { setErr('The case link is the https:// address of the case.'); return; }
     setBusy(true); setErr('');
     const r = await saveClaim({ unitId: unitId || null, occurredOn: today, category: category || null, severity,
-                                status: 'Open', description: what.trim(), refund: 0, repairCost: 0,
+                                status: 'Open', description: what.trim(), refund: 0,
                                 reservationId: stay?.id ?? null, reservationLabel: stay?.label ?? null,
                                 caseUrl: cleanCaseUrl(link) ?? '' })
       .catch(e => ({ ok: false, error: String(e) }));
@@ -1360,7 +1389,7 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
   return (
     <form className="todo-form" onSubmit={e => { e.preventDefault(); void save(); }}>
       <div className="todo-first">
-        <b className="todo-adding">⚑ New claim</b>
+        <b className="todo-adding">⚑ New claim or upsell</b>
         <input className="todo-text" autoFocus value={what} maxLength={500} placeholder="What happened? e.g. guest asked for a 2pm late checkout"
                onChange={e => setWhat(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') onCancel(); }} />
       </div>
@@ -1369,9 +1398,9 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
           <option value="">Unit (optional)</option>
           {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
         </select>
-        <select value={category} onChange={e => setCategory(e.target.value)} aria-label="Kind of claim">
-          <option value="">Kind of claim</option>
-          {CLAIM_CATEGORIES.map(c => <option key={c}>{c}</option>)}
+        <select value={category} onChange={e => setCategory(e.target.value)} aria-label="Kind">
+          <option value="">Kind</option>
+          <CategoryOptions />
         </select>
         <select value={severity} onChange={e => setSeverity(e.target.value)} aria-label="Severity">
           {CLAIM_SEVERITY.map(s => <option key={s}>{s}</option>)}
@@ -1404,7 +1433,7 @@ function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) =
     setBusy(true); setErr('');
     const r = await saveClaim({ id: c.id, unitId: c.unit_id, occurredOn: c.occurred_on.slice(0, 10), category: c.category,
       severity: c.severity, status: c.status, source: c.source, description: c.description,
-      refund: Number(c.refund) || 0, repairCost: Number(c.repair_cost) || 0,
+      refund: Number(c.refund) || 0, requested: Number(c.requested) || 0,
       reservationId: c.reservation_id, reservationLabel: c.reservation_label,
       caseUrl: c.case_url ?? '' }).catch(e => ({ ok: false, error: String(e) }));
     setBusy(false);
@@ -1423,7 +1452,7 @@ function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) =
         <label>Raised on <input type="date" value={c.occurred_on.slice(0, 10)} onChange={e => set({ occurred_on: e.target.value })} /></label>
         <label>Kind
           <select value={c.category ?? ''} onChange={e => set({ category: e.target.value || null })}>
-            <option value="">—</option>{CLAIM_CATEGORIES.map(x => <option key={x}>{x}</option>)}
+            <option value="">—</option><CategoryOptions />
           </select></label>
         <label>Severity
           <select value={c.severity} onChange={e => set({ severity: e.target.value })}>{CLAIM_SEVERITY.map(x => <option key={x}>{x}</option>)}</select></label>
@@ -1433,8 +1462,8 @@ function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) =
           <select value={c.source ?? ''} onChange={e => set({ source: e.target.value || null })}>
             <option value="">—</option>{CLAIM_SOURCES.map(x => <option key={x}>{x}</option>)}
           </select></label>
-        <label>Refunded <input type="number" min={0} step="0.01" value={c.refund ?? ''} onChange={e => set({ refund: e.target.value })} /></label>
-        <label>Repair cost <input type="number" min={0} step="0.01" value={c.repair_cost ?? ''} onChange={e => set({ repair_cost: e.target.value })} /></label>
+        <label>Requested <input type="number" min={0} step="0.01" value={c.requested ?? ''} onChange={e => set({ requested: e.target.value })} /></label>
+        <label>Received (refunded) <input type="number" min={0} step="0.01" value={c.refund ?? ''} onChange={e => set({ refund: e.target.value })} /></label>
         <label className="claim-caselink">Case link (Airbnb, Booking.com, Vrbo…)
           <input type="url" value={c.case_url ?? ''} placeholder="https://www.airbnb.com/mediation/…"
                  onChange={e => set({ case_url: e.target.value || null })} /></label>
@@ -1455,13 +1484,12 @@ function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) =
 
 /**
  * A claim, opened in place (§77) — on the Claims screen and in the work
- * list alike: the work that resolves it (to-dos and work orders), what that
- * work has cost, and the case's timeline.
+ * list alike: the work that resolves it (to-dos, work orders, purchase
+ * orders), what that work has cost, and the case's timeline.
  *
- * The claim is the CASE; the work is how it gets resolved. Its repair cost
- * stays a figure a person sets (a refund negotiated with Airbnb is not a
- * sum of invoices), but the work's total sits beside it, one click from
- * being used.
+ * The claim is the CASE; the work is how it gets resolved. §162: what was
+ * requested and what was received are typed; the repair work is not — it is
+ * the sum of its work orders' and purchase orders' costs.
  */
 export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
   claim: Claim; canWork: boolean; today?: DateStr; onSaved?: () => void;
@@ -1476,21 +1504,10 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
     const r = await deleteClaim(String(claim.id)).catch(() => ({ ok: false }));
     if (r.ok) { onRemoved?.(claim); onSaved?.(); } else setMsg('Not removed.');
   };
+  // Read from the list as it is now, so it moves as work is costed; the server sums the same way (/api/claims).
   const cost = workCost(work);
-  const total = cost.actual + cost.estimated;
-  const recorded = Number(claim.repair_cost) || 0;
+  const repairWork = work.length ? cost.actual + cost.estimated + cost.bought : Number(claim.repair_work) || 0;
   const day = today ?? new Date().toISOString().slice(0, 10);
-
-  // The claims route saves the whole case, so every field goes back as it is.
-  const applyCost = async () => {
-    const r = await saveClaim({
-      id: claim.id, unitId: claim.unit_id, occurredOn: claim.occurred_on.slice(0, 10), category: claim.category,
-      severity: claim.severity, status: claim.status, source: claim.source, description: claim.description,
-      refund: Number(claim.refund) || 0, repairCost: Math.round(total * 100) / 100
-    }).catch(e => ({ ok: false, error: String(e) }));
-    setMsg(r.ok ? `Repair cost set to ${money2(total)}.` : r.error ?? 'Not saved.');
-    if (r.ok) onSaved?.();
-  };
 
   return (
     <div className="claim-case">
@@ -1507,19 +1524,18 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
               <button className="link tiny" onClick={() => setConfirmDel(false)}>Keep</button></>}
       </div>
       {editing && <ClaimEdit claim={claim} onDone={saved => { setEditing(false); if (saved) onSaved?.(); }} />}
+      <dl className="claim-money">
+        <div><dt>Requested</dt><dd>{money2(Number(claim.requested) || 0)}</dd></div>
+        <div><dt>Received</dt><dd>{money2(Number(claim.refund) || 0)}</dd></div>
+        <div><dt>Repair work<Hint>Not typed: the sum of this case's work orders (their cost, or the estimate until there is one)
+          and what was bought on its purchase orders. Cancelled work counts nothing.</Hint></dt>
+          <dd>{money2(repairWork)}{cost.estimated > 0 && <small> incl. ~{money2(cost.estimated)} estimated</small>}</dd></div>
+      </dl>
       {canWork && (
         <div className="claim-case-work">
           <div className="claim-case-head">
             <b>Work on this claim</b>
-            {work.length > 0 && (
-              <span className="note">
-                {cost.open} open · work cost {money2(cost.actual)}{cost.estimated ? ` + ~${money2(cost.estimated)} estimated` : ''}
-                {' '}· repair cost on the claim {money2(recorded)}
-                {total > 0 && Math.abs(total - recorded) > 0.005 && (
-                  <> · <button className="link tiny" onClick={() => void applyCost()}>use {money2(total)}</button></>
-                )}
-              </span>
-            )}
+            {work.length > 0 && <span className="note">{cost.open} open</span>}
             {msg && <span className="note">{msg}</span>}
           </div>
           <TodoList today={day} claim={{ id: String(claim.id), unitId: claim.unit_id, reservationId: claim.reservation_id,
@@ -1734,9 +1750,12 @@ function VendorOptions() {
  * "+ Purchase order" (owner, 2026-10-14 — §159): what is needed, in anyone's words, and where. It is created as
  * an order and opens on its form, where ✨ Build the cart turns the words into supplies.
  */
-function NewOrderForm({ units, onSave, onCancel }: { units: Unit[]; onSave: (text: string, unitId: string) => Promise<boolean>; onCancel: () => void }) {
+function NewOrderForm({ units, onSave, onCancel, unitId: start = '' }: {
+  units: Unit[]; onSave: (text: string, unitId: string) => Promise<boolean>; onCancel: () => void;
+  /** A claim's listing, pre-set (§162). */ unitId?: string;
+}) {
   const [text, setText] = useState('');
-  const [unitId, setUnitId] = useState('');
+  const [unitId, setUnitId] = useState(start);
   const [busy, setBusy] = useState(false);
   return (
     <form className="todo-form new-order" onSubmit={async e => { e.preventDefault(); if (!text.trim() || busy) return; setBusy(true); await onSave(text, unitId); setBusy(false); }}>
