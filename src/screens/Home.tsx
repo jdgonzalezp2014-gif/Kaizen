@@ -171,7 +171,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     return (
       <label className={`home-upload ${needed ? '' : 'optional'}`} title={`Upload the ${word.toLowerCase()} to the reservation's Drive folder — or drop the file on this line`}>
         {uploading === `${r.resId}:${kind}` ? 'Uploading…' : `⇪ ${word}`}
-        <input type="file" accept="image/*,.pdf" hidden disabled={!!uploading}
+        <input type="file" accept="image/*,.pdf" className="sr-file" disabled={!!uploading}
                onChange={e => { void upload(r, kind, e.target.files?.[0]); e.target.value = ''; }} />
       </label>
     );

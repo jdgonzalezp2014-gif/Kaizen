@@ -41,3 +41,12 @@ Drive OAuth tokens on `accounts` (encrypted).
 ## History
 
 §72, §73, §89, §90, §106.
+
+## Redesign (§158, 2026-10-14, branch `redesign`)
+
+UI only; tokens and shared components from `docs/design-system.md`.
+- Home → Check-ins: the "⇪ ID / ⇪ Agreement" uploads were a `<label>` over an `<input hidden>` — not reachable
+  by keyboard, and a 13 px word to tap. Now the input is visually hidden but focusable (`.sr-file`, focus ring
+  on the label) and the label is a dashed pill (amber when the building needs the copy, muted when optional),
+  36 px tall on a phone. Drag-and-drop on the row is unchanged.
+- Signed / Not signed / ID verified already carried a word + shape; unchanged.

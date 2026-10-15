@@ -1470,9 +1470,13 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 
 /* §90: the reservation in Hostaway, and the ID to Drive from Home. */
 .home-hostaway, .ops-hostaway { font-size: var(--fs-footnote); color: var(--series-1); font-weight: 600; text-decoration: none; }
-.home-upload { display: inline-flex; margin: 0; font-size: var(--fs-footnote); font-weight: 600; color: var(--warn); cursor: pointer; }
-.home-upload:hover { text-decoration: underline; }
-.home-upload input[type=file] { display: none; }
+.home-upload { position: relative; display: inline-flex; align-items: center; margin: 0; padding: 1px 9px; min-height: 24px;
+  border: 1px dashed currentColor; border-radius: var(--r-pill); font-size: var(--fs-footnote); font-weight: 600; color: var(--warn); cursor: pointer; }
+.home-upload:hover { background: var(--hover); }
+/* Hidden from sight, not from the keyboard (§158): the label is the button, the input takes focus. */
+.home-upload input.sr-file { position: absolute; inset: 0; width: 100%; height: 100%; margin: 0; opacity: 0; cursor: pointer; }
+.home-upload:focus-within { box-shadow: var(--focus); }
+@media (max-width: 720px) { .home-upload { min-height: 36px; padding: 4px 12px; } }
 .home-main > b { white-space: nowrap; }
 
 /* §91: Home for a glance. One rule for colour and weight — an outline or a
