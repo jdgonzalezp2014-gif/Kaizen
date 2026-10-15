@@ -141,7 +141,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 
 ## History
 
-§99–§102, §107–§117, §119, §134, §152, §153, §157.
+§99–§102, §107–§117, §119, §134, §152, §153, §157, §162.
 - **Orders closed unbought (§150, operations):** ✓ Complete on a cleaner's or an inspection's request with no purchase
   recorded opens `unboughtModal` (callback `task_unbought`; views.open from a message, views.push inside the Tasks
   pop-up): a link to record the purchase in Kaizen, or a required reason → `/api/todos` done with `closeReason`.
@@ -225,3 +225,9 @@ The messages Kaizen posts to Slack keep their emoji — they are Slack copy, not
 - Emoji in the panel's copy → one-colour icons (phase 0b); a label with an icon in it stays one line of text
   (`ic()` returns one inline span — loose pieces became columns inside `label.check`).
 - Checkboxes no longer shrink beside a two-line label; a card's title (h2) outranks its numbered steps (h3).
+- **§162 — one message per new item, the rest in its thread (owner, 2026-10-15).** `notifyTask`/`notifyClaim`
+  (functions/_lib/slack.ts): created/opened = one channel message (its thread); later events = `threadLine` reply with who
+  + `chat.update` of the first message. Every status change is told (`'status'`). Slack-made work outside the tasks
+  channel is announced there too (`quickCreate`). `@Kaizen order …` / "+ Purchase order"; 💲 Upsell for upsell kinds;
+  "Open in Kaizen ↗" (`kaizenButton`, `/?todo=` `/?claim=` deep links). Money left Slack's claim form and card (Finance's).
+  Not yet seen in the real workspace — first real event will show it; check #kaizen-ops after the deploy.

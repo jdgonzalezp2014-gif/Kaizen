@@ -129,8 +129,10 @@ const MAX_AHEAD = 30;
 interface Range { from: string; to: string }
 const defaultRange = (today: string): Range => ({ from: today, to: addDays(today, DEFAULT_DAYS) });
 
-export function Operations({ permissions, initialView, nav, onView }: {
+export function Operations({ permissions, initialView, nav, onView, focus }: {
   permissions: string[]; initialView?: string;
+  /** §162: one piece of work to open (a link from Slack). */
+  focus?: { todo?: string; claim?: string };
   /** Told which view is showing, so the top bar's SOPs button can follow it (§92). */
   onView?: (view: string) => void;
   /** §159: a view chosen in the side bar — the counter makes the same view twice still a move. */
@@ -227,7 +229,7 @@ export function Operations({ permissions, initialView, nav, onView }: {
 
       <div className={busy && data ? 'is-stale' : undefined}>
         {data && view === 'board' && <Board data={data} range={range} patch={patch} reload={() => load()} />}
-        {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} unit={workUnit} />}
+        {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} unit={workUnit} focus={focus} />}
         {(view === 'crew' || view === 'calendar') && (
           <nav className="setup-secs" aria-label="Cleaners sections">
             <button className={view === 'crew' ? 'chip active' : 'chip'} onClick={() => setView('crew')}><Icon n="users" /> Pages & approvals</button>

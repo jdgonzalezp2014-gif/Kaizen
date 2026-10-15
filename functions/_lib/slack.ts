@@ -9,7 +9,8 @@
  */
 import type { SqlFn } from './accounts.ts';
 import { decrypt } from './crypto.ts';
-import { claimMessage, dmTarget, esc, eventsOf, taskMessage, type ClaimLite, type SlackConfig, type TaskLite, type Topic } from '../../src/lib/slack.ts';
+import { STATUS_LABEL } from '../../src/lib/todos.ts';
+import { caseWord, claimMessage, dmTarget, esc, eventsOf, taskMessage, threadLine, type ClaimLite, type SlackConfig, type TaskLite, type Topic } from '../../src/lib/slack.ts';
 
 export interface SlackSetup { config: SlackConfig; token: string | null; secret: string | null }
 
@@ -75,16 +76,18 @@ const who = (email: string) => email.includes('@') ? email.split('@')[0]! : emai
 
 export async function taskLite(sql: SqlFn, id: string): Promise<TaskLite | null> {
   const [t] = await sql`SELECT t.id::text, t.title, t.kind, t.status, t.priority, t.assignee, t.due_on::text AS due_on, t.reservation_label,
-                               t.description, t.parent_id, u.name AS unit
+                               t.description, t.parent_id, u.name AS unit,
+                               (EXISTS (SELECT 1 FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id)
+                                 OR (t.parent_id IS NULL AND t.clean_group IN ('request', 'inspection'))) AS is_order
                           FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
                          WHERE t.account_id = 1 AND t.id::text = ${id}` as
     { id: string; title: string; kind: TaskLite['kind']; status: string; priority: string; assignee: string | null; due_on: string | null;
-      reservation_label: string | null; description: string | null; parent_id: string | null; unit: string | null }[];
+      reservation_label: string | null; description: string | null; parent_id: string | null; unit: string | null; is_order: boolean }[];
   return t ? { id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, dueOn: t.due_on,
-               reservationLabel: t.reservation_label, description: t.description, unit: t.unit } : null;
+               reservationLabel: t.reservation_label, description: t.description, unit: t.unit, isOrder: !!t.is_order } : null;
 }
 
-export type TaskEvent = 'created' | 'assigned' | 'completed' | 'cancelled' | 'reopened' | 'hostaway';
+export type TaskEvent = 'created' | 'assigned' | 'completed' | 'cancelled' | 'reopened' | 'status' | 'hostaway';
 
 /**
  * Where a task's or claim's news goes (owner, Oct 2026): its own thread — else, for work made from
@@ -103,7 +106,14 @@ export async function threadFor(sql: SqlFn, subject: 'task' | 'claim', id: strin
   return null;
 }
 
-/** A task's news in its channel — only the events switched on. Work made from a thread is told in that thread. */
+/**
+ * A task's news — only the events switched on (§162, owner 2026-10-15: "too much spam"):
+ * - something NEW (a to-do, a repair, a purchase order) is ONE message in the tasks channel, so everyone knows;
+ *   it becomes the item's thread. Work made inside another's thread (a sub-task, a claim's work) is told there.
+ * - everything after (done, cancelled, reopened, a status, an owner, Hostaway) is a one-line reply in that thread,
+ *   saying who — and the first message is redrawn with where it stands now, its buttons right.
+ * - no thread yet (work from before §107): its first news is the one message, and its thread from then on.
+ */
 export async function notifyTask(sql: SqlFn, key: string, id: string, event: TaskEvent, by: string, extra = ''): Promise<void> {
   const s = await slackSetup(sql, key);
   if (!s.token || !s.config.channels?.tasks) return;
@@ -113,23 +123,32 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
   if (!on) return;
   const t = await taskLite(sql, id);
   if (!t) return;
+  const app = s.config.appUrl;
   const [p] = await sql`SELECT parent_id::text AS parent_id, claim_id::text AS claim_id FROM todos WHERE id::text = ${id}` as { parent_id: string | null; claim_id: string | null }[];
-  const word = event === 'assigned' ? `assigned to ${t.assignee ?? 'nobody'}` : event === 'hostaway' ? `changed in Hostaway${extra ? ` (${extra})` : ''}` : event;
-  if (p?.parent_id || p?.claim_id) {
-    const home = await threadFor(sql, 'task', id);
-    if (home && !home.own) {
-      // A sub-task is a line in its parent's thread; a claim's task is its whole message, with its buttons.
-      const m = p.parent_id ? { text: `${SUB_ICON[event] ?? '•'} Sub-task ${word}: ${t.title}`,
-                                blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: `${SUB_ICON[event] ?? '•'} Sub-task ${word}: *${esc(t.title)}* · ${who(by)}` }] }] }
-        : taskMessage(t, word, who(by));
-      await slackApi(s.token, 'chat.postMessage', { channel: home.channel, thread_ts: home.ts, text: m.text, blocks: m.blocks, unfurl_links: false });
-      return;
-    }
-    if (p.parent_id) return;
+  const word = event === 'assigned' ? `assigned to ${t.assignee ?? 'nobody'}` : event === 'hostaway' ? `changed in Hostaway${extra ? ` (${extra})` : ''}`
+    : event === 'status' ? `→ ${STATUS_LABEL[t.status as keyof typeof STATUS_LABEL] ?? t.status}` : event;
+  const home = await threadFor(sql, 'task', id);
+  const reply = (m: { text: string; blocks: unknown[] }) =>
+    slackApi(s.token!, 'chat.postMessage', { channel: home!.channel, thread_ts: home!.ts, text: m.text, blocks: m.blocks, unfurl_links: false });
+  if (home && !home.own) {
+    // Inside another's thread: a sub-task is a line there; a claim's new work is its whole message (its buttons), later news a line.
+    const kind = p?.parent_id ? 'Sub-task' : t.isOrder ? 'Purchase order' : t.kind === 'work_order' ? 'Repair' : 'To-do';
+    await reply(event === 'created' && !p?.parent_id ? taskMessage(t, word, who(by), app)
+      : threadLine(`${ICON[event] ?? '•'} ${kind} ${word}: *${esc(t.title)}*`, who(by)));
+    return;
   }
-  await rememberThread(sql, await postTo(s, 'tasks', taskMessage(t, word, who(by))), 'task', id);
+  if (p?.parent_id) return;
+  if (home && event !== 'created') {
+    await reply(threadLine(`${ICON[event] ?? '•'} ${word[0]!.toUpperCase()}${word.slice(1)}`, who(by)));
+    // The first message says where it stands now. Not ours to edit (a person's message the task was made from): left as is.
+    await slackApi(s.token, 'chat.update', { channel: home.channel, ts: home.ts, ...taskMessage(t, `· ${STATUS_LABEL[t.status as keyof typeof STATUS_LABEL] ?? t.status}`, '', app) })
+      .catch(() => null);
+    return;
+  }
+  // New — or news of work that has no thread yet: the one message, and its thread from now on.
+  await rememberThread(sql, await postTo(s, 'tasks', taskMessage(t, word, who(by), app)), 'task', id);
 }
-const SUB_ICON: Partial<Record<TaskEvent, string>> = { created: '➕', completed: '✓', cancelled: '✕', reopened: '↺', assigned: '🙋' };
+const ICON: Partial<Record<TaskEvent, string>> = { created: '➕', completed: '✓', cancelled: '✕', reopened: '↺', assigned: '🙋', status: '◐', hostaway: '⇄' };
 
 /**
  * The owner hears it directly (§100): a task given to them — on creation
@@ -145,7 +164,7 @@ export async function tellOwner(sql: SqlFn, key: string, id: string, by: string,
   const target = dmTarget(s.config, r.assignee_user_id);
   const t = await taskLite(sql, id);
   if (!target || !t) return;
-  const m = taskMessage(t, 'for you', who(by));
+  const m = taskMessage(t, 'for you', who(by), s.config.appUrl);
   const head = target.standIn ? `🧪 Test — would go to *${r.assignee}*: ${lead.toLowerCase()}` : `👋 ${lead}`;
   await slackApi(s.token, 'chat.postMessage', { channel: target.to, text: `${lead}: ${t.title}`,
     blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: head }] }, ...m.blocks] });
@@ -160,13 +179,21 @@ export async function claimLite(sql: SqlFn, id: string): Promise<ClaimLite | nul
   return c ? { id: c.id, unit: c.unit, category: c.category, severity: c.severity, status: c.status, description: c.description, caseUrl: c.case_url, days: c.days } : null;
 }
 
+/** A claim's or upsell's news (§162): opened = one message in the claims channel; a change = a line in its thread. */
 export async function notifyClaim(sql: SqlFn, key: string, id: string, event: 'opened' | 'changed', by: string, word?: string): Promise<void> {
   const s = await slackSetup(sql, key);
   if (!s.token || !s.config.channels?.claims) return;
   const ev = eventsOf(s.config);
   if (event === 'opened' ? !ev.claimOpened : !ev.claimChanged) return;
   const c = await claimLite(sql, id);
-  if (c) await rememberThread(sql, await postTo(s, 'claims', claimMessage(c, word ?? event, who(by))), 'claim', id);
+  if (!c) return;
+  const home = event === 'changed' ? await threadFor(sql, 'claim', id) : null;
+  if (home) {
+    await slackApi(s.token, 'chat.postMessage', { channel: home.channel, thread_ts: home.ts, ...threadLine(`◐ ${caseWord(c).split(' ')[1]} ${word ?? 'changed'}`, who(by)), unfurl_links: false });
+    await slackApi(s.token, 'chat.update', { channel: home.channel, ts: home.ts, ...claimMessage(c, `· ${c.status}`, '', s.config.appUrl) }).catch(() => null);
+    return;
+  }
+  await rememberThread(sql, await postTo(s, 'claims', claimMessage(c, word ?? event, who(by), s.config.appUrl)), 'claim', id);
 }
 
 /**

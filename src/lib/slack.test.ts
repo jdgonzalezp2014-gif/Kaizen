@@ -438,3 +438,18 @@ test('closing an order with nothing bought asks why, with a way to record the pu
   assert.match(JSON.stringify(m.blocks), /Record the purchase in Kaizen/);
   assert.doesNotMatch(JSON.stringify(unboughtModal({ id: '1', title: 'x' }, 'cancel').blocks), /Record the purchase/);
 });
+
+test('§162: a purchase order from a mention, an upsell named as such, and the link to Kaizen', async () => {
+  const { parseMention, newButtons, caseWord, kaizenButton, threadLine, taskMessage, claimMessage } = await import('./slack.ts');
+  assert.deepEqual(parseMention('<@U1> order 2 boxes of trash bags'), { verb: 'order', arg: '2 boxes of trash bags' });
+  assert.equal(parseMention('<@U1> upsell pet fee').verb, 'claim');
+  assert.match(JSON.stringify(newButtons('x')), /mention_new_order/);
+  assert.equal(caseWord({ category: 'Pet fee' }), '💲 Upsell');
+  assert.equal(caseWord({ category: 'Damage' }), '⚑ Claim');
+  assert.deepEqual(kaizenButton(undefined, 'todo', '5'), []);
+  assert.match(JSON.stringify(kaizenButton('https://k.dev', 'todo', '5')), /https:\/\/k\.dev\/\?todo=5/);
+  assert.match(JSON.stringify(taskMessage({ id: '5', title: 'Buy', kind: 'task', status: 'pending', priority: 'none', isOrder: true }, 'created', 'juan', 'https://k.dev')),
+    /🛒 Purchase order created.*\?todo=5/);
+  assert.match(JSON.stringify(claimMessage({ id: '9', category: 'Late check-in', severity: 'Low', status: 'Open' }, 'opened', 'juan', 'https://k.dev')), /💲 Upsell opened.*\?claim=9/);
+  assert.equal(threadLine('✓ Completed', 'juan').blocks.length, 1);
+});

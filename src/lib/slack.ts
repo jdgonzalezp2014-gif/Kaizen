@@ -8,6 +8,7 @@
  * whose email the Slack user has, with that member's permissions.
  */
 import { STATUS_LABEL, stageOf } from './todos.ts';
+import { isUpsell } from './claims.ts';
 import { channelLabel } from './breakdown.ts';
 import { COST_CATEGORIES, amountIn, guessCategory } from './costs.ts';
 
@@ -101,6 +102,8 @@ export const slackSource = (t: string) => t.replace(/\n?— From Slack: (https?:
 
 export interface TaskLite {
   id: string; title: string; kind: 'task' | 'work_order'; status: string; priority: string;
+  /** §162: a purchase order (a request, or a to-do with order lines). */
+  isOrder?: boolean;
   unit?: string | null; assignee?: string | null; dueOn?: string | null; reservationLabel?: string | null; description?: string | null;
 }
 // §159: Slack says what Kaizen says — New → In progress → Done (or Cancelled); an order Ordered → Purchased.
@@ -114,7 +117,19 @@ export function taskFacts(t: TaskLite): string {
           t.assignee ? `owner ${t.assignee}` : '' /* §108: only when there is one */, t.priority === 'urgent' ? 'Urgent' : t.priority === 'high' ? 'High' : '',
           stageWord(t.status)].filter(Boolean).map(esc).join(' · ');
 }
-const what = (t: TaskLite) => t.kind === 'work_order' ? '🔧 Repair' : '☐ To-do';
+const what = (t: TaskLite) => t.isOrder ? '🛒 Purchase order' : t.kind === 'work_order' ? '🔧 Repair' : '☐ To-do';
+
+/**
+ * §162: what Slack cannot do (record a purchase, a vendor's cost, merge, files…) is one click away — the item
+ * itself in Kaizen (Operations → To-do opens it). A URL button: Slack opens it, the click is only acked.
+ */
+export const kaizenButton = (appUrl: string | undefined, kind: 'todo' | 'claim', id: string): Block[] =>
+  appUrl ? [{ type: 'button', text: plain('Open in Kaizen ↗'), url: `${appUrl}/?${kind}=${encodeURIComponent(id)}`, action_id: 'open_kaizen' }] : [];
+
+/** §162: a reply in an item's thread — who did what — instead of a new message in the channel. */
+export function threadLine(text: string, by?: string): { text: string; blocks: Block[] } {
+  return { text, blocks: [context(`${text}${by ? ` · ${esc(by)}` : ''}`)] };
+}
 
 /* ── the cleans' daily thread (§134) ───────────────────────────────── */
 
@@ -196,7 +211,7 @@ export function pickTask(list: { id?: string; title: string; unit?: string | nul
  * app's front door, not the task, so it cost a line of the phone's screen
  * for a trip the person still had to finish by hand.
  */
-export function taskMessage(t: TaskLite, event: string, by: string): { text: string; blocks: Block[] } {
+export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: string): { text: string; blocks: Block[] } {
   const closed = t.status === 'completed' || t.status === 'cancelled';
   const title = `${what(t)} ${event}: *${esc(t.title)}*`;
   return {
@@ -207,7 +222,8 @@ export function taskMessage(t: TaskLite, event: string, by: string): { text: str
       { type: 'actions', elements: [
         ...(closed ? [button('↺ Reopen', 'task_reopen', t.id)] : [button('✓ Complete', 'task_complete', t.id, 'primary')]),
         // Owner, 2026-10-14: "Manage", like the daily message — it opens the whole card, not only comments.
-        button('Manage', 'task_open', t.id)
+        button('Manage', 'task_open', t.id),
+        ...kaizenButton(appUrl, 'todo', t.id)
       ] }
     ]
   };
@@ -234,13 +250,16 @@ export const CLAIM_STATUSES = ['Open', 'In progress', 'Resolved', 'Refunded', 'D
 const claimTitle = (c: ClaimLite) => `${c.unit ?? 'Portfolio'} · ${(c.description || c.category || 'Claim').slice(0, 80)}`;
 const sevMark = (s: string) => s === 'Critical' || s === 'High' ? '🔴' : s === 'Medium' ? '🟠' : '⚪';
 
-export function claimMessage(c: ClaimLite, event: string, by: string): { text: string; blocks: Block[] } {
+/** §162: a pet fee or a late check-in is an upsell — the same case, named for what it is. */
+export const caseWord = (c: Pick<ClaimLite, 'category'>) => isUpsell(c.category) ? '💲 Upsell' : '⚑ Claim';
+export function claimMessage(c: ClaimLite, event: string, by: string, appUrl?: string): { text: string; blocks: Block[] } {
   return {
-    text: `⚑ Claim ${event}: ${claimTitle(c)}`,
+    text: `${caseWord(c)} ${event}: ${claimTitle(c)}`,
     blocks: [
-      section(`${sevMark(c.severity)} ⚑ Claim ${event}: *${esc(claimTitle(c))}*`),
+      section(`${sevMark(c.severity)} ${caseWord(c)} ${event}: *${esc(claimTitle(c))}*`),
       context([c.category, c.severity, c.status].filter(Boolean).map(esc).join(' · '), c.caseUrl ? link(c.caseUrl, 'platform case') : '', by ? `by ${esc(by)}` : ''),
-      { type: 'actions', elements: [claimStatusSelect(c), button('💬 Comment', 'claim_open', c.id), button('✎ Edit', 'claim_edit', c.id)] }
+      { type: 'actions', elements: [claimStatusSelect(c), button('💬 Comment', 'claim_open', c.id), button('✎ Edit', 'claim_edit', c.id),
+                                     ...kaizenButton(appUrl, 'claim', c.id)] }
     ]
   };
 }
@@ -264,6 +283,8 @@ function claimRows(c: ClaimLite): Block[] {
 }
 
 export interface ClaimCard extends ClaimLite {
+  /** §162: the link to it in Kaizen (a purchase order, the money, files — what the card cannot do). */
+  appUrl?: string;
   source?: string | null;
   updates: { who: string; when: string; body: string }[];
   /** Owner, Oct 2026: the claim's work, as in Kaizen — each opens its own card. */
@@ -282,13 +303,14 @@ export function claimCard(c: ClaimCard, note?: string, root?: 'claims', focus = 
   ].filter(Boolean).slice(0, 10);
   return {
     type: 'modal', callback_id: 'claim_card', private_metadata: JSON.stringify({ id: c.id, ...(root ? { root } : {}) }),
-    title: plain('Claim'), submit: plain('Save'), close: plain('Close'),
+    title: plain(isUpsell(c.category) ? 'Upsell' : 'Claim'), submit: plain('Save'), close: plain('Close'),
     blocks: [
       { type: 'header', text: plain(claimTitle(c).slice(0, 150)) },
       ...(note ? [context(note)] : []),
       { type: 'section', fields },
       ...(c.description ? [section(esc(c.description).slice(0, 2900))] : []),
       ...(c.caseUrl ? [context(link(c.caseUrl, '↗ Platform case'))] : []),
+      ...(c.appUrl ? [{ type: 'actions', elements: kaizenButton(c.appUrl, 'claim', c.id) }] : []),
       ...(c.work?.length ? [{ type: 'divider' },
         section(`*Work* · ${c.work.filter(w => w.status !== 'completed' && w.status !== 'cancelled').length} open of ${c.work.length}`),
         ...c.work.slice(0, 20).map(w => {
@@ -557,6 +579,8 @@ export interface TaskCard extends TaskLite {
   claim?: string | null; order?: string[] | null; activity?: { when: string; who: string; body: string }[]; parentId?: string | null;
   /** Owner, 2026-10-14: what can go on its purchase order (an open, top-level to-do only). */
   orderForm?: { items: Opt[]; places: Opt[] } | null;
+  /** §162: the link to it in Kaizen, for what a card cannot do. */
+  appUrl?: string;
 }
 
 /**
@@ -568,7 +592,7 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
   const closed = t.status === 'completed' || t.status === 'cancelled';
   const f = (label: string, v: string | null | undefined) => v ? mrk(`*${label}*\n${esc(v)}`) : null;
   const fields = [
-    f('Status', stageWord(t.status, !!t.order?.length)), f('Owner', t.assignee ?? 'Nobody'),
+    f('Status', stageWord(t.status, !!t.order?.length || !!t.isOrder)), f('Owner', t.assignee ?? 'Nobody'),
     f('Priority', t.priority !== 'none' ? t.priority[0]!.toUpperCase() + t.priority.slice(1) : null), f('Listing', t.unit),
     f('Start from', t.scheduledOn ? day(t.scheduledOn) : null), f('Finish by', t.dueOn ? day(t.dueOn) : null),
     f('Supervisor', t.supervisor), f('Stay', t.reservationLabel), f('Claim', t.claim ? `⚑ ${t.claim}` : null), f('Vendor', t.vendor),
@@ -576,7 +600,7 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
   ].filter(Boolean).slice(0, 10);
   return {
     type: 'modal', callback_id: 'task_card', private_metadata: JSON.stringify({ id: t.id, ...(root ? { root } : {}) }),
-    title: plain(t.order?.length ? 'Purchase order' : t.kind === 'work_order' ? 'Work order' : 'To-do'), submit: plain('Save'), close: plain('Close'),
+    title: plain(t.order?.length || t.isOrder ? 'Purchase order' : t.kind === 'work_order' ? 'Work order' : 'To-do'), submit: plain('Save'), close: plain('Close'),
     blocks: [
       { type: 'header', text: plain(t.title.slice(0, 150)) },
       ...(note ? [context(note)] : []),
@@ -588,7 +612,8 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
         // door /api/todos starts the work through, so pressing it first said nothing twice.
         ...(closed ? [button('↺ Reopen', 'card_reopen', t.id)] : [button('✓ Complete', 'card_complete', t.id, 'primary'), button('✕ Cancel', 'card_cancel', t.id)]),
         button('🙋 Take it', 'card_take', t.id),
-        button('✎ Edit', 'card_edit', t.id)
+        button('✎ Edit', 'card_edit', t.id),
+        ...kaizenButton(t.appUrl, 'todo', t.id)
       ] },
       ...(t.order?.length ? [{ type: 'divider' }, section(`*🛒 Purchase order*\n${t.order.map(l => `• ${esc(l)}`).join('\n')}`.slice(0, 2900)),
         context('No price yet — record what was bought in Kaizen (Inventory or the to-do).')] : []),
@@ -895,14 +920,14 @@ export function taskCheckMessage(kind: 'checkin' | 'checkout', d: TaskCheckInput
 
 /* ── @Kaizen: what a mention asks for (§108) ────────────────────────── */
 
-export type MentionVerb = 'help' | 'new' | 'repair' | 'claim' | 'cost' | 'claims' | 'tasks' | 'today' | 'all' | 'comments' | 'newsop' | 'sops' | 'text';
+export type MentionVerb = 'help' | 'new' | 'repair' | 'order' | 'claim' | 'cost' | 'claims' | 'tasks' | 'today' | 'all' | 'comments' | 'newsop' | 'sops' | 'text';
 
 /** "@Kaizen new Fix the AC" → { verb: 'new', arg: 'Fix the AC' }; anything else is plain text. */
 export function parseMention(text: string): { verb: MentionVerb; arg: string } {
   const t = commentFromMention(text);
   const [first = '', ...rest] = t.split(/\s+/);
   const map: Record<string, MentionVerb> = { '': 'help', help: 'help', '?': 'help', commands: 'help',
-    new: 'new', task: 'new', todo: 'new', 'to-do': 'new', add: 'new', repair: 'repair', claim: 'claim', claims: 'claims', cases: 'claims', cost: 'cost', expense: 'cost', gasto: 'cost', costo: 'cost',
+    new: 'new', task: 'new', todo: 'new', 'to-do': 'new', add: 'new', repair: 'repair', order: 'order', buy: 'order', purchase: 'order', compra: 'order', comprar: 'order', upsell: 'claim', claim: 'claim', claims: 'claims', cases: 'claims', cost: 'cost', expense: 'cost', gasto: 'cost', costo: 'cost',
     tasks: 'tasks', list: 'tasks', today: 'today', all: 'all', status: 'all', reminder: 'all', summary: 'all', comments: 'comments', history: 'comments',
     newsop: 'newsop', sop: 'newsop', sops: 'sops' };
   // "task: …" as much as "task …" (owner, Oct 2026 — Derek's to-do kept "task:" in its title).
@@ -913,17 +938,17 @@ export function parseMention(text: string): { verb: MentionVerb; arg: string } {
 }
 
 /** Buttons that open the forms — what a mention can offer, since a mention cannot open a pop-up itself. */
-export function newButtons(title = '', only?: 'task' | 'work_order' | 'claim' | 'cost', from?: { channel: string; ts: string }): Block {
+export function newButtons(title = '', only?: 'task' | 'work_order' | 'order' | 'claim' | 'cost', from?: { channel: string; ts: string }): Block {
   const b = (label: string, kind: string, primary: boolean) =>
     ({ type: 'button', text: plain(label), action_id: `mention_new_${kind}`, value: JSON.stringify({ kind, title: title.slice(0, 120), ...(from ? { from } : {}) }), ...(primary ? { style: 'primary' } : {}) });
-  const all = [b('+ New to-do', 'task', !only || only === 'task'), b('+ Repair', 'work_order', only === 'work_order'), b('+ Claim', 'claim', only === 'claim'),
-               b('+ Cost', 'cost', only === 'cost')];
+  const all = [b('+ New to-do', 'task', !only || only === 'task'), b('+ Repair', 'work_order', only === 'work_order'),
+               b('+ Purchase order', 'order', only === 'order'), b('+ Claim / upsell', 'claim', only === 'claim'), b('+ Cost', 'cost', only === 'cost')];
   return { type: 'actions', elements: only ? all.filter(x => (x.action_id as string).endsWith(only)) : all };
 }
 
 export const MENTION_HELP = [
   '*@Kaizen new* _Fix the AC in P2-4308_ — made at once (the listing found in the text); *✎ Add details* in the reply if you want',
-  '*@Kaizen repair* … — the same, as a repair · *@Kaizen claim* … — the claim form',
+  '*@Kaizen repair* … — the same, as a repair · *@Kaizen order* _2 boxes of trash bags_ — a purchase order · *@Kaizen claim* … — the claim / upsell form',
   '*@Kaizen cost* _45 towels P2-4308_ — the cost form, with what it could read filled in; you confirm every field',
   '*@Kaizen tasks* — the open tasks, each with its menu · *@Kaizen claims* — the open claims (status, edit, remove)',
   '*@Kaizen all* — the whole reminder now, in a thread for everyone: check-ins, cleans, tasks, claims, and how the day is going',
@@ -977,7 +1002,7 @@ export function quickTitle(text: string): { title: string; description: string |
 /** The reply in the request's thread: it is tracked, and the way to add details. */
 export function trackedReply(t: { id: string; title: string; kind: string; unit?: string | null }, under?: 'sub-task' | 'claim'): { text: string; blocks: Block[] } {
   // Made inside a task's or a claim's thread (owner, Oct 2026): it belongs to that one.
-  const what = under === 'sub-task' ? 'sub-task of this task' : `${t.kind === 'work_order' ? 'repair' : 'to-do'}${under === 'claim' ? ' for this claim' : ''}`;
+  const what = under === 'sub-task' ? 'sub-task of this task' : `${t.kind === 'work_order' ? 'repair' : t.kind === 'order' ? 'purchase order' : 'to-do'}${under === 'claim' ? ' for this claim' : ''}`;
   return {
     text: `📋 Tracked in Kaizen as a ${what}: ${t.title}`,
     blocks: [
@@ -1001,7 +1026,7 @@ export function unboughtModal(t: { id: string; title: string }, verb: 'complete'
     title: plain('Nothing bought'), submit: plain(verb === 'complete' ? 'Close without buying' : 'Cancel the request'), close: plain('Keep it open'),
     blocks: [
       section(`*${t.title}*\nThis is a request to buy, and no purchase is recorded for it. Closing it now says the request was dismissed.`),
-      ...(appUrl ? [{ type: 'actions', elements: [{ type: 'button', text: plain('🛒 Record the purchase in Kaizen'), url: appUrl, action_id: 'open_kaizen', style: 'primary' }] }] : []),
+      ...(appUrl ? [{ type: 'actions', elements: [{ type: 'button', text: plain('🛒 Record the purchase in Kaizen'), url: `${appUrl}/?todo=${encodeURIComponent(t.id)}`, action_id: 'open_kaizen', style: 'primary' }] }] : []),
       input('why', 'Or close it without buying — why?', { ...text(null, true), placeholder: plain('e.g. there was enough in the closet') }, false)
     ]
   };

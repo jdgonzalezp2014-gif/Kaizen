@@ -113,8 +113,10 @@ const bucketOf = (t: Todo, today: DateStr): Bucket => {
     : d === 'soon' || t.priority === 'high' ? 'week' : 'later';
 };
 
-export function TodoList({ today, compact = false, head, lead, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds, unit }: {
+export function TodoList({ today, compact = false, head, lead, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds, unit, focus }: {
   today: DateStr;
+  /** §162: open this one as soon as it is loaded (a link from Slack). */
+  focus?: { todo?: string; claim?: string };
   /** Opened from a unit (the board's "2 to-dos", §159): that listing's work, filter on. */
   unit?: string;
   /** Home: open work only, in a scrolling feed. `head` puts the card's title, count, "?" and + Add above the pills. */
@@ -202,6 +204,18 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   // something of another kind is also listed in its own section.
   const crossCat = (t: Todo) => { const p = t.parentId ? byId.get(t.parentId) : undefined; return !!p && catOf(t) !== 'task' && catOf(p) !== catOf(t); };
   const [pop, setPop] = useState<{ todo?: string; claim?: string } | null>(null);
+  // §162: a link from Slack opens the item where it lives — its tab, its side panel (a claim: opened in its tab).
+  // A closed one is not in an open list: it opens in the pop-up instead.
+  useEffect(() => {
+    if (focus?.claim && claims.some(c => String(c.id) === focus.claim)) { setTab('claims'); setOpenClaim(focus.claim); return; }
+    const t = focus?.todo ? todos?.find(x => x.id === focus.todo) : undefined;
+    if (!t) return;
+    if (isClosed(t.status)) { setPop({ todo: t.id }); return; }
+    const p = t.parentId ? todos?.find(x => x.id === t.parentId) : undefined;
+    const top = p && categoryOf(p, !!allOrders?.has(p.id)) === categoryOf(t, !!allOrders?.has(t.id)) ? p : t;
+    const c = categoryOf(top, !!allOrders?.has(top.id));
+    setTab(c === 'order' ? 'orders' : c); setOpen(top.id);
+  }, [focus, todos === null, claims.length]);
   // §159: orders made from here this session (the order list is read by the screen above, once).
   const [madeOrders, setMadeOrders] = useState<Set<string>>(new Set());
   const allOrders = useMemo(() => orderIds ? new Set([...orderIds, ...madeOrders]) : undefined, [orderIds, madeOrders]);
@@ -1592,7 +1606,7 @@ function TodoFiles({ todoId }: { todoId: string }) {
 /**
  * Operations → To-do: the open work, or the done log — one switch.
  */
-export function WorkView({ today, canClaims, unit }: { today: DateStr; canClaims: boolean; unit?: string }) {
+export function WorkView({ today, canClaims, unit, focus }: { today: DateStr; canClaims: boolean; unit?: string; focus?: { todo?: string; claim?: string } }) {
   const [mode, setMode] = useState<'open' | 'log'>('open');
   // The open purchase orders: their own tab, as on Home (owner, Oct 2026).
   const [orderIds, setOrderIds] = useState<Set<string>>(new Set());
@@ -1603,7 +1617,7 @@ export function WorkView({ today, canClaims, unit }: { today: DateStr; canClaims
   </>;
   return (
     <>
-      {mode === 'open' ? <TodoList key={unit ?? ''} today={today} canClaims={canClaims} orderIds={orderIds} unit={unit} lead={modes} />
+      {mode === 'open' ? <TodoList key={unit ?? ''} today={today} canClaims={canClaims} orderIds={orderIds} unit={unit} lead={modes} focus={focus} />
         : <><div className="row-controls work-bar">{modes}</div><DoneLog today={today} canClaims={canClaims} /></>}
     </>
   );

@@ -4288,3 +4288,16 @@ Owner, from a claim card (P2-4308 · Missing Fob) and a to-do's "More: kind, cla
   `otherIncome` (`IncomeRow`, `incomeIn`; `unitMetrics`/`portfolioMetrics`), dated `COALESCE(resolved_on, occurred_on)`
   — never in revenue, ADR or RevPAN. Repair work is never added to Costs again. Claim #9 ("Charge early check in Quest",
   $60 in `refund`) was already used as *received*: kind set to Early check-in, requested $60. SOP #3 v4.
+- **Round 3 — Slack, less noise (owner, same day: "mucho spam").** The daily messages stay as they are. Something
+  NEW (to-do, repair, purchase order, claim, upsell) is ONE message in its channel; everything after — done, cancelled,
+  reopened, any status change (now told too, `TaskEvent 'status'`), an owner, Hostaway, sub-tasks, comments — is a
+  one-line reply in that item's thread saying who (`threadLine`), and the first message is redrawn with where it stands
+  (`chat.update`; a person's message a task was made from is left as is). Before, `notifyTask`/`notifyClaim` posted a
+  NEW channel message for every event and moved the item's thread to it. The `via: 'slack-message'` gate went: a
+  button's change is a reply now, not a second message. Work with no thread yet gets its one message on its first news.
+  Made in Slack in another channel (or a DM) → also announced once in the tasks channel (that becomes its thread).
+  `@Kaizen order <what>` (also buy/purchase/compra) and "+ Purchase order" on the offer make a purchase order like
+  `new`/`repair`; "+ Claim / upsell"; an upsell's message and card say 💲 Upsell. **"Open in Kaizen ↗"** (`kaizenButton`)
+  on every task/claim message and card, and the unbought modal, links `/?todo=N` / `/?claim=N`: App opens Operations →
+  To-do, the item's tab and its side panel (a closed one in the pop-up) — for what Slack cannot do. "Add to…" unchanged.
+  Validated with a fake Slack + database (`functions/_lib/slack.test.ts`), not against the workspace. SOP #8 v17.

@@ -533,10 +533,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       mirror(par.id);
     }
   }
-  // via 'slack-message': done from a button on the channel's own message, which Slack updates in place.
-  if (status !== undefined && status !== before.status && b.via !== 'slack-message') {
+  // §162: every status change is a line in the item's thread, saying who — from a Slack button too (it is a reply now,
+  // not a second message in the channel, which is what 'slack-message' used to avoid).
+  if (status !== undefined && status !== before.status) {
     if (CLOSED.includes(status)) tell(id, status === 'completed' ? 'completed' : 'cancelled');
     else if (CLOSED.includes(before.status)) tell(id, 'reopened');
+    else tell(id, 'status');
   }
   if (f.assigneeUserId !== undefined && (assigneeName ?? null) !== (before.assignee ?? null) && assigneeName) { tell(id, 'assigned'); dm(id); }
 

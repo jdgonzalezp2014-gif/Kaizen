@@ -15,7 +15,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { mayAccess } from '../_lib/roles.ts';
 import { attachTodoFiles, commentFileLines, slackFiles, slackMessageFiles } from '../_lib/todo-files.ts';
-import { commentToThread, rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
+import { commentToThread, notifyTask, rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
 import { cleansFor, digestFacts } from '../_lib/slack-digest.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import * as todos from './todos.ts';
@@ -167,14 +167,16 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     return;
   }
   // §110: "@Kaizen new <what>" is made at once — the reply in its thread has ✎ Add details. No words: the form.
-  if ((verb === 'new' || verb === 'repair') && arg) {
+  // §162: "@Kaizen order <what is needed>" — a purchase order, made the same way.
+  if ((verb === 'new' || verb === 'repair' || verb === 'order') && arg) {
     const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
     if (!member.ok) { await sayPrivate(member.why); return; }
     const r = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user))
-      .quickCreate(verb === 'repair' ? 'work_order' : 'task', arg, from, String(ev.ts), ev.files);
+      .quickCreate(verb === 'repair' ? 'work_order' : verb === 'order' ? 'order' : 'task', arg, from, String(ev.ts), ev.files);
     if (!r.ok) await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`);
     return;
   }
+  if (verb === 'order') { await say('Write what is needed: *@Kaizen order* _2 boxes of trash bags for Napa_.'); return; }
   if (verb === 'new' || verb === 'repair' || verb === 'claim' || verb === 'cost') {
     // §117: a cost is never made at once — the button opens the form, every field to confirm.
     const only = verb === 'new' ? 'task' : verb === 'repair' ? 'work_order' : verb === 'cost' ? 'cost' : 'claim';
@@ -462,10 +464,13 @@ class Kaizen {
    * reply in the request's thread says it is tracked, with ✎ Add details,
    * and that thread becomes the task's.
    */
-  async quickCreate(kind: 'task' | 'work_order', words: string, thread: { channel: string; ts: string }, messageTs: string, files?: unknown[]): Promise<Record<string, unknown>> {
+  async quickCreate(kind: 'task' | 'work_order' | 'order', words: string, thread: { channel: string; ts: string }, messageTs: string, files?: unknown[]): Promise<Record<string, unknown>> {
     if (!this.may('/api/todos', 'POST')) return { ok: false, message: 'your role does not include the to-do list' };
     const units = await this.units();
-    const { title, description } = quickTitle(words);
+    const quick = quickTitle(words);
+    // §162: a purchase order is a to-do made as an order (listed with the orders; ✨ builds its cart in Kaizen).
+    const title = kind === 'order' ? `Purchase order: ${quick.title}`.slice(0, 120) : quick.title;
+    const description = kind === 'order' ? [quick.title, quick.description].filter(Boolean).join('\n') || null : quick.description;
     // Owner, Oct 2026: made inside a task's thread → its sub-task; inside a claim's → work on that claim. Either way it
     // lives in that thread (no new one): its news and comments go there (threadFor).
     const [home] = await this.sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${thread.channel} AND ts = ${thread.ts}` as
@@ -475,7 +480,8 @@ class Kaizen {
     const claim = home?.subject === 'claim' ? await this.claimRow(home.subject_id) : undefined;
     const unit = guessUnit(words, units) ?? parent?.unit_ids?.[0] ?? claim?.unit_id ?? null;
     const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: thread.channel, message_ts: messageTs });
-    const r = await this.todo({ action: 'create', kind, title, unitIds: unit ? [unit] : [], priority: 'none', via: home ? 'slack-thread' : dmChannel(thread.channel) ? 'slack-dm' : 'slack',
+    const r = await this.todo({ action: 'create', kind: kind === 'order' ? 'task' : kind, ...(kind === 'order' && !parent ? { asOrder: true } : {}),
+      title, unitIds: unit ? [unit] : [], priority: 'none', via: home ? 'slack-thread' : dmChannel(thread.channel) ? 'slack-dm' : 'slack',
       ...(parent ? { parentId: parent.id } : {}), ...(claim ? { claimId: String(claim.id) } : {}),
       description: [description, link.permalink ? `From Slack: ${link.permalink.split('?')[0]}` : ''].filter(Boolean).join('\n\n') || null });
     if (!r.ok || !r.id) return r;
@@ -483,6 +489,11 @@ class Kaizen {
     const posted = await slackApi<{ ts?: string }>(this.s.token!, 'chat.postMessage', { channel: thread.channel, thread_ts: thread.ts, ...m, unfurl_links: false });
     // From a DM the task's thread is its notice in the tasks channel (via 'slack-dm'), where the team talks — not the DM.
     if (posted.ok && !home && !dmChannel(thread.channel)) await rememberThread(this.sql, { ok: true, ...thread }, 'task', String(r.id));
+    // §162: something new is announced once where the team works — made in another channel, it is also posted in the
+    // tasks channel (and that becomes its thread). Made right there, the mention already is the announcement.
+    if (!home && !dmChannel(thread.channel) && this.s.config.channels?.tasks?.id && thread.channel !== this.s.config.channels.tasks.id) {
+      this.ctx.waitUntil(notifyTask(this.sql, this.ctx.env.ENCRYPTION_KEY, String(r.id), 'created', this.email).catch(() => {}));
+    }
     this.attachFromSlack(String(r.id), { channel: thread.channel, ts: messageTs, thread: thread.ts }, files);
     return r;
   }
@@ -550,7 +561,7 @@ class Kaizen {
     ]);
     const line = (u: { body: string; created_by: string | null; created_at: string }) =>
       ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short });
-    return { parentId: t.parent_id, claim: t.claim, order: order.length ? order.map(o => `${o.name} × ${o.qty}`) : null, activity: acts.reverse().map(line), id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, supervisor: t.supervisor,
+    return { appUrl: this.s.config.appUrl, parentId: t.parent_id, claim: t.claim, order: order.length ? order.map(o => `${o.name} × ${o.qty}`) : null, activity: acts.reverse().map(line), id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, supervisor: t.supervisor,
       dueOn: t.due_on, scheduledOn: t.scheduled_on, reservationLabel: t.reservation_label, description: t.description, vendor: t.vendor,
       costActual: t.cost_actual == null ? null : Number(t.cost_actual), costEstimate: t.cost_estimate == null ? null : Number(t.cost_estimate),
       resolutionNote: t.resolution_note, unit: t.unit, children: kids, orderForm: await form,
@@ -766,7 +777,7 @@ class Kaizen {
                 ORDER BY status IN ('completed', 'cancelled'), created_at` as Promise<{ id: string; title: string; status: string; kind: string }[]>
     ]);
     if (!c || !row) return null;
-    return { ...c, work, source: row.source,
+    return { ...c, work, source: row.source, appUrl: this.s.config.appUrl,
       updates: ups.map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
   }
   private async openClaimCard(trigger: string, id: string, push = false) {
@@ -1155,8 +1166,8 @@ class Kaizen {
     if (id.startsWith('mention_new_')) {
       const v = JSON.parse(value || '{}') as { kind?: string; title?: string; from?: { channel: string; ts: string } };
       // A to-do or repair with words: made at once, like "@Kaizen new" (§110); the offer goes.
-      if ((v.kind === 'task' || v.kind === 'work_order') && v.title && v.from) {
-        const r = await this.quickCreate(v.kind === 'work_order' ? 'work_order' : 'task', v.title, v.from, v.from.ts);
+      if ((v.kind === 'task' || v.kind === 'work_order' || v.kind === 'order') && v.title && v.from) {
+        const r = await this.quickCreate(v.kind === 'work_order' ? 'work_order' : v.kind === 'order' ? 'order' : 'task', v.title, v.from, v.from.ts);
         await this.reply(url, r.ok ? { delete_original: true } : { replace_original: true, response_type: 'ephemeral', text: `Not saved: ${String(r.message ?? 'Kaizen said no.')}` });
         return ack();
       }
