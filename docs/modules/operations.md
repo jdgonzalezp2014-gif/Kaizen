@@ -475,6 +475,13 @@ key had no SOPs.
 
 ## Open items
 
+- **To evaluate (owner, 2026-10-15): the Amazon Business Cart API** for an "Add to Amazon cart (n)" like Walmart's — Kaizen has
+  Amazon Business; `addItems` (ASIN + qty) fills a user's cart, the person checks and pays (Kaizen never pays). Needs the account's
+  admin to register API access on the Amazon Business developer portal (approval time unknown) + a one-time OAuth, its token kept
+  encrypted (like Hostaway's). The ASINs and packs already come from the .md receipts (`buy_options`). Ruled out: the public
+  add.html link (opened the cart as it was), someone else's Associate tag (commission + their reports see what Kaizen buys;
+  fragile), "Share your Amazon Business Cart" (only built by hand in Amazon), "Bulk order products" (quotes, not a list upload).
+  Docs: https://docs.business.amazon.com/docs/cart-api-overview · /reference/additems
 - **Store carts & .md receipts (2026-10-15):** Amazon has no working multi-item cart link (add.html opened the old cart; untried:
   `gp/aws/cart/add-res.html`). Several stores' links per item: later, when the owner asks. No supply has a store product yet: the
   first .md receipts are all ≈ (one tap each, then matched by number). The UI flow (read → flags → record → product learned) was
