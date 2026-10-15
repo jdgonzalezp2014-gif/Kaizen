@@ -31,7 +31,8 @@ import { todayIn, addDays } from '../lib/dates.ts';
 import { TodoList, type WorkSum, type WorkTab } from '../components/Todos.tsx';
 import { money, money2 } from '../lib/format.ts';
 import { hostawayReservationUrl, type BoardRow } from '../lib/operations.ts';
-import { IconFlag } from '../components/Hint.tsx';
+import { Hint, IconFlag } from '../components/Hint.tsx';
+import { usePhone } from '../components/usePhone.ts';
 import { Icon } from '../components/Icon.tsx';
 
 const TZ = 'America/New_York';
@@ -235,6 +236,65 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   const comingCount = comingGroups.reduce((a, g) => a + g.items.length, 0);
   const comingErr = [ops.err, spend.err, claims.err].filter(Boolean).join(' · ');
 
+  const [pick, setPick] = useState('');
+  const phone = usePhone();
+  const unassignedAll = unassigned.length + todays.outs2.filter(isOpen).length;
+  const checkAlert = unassignedAll + unsigned + notReady;
+  // The modules this person may see, in order; each renders itself so a new one is one more entry (§159).
+  const mods: { key: string; label: string; count?: number; alert?: boolean; body: ReactNode }[] = [
+    ...(canOps ? [{ key: 'checkio', label: 'Check-ins/outs', count: ops.busy ? undefined : cleans.length + todays.ins.length, alert: checkAlert > 0, body: (
+      <Panel title="Check-ins & check-outs" hint="Today and tomorrow, from the Operations board. Unassigned cleans and unsigned agreements come first." load={ops}
+             action="Open the board" onAction={() => onGo('operations')}
+             summary={checkAlert > 0 ? <span className="breach">▲ {[unassignedAll && `${unassignedAll} unassigned`, unsigned && `${unsigned} not signed`, notReady && `${notReady} not ready`].filter(Boolean).join(' · ')}</span> : undefined}>
+        {upErr && <p className="banner warn">▲ {upErr}</p>}
+        <h4 className="home-sub">Check-outs</h4>
+        <DayGroup label={`Today · ${dayWord(today)}`} empty="No departures today.">
+          {todays.outs.length > 0 && <ShowMore items={[...todays.outs].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))} render={r => <CleanItem key={r.resId} r={r} />} />}
+        </DayGroup>
+        <DayGroup label={`Tomorrow · ${dayWord(tomorrow)}`} empty="No departures tomorrow.">
+          {todays.outs2.length > 0 && <ShowMore items={[...todays.outs2].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))} render={r => <CleanItem key={r.resId} r={r} />} />}
+        </DayGroup>
+        <h4 className="home-sub">Check-ins</h4>
+        <DayGroup label={`Today · ${dayWord(today)}`} empty="No arrivals today.">
+          {todays.ins.length > 0 && <ShowMore items={bySigned(todays.ins)} render={r => arrivalRow(r, true)} />}
+        </DayGroup>
+        <DayGroup label={`Tomorrow · ${dayWord(tomorrow)}`} empty="No arrivals tomorrow.">
+          {todays.ins2.length > 0 && <ShowMore items={bySigned(todays.ins2)} render={r => arrivalRow(r, false)} />}
+        </DayGroup>
+      </Panel>) }] : []),
+    ...(comingGroups.length > 0 ? [{ key: 'coming', label: 'Coming up', count: ops.busy || spend.busy || claims.busy ? undefined : comingCount, body: (
+      <Panel title="Coming up" hint="Inspections in the next 7 days and what costs money in the next 14." load={{ data: true, err: comingErr, busy: ops.busy || spend.busy || claims.busy }}
+             action={canCosts ? 'Open Costs' : undefined} onAction={() => onGo('costs')}>
+        <div className="home-events">
+          {comingGroups.filter(g => g.items.length).map(g => (
+            <EventGroup key={g.title} title={g.title} items={g.items} onMore={g.onMore} more={g.more} />
+          ))}
+          {/* Empty groups say so in one quiet line, not a heading each (§91). */}
+          {comingGroups.some(g => !g.items.length) && (
+            <p className="note home-empty">{cap(comingGroups.filter(g => !g.items.length).map(g => g.quiet).join(' · '))}.</p>
+          )}
+        </div>
+      </Panel>) }] : []),
+    ...(canUnits ? [{ key: 'red', label: 'Units in red', count: red.busy ? undefined : red.data?.list.length, alert: !!red.data?.list.length, body: (
+      <Panel title="Units in red" hint="Units the Units screen's analysis flags red, worst first." load={red} action="Open Units" onAction={() => onGo('units')}
+             busyText="Reading every calendar…"
+             foot={red.data ? `By the Units screen's analysis, of ${red.data.total} live units · read ${red.data.at ? new Date(red.data.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) : 'now'} (kept 10 min; Units is live)` : undefined}>
+        {red.data && !red.data.list.length ? <Empty>No unit is red. ● All live units are filling, full or too early to tell.</Empty> : (
+          <ShowMore items={red.data?.list ?? []} render={({ unit: u, read }) => (
+            <li key={u.listingId}>
+              <span className="light tone-bad" aria-hidden="true" />
+              <span className="home-main"><b>{u.name}</b> <span className="home-verdict">{read.v.label}</span>
+                <span className="home-reason">{read.v.reason}</span></span>
+              {can(permissions, 'money') && u.exposure > 0 && <span className="home-side sub-n">{money(u.exposure)} open</span>}
+            </li>
+          )} />
+        )}
+      </Panel>) }] : [])
+  ];
+  // Phone: To-dos is a tab too, and the default. Desktop: To-dos is always the left column; the rail picks among the rest.
+  const tabs = phone && canTodos ? [{ key: 'todo', label: 'To-dos', count: todoSum?.open, alert: !!(todoSum?.overdue || todoSum?.urgent), body: null as ReactNode }, ...mods] : mods;
+  const active = tabs.some(t => t.key === pick) ? pick : tabs[0]?.key ?? '';
+
   return (
     <section className="home">
       {/* §159 (owner, 2026-10-14): the date lives in the menu now, and the summary pills (they repeated the cards) are gone. */}
@@ -243,83 +303,36 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
         <p className="note">○ Operations is in shadow mode — cleaners shown are Kaizen's reading; the daily file still decides.</p>
       )}
 
-      <div className="home-grid">
-        {canOps && (
-          <Card id="cleans" title="Check-outs" count={cleans.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
-                summary={unassigned.length || todays.outs2.some(isOpen)
-                  ? <span className="breach">▲ {unassigned.length + todays.outs2.filter(isOpen).length} clean{unassigned.length + todays.outs2.filter(isOpen).length === 1 ? '' : 's'} unassigned</span> : undefined}>
-            {/* Today and tomorrow, unassigned first: the three shown are the three that need someone. */}
-            <DayGroup label={`Today · ${dayWord(today)}`} empty="No departures today.">
-              {todays.outs.length > 0 && <ShowMore items={[...todays.outs].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))}
-                                                   render={r => <CleanItem key={r.resId} r={r} />} />}
-            </DayGroup>
-            <DayGroup label={`Tomorrow · ${dayWord(tomorrow)}`} empty="No departures tomorrow.">
-              {todays.outs2.length > 0 && <ShowMore items={[...todays.outs2].sort((a, b) => Number(isOpen(b)) - Number(isOpen(a)))}
-                                                    render={r => <CleanItem key={r.resId} r={r} />} />}
-            </DayGroup>
-          </Card>
-        )}
-
-        {canOps && (
-          <Card id="checkins" title="Check-ins" count={todays.ins.length} load={ops} action="Open the board" onAction={() => onGo('operations')}
-                summary={(unsigned || notReady) ? <>
-                  {unsigned > 0 && <span className="breach">▲ {unsigned} not signed</span>}
-                  {unsigned > 0 && notReady > 0 && ' · '}
-                  {notReady > 0 && <span className="breach">▲ {notReady} not ready</span>}
-                </> : undefined}>
-            {upErr && <p className="banner warn">▲ {upErr}</p>}
-            <DayGroup label={`Today · ${dayWord(today)}`} empty="No arrivals today.">
-              {todays.ins.length > 0 && <ShowMore items={bySigned(todays.ins)} render={r => arrivalRow(r, true)} />}
-            </DayGroup>
-            <DayGroup label={`Tomorrow · ${dayWord(tomorrow)}`} empty="No arrivals tomorrow.">
-              {todays.ins2.length > 0 && <ShowMore items={bySigned(todays.ins2)} render={r => arrivalRow(r, false)} />}
-            </DayGroup>
-          </Card>
-        )}
-
+      <div className={`home-layout ${canTodos && mods.length ? '' : 'solo'}`}>
         {canTodos && (
-          <Card id="todo" title="To-do" count={todoSum?.open} className="home-todos" load={{ data: true, err: '', busy: false }}
-                summary={todoSum && <WorkSummary s={todoSum} />}
-                action={canOps ? 'All to-dos' : undefined} onAction={() => onGo('operations:todos')}>
-            <TodoList today={today} compact canClaims={canClaims} onSummary={setTodoSum} extraTabs={approvalTab}
-                      orderIds={canOps ? orders.data ?? new Set() : undefined}
-                      onMore={canOps ? () => onGo('operations:todos') : undefined} />
-          </Card>
-        )}
-        {canUnits && (
-          <Card id="red" title="Units in red" count={red.data?.list.length} load={red} action="Open Units" onAction={() => onGo('units')}
-                busyText="Reading every calendar…"
-                foot={red.data ? `By the Units screen's analysis, of ${red.data.total} live units · read ${red.data.at ? new Date(red.data.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) : 'now'} (kept 10 min; Units is live)` : undefined}>
-            {red.data && !red.data.list.length ? <Empty>No unit is red. ● All live units are filling, full or too early to tell.</Empty> : (
-              <ShowMore items={red.data?.list ?? []} render={({ unit: u, read }) => (
-                  <li key={u.listingId}>
-                    <span className="light tone-bad" aria-hidden="true" />
-                    <span className="home-main"><b>{u.name}</b> <span className="home-verdict">{read.v.label}</span>
-                      <span className="home-reason">{read.v.reason}</span></span>
-                    {can(permissions, 'money') && u.exposure > 0 && <span className="home-side sub-n">{money(u.exposure)} open</span>}
-                  </li>
-                )} />
-            )}
-          </Card>
+          <div className="home-main-col" role={phone ? 'tabpanel' : undefined} id="home-panel-todo" hidden={phone && active !== 'todo'}>
+            <Panel title="To-dos" hint="Everything that needs a person, by category. Overdue, today and urgent come first; Now, Later and Further out group the rest."
+                   count={todoSum?.open} className="home-todos" load={{ data: true, err: '', busy: false }}
+                   summary={todoSum && <WorkSummary s={todoSum} />}
+                   action={canOps ? 'All to-dos' : undefined} onAction={() => onGo('operations:todos')}>
+              <TodoList today={today} compact canClaims={canClaims} onSummary={setTodoSum} extraTabs={approvalTab}
+                        orderIds={canOps ? orders.data ?? new Set() : undefined}
+                        onMore={canOps ? () => onGo('operations:todos') : undefined} />
+            </Panel>
+          </div>
         )}
 
-        {comingGroups.length > 0 && (comingCount > 0 || comingErr) && (
-          <Card id="coming" title="Coming up" count={comingCount}
-                load={{ data: true, err: comingErr, busy: ops.busy || spend.busy || claims.busy }}
-                action={canCosts ? 'Open Costs' : undefined} onAction={() => onGo('costs')}>
-            <div className="home-events">
-              {comingGroups.filter(g => g.items.length).map(g => (
-                <EventGroup key={g.title} title={g.title} items={g.items} onMore={g.onMore} more={g.more} />
+        {mods.length > 0 && (
+          <aside className="home-side-col" aria-label="Operations">
+            {/* One strip of modules: on a phone it also carries To-dos and takes the whole screen. */}
+            <div className="home-rail" role="tablist" aria-label="Home modules">
+              {tabs.map(m => (
+                <button key={m.key} role="tab" id={`home-tab-${m.key}`} aria-selected={active === m.key} aria-controls={`home-panel-${m.key}`}
+                        className={`home-chip ${active === m.key ? 'on' : ''}`} onClick={() => setPick(m.key)}>
+                  {m.label}
+                  {m.count != null && <span className={`home-chip-n ${m.alert ? 'alert' : ''}`}>{m.alert && <span aria-hidden="true">▲ </span>}{m.count}</span>}
+                </button>
               ))}
-              {/* Empty groups say so in one quiet line, not a heading each (§91). */}
-              {comingGroups.some(g => !g.items.length) && (
-                <p className="note home-empty">{cap(comingGroups.filter(g => !g.items.length).map(g => g.quiet).join(' · '))}.</p>
-              )}
             </div>
-          </Card>
-        )}
-        {comingGroups.length > 0 && comingCount === 0 && !comingErr && !ops.busy && !spend.busy && !claims.busy && (
-          <p className="note home-quiet">Nothing coming up — {comingGroups.map(g => g.quiet).join(' · ')}.</p>
+            {mods.filter(m => m.key === active).map(m => (
+              <div key={m.key} className="home-slide" role="tabpanel" id={`home-panel-${m.key}`} aria-labelledby={`home-tab-${m.key}`}>{m.body}</div>
+            ))}
+          </aside>
         )}
       </div>
 
@@ -332,42 +345,26 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
 
 
 /**
- * A Home card (§81). Home is a summary, not a workspace: every card can
- * fold to its title, its count and what needs attention — and stays folded
- * on this device — so no one card can push the others off the screen.
+ * A Home module's body (§81, §159): title, its "?", what needs attention, and the door to the full screen.
+ * Folding is gone — the module strip does the choosing, so one module is on screen at a time.
  */
-function Card<T>({ id, title, count, summary, load, action, onAction, foot, busyText, children, className = '' }: {
-  id: string; title: string; count?: number; summary?: ReactNode; load: Load<T>; action?: string; onAction?: () => void;
+function Panel<T>({ title, hint, count, summary, load, action, onAction, foot, busyText, children, className = '' }: {
+  title: string; hint?: string; count?: number; summary?: ReactNode; load: Load<T>; action?: string; onAction?: () => void;
   foot?: string; busyText?: string; children: ReactNode; className?: string;
 }) {
-  const [folded, toggle] = useFolded(id);
   return (
-    <div className={`card home-card ${folded ? 'folded' : ''} ${className}`} data-card={id}>
+    <div className={`card home-card ${className}`}>
       <div className="home-card-head">
-        <button className="home-fold" onClick={toggle} aria-expanded={!folded} title={folded ? 'Show' : 'Fold'}>
-          <span className="home-caret" aria-hidden="true">{folded ? '▸' : '▾'}</span>
-          <h3>{title}{count != null && !load.busy && <span className="count">{count}</span>}</h3>
-        </button>
+        <h3>{title}{count != null && !load.busy && <span className="count">{count}</span>}{hint && <Hint>{hint}</Hint>}</h3>
         {summary && !load.busy && <span className="home-summary">{summary}</span>}
         {action && <button className="link" onClick={onAction}>{action} →</button>}
       </div>
-      {!folded && (load.busy ? <p className="note loading-dot">{busyText ?? 'Loading'}</p>
+      {load.busy ? <p className="note loading-dot">{busyText ?? 'Loading'}</p>
         : load.err ? <p className="banner warn">▲ {load.err}</p>
-        : children)}
-      {!folded && foot && !load.busy && !load.err && <p className="home-foot">{foot}</p>}
+        : children}
+      {foot && !load.busy && !load.err && <p className="home-foot">{foot}</p>}
     </div>
   );
-}
-
-/** Folded or not, remembered per card on this device (a per-person convenience, never data). */
-function useFolded(id: string): [boolean, () => void] {
-  const key = `kaizen.home.folded.${id}`;
-  const [folded, setFolded] = useState(() => { try { return localStorage.getItem(key) === '1'; } catch { return false; } });
-  const toggle = () => setFolded(v => {
-    try { localStorage.setItem(key, v ? '0' : '1'); } catch { /* private window: it just is not remembered */ }
-    return !v;
-  });
-  return [folded, toggle];
 }
 
 /**

@@ -1218,7 +1218,6 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 .home-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
 .home-head h2 { margin: 0; font-size: var(--fs-title2); font-weight: 650; letter-spacing: -.02em; }
 .home-head .note { margin: 2px 0 0; }
-.home-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; align-items: start; }
 .home-card { margin: 0; }
 .home-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-bottom: 6px; }
 .home-card-head h3 { margin: 0; font-size: var(--fs-headline); font-weight: 650; display: flex; align-items: center; gap: 8px; }
@@ -1239,7 +1238,7 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 .home-events { display: flex; flex-direction: column; gap: 10px; }
 .home-evgroup h4 { margin: 6px 0 2px; font-size: var(--fs-caption); font-weight: 650; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .home-list .light { margin-top: 3px; }
-@media (max-width: 900px) { .home-grid { grid-template-columns: minmax(0, 1fr); } .home-side { max-width: 55%; } }
+@media (max-width: 900px) { .home-side { max-width: 55%; } }
 
 /* To-do list (§76) — Home and Operations. */
 .todos { display: flex; flex-direction: column; gap: 8px; }
@@ -1264,7 +1263,6 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 .todo.due-today .todo-due { color: var(--warn); font-weight: 600; }
 .todo-edit { margin: 8px 0 4px 24px; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .todo-edit .button-row { align-items: center; gap: 10px; }
-.home-todos { grid-column: 1 / -1; }
 .todos > .link { align-self: flex-start; }
 
 /* Work (§77): kinds, status, priority, claims, and the timeline. */
@@ -1401,14 +1399,8 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 
 /* Home (§81): cards fold to a line; three items, the rest in place. */
 .home-card-head { flex-wrap: wrap; row-gap: 4px; }
-.home-fold { display: inline-flex; align-items: center; gap: 6px; background: none; border: 0; padding: 0;
-  color: var(--ink); font: inherit; cursor: pointer; text-align: left; }
-.home-fold h3 { margin: 0; }
-.home-caret { color: var(--muted); font-size: var(--fs-footnote); width: 12px; }
 .home-summary { font-size: var(--fs-footnote); color: var(--muted); margin-right: auto; }
 .home-summary .home-today { color: var(--warn); font-weight: 600; }
-.home-card.folded { padding-bottom: 12px; }
-.home-card.folded .home-card-head { margin-bottom: 0; }
 .home-more { margin-top: 4px; }
 .link.home-more { color: var(--series-1); font-weight: 600; font-size: var(--fs-footnote); opacity: 1; }
 
@@ -1492,7 +1484,6 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
    colour only on what needs a person; the rest in quiet type, so the eye
    lands on exceptions first (pre-attentive pop-out needs few competitors).
    Titles outrank their labels; the day, which has a clock, comes first. */
-.home-grid { gap: 16px; }
 .home-card-head h3 { font-size: var(--fs-headline); }
 .home-card-head { margin-bottom: 8px; }
 /* Row titles one step under the card's own. */
@@ -1512,7 +1503,6 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 /* An action is never faint: `button.link.tiny` outranked these at 45%. */
 button.link.lane-add, button.link.home-more { opacity: 1; }
 /* Nothing coming up is one line under the cards, not a card. */
-.home-quiet { grid-column: 1 / -1; margin: 0; }
 @media (max-width: 720px) {
   /* The page's own heading reads from the left like the rest of the screen. */
   .home-head { flex-direction: column; align-items: stretch; }
@@ -2439,11 +2429,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 @media (max-width: 720px) { .flag-slots { display: flex; flex-wrap: wrap; } .flag-slots .slot:empty { display: none; } }
 /* §159 (owner, 2026-10-14): Home is a fixed, centred page on a tablet or a desktop — the cards in a steady
    grid, the same height side by side — so the eye is not dragged across a 1440 px screen. */
-@media (min-width: 721px) {
-  .home { max-width: 1120px; margin: 0 auto; }
-  .home-grid { align-items: stretch; gap: 16px; }
-  .home-grid > .home-card { height: 100%; }
-}
+@media (min-width: 721px) { .home { max-width: 1120px; margin: 0 auto; } }
 /* A phone reads Home; uploading documents and opening Hostaway are desk work. */
 @media (max-width: 720px) { .home .home-upload, .home .home-hostaway { display: none; } }
 
@@ -2505,24 +2491,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .side-today .side-word { font-weight: 600; font-size: var(--fs-body); }
 .today-chip { margin-left: auto; font-size: var(--fs-footnote); color: var(--muted); font-weight: 600; white-space: nowrap; }
 .today-chip + .phone-theme { margin-left: 8px; }
-/* §159 (owner: "lots of space now — use it without cramming"): on a wide screen, three columns — the day's moves
-   and what is coming side by side; the to-do list wide under them, the units in red beside it. */
-@media (min-width: 1280px) {
-  .home { max-width: 1360px; }
-  .home-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px;
-    grid-template-areas: "cleans checkins coming" "todo todo red"; }
-  .home-grid > [data-card="cleans"] { grid-area: cleans; }
-  .home-grid > [data-card="checkins"] { grid-area: checkins; }
-  .home-grid > [data-card="coming"] { grid-area: coming; }
-  .home-grid > [data-card="todo"] { grid-area: todo; }
-  .home-grid > [data-card="red"] { grid-area: red; }
-  .home-grid > .home-card { padding: var(--s-5); }
-}
-@media (min-width: 1280px) {
-  /* A third of the width: the documents go under the stay instead of squeezing it. */
-  .home-grid > [data-card="checkins"] .home-list li { flex-wrap: wrap; }
-  .home-grid > [data-card="checkins"] .home-side { flex-basis: 100%; max-width: none; text-align: left; padding-left: 84px; display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; }
-}
+@media (min-width: 1280px) { .home { max-width: 1360px; } }
 /* §159: building a purchase order from what was asked; what is already on hand. */
 .buy-asked { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 10px; }
 .buy-asked > button { align-self: flex-start; }
@@ -2532,3 +2501,46 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .onhand .peek-label { color: var(--amber); font-weight: 600; }
 .bang { display: inline-grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--amber); color: var(--on-status);
   font-size: 11px; font-weight: 800; margin-right: 2px; }
+
+/* §159 (owner, 2026-10-14): Home is To-dos (left, the priority) and a strip of operational modules (right).
+   The strip lists only what the role may see; on a phone it also carries To-dos and shows one module at a time. */
+.home-layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--s-4); align-items: start; }
+.home-main-col, .home-side-col { min-width: 0; }
+.home-main-col[hidden] { display: none; }
+.home-side-col { display: flex; flex-direction: column; gap: var(--s-3); }
+.home-rail { display: flex; gap: var(--s-2); overflow-x: auto; scroll-snap-type: x proximity; scrollbar-width: none;
+  padding: 2px 1px var(--s-1); -webkit-overflow-scrolling: touch; }
+.home-rail::-webkit-scrollbar { display: none; }
+.home-chip { flex: 0 0 auto; scroll-snap-align: start; display: inline-flex; align-items: center; gap: var(--s-2); white-space: nowrap;
+  min-height: var(--control-h); padding: 0 var(--s-3); border-radius: var(--r-pill); font-size: var(--fs-body); font-weight: 600;
+  background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); box-shadow: none;
+  transition: background .15s ease, color .15s ease, border-color .15s ease; }
+.home-chip:hover { background: var(--tint); }
+.home-chip.on { background: var(--ink); color: var(--card); border-color: var(--ink); }   /* ink fill = selected */
+.home-chip-n { font-variant-numeric: tabular-nums; font-size: var(--fs-footnote); font-weight: 650; color: var(--muted); }
+.home-chip.on .home-chip-n { color: inherit; opacity: .85; }
+.home-chip-n.alert { color: var(--warn); }
+.home-chip.on .home-chip-n.alert { color: inherit; }
+.home-slide { animation: home-slide .18s ease-out; }
+@keyframes home-slide { from { opacity: 0; transform: translateX(8px); } to { opacity: 1; transform: none; } }
+.home-sub { margin: var(--s-4) 0 var(--s-1); font-size: var(--fs-footnote); font-weight: 650; letter-spacing: .01em; }
+.home-sub:first-of-type { margin-top: 0; }
+.home-card { margin: 0; }
+@media (min-width: 981px) {
+  .home-layout:not(.solo) { grid-template-columns: minmax(0, 2fr) minmax(300px, 1fr); gap: var(--s-5); }
+  .home-side-col { position: sticky; top: var(--s-4); max-height: calc(100vh - var(--s-6)); overflow-y: auto; }
+  .home-side-col .home-list li { flex-wrap: wrap; }
+  .home-side-col .home-side { flex-basis: 100%; max-width: none; text-align: left; padding-left: 84px; display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; }
+}
+@media (min-width: 721px) and (max-width: 980px) { .home-rail { flex-wrap: wrap; overflow: visible; } }
+@media (max-width: 720px) {
+  .home-layout { display: flex; flex-direction: column; }
+  .home-side-col { display: contents; }
+  .home-rail { order: -1; margin: 0 calc(-1 * var(--s-4)); padding: 2px var(--s-4) var(--s-1);
+    -webkit-mask-image: linear-gradient(90deg, #000 92%, transparent); mask-image: linear-gradient(90deg, #000 92%, transparent); }
+  .home-chip { min-height: 44px; padding: 0 var(--s-4); font-size: var(--fs-callout); }
+}
+@media (prefers-reduced-motion: reduce) { .home-slide { animation: none; } .home-chip { transition: none; } }
+/* The strip scrolls inside itself: as a flex item (display: contents parent) it would grow to its content and push the page sideways. */
+.home-layout > *, .home-rail { min-width: 0; max-width: 100%; }
+@media (min-width: 981px) { .home-chip { padding: 0 var(--s-2); gap: var(--s-1); } }

@@ -97,6 +97,7 @@ decorative.
 | Tables | `table`, `th`, `td`, `table.units` | Head in caption UPPERCASE, row hover, tabular numbers |
 | Card | `.card` | `--r-md`, `--shadow`, padding 16/24 (16 on a phone) |
 | Dialog / sheet | `Modal` (`.modal-backdrop`, `.modal`) | Desktop: centred. Phone: sheet from below with safe-area. ✕ of 36 px |
+| Module strip | `.home-rail` / `.home-chip` (Home) | Pill chips with a count, scroll-snap, ink fill = selected, `role=tablist`; ▲ on the count when the module needs attention. Panel change slides in 8 px (off under reduced motion) |
 | Hint | `Hint` (`.hint-q`) | You see 18 px, you tap 44 px (invisible `::after`) |
 | Loading | `Loading` (`.loading`) | Determinate bar with the step's name |
 | Empty | `.note` + verb | An empty state says what's missing and what to do |

@@ -103,3 +103,8 @@ Hostaway client, sync, crypto, migrations.
   no heading. Home ≥ 1280 px: three columns (check-outs · check-ins · coming up / to-do ×2 · units in red, `data-card`).
   **Open: the owner says the time is Central (CST); the board, ops and timelines still compute "today" in New York (43
   places, the daily file's zone) — a separate, asked-for change.**
+- **Home = To-dos + a strip of modules (owner, 2026-10-14, §159):** desktop — To-dos fills the left column (~2/3); the right
+  column is a horizontal strip of chips with counts (Check-ins/outs, Coming up, Units in red — only what the role may see,
+  `mods` in `Home.tsx`) and the chosen module's panel under it. Phone — the same strip is the top tab bar and also carries
+  To-dos (default); one module on screen, To-dos stays mounted (hidden) so its count and state survive. A new widget = one more
+  entry in `mods`. Cards no longer fold (`useFolded` removed). Check-ins and check-outs are one module. Labels stay in English.
