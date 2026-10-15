@@ -28,6 +28,8 @@ export interface Todo {
   chargeOwner?: boolean; hostawayExpenseId?: string | null;
   /** §150: a cleaner's report group (problem / request / bought) and how many purchases were recorded for it. */
   cleanGroup?: 'problem' | 'request' | 'bought' | 'inspection' | null; purchases?: number;
+  /** §162: what its recorded purchases cost, and whether it is a purchase order (a request, or one with order lines). */
+  purchaseTotal?: number; order?: boolean;
   /** Owner, Oct 2026: files on it (📎). */ files?: number;
   /** The claim this work resolves, if any. */
   claimId: string | null;
@@ -154,7 +156,7 @@ export function sourceOf(t: Pick<Todo, 'cleanGroup' | 'description' | 'source'>)
   return t.description?.trim() ? 'Details' : null;
 }
 export const CATEGORY_LABEL: Record<Category, string> = { task: 'To-do', work_order: 'Work order', order: 'Purchase order', claim: 'Claim' };
-export const categoryOf = (t: Pick<Todo, 'kind'>, order = false): Category => order ? 'order' : t.kind;
+export const categoryOf = (t: Pick<Todo, 'kind' | 'order'>, order = false): Category => order || t.order ? 'order' : t.kind;
 
 /** For a status picker: the stored value stays Hostaway's, the word is ours. */
 export const STATUS_LABEL: Record<TaskStatus, string> = {
@@ -215,15 +217,17 @@ export function sortTodos(list: Todo[]): Todo[] {
 }
 
 /** What a claim's work has cost so far: actual where known, else the estimate. */
-export function workCost(list: Todo[]): { actual: number; estimated: number; open: number } {
-  let actual = 0, estimated = 0, open = 0;
+export function workCost(list: Todo[]): { actual: number; estimated: number; bought: number; open: number } {
+  let actual = 0, estimated = 0, bought = 0, open = 0;
   for (const t of list) {
     if (t.status === 'cancelled') continue;
     if (!isClosed(t.status)) open++;
     if (t.costActual != null) actual += t.costActual;
-    else if (t.costEstimate != null) estimated += t.costEstimate;
+    // §162: an estimate stands in only for a work order — a to-do has no cost of its own.
+    else if (t.costEstimate != null && t.kind === 'work_order') estimated += t.costEstimate;
+    bought += t.purchaseTotal ?? 0;
   }
-  return { actual, estimated, open };
+  return { actual, estimated, bought, open };
 }
 
 /* ── the done log (§87) ─────────────────────────────────────────────── */

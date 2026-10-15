@@ -239,7 +239,9 @@ export interface Claim {
   id: string; unit_id: string | null; unit_name: string | null;
   occurred_on: string; category: string | null; severity: string; status: string;
   source: string | null; description: string | null;
-  refund: string; repair_cost: string; resolved_on: string | null;
+  /** §162: the repair work — the sum of the work orders' and purchase orders' costs on the case, computed by the
+   *  server. What was requested and received is Finance's (`getClaimsMoney`). */
+  repair_work: string; resolved_on: string | null;
   created_by: string; created_at: string;
   /** The stay it is about, when there is one (§84). */
   reservation_id: string | null; reservation_label: string | null;
@@ -251,6 +253,17 @@ export const saveClaim = (body: Record<string, unknown>) =>
   call<{ ok: boolean; id?: string; error?: string }>('/api/claims', {
     method: 'POST', body: JSON.stringify(body)
   });
+/** §162: Claims & upselling as money — Finance only (`claims.money`). */
+export interface ClaimMoney {
+  id: string; unit_id: string | null; unit_name: string | null; occurred_on: string; resolved_on: string | null;
+  category: string | null; status: string; source: string | null; description: string | null;
+  reservation_label: string | null; case_url: string | null;
+  requested: number; received: number; repair_work: number;
+}
+export const getClaimsMoney = (from: string, to: string) =>
+  call<{ ok: true; cases: ClaimMoney[] } | { ok: false; message?: string }>(`/api/claims-money?from=${from}&to=${to}`);
+export const saveClaimMoney = (body: { id: string; requested?: number; received?: number; category?: string | null }) =>
+  call<{ ok: boolean; message?: string }>('/api/claims-money', { method: 'POST', body: JSON.stringify(body) });
 export const deleteClaim = (id: string) =>
   call<{ ok: boolean }>(`/api/claims?id=${id}`, { method: 'DELETE' });
 /** Undo a removal (§86). */

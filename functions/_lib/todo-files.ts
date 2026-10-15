@@ -41,6 +41,16 @@ export async function toDrive(sql: SqlFn, key: string, label: string, files: InF
   return out;
 }
 
+/**
+ * §162 (owner, 2026-10-15): files posted WITH a comment belong to that comment — kept in Drive and written into
+ * it as "📷 name: <Drive url>" (a photo, shown in the comment) or "📎 name: <url>", not added to the to-do's Files
+ * (those are what is attached to the to-do itself, e.g. the message it was made from).
+ */
+export async function commentFileLines(sql: SqlFn, key: string, label: string, files: InFile[]): Promise<string[]> {
+  if (!files.length) return [];
+  return (await toDrive(sql, key, label, files)).map(u => `${/^image\//.test(u.type) ? '📷' : '📎'} ${u.name.replace(/:/g, ' ')}: ${u.url}`);
+}
+
 /** Uploads them to Drive and lists them on the to-do; one activity line names them. Returns the names saved. */
 export async function attachTodoFiles(sql: SqlFn, key: string, todoId: string, files: InFile[], by: string, source: 'app' | 'slack'): Promise<string[]> {
   if (!files.length) return [];

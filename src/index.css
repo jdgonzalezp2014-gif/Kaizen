@@ -1297,6 +1297,12 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 .timeline-add textarea { flex: 1; }
 .claim-case { margin: 8px 0 4px; padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card, transparent); }
 .claim-case-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px; }
+/* §162: what was requested, what came in, what the work cost — three figures, one quiet row. */
+.claim-money { display: flex; flex-wrap: wrap; gap: 4px 24px; margin: 8px 0 12px; }
+.claim-money > div { display: flex; flex-direction: column; }
+.claim-money dt { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 4px; }
+.claim-money dd { margin: 0; font-weight: 600; font-variant-numeric: tabular-nums; }
+.claim-money small { font-weight: 400; color: var(--muted); }
 @media (max-width: 640px) { .timeline-list li { grid-template-columns: 1fr; gap: 0; } }
 /* Claims in the work list: cases above the work, worst first. */
 .case-flag { color: var(--crit); }
@@ -1780,6 +1786,9 @@ button.sop-num { cursor: pointer; }
 .tl-note-head { font-size: var(--fs-caption); color: var(--muted); }
 .tl-note-head b { color: var(--ink); font-weight: 600; }
 .tl-note-body { white-space: pre-wrap; line-height: 1.45; }
+/* §162: a photo posted with a comment shows in it; other files as named links. */
+.note-files { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; white-space: normal; }
+.note-photo img { display: block; max-width: 220px; max-height: 160px; border-radius: 6px; border: 1px solid var(--line); object-fit: cover; background: var(--bg); }
 .tl-more { font-size: var(--fs-footnote); }
 .tl-toggle { background: none; border: 0; padding: 2px 0; color: var(--ink); font: inherit; font-size: var(--fs-footnote); font-weight: 650; cursor: pointer; }
 .tl-toggle span { color: var(--muted); }
@@ -2482,15 +2491,26 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 @media (min-width: 721px) and (prefers-reduced-motion: reduce) { .side-nav, .side-word { transition: none; } }
 .phone-theme { display: inline-flex; margin-left: auto; }
 @media (min-width: 721px) { .side-nav .side-list { align-items: stretch; margin-left: 0; } .side-item { width: 100%; } }
-/* §159: Operations' top line — where you are, and the gear, dark and alone. */
-.ops-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-3); }
+/* §159: Operations' top line — where you are, and the gear. §163: the gear wears the controls' own style (card, hairline,
+   ink icon) instead of a dark disc; on a phone the views' strip shares the line and the gear closes it on the right. */
+.ops-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); margin-bottom: var(--s-3); }
 .ops-top .screen-crumb { margin: 0; }
-.ops-gear { position: relative; display: inline-grid; place-items: center; width: 38px; height: 38px; padding: 0; margin-left: auto;
-  border-radius: var(--r-pill); background: var(--ink); color: var(--bg); border: 0; }
-.ops-gear:hover { background: color-mix(in srgb, var(--ink) 85%, var(--bg)); }
-.ops-gear .icon { width: 20px; height: 20px; }
-.ops-gear .live-dot { position: absolute; top: 3px; right: 3px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--bg); }
-@media (max-width: 720px) { .ops-gear { width: 44px; height: 44px; } }
+.ops-top .subtabs { margin: 0; flex: 1 1 auto; min-width: 0; }
+.ops-gear { position: relative; display: inline-grid; place-items: center; width: 40px; height: 40px; padding: 0; margin-left: auto;
+  flex: 0 0 auto; border-radius: var(--r-pill); background: var(--card); color: var(--ink); border: 1px solid var(--line-strong);
+  transition: background .12s ease, transform .12s ease; }
+.ops-gear:hover { background: var(--tint); }
+.ops-gear:hover .icon { transform: rotate(45deg); }
+.ops-gear .icon { width: 19px; height: 19px; transition: transform .25s ease; }
+.ops-gear:active { transform: scale(.95); }
+.ops-gear .live-dot { position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--card); }
+@media (max-width: 720px) {
+  .ops-top { align-items: stretch; margin-bottom: 16px; }
+  .ops-gear { width: 56px; height: auto; border-radius: var(--r); background: var(--tint); border-color: var(--line); }
+  .ops-gear .icon { width: 20px; height: 20px; }
+  .ops-gear .live-dot { top: 6px; right: 6px; border-color: var(--tint); }
+}
+@media (prefers-reduced-motion: reduce) { .ops-gear, .ops-gear .icon { transition: none; } .ops-gear:hover .icon { transform: none; } }
 /* The day in the menu: plain text at the foot of the rail, right-aligned, fading in with the other labels
    when it opens; a chip in the phone's header. */
 .side-today { padding: 0 12px; font-weight: 500; font-size: var(--fs-footnote); color: var(--muted); white-space: nowrap; }
@@ -2646,3 +2666,17 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .pop-panel > button.danger:hover { background: color-mix(in srgb, var(--crit) 10%, transparent); }
 .pop-panel > button.danger { padding: 8px 10px; margin: 0; }
 .pop-panel > button.danger { justify-content: flex-start; width: 100%; }
+
+/* §162: Revenue → Claims & upselling — a narrow money table that scrolls sideways on a phone. */
+.table-wrap { overflow-x: auto; }
+.money-table th.n, .money-table td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.money-table td { vertical-align: top; }
+.money-table select { max-width: 150px; }
+.money-in { width: 96px; text-align: right; }
+.seg { display: inline-flex; gap: 4px; flex-wrap: wrap; }
+/* §163: the closed section — its toggle, and (Operations) the switch to the full done log, on one line. */
+.closed-head { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; margin-top: var(--s-2); }
+.closed-modes { display: inline-flex; gap: 6px; margin-left: auto; }
+.closed-modes .chip { font-size: var(--fs-footnote); }
+.done-bar { display: flex; align-items: center; gap: var(--s-2); flex-wrap: wrap; margin: var(--s-2) 0; }
+.done-bar input[type="date"] { width: auto; }

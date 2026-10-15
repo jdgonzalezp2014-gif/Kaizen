@@ -129,8 +129,10 @@ const MAX_AHEAD = 30;
 interface Range { from: string; to: string }
 const defaultRange = (today: string): Range => ({ from: today, to: addDays(today, DEFAULT_DAYS) });
 
-export function Operations({ permissions, initialView, nav, onView }: {
+export function Operations({ permissions, initialView, nav, onView, focus }: {
   permissions: string[]; initialView?: string;
+  /** §162: one piece of work to open (a link from Slack). */
+  focus?: { todo?: string; claim?: string };
   /** Told which view is showing, so the top bar's SOPs button can follow it (§92). */
   onView?: (view: string) => void;
   /** §159: a view chosen in the side bar — the counter makes the same view twice still a move. */
@@ -193,20 +195,21 @@ export function Operations({ permissions, initialView, nav, onView }: {
   return (
     <section>
       {/* §159: on a big screen the side bar lists the views; this line says which one is open — and the gear,
-          dark and alone (owner: "everyone knows the gear"), the only control most views need on top. */}
+          the only control most views need on top. §163: on a phone the views' strip shares the line, the gear at
+          its right in the strip's own style (owner: one family of controls, not a dark disc floating alone). */}
       <div className="ops-top">
         <h2 className="screen-crumb">Operations <span>› {views.find(([k]) => k === view || (k === 'crew' && view === 'calendar'))?.[1] ?? ''}</span></h2>
+        <nav className="subtabs ops-subtabs">
+          {views.map(([k, label]) => (
+            <button key={k} className={view === k || (k === 'crew' && view === 'calendar') ? 'tab active' : 'tab'} onClick={() => setView(k)}>{label}</button>
+          ))}
+        </nav>
         {view !== 'setup' && can(data?.permissions, 'operations.setup') && (
           <button className="ops-gear" onClick={() => openSetup(SETUP_OF[view])} aria-label="Settings for this section"
                   title={`Settings for this section${data?.mode === 'live' ? ' — Live: Kaizen decides the cleans and writes the Host Note in Hostaway' : ''}`}>
             <Icon n="gear" />{data?.mode === 'live' && <span className="live-dot" aria-hidden="true" />}</button>
         )}
       </div>
-      <nav className="subtabs ops-subtabs">
-        {views.map(([k, label]) => (
-          <button key={k} className={view === k || (k === 'crew' && view === 'calendar') ? 'tab active' : 'tab'} onClick={() => setView(k)}>{label}</button>
-        ))}
-      </nav>
 
       {(view === 'board' || (data?.sheetUrl && data.mode === 'shadow')) && (
         <div className="row-controls">
@@ -227,7 +230,7 @@ export function Operations({ permissions, initialView, nav, onView }: {
 
       <div className={busy && data ? 'is-stale' : undefined}>
         {data && view === 'board' && <Board data={data} range={range} patch={patch} reload={() => load()} />}
-        {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} unit={workUnit} />}
+        {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} unit={workUnit} focus={focus} />}
         {(view === 'crew' || view === 'calendar') && (
           <nav className="setup-secs" aria-label="Cleaners sections">
             <button className={view === 'crew' ? 'chip active' : 'chip'} onClick={() => setView('crew')}><Icon n="users" /> Pages & approvals</button>
@@ -1031,7 +1034,7 @@ function StayWork({ r, data }: { r: BoardRow; data: OperationsResponse }) {
       ? await todoAction({ action: 'create', title: text.trim(), unitIds: [r.unitId], reservationId: r.resId, reservationLabel: label })
           .catch(e => ({ ok: false as const, message: String(e) }))
       : await saveClaim({ unitId: r.unitId, occurredOn: data.today, severity: 'Medium', status: 'Open', description: text.trim(),
-                          refund: 0, repairCost: 0, reservationId: r.resId, reservationLabel: label })
+                          refund: 0, reservationId: r.resId, reservationLabel: label })
           .then(x => x.ok ? { ok: true as const } : { ok: false as const, message: x.error })
           .catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);

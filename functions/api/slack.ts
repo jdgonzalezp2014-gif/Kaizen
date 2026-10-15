@@ -14,8 +14,8 @@
 import { db, type Env } from '../_lib/db.ts';
 import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { mayAccess } from '../_lib/roles.ts';
-import { attachTodoFiles, slackFiles, slackMessageFiles, toDrive } from '../_lib/todo-files.ts';
-import { commentToThread, rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
+import { attachTodoFiles, commentFileLines, slackFiles, slackMessageFiles } from '../_lib/todo-files.ts';
+import { commentToThread, notifyTask, rememberThread, slackApi, slackSetup, taskLite, claimLite, verifySlack, type SlackSetup } from '../_lib/slack.ts';
 import { cleansFor, digestFacts } from '../_lib/slack-digest.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import * as todos from './todos.ts';
@@ -167,14 +167,16 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     return;
   }
   // §110: "@Kaizen new <what>" is made at once — the reply in its thread has ✎ Add details. No words: the form.
-  if ((verb === 'new' || verb === 'repair') && arg) {
+  // §162: "@Kaizen order <what is needed>" — a purchase order, made the same way.
+  if ((verb === 'new' || verb === 'repair' || verb === 'order') && arg) {
     const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
     if (!member.ok) { await sayPrivate(member.why); return; }
     const r = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user))
-      .quickCreate(verb === 'repair' ? 'work_order' : 'task', arg, from, String(ev.ts), ev.files);
+      .quickCreate(verb === 'repair' ? 'work_order' : verb === 'order' ? 'order' : 'task', arg, from, String(ev.ts), ev.files);
     if (!r.ok) await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`);
     return;
   }
+  if (verb === 'order') { await say('Write what is needed: *@Kaizen order* _2 boxes of trash bags for Napa_.'); return; }
   if (verb === 'new' || verb === 'repair' || verb === 'claim' || verb === 'cost') {
     // §117: a cost is never made at once — the button opens the form, every field to confirm.
     const only = verb === 'new' ? 'task' : verb === 'repair' ? 'work_order' : verb === 'cost' ? 'cost' : 'claim';
@@ -207,9 +209,8 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
       { type: 'context', elements: [{ type: 'mrkdwn', text: 'Type *@Kaizen help* for everything Kaizen does here.' }] }]);
     return;
   }
-  if (t.subject === 'task' && ev.files?.length) k.attachFromSlack(t.subject_id, { channel: String(ev.channel), ts: String(ev.ts), thread: String(ev.thread_ts) }, ev.files);
-  if (!arg.trim() && ev.files?.length) return;
-  const r = await k.comment(t.subject, t.subject_id, arg);
+  // §162: a reply's photos stay in its comment — not the to-do's Files.
+  const r = await k.commentWithFiles(t.subject, t.subject_id, arg, ev.files, { channel: String(ev.channel), thread: String(ev.thread_ts) });
   if (!r.ok) { await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`); return; }
   const re = await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
   if (!re.ok) await say('✓ Saved as a comment in Kaizen.');
@@ -303,10 +304,8 @@ async function threadReply(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<strin
   const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
   if (!member.ok) return;
   const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
-  // Owner, Oct 2026: files posted in a to-do's thread go onto the to-do.
-  if (t.subject === 'task' && ev.files?.length) k.attachFromSlack(t.subject_id, { channel: String(ev.channel), ts: String(ev.ts), thread: String(ev.thread_ts) }, ev.files);
-  if (!body) return;
-  const r = await k.comment(t.subject, t.subject_id, body);
+  // §162 (owner, 2026-10-15): files posted in the thread stay in that comment (a photo shows there), not in Files.
+  const r = await k.commentWithFiles(t.subject, t.subject_id, body, ev.files, { channel: String(ev.channel), thread: String(ev.thread_ts) });
   if (r.ok) await slackApi(s.token!, 'reactions.add', { channel: ev.channel, timestamp: ev.ts, name: 'white_check_mark' });
 }
 
@@ -386,7 +385,7 @@ class Kaizen {
   }
   private async claimRow(id: string) {
     const [c] = await this.sql`SELECT id::text, unit_id, occurred_on::text AS occurred_on, category, severity, status, source, description,
-                                      refund, repair_cost, case_url
+                                      case_url
                                  FROM claims WHERE account_id = 1 AND id::text = ${id} AND deleted_at IS NULL` as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     return c;
   }
@@ -395,7 +394,7 @@ class Kaizen {
     const c = await this.claimRow(id);
     if (!c) return { ok: false, error: 'That claim is gone.' };
     return this.claimSave({ id, unitId: c.unit_id, occurredOn: c.occurred_on, category: c.category, severity: c.severity, status: c.status,
-      source: c.source, description: c.description, refund: Number(c.refund) || 0, repairCost: Number(c.repair_cost) || 0,
+      source: c.source, description: c.description,
       caseUrl: c.case_url ?? '', ...change });
   }
 
@@ -430,9 +429,27 @@ class Kaizen {
         text: `⚠ ${missed} file${missed === 1 ? '' : 's'} not added to Kaizen — over 15 MB and not a photo. Add ${missed === 1 ? 'it' : 'them'} in Kaizen, or share a smaller copy.` });
       if (!got.length) return;
       if (subject === 'task') { await attachTodoFiles(this.sql, this.ctx.env.ENCRYPTION_KEY, id, got, this.email, 'slack'); return; }
-      const up = await toDrive(this.sql, this.ctx.env.ENCRYPTION_KEY, `claim #${id}`, got);
-      await this.claimSave({ action: 'note', id, body: `📎 ${up.map(u => `${u.name}: ${u.url}`).join('\n')}` });
+      const lines = await commentFileLines(this.sql, this.ctx.env.ENCRYPTION_KEY, `claim #${id}`, got);
+      await this.claimSave({ action: 'note', id, body: lines.join('\n') });
     })().catch(() => {}));
+  }
+
+  /**
+   * A comment and the files posted with it (§162): kept in Drive and written into the comment — a photo shows in it.
+   * Before `footer` ("— From Slack: …"), which must stay last. A file Kaizen cannot keep is said in the thread.
+   */
+  async commentWithFiles(subject: 'task' | 'claim', id: string, words: string, files: unknown[] | undefined,
+                         from: { channel: string; thread: string }, footer = ''): Promise<Record<string, unknown>> {
+    const raw = files ?? [];
+    const got = raw.length ? await slackFiles(this.s.token!, raw) : [];
+    const missed = raw.length - got.length;
+    if (missed) await slackApi(this.s.token!, 'chat.postMessage', { channel: from.channel, thread_ts: from.thread,
+      text: `⚠ ${missed} file${missed === 1 ? '' : 's'} not added to Kaizen — over 15 MB and not a photo, or the app needs the files:read permission.` });
+    const lines = await commentFileLines(this.sql, this.ctx.env.ENCRYPTION_KEY, `${subject === 'task' ? 'to-do' : 'claim'} #${id} comment`, got)
+      .catch(() => [] as string[]);
+    const text = [words.trim(), ...lines].filter(Boolean).join('\n');
+    if (!text) return { ok: false, message: 'Nothing to save.' };
+    return this.comment(subject, id, `${text}${footer}`);
   }
 
   async comment(subject: 'task' | 'claim', id: string, body: string): Promise<Record<string, unknown>> {
@@ -447,10 +464,13 @@ class Kaizen {
    * reply in the request's thread says it is tracked, with ✎ Add details,
    * and that thread becomes the task's.
    */
-  async quickCreate(kind: 'task' | 'work_order', words: string, thread: { channel: string; ts: string }, messageTs: string, files?: unknown[]): Promise<Record<string, unknown>> {
+  async quickCreate(kind: 'task' | 'work_order' | 'order', words: string, thread: { channel: string; ts: string }, messageTs: string, files?: unknown[]): Promise<Record<string, unknown>> {
     if (!this.may('/api/todos', 'POST')) return { ok: false, message: 'your role does not include the to-do list' };
     const units = await this.units();
-    const { title, description } = quickTitle(words);
+    const quick = quickTitle(words);
+    // §162: a purchase order is a to-do made as an order (listed with the orders; ✨ builds its cart in Kaizen).
+    const title = kind === 'order' ? `Purchase order: ${quick.title}`.slice(0, 120) : quick.title;
+    const description = kind === 'order' ? [quick.title, quick.description].filter(Boolean).join('\n') || null : quick.description;
     // Owner, Oct 2026: made inside a task's thread → its sub-task; inside a claim's → work on that claim. Either way it
     // lives in that thread (no new one): its news and comments go there (threadFor).
     const [home] = await this.sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${thread.channel} AND ts = ${thread.ts}` as
@@ -460,7 +480,8 @@ class Kaizen {
     const claim = home?.subject === 'claim' ? await this.claimRow(home.subject_id) : undefined;
     const unit = guessUnit(words, units) ?? parent?.unit_ids?.[0] ?? claim?.unit_id ?? null;
     const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: thread.channel, message_ts: messageTs });
-    const r = await this.todo({ action: 'create', kind, title, unitIds: unit ? [unit] : [], priority: 'none', via: home ? 'slack-thread' : dmChannel(thread.channel) ? 'slack-dm' : 'slack',
+    const r = await this.todo({ action: 'create', kind: kind === 'order' ? 'task' : kind, ...(kind === 'order' && !parent ? { asOrder: true } : {}),
+      title, unitIds: unit ? [unit] : [], priority: 'none', via: home ? 'slack-thread' : dmChannel(thread.channel) ? 'slack-dm' : 'slack',
       ...(parent ? { parentId: parent.id } : {}), ...(claim ? { claimId: String(claim.id) } : {}),
       description: [description, link.permalink ? `From Slack: ${link.permalink.split('?')[0]}` : ''].filter(Boolean).join('\n\n') || null });
     if (!r.ok || !r.id) return r;
@@ -468,6 +489,11 @@ class Kaizen {
     const posted = await slackApi<{ ts?: string }>(this.s.token!, 'chat.postMessage', { channel: thread.channel, thread_ts: thread.ts, ...m, unfurl_links: false });
     // From a DM the task's thread is its notice in the tasks channel (via 'slack-dm'), where the team talks — not the DM.
     if (posted.ok && !home && !dmChannel(thread.channel)) await rememberThread(this.sql, { ok: true, ...thread }, 'task', String(r.id));
+    // §162: something new is announced once where the team works — made in another channel, it is also posted in the
+    // tasks channel (and that becomes its thread). Made right there, the mention already is the announcement.
+    if (!home && !dmChannel(thread.channel) && this.s.config.channels?.tasks?.id && thread.channel !== this.s.config.channels.tasks.id) {
+      this.ctx.waitUntil(notifyTask(this.sql, this.ctx.env.ENCRYPTION_KEY, String(r.id), 'created', this.email).catch(() => {}));
+    }
     this.attachFromSlack(String(r.id), { channel: thread.channel, ts: messageTs, thread: thread.ts }, files);
     return r;
   }
@@ -535,7 +561,7 @@ class Kaizen {
     ]);
     const line = (u: { body: string; created_by: string | null; created_at: string }) =>
       ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short });
-    return { parentId: t.parent_id, claim: t.claim, order: order.length ? order.map(o => `${o.name} × ${o.qty}`) : null, activity: acts.reverse().map(line), id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, supervisor: t.supervisor,
+    return { appUrl: this.s.config.appUrl, parentId: t.parent_id, claim: t.claim, order: order.length ? order.map(o => `${o.name} × ${o.qty}`) : null, activity: acts.reverse().map(line), id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, supervisor: t.supervisor,
       dueOn: t.due_on, scheduledOn: t.scheduled_on, reservationLabel: t.reservation_label, description: t.description, vendor: t.vendor,
       costActual: t.cost_actual == null ? null : Number(t.cost_actual), costEstimate: t.cost_estimate == null ? null : Number(t.cost_estimate),
       resolutionNote: t.resolution_note, unit: t.unit, children: kids, orderForm: await form,
@@ -613,13 +639,17 @@ class Kaizen {
     if (!m) return { ok: false, message: 'Kaizen could not read that message (is the bot in the channel?).' };
     const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: src.channel, message_ts: src.ts });
     const words = slackText(m.text).trim();
-    if (words || !m.files.length) {
-      // The author's name only when someone else saves it — the comment already says who saved it (2026-10-14: noise).
-      const by = m.user && m.user === this.slackUser ? '' : `${m.who}: `;
-      const r = await this.comment(subject, id, `${by}${words || '(no text)'}${link.permalink ? `\n— From Slack: ${link.permalink.split('?')[0]}` : ''}`);
+    // The author's name only when someone else saves it — the comment already says who saved it (2026-10-14: noise).
+    const by = m.user && m.user === this.slackUser ? '' : `${m.who}: `;
+    const footer = link.permalink ? `\n— From Slack: ${link.permalink.split('?')[0]}` : '';
+    if (m.files.length) {
+      // §162: the files go into the comment with the words. After the answer — Slack waits 3 s, Drive does not.
+      this.ctx.waitUntil(this.commentWithFiles(subject, id, `${by}${words}`.trim(), m.files, { channel: src.channel, thread: src.thread ?? src.ts }, footer)
+        .then(() => {}).catch(() => {}));
+    } else {
+      const r = await this.comment(subject, id, `${by}${words || '(no text)'}${footer}`);
       if (!r.ok) return { ok: false, message: String(r.message ?? r.error ?? 'Not saved.') };
     }
-    if (m.files.length) this.attachFiles(subject, id, m.files, { channel: src.channel, thread: src.thread ?? src.ts });
     // Its thread is this subject's from now on — as a conversation: a reply is saved when someone reacts 📎 to it
     // (or writes @Kaizen), not every reply (owner, 2026-10-14).
     await this.sql`INSERT INTO slack_threads (account_id, channel, ts, subject, subject_id, via)
@@ -747,7 +777,7 @@ class Kaizen {
                 ORDER BY status IN ('completed', 'cancelled'), created_at` as Promise<{ id: string; title: string; status: string; kind: string }[]>
     ]);
     if (!c || !row) return null;
-    return { ...c, work, source: row.source, refund: Number(row.refund) || 0, repairCost: Number(row.repair_cost) || 0,
+    return { ...c, work, source: row.source, appUrl: this.s.config.appUrl,
       updates: ups.map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
   }
   private async openClaimCard(trigger: string, id: string, push = false) {
@@ -1047,7 +1077,7 @@ class Kaizen {
       if (verb === 'edit') {
         const c = await this.claimRow(cid);
         if (c) await this.pushForm(p.trigger_id, claimModal({ id: c.id, unitId: c.unit_id, occurredOn: c.occurred_on, category: c.category, severity: c.severity,
-          status: c.status, source: c.source, description: c.description, refund: Number(c.refund) || 0, caseUrl: c.case_url }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES) as Record<string, unknown>, { id: c.id, root: 'claims' });
+          status: c.status, source: c.source, description: c.description, caseUrl: c.case_url }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES) as Record<string, unknown>, { id: c.id, root: 'claims' });
         return ack();
       }
       const before = await claimLite(this.sql, cid);
@@ -1136,8 +1166,8 @@ class Kaizen {
     if (id.startsWith('mention_new_')) {
       const v = JSON.parse(value || '{}') as { kind?: string; title?: string; from?: { channel: string; ts: string } };
       // A to-do or repair with words: made at once, like "@Kaizen new" (§110); the offer goes.
-      if ((v.kind === 'task' || v.kind === 'work_order') && v.title && v.from) {
-        const r = await this.quickCreate(v.kind === 'work_order' ? 'work_order' : 'task', v.title, v.from, v.from.ts);
+      if ((v.kind === 'task' || v.kind === 'work_order' || v.kind === 'order') && v.title && v.from) {
+        const r = await this.quickCreate(v.kind === 'work_order' ? 'work_order' : v.kind === 'order' ? 'order' : 'task', v.title, v.from, v.from.ts);
         await this.reply(url, r.ok ? { delete_original: true } : { replace_original: true, response_type: 'ephemeral', text: `Not saved: ${String(r.message ?? 'Kaizen said no.')}` });
         return ack();
       }
@@ -1205,7 +1235,7 @@ class Kaizen {
         const c = await this.claimRow(claimId);
         if (!c) return ephemeral('That claim is gone.');
         await this.open(p.trigger_id, claimModal({ id: c.id, unitId: c.unit_id, occurredOn: c.occurred_on, category: c.category, severity: c.severity,
-          status: c.status, source: c.source, description: c.description, refund: Number(c.refund) || 0, caseUrl: c.case_url }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES));
+          status: c.status, source: c.source, description: c.description, caseUrl: c.case_url }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES));
         return ack();
       }
       let r: Record<string, unknown>;
@@ -1375,7 +1405,7 @@ class Kaizen {
     if (view.callback_id === 'claim_save') {
       if (!this.may('/api/claims', 'POST')) return json({ response_action: 'errors', errors: { description: 'Your role does not include claims.' } });
       const body = readClaimForm(state);
-      const r = meta.id ? await this.claimUpdate(meta.id, body) : await this.claimSave({ ...body, repairCost: 0 });
+      const r = meta.id ? await this.claimUpdate(meta.id, body) : await this.claimSave(body);
       if (!r.ok) return json({ response_action: 'errors', errors: { description: String(r.error ?? 'Not saved.') } });
       // From the Claims pop-up: back to the list, refreshed.
       if ((meta as { root?: string }).root === 'claims' && view.root_view_id) { await this.refreshClaims(view.root_view_id, '✓ Saved'); return ack(); }

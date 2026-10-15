@@ -65,7 +65,7 @@ interface Row {
   assignee_user_id?: number | null; supervisor_user_id?: number | null; supervisor?: string | null;
   start_time?: string | null; due_time?: string | null; resolution_note?: string | null;
   charge_owner?: boolean; hostaway_expense_id?: string | null;
-  clean_group?: string | null; purchases?: number; files?: number;
+  clean_group?: string | null; purchases?: number; files?: number; purchase_total?: string | null; is_order?: boolean;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
 const num = (v: string | null) => v == null ? null : Number(v);
@@ -81,7 +81,8 @@ const out = (r: Row) => ({
   startTime: r.start_time ?? null, dueTime: r.due_time ?? null, resolutionNote: r.resolution_note ?? null,
   chargeOwner: !!r.charge_owner, hostawayExpenseId: r.hostaway_expense_id ?? null,
   // §150: a cleaner's supplies request, and whether anything was bought for it — closing it unbought is asked.
-  cleanGroup: r.clean_group ?? null, purchases: Number(r.purchases ?? 0), files: Number(r.files ?? 0)
+  cleanGroup: r.clean_group ?? null, purchases: Number(r.purchases ?? 0), files: Number(r.files ?? 0),
+  purchaseTotal: Number(r.purchase_total ?? 0), order: !!r.is_order
 });
 
 async function list(sql: SqlFn, claim?: string) {
@@ -93,6 +94,10 @@ async function list(sql: SqlFn, claim?: string) {
            t.assignee_user_id, t.supervisor_user_id, t.supervisor, to_char(t.start_time, 'HH24:MI') AS start_time,
            to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note, t.charge_owner, t.hostaway_expense_id, t.clean_group,
            (SELECT count(*)::int FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id) AS purchases,
+           (SELECT sum(p.total) FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id) AS purchase_total,
+           -- §162: a purchase order wherever it is listed (a claim's work too) — the same rule as openOrders.
+           (EXISTS (SELECT 1 FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id)
+             OR (t.parent_id IS NULL AND t.clean_group IN ('request', 'inspection'))) AS is_order,
            (SELECT count(*)::int FROM todo_files f WHERE f.account_id = 1 AND f.todo_id = t.id) AS files,
            (SELECT count(*)::int FROM work_updates w
              WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
@@ -398,10 +403,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     const category = typeof b.category === 'string' && b.category.trim() ? b.category.trim().slice(0, 60) : null;
     const detail = (await sql`SELECT description FROM todos WHERE id = ${id}`)[0]?.description as string | null;
     const c = (await sql`
-      INSERT INTO claims (account_id, unit_id, occurred_on, category, severity, status, description, refund, repair_cost, created_by,
+      INSERT INTO claims (account_id, unit_id, occurred_on, category, severity, status, description, refund, created_by,
                           reservation_id, reservation_label)
       VALUES (1, ${(before.unit_ids ?? [])[0] ?? null}, ${new Date().toISOString().slice(0, 10)}, ${category}, ${severity}, 'Open',
-              ${[before.title, detail].filter(Boolean).join(' — ').slice(0, 2000)}, 0, 0, ${who.email},
+              ${[before.title, detail].filter(Boolean).join(' — ').slice(0, 2000)}, 0, ${who.email},
               ${before.reservation_id ?? null}, ${before.reservation_label ?? null})
       RETURNING id`)[0] as { id: string | number };
     const claimId = String(c.id);
@@ -528,10 +533,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       mirror(par.id);
     }
   }
-  // via 'slack-message': done from a button on the channel's own message, which Slack updates in place.
-  if (status !== undefined && status !== before.status && b.via !== 'slack-message') {
+  // §162: every status change is a line in the item's thread, saying who — from a Slack button too (it is a reply now,
+  // not a second message in the channel, which is what 'slack-message' used to avoid).
+  if (status !== undefined && status !== before.status) {
     if (CLOSED.includes(status)) tell(id, status === 'completed' ? 'completed' : 'cancelled');
     else if (CLOSED.includes(before.status)) tell(id, 'reopened');
+    else tell(id, 'status');
   }
   if (f.assigneeUserId !== undefined && (assigneeName ?? null) !== (before.assignee ?? null) && assigneeName) { tell(id, 'assigned'); dm(id); }
 

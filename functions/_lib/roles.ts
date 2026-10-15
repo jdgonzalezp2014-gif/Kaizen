@@ -62,6 +62,8 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/todos', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] },
     // A to-do's files (owner, Oct 2026).
     { path: '/api/todo-files', methods: ['GET', 'POST'] },
+    // A photo inside a comment (§162).
+    { path: '/api/comment-image', methods: ['GET'] },
     // A repair's vendor is picked from the directory (§133).
     { path: '/api/vendors', methods: ['GET'] }] },
   { key: 'guests.documents', label: 'Guest documents — see and upload IDs and rental agreements', routes: [
@@ -77,8 +79,12 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/repository-structure', methods: ['POST'] }, { path: '/api/repository-import', methods: ['POST'] }] },
   { key: 'costs', label: 'Costs — record expenses, see cleaning costs', tab: 'costs', routes: [
     { path: '/api/expenses', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/cleaning-log', methods: ['GET'] }] },
-  { key: 'claims', label: 'Claims — record and follow guest claims', tab: 'claims', routes: [
-    { path: '/api/claims', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/stays', methods: ['GET'] }] },
+  // §162: the cases are followed in Operations → To-do (Claims & upselling tab); their money is Finance's, below.
+  { key: 'claims', label: 'Claims & upselling — record and follow guest claims and upsells (no figures)', routes: [
+    { path: '/api/claims', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/stays', methods: ['GET'] },
+    { path: '/api/comment-image', methods: ['GET'] }] },
+  { key: 'claims.money', label: 'Claims & upselling — money: requested, received, upsell revenue (Revenue tab)', routes: [
+    { path: '/api/claims-money', methods: ['GET', 'POST'] }] },
   // SOPs (§92): the library tab, and each screen's "SOPs" button. Drafts are for editors only.
   { key: 'sops', label: 'SOPs — read the procedures and articles', tab: 'sops', routes: [
     { path: '/api/sops', methods: ['GET'] }] },

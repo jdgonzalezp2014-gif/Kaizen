@@ -1,6 +1,6 @@
 # Module: work (tasks, repairs, claims)
 
-One backbone for the team's work: to-dos, 🔧 repairs (work orders) and ⚑ claims. Shown on
+One backbone for the team's work: to-dos, 🔧 repairs (work orders), 🛒 purchase orders and ⚑ claims & upselling (§162). Shown on
 Home (summary) and Operations → To-do (lanes, filters, done log); claims also on **Claims**.
 Cleans are not tasks (operations module).
 
@@ -91,7 +91,7 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 
 ## History
 
-§46, §76–§78, §82–§88, §93–§95, §103–§105, §120, §132, §137.
+§46, §76–§78, §82–§88, §93–§95, §103–§105, §120, §132, §137, §162.
 
 - **+ 🛒 purchase on a to-do (§150, operations module):** an open top-level to-do can record what was bought for it
   (inventory stock per place + one Restock expense) and close, or save its order as sub-tasks — `TaskPurchase` from
@@ -155,8 +155,18 @@ UI only; tokens and shared components from `docs/design-system.md`.
   is cancelled "Merged into #N" (Hostaway closes it). Refused into a closed one, into its own child, or children under a
   sub-task. **Not exercised against real data** (the Hostaway mirror is on) — try it first on two test to-dos.
 - **Round 4:** not-started reads **New** (the owner's word: what the system made or someone just wrote is new).
-- **Side panel instead of the accordion (owner, 2026-10-15, §160):** opening a to-do/repair/claim row shows its card in `SlideOver` (`components/SlideOver.tsx`, portal; 50 % wide on desktop, full screen on a phone) — the list never expands. Header: title, ✓ / ↺ Reopen, ⋯ (`Popover`: Register as a claim, Merge into…, Remove…), ✕. The comment box of `Timeline` is portaled into the panel's dock (`useDock`) so it stays at the bottom. A sub-task opens in place inside its parent's panel (`inPanel`, `NoDock`). Operations → To-do header is one row: Open work / Done log on the left, one **Filters** popover (urgency, deadline, listing, owner; count badge) on the right. Home's card has `All ↗` back beside `+ Add`. Two draft SOPs from `scripts/seed-sops.mjs` inserted 2026-10-15: #36 Home, #37 side panel — **drafts, for the owner to publish**.
+- **Side panel instead of the accordion (owner, 2026-10-15, §160):** opening a to-do/repair/claim row shows its card in `SlideOver` (`components/SlideOver.tsx`, portal; 50 % wide on desktop, full screen on a phone) — the list never expands. Header: title, ✓ / ↺ Reopen, ⋯ (`Popover`: Register as a claim, Merge into…, Remove…), ✕. The comment box of `Timeline` is portaled into the panel's dock (`useDock`) so it stays at the bottom. A sub-task opens in place inside its parent's panel (`inPanel`, `NoDock`). Operations → To-do header is one row: one **Filters** popover (urgency, deadline, listing, owner; count badge) on the right. *(§163: the Open work / Done log switch is gone — see below.)* Home's card has `All ↗` back beside `+ Add`. Two draft SOPs from `scripts/seed-sops.mjs` inserted 2026-10-15: #36 Home, #37 side panel — **drafts, for the owner to publish**.
 - **Summary / Edit (owner, 2026-10-15, §161):** in the panel an item is one summary line (`status • urgency • listing • dates • owner`) with `✎ Edit` to open the fields; each sub-task is a one-line row that opens only with its own `✎ Edit` (`inPanel`, `startEditing`). The panel header has `✓` (done) and `⋯` (done, cancel, claim, merge, remove — cancel is not one click); the panel closes with `Close →` (top right), Esc or the backdrop. The description is edited by clicking it. Files: size limit in an `ⓘ` tooltip, uploader/source in the file name's tooltip.
+- **Claims & upselling (§162, owner 2026-10-15):** a case has `requested` and `refund` ("Received (refunded)") typed, and
+  **Repair work** computed (work orders' cost/estimate + purchase orders' purchases; `/api/claims` `repair_work`, `workCost().bought`).
+  Kinds grouped Claim / Upselling (`CategoryOptions`). Alterations are not upselling unless collected through the Resolution
+  Center or unpriced on the reservation (SOP #3 v3). "+ Purchase order" inside a case. Purchase orders take sub-tasks.
+  To-dos: no Kind switch, no Cost; a work order's Vendor / Estimate / Cost / Charge to owner are their own group.
+  Slack thread replies keep their files in the comment (`📷 name: url` → shown via `/api/comment-image`), not in Files.
+  Round 2: money moved to Finance — Operations sees a case's Repair work only; requested/received in Revenue → Claims &
+  upselling (`claims.money`, `/api/claims-money`); the Claims nav tab is gone (cases live in Operations → To-do).
+  Open: drop `claims.repair_cost` once this is deployed (migration 087).
+- **Done log folded into Closed (owner, 2026-10-15, §163):** no Open work / Done log switch. `WorkView` passes `doneLog` to `TodoList`; its "Closed in the last 14 days" toggle, when open, shows chips *Last 14 days* (the rows, with ↺ Reopen) / *Done log* (`DoneLog`: From–to in sight, Kind / Closed by / Listing / Include removed behind its own **Filters** popover, Export CSV). The open-work **Filters** button now sits on the tabs' line after `+ Add` (the `work-bar` row renders only when there is a `lead` or no tabs).
 - **"Inside"'s guide line (owner, 2026-10-15):** `.todo-kids`' indent + `border-left` is a nesting cue for the flat board,
   where a kid row has nothing else marking it as nested. Inside the panel's "Inside" section it sat inside `.task-fold`
   — already a box — so the line read as a short stray segment, not attached to anything above or below. Zeroed for

@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Revenue } from './screens/Revenue.tsx';
 import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
-import { Claims } from './screens/Claims.tsx';
 import { Settings } from './screens/Settings.tsx';
 import { Operations } from './screens/Operations.tsx';
 import { Repository } from './screens/Repository.tsx';
@@ -120,7 +119,7 @@ function CrewShell({ token }: { token: string | null }) {
 
 const TABS: [Tab, string][] = [
   ['home', 'Home'], ['units', 'Units'], ['revenue', 'Revenue'], ['operations', 'Operations'],
-  ['repository', 'Repository'], ['costs', 'Costs'], ['claims', 'Claims'], ['sops', 'SOPs'], ['settings', 'Settings']
+  ['repository', 'Repository'], ['costs', 'Costs'], ['sops', 'SOPs'], ['settings', 'Settings']
 ];
 
 function TeamApp() {
@@ -138,6 +137,8 @@ function TeamApp() {
   const [opsNow, setOpsNow] = useState<string | undefined>(undefined);
   /** An SOP to open when the library tab opens from a screen's SOPs panel. */
   const [sopFocus, setSopFocus] = useState<string | undefined>(undefined);
+  /** §162: a link from Slack to one piece of work (?todo=N / ?claim=N) — opened in Operations → To-do. */
+  const [workFocus, setWorkFocus] = useState<{ todo?: string; claim?: string } | undefined>(undefined);
   /** The screen whose SOPs are open beside the work (§98) — it stays open while they move around. */
   const [sopPanel, setSopPanel] = useState<string | null>(null);
   // Fetched once at the top: three screens need the same unit list, and
@@ -176,6 +177,14 @@ function TeamApp() {
         const sop = new URLSearchParams(location.search).get('sop');
         if (sop && tabs.includes('sops')) {
           setSopFocus(sop); setTab('sops');
+          history.replaceState(null, '', location.pathname);
+          return;
+        }
+        // §162: Slack's "Open in Kaizen" on a task or a claim — what Slack cannot do is one click away.
+        const q = new URLSearchParams(location.search);
+        if ((q.get('todo') || q.get('claim')) && tabs.includes('operations')) {
+          setWorkFocus(q.get('todo') ? { todo: q.get('todo')! } : { claim: q.get('claim')! });
+          setOpsView('todos'); setTab('operations');
           history.replaceState(null, '', location.pathname);
           return;
         }
@@ -238,16 +247,15 @@ function TeamApp() {
       {tab === 'crew'     && <CrewHome />}
       {tab === 'vendor'   && <VendorHome />}
       {tab === 'units'    && <Units />}
-      {tab === 'revenue'  && <Revenue />}
+      {tab === 'revenue'  && <Revenue canClaims={can(permissions, 'claims.money')} />}
       {tab === 'home' && <Home permissions={permissions} onGo={to => {
         const [t, sub] = to.split(':');
         if (allowed?.includes(t!)) { if (t === 'operations' && sub) goOps(sub); else { setOpsView(sub); setTab(t as Tab); } }
       }} />}
-      {tab === 'operations' && <Operations permissions={permissions} initialView={opsView} nav={opsNav} onView={setOpsNow} />}
+      {tab === 'operations' && <Operations permissions={permissions} initialView={opsView} nav={opsNav} onView={setOpsNow} focus={workFocus} />}
       {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')}
                                            canEdit={can(permissions, 'repository.edit')}
                                            canStructure={can(permissions, 'repository.structure')} />}
-      {tab === 'claims'   && <Claims units={units} canWork={can(permissions, 'todos')} />}
       {tab === 'costs'    && <Costs units={units} />}
       {tab === 'sops'     && <Sops focus={sopFocus} onFocused={() => setSopFocus(undefined)} />}
       {tab === 'settings' && <Settings />}

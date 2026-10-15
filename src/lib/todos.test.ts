@@ -67,9 +67,18 @@ test('what a claim’s work costs: actual where known, the estimate otherwise, c
     t('a', { kind: 'work_order', status: 'completed', costEstimate: 300, costActual: 280 }),
     t('b', { kind: 'work_order', status: 'in_progress', costEstimate: 150 }),
     t('c', { kind: 'work_order', status: 'cancelled', costEstimate: 999 }),
-    t('d', { status: 'pending' })
+    t('d', { status: 'pending' }),
+    // §162: a purchase order's purchases count; a to-do's estimate does not.
+    t('e', { status: 'completed', purchaseTotal: 42.5, order: true }),
+    t('f', { status: 'pending', costEstimate: 70 })
   ]);
-  assert.deepEqual(c, { actual: 280, estimated: 150, open: 2 });
+  assert.deepEqual(c, { actual: 280, estimated: 150, bought: 42.5, open: 3 });
+});
+
+test('a purchase order is its own category, from the server flag or the order list', () => {
+  assert.equal(categoryOf(t('o', { order: true })), 'order');
+  assert.equal(categoryOf(t('o'), true), 'order');
+  assert.equal(categoryOf(t('w', { kind: 'work_order' })), 'work_order');
 });
 
 test('the done log: how it ended, how long it took, and a CSV an auditor can open', () => {

@@ -12,6 +12,9 @@ test('ops run the day: board, edits, inspections, costs, claims, the repository'
   assert.equal(mayAccess(OPS, '/api/inspections', 'DELETE'), true);
   assert.equal(mayAccess(OPS, '/api/expenses', 'POST'), true);
   assert.equal(mayAccess(OPS, '/api/claims', 'DELETE'), true);
+  // §162: the money on claims is Finance's — ops follow the cases without the figures.
+  assert.equal(mayAccess(OPS, '/api/claims-money', 'GET'), false);
+  assert.equal(mayAccess(['claims.money'], '/api/claims-money', 'POST'), true);
   assert.equal(mayAccess(OPS, '/api/repository', 'GET'), true);
 });
 
@@ -68,7 +71,7 @@ test('a method not listed is closed even on a listed path', () => {
 test('the tabs come from the same permissions as the routes', () => {
   // If these drift apart, someone sees a tab that answers 403 — which
   // reads as the app being broken rather than as a permission.
-  assert.deepEqual(tabsFor(OPS), ['home', 'operations', 'repository', 'costs', 'claims', 'sops']);
+  assert.deepEqual(tabsFor(OPS), ['home', 'operations', 'repository', 'costs', 'sops']);
   assert.deepEqual(tabsFor([]), ['home']);
   assert.ok(tabsFor([ALL]).includes('settings'));
   for (const p of PERMISSIONS.filter(p => p.tab)) {

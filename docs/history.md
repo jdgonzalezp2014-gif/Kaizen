@@ -4247,3 +4247,65 @@ as one too many). Files: the size limit is an ⓘ tooltip; who added a file and 
 Owner: ✓ and ✕ in a work header are the item's own done / cancel, so ✕ must never mean "close the panel". The header
 keeps **✓** and **⋯** (Mark as done, Cancel it, Register as a claim, Merge into…, Remove…) — a cancel is two clicks,
 never a stray one — and **Close →** at the far right; Esc and the dimmed list also close it.
+
+## §162 — Claims & upselling; work orders look like work orders; photos stay in their comment (2026-10-15)
+
+Owner, from a claim card (P2-4308 · Missing Fob) and a to-do's "More: kind, claim, cost":
+- **Claims & upselling.** A pet fee or a late check-in is the same case as a claim (asked, received, sometimes work
+  behind it), so the screen, nav and tab are "Claims & upselling" and the kinds are grouped Claim / Upselling
+  (`UPSELL_CATEGORIES`: Pet fee, Early check-in, Late check-in, Late checkout, Extra guest, Other upsell).
+  A reservation **alteration is not upselling** — its price is part of the reservation and counted there — unless it
+  was collected through the Resolution Center or no price was recorded on the reservation (SOP #3 rule, v3).
+- **Money on a case:** `requested` (new column, migration 086) and `refund` (shown "Received (refunded)") are typed;
+  **Repair work** is not: `/api/claims` sums, over the case's to-dos (sub-tasks carry the claim), the cost (or a work
+  order's estimate until there is one) plus `inventory_purchases.total`; cancelled work counts nothing. The client
+  sums the same way from the live list (`workCost` → `bought`). The old typed `repair_cost` was what had been claimed —
+  copied into `requested` (claims 4, 7, 8); the column stays until the deploy, nothing writes it (drop it later).
+  The "use $X" button is gone. Slack's claim card shows Requested / Received.
+- **A purchase order from a claim:** "+ Purchase order" beside "+ To-do / + Repair" in a case's work (`NewOrderForm`
+  with the claim's listing; `asOrder` + `claimId`). `/api/todos` now says per row `order` (the openOrders rule) and
+  `purchaseTotal`, so a claim's list knows its orders without the inventory read.
+- **Purchase orders take sub-tasks** (what is bought may need installing): the order's purchase form and the
+  "+ sub-task / + work order" row show together.
+- **A to-do has no kind and no cost:** the Kind switch and Cost are gone from the open item; "More" keeps Claim and
+  the Hostaway link. A **work order** shows its own group in the fields — Vendor (a registered one from the directory
+  or any name), Estimate, Cost, Charge to owner — and its summary line says vendor and cost. Work orders #67 and #80
+  (made by inspections with the checklist's words as title) renamed "Replace the missing pantry door knob" /
+  "Repair the broken sofa bed"; no vendor set (not required).
+- **Photos stay in their comment.** A Slack reply with files in a task's or claim's thread (and "Add to…" of a message
+  with files) is now ONE comment: the words, then a line per file — `📷 name: <Drive url>` for a photo, `📎 name: <url>`
+  otherwise (`commentFileLines`, `Kaizen.commentWithFiles`). The timeline shows the photo inside the comment through
+  `/api/comment-image?id=` (Drive read with Kaizen's token; only an id a comment names). The to-do's Files are for what
+  is attached to the to-do itself — the message it was made from, the 📎 box.
+- **Round 2 — the money is Finance's (owner, same day: "how does this feed the costs?").** Before: finance read no claim
+  at all (`/api/portfolio` returned them, nothing used them) — no double count, but no reimbursement or upsell in profit
+  either. Now: the **Claims nav tab is gone**; Operations follows cases in To-do (Claims & upselling tab) and sees only
+  their **Repair work** (maintenance — its work orders and purchases already write their own expenses). The figures
+  (requested, received = `claims.refund`, kind) live in **Revenue → Claims & upselling** (`ClaimsMoney`,
+  `/api/claims-money`, permission `claims.money`, admin only by default): totals for claims (received of requested,
+  recovery %, repair work, net = received − repair work) and upselling (received by kind). `/api/claims` and Slack no
+  longer read or write money (Slack's claim form lost "Refunded ($)"). **Received counts in Revenue's net** as
+  `otherIncome` (`IncomeRow`, `incomeIn`; `unitMetrics`/`portfolioMetrics`), dated `COALESCE(resolved_on, occurred_on)`
+  — never in revenue, ADR or RevPAN. Repair work is never added to Costs again. Claim #9 ("Charge early check in Quest",
+  $60 in `refund`) was already used as *received*: kind set to Early check-in, requested $60. SOP #3 v4.
+- **Round 3 — Slack, less noise (owner, same day: "mucho spam").** The daily messages stay as they are. Something
+  NEW (to-do, repair, purchase order, claim, upsell) is ONE message in its channel; everything after — done, cancelled,
+  reopened, any status change (now told too, `TaskEvent 'status'`), an owner, Hostaway, sub-tasks, comments — is a
+  one-line reply in that item's thread saying who (`threadLine`), and the first message is redrawn with where it stands
+  (`chat.update`; a person's message a task was made from is left as is). Before, `notifyTask`/`notifyClaim` posted a
+  NEW channel message for every event and moved the item's thread to it. The `via: 'slack-message'` gate went: a
+  button's change is a reply now, not a second message. Work with no thread yet gets its one message on its first news.
+  Made in Slack in another channel (or a DM) → also announced once in the tasks channel (that becomes its thread).
+  `@Kaizen order <what>` (also buy/purchase/compra) and "+ Purchase order" on the offer make a purchase order like
+  `new`/`repair`; "+ Claim / upsell"; an upsell's message and card say 💲 Upsell. **"Open in Kaizen ↗"** (`kaizenButton`)
+  on every task/claim message and card, and the unbought modal, links `/?todo=N` / `/?claim=N`: App opens Operations →
+  To-do, the item's tab and its side panel (a closed one in the pop-up) — for what Slack cannot do. "Add to…" unchanged.
+  Validated with a fake Slack + database (`functions/_lib/slack.test.ts`), not against the workspace. SOP #8 v17.
+
+## §163 — The gear joins the views' line; the done log folds into Closed (2026-10-15)
+
+Owner: on a phone the dark gear floated alone over the views' strip — it should look like the other controls, with the
+strip to its left. And on To-do the Open work / Done log switch took a whole row for something used only to audit.
+Now: the gear is a light, bordered control (strip style on a phone, sharing its line); the done log is a chip inside the
+"Closed in the last 14 days" section, with its own Filters popover and Export CSV; the open-work Filters moved to the
+tabs' line. Nothing changed in the API or the data.

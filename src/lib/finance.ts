@@ -45,6 +45,8 @@ export interface CostBreakdown {
 export interface UnitMetrics {
   listingId: string;
   revenue: number; nights: number; bookings: number; cleaningCollected: number;
+  /** §162: money received on claims and upsells (not reservation revenue — it is not in Hostaway's figures). */
+  otherIncome: number;
   occupancy: number | null; adr: number | null; revpan: number | null;
   costs: CostBreakdown;
   net: number; roi: number | null;
@@ -139,8 +141,17 @@ export function prorateCosts(rows: CostRow[], listingIds: string[], p: Period): 
   return out;
 }
 
+/**
+ * §162: money that came in outside a reservation's price — what a platform or a guest paid on a claim (a
+ * reimbursement: the repair it pays for is already a cost) or an upsell (a pet fee, a late check-in collected
+ * through the Resolution Center). Dated the day the case was resolved, else the day it was raised.
+ */
+export interface IncomeRow { unitId: string | null; on: string; amount: number; kind: 'claim' | 'upsell' }
+export const incomeIn = (rows: IncomeRow[], p: Period, unitId?: string | null) =>
+  rows.filter(r => r.on >= p.from && r.on <= p.to && (unitId === undefined || r.unitId === unitId)).reduce((a, r) => a + r.amount, 0);
+
 export function unitMetrics(
-  listingId: string, reservations: Reservation[], costs: CostBreakdown, p: Period
+  listingId: string, reservations: Reservation[], costs: CostBreakdown, p: Period, otherIncome = 0
 ): UnitMetrics {
   const days = daysInclusive(p.from, p.to);
   let revenue = 0, nights = 0, cleaningCollected = 0, bookings = 0;
@@ -151,9 +162,9 @@ export function unitMetrics(
     revenue += c.revenue; nights += c.nights; cleaningCollected += c.cleaning; bookings++;
   }
 
-  const net = revenue - costs.total;
+  const net = revenue + otherIncome - costs.total;
   return {
-    listingId, revenue, nights, bookings, cleaningCollected, costs, net,
+    listingId, revenue, nights, bookings, cleaningCollected, otherIncome, costs, net,
     occupancy: days ? nights / days : null,
     adr: nights ? revenue / nights : null,
     // Per AVAILABLE night, not per night sold — the one that falls when a
@@ -166,7 +177,7 @@ export function unitMetrics(
 }
 
 /** Rates are recomputed from the totals, never averaged from per-unit rates. */
-export function portfolioMetrics(units: UnitMetrics[], p: Period) {
+export function portfolioMetrics(units: UnitMetrics[], p: Period, unassignedIncome = 0) {
   const days = daysInclusive(p.from, p.to);
   const sum = (f: (u: UnitMetrics) => number) => units.reduce((a, u) => a + (f(u) || 0), 0);
 
@@ -176,12 +187,14 @@ export function portfolioMetrics(units: UnitMetrics[], p: Period) {
   const variable = sum(u => u.costs.variable);
   const total = fixed + variable;
   const available = days * Math.max(1, units.length);
+  // A portfolio-wide case (no listing) still counts in the portfolio's net.
+  const otherIncome = sum(u => u.otherIncome) + unassignedIncome;
 
   return {
-    units: units.length, revenue, nights,
+    units: units.length, revenue, nights, otherIncome,
     costs: { fixed, variable, total },
-    net: revenue - total,
-    roi: total > 0 ? (revenue - total) / total : null,
+    net: revenue + otherIncome - total,
+    roi: total > 0 ? (revenue + otherIncome - total) / total : null,
     // An average of per-unit occupancy would weight a unit listed for a
     // week the same as one listed all quarter.
     occupancy: available ? nights / available : null,
