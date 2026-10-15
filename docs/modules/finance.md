@@ -75,3 +75,13 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
   is shown. Dates read `YYYY-MM-DD` (the API returns `start_date::text`; it used to show the ISO timestamp). On top,
   **🛒 Orders not bought yet** (`OpenOrders`, from `/api/inventory`): the draft order and open orders with no
   purchase — hidden for roles that cannot read Inventory.
+
+## Redesign (§158, 2026-10-14, branch `redesign`)
+
+UI only; tokens and shared components from `docs/design-system.md`.
+- "Too early to tell" (`tone-info`: the light, the bar, the open row's edge, the verdict) is muted, not
+  blue — blue is reserved for actions; it keeps its ● shape and its words.
+- Sideways-scrolling grids (`.grid-scroll`: the fixed-cost matrix, the board) sit on the card surface: the
+  editable cells were on the grey page and read as disabled.
+- Phone: the summary strip is a real two-column grid with hairlines; an odd last figure spans the row.
+- Emoji → one-colour icons (phase 0b), e.g. the cost kinds and the Gemini advice.

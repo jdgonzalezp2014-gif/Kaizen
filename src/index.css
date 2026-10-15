@@ -429,7 +429,7 @@ table.units .tag.grey  { color: var(--muted); }
 /* 27 units against half a dozen cost types is wider than any phone, so
    the grid scrolls sideways and the unit name stays pinned — scrolling
    to the fifth column is useless if you can no longer see whose row it is. */
-.grid-scroll { overflow-x: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.grid-scroll { overflow-x: auto; margin: 12px 0; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
 table.matrix { margin: 0; min-width: 100%; }
 table.matrix th, table.matrix td { white-space: nowrap; }
 table.matrix .sticky-col { position: sticky; left: 0; z-index: 1;
@@ -530,7 +530,13 @@ table.units.compact { font-size: var(--fs-body); }
 
 @media (max-width: 720px) {
   .umetrics { gap: 14px; }
-  .strip > div { flex-basis: 50%; }
+  /* Two columns that stay a grid: hairlines between, an odd last figure spans the row (§158). */
+  .strip { display: grid; grid-template-columns: 1fr 1fr; }
+  .strip > div { border-right: 0; border-top: 1px solid var(--line); padding: 12px 14px; }
+  .strip > div:nth-child(odd) { border-right: 1px solid var(--line); }
+  .strip > div:nth-child(-n+2) { border-top: 0; }
+  .strip > div:last-child:nth-child(odd) { grid-column: 1 / -1; border-right: 0; }
+  .strip dd { font-size: var(--fs-title3); }
 }
 
 .umetrics .pending dd { color: var(--muted); font-weight: 500; }
@@ -602,7 +608,7 @@ table.units.compact { font-size: var(--fs-body); }
 .light.tone-warn::before { content: '▲'; font-size: var(--fs-caption); }
 .light.tone-ok   { color: var(--good); }
 .light.tone-ok::before   { content: '●'; }
-.light.tone-info { color: var(--series-1); }
+.light.tone-info { color: var(--muted); }  /* "too early to tell" is information, not an action: not blue (§158) */
 .light.tone-info::before { content: '●'; }
 .light.tone-off  { color: color-mix(in srgb, var(--muted) 60%, transparent); }
 
@@ -621,7 +627,7 @@ table.units.compact { font-size: var(--fs-body); }
 .ubar-fill.tone-bad  { background: var(--crit); }
 .ubar-fill.tone-warn { background: var(--warn); }
 .ubar-fill.tone-ok   { background: var(--good); }
-.ubar-fill.tone-info { background: var(--series-1); }
+.ubar-fill.tone-info { background: color-mix(in srgb, var(--muted) 70%, var(--card)); }
 .ubar-median { position: absolute; top: -3px; bottom: -3px; width: 1.5px;
   background: var(--ink); opacity: .45; border-radius: 1px; }
 
@@ -632,7 +638,7 @@ table.units.compact { font-size: var(--fs-body); }
 .udetail .verdict.tone-bad  { border-left-color: var(--crit); }
 .udetail .verdict.tone-warn { border-left-color: var(--warn); }
 .udetail .verdict.tone-ok   { border-left-color: var(--good); }
-.udetail .verdict.tone-info { border-left-color: var(--series-1); }
+.udetail .verdict.tone-info { border-left-color: var(--muted); }
 .udetail .signals { margin: 0 0 14px; padding-left: 14px; }
 .udetail .signals li { font-size: var(--fs-footnote); color: var(--muted); }
 
@@ -777,7 +783,7 @@ button.fact-k:hover { color: var(--ink); }
 .urow.open.tone-bad::before  { background: var(--crit); }
 .urow.open.tone-warn::before { background: var(--warn); }
 .urow.open.tone-ok::before   { background: var(--good); }
-.urow.open.tone-info::before { background: var(--series-1); }
+.urow.open.tone-info::before { background: var(--muted); }
 .urow.open.tone-off::before  { background: color-mix(in srgb, var(--muted) 50%, transparent); }
 
 /* The header of an open row reads as its title, not as another list item. */
