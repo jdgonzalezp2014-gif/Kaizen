@@ -55,6 +55,9 @@ Hostaway client, sync, crypto, migrations.
   The panel also shows "🧪 Practice · Practicar" links on the screens in `PRACTICE_FOR` (§139, operations module).
   Feature `crew.page` (§128) is the cleaner's own page: cleaners have no SOP access, so its published SOPs
   reach them through /api/crew (`help`), not the library.
+- **Design system: `docs/design-system.md`** (redesign, §158) — tokens at the top of `src/index.css`; a screen's
+  rule reads tokens (`--fs-*`, `--r-*`, `--s-*`, `--shadow*`, colours), never its own px/hex. Phone (≤720):
+  bottom tab bar (`TabBar` in App.tsx, `TabIcon.tsx`), 4 + More past five tabs; `--tabbar-h` lifts fixed things.
 - Design: day theme by default via `data-theme` (never prefers-color-scheme); status shapes
   ● ▲ ■ ○; colour means one thing (red failure, amber attention, green confirmed, blue
   action); no modals over the thing being compared; Home folds, three items per card;
@@ -82,7 +85,7 @@ Hostaway client, sync, crypto, migrations.
 
 ## History
 
-§1–§3, §8, §10–§13, §20, §27–§29, §49, §51–§52, §55, §65, §67, §75, §80–§81, §91–§92, §96–§98, §137, §151.
+§1–§3, §8, §10–§13, §20, §27–§29, §49, §51–§52, §55, §65, §67, §75, §80–§81, §91–§92, §96–§98, §137, §151, §158.
 - **Home's "Units in red" cached (owner, 2026-10-13, migration 077 `api_cache`):** `/api/forward?cache=1` (Home only) keeps
   the answer 10 min for everyone (`forward:<asOf>:<days>`); *.pages.dev has no usable Cache API. The card says when it
   was read. Units asks without `cache` — live.

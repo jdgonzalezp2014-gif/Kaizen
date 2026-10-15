@@ -17,6 +17,8 @@ import { SopButton, SopPanel } from './components/Sops.tsx';
 import { featureOf } from './lib/sops.ts';
 import { getUnits, getSettings, can, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
+import { TabIcon } from './components/TabIcon.tsx';
+import { Modal } from './components/Modal.tsx';
 
 type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor';
 
@@ -215,20 +217,21 @@ function TeamApp() {
         {/* No tagline. It restated a framing the owner had already lost an
             argument about, and a slogan nobody reads is pure vertical
             space on a screen whose job is a list. */}
-        <h1>Kaizen OS</h1>
-        <nav ref={navRef}>
+        <div className="brand"><span className="brand-mark" aria-hidden="true" /><h1>Kaizen OS</h1></div>
+        <nav ref={navRef} aria-label="Sections">
           {/* Nothing until the role is known. A tab that appears and then
               vanishes has already told the reader it exists. */}
           {allowed?.map(t => {
             const label = TABS.find(x => x[0] === t)?.[1];
             return label ? (
-              <button key={t} className={tab === t ? 'tab active' : 'tab'}
+              <button key={t} className={tab === t ? 'tab active' : 'tab'} aria-current={tab === t ? 'page' : undefined}
                       onClick={() => setTab(t as Tab)}>{label}</button>
             ) : null;
           })}
-          <ThemeToggle />
         </nav>
+        <ThemeToggle />
       </header>}
+      {!crewOnly && allowed && <TabBar tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab} />}
 
       {/* Only shown to someone who can act on it. Telling an ops account
           to go to Settings → Sync listings names a screen they cannot
@@ -274,5 +277,49 @@ function TeamApp() {
                   onLibrary={id => { setSopPanel(null); setSopFocus(id); setTab('sops'); }} />
       )}
     </main>
+  );
+}
+
+/**
+ * The phone's tab bar (§80, redesign 2026-10-14): the tabs at the bottom,
+ * in reach of a thumb, instead of a strip that scrolls sideways and hides
+ * half the app. Five fit; past five, four and "More", which lists the rest.
+ * Hidden by CSS above 720px, where the header's tabs are shown instead.
+ */
+function TabBar({ tabs, tab, onTab }: { tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void }) {
+  const [more, setMore] = useState(false);
+  if (tabs.length < 2) return null;
+  const shown = tabs.length <= 5 ? tabs : tabs.slice(0, 4);
+  const rest = tabs.length <= 5 ? [] : tabs.slice(4);
+  const label = (t: Tab) => TABS.find(x => x[0] === t)?.[1] ?? t;
+  const restOpen = tab !== null && rest.includes(tab);
+  return (
+    <>
+      <nav className="tabbar" aria-label="Sections">
+        {shown.map(t => (
+          <button key={t} className={tab === t ? 'tab active' : 'tab'} aria-current={tab === t ? 'page' : undefined}
+                  onClick={() => onTab(t)}><TabIcon name={t} />{label(t)}</button>
+        ))}
+        {rest.length > 0 && (
+          <button className={restOpen ? 'tab active' : 'tab'} aria-haspopup="dialog" onClick={() => setMore(true)}>
+            <TabIcon name="more" />{restOpen ? label(tab!) : 'More'}
+          </button>
+        )}
+      </nav>
+      {more && (
+        <Modal title="More" onClose={() => setMore(false)}>
+          <ul className="more-list">
+            {rest.map(t => (
+              <li key={t}>
+                <button className={tab === t ? 'more-item active' : 'more-item'} aria-current={tab === t ? 'page' : undefined}
+                        onClick={() => { onTab(t); setMore(false); }}>
+                  <TabIcon name={t} /><span>{label(t)}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      )}
+    </>
   );
 }

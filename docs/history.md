@@ -4188,3 +4188,16 @@ refund first, then negotiate") should become an SOP so nobody asks again.
 - **Big photos from Slack (same day):** a 24 MB phone photo of the court notice was dropped without a word (limit 15 MB).
   `slackFiles` now keeps Slack's own 1024-px copy of an image over the limit ("<name> (reduced)"); any file still left out is
   said in the message's thread ("⚠ 1 file not added to Kaizen…"). The missing photo was added to to-do #76 by hand.
+
+## §158 — Redesign: one design system, tokens only (2026-10-14)
+
+Owner's feedback: "it looks messy". Measured causes: 23 font sizes (10–12.5 px dominant), 13 corner
+radii, three CSS layers re-declaring the base, black primary buttons competing with the selected
+tab, a status green (#0ca30c) at 3.2:1 under white text, and a phone tab strip that scrolled sideways
+and hid half the tabs. Branch `redesign` (UI only — no logic, API, data or migrations):
+tokens (colour light/dark ≥4.5:1, a 9-step type scale named after Apple's text styles that steps up on
+phones, 4-pt space, 4 radii, 3 elevations) and every px/hex in `index.css` mapped onto them; blue =
+action for primary buttons; banners as a status rail; a bottom tab bar on phones (4 + More); 44 px
+targets on phones. Kept on purpose: light by default and the day/night switch (§20). The full write-up
+and the per-module changes: `docs/design-system.md`, `docs/redesign-report.md`.
+
