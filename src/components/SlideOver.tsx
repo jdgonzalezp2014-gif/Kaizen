@@ -28,9 +28,9 @@ export function SlideOver({ title, onClose, actions, below, children }: {
       <aside className="slide-over" role="dialog" aria-label={title}>
         <div className="slide-head">
           <h2 title={title}>{title}</h2>
-          {/* ✓ and ✕ in `actions` are the item's own (done / cancel). Closing the panel is this, Esc, or the backdrop. */}
-          <button type="button" className="link tiny slide-close" onClick={onClose} title="Close the panel (Esc)">Close →</button>
+          {/* `actions` are the item's own (done, ⋯). Closing the panel is Close →, Esc, or the backdrop — never a status button. */}
           <div className="slide-actions">{actions}</div>
+          <button type="button" className="link tiny slide-close" onClick={onClose} title="Close the panel (Esc)">Close →</button>
         </div>
         {below}
         <Dock.Provider value={dock}><div className="slide-body">{children}</div></Dock.Provider>

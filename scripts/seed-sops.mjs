@@ -397,7 +397,7 @@ Cleaners report from each clean on their page (☀️ Today, its tabs): what the
     doneWhen: 'The item shows its real status, owner and date, and the last comment says where it stands.',
     steps: [
       { text: 'Click a row to open it.', who: 'Everyone',
-        detail: '- The row you opened is highlighted; the list behind it does not move. A click on the dimmed list closes the panel.\n- The panel header has the title, **Close →**, and the item\'s own buttons: **✕** cancels the item, **✓** marks it done (**↺ Reopen** on a closed one), **⋯** has the rare actions. **✕ and ✓ change the item — they do not close the panel.**\n- To leave the panel without changing anything: **Close →**, **Esc**, or a click on the dimmed list.' },
+        detail: '- The row you opened is highlighted; the list behind it does not move. A click on the dimmed list closes the panel.\n- The panel header has the title, **Close →**, and the item\'s own buttons: **✓** marks it done (**↺ Reopen** on a closed one) and **⋯**, which also holds **Mark as done**, **Cancel it**, **Register as a claim**, **Merge into…** and **Remove…** — so a cancel is never one stray click. **Close →** sits at the far right. **✓ and ⋯ change the item — they do not close the panel.**\n- To leave the panel without changing anything: **Close →** (top right), **Esc**, or a click on the dimmed list.\n- The description is edited by clicking it.' },
       { text: 'Read the summary line; press ✎ Edit to change it.', who: 'Everyone',
         detail: '- The item reads as one line: *In progress • Urgent • CL2260 • Oct 14 – Oct 16 • owner*. Nothing else takes room.\n- **✎ Edit** opens the fields: **Status**, **Priority**, **Owner**, **Supervisor**, listing, dates, the stay; the rest under **More**. **▴ Hide fields** folds them again.\n- Save with the **Unsaved changes** bar that appears once you edit.' },
       { text: 'Work the items inside.', who: 'Everyone',
@@ -407,7 +407,7 @@ Cleaners report from each clean on their page (☀️ Today, its tabs): what the
       { text: 'Comment at the bottom.', who: 'Everyone',
         detail: '- The comment box stays at the foot of the panel while you scroll. **Ctrl/⌘ + Enter** sends.\n- **Activity log** shows what the system recorded.' },
       { text: 'Rare actions are behind ⋯.', who: 'Ops',
-        detail: '- **Register as a claim** (a guest case), **Merge into…** (the same job written twice) and **Remove…** (asked first, with Undo).' },
+        detail: '- **Mark as done** and **Cancel it**, **Register as a claim** (a guest case), **Merge into…** (the same job written twice) and **Remove…** (asked first, with Undo).' },
       { text: 'Narrow the list with Filters.', who: 'Ops',
         detail: '- One **Filters** button holds urgency, deadline, listing and owner; its number says how many are on. **Clear filters** is inside it.\n- Switch between **Open work** and **Done log** on the same row.' }
     ],
@@ -415,7 +415,7 @@ Cleaners report from each clean on their page (☀️ Today, its tabs): what the
 - Only people who may register claims see **Register as a claim**; a to-do already linked to a claim, or a sub-task, does not offer it.
 - Closing a cleaner's supplies request with nothing bought asks why first.
 - A sub-task opens inside its parent's panel, in place — never a second panel — and only from its own **✎ Edit**.
-- **✕** in the panel header cancels the item (kept, closed as cancelled); it never just closes the panel.
+- **Cancel it** (in ⋯) closes the item as cancelled, kept; it never just closes the panel. Only **Close →**, Esc or the backdrop do that.
 
 ## What the system does
 - The list never expands in place: details always open in the panel (half the screen on a desktop, the whole screen on a phone).

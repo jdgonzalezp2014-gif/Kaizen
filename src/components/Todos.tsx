@@ -767,14 +767,16 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
             {closed
               ? <button type="button" className="slide-btn wide" disabled={busy} onClick={() => void tick()}>↺ Reopen</button>
               : <>
-                  <button type="button" className="slide-btn cancel" disabled={busy} onClick={() => void cancel()} title="Cancel it — kept, closed as cancelled"
-                          aria-label={`Cancel: ${t.title}`}>✕</button>
                   <button type="button" className="slide-btn done" disabled={busy} onClick={() => void tick()} title={isOrder ? 'Mark as purchased' : 'Mark as done'}
                           aria-label={`Done: ${t.title}`}>✓</button>
                 </>}
             {(
               <Popover label="More actions" align="right" button={<Icon n="dots" />} className="slide-more">
                 {close => <>
+                  {!closed && <>
+                    <button type="button" role="menuitem" disabled={busy} onClick={() => { close(); void tick(); }}><Icon n="done" /> {isOrder ? 'Mark as purchased' : 'Mark as done'}</button>
+                    <button type="button" role="menuitem" disabled={busy} onClick={() => { close(); void cancel(); }} title="Kept, closed as cancelled"><Icon n="ban" /> Cancel it</button>
+                  </>}
                   {canClaim && <button type="button" role="menuitem" disabled={busy} onClick={() => { close(); void toClaim(); }}
                                        title="It is a guest case — open a claim for it, linked to this to-do"><Icon n="warning" /> Register as a claim</button>}
                   {!closed && <button type="button" role="menuitem" onClick={() => { close(); setMerging(''); }}
@@ -1015,8 +1017,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
                       onChange={e => set('description', e.target.value || null)} />
           ) : (
             <div className="sheet-desc">
-              <div className="todo-desc-full"><Linked text={v.description!} /></div>
-              <button type="button" className="link tiny" onClick={() => setEditDesc(true)}>✎ Edit</button>
+              <div className="todo-desc-full is-editable" title="Click to edit" onClick={e => { if (!(e.target as HTMLElement).closest('a, button')) setEditDesc(true); }}><Linked text={v.description!} /></div>
             </div>
           )}
         </section>
