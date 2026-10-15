@@ -57,7 +57,7 @@ Hostaway client, sync, crypto, migrations.
   reach them through /api/crew (`help`), not the library.
 - **Design system: `docs/design-system.md`** (redesign, §158) — tokens at the top of `src/index.css`; a screen's
   rule reads tokens (`--fs-*`, `--r-*`, `--s-*`, `--shadow*`, colours), never its own px/hex. Phone (≤720):
-  bottom tab bar (`TabBar` in App.tsx, `TabIcon.tsx`), 4 + More past five tabs; `--tabbar-h` lifts fixed things.
+  bottom tab bar (`TabBar` in App.tsx, `TabIcon.tsx`), always 4 + More (More also holds "Report a bug / request", 2026-10-15); `--tabbar-h` lifts fixed things.
 - Design: day theme by default via `data-theme` (never prefers-color-scheme); status shapes
   ● ▲ ■ ○; colour means one thing (red failure, amber attention, green confirmed, blue
   action); no modals over the thing being compared; Home folds, three items per card;
@@ -98,6 +98,8 @@ Hostaway client, sync, crypto, migrations.
   Operations' views inside it (`goOps` → Operations `nav` {v, n}); no top bar ≥ 721 px. Phone = header + bottom bar.
   Home: no summary pills (they repeated the cards); centred 1120 px with equal-height cards on a big screen; no uploads or
   Hostaway links on a phone. `scripts/screenshot.mjs` clicks `.side-link` (big) or the bottom bar / More (phone).
+- **Reports (owner, 2026-10-15):** "Report / request" at the rail's foot (above day/night) and in the phone's More — the
+  bug / request form and what was sent (`src/components/Reports.tsx`, `/api/reports`, open to every member). Details: slack module.
 - **Round 4 (§159):** the rail opens on hover or keyboard focus (`:has(:focus-visible)`) — not after a click (it stayed
   stuck open). The day is in the menu (`Today` in App.tsx: a calendar leaf in the rail, a chip in the phone header); Home has
   no heading. Home ≥ 1280 px: three columns (check-outs · check-ins · coming up / to-do ×2 · units in red, `data-card`).
