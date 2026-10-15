@@ -66,7 +66,8 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
 - **Units access/parking block (§147):** the three Units tables share one block, same keys, types
   and order after Type: `lock_type` (select: Schlage Smart Lock / Yale Smart Lock / Access Fob / Keys /
   None) · `keys_fobs` (Access Fob / None) · `cleaner_code` · `lockbox` · `closet_code` (houses: the
-  supply closet in the house) · `storage` (ref → `name` of the same table: **where the unit's supplies are
+  supply closet in the house) · `has_closet` ("Has closet", 090: the unit keeps its supplies in its own closet — then
+  `storage` names what REFILLS that closet; houses + The Links ✓, Cortland ✗) · `storage` (ref → `name` of the same table: **where the unit's supplies are
   kept** — a Storage row, or a house's OWN name = its closet; blank = ▲ no place. The inventory reads it and
   nothing else (§150); it is looked up in every Units table, but the ref picker offers only the same table —
   a central storage across buildings = repoint the ref or add its row) · `admin_code` 🔒 · `backup_code` 🔒 ·

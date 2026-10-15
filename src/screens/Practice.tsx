@@ -382,12 +382,14 @@ function inventoryPractice(): InvTransport {
     // Owner, 2026-10-15: furniture is the house's — counted and ordered in the house, never in a storage.
     { id: 'f1', name: 'Bath towels', measure: 'unit', category: 'linens', perClean: null, reorderAt: 8, active: true, kind: 'furniture' },
     { id: 'f2', name: 'Wine glasses', measure: 'unit', category: 'kitchen', perClean: null, reorderAt: 6, active: true, kind: 'furniture' }];
-  const S100 = 'practice/S100', S200 = 'practice/S200', HOUSE = 'practice/HOUSE';
+  const S100 = 'practice/S100', S200 = 'practice/S200', HOUSE = 'practice/HOUSE', APT2 = 'practice/APT2';
   const LOFT_HOUSE = 'practice/LOFT#house', HOUSE_HOUSE = 'practice/HOUSE#house';
-  const places: { place: string; name: string; self: boolean; view: 'storage' | 'house'; supplies?: string | null;
+  const places: { place: string; name: string; self: boolean; view: 'storage' | 'house'; supplies?: string | null; from?: string; refills?: string[];
                   units: { id: string; name: string; recordId: string | null; cleansAhead: number }[] }[] = [
-    { place: S100, name: 'S100 Storage (practice)', self: false, view: 'storage',
-      units: [{ id: 'practice-loft', name: LOFT, recordId: null, cleansAhead: 4 }, { id: 'practice-apt', name: '🧪 Practice Apt 2', recordId: null, cleansAhead: 3 }] },
+    { place: S100, name: 'S100 Storage (practice)', self: false, view: 'storage', refills: [APT2],
+      units: [{ id: 'practice-loft', name: LOFT, recordId: null, cleansAhead: 4 }] },
+    // An apartment with a closet (owner, 2026-10-15): cleaners take from the closet; S100 refills it.
+    { place: APT2, name: '🧪 Practice Apt 2', self: true, view: 'storage', from: S100, units: [{ id: 'practice-apt', name: '🧪 Practice Apt 2', recordId: null, cleansAhead: 3 }] },
     { place: S200, name: 'S200 Storage (practice)', self: false, view: 'storage', units: [] },
     { place: HOUSE, name: UNIT, self: true, view: 'storage', units: [{ id: 'practice', name: UNIT, recordId: null, cleansAhead: 2 }] },
     { place: HOUSE_HOUSE, name: UNIT, self: false, view: 'house', supplies: HOUSE, units: [{ id: 'practice', name: UNIT, recordId: null, cleansAhead: 2 }] },
@@ -400,6 +402,7 @@ function inventoryPractice(): InvTransport {
   const moves: (Move & { note?: string })[] = [
     mv('count', 's1', S100, 30, addDays(today, -6)), mv('count', 's6', S100, 40, addDays(today, -6)), mv('count', 's3', S100, 8, addDays(today, -6)),
     mv('taken', 's1', S100, 4, addDays(today, -3), 'practice-loft', 'Practice cleaner'), mv('taken', 's6', S100, 6, addDays(today, -3), 'practice-loft', 'Practice cleaner'),
+    mv('count', 's1', APT2, 2, addDays(today, -2)), mv('count', 's6', APT2, 3, addDays(today, -2)),
     mv('count', 's1', HOUSE, 6, addDays(today, -5)), mv('missing', 's6', HOUSE, 0, addDays(today, -1), 'practice', 'Practice cleaner'),
     mv('count', 'f1', HOUSE_HOUSE, 5, addDays(today, -5)), mv('count', 'f1', S200, 4, addDays(today, -5)), mv('count', 'f2', LOFT_HOUSE, 6, addDays(today, -4))
   ];
@@ -415,19 +418,27 @@ function inventoryPractice(): InvTransport {
   const nameOf = (key: string | null) => places.find(p => p.place === key)?.name ?? '▲ no place';
   const view = (): { ok: true } & Inventory => {
     const levels = stockLevels(moves);
+    const own = (i: InvItemRow, p: (typeof places)[number]) => {
+      const l = levels.get(`${i.id}|${p.place}`);
+      const need = p.view === 'house' ? 0 : p.units.reduce((a, u) => a + (i.perClean ?? 0) * u.cleansAhead, 0);
+      return { l, need, min: mins.get(`${i.id}|${p.place}`) ?? i.reorderAt };
+    };
+    // A closet's shortfall is refilled from its storage, and counts as need there.
+    const fed = (i: InvItemRow, key: string) => places.filter(c => c.from === key).reduce((a, c) => {
+      const o = own(i, c); return a + (o.l?.countedAt ? toOrder(o.l.qty, o.need, o.min) : Math.ceil(o.need)); }, 0);
     return { ok: true, items: clone(items), aheadDays: 14, windowDays: 60, unassigned: [], orders: clone(orders), fieldTodos: clone(fieldTodos),
       draft: clone(draft), lowStockTasks: false, toPayBack: clone(payBack),
       places: places.map(p => ({ ...clone(p), hidden: items.filter(i => hidden.has(`${i.id}|${p.place}`)).map(i => i.id),
         items: items.filter(i => i.active && !hidden.has(`${i.id}|${p.place}`)
           // A house: furniture only. A storage or closet: supplies, and the furniture kept there.
           && (p.view === 'house' ? i.kind === 'furniture' : i.kind !== 'furniture' || moves.some(m => m.itemId === i.id && m.place === p.place))).map(i => {
-        const l = levels.get(`${i.id}|${p.place}`);
-        const need = p.view === 'house' ? 0 : p.units.reduce((a, u) => a + (i.perClean ?? 0) * u.cleansAhead, 0);
-        const own = mins.get(`${i.id}|${p.place}`);
-        const min = own ?? i.reorderAt;
+        const o = own(i, p), l = o.l;
+        const need = o.need + (i.kind === 'furniture' ? 0 : fed(i, p.place));
+        const min = o.min;
+        const order = toOrder(l?.countedAt ? l.qty : null, need, min);
         return { itemId: i.id, qty: l?.qty ?? null, countedAt: l?.countedAt ?? null, missingSince: l?.missingSince ?? null,
-                 perClean: i.perClean, learned: false, reportedCleans: 0, need: Math.ceil(need), min, minOwn: own !== undefined,
-                 toOrder: toOrder(l?.countedAt ? l.qty : null, need, min) };
+                 perClean: i.perClean, learned: false, reportedCleans: 0, need: Math.ceil(need), min, minOwn: mins.has(`${i.id}|${p.place}`),
+                 ...(p.from && i.kind !== 'furniture' ? { toOrder: 0, toRefill: order } : { toOrder: order }) };
       }) })),
       recent: [...moves].reverse().map((m, k) => ({ id: String(k), item: items.find(i => i.id === m.itemId)?.name ?? '', place: nameOf(m.place),
         unit: places.flatMap(p => p.units).find(u => u.id === m.unitId)?.name ?? null, kind: m.kind, qty: m.qty, note: m.note ?? null,
@@ -471,6 +482,19 @@ function inventoryPractice(): InvTransport {
       if (!it || !to || !from || !(n > 0)) return fail('Which item, where to, how many?');
       if (to.view === 'house' && it.kind !== 'furniture') return fail('Supplies are kept in a storage or a closet — not in the house.');
       moves.push({ ...mv('adjust', it.id, from.place, -n, today), note: `Moved to ${to.name}` }, { ...mv('adjust', it.id, to.place, n, today), note: `Moved from ${from.name}` });
+    } else if (b.action === 'refill') {
+      const to = places.find(x => x.place === String(b.to)), from = places.find(x => x.place === to?.from);
+      if (!to || !from) return fail('That closet is not refilled from a storage.');
+      const levels = stockLevels(moves);
+      const lines = b.lines as { itemId: string; qty: number }[];
+      for (const x of lines) { const have = levels.get(`${x.itemId}|${from.place}`)?.qty;
+        if (have != null && x.qty > have) return fail(`${items.find(i => i.id === x.itemId)?.name}: ${from.name} has ${have} on record — count it first if there are more.`); }
+      for (const x of lines) moves.push({ ...mv('adjust', x.itemId, from.place, -x.qty, today), note: `Moved to ${to.name} closet — Refill` },
+                                        { ...mv('adjust', x.itemId, to.place, x.qty, today), note: `Moved from ${from.name} — Refill` });
+    } else if (b.action === 'measure') {
+      const it = items.find(i => i.id === String(b.itemId));
+      if (!it || !String(b.measure ?? '').trim()) return fail('Counted in what?');
+      it.measure = String(b.measure).trim();
     } else if (b.action === 'editItem') {
       const it = items.find(i => i.id === String(b.itemId));
       if (!it) return fail('Which item?');

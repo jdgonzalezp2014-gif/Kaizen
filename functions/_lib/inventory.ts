@@ -67,8 +67,9 @@ export async function overview(sql: SqlFn) {
   const mins = new Map(minRows.map(m => [`${m.itemId}|${m.place}`, m.min]));
   // Places the Repository no longer lists (renamed, archived, or "no place") still show while their moves say something.
   type Row = { key: string | null; name: string; self: boolean; units: { id: string; name: string; recordId: string | null }[];
-               view: 'storage' | 'house'; supplies?: string | null };
-  const rows: Row[] = sp.places.map(p => ({ key: p.key as string | null, name: p.name, self: p.self, units: p.units, view: 'storage' as const }));
+               view: 'storage' | 'house'; supplies?: string | null; from?: string | null; refills?: string[] };
+  const rows: Row[] = sp.places.map(p => ({ key: p.key as string | null, name: p.name, self: p.self, units: p.units, view: 'storage' as const,
+                                            ...(p.from ? { from: p.from } : {}), ...(p.refills ? { refills: p.refills } : {}) }));
   // Owner, 2026-10-15: the houses apart — their furniture is counted and ordered there, never in a storage.
   for (const h of sp.houses) rows.push({ key: h.key, name: h.name, self: h.self, units: h.units, view: 'house', supplies: h.supplies ?? null });
   for (const k of new Set(moveRows.map(m => m.place))) if (!rows.some(r => r.key === k))
@@ -92,8 +93,25 @@ export async function overview(sql: SqlFn) {
   const recorded = new Set(moveRows.map(m => `${m.itemId}|${placeKey(m.place)}`));
   const listed = (p: Row, i: InvItem) => p.view === 'house' ? i.kind === 'furniture'
     : i.kind !== 'furniture' || recorded.has(`${i.id}|${placeKey(p.key)}`);
+  const minOf = (i: InvItem, key: string) => mins.get(`${i.id}|${key}`) ?? i.reorderAt;
+  /**
+   * A closet refilled from a storage (owner, 2026-10-15) is not bought for — it is refilled: what it is short
+   * (its cleans ahead + its minimum − what it holds, once counted; never counted: its cleans ahead) is
+   * "To refill" there, and counts as need at the storage, which is what gets ordered.
+   */
+  const refill = new Map<string, number>();
+  const fedNeed = new Map<string, number>();
+  for (const p of rows) if (p.key && p.from) for (const i of active) {
+    if (i.kind === 'furniture' || hidden.has(`${i.id}|${p.key}`)) continue;
+    const l = levels.get(`${i.id}|${placeKey(p.key)}`);
+    const need = needs.get(i.id)!.get(p.key) ?? 0;
+    const short = l?.countedAt ? toOrder(l.qty, need, minOf(i, p.key)) : Math.ceil(need);
+    refill.set(`${i.id}|${p.key}`, l?.countedAt ? short : 0);
+    if (short > 0) fedNeed.set(`${i.id}|${p.from}`, (fedNeed.get(`${i.id}|${p.from}`) ?? 0) + short);
+  }
   const places = rows.map(p => ({
     place: p.key, name: p.name, self: p.self, view: p.view, ...(p.view === 'house' ? { supplies: p.supplies ?? null } : {}),
+    ...(p.from ? { from: p.from } : {}), ...(p.refills ? { refills: p.refills } : {}),
     units: p.units.map(u => ({ ...u, cleansAhead: ahead.get(u.id) ?? 0 })),
     hidden: active.filter(i => hidden.has(`${i.id}|${p.key}`) && listed(p, i)).map(i => i.id),
     items: active.filter(i => !hidden.has(`${i.id}|${p.key}`) && listed(p, i)).map(i => {
@@ -101,12 +119,13 @@ export async function overview(sql: SqlFn) {
       const own = p.key ? mins.get(`${i.id}|${p.key}`) : undefined;
       const min = own ?? i.reorderAt;
       // A house is not drawn from by cleans: what it needs is its minimum (furniture is not used up per clean).
-      const need = p.key && p.view === 'storage' ? needs.get(i.id)!.get(p.key) ?? 0 : 0;
+      const need = p.key && p.view === 'storage' ? (needs.get(i.id)!.get(p.key) ?? 0) + (fedNeed.get(`${i.id}|${p.key}`) ?? 0) : 0;
       const r = p.view === 'storage' ? placeRate(i, p.units.map(u => u.id)) : { rate: null, learned: false, cleans: 0 };
       return { itemId: i.id, qty: l?.qty ?? null, countedAt: l?.countedAt ?? null, missingSince: l?.missingSince ?? null,
                perClean: r.rate, learned: r.learned, reportedCleans: r.cleans, need: Math.ceil(need), min, minOwn: own !== undefined,
                // Only a counted place is ordered for: a never-counted record is not a stock (§134).
-               toOrder: p.key ? toOrder(l?.countedAt ? l.qty : null, need, min) : 0 };
+               ...(p.key && p.from && i.kind !== 'furniture' ? { toOrder: 0, toRefill: refill.get(`${i.id}|${p.key}`) ?? 0 }
+                 : { toOrder: p.key ? toOrder(l?.countedAt ? l.qty : null, need, min) : 0, toRefill: 0 }) };
     })
   }));
   const recent = (await sql`
@@ -587,13 +606,16 @@ export async function lowStock(sql: SqlFn, places: (string | null)[]): Promise<s
     const fresh = low.filter(l => !listed.some(x => x.startsWith(`Low: ${item(l.itemId).name} —`)));
     if (!fresh.length) continue;
     if (!t) {
-      const id = await newTodo(sql, `Low stock at ${name}`, `Below the minimum to keep — counted places only. Buy it: Inventory → 🧾 Record a purchase, ` +
-        `starting from this order. Switch these to-dos off in Setup → Inventory.`, p.units.length === 1 && (p.self || p.view === 'house') ? p.units[0]!.id : null, 'Kaizen', 'high');
+      const from = p.from ? inv.places.find(x => x.place === p.from)?.name ?? 'its storage' : null;
+      const id = await newTodo(sql, `Low stock at ${name}`, (from
+        ? `Below the minimum to keep — counted places only. Refill it from ${from}: Inventory → ${name} → ⇄ Refill (or send someone and record it there). `
+        : `Below the minimum to keep — counted places only. Buy it: Inventory → 🧾 Record a purchase, starting from this order. `) +
+        `Switch these to-dos off in Setup → Inventory.`, p.units.length === 1 && (p.self || p.view === 'house') ? p.units[0]!.id : null, 'Kaizen', 'high');
       await sql`UPDATE todos SET low_stock_place = ${key} WHERE account_id = 1 AND id = ${Number(id)}`;
       t = { id };
       made.push(id);
     }
-    const said = fresh.map(l => `• Low: ${item(l.itemId).name} — ${l.qty} left, keep ${l.min}${l.toOrder ? `; buy ${l.toOrder}` : ''}`).join('\n');
+    const said = fresh.map(l => `• Low: ${item(l.itemId).name} — ${l.qty} left, keep ${l.min}${l.toOrder ? `; buy ${l.toOrder}` : l.toRefill ? `; refill ${l.toRefill}` : ''}`).join('\n');
     await sql`UPDATE todos SET description = concat_ws(E'\n', NULLIF(description, ''), ${said}), updated_at = now() WHERE account_id = 1 AND id = ${Number(t.id)}`;
     const lines = fresh.filter(l => l.toOrder > 0).map(l => ({ itemId: l.itemId, place: key, qty: l.toOrder }));
     if (lines.length) await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(lines)}::jsonb, 'Kaizen')
@@ -736,25 +758,59 @@ async function writePurchase(sql: SqlFn, by: string, c: Awaited<ReturnType<typeo
  * a supply never into a house. The team only.
  */
 export async function transfer(sql: SqlFn, by: string, b: Record<string, unknown>) {
-  const qty = Math.round(Number(b.qty) * 100) / 100;
-  if (!(qty > 0) || qty > 10000) throw new Error('How many?');
-  const [items, sp] = await Promise.all([invItems(sql), supplyPlaces(sql)]);
-  const item = items.find(i => i.id === String(b.itemId) && i.active);
-  if (!item) throw new Error('Which item?');
-  const from = findPlace(sp, String(b.from ?? '')), to = findPlace(sp, String(b.to ?? ''));
+  return moveLines(sql, by, b.from, b.to, [{ itemId: b.itemId, qty: b.qty }], b.note);
+}
+
+/**
+ * A closet refilled from its storage (owner, 2026-10-15): the same two moves per item, from the storage the
+ * Repository names for that closet — when a cleaner finds it short, the team moves stock (or sends someone)
+ * and records it here.
+ */
+export async function refillCloset(sql: SqlFn, by: string, b: Record<string, unknown>) {
+  const sp = await supplyPlaces(sql);
+  const closet = sp.places.find(p => p.key === String(b.to ?? ''));
+  if (!closet?.from) throw new Error('That closet is not refilled from a storage — set its Storage in the Repository.');
+  const lines = (Array.isArray(b.lines) ? b.lines : []) as { itemId: unknown; qty: unknown }[];
+  if (!lines.length) throw new Error('Nothing to move.');
+  return moveLines(sql, by, closet.from, closet.key, lines, b.note ?? 'Refill', sp);
+}
+
+async function moveLines(sql: SqlFn, by: string, fromKey: unknown, toKey: unknown, lines: { itemId: unknown; qty: unknown }[], rawNote: unknown,
+                         known?: Awaited<ReturnType<typeof supplyPlaces>>) {
+  const [items, sp] = await Promise.all([invItems(sql), known ?? supplyPlaces(sql)]);
+  const from = findPlace(sp, String(fromKey ?? '')), to = findPlace(sp, String(toKey ?? ''));
   if (!from || !to) throw new Error('Which place?');
   if (from.key === to.key) throw new Error('Pick another place to move it to.');
-  if (!fitsPlace(to, item.kind)) throw new Error(NOT_IN_HOUSE);
+  const want = lines.map(x => {
+    const qty = Math.round(Number(x.qty) * 100) / 100;
+    if (!(qty > 0) || qty > 10000) throw new Error('How many?');
+    const item = items.find(i => i.id === String(x.itemId) && i.active);
+    if (!item) throw new Error('Which item?');
+    if (!fitsPlace(to, item.kind)) throw new Error(NOT_IN_HOUSE);
+    return { item, qty };
+  });
+  const ids = want.map(w => Number(w.item.id));
   const levels = stockLevels(await sql`SELECT item_id::text AS "itemId", place, unit_id AS "unitId", kind, qty::float AS qty,
                                              to_char(created_at, 'YYYY-MM-DD HH24:MI:SS') AS at
-                                        FROM inventory_moves WHERE account_id = 1 AND item_id = ${Number(item.id)}` as Move[]);
-  const have = levels.get(`${item.id}|${placeKey(from.key)}`)?.qty;
-  if (have != null && qty > have) throw new Error(`${placeWord(from)} has ${have} on record — count it first if there are more.`);
-  const note = String(b.note ?? '').trim().slice(0, 300);
-  await sql`INSERT INTO inventory_moves (account_id, item_id, place, kind, qty, note, by_name, source)
-            VALUES (1, ${Number(item.id)}, ${from.key}, 'adjust', ${-qty}, ${`Moved to ${placeWord(to)}${note ? ` — ${note}` : ''}`}, ${by}, 'team'),
-                   (1, ${Number(item.id)}, ${to.key}, 'adjust', ${qty}, ${`Moved from ${placeWord(from)}${note ? ` — ${note}` : ''}`}, ${by}, 'team')`;
+                                        FROM inventory_moves WHERE account_id = 1 AND item_id = ANY(${ids})` as Move[]);
+  for (const w of want) {
+    const have = levels.get(`${w.item.id}|${placeKey(from.key)}`)?.qty;
+    if (have != null && w.qty > have) throw new Error(`${w.item.name}: ${placeWord(from)} has ${have} on record — count it first if there are more.`);
+  }
+  const note = String(rawNote ?? '').trim().slice(0, 300);
+  for (const w of want)
+    await sql`INSERT INTO inventory_moves (account_id, item_id, place, kind, qty, note, by_name, source)
+              VALUES (1, ${Number(w.item.id)}, ${from.key}, 'adjust', ${-w.qty}, ${`Moved to ${placeWord(to)}${note ? ` — ${note}` : ''}`}, ${by}, 'team'),
+                     (1, ${Number(w.item.id)}, ${to.key}, 'adjust', ${w.qty}, ${`Moved from ${placeWord(from)}${note ? ` — ${note}` : ''}`}, ${by}, 'team')`;
   return [from.key, to.key];
+}
+
+/** "Counted in" of any item (owner, 2026-10-15: fix it where it shows — an order, a purchase): the label only, no quantity changes. */
+export async function setMeasure(sql: SqlFn, b: Record<string, unknown>) {
+  const measure = String(b.measure ?? '').trim().slice(0, 20);
+  if (!measure) throw new Error('Counted in what? (unit, pack, roll…)');
+  const r = await sql`UPDATE inventory_items SET measure = ${measure}, updated_at = now() WHERE account_id = 1 AND id = ${Number(b.itemId)} RETURNING id` as unknown[];
+  if (!r.length) throw new Error('Which item?');
 }
 
 /** The minimum to keep of items in one place (§150); a blank goes back to the item's own. */

@@ -78,3 +78,29 @@ test('a unit draws supplies from the record its Storage names: a storage, or the
   assert.equal(placeWord({ name: 'Preston Vineyard', self: true }), 'Preston Vineyard closet');
   assert.equal(placeWord(preston), 'Preston Vineyard (house)');
 });
+
+test('a unit with a closet takes from it; its Storage is what refills that closet (owner, 2026-10-15)', () => {
+  const r = (table: string, id: string, vals: Record<string, unknown>): RepoRow => ({ id, table, vals });
+  const recs = [
+    r('the_links', 'S1', { name: 'S1105 Storage (stock)', property_type: 'Storage', lockbox: '3611' }),
+    r('the_links', 'L1', { name: 'LP-4315', storage: 'S1105 Storage (stock)', has_closet: true, closet_code: '77', lockbox: '9999' }),
+    r('the_links', 'L2', { name: 'LP-1201', storage: '', has_closet: 'true' }),
+    r('cortland', 'C1', { name: 'CL-1125', storage: 'S1105 Storage (stock)', has_closet: false }),
+    r('houses', 'H1', { name: 'Preston Vineyard', storage: 'Preston Vineyard', has_closet: true })
+  ];
+  // The closet, its code (never the door lockbox), refilled from S1105.
+  assert.deepEqual(supplyPlace(recs[1]!, recs), { key: 'the_links/L1', name: 'LP-4315', self: true, code: '77',
+                                                  from: { key: 'the_links/S1', name: 'S1105 Storage (stock)' } });
+  // A closet with no Storage is still a place — nothing refills it.
+  assert.deepEqual(supplyPlace(recs[2]!, recs)?.from, null);
+  assert.equal(supplyPlace(recs[3]!, recs)?.key, 'the_links/S1');   // no closet: the storage, as before
+  assert.equal(supplyPlace(recs[4]!, recs)?.from, null);            // a house naming itself
+  const m = inventoryPlaces([{ id: '1', name: 'LP-4315', active: true }, { id: '2', name: 'CL-1125', active: true },
+                             { id: '3', name: 'Preston Vineyard', active: true }], recs);
+  const s1 = m.places.find(p => p.key === 'the_links/S1')!;
+  assert.deepEqual(s1.units.map(u => u.name), ['CL-1125']);
+  assert.deepEqual(s1.refills, ['the_links/L1']);
+  assert.equal(m.places.find(p => p.key === 'the_links/L1')?.from, 'the_links/S1');
+  assert.equal(m.places.find(p => p.key === 'houses/H1')?.from, null);
+  assert.equal(m.houses.find(h => h.units[0]!.id === '1')?.supplies, 'the_links/L1');   // a supply for it goes to its closet
+});

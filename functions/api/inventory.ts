@@ -15,6 +15,8 @@
  *   POST { action: 'newItem', name, measure?, category?, kind? }        an item added on the spot (kind 'furniture' = the house's)
  *   POST { action: 'transfer', itemId, from, to, qty, note? }       moved between places (furniture: house ⇄ storage); never a supply into a house
  *   POST { action: 'editItem', itemId, name, size?, measure, kind }    a NEW item corrected (nothing recorded for it yet)
+ *   POST { action: 'refill', to, lines: [{ itemId, qty }], note? }      a closet refilled from the storage the Repository names for it
+ *   POST { action: 'measure', itemId, measure }                         "counted in" of any item — the label only
  * A count, a correction or a take may leave a place below its minimum → "Low stock" to-do, if Setup has it on.
  *   POST { action: 'order', lines: [{ itemId, place, qty }], forTodo? }  the ORDER: ONE to-do (or onto a field to-do), a line per item
  *   POST { action: 'purchase', lines, total, todoId?, note?, paidBy?, date? } + receipt  what was BOUGHT: stock per place + one Restock expense
@@ -31,7 +33,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { commentToThread } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, editNewItem, fieldPhotos, transfer, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
+import { createOrder, editNewItem, fieldPhotos, refillCloset, setMeasure, transfer, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
 import { learnAliases, readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
 import { readRequestText } from '../_lib/request-read.ts';
 
@@ -103,6 +105,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     } else if (b.action === 'transfer') {
       const keys = await transfer(sql, who.email, b);
       waitUntil(lowStock(sql, keys).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
+    } else if (b.action === 'refill') {
+      const keys = await refillCloset(sql, who.email, b);
+      waitUntil(lowStock(sql, keys).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
+    } else if (b.action === 'measure') {
+      await setMeasure(sql, b);
     } else if (b.action === 'editItem') {
       await editNewItem(sql, b);
     } else if (b.action === 'paidBack') {

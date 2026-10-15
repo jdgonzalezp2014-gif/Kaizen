@@ -92,14 +92,31 @@ export function unitAccess(u: UnitRow, rec: RepoRow | null): UnitAccess {
  * own name = its own closet). Looked up in the unit's table first, then in
  * every Units table, so a storage shared across buildings needs no code.
  * Blank, or a name no record has: no place (null) — never guessed.
+ *
+ * A unit that HAS A CLOSET (Repository "Has closet", owner 2026-10-15 — every
+ * house, the P2 apartments) keeps its supplies there: its place is its own
+ * closet, and `storage` then names what REFILLS that closet (`from`; blank or
+ * its own name = nothing does). Cleaners take from the closet only.
  */
-export interface SupplyPlace { key: string; name: string; self: boolean; code: string | null }
+export interface SupplyPlace { key: string; name: string; self: boolean; code: string | null;
+  /** A closet refilled from a storage: that storage. */
+  from?: { key: string; name: string } | null }
+export const hasCloset = (rec: RepoRow | null) => { const v = rec?.vals.has_closet; return v === true || /^(true|yes|1)$/i.test(String(v ?? '').trim()); };
+function storageOf(rec: RepoRow, records: RepoRow[]) {
+  const want = norm(rec.vals.storage);
+  if (!want) return null;
+  if (norm(rec.vals.name) === want) return rec;
+  return records.find(r => r.table === rec.table && norm(r.vals.name) === want) ?? records.find(r => norm(r.vals.name) === want) ?? null;
+}
 export function supplyPlace(rec: RepoRow | null, records: RepoRow[]): SupplyPlace | null {
-  const want = norm(rec?.vals.storage);
-  if (!rec || !want) return null;
-  const self = norm(rec.vals.name) === want;
-  const target = self ? rec : records.find(r => r.table === rec.table && norm(r.vals.name) === want) ?? records.find(r => norm(r.vals.name) === want);
+  if (!rec) return null;
+  const target = storageOf(rec, records);
+  if (hasCloset(rec)) {
+    const from = target && target !== rec ? { key: `${target.table}/${target.id}`, name: String(target.vals.name ?? '').trim() } : null;
+    return { key: `${rec.table}/${rec.id}`, name: String(rec.vals.name ?? '').trim(), self: true, code: text(rec.vals.closet_code), from };
+  }
   if (!target) return null;
+  const self = target === rec;
   // A house's lockbox holds the door keys, not the closet's — only a storage's lockbox opens the storage.
   const code = text(target.vals.closet_code) ?? (self ? null : text(target.vals.lockbox));
   return { key: `${target.table}/${target.id}`, name: String(target.vals.name ?? '').trim(), self, code };
@@ -112,7 +129,11 @@ export interface PlaceRow { key: string; name: string; self: boolean; units: { i
   /** A house's own place (owner, 2026-10-15): its furniture and equipment only — supplies live in a storage or a closet. */
   house?: boolean;
   /** A house: where its supplies come from (a storage, or itself when it keeps its own closet). */
-  supplies?: string | null }
+  supplies?: string | null;
+  /** A closet refilled from a storage (owner, 2026-10-15): that storage's key. */
+  from?: string | null;
+  /** A storage: the closets it refills. */
+  refills?: string[] }
 /**
  * The inventory's places, from the Repository (§150): every Storage row and
  * every place an active unit is assigned to (a house's own closet), with the
@@ -131,9 +152,14 @@ export function inventoryPlaces(units: { id: string; name: string; active: boole
     if (!u.active) continue;
     const recordId = rec ? `${rec.table}/${rec.id}` : null;
     if (!p) { unassigned.push({ id: u.id, name: u.name, recordId }); continue; }
-    const row = places.get(p.key) ?? { key: p.key, name: p.name, self: p.self, units: [] };
+    const row = places.get(p.key) ?? { key: p.key, name: p.name, self: p.self, units: [], ...(p.self ? { from: p.from?.key ?? null } : {}) };
     row.units.push({ id: u.id, name: u.name, recordId });
     places.set(p.key, row);
+  }
+  // A storage that refills closets lists them (it may supply no unit directly any more).
+  for (const r of places.values()) if (r.from) {
+    const s = places.get(r.from);
+    if (s) s.refills = [...s.refills ?? [], r.key];
   }
   // Storages first, then the houses' closets.
   const list = [...places.values()].sort((a, b) => Number(a.self) - Number(b.self) || a.name.localeCompare(b.name));

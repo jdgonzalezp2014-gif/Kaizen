@@ -518,6 +518,8 @@ export interface InvLevel {
   perClean: number | null; learned: boolean; reportedCleans: number;
   /** What the next cleans of its units will take out; the minimum here (`minOwn`: set for this place, else the item's). */
   need: number; min: number | null; minOwn: boolean; toOrder: number;
+  /** A closet refilled from a storage (owner, 2026-10-15): what to move into it from there — it is not bought for. */
+  toRefill?: number;
 }
 /** A place (§150): a Repository record `table/ROW-id` — a storage or a house's closet; null = moves of units with no place. */
 export interface InvPlace { place: string | null; name: string; self: boolean;
@@ -525,6 +527,8 @@ export interface InvPlace { place: string | null; name: string; self: boolean;
   view?: 'storage' | 'house';
   /** A house: where its supplies come from (a storage key, or its own key when it keeps its closet). */
   supplies?: string | null; units: { id: string; name: string; recordId: string | null; cleansAhead: number }[]; items: InvLevel[];
+  /** A closet refilled from a storage: that storage's key. A storage: the closets it refills (owner, 2026-10-15). */
+  from?: string | null; refills?: string[];
   /** §150: items "not kept here". */ hidden: string[];
   /** The latest photos / note of how the place looked at a count (owner, 2026-10-14). */
   look?: { note: string | null; photos: { name: string; url: string }[]; byName: string; counted: number; at: string } | null }

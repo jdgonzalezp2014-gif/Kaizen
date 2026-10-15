@@ -281,6 +281,17 @@ key had no SOPs.
   `adjust` moves). "Goes to" a unit = furniture to the house, supplies to its supplies place (`destFor`); place checks
   `findPlace`, text `placeWord`. A receipt's new line is corrected before it is added (how many, counted in, type);
   matched quantities editable; "✎ new item" (`editItem`, only while the item has no moves). Migration 089.
+- **Closets and refills (owner, 2026-10-15, 090):** Repository **Has closet** (`has_closet`, checkbox after Closet code in the 3
+  Units tables; filled: every house ✓, The Links/P2 ✓, Cortland ✗). With a closet the unit's place is ITS OWN closet (the record
+  key, `self`) — cleaners see and take from it only (step 2 "from the closet") — and its `storage` names what REFILLS it
+  (`SupplyPlace.from`; blank or its own name = nothing). `inventoryPlaces` gives the closet `from` and the storage `refills`.
+  Overview: a refilled closet's supplies show **To refill** (`toRefill` = cleans ahead + min − held, counted only; `toOrder` 0, no
+  "Draft order"); what it is short (never counted: its cleans ahead) is added to the storage's need → the STORAGE is ordered.
+  **⇄ Refill from S1105** on the closet (`refill` → `refillCloset`, two `adjust` moves per item via `moveLines`, same limit as
+  ⇄ move); a low-stock to-do on such a closet says refill, not buy. Setup → Places: a storage zone lists the closets it refills
+  ("· closet"), "Own closet, nothing refills it", and a **Has closet** switch per unit (`inventory-items` `closet`, written to the
+  Repository, audited). **Counted in** editable anywhere it shows (`MeasureEdit` on order and purchase lines → `measure` /
+  `setMeasure`): the label only, quantities never converted. Practice has a closet (Practice Apt 2) refilled from S100. SOP #15 v16.
 - **Inventory (§134, §150): by PLACE, never by unit.** A place = a Repository record (`table/ROW-id`): a Storage
   row (S13, S1105…) or a house's own record (its closet). Which place a unit draws from = the Repository's
   `storage` column, the ONLY source (a house names itself; blank = ▲ no place), read every time by

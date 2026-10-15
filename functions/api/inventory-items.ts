@@ -8,6 +8,8 @@
  *   POST { action: 'assign', unitId, to } §150: where a unit draws supplies — a place key, 'self' (its own
  *                                         closet) or '' (not assigned): written to the Repository's
  *                                         `storage` column, the one source, audited by field name
+ *                                         (a unit that has a closet: what REFILLS it; 'self' = nothing)
+ *   POST { action: 'closet', unitId, on } "Has closet" (owner, 2026-10-15), written to the Repository
  *
  * `operations.setup` (roles.ts). Read with /api/inventory.
  */
@@ -72,6 +74,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     await sql`INSERT INTO repo_audit (account_id, actor, action, table_key, row_id, detail)
               VALUES (1, ${who.email}, 'records.update', ${rec.table}, ${rec.id}, 'storage (supplies place, from Setup → Inventory, §150)')`;
     return Response.json({ ok: true, items: await invItems(sql) });
+  } else if (b.action === 'closet') {
+    // Owner, 2026-10-15: "Has closet" lives in the Repository — switched here, written there.
+    const [u] = await sql`SELECT name FROM units WHERE account_id = 1 AND id = ${String(b.unitId ?? '')}` as { name: string }[];
+    if (!u) return bad('Which unit?');
+    const recs = await sql`SELECT r.id, r.table_key AS "table", r.vals FROM repo_records r
+                             JOIN repo_tables t ON t.account_id = r.account_id AND t.key = r.table_key
+                            WHERE r.account_id = 1 AND t.section_key = 'units' AND t.archived_at IS NULL AND r.archived_at IS NULL` as RepoRow[];
+    const rec = repoMatch(u.name, recs);
+    if (!rec) return bad(`${u.name} has no record in Repository → Units — add it there first.`);
+    await sql`UPDATE repo_records SET vals = jsonb_set(vals, '{has_closet}', to_jsonb(${b.on === true}::boolean)), updated_at = now(), updated_by = ${who.email}
+               WHERE account_id = 1 AND table_key = ${rec.table} AND id = ${rec.id}`;
+    await sql`INSERT INTO repo_audit (account_id, actor, action, table_key, row_id, detail)
+              VALUES (1, ${who.email}, 'records.update', ${rec.table}, ${rec.id}, 'has_closet (from Setup → Inventory)')`;
   } else if (b.action === 'lowStock') {
     await sql`UPDATE accounts SET inventory_low_stock_tasks = ${b.on === true} WHERE id = 1`;
   } else return bad('Unknown action.');
