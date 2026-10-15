@@ -497,10 +497,12 @@ key had no SOPs.
 - **Store carts & .md receipts (2026-10-15):** Amazon has no working multi-item cart link (add.html opened the old cart; untried:
   `gp/aws/cart/add-res.html`). Several stores' links per item: later, when the owner asks. The UI flow (read → flags → record →
   product learned) was not run end to end — check it on the first real receipt.
-- **Store products, open (2026-10-15):** no product yet for Coffee pods, Pillowcases, Bath mats (the only recent one was a
-  Walmart substitution), Cooking utensils, Wine glasses and the safety/hardware items. Sizes: Sheet sets / Blankets / Mattress
-  protectors have no size, so their product is one size (Queen sheets, **Twin** comforter, Queen protector) — sized items if the
-  owner wants. Packs to confirm: Swirl flatware (forks/spoons/knives each), Quatish set (plates/bowls).
+- **Store products, open (2026-10-15):** 34 of 46 supplies have one. Owner: Bath mats = the Walmart bath rug; Blankets /
+  comforters split by size (Queen = id 22, Twin = new id 46, each its Utopia product). Packs from the web: Quatish set (model
+  QT-TU-WHEAT-16P-BK) = 4 dinner + 4 salad plates, 4 bowls, 4 cups → Plates 8, Bowls 4; Swirl 49 = 8 dinner + 8 salad forks,
+  8 knives, 8 dinner spoons + 16 teaspoons → Forks 16, Knives 8, Spoons 24 (read from the teal version's listing — check one box).
+  No product, on purpose: Coffee pods (not bought online), Pillowcases (they come in the sheet set), Cooking utensils (later),
+  Wine glasses, the safety/hardware items. Sheet sets and Mattress protectors still have no size (Queen products).
 - **Later (owner, 2026-10-15): the September–October purchases as Restock** (stock + Costs; Costs has no Restock yet, so no
   duplicates) — the owner says where each order went; deferred ("no miremos lo del stock ahorita"). With it, a screen to upload a
   purchase and pick where each thing went.
