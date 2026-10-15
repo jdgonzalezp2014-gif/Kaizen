@@ -1530,7 +1530,9 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
       <div className="buy-opts">
         <b>Buy at</b> <span className="sub-n">— where to buy it; each option with its link and how many come in one (×)</span>
         <Hint>ONE Walmart (walmart.com/ip/…) or Amazon (amazon.com/dp/…) link per item: it is the store's product — receipts match it by number and an order
-          opens it (Walmart: in the cart). Recording a receipt (.md) sets it, with its ×; bought at the other store, that one replaces it.</Hint>
+          opens it (Walmart: in the cart). Recording a receipt (.md) sets it, with its ×; bought at the other store, that one replaces it.
+          A set: put the same link on each item it holds, each with its own × (flatware: Forks ×16, Knives ×8, Spoons ×24) — a receipt
+          splits it into those items and the cart buys it once for all of them.</Hint>
         {form.buyOptions.map((o, k) => (
           <div key={k} className="row" style={{ gap: 6, alignItems: 'center' }}>
             <input value={o.label} maxLength={60} placeholder="Store, e.g. Costco" aria-label="Store" onChange={e => setOpt(k, { label: e.target.value })} />

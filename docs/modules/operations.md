@@ -65,6 +65,11 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   its page "Amazon: <item> ×n". qty = ⌈ordered ÷ pack⌉; items with neither are named ("No store link"). Kaizen never pays.
 - **One store product per item (owner, 2026-10-15: "not several platforms' links yet"):** `withProduct` keeps ONE
   Walmart/Amazon option (bought at the other store, it replaces it; Costco-type links stay); `inventory-items` save refuses two.
+- **Sets (owner, 2026-10-15):** one store product on several supplies = a set (Swirl flatware on Forks ×16 / Knives ×8 / Spoons ×24,
+  Quatish on Plates ×8 / Bowls ×4, the Amazon sheet set on Sheet sets ×1 / Pillowcases ×2). `readOrder` splits its line into one
+  line per supply (`match` 'product', its pieces, the price shared evenly, leftover cents on the first) and `cartLinks` buys it
+  as often as the neediest supply asks (max, not sum). Deterministic, by product number — the AI photo path is unchanged.
+  SOP #15 v18 says so; Items list → Buy at "?" too.
 - **Every read is checked (owner, 2026-10-15):** `orderWarnings` — no order number/date (a Walmart selection started below the
   title), products ≠ subtotal (left out), items ≠ "Subtotal (N items)" → ▲ in the read message; also in SOP #15 v17.
   Tested on real data (read-only): Walmart 2000156-31789057 6 lines, 19 items, 38.67 + 3.19 = 41.86; Amazon 113-2518508-6894635;
@@ -497,11 +502,11 @@ key had no SOPs.
 - **Store carts & .md receipts (2026-10-15):** Amazon has no working multi-item cart link (add.html opened the old cart; untried:
   `gp/aws/cart/add-res.html`). Several stores' links per item: later, when the owner asks. The UI flow (read → flags → record →
   product learned) was not run end to end — check it on the first real receipt.
-- **Store products, open (2026-10-15):** 34 of 46 supplies have one. Owner: Bath mats = the Walmart bath rug; Blankets /
+- **Store products, open (2026-10-15):** 35 of 45 active supplies have one. Owner: Bath mats = the Walmart bath rug; Blankets /
   comforters split by size (Queen = id 22, Twin = new id 46, each its Utopia product). Packs from the web: Quatish set (model
   QT-TU-WHEAT-16P-BK) = 4 dinner + 4 salad plates, 4 bowls, 4 cups → Plates 8, Bowls 4; Swirl 49 = 8 dinner + 8 salad forks,
   8 knives, 8 dinner spoons + 16 teaspoons → Forks 16, Knives 8, Spoons 24 (read from the teal version's listing — check one box).
-  No product, on purpose: Coffee pods (not bought online), Pillowcases (they come in the sheet set), Cooking utensils (later),
+  Coffee pods switched off (owner: not used). Pillowcases = the sheet set ×2. No product, on purpose: Cooking utensils (later),
   Wine glasses, the safety/hardware items. Sheet sets and Mattress protectors still have no size (Queen products).
 - **Later (owner, 2026-10-15): the September–October purchases as Restock** (stock + Costs; Costs has no Restock yet, so no
   duplicates) — the owner says where each order went; deferred ("no miremos lo del stock ahorita"). With it, a screen to upload a

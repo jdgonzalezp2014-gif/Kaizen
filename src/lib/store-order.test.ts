@@ -434,3 +434,20 @@ Total$27.02`);
   assert.deepEqual(o.lines.map(l => [l.product.id, l.qty, l.amount, l.unitPrice, l.pack]),
     [['578550306', 1, 12.96, 12.96, null], ['211142390', 2, 12, 6, 6]]);
 });
+
+test('readOrder: a set — one product on several supplies — split into each, its pieces counted, the price shared', () => {
+  const swirl = 'https://www.walmart.com/ip/MS-49-SWIRL-FLATWARE/17074320417';
+  const set = [
+    { id: '32', name: 'Forks', measure: 'fork', buyOptions: [{ label: 'Walmart', url: swirl, pack: 16 }] },
+    { id: '33', name: 'Knives', measure: 'knife', buyOptions: [{ label: 'Walmart', url: swirl, pack: 8 }] },
+    { id: '34', name: 'Spoons', measure: 'spoon', buyOptions: [{ label: 'Walmart', url: swirl, pack: 24 }] },
+  ];
+  const o = parseOrderMd(STORE.replaceAll('Mainstays-Bath-Towel/1914075718', 'MS-49-SWIRL-FLATWARE/17074320417'));
+  const r = readOrder(o, set);
+  assert.deepEqual(r.lines.map(l => [l.itemId, l.itemQty, l.amount, l.match]),
+    [['32', 64, 5.3, 'product'], ['33', 32, 5.29, 'product'], ['34', 96, 5.29, 'product']]);
+  assert.equal(Math.round(r.lines.reduce((a, l) => a + (l.amount ?? 0), 0) * 100) / 100, 15.88);
+  // The cart buys the set as often as the supply that needs most asks — not once per supply.
+  const c = cartLinks([{ itemId: '32', qty: 10 }, { itemId: '33', qty: 9 }, { itemId: '34', qty: 5 }], set);
+  assert.deepEqual(c.walmart.items.map(x => [x.id, x.qty]), [['17074320417', 2]]);
+});

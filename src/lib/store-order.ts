@@ -143,24 +143,37 @@ export type Match = 'product' | 'alias' | 'guess' | 'none';
 
 /**
  * The order's lines as receipt lines for the purchase form: a supply only when SURE — its product number is on
- * exactly one supply, or a person decided that text before. Otherwise the look-alikes are offered (≈ not exact) or
+ * exactly one supply (on several = a set, split into each), or a person decided that text before. Otherwise the look-alikes are offered (≈ not exact) or
  * nothing (✕ no match), and the person decides. Fees and savings the lines do not explain become one line, so the
  * lines plus tax add up to the total.
  */
 export function readOrder(o: StoreOrder, items: (ReceiptItem & { buyOptions?: BuyOption[] })[], orders: ReceiptOrder[] = [],
                           aliases: Map<string, string> = new Map()): Receipt {
   const active = items.filter(i => i.active !== false);
-  const lines: ReceiptLine[] = o.lines.map(l => {
+  const lines: ReceiptLine[] = o.lines.flatMap((l): ReceiptLine[] => {
     const owners = active.filter(i => optionOf(i, l.product));
+    // A set (owner, 2026-10-15): one product on several supplies — the Swirl flatware on Forks ×16, Knives ×8 and
+    // Spoons ×24, a sheet set on Sheet sets ×1 and Pillowcases ×2 — is split into one line per supply, each counting
+    // its own pieces; the price is shared evenly (the cents left over on the first) so the lines still add up.
+    if (owners.length > 1) {
+      const share = l.amount == null ? null : Math.floor(l.amount / owners.length * 100) / 100;
+      return owners.map((it, k): ReceiptLine => {
+        const amount = share == null ? null : k ? share : Math.round((l.amount! - share * (owners.length - 1)) * 100) / 100;
+        return { text: `${l.text} — ${it.name}${it.size ? ` (${it.size})` : ''}`, qty: l.qty, amount, kind: 'item', itemId: it.id,
+                 unitPrice: amount == null ? null : Math.round(amount / l.qty * 100) / 100,
+                 itemQty: Math.round(l.qty * packFor(l, it.measure, optionOf(it, l.product)?.pack) * 100) / 100, candidates: [],
+                 orderId: orderFor(it.id, orders), size: null, newName: null, product: l.product, match: 'product', pack: l.pack, packWord: l.packWord };
+      });
+    }
     const learned = aliases.get(aliasKey(l.text));
     const byAlias = learned ? active.find(i => i.id === learned) : undefined;
     const it = owners.length === 1 ? owners[0]! : byAlias;
     const match: Match = owners.length === 1 ? 'product' : byAlias ? 'alias' : 'none';
     const candidates = it ? [] : [...new Set([...owners.map(i => i.id), ...similarItems(l.text, active, 8).filter(c => !wrongSize(active.find(i => i.id === c)!, null, active))])].slice(0, 4);
     const pack = it ? packFor(l, it.measure, optionOf(it, l.product)?.pack) : null;
-    return { text: l.text, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount, kind: 'item', itemId: it?.id ?? null,
+    return [{ text: l.text, qty: l.qty, unitPrice: l.unitPrice, amount: l.amount, kind: 'item', itemId: it?.id ?? null,
              itemQty: it ? Math.round(l.qty * pack! * 100) / 100 : l.qty, candidates, orderId: orderFor(it?.id ?? null, orders), size: null, newName: null,
-             product: l.product, match: it ? match : candidates.length ? 'guess' : 'none', pack: l.pack, packWord: l.packWord };
+             product: l.product, match: it ? match : candidates.length ? 'guess' : 'none', pack: l.pack, packWord: l.packWord }];
   });
   const sum = Math.round(lines.reduce((a, l) => a + (l.amount ?? 0), 0) * 100) / 100;
   const rest = o.total != null ? Math.round((o.total - sum - (o.tax ?? 0)) * 100) / 100 : 0;
@@ -215,9 +228,10 @@ export function cartLinks(lines: { itemId: string; qty: number }[], items: { id:
     const p = opt ? storeProduct(opt.url)! : null;
     if (!p) { none.push(itemId); continue; }
     const n = Math.max(1, Math.ceil(Math.round(qty / (opt!.pack && opt!.pack > 0 ? opt!.pack : 1) * 1000) / 1000));
-    if (p.store === 'amazon') { amazon.push({ url: p.url, qty: n, itemId }); continue; }
+    // A set on several supplies (forks, knives, spoons): bought as many times as the supply that needs most asks.
+    if (p.store === 'amazon') { const had = amazon.find(x => x.url === p.url); if (had) had.qty = Math.max(had.qty, n); else amazon.push({ url: p.url, qty: n, itemId }); continue; }
     const had = walmart.find(x => x.id === p.id);
-    if (had) had.qty += n; else walmart.push({ id: p.id, qty: n, itemId });
+    if (had) had.qty = Math.max(had.qty, n); else walmart.push({ id: p.id, qty: n, itemId });
   }
   const url = walmart.length ? `https://affil.walmart.com/cart/addToCart?items=${walmart.map(x => `${x.id}|${x.qty}`).join(',')}` : null;
   return { walmart: { url, items: walmart }, amazon, none };
