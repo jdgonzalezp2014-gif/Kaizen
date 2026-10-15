@@ -128,20 +128,11 @@ function TeamApp() {
   // and fired /api/forward, which answers 403 for them. The flash was
   // the visible part; the forbidden request was the rest of it.
   const [tab, setTab] = useState<Tab | null>(null);
-  // On a phone the tab bar scrolls sideways; the open tab is brought into
-  // view — sideways only, so the page itself never jumps (§80).
-  const navRef = useRef<HTMLElement>(null);
-  useEffect(() => {
-    const nav = navRef.current;
-    const active = nav?.querySelector<HTMLElement>('.tab.active');
-    if (!nav || !active || nav.scrollWidth <= nav.clientWidth) return;
-    const left = active.offsetLeft - nav.offsetLeft;
-    if (left < nav.scrollLeft || left + active.offsetWidth > nav.scrollLeft + nav.clientWidth) {
-      nav.scrollLeft = Math.max(0, left - 16);
-    }
-  }, [tab]);
   /** A door from Home straight into one of Operations' views ("operations:todos"). */
   const [opsView, setOpsView] = useState<string | undefined>(undefined);
+  // §159: a click in the side bar on an Operations view — a counter, so the same view twice still navigates.
+  const [opsNav, setOpsNav] = useState<{ v: string; n: number } | undefined>(undefined);
+  const goOps = (v: string) => { setOpsView(v); setOpsNav({ v, n: Date.now() }); setTab('operations'); };
   // Which Operations view is showing — its SOPs button lists that view's procedures (§92).
   const [opsNow, setOpsNow] = useState<string | undefined>(undefined);
   /** An SOP to open when the library tab opens from a screen's SOPs panel. */
@@ -219,9 +210,10 @@ function TeamApp() {
             argument about, and a slogan nobody reads is pure vertical
             space on a screen whose job is a list. */}
         <div className="brand"><span className="brand-mark" aria-hidden="true" /><h1>Kaizen OS</h1></div>
-        <DeskNav tabs={(allowed ?? []).filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab} navRef={navRef} />
         <span className="phone-theme"><ThemeToggle /></span>
       </header>}
+      {!crewOnly && allowed && <SideNav tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab}
+                                         opsNow={opsNow} onOps={goOps} permissions={permissions} />}
       {!crewOnly && allowed && <TabBar tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab} />}
 
       {/* Only shown to someone who can act on it. Telling an ops account
@@ -247,9 +239,9 @@ function TeamApp() {
       {tab === 'revenue'  && <Revenue />}
       {tab === 'home' && <Home permissions={permissions} onGo={to => {
         const [t, sub] = to.split(':');
-        if (allowed?.includes(t!)) { setOpsView(sub); setTab(t as Tab); }
+        if (allowed?.includes(t!)) { if (t === 'operations' && sub) goOps(sub); else { setOpsView(sub); setTab(t as Tab); } }
       }} />}
-      {tab === 'operations' && <Operations permissions={permissions} initialView={opsView} onView={setOpsNow} />}
+      {tab === 'operations' && <Operations permissions={permissions} initialView={opsView} nav={opsNav} onView={setOpsNow} />}
       {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')}
                                            canEdit={can(permissions, 'repository.edit')}
                                            canStructure={can(permissions, 'repository.structure')} />}
@@ -316,45 +308,40 @@ function TabBar({ tabs, tab, onTab }: { tabs: Tab[]; tab: Tab | null; onTab: (t:
 }
 
 /**
- * The desktop's navigation (owner, 2026-10-14 — "like the phone's menu, less noise on top"): the first four
- * sections with their icons, and "More" — a menu with the rest and day / night. Hidden at 720 px and below,
- * where the bottom bar does the same job.
+ * Tablet and desktop navigation (owner, 2026-10-14: "clean screens — the menu as a vertical slider, the
+ * sub-menus open when the cursor is on them"): a rail of icons on the left that slides open on hover or
+ * keyboard focus, with Operations' views under it; day / night at the foot. The screen above is the work
+ * alone. Hidden at 720 px and below, where the bottom bar does this.
  */
-function DeskNav({ tabs, tab, onTab, navRef }: { tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void; navRef: React.RefObject<HTMLElement> }) {
-  const [open, setOpen] = useState(false);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    addEventListener('mousedown', away); addEventListener('keydown', esc);
-    return () => { removeEventListener('mousedown', away); removeEventListener('keydown', esc); };
-  }, [open]);
-  const shown = tabs.length <= 5 ? tabs : tabs.slice(0, 4);
-  const rest = tabs.length <= 5 ? [] : tabs.slice(4);
+function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions }: {
+  tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void; opsNow?: string; onOps: (v: string) => void; permissions: string[];
+}) {
   const label = (t: Tab) => TABS.find(x => x[0] === t)?.[1] ?? t;
-  const restOpen = tab !== null && rest.includes(tab);
+  // The same views, words and permissions as Operations' own strip (which the rail replaces on a big screen).
+  const opsViews: [string, string][] = [['board', 'Movements'], ...(can(permissions, 'todos') ? [['todos', 'To-do'] as [string, string]] : []),
+    ['crew', 'Cleaners'], ['inspections', 'Inspections'], ['inventory', 'Inventory'], ['notes', 'Notes log'], ['rates', 'Rates & rules'],
+    ...(can(permissions, 'operations.setup') ? [['setup', 'Setup'] as [string, string]] : [])];
   return (
-    <nav ref={navRef} className="desk-nav" aria-label="Sections">
-      {shown.map(t => (
-        <button key={t} className={tab === t ? 'tab active' : 'tab'} aria-current={tab === t ? 'page' : undefined}
-                onClick={() => onTab(t)}><TabIcon name={t} />{label(t)}</button>
-      ))}
-      <div className="desk-more" ref={box}>
-        <button className={restOpen ? 'tab active' : 'tab'} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(v => !v)}>
-          <TabIcon name={restOpen ? tab! : 'more'} />{restOpen ? label(tab!) : 'More'}<span className="caret" aria-hidden="true">▾</span>
-        </button>
-        {open && (
-          <div className="desk-menu" role="menu">
-            {rest.map(t => (
-              <button key={t} role="menuitem" className={tab === t ? 'more-item active' : 'more-item'} aria-current={tab === t ? 'page' : undefined}
-                      onClick={() => { onTab(t); setOpen(false); }}><TabIcon name={t} /><span>{label(t)}</span></button>
-            ))}
-            <div className="desk-menu-sep" role="separator" />
-            <div className="desk-menu-theme"><ThemeToggle /></div>
+    <aside className="side-nav" aria-label="Sections">
+      <div className="side-brand"><span className="brand-mark" aria-hidden="true" /><span className="side-word">Kaizen OS</span></div>
+      <nav className="side-list">
+        {tabs.map(t => (
+          <div key={t} className={`side-item ${tab === t ? 'active' : ''} ${t === 'operations' ? 'has-sub' : ''}`}>
+            <button className="side-link" aria-current={tab === t ? 'page' : undefined} onClick={() => onTab(t)} title={label(t)}>
+              <TabIcon name={t} /><span className="side-word">{label(t)}</span>
+            </button>
+            {t === 'operations' && (
+              <div className="side-sub" role="group" aria-label="Operations">
+                {opsViews.map(([k, l]) => (
+                  <button key={k} className={tab === 'operations' && (opsNow === k || (k === 'crew' && opsNow === 'calendar')) ? 'side-sublink active' : 'side-sublink'}
+                          onClick={() => onOps(k)}>{l}</button>
+                ))}
+              </div>
+            )}
           </div>
-        )}
-      </div>
-    </nav>
+        ))}
+      </nav>
+      <div className="side-foot"><ThemeToggle /></div>
+    </aside>
   );
 }

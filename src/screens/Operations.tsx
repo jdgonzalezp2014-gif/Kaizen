@@ -129,10 +129,12 @@ const MAX_AHEAD = 30;
 interface Range { from: string; to: string }
 const defaultRange = (today: string): Range => ({ from: today, to: addDays(today, DEFAULT_DAYS) });
 
-export function Operations({ permissions, initialView, onView }: {
+export function Operations({ permissions, initialView, nav, onView }: {
   permissions: string[]; initialView?: string;
   /** Told which view is showing, so the top bar's SOPs button can follow it (§92). */
   onView?: (view: string) => void;
+  /** §159: a view chosen in the side bar — the counter makes the same view twice still a move. */
+  nav?: { v: string; n: number };
 }) {
   const [data, setData] = useState<OperationsResponse | null>(null);
   const [err, setErr] = useState('');
@@ -147,6 +149,7 @@ export function Operations({ permissions, initialView, onView }: {
     return () => removeEventListener('kaizen:work-for', go);
   }, []);
   useEffect(() => { onView?.(view); }, [view]);
+  useEffect(() => { if (nav && VIEWS.includes(nav.v as View)) setView(nav.v as View); }, [nav?.n]);
   const canTodos = can(permissions, 'todos');
   const nyToday = todayIn('America/New_York');
   const [range, setRange] = useState<Range>(() => defaultRange(nyToday));
@@ -189,21 +192,22 @@ export function Operations({ permissions, initialView, onView }: {
 
   return (
     <section>
-      <nav className="subtabs">
+      {/* §159: on a big screen the side bar lists the views; this line says which one is open. */}
+      <h2 className="screen-crumb">Operations <span>› {views.find(([k]) => k === view || (k === 'crew' && view === 'calendar'))?.[1] ?? ''}</span></h2>
+      <nav className="subtabs ops-subtabs">
         {views.map(([k, label]) => (
           <button key={k} className={view === k || (k === 'crew' && view === 'calendar') ? 'tab active' : 'tab'} onClick={() => setView(k)}>{label}</button>
         ))}
       </nav>
 
       <div className="row-controls">
-        {view === 'board'
-          ? <MovementsRange range={range} today={nyToday} onChange={setRange} />
-          : data && <span className="note">{dayLabel(data.today)} → {dayLabel(data.end)} · New York time</span>}
-        <button className="chip" disabled={busy} onClick={() => load(true)}>
-          {busy && data ? 'Refreshing…' : 'Refresh'}
-        </button>
+        {/* §159 (owner, 2026-10-14): only what is used — the board's days and the gear. The dates of other views,
+            Refresh (the screen reads on opening) and the Live line (now on the gear's hover) were noise. */}
+        {view === 'board' && <MovementsRange range={range} today={nyToday} onChange={setRange} />}
         {view !== 'setup' && can(data?.permissions, 'operations.setup') && (
-          <button className="chip" title="This section's settings" onClick={() => openSetup(SETUP_OF[view])}><Icon n="gear" /> Setup</button>
+          <button className="chip ops-gear" onClick={() => openSetup(SETUP_OF[view])}
+                  title={`This section's settings${data?.mode === 'live' ? ' — Live: Kaizen decides the cleans and writes the Host Note in Hostaway' : ''}`}>
+            <Icon n="gear" /> Setup{data?.mode === 'live' && <span className="live-dot" aria-label="Live" />}</button>
         )}
         {data?.sheetUrl && data.mode === 'shadow' && (
           <a className="chip" href={data.sheetUrl} target="_blank" rel="noreferrer">Open the daily file ↗</a>
@@ -250,6 +254,8 @@ function ModeBanner({ data, onSetup }: { data: OperationsResponse; onSetup: () =
     // A refusal because the listing is archived is not a fault to retry —
     // Kaizen no longer asks — so it is not counted as one.
     const failed = data.pushes.filter(p => p.outcome === 'failed' && !/archived listing/i.test(p.detail ?? '')).length;
+    // §159: live and well is the normal state — the gear's dot says it; only a failure takes a line.
+    if (!failed) return null;
     return (
       <p className={`banner ${failed ? 'warn' : 'ok'}`}>
         ● <b>Live.</b> Kaizen decides the cleans and writes the Host Note in Hostaway.
@@ -292,10 +298,10 @@ function MovementsRange({ range, today, onChange }: { range: Range; today: strin
         return <button key={label} className={r.from === range.from && r.to === range.to ? 'chip active' : 'chip'}
                        onClick={() => onChange(r)}>{label}</button>;
       })}
-      <input type="date" className="date-in" value={range.from} max={range.to} onChange={e => setFrom(e.target.value)} />
+      <input type="date" className="date-in" title="From — New York time" value={range.from} max={range.to} onChange={e => setFrom(e.target.value)} />
       <span className="note">to</span>
-      <input type="date" className="date-in" value={range.to} min={range.from} max={last} onChange={e => setTo(e.target.value)} />
-      <span className="note">New York time · up to {MAX_AHEAD} days ahead</span>
+      <input type="date" className="date-in" title={`To — up to ${MAX_AHEAD} days ahead`} value={range.to} min={range.from} max={last} onChange={e => setTo(e.target.value)} />
+      {/* §159: "New York time · up to 30 days ahead" was explanation — it is on the date fields' hover now. */}
     </>
   );
 }
@@ -665,41 +671,50 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
         {shadow && r.differs.includes('price') && r.sheet?.price != null && <div className="ops-diff">sheet: {money2(r.sheet.price)}</div>}
       </td>
       <td>
+        {/* §159 (owner, 2026-10-14): the same three slots on every row, in the same order — icons (same-day ·
+            inspection · deep), work (work orders · to-dos), documents (agreement · ID) — so to-dos line up in
+            one column down the board. What needs words (cancelled, an inspection's tasks) goes under them. */}
+        <div className="flag-slots">
+          <span className="slot slot-icons">
+            {r.urgency === 'turnover' && <IconFlag tone="attn" icon={<Icon n="zap" />} label="Same-day turnover" detail="The next guest arrives the same day" />}
+            {r.inspection.key === 'req' && <IconFlag tone="attn" icon={<Icon n="search" />} label="Inspection required" detail={r.inspection.reason} />}
+            {r.inspection.key === 'due' && <IconFlag icon={<Icon n="search" />} label="Monthly inspection due" detail={r.inspection.reason} />}
+            {r.inspection.key === 'ok' && <IconFlag icon={<Icon n="done" />} label="Inspected" detail={r.inspection.reason} />}
+            {r.deep && <IconFlag icon={<Icon n="brush" />} label="Deep clean" detail="Confirmed" />}
+            {r.kind === 'out' && !r.deep && r.deepSuggested && !r.manual.deep &&
+              <IconFlag tone="attn" icon={<Icon n="warning" />} label="Deep clean suggested" detail={`A ${r.nights}-night stay — confirm it in the row if it will be cleaned as deep`} />}
+          </span>
+          <span className="slot slot-work">
+            {(() => {
+              // Open work on this unit: repairs said apart from to-dos, the titles on hover — a door to them (§159).
+              const wo = (todos ?? []).filter(t => t.kind === 'work_order');
+              const td = (todos ?? []).filter(t => t.kind !== 'work_order');
+              return <>
+                {wo.length > 0 && <button type="button" className="ops-flag urgent ops-flag-btn" title={`${wo.map(t => t.title).join('\n')}\n— open them`} onClick={e => { e.stopPropagation(); workFor(r.unitId); }}>
+                  <Icon n="wrench" /> {wo.length} work order{wo.length === 1 ? '' : 's'}</button>}
+                {td.length > 0 && <button type="button" className="ops-flag due ops-flag-btn" title={`${td.map(t => t.title).join('\n')}\n— open them`} onClick={e => { e.stopPropagation(); workFor(r.unitId); }}>
+                  <Icon n="list" /> {td.length} to-do{td.length === 1 ? '' : 's'}</button>}
+              </>;
+            })()}
+          </span>
+          <span className="slot slot-docs">
+            {/* The agreement: signed in Hostaway's guest portal, or its PDF filed in Drive (§89). */}
+            {r.kind === 'in' && (r.agreement || docs) && (() => {
+              const signed = r.agreement === 'signed' || !!docs?.agreement.length;
+              return <span className={`ops-flag ${signed ? 'ok' : 'urgent'}`} title={signed ? 'Rental agreement signed' : 'Rental agreement not signed yet'}>
+                {signed ? '✓ signed' : '▲ not signed'}</span>;
+            })()}
+            {/* The ID: verified in Hostaway for every guest; a copy in Drive where the building needs one (§89). */}
+            {r.kind === 'in' && r.idVerified && <span className="ops-flag ok" title="ID verified in Hostaway">✓ ID verified</span>}
+            {docs !== undefined && (docs === null ? <span className="ops-flag ok">… Drive</span>
+              : <span className={`ops-flag ${docs.id.length ? 'ok' : 'missing'}`} title="A copy of the ID in the reservation's Drive folder">
+                  {docs.id.length ? '✓' : '○'} ID in Drive</span>)}
+          </span>
+        </div>
         {r.cancelled && <span className="ops-flag urgent" title={r.auto.reason}>▲ cancelled {r.cancelled} — {r.manual.cleaner ? 'confirmed' : 'confirm who cleaned'}</span>}
-        {cleanTasks?.length ? <span className="ops-flag due" title={cleanTasks.map(t => `${t}`).join('\n')}><Icon n="receipt" /> {cleanTasks.length} from the inspection</span> : null}
-        {r.deep && <IconFlag icon={<Icon n="brush" />} label="Deep clean" detail="Confirmed" />}
-        {r.kind === 'out' && !r.deep && r.deepSuggested && !r.manual.deep &&
-          <span className="sub-n" title="A long stay — confirm it in the row if it will be cleaned as deep">○ deep suggested ({r.nights} nights)</span>}
+        {cleanTasks?.length ? <span className="ops-flag due" title={cleanTasks.join('\n')}><Icon n="receipt" /> {cleanTasks.length} from the inspection</span> : null}
+        {r.urgency && r.urgency !== 'turnover' && URGENCY[r.urgency] && <span className="ops-flag urgent">{ic(URGENCY[r.urgency])}</span>}
         {shadow && r.differs.includes('deep') && <span className="ops-diff">sheet: {r.sheet?.deep ? 'deep' : 'not deep'}</span>}
-        {r.urgency && URGENCY[r.urgency] && (r.urgency === 'turnover'
-          ? <IconFlag tone="attn" icon={<Icon n="zap" />} label="Same-day turnover" detail="The next guest arrives the same day" />
-          : <span className="ops-flag urgent">{ic(URGENCY[r.urgency])}</span>)}
-        {r.inspection.key === 'req' && <IconFlag tone="attn" icon={<Icon n="search" />} label="Inspection required" detail={r.inspection.reason} />}
-        {r.inspection.key === 'due' && <IconFlag icon={<Icon n="search" />} label="Monthly inspection due" detail={r.inspection.reason} />}
-        {r.inspection.key === 'ok' && <span className="ops-flag ok" title={r.inspection.reason}>✓ inspected</span>}
-        {(() => {
-          // Open work on this unit: repairs said apart from to-dos, the titles on hover.
-          const wo = (todos ?? []).filter(t => t.kind === 'work_order');
-          const td = (todos ?? []).filter(t => t.kind !== 'work_order');
-          return <>
-            {/* §159: a door, not a label — To-do opens with this unit's work, its filter on. */}
-            {wo.length > 0 && <button type="button" className="ops-flag urgent ops-flag-btn" title={`${wo.map(t => t.title).join('\n')}\n— open them`} onClick={e => { e.stopPropagation(); workFor(r.unitId); }}>
-              <Icon n="wrench" /> {wo.length} work order{wo.length === 1 ? '' : 's'}</button>}
-            {td.length > 0 && <button type="button" className="ops-flag due ops-flag-btn" title={`${td.map(t => t.title).join('\n')}\n— open them`} onClick={e => { e.stopPropagation(); workFor(r.unitId); }}>
-              <Icon n="list" /> {td.length} to-do{td.length === 1 ? '' : 's'}</button>}
-          </>;
-        })()}
-        {/* The agreement: signed in Hostaway's guest portal, or its PDF filed in Drive (§89). */}
-        {r.kind === 'in' && (r.agreement || docs) && (() => {
-          const signed = r.agreement === 'signed' || !!docs?.agreement.length;
-          return <span className={`ops-flag ${signed ? 'ok' : 'urgent'}`} title={signed ? 'Rental agreement signed' : 'Rental agreement not signed yet'}>
-            {signed ? '✓ signed' : '▲ not signed'}</span>;
-        })()}
-        {/* The ID: verified in Hostaway for every guest; a copy in Drive where the building needs one (§89). */}
-        {r.kind === 'in' && r.idVerified && <span className="ops-flag ok" title="ID verified in Hostaway">✓ ID verified</span>}
-        {docs !== undefined && (docs === null ? <span className="ops-flag ok">… Drive</span>
-          : <span className={`ops-flag ${docs.id.length ? 'ok' : 'missing'}`} title="A copy of the ID in the reservation's Drive folder">
-              {docs.id.length ? '✓' : '○'} ID in Drive</span>)}
       </td>
       <td className="ops-note">
         {r.note}

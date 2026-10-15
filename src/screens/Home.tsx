@@ -145,7 +145,6 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   }, []);
   const signed = (r: BoardRow) => r.agreement === 'signed';
   const unsigned = arrivals.filter(r => r.agreement === 'not_signed').length;
-  const unsignedToday = todays.ins.filter(r => r.agreement === 'not_signed').length;
   const needsCopy = new Set(ops.data?.guestDocUnits ?? []);
   const [uploading, setUploading] = useState<string | null>(null);
   const [upErr, setUpErr] = useState('');
@@ -244,23 +243,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
           <h2>{long(today)}</h2>
           <p className="note">New York time</p>
         </div>
-        {/* The day in one line, each figure a door to its screen (§91). Colour
-            only where something needs a person; a zero steps back. */}
-        <div className="home-pulses">
-          {/* §159 (owner, 2026-10-14: "this can go"): only what needs a person — the cards below say the rest. */}
-          {canOps && unassigned.length > 0 && <Pulse n={cleans.length} one="clean" many="cleans" busy={ops.busy} onClick={() => onGo('operations')}
-                            tone={unassigned.length ? 'bad' : undefined}
-                            note={unassigned.length ? `▲ ${unassigned.length} unassigned` : cleans.length ? '✓ all assigned' : ''} />}
-          {canOps && unsignedToday > 0 && <Pulse n={todays.ins.length} one="check-in" many="check-ins" busy={ops.busy} onClick={() => onGo('operations')}
-                            tone={unsignedToday ? 'warn' : undefined}
-                            note={unsignedToday ? `▲ ${unsignedToday} not signed` : todays.ins.length && todays.ins.every(signed) ? '✓ all signed' : ''} />}
-          {/* §137 approvals do not surface anywhere else on Home: a $ paid in the field
-              is unpaid until a person says yes, and extras do not reach the invoice. */}
-          {canApprove && (approvals.data?.count ?? 0) > 0 && <Pulse n={approvals.data?.count ?? 0} one="approval waiting" many="approvals waiting"
-                                busy={approvals.busy} onClick={() => onGo('operations:crew')}
-                                tone={approvals.data?.count ? 'warn' : undefined}
-                                note={approvals.data?.count && can(permissions, 'money') ? `${money(approvals.data.total)} at stake` : ''} />}
-        </div>
+        {/* §159 (owner, 2026-10-14): the summary pills repeated the cards below — gone. */}
       </header>
 
       {ops.data?.mode === 'shadow' && (
@@ -354,21 +337,6 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   );
 }
 
-/**
- * One figure of the day (§91): a count, what it is, and — only when a person
- * must act — a colour and a ▲. A zero steps back rather than disappearing,
- * so "none today" is still an answer.
- */
-function Pulse({ n, one, many, note, tone, busy, onClick }: {
-  n: number; one: string; many: string; note?: string; tone?: 'bad' | 'warn'; busy: boolean; onClick: () => void;
-}) {
-  return (
-    <button className={`home-pulse ${tone && !busy ? tone : ''} ${!busy && !n && !tone ? 'zero' : ''}`} onClick={onClick}>
-      <b>{busy ? '…' : n}</b> {n === 1 ? one : many}
-      {note && !busy && <span className="home-pulse-note">{note}</span>}
-    </button>
-  );
-}
 
 /**
  * A Home card (§81). Home is a summary, not a workspace: every card can

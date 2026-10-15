@@ -27,12 +27,13 @@ const metrics = h => send('Emulation.setDeviceMetricsOverride', { width: W, heig
 await metrics(900);
 await send('Page.enable'); await send('Page.navigate', { url: `http://127.0.0.1:8799${process.env.PAGE ?? '/'}` });
 const clickText = async (sel, text) => { for (let i = 0; i < 60; i++) { if (await ev(`(()=>{const b=[...document.querySelectorAll(${JSON.stringify(sel)})].find(b=>b.textContent.trim().startsWith(${JSON.stringify(text)})); if(b){b.click();return true} return false})()`)) return true; await sleep(500); } return false; };
-// The desktop shows four sections and "More" (2026-10-14): a section under More is clicked through its menu.
+// Sections (2026-10-14): a big screen's side bar (.side-link); a phone's bottom bar, the rest behind "More".
 if (tab !== '-') {
-  for (let i = 0; i < 60 && !(await ev(`document.querySelectorAll('header nav button').length > 1`)); i++) await sleep(500);
-  const direct = await ev(`[...document.querySelectorAll('header nav button')].some(b=>b.textContent.trim().startsWith(${JSON.stringify(tab)}))`);
-  if (direct) await clickText('header nav button', tab);
-  else { await clickText('header nav button', 'More'); await clickText('[role=menuitem]', tab); }
+  for (let i = 0; i < 60 && !(await ev(`document.querySelectorAll('.side-link, .tabbar .tab').length > 1`)); i++) await sleep(500);
+  const sel = phone ? '.tabbar .tab' : '.side-link';
+  const direct = await ev(`[...document.querySelectorAll(${JSON.stringify(sel)})].some(b=>b.textContent.trim().startsWith(${JSON.stringify(tab)}))`);
+  if (direct) await clickText(sel, tab);
+  else { await clickText('.tabbar .tab', 'More'); await clickText('.more-item', tab); }
 }
 if (sub) await clickText('.subtabs button', sub);
 for (let i = 0; i < 90; i++) { await sleep(1000); if (!(await ev(`!!document.querySelector('.loading-dot, .loading')`))) break; }

@@ -94,6 +94,7 @@ Hostaway client, sync, crypto, migrations.
   warnings and empty states stay on screen. Done (2026-10-14): Settings → Slack, Operations (16), Settings (17), Inventory (9), Crew's
   admin parts (2), Revenue, Cleanings (2), Costs. Kept on screen on purpose: Todos' notes and Units' data caveats (states),
   the cleaner-facing crew page, empty states.
-- **Navigation (§159, owner 2026-10-14):** desktop = four sections with icons + "More ▾" (the rest and day/night) —
-  `DeskNav` in App.tsx; phone = the bottom bar. Home's summary pills show only what needs a person (unassigned cleans,
-  unsigned check-ins, approvals). `scripts/screenshot.mjs` opens "More" for a section behind it.
+- **Navigation (§159, owner 2026-10-14):** tablet/desktop = a side rail (`SideNav`, App.tsx) that slides open on hover,
+  Operations' views inside it (`goOps` → Operations `nav` {v, n}); no top bar ≥ 721 px. Phone = header + bottom bar.
+  Home: no summary pills (they repeated the cards); centred 1120 px with equal-height cards on a big screen; no uploads or
+  Hostaway links on a phone. `scripts/screenshot.mjs` clicks `.side-link` (big) or the bottom bar / More (phone).

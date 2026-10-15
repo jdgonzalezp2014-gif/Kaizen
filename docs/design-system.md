@@ -87,7 +87,7 @@ decorative.
 | Component | Class / file | Notes |
 |---|---|---|
 | Shell | `header`, `.brand`, `nav .tab` — `App.tsx` | Sticky with blur (solid under *reduced transparency*). Current tab = white raised segment, `aria-current="page"` |
-| Desktop nav | `DeskNav` in `App.tsx` | Four sections with icons + "More ▾" menu (the rest, day / night) |
+| Side rail (tablet, desktop) | `SideNav` in `App.tsx` | A 64 px rail of icons that slides open (248 px) on hover / focus; Operations' views under it; day / night at the foot. No top bar ≥ 721 px — the screen is the work; Operations shows a one-line crumb instead of its strip |
 | Phone tab bar | `.tabbar` + `TabBar` in `App.tsx`, icons in `components/TabIcon.tsx` | ≤ 720 px. Up to 5 tabs; more → 4 + **More** (sheet with the rest). Never scrolls sideways. `--tabbar-h` lifts the SOP button, toasts and the minimised SOP sheet |
 | Buttons | `button` (primary), `.secondary`/`.ghost`, `.danger`, `.small`, `.link` | Only these roles get `--control-h`; chips, day cells and row headers keep their own size |
 | Fields | `input`, `select`, `textarea`, `label > input` | Border `--line-strong`, focus = accent border + 3 px ring |

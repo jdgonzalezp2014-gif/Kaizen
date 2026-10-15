@@ -536,3 +536,8 @@ UI only; tokens and shared components from `docs/design-system.md`.
   (`kaizen:work-for` event → `WorkView unit`). **Manual cleans can be changed** (owner: "mid-stay cleans can't be fixed"):
   `/api/manual-clean` `update` (cleaner, deep, note, day — not an early departure's day), price re-rated only when the
   cleaner or deep change; "Change…" on the row. Old "Assign and schedule" sub-tasks already in production stay as they are.
+- **Round 3 (§159):** the board's flags sit in three fixed slots (icons: same-day · inspection · deep; work: work orders ·
+  to-dos; documents: agreement · ID) so each lines up down the column; "deep suggested" is an amber ⚠ icon with the
+  nights on hover. Top of Operations: only the board's days and the gear — no Refresh (it reads on opening), no date line
+  on other views, no "Live" banner while live and healthy (a green dot on the gear, the sentence on its hover; failures
+  and shadow mode still take a banner). On a big screen the view strip is replaced by the side rail + "Operations › View".

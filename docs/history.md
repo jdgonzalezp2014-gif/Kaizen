@@ -4216,4 +4216,6 @@ the listing is not repeated in titles; sub-tasks are born and stay inside their 
 orders inside a work order, with no "Assign and schedule" to-do (it was the same job written twice); to-dos can be
 **merged**; manual cleans can be changed; flags are icons with the word on hover; "n to-dos" on the board opens that
 unit's work; the desktop navigation is four sections and "More", like the phone.
+Round 3, same day: Home's pills removed (they repeated the cards); the board's flags in fixed slots; Operations' top
+reduced to the days and the gear; tablet/desktop navigate from a sliding side rail with Operations' views in it.
 

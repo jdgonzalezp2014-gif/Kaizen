@@ -1492,18 +1492,6 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
    colour only on what needs a person; the rest in quiet type, so the eye
    lands on exceptions first (pre-attentive pop-out needs few competitors).
    Titles outrank their labels; the day, which has a clock, comes first. */
-.home-pulses { display: flex; gap: 8px; flex-wrap: wrap; }
-.home-pulse { display: inline-flex; align-items: baseline; gap: 5px; flex-wrap: wrap; background: var(--card); color: var(--ink);
-  border: 1px solid var(--line); border-radius: var(--r-md); padding: 7px 12px; font-size: var(--fs-body); font-weight: 500; text-align: left; }
-.home-pulse:hover { border-color: color-mix(in srgb, var(--ink) 28%, var(--line)); }
-.home-pulse b { font-size: var(--fs-headline); font-weight: 700; font-variant-numeric: tabular-nums; }
-.home-pulse-note { font-size: var(--fs-footnote); color: var(--muted); font-weight: 500; }
-.home-pulse.zero { color: var(--muted); }
-.home-pulse.zero b { color: var(--muted); font-weight: 600; }
-.home-pulse.bad { border-color: color-mix(in srgb, var(--crit) 55%, transparent); background: color-mix(in srgb, var(--crit) 6%, var(--card)); }
-.home-pulse.bad b, .home-pulse.bad .home-pulse-note { color: var(--crit); font-weight: 700; }
-.home-pulse.warn { border-color: color-mix(in srgb, var(--warn) 55%, transparent); background: color-mix(in srgb, var(--warn) 7%, var(--card)); }
-.home-pulse.warn b, .home-pulse.warn .home-pulse-note { color: var(--warn); font-weight: 700; }
 .home-grid { gap: 16px; }
 .home-card-head h3 { font-size: var(--fs-headline); }
 .home-card-head { margin-bottom: 8px; }
@@ -2438,21 +2426,65 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .todo-merge { display: inline-flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 .todo-merge select { max-width: 360px; }
 
-/* Desktop navigation (owner, 2026-10-14): four sections with icons, the rest and day / night under "More". */
-.desk-nav { display: flex; gap: 2px; align-items: center; margin-left: auto; }
-.desk-nav .tab .tab-icon { display: block; width: 18px; height: 18px; opacity: .85; }
-.desk-nav .caret { font-size: 10px; margin-left: 2px; color: var(--muted); }
-.desk-more { position: relative; }
-.desk-menu { position: absolute; right: 0; top: calc(100% + 6px); z-index: 50; min-width: 220px; padding: 6px;
-  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); box-shadow: var(--shadow-3); }
-.desk-menu .more-item { min-height: 40px; padding: 0 10px; border-bottom: 0; border-radius: var(--r-sm); font-size: var(--fs-body); }
-.desk-menu .more-item .tab-icon { width: 18px; height: 18px; }
-.desk-menu-sep { height: 1px; background: var(--line); margin: 6px 4px; }
-.desk-menu-theme .theme-toggle { width: 100%; justify-content: flex-start; padding: 8px 10px; }
-.phone-theme { display: none; }
-@media (max-width: 720px) { .phone-theme { display: inline-flex; margin-left: auto; } .desk-nav { display: none; } }
 .ops-flag-btn { cursor: pointer; font: inherit; font-size: var(--fs-caption); font-weight: 600; min-height: 0; }
 .ops-flag-btn:hover { border-color: var(--accent); color: var(--accent); }
 .ops-editor-why .peek-label { color: var(--ink); }
 .ops-manual-btns { display: flex; gap: 12px; margin-top: 4px; }
 .ops-manual-edit { margin: 4px 0 8px; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-left: 2px; }
+/* §159: the board's flags in three fixed slots, so each kind lines up down the column. */
+.flag-slots { display: grid; grid-template-columns: 92px 128px auto; gap: 4px 8px; align-items: center; }
+.flag-slots .slot { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; min-width: 0; }
+.flag-slots .ops-flag { margin: 0; }
+@media (max-width: 720px) { .flag-slots { display: flex; flex-wrap: wrap; } .flag-slots .slot:empty { display: none; } }
+/* §159 (owner, 2026-10-14): Home is a fixed, centred page on a tablet or a desktop — the cards in a steady
+   grid, the same height side by side — so the eye is not dragged across a 1440 px screen. */
+@media (min-width: 721px) {
+  .home { max-width: 1120px; margin: 0 auto; }
+  .home-grid { align-items: stretch; gap: 16px; }
+  .home-grid > .home-card { height: 100%; }
+}
+/* A phone reads Home; uploading documents and opening Hostaway are desk work. */
+@media (max-width: 720px) { .home .home-upload, .home .home-hostaway { display: none; } }
+
+/* §159 (owner, 2026-10-14): tablet and desktop navigate from a rail of icons on the left that slides open on
+   hover or focus, Operations' views under it, day / night at its foot. The screen is the work alone: no top bar. */
+.side-nav { display: none; }
+.screen-crumb { display: none; }
+@media (min-width: 721px) {
+  header.app-header { display: none; }
+  main:has(> .side-nav) { max-width: none; margin: 0 0 0 64px; padding: var(--s-5) var(--s-6) 96px; }
+  .side-nav { position: fixed; z-index: 45; top: 0; left: 0; bottom: 0; width: 64px; display: flex; flex-direction: column; gap: 4px;
+    padding: 14px 10px; overflow: hidden; background: var(--card); border-right: 1px solid var(--line);
+    transition: width .18s ease, box-shadow .18s ease; }
+  .side-nav:hover, .side-nav:focus-within { width: 248px; box-shadow: var(--shadow-3); }
+  .side-word { opacity: 0; white-space: nowrap; transition: opacity .12s ease; }
+  .side-nav:hover .side-word, .side-nav:focus-within .side-word { opacity: 1; }
+  .side-brand { display: flex; align-items: center; gap: 14px; padding: 2px 11px 16px; font-weight: 700; font-size: var(--fs-headline); }
+  .side-list { display: flex; flex-direction: column; gap: 2px; }
+  .side-link { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 40px; padding: 0 12px; background: none; border: 0;
+    border-radius: var(--r-sm); color: var(--muted); font: inherit; font-size: var(--fs-body); font-weight: 600; cursor: pointer; text-align: left; }
+  .side-link .tab-icon { display: block; width: 20px; height: 20px; flex: none; }
+  .side-link:hover { background: var(--hover); color: var(--ink); }
+  .side-item.active > .side-link { background: var(--tint); color: var(--ink); box-shadow: inset 3px 0 0 var(--accent); }
+  .side-sub { display: none; flex-direction: column; padding: 2px 0 6px 48px; }
+  .side-nav:hover .side-item.has-sub:hover .side-sub,
+  .side-nav:hover .side-item.has-sub.active .side-sub,
+  .side-nav:focus-within .side-item.has-sub:focus-within .side-sub { display: flex; }
+  .side-sublink { text-align: left; background: none; border: 0; padding: 6px 10px; border-radius: var(--r-sm); color: var(--muted);
+    font: inherit; font-size: var(--fs-footnote); font-weight: 500; cursor: pointer; white-space: nowrap; }
+  .side-sublink:hover { background: var(--hover); color: var(--ink); }
+  .side-sublink.active { color: var(--ink); font-weight: 650; background: var(--tint); }
+  .side-foot { margin-top: auto; }
+  .side-foot .theme-toggle { width: 100%; justify-content: flex-start; gap: 16px; padding: 0 12px; min-height: 40px; border: 0; background: none; }
+  .side-foot .theme-word { opacity: 0; transition: opacity .12s ease; }
+  .side-nav:hover .side-foot .theme-word, .side-nav:focus-within .side-foot .theme-word { opacity: 1; }
+  /* The rail lists Operations' views; the strip on the page would say it twice. A one-line crumb says where you are. */
+  .ops-subtabs { display: none !important; }
+  .screen-crumb { display: block; margin: 0 0 var(--s-3); font-size: var(--fs-title3); font-weight: 650; }
+  .screen-crumb span { color: var(--muted); font-weight: 500; }
+  body.sop-docked .side-nav { z-index: 46; }
+}
+@media (min-width: 721px) and (prefers-reduced-motion: reduce) { .side-nav, .side-word { transition: none; } }
+.phone-theme { display: inline-flex; margin-left: auto; }
+@media (min-width: 721px) { .side-nav .side-list { align-items: stretch; margin-left: 0; } .side-item { width: 100%; } }
