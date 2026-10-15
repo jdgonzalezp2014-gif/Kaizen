@@ -12,6 +12,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { addDays, today } from '../../src/lib/dates.ts';
+import { isUpsell } from '../../src/lib/claims.ts';
 
 interface CostRowDb {
   unit_id: string | null; shared: boolean;
@@ -57,8 +58,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     fetchReservationsTouching(creds, from, to),
     sql`SELECT unit_id, shared, start_date, end_date, category, frequency, amount
         FROM expenses WHERE (end_date IS NULL OR end_date >= ${from}) AND start_date <= ${to}` as unknown as Promise<CostRowDb[]>,
-    sql`SELECT unit_id, occurred_on, category, severity, status, refund, requested
-        FROM claims WHERE occurred_on >= ${from} AND occurred_on <= ${to} AND deleted_at IS NULL`,
+    // §162: what came in on claims and upsells — income beside the reservations, dated when the case closed (else
+    // when it was raised). Only the received amount: what was requested is not money, and the repair work a claim
+    // pays for is already in `expenses` (work orders and purchases write their own).
+    sql`SELECT unit_id, COALESCE(resolved_on, occurred_on)::text AS on_day, category, refund
+        FROM claims WHERE account_id = 1 AND deleted_at IS NULL AND refund > 0
+         AND COALESCE(resolved_on, occurred_on) BETWEEN ${from} AND ${to}`,
     // The parked verdict, computed at sync time. Reading it costs one
     // cheap query; recomputing it would cost 27 calendar requests on
     // every dashboard load.
@@ -109,6 +114,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       amount: Number(e.amount),
       source: e.frequency === 'Monthly' ? 'fixed' : 'variable'
     })),
-    claims
+    income: (claims as { unit_id: string | null; on_day: string; category: string | null; refund: string }[]).map(c => ({
+      unitId: c.unit_id, on: c.on_day, amount: Number(c.refund), kind: isUpsell(c.category) ? 'upsell' : 'claim' }))
   });
 };

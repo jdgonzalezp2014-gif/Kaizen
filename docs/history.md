@@ -4277,3 +4277,14 @@ Owner, from a claim card (P2-4308 · Missing Fob) and a to-do's "More: kind, cla
   otherwise (`commentFileLines`, `Kaizen.commentWithFiles`). The timeline shows the photo inside the comment through
   `/api/comment-image?id=` (Drive read with Kaizen's token; only an id a comment names). The to-do's Files are for what
   is attached to the to-do itself — the message it was made from, the 📎 box.
+- **Round 2 — the money is Finance's (owner, same day: "how does this feed the costs?").** Before: finance read no claim
+  at all (`/api/portfolio` returned them, nothing used them) — no double count, but no reimbursement or upsell in profit
+  either. Now: the **Claims nav tab is gone**; Operations follows cases in To-do (Claims & upselling tab) and sees only
+  their **Repair work** (maintenance — its work orders and purchases already write their own expenses). The figures
+  (requested, received = `claims.refund`, kind) live in **Revenue → Claims & upselling** (`ClaimsMoney`,
+  `/api/claims-money`, permission `claims.money`, admin only by default): totals for claims (received of requested,
+  recovery %, repair work, net = received − repair work) and upselling (received by kind). `/api/claims` and Slack no
+  longer read or write money (Slack's claim form lost "Refunded ($)"). **Received counts in Revenue's net** as
+  `otherIncome` (`IncomeRow`, `incomeIn`; `unitMetrics`/`portfolioMetrics`), dated `COALESCE(resolved_on, occurred_on)`
+  — never in revenue, ADR or RevPAN. Repair work is never added to Costs again. Claim #9 ("Charge early check in Quest",
+  $60 in `refund`) was already used as *received*: kind set to Early check-in, requested $60. SOP #3 v4.

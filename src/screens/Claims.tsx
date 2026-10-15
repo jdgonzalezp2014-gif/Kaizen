@@ -1,266 +1,136 @@
 /**
- * Claims & upselling — open a case, move it along, see what was asked, what came in
- * and what the work cost. §162: a pet fee or a late check-in is the same shape of case.
+ * Revenue → Claims & upselling (§162, owner 2026-10-15) — the cases as money, for Finance only
+ * (permission `claims.money`). The team opens and follows cases in Operations → To-do; here is what
+ * was requested, what came in, and what the work cost.
  *
- * The only screen here with real CRUD, and the reason is that a claim is
- * a CASE rather than a fact. An expense happened once; a complaint moves
- * — raised, investigated, refunded, closed — and a table you could only
- * append to would make "update the status" mean "file it twice".
- *
- * Open cases sort first regardless of age. A three-month-old open claim
- * is precisely the one that needs attention, and sorting by date alone
- * buries it under yesterday's resolved ones.
+ * - Received is income: Revenue counts it in net, beside the reservations (/api/portfolio).
+ * - Requested is not money — it is what the recovery rate is measured against.
+ * - Repair work is read from the case's work orders and purchase orders, which reached Costs on their
+ *   own; it is shown to net a claim, never added to costs a second time.
+ * - Upselling is revenue. A reservation alteration is not: its price is in the reservation — unless it
+ *   was collected through the Resolution Center or no price was recorded on the reservation.
  */
 import { useEffect, useMemo, useState } from 'react';
-import { getClaims, saveClaim, deleteClaim, restoreClaim, type Claim, type UnitRow } from '../api.ts';
+import { getClaimsMoney, saveClaimMoney, type ClaimMoney } from '../api.ts';
 import { money2 } from '../lib/format.ts';
-import { CategoryOptions, ClaimCase, StayPicker } from '../components/Todos.tsx';
-import { caseHost } from '../lib/claims.ts';
-import { CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
-import { Icon } from '../components/Icon.tsx';
-import { Hint, Peek } from '../components/Hint.tsx';
-import { Linked } from '../components/Todos.tsx';
+import { caseHost, isUpsell } from '../lib/claims.ts';
 import { claimStage, shortDay } from '../lib/todos.ts';
+import { resolvePreset, type PresetId } from '../lib/ranges.ts';
+import type { Period } from '../lib/finance.ts';
+import { RangePicker } from '../components/RangePicker.tsx';
+import { CategoryOptions } from '../components/Todos.tsx';
+import { Hint } from '../components/Hint.tsx';
 
-/** A claim's name on its row: what happened (the unit is the link beside it), without the "— From Slack: <url>" tail (§159). */
-const claimTitle = (c: Claim) =>
-  (c.description ?? '').replace(/\s*—?\s*From Slack:?\s*\S*\s*$/i, '').trim().slice(0, 80) || c.category || 'Claim';
+const what = (c: ClaimMoney) =>
+  (c.description ?? '').replace(/\s*—?\s*From Slack:?\s*\S*\s*$/i, '').trim().slice(0, 70) || c.category || 'Case';
+const inRange = (c: ClaimMoney, p: Period) => c.occurred_on >= p.from && c.occurred_on <= p.to;
 
-const SEVERITY = CLAIM_SEVERITY;
-const STATUS = CLAIM_STATUS;
-const SOURCES = CLAIM_SOURCES;
-
-/**
- * Weighted 1/2/4/8, the same as the old panel.
- *
- * A plain count ranks five "the wifi was slow" complaints above three
- * midnight lockouts, which is exactly backwards.
- */
-const WEIGHT: Record<string, number> = { Low: 1, Medium: 2, High: 4, Critical: 8 };
-
-const OPEN = (c: Claim) => c.status === 'Open' || c.status === 'In progress';
-
-export function Claims({ units, canWork = false }: {
-  units: UnitRow[];
-  /** May see and add work (to-dos, work orders) — the `todos` permission. */
-  canWork?: boolean;
-}) {
-  const [claims, setClaims] = useState<Claim[] | null>(null);
-  const [editing, setEditing] = useState<Partial<Claim> | null>(null);
-  const [openId, setOpenId] = useState<string | null>(null);
-  const [unitFilter, setUnitFilter] = useState('');
-  const [removed, setRemoved] = useState<Claim | null>(null);
-  const [busy, setBusy] = useState(false);
+export function ClaimsMoney() {
+  // The year so far: cases are few and slow; thirty days would show almost nothing.
+  const [preset, setPreset] = useState<PresetId | 'custom'>('ytd');
+  const [period, setPeriod] = useState<Period>(() => resolvePreset('ytd')!);
+  const [cases, setCases] = useState<ClaimMoney[] | null>(null);
+  const [view, setView] = useState<'claims' | 'upsell'>('claims');
   const [err, setErr] = useState('');
 
-  const load = () => getClaims()
-    .then(r => setClaims(r.claims ?? []))
+  const load = () => getClaimsMoney(period.from, period.to)
+    .then(r => { if (r.ok) { setCases(r.cases); setErr(''); } else setErr(r.message ?? 'Could not read the cases.'); })
     .catch(e => setErr(String(e)));
-  useEffect(() => { load(); }, []);
+  useEffect(() => { void load(); }, [period.from, period.to]);
 
-  const stats = useMemo(() => {
-    const list = claims ?? [];
-    const open = list.filter(OPEN);
-    const requested = list.reduce((a, c) => a + Number(c.requested), 0);
-    const received = list.reduce((a, c) => a + Number(c.refund), 0);
-    const work = list.reduce((a, c) => a + Number(c.repair_work), 0);
-    const weighted = open.reduce((a, c) => a + (WEIGHT[c.severity] ?? 1), 0);
-    // Oldest open case, in days. The number that says whether cases are
-    // being worked or just recorded.
-    const oldest = open.length
-      ? Math.max(...open.map(c => Math.round((Date.now() - Date.parse(c.occurred_on)) / 864e5)))
-      : 0;
-    return { total: list.length, open: open.length, requested, received, work, weighted, oldest };
-  }, [claims]);
+  const sums = useMemo(() => {
+    const list = (cases ?? []).filter(c => inRange(c, period));
+    const claims = list.filter(c => !isUpsell(c.category)), ups = list.filter(c => isUpsell(c.category));
+    const add = (xs: ClaimMoney[], f: (c: ClaimMoney) => number) => xs.reduce((a, c) => a + f(c), 0);
+    const byKind = new Map<string, number>();
+    for (const c of ups) byKind.set(c.category!, (byKind.get(c.category!) ?? 0) + c.received);
+    return {
+      claims: { n: claims.length, requested: add(claims, c => c.requested), received: add(claims, c => c.received), work: add(claims, c => c.repair_work) },
+      upsell: { n: ups.length, received: add(ups, c => c.received), byKind: [...byKind].sort((a, b) => b[1] - a[1]) }
+    };
+  }, [cases, period]);
 
-  const save = async (c: Partial<Claim> & { unitId?: string | null }) => {
-    setBusy(true); setErr('');
-    const r = await saveClaim({
-      id: c.id, unitId: c.unit_id ?? null, occurredOn: c.occurred_on,
-      category: c.category, severity: c.severity, status: c.status, source: c.source,
-      description: c.description, refund: Number(c.refund) || 0, requested: Number(c.requested) || 0,
-      reservationId: c.reservation_id ?? null, reservationLabel: c.reservation_label ?? null,
-      caseUrl: c.case_url ?? ''
-    });
-    setBusy(false);
-    if (!r.ok) { setErr(r.error ?? 'Could not save.'); return; }
-    setEditing(null);
-    await load();
-  };
+  // Cases raised in the range — and every open one, wherever it started: it is still money to chase.
+  const rows = (cases ?? []).filter(c => (view === 'upsell') === isUpsell(c.category))
+    .filter(c => inRange(c, period) || c.status === 'Open' || c.status === 'In progress');
+  const c = sums.claims;
 
   return (
     <section>
-      <div className="row-controls">
-        <h2 className="screen-title">Claims &amp; upselling<Hint>A case is anything a guest owes or is owed beyond the stay: damage, a
-          complaint — or an upsell such as a pet fee or a late check-in. Each says how much was requested, how much was received
-          (refunded) and what its repair work cost: the sum of its work orders and purchase orders, never typed. A reservation
-          alteration is not upselling — its price is part of the reservation — unless it was collected through the Resolution
-          Center or no price was recorded on the reservation.</Hint></h2>
-        <button className="small" onClick={() => setEditing({
-          occurred_on: new Date().toISOString().slice(0, 10),
-          severity: 'Medium', status: 'Open'
-        })}>Log a case</button>
-      </div>
-
+      <RangePicker period={period} preset={preset} onChange={(p, id) => { setPeriod(p); setPreset(id); }} />
       {err && <p className="banner error">{err}</p>}
-      {removed && (
-        <p className="banner ok todo-undo">
-          Removed the claim “{removed.unit_name ?? 'Portfolio'} · {removed.description || removed.category || 'claim'}”.
-          <button className="link" onClick={() => void restoreClaim(String(removed.id)).then(() => { setRemoved(null); void load(); })}>Undo</button>
-          <button className="link tiny" aria-label="Dismiss" onClick={() => setRemoved(null)}>✕</button>
-        </p>
-      )}
+      <dl className="strip">
+        <div><dt>Claims received</dt><dd>{money2(c.received)}<small>of {money2(c.requested)} requested{c.requested > 0 ? ` · ${Math.round(c.received / c.requested * 100)}%` : ''}</small></dd></div>
+        <div><dt>Claims repair work</dt><dd>{money2(c.work)}<small>already in Costs</small></dd></div>
+        <div><dt>Claims net</dt><dd>{money2(c.received - c.work)}<small>received − repair work</small></dd></div>
+        <div><dt>Upselling</dt><dd>{money2(sums.upsell.received)}<small>{sums.upsell.n} case{sums.upsell.n === 1 ? '' : 's'}{sums.upsell.byKind.length ? ` · ${sums.upsell.byKind.slice(0, 2).map(([k, v]) => `${k} ${money2(v)}`).join(' · ')}` : ''}</small></dd></div>
+      </dl>
 
-      {claims && (
-        <dl className="strip">
-          <div><dt>Open</dt><dd>{stats.open}<small>of {stats.total}</small></dd></div>
-          <div><dt>Weighted</dt><dd>{stats.weighted}
-            <small>1/2/4/8 by severity</small></dd></div>
-          <div><dt>Oldest open</dt><dd>{stats.oldest}<small>days</small></dd></div>
-          <div><dt>Received</dt><dd>{money2(stats.received)}<small>of {money2(stats.requested)} requested</small></dd></div>
-          <div><dt>Repair work</dt><dd>{money2(stats.work)}<small>work + purchase orders</small></dd></div>
-        </dl>
-      )}
-
-      {editing && (
-        <ClaimForm claim={editing} units={units} busy={busy}
-          onCancel={() => setEditing(null)} onSave={save} onRemoved={x => { setRemoved(x); void load(); }} />
-      )}
-
-      {/* §159 (owner, 2026-10-14: too much text): one row per claim — what happened on the first line, one quiet
-          line of context under it. The full description is behind "Details"; the unit filters the list. */}
-      {unitFilter && (
-        <div className="filter-chips">
-          <button className="fchip on" onClick={() => setUnitFilter('')}>{claims?.find(c => c.unit_id === unitFilter)?.unit_name ?? 'Listing'} <span aria-hidden="true">✕</span><span className="sr-only"> — clear</span></button>
+      <div className="card">
+        <div className="row-controls">
+          <h2>Claims &amp; upselling <Hint>Figures by the day a case was raised. <b>Received</b> is income — Revenue counts it in
+            net, beside the reservations, on the day the case closed. <b>Requested</b> is what was asked for (the recovery rate is
+            measured against it). <b>Repair work</b> is what the case's work orders and purchase orders cost; those reached Costs on
+            their own, so it is shown here to net a claim, never added again. A reservation alteration is not upselling — its
+            price is in the reservation — unless it was collected through the Resolution Center or no price was recorded on
+            it. Open cases from before the range are listed too. The team follows the cases in Operations → To-do.</Hint></h2>
+          <span className="rb-spacer" />
+          <span className="seg" role="group" aria-label="Which cases">
+            <button className={view === 'claims' ? 'chip active' : 'chip'} onClick={() => setView('claims')}>Claims · {c.n}</button>
+            <button className={view === 'upsell' ? 'chip active' : 'chip'} onClick={() => setView('upsell')}>Upselling · {sums.upsell.n}</button>
+          </span>
         </div>
-      )}
-      {claims && claims.length > 0 && (
-        <ul className="todo-list claims-list">
-          {claims.filter(c => !unitFilter || c.unit_id === unitFilter).map(c => {
-            const st = claimStage(c.status), on = openId === String(c.id), title = claimTitle(c);
-            const desc = (c.description ?? '').trim();
-            return (
-              <li key={c.id} className={`todo case cat-claim ${OPEN(c) ? '' : 'is-done'}`}>
-                <div className="todo-line todo-opener">
-                  <button className="todo-title" aria-expanded={on} onClick={() => setOpenId(on ? null : String(c.id))} title={on ? 'Close it' : 'Open it'}>
-                    <span className="todo-caret" aria-hidden="true">{on ? '▾' : '▸'}</span>{title}</button>
-                  <button type="button" className="todo-pencil" title="Edit the claim" aria-label={`Edit ${title}`} onClick={() => setEditing(c)}>✎</button>
-                </div>
-                <div className="todo-meta">
-                  <span className={`m m-stage st-${st.key}`}>{st.label}</span>
-                  {['High', 'Critical'].includes(c.severity) && <span className="m m-attn">{c.severity}</span>}
-                  {!c.unit_name && <span className="m"><Icon n="building" />Portfolio</span>}
-                  {c.unit_name && <button type="button" className="m m-btn m-link" title={`Show only ${c.unit_name}`} onClick={() => setUnitFilter(c.unit_id ?? '')}><Icon n="home" />{c.unit_name}</button>}
-                  {c.category && <span className="m">{c.category}</span>}
-                  <span className="m"><Icon n="calendar" />{shortDay(c.occurred_on.slice(0, 10))}{OPEN(c) ? ` · ${Math.round((Date.now() - Date.parse(c.occurred_on)) / 864e5)}d open` : ''}</span>
-                  {Number(c.requested) > 0 && <span className="m" title="Received of requested">{money2(Number(c.refund))} / {money2(Number(c.requested))}</span>}
-                  {Number(c.repair_work) > 0 && <span className="m" title="Repair work: work orders + purchase orders"><Icon n="wrench" />{money2(Number(c.repair_work))}</span>}
-                  {c.reservation_label && <span className="m"><Icon n="bed" />{c.reservation_label}</span>}
-                  {desc && desc !== title && <span className="m"><Peek label={<><Icon n="note" />{/from slack/i.test(desc) ? 'From Slack' : 'Details'}</>}><Linked text={desc} /></Peek></span>}
-                  {c.case_url && <a className="m m-link" href={c.case_url} target="_blank" rel="noreferrer">↗ {caseHost(c.case_url)} case</a>}
-                </div>
-                {on && <ClaimCase claim={c} canWork={canWork} onSaved={() => void load()} onRemoved={x => { setRemoved(x); setOpenId(null); }} />}
-              </li>
-            );
-          })}
-        </ul>
-      )}
-
-      {claims && claims.length === 0 && (
-        <p className="note">
-          Nothing logged yet. Claims feed the month-over-month view and the per-unit cost —
-          a unit that looks profitable until you count what it refunds is not profitable.
-        </p>
-      )}
+        {cases === null ? <p className="note loading-dot">Reading</p> : !rows.length ? <p className="note">Nothing in this range.</p> : (
+          <div className="table-wrap">
+            <table className="money-table">
+              <thead><tr>
+                <th>Raised</th><th>Case</th><th>Kind</th><th>Status</th>
+                {view === 'claims' && <th className="n">Requested</th>}
+                <th className="n">Received</th>
+                {view === 'claims' && <><th className="n">Repair work</th><th className="n">Net</th></>}
+              </tr></thead>
+              <tbody>{rows.map(x => <MoneyRow key={x.id} c={x} claims={view === 'claims'} onSaved={() => void load()} />)}</tbody>
+            </table>
+          </div>
+        )}
+      </div>
     </section>
   );
 }
 
-function ClaimForm({ claim, units, busy, onCancel, onSave, onRemoved }: {
-  claim: Partial<Claim>; units: UnitRow[]; busy: boolean;
-  onCancel: () => void; onSave: (c: Partial<Claim>) => void;
-  /** Removed (never erased, §86): the screen offers Undo. */
-  onRemoved?: (c: Claim) => void;
-}) {
-  const [c, setC] = useState<Partial<Claim>>(claim);
-  const set = (k: keyof Claim, v: unknown) => setC(prev => ({ ...prev, [k]: v }));
-  const closing = c.status === 'Resolved' || c.status === 'Refunded' || c.status === 'Dismissed';
-
+function MoneyRow({ c, claims, onSaved }: { c: ClaimMoney; claims: boolean; onSaved: () => void }) {
+  const [req, setReq] = useState(c.requested ? String(c.requested) : '');
+  const [rec, setRec] = useState(c.received ? String(c.received) : '');
+  const [msg, setMsg] = useState('');
+  const save = async (body: { requested?: number; received?: number; category?: string | null }) => {
+    const r = await saveClaimMoney({ id: c.id, ...body }).catch(e => ({ ok: false, message: String(e) }));
+    setMsg(r.ok ? '' : r.message ?? 'Not saved.');
+    if (r.ok) onSaved();
+  };
+  const st = claimStage(c.status);
+  const money = (v: string, set: (s: string) => void, key: 'requested' | 'received', was: number) => (
+    <input type="number" min={0} step="0.01" className="money-in" value={v} placeholder="$" aria-label={key}
+           onChange={e => set(e.target.value)}
+           onBlur={() => { const n = Number(v) || 0; if (Math.abs(n - was) > 0.004) void save({ [key]: n }); }} />
+  );
   return (
-    <div className="card claim-form">
-      <h3>{c.id ? 'Edit case' : 'Log a claim or upsell'}</h3>
-      <div className="entry">
-        <label>Raised on
-          <input type="date" value={c.occurred_on?.slice(0, 10) ?? ''}
-                 onChange={e => set('occurred_on', e.target.value)} />
-        </label>
-        <label>Unit
-          <select value={c.unit_id ?? ''} onChange={e => setC(prev => ({ ...prev, unit_id: e.target.value || null,
-                                                                          reservation_id: null, reservation_label: null }))}>
-            <option value="">Portfolio-wide</option>
-            {units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-          </select>
-        </label>
-        <label>Category
-          <select value={c.category ?? ''} onChange={e => set('category', e.target.value)}>
-            <option value="">—</option>
-            <CategoryOptions />
-          </select>
-        </label>
-        <label>Severity
-          <select value={c.severity ?? 'Medium'} onChange={e => set('severity', e.target.value)}>
-            {SEVERITY.map(x => <option key={x}>{x}</option>)}
-          </select>
-        </label>
-        <label>Source
-          <select value={c.source ?? ''} onChange={e => set('source', e.target.value)}>
-            <option value="">—</option>
-            {SOURCES.map(x => <option key={x}>{x}</option>)}
-          </select>
-        </label>
-        <label>Status
-          <select value={c.status ?? 'Open'} onChange={e => set('status', e.target.value)}>
-            {STATUS.map(x => <option key={x}>{x}</option>)}
-          </select>
-        </label>
-        <label>Requested
-          <input type="number" min={0} step="0.01" value={c.requested ?? ''} onChange={e => set('requested', e.target.value)} />
-        </label>
-        <label>Received (refunded)
-          <input type="number" min={0} step="0.01" value={c.refund ?? ''} onChange={e => set('refund', e.target.value)} />
-        </label>
-      </div>
-      <div className="claim-stay">
-        <StayPicker unitId={c.unit_id ?? null}
-                    value={c.reservation_id ? { id: c.reservation_id, label: c.reservation_label ?? '' } : null}
-                    today={c.occurred_on?.slice(0, 10)}
-                    onChange={x => setC(p => ({ ...p, reservation_id: x?.id ?? null, reservation_label: x?.label ?? null }))} />
-      </div>
-      <label>Case link (Airbnb, Booking.com, Vrbo…)
-        <input type="url" value={c.case_url ?? ''} placeholder="https://www.airbnb.com/mediation/…"
-               onChange={e => setC(p => ({ ...p, case_url: e.target.value || null }))} />
-      </label>
-      <label>What happened
-        <input value={c.description ?? ''} onChange={e => set('description', e.target.value)}
-               placeholder="e.g. AC out on arrival, guest moved to CL1339 for one night" />
-      </label>
-      {closing && (
-        <p className="note">
-          {/* Filled rather than left to whoever remembers, so a resolved
-              claim can always be aged. */}
-          Closing this fills the resolution date with today. Re-opening it clears it again.
-        </p>
-      )}
-      <div className="button-row">
-        <button className="ghost" onClick={onCancel}>Cancel</button>
-        <button onClick={() => onSave(c)} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
-        {c.id && (
-          <button className="link danger"
-            onClick={() => void deleteClaim(c.id!).then(() => { onRemoved?.(c as Claim); onCancel(); })}>
-            delete
-          </button>
-        )}
-      </div>
-    </div>
+    <tr>
+      <td>{shortDay(c.occurred_on)}</td>
+      <td>
+        <span>{c.unit_name ?? 'Portfolio'} · {what(c)}</span>
+        {c.case_url && <> <a className="case-link" href={c.case_url} target="_blank" rel="noreferrer">↗ {caseHost(c.case_url)}</a></>}
+        {c.reservation_label && <div className="sub-n">{c.reservation_label}</div>}
+        {msg && <div className="breach">{msg}</div>}
+      </td>
+      <td>
+        <select value={c.category ?? ''} aria-label="Kind" onChange={e => void save({ category: e.target.value || null })}>
+          <option value="">—</option><CategoryOptions />
+        </select>
+      </td>
+      <td><span className={`m-stage st-${st.key}`}>{st.label}</span></td>
+      {claims && <td className="n">{money(req, setReq, 'requested', c.requested)}</td>}
+      <td className="n">{money(rec, setRec, 'received', c.received)}</td>
+      {claims && <><td className="n">{money2(c.repair_work)}</td><td className="n">{money2(c.received - c.repair_work)}</td></>}
+    </tr>
   );
 }

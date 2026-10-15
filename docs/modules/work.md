@@ -164,4 +164,6 @@ UI only; tokens and shared components from `docs/design-system.md`.
   Center or unpriced on the reservation (SOP #3 v3). "+ Purchase order" inside a case. Purchase orders take sub-tasks.
   To-dos: no Kind switch, no Cost; a work order's Vendor / Estimate / Cost / Charge to owner are their own group.
   Slack thread replies keep their files in the comment (`📷 name: url` → shown via `/api/comment-image`), not in Files.
+  Round 2: money moved to Finance — Operations sees a case's Repair work only; requested/received in Revenue → Claims &
+  upselling (`claims.money`, `/api/claims-money`); the Claims nav tab is gone (cases live in Operations → To-do).
   Open: drop `claims.repair_cost` once this is deployed (migration 087).

@@ -1378,7 +1378,7 @@ function QuickClaim({ units, today, onSaved, onCancel }: {
     if (link.trim() && !cleanCaseUrl(link)) { setErr('The case link is the https:// address of the case.'); return; }
     setBusy(true); setErr('');
     const r = await saveClaim({ unitId: unitId || null, occurredOn: today, category: category || null, severity,
-                                status: 'Open', description: what.trim(), refund: 0,
+                                status: 'Open', description: what.trim(),
                                 reservationId: stay?.id ?? null, reservationLabel: stay?.label ?? null,
                                 caseUrl: cleanCaseUrl(link) ?? '' })
       .catch(e => ({ ok: false, error: String(e) }));
@@ -1433,7 +1433,6 @@ function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) =
     setBusy(true); setErr('');
     const r = await saveClaim({ id: c.id, unitId: c.unit_id, occurredOn: c.occurred_on.slice(0, 10), category: c.category,
       severity: c.severity, status: c.status, source: c.source, description: c.description,
-      refund: Number(c.refund) || 0, requested: Number(c.requested) || 0,
       reservationId: c.reservation_id, reservationLabel: c.reservation_label,
       caseUrl: c.case_url ?? '' }).catch(e => ({ ok: false, error: String(e) }));
     setBusy(false);
@@ -1462,8 +1461,6 @@ function ClaimEdit({ claim, onDone }: { claim: Claim; onDone: (saved: boolean) =
           <select value={c.source ?? ''} onChange={e => set({ source: e.target.value || null })}>
             <option value="">—</option>{CLAIM_SOURCES.map(x => <option key={x}>{x}</option>)}
           </select></label>
-        <label>Requested <input type="number" min={0} step="0.01" value={c.requested ?? ''} onChange={e => set({ requested: e.target.value })} /></label>
-        <label>Received (refunded) <input type="number" min={0} step="0.01" value={c.refund ?? ''} onChange={e => set({ refund: e.target.value })} /></label>
         <label className="claim-caselink">Case link (Airbnb, Booking.com, Vrbo…)
           <input type="url" value={c.case_url ?? ''} placeholder="https://www.airbnb.com/mediation/…"
                  onChange={e => set({ case_url: e.target.value || null })} /></label>
@@ -1524,11 +1521,11 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
               <button className="link tiny" onClick={() => setConfirmDel(false)}>Keep</button></>}
       </div>
       {editing && <ClaimEdit claim={claim} onDone={saved => { setEditing(false); if (saved) onSaved?.(); }} />}
+      {/* §162: Operations sees what the maintenance costs — what was requested and received is Finance's. */}
       <dl className="claim-money">
-        <div><dt>Requested</dt><dd>{money2(Number(claim.requested) || 0)}</dd></div>
-        <div><dt>Received</dt><dd>{money2(Number(claim.refund) || 0)}</dd></div>
         <div><dt>Repair work<Hint>Not typed: the sum of this case's work orders (their cost, or the estimate until there is one)
-          and what was bought on its purchase orders. Cancelled work counts nothing.</Hint></dt>
+          and what was bought on its purchase orders. Cancelled work counts nothing. Each already reaches Costs on its own.
+          What was requested and received is kept by Finance (Revenue → Claims &amp; upselling).</Hint></dt>
           <dd>{money2(repairWork)}{cost.estimated > 0 && <small> incl. ~{money2(cost.estimated)} estimated</small>}</dd></div>
       </dl>
       {canWork && (

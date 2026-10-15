@@ -7,8 +7,8 @@
  */
 import { type DateStr, daysInclusive, today } from './dates.ts';
 import {
-  type CostRow, type Period, type Reservation,
-  portfolioMetrics, prorateCosts, unitMetrics
+  type CostRow, type IncomeRow, type Period, type Reservation,
+  incomeIn, portfolioMetrics, prorateCosts, unitMetrics
 } from './finance.ts';
 import { type Granularity, bucketLabel, bucketPeriod, granularityFor, isPartial } from './ranges.ts';
 
@@ -41,6 +41,8 @@ export interface Dataset {
    * the API response.
    */
   sharedAmong?: string[];
+  /** §162: claims and upsells received, by listing (null = portfolio-wide). */
+  income?: IncomeRow[];
 }
 
 function metricsFor(data: Dataset, p: Period) {
@@ -50,9 +52,11 @@ function metricsFor(data: Dataset, p: Period) {
       id,
       data.reservations.filter(r => r.listingId === id),
       costs[id] ?? { total: 0, fixed: 0, variable: 0, shared: 0, byCategory: {} },
-      p
+      p, incomeIn(data.income ?? [], p, id)
     ));
-  return { byUnit, portfolio: portfolioMetrics(byUnit, p) };
+  const known = new Set(data.listingIds);
+  const loose = incomeIn((data.income ?? []).filter(r => !r.unitId || !known.has(r.unitId)), p);
+  return { byUnit, portfolio: portfolioMetrics(byUnit, p, loose) };
 }
 
 /** One point per bucket, for the whole portfolio. */
@@ -84,7 +88,8 @@ export function unitSeries(
     // count — a unit's share of the accountant does not grow just because
     // you are looking at it alone.
     costs: data.costs,
-    listingIds: data.listingIds
+    listingIds: data.listingIds,
+    income: (data.income ?? []).filter(r => r.unitId === listingId)
   };
   return bucketPeriod(period, g).map(b => {
     const m = metricsFor(scoped, b).byUnit.find(u => u.listingId === listingId);

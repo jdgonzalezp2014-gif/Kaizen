@@ -2647,3 +2647,11 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .pop-panel > button.danger:hover { background: color-mix(in srgb, var(--crit) 10%, transparent); }
 .pop-panel > button.danger { padding: 8px 10px; margin: 0; }
 .pop-panel > button.danger { justify-content: flex-start; width: 100%; }
+
+/* §162: Revenue → Claims & upselling — a narrow money table that scrolls sideways on a phone. */
+.table-wrap { overflow-x: auto; }
+.money-table th.n, .money-table td.n { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.money-table td { vertical-align: top; }
+.money-table select { max-width: 150px; }
+.money-in { width: 96px; text-align: right; }
+.seg { display: inline-flex; gap: 4px; flex-wrap: wrap; }

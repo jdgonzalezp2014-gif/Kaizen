@@ -228,7 +228,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     ...(canCosts ? [{ title: 'Expenses', quiet: 'no one-off expenses in the next 14 days',
       items: upcoming.map((e: VariableExpense) => ({ key: e.id, when: e.start_date.slice(0, 10) === today ? 'today' : short(e.start_date.slice(0, 10)),
         what: e.label || e.category, note: `${e.unit_name ?? 'shared'} · ${money2(Number(e.amount))}`, warn: false })) }] : []),
-    ...(canClaims && !canTodos ? [{ title: 'Open claims', quiet: 'no open claims', onMore: () => onGo('claims'), more: 'Open Claims',
+    ...(canClaims && !canTodos ? [{ title: 'Open claims', quiet: 'no open claims',
       items: openClaims.map((c: Claim) => ({ key: c.id, when: short(c.occurred_on.slice(0, 10)), what: c.unit_name ?? 'shared',
         note: [c.description || c.category, c.severity, `waiting ${Math.max(0, Math.round((Date.parse(today) - Date.parse(c.occurred_on)) / 864e5))}d`]
           .filter(Boolean).join(' · '), warn: c.severity === 'Critical' || c.severity === 'High' })) }] : [])

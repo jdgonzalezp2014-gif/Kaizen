@@ -2,7 +2,6 @@ import { useEffect, useRef, useState } from 'react';
 import { Revenue } from './screens/Revenue.tsx';
 import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
-import { Claims } from './screens/Claims.tsx';
 import { Settings } from './screens/Settings.tsx';
 import { Operations } from './screens/Operations.tsx';
 import { Repository } from './screens/Repository.tsx';
@@ -120,7 +119,7 @@ function CrewShell({ token }: { token: string | null }) {
 
 const TABS: [Tab, string][] = [
   ['home', 'Home'], ['units', 'Units'], ['revenue', 'Revenue'], ['operations', 'Operations'],
-  ['repository', 'Repository'], ['costs', 'Costs'], ['claims', 'Claims & upselling'], ['sops', 'SOPs'], ['settings', 'Settings']
+  ['repository', 'Repository'], ['costs', 'Costs'], ['sops', 'SOPs'], ['settings', 'Settings']
 ];
 
 function TeamApp() {
@@ -238,7 +237,7 @@ function TeamApp() {
       {tab === 'crew'     && <CrewHome />}
       {tab === 'vendor'   && <VendorHome />}
       {tab === 'units'    && <Units />}
-      {tab === 'revenue'  && <Revenue />}
+      {tab === 'revenue'  && <Revenue canClaims={can(permissions, 'claims.money')} />}
       {tab === 'home' && <Home permissions={permissions} onGo={to => {
         const [t, sub] = to.split(':');
         if (allowed?.includes(t!)) { if (t === 'operations' && sub) goOps(sub); else { setOpsView(sub); setTab(t as Tab); } }
@@ -247,7 +246,6 @@ function TeamApp() {
       {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')}
                                            canEdit={can(permissions, 'repository.edit')}
                                            canStructure={can(permissions, 'repository.structure')} />}
-      {tab === 'claims'   && <Claims units={units} canWork={can(permissions, 'todos')} />}
       {tab === 'costs'    && <Costs units={units} />}
       {tab === 'sops'     && <Sops focus={sopFocus} onFocused={() => setSopFocus(undefined)} />}
       {tab === 'settings' && <Settings />}

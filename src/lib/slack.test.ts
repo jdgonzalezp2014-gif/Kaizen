@@ -84,7 +84,7 @@ test('forms read back as the API bodies', () => {
   });
   assert.deepEqual(readClaimForm({ description: { v: { value: 'Fob' } }, severity: { v: { selected_option: { value: 'High' } } },
                                    occurred: { v: { selected_date: '2026-10-01' } } }),
-    { description: 'Fob', unitId: null, occurredOn: '2026-10-01', category: null, severity: 'High', status: 'Open', source: null, caseUrl: '', refund: 0 });
+    { description: 'Fob', unitId: null, occurredOn: '2026-10-01', category: null, severity: 'High', status: 'Open', source: null, caseUrl: '' });
 });
 
 
@@ -347,13 +347,13 @@ test('the help opens every section; @Kaizen claims lists them', () => {
 });
 
 test('a claim has its card: the case, its comments and the box; every row and message has 💬 Comment', () => {
-  const c = { id: '5', unit: 'P2-4308', category: 'Damage', severity: 'High', status: 'Open', description: 'Broken TV', days: 3, refund: 50,
+  const c = { id: '5', unit: 'P2-4308', category: 'Damage', severity: 'High', status: 'Open', description: 'Broken TV', days: 3,
               updates: [{ who: 'juan', when: 'Oct 6', body: 'Asked the guest' }] };
   const v = claimCard(c, undefined, 'claims', true) as { callback_id: string; private_metadata: string };
   const s = JSON.stringify(v);
   assert.equal(v.callback_id, 'claim_card');
   assert.deepEqual(JSON.parse(v.private_metadata), { id: '5', root: 'claims' });
-  for (const k of ['P2-4308 · Broken TV', 'Comments* · 1', 'Asked the guest', '$50.00', '"focus_on_load":true']) assert.ok(s.includes(k), k);
+  for (const k of ['P2-4308 · Broken TV', 'Comments* · 1', 'Asked the guest', '"focus_on_load":true']) assert.ok(s.includes(k), k);
   assert.match(JSON.stringify(claimList([c])), /"action_id":"claim_open","value":"5"/);
   assert.match(JSON.stringify(claimMessage(c, 'opened', 'juan').blocks), /claim_open/);
 });

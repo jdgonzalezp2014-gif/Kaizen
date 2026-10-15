@@ -1,7 +1,7 @@
 # Module: finance
 
 Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (first tab),
-**Revenue**, **Costs** (fixed · one-offs · cleanings cost view).
+**Revenue** (Profit · Claims & upselling), **Costs** (fixed · one-offs · cleanings cost view).
 
 ## Files
 
@@ -85,3 +85,8 @@ UI only; tokens and shared components from `docs/design-system.md`.
   editable cells were on the grey page and read as disabled.
 - Phone: the summary strip is a real two-column grid with hairlines; an odd last figure spans the row.
 - Emoji → one-colour icons (phase 0b), e.g. the cost kinds and the Gemini advice.
+- **Claims & upselling are income, not cost (§162).** What a case received (`claims.refund`) is `otherIncome` in net
+  (`/api/portfolio` → `income`, dated when the case closed); not revenue/ADR/RevPAN. A claim's repair work is already in
+  `expenses` through its work orders and purchases — shown in Revenue → Claims & upselling to net a claim, never added.
+  That view (`src/screens/Claims.tsx` `ClaimsMoney`, `/api/claims-money`) needs `claims.money`. Alterations are not
+  upselling unless collected through the Resolution Center or unpriced on the reservation.

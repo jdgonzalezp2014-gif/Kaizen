@@ -12,6 +12,8 @@ import {
 import { money as fmtMoney, pct } from '../lib/format.ts';
 import { Loading } from '../components/Loading.tsx';
 import { rememberTiming, recallTiming } from '../lib/progress.ts';
+import { ClaimsMoney } from './Claims.tsx';
+import type { IncomeRow } from '../lib/finance.ts';
 
 interface Portfolio {
   meta: { targets: { perUnitNet: number; activeUnits: number; portfolioNet: number; basis: string };
@@ -21,11 +23,29 @@ interface Portfolio {
               specialStatus?: string | null; city?: string; state?: string }[];
   reservations: Dataset['reservations'];
   costs: Dataset['costs'];
+  /** §162: claims and upsells received — income beside the reservations. */
+  income?: IncomeRow[];
 }
 
 const money = fmtMoney;
 
-export function Revenue() {
+/** §162: Revenue, and — for Finance — the claims and upsells as money, beside it. */
+export function Revenue({ canClaims = false }: { canClaims?: boolean }) {
+  const [sub, setSub] = useState<'profit' | 'claims'>('profit');
+  return <>
+    {canClaims && (
+      <div className="row-controls">
+        <span className="seg" role="group" aria-label="Revenue view">
+          <button className={sub === 'profit' ? 'chip active' : 'chip'} onClick={() => setSub('profit')}>Profit</button>
+          <button className={sub === 'claims' ? 'chip active' : 'chip'} onClick={() => setSub('claims')}>Claims &amp; upselling</button>
+        </span>
+      </div>
+    )}
+    {sub === 'claims' && canClaims ? <ClaimsMoney /> : <Profit />}
+  </>;
+}
+
+function Profit() {
   const [data, setData] = useState<Portfolio | null>(null);
   const [error, setError] = useState('');
   // Thirty days by default: the question most mornings, and the cheapest
@@ -66,6 +86,7 @@ export function Revenue() {
     const set: Dataset = {
       reservations: data.reservations,
       costs: data.costs,
+      income: data.income ?? [],
       // EVERY unit, not just the live ones. One archived listing here
       // carries $91,672 across 68 real reservations; filtering on
       // `active` quietly removed all of it from the portfolio totals,
@@ -149,6 +170,11 @@ export function Revenue() {
         </div>
         <dl className="stats">
           <div><dt>Revenue</dt><dd>{money(board.portfolio.revenue)}</dd></div>
+          {board.portfolio.otherIncome > 0 && (
+            <div><dt>Claims &amp; upsells <Hint>Received on claims and upsells (pet fees, late check-ins collected outside the
+              reservation), on the day the case closed. Counted in net; not in revenue, ADR or RevPAN, which are the
+              reservations'.</Hint></dt><dd>{money(board.portfolio.otherIncome)}</dd></div>
+          )}
           <div><dt>Costs</dt><dd>{money(board.portfolio.costs.total)}</dd></div>
           <div><dt>Occupancy</dt><dd>{board.portfolio.occupancy == null ? '—'
             : `${Math.round(board.portfolio.occupancy * 100)}%`}</dd></div>

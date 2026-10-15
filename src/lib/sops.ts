@@ -88,7 +88,7 @@ export const FEATURES: { key: string; label: string; tab: string; view?: string;
   { key: 'operations.setup', label: 'Operations · Setup', tab: 'operations', view: 'setup', section: 'systems' },
   { key: 'repository', label: 'Repository', tab: 'repository', section: 'systems' },
   { key: 'costs', label: 'Costs', tab: 'costs', section: 'finance' },
-  { key: 'claims', label: 'Claims & upselling', tab: 'claims', section: 'claims' },
+  { key: 'claims', label: 'Revenue · Claims & upselling', tab: 'revenue', section: 'claims' },
   { key: 'settings', label: 'Settings', tab: 'settings', section: 'systems' }
 ];
 export const FEATURE_KEYS = new Set(FEATURES.map(f => f.key));

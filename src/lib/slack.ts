@@ -264,7 +264,7 @@ function claimRows(c: ClaimLite): Block[] {
 }
 
 export interface ClaimCard extends ClaimLite {
-  source?: string | null; refund?: number; requested?: number;
+  source?: string | null;
   updates: { who: string; when: string; body: string }[];
   /** Owner, Oct 2026: the claim's work, as in Kaizen — each opens its own card. */
   work?: { id: string; title: string; status: string; kind: string }[];
@@ -277,10 +277,9 @@ export interface ClaimCard extends ClaimLite {
  */
 export function claimCard(c: ClaimCard, note?: string, root?: 'claims', focus = false): Block {
   const f = (label: string, v: string | null | undefined) => v ? mrk(`*${label}*\n${esc(v)}`) : null;
-  const money = (n?: number) => n ? `$${n.toFixed(2)}` : null;
   const fields = [f('Status', c.status), f('Severity', c.severity), f('Category', c.category), f('Listing', c.unit ?? 'Portfolio'),
     f('Source', c.source), f('Open for', c.days != null ? `${c.days} day${c.days === 1 ? '' : 's'}` : null),
-    f('Requested', money(c.requested)), f('Received', money(c.refund))].filter(Boolean).slice(0, 10);
+  ].filter(Boolean).slice(0, 10);
   return {
     type: 'modal', callback_id: 'claim_card', private_metadata: JSON.stringify({ id: c.id, ...(root ? { root } : {}) }),
     title: plain('Claim'), submit: plain('Save'), close: plain('Close'),
@@ -761,7 +760,7 @@ export function readTaskForm(state: State, meta: { id: string | null; kind: stri
 
 export interface ClaimForm {
   id?: string; unitId?: string | null; occurredOn?: string; category?: string | null; severity?: string; status?: string;
-  source?: string | null; description?: string | null; refund?: number; caseUrl?: string | null;
+  source?: string | null; description?: string | null; caseUrl?: string | null;
 }
 export function claimModal(f: ClaimForm, units: Opt[], categories: string[], sources: string[]): Block {
   const o = (xs: string[]) => xs.map(x => ({ value: x, label: x }));
@@ -776,20 +775,18 @@ export function claimModal(f: ClaimForm, units: Opt[], categories: string[], sou
       input('severity', 'Severity', select(o(['Low', 'Medium', 'High', 'Critical']), f.severity ?? 'Medium'), false),
       input('status', 'Status', select(o(CLAIM_STATUSES), f.status ?? 'Open'), false),
       input('source', 'Source', select(o(sources), f.source)),
-      input('case', 'Case link (https://…)', text(f.caseUrl)),
-      input('refund', 'Refunded ($)', text(f.refund ? String(f.refund) : null))
+      input('case', 'Case link (https://…)', text(f.caseUrl))
+      // §162: the money on a case (requested, received) is Finance's — Revenue → Claims & upselling — not a Slack field.
     ]
   };
 }
 /** A submitted claim form, as the body /api/claims takes (the fields it does not show are kept by the caller). */
 export function readClaimForm(state: State): Record<string, unknown> {
-  const refund = val(state, 'refund')?.value;
   return {
     description: val(state, 'description')?.value ?? '', unitId: val(state, 'unit')?.selected_option?.value ?? null,
     occurredOn: val(state, 'occurred')?.selected_date ?? null, category: val(state, 'category')?.selected_option?.value ?? null,
     severity: val(state, 'severity')?.selected_option?.value ?? 'Medium', status: val(state, 'status')?.selected_option?.value ?? 'Open',
-    source: val(state, 'source')?.selected_option?.value ?? null, caseUrl: val(state, 'case')?.value ?? '',
-    refund: refund ? Number(refund) || 0 : 0
+    source: val(state, 'source')?.selected_option?.value ?? null, caseUrl: val(state, 'case')?.value ?? ''
   };
 }
 

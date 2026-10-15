@@ -383,7 +383,7 @@ class Kaizen {
   }
   private async claimRow(id: string) {
     const [c] = await this.sql`SELECT id::text, unit_id, occurred_on::text AS occurred_on, category, severity, status, source, description,
-                                      refund, requested, case_url
+                                      case_url
                                  FROM claims WHERE account_id = 1 AND id::text = ${id} AND deleted_at IS NULL` as Record<string, any>[]; // eslint-disable-line @typescript-eslint/no-explicit-any
     return c;
   }
@@ -392,7 +392,7 @@ class Kaizen {
     const c = await this.claimRow(id);
     if (!c) return { ok: false, error: 'That claim is gone.' };
     return this.claimSave({ id, unitId: c.unit_id, occurredOn: c.occurred_on, category: c.category, severity: c.severity, status: c.status,
-      source: c.source, description: c.description, refund: Number(c.refund) || 0,
+      source: c.source, description: c.description,
       caseUrl: c.case_url ?? '', ...change });
   }
 
@@ -766,7 +766,7 @@ class Kaizen {
                 ORDER BY status IN ('completed', 'cancelled'), created_at` as Promise<{ id: string; title: string; status: string; kind: string }[]>
     ]);
     if (!c || !row) return null;
-    return { ...c, work, source: row.source, refund: Number(row.refund) || 0, requested: Number(row.requested) || 0,
+    return { ...c, work, source: row.source,
       updates: ups.map(u => ({ body: u.body, who: (u.created_by ?? '—').split('@')[0]!, when: nyParts(new Date(u.created_at).toISOString()).short })) };
   }
   private async openClaimCard(trigger: string, id: string, push = false) {
@@ -1066,7 +1066,7 @@ class Kaizen {
       if (verb === 'edit') {
         const c = await this.claimRow(cid);
         if (c) await this.pushForm(p.trigger_id, claimModal({ id: c.id, unitId: c.unit_id, occurredOn: c.occurred_on, category: c.category, severity: c.severity,
-          status: c.status, source: c.source, description: c.description, refund: Number(c.refund) || 0, caseUrl: c.case_url }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES) as Record<string, unknown>, { id: c.id, root: 'claims' });
+          status: c.status, source: c.source, description: c.description, caseUrl: c.case_url }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES) as Record<string, unknown>, { id: c.id, root: 'claims' });
         return ack();
       }
       const before = await claimLite(this.sql, cid);
@@ -1224,7 +1224,7 @@ class Kaizen {
         const c = await this.claimRow(claimId);
         if (!c) return ephemeral('That claim is gone.');
         await this.open(p.trigger_id, claimModal({ id: c.id, unitId: c.unit_id, occurredOn: c.occurred_on, category: c.category, severity: c.severity,
-          status: c.status, source: c.source, description: c.description, refund: Number(c.refund) || 0, caseUrl: c.case_url }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES));
+          status: c.status, source: c.source, description: c.description, caseUrl: c.case_url }, await this.units(), CLAIM_CATEGORIES, CLAIM_SOURCES));
         return ack();
       }
       let r: Record<string, unknown>;

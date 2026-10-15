@@ -49,3 +49,18 @@ test('sharedAmong defaults to listingIds when it is not given', () => {
   const gone = b.units.find(u => u.listingId === 'gone')!;
   assert.ok(gone.costs.shared > 0, 'without the split, every listed unit shares');
 });
+
+test('§162: claims and upsells received count in net, not in revenue — and only inside the range', () => {
+  const base = scoreboard(set, P, 1500);
+  const withIncome = scoreboard({ ...set, income: [
+    { unitId: 'live', on: '2026-09-15', amount: 60, kind: 'upsell' },
+    { unitId: null, on: '2026-09-20', amount: 150, kind: 'claim' },      // portfolio-wide: the portfolio only
+    { unitId: 'live', on: '2026-10-02', amount: 999, kind: 'claim' }     // outside the range
+  ] }, P, 1500);
+  const live = (b: typeof base) => b.units.find(u => u.listingId === 'live')!;
+  assert.equal(withIncome.portfolio.revenue, base.portfolio.revenue);
+  assert.equal(withIncome.portfolio.otherIncome, 210);
+  assert.equal(withIncome.portfolio.net, base.portfolio.net + 210);
+  assert.equal(live(withIncome).net, live(base).net + 60);
+  assert.equal(live(withIncome).adr, live(base).adr);
+});
