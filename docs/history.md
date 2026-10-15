@@ -4343,3 +4343,34 @@ inspections, inventory) fits how work is shaped now, and stop asking cleaners ho
   days → due 5 days from today** (`HIGH_EMPTY_DAYS`). Tested in #kaizen-task with the real token and P2-4308's stays
   (high → Oct 18, Reimundo Chavez attached), then the test to-do and its messages deleted. Buttons clicked in Slack go
   to the deployed code: they work once this is pushed. SOP #8 v19.
+
+## §165 — Inventory: Storage and Houses apart; new items from a receipt corrected (2026-10-15)
+
+Owner: counting and ordering everything in one list is overwhelming, and furniture is never in a storage — it is in
+the house. Orders must be able to go to the house or to the storage, without one huge list. And when a purchase brings
+something new (by unit, kit, pods…), the person must be able to correct what the AI read: the name, how it is counted,
+how many.
+
+- **Two views, one model.** Operations → Inventory has **Storage · supplies** and **Houses · furniture** (chips; the
+  viewer's choice remembered in localStorage). A house = every active unit with a Repository record, its place key =
+  that record (`inventoryPlaces().houses`, `src/lib/unit-access.ts`). A house that keeps its own closet is ONE key
+  shown in both views: supplies under the closet, furniture under the house — the item's `kind` separates them, so no
+  migration and no stock moves. Overview places now carry `view` ('storage' | 'house') and a house its `supplies` key.
+- **What a view lists:** its own kind, plus anything of the other kind that has a record at that key (bought or counted
+  there before) — nothing recorded disappears. Houses have no per-clean columns: need = 0, to order = minimum − stock.
+- **Where lines go:** one grouped picker (Storage, then Houses: "Bobcat · supplies at S13", "Napa Valley (house +
+  closet)"). Picking a unit in "Goes to" sends its furniture to the house and its supplies to the place it draws from
+  (`destFor`); each line can still be pointed anywhere. To-do orders, a cleaner's approval and inspection orders start
+  from the unit's house the same way. Order/expense text says "the house" for furniture and "closet" for supplies
+  (`placeWord`). An expense into one house (closet or house) is that unit's.
+- **Server:** every place check uses `findPlace` (storages, closets, houses). Low stock reads both views of a key. A
+  house's "how it looked" photos are kept as `<key>#house`, apart from its closet's. Slack's order form lists the houses too.
+- **New items, corrected:** the receipt reader also returns `measure` and `furniture` for a line not on the list
+  (`newMeasure`, `newKind`). A new line asks name, size, **how many**, **counted in** (datalist: unit, pack, kit, pod…)
+  and **type** before "+ Add as a new item", with what the receipt said and what the AI read beside it. Every matched
+  line's quantity is editable in place ("read 42" shows when changed). Items made in the form keep a "✎ new item" in the
+  lines (`editItem` → `editNewItem`): name, size, counted in, type — refused once the item has any move (changing "pack"
+  to "pod" under a recorded stock would change every number; Setup → Inventory edits those).
+- Count sheet: "+ count X here" for an item of the other type (e.g. furniture in "S2101 Storage (furniture)").
+- Checked read-only on production: 11 storage views at 15 supplies each (were 45 items), 21 houses; Napa Valley's 21
+  furniture counts now under its house, its 9 supply counts under its closet.

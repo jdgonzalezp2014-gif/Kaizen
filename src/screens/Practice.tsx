@@ -377,14 +377,21 @@ function helperPractice(): { team: ReportTeam; post: (f: Record<string, string>,
  */
 function inventoryPractice(): InvTransport {
   const today = todayIn(TZ);
-  const items: InvItemRow[] = SUPPLIES.map((x, i) => ({ ...x, category: x.category.toLowerCase(), measure: x.measure.replace(/s$/, ''),
-    perClean: [2, 1, 3, 0.25, 1, 6][i] ?? 1, reorderAt: [12, 4, 10, 1, 2, 24][i] ?? 2, active: true }));
+  const items: InvItemRow[] = [...SUPPLIES.map((x, i): InvItemRow => ({ ...x, category: x.category.toLowerCase(), measure: x.measure.replace(/s$/, ''),
+    perClean: [2, 1, 3, 0.25, 1, 6][i] ?? 1, reorderAt: [12, 4, 10, 1, 2, 24][i] ?? 2, active: true, kind: 'supply' })),
+    // Owner, 2026-10-15: furniture is the house's — counted and ordered in the house, never in a storage.
+    { id: 'f1', name: 'Bath towels', measure: 'unit', category: 'linens', perClean: null, reorderAt: 8, active: true, kind: 'furniture' },
+    { id: 'f2', name: 'Wine glasses', measure: 'unit', category: 'kitchen', perClean: null, reorderAt: 6, active: true, kind: 'furniture' }];
   const S100 = 'practice/S100', S200 = 'practice/S200', HOUSE = 'practice/HOUSE';
-  const places = [
-    { place: S100, name: 'S100 Storage (practice)', self: false,
+  const LOFT_HOUSE = 'practice/LOFT';
+  const places: { place: string; name: string; self: boolean; view: 'storage' | 'house'; supplies?: string | null;
+                  units: { id: string; name: string; recordId: string | null; cleansAhead: number }[] }[] = [
+    { place: S100, name: 'S100 Storage (practice)', self: false, view: 'storage',
       units: [{ id: 'practice-loft', name: LOFT, recordId: null, cleansAhead: 4 }, { id: 'practice-apt', name: '🧪 Practice Apt 2', recordId: null, cleansAhead: 3 }] },
-    { place: S200, name: 'S200 Storage (practice)', self: false, units: [] },
-    { place: HOUSE, name: UNIT, self: true, units: [{ id: 'practice', name: UNIT, recordId: null, cleansAhead: 2 }] }
+    { place: S200, name: 'S200 Storage (practice)', self: false, view: 'storage', units: [] },
+    { place: HOUSE, name: UNIT, self: true, view: 'storage', units: [{ id: 'practice', name: UNIT, recordId: null, cleansAhead: 2 }] },
+    { place: HOUSE, name: UNIT, self: true, view: 'house', supplies: HOUSE, units: [{ id: 'practice', name: UNIT, recordId: null, cleansAhead: 2 }] },
+    { place: LOFT_HOUSE, name: LOFT, self: false, view: 'house', supplies: S100, units: [{ id: 'practice-loft', name: LOFT, recordId: null, cleansAhead: 4 }] }
   ];
   let seq = 0;
   const at = (day: string) => `${day} 09:${String(10 + (seq++ % 50)).padStart(2, '0')}:00`;
@@ -393,7 +400,8 @@ function inventoryPractice(): InvTransport {
   const moves: (Move & { note?: string })[] = [
     mv('count', 's1', S100, 30, addDays(today, -6)), mv('count', 's6', S100, 40, addDays(today, -6)), mv('count', 's3', S100, 8, addDays(today, -6)),
     mv('taken', 's1', S100, 4, addDays(today, -3), 'practice-loft', 'Practice cleaner'), mv('taken', 's6', S100, 6, addDays(today, -3), 'practice-loft', 'Practice cleaner'),
-    mv('count', 's1', HOUSE, 6, addDays(today, -5)), mv('missing', 's6', HOUSE, 0, addDays(today, -1), 'practice', 'Practice cleaner')
+    mv('count', 's1', HOUSE, 6, addDays(today, -5)), mv('missing', 's6', HOUSE, 0, addDays(today, -1), 'practice', 'Practice cleaner'),
+    mv('count', 'f1', HOUSE, 5, addDays(today, -5)), mv('count', 'f2', LOFT_HOUSE, 6, addDays(today, -4))
   ];
   const mins = new Map<string, number>();
   let draft: Inventory['draft'] = null;
@@ -410,9 +418,9 @@ function inventoryPractice(): InvTransport {
     return { ok: true, items: clone(items), aheadDays: 14, windowDays: 60, unassigned: [], orders: clone(orders), fieldTodos: clone(fieldTodos),
       draft: clone(draft), lowStockTasks: false, toPayBack: clone(payBack),
       places: places.map(p => ({ ...clone(p), hidden: items.filter(i => hidden.has(`${i.id}|${p.place}`)).map(i => i.id),
-        items: items.filter(i => i.active && !hidden.has(`${i.id}|${p.place}`)).map(i => {
+        items: items.filter(i => i.active && !hidden.has(`${i.id}|${p.place}`) && (p.view === 'house') === (i.kind === 'furniture')).map(i => {
         const l = levels.get(`${i.id}|${p.place}`);
-        const need = p.units.reduce((a, u) => a + (i.perClean ?? 0) * u.cleansAhead, 0);
+        const need = p.view === 'house' ? 0 : p.units.reduce((a, u) => a + (i.perClean ?? 0) * u.cleansAhead, 0);
         const own = mins.get(`${i.id}|${p.place}`);
         const min = own ?? i.reorderAt;
         return { itemId: i.id, qty: l?.qty ?? null, countedAt: l?.countedAt ?? null, missingSince: l?.missingSince ?? null,
@@ -451,8 +459,15 @@ function inventoryPractice(): InvTransport {
       const had = items.find(i => i.name.toLowerCase() === name.toLowerCase());
       if (had) { had.active = true; hidden.delete(`${had.id}|${place}`); return { ...view(), itemId: had.id }; }
       const id = `s${items.length + 1}`;
-      items.push({ id, name, category: String(b.category ?? 'other'), measure: String(b.measure ?? 'unit') || 'unit', perClean: null, reorderAt: null, active: true });
+      items.push({ id, name, category: String(b.category ?? 'other'), measure: String(b.measure ?? 'unit') || 'unit', perClean: null, reorderAt: null, active: true,
+                   kind: b.kind === 'furniture' ? 'furniture' : 'supply' });
       return { ...view(), itemId: id };
+    } else if (b.action === 'editItem') {
+      const it = items.find(i => i.id === String(b.itemId));
+      if (!it) return fail('Which item?');
+      if (moves.some(m => m.itemId === it.id)) return fail('This item already has a record — edit it in Setup → Inventory.');
+      it.name = String(b.name ?? '').trim() || it.name; it.measure = String(b.measure ?? '').trim() || 'unit';
+      it.kind = b.kind === 'furniture' ? 'furniture' : 'supply';
     } else if (b.action === 'draft') {
       const lines = (b.lines as { itemId: string; place: string; qty: number }[]).filter(l => l.qty > 0);
       draft = lines.length ? { lines, forTodo: b.forTodo ? String(b.forTodo) : null, savedBy: 'You (practice)', savedAt: `${today} ${new Date().toTimeString().slice(0, 5)}` } : null;

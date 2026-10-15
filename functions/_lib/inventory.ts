@@ -16,6 +16,7 @@ import type { Priority } from '../../src/lib/todos.ts';
 import { todayIn, addDays } from '../../src/lib/dates.ts';
 import { itemLabel, needByPlace, orderList, perClean, placeKey, stockLevels, toOrder, unitUses, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
 import { supplyPlaces } from './unit-access.ts';
+import { findPlace, placeWord } from '../../src/lib/unit-access.ts';
 
 const TZ = 'America/New_York';
 const WINDOW_DAYS = 60, AHEAD_DAYS = 14;
@@ -65,10 +66,13 @@ export async function overview(sql: SqlFn) {
   const since = addDays(today, -WINDOW_DAYS);
   const mins = new Map(minRows.map(m => [`${m.itemId}|${m.place}`, m.min]));
   // Places the Repository no longer lists (renamed, archived, or "no place") still show while their moves say something.
-  const rows: { key: string | null; name: string; self: boolean; units: { id: string; name: string; recordId: string | null }[] }[] =
-    sp.places.map(p => ({ key: p.key as string | null, name: p.name, self: p.self, units: p.units }));
+  type Row = { key: string | null; name: string; self: boolean; units: { id: string; name: string; recordId: string | null }[];
+               view: 'storage' | 'house'; supplies?: string | null };
+  const rows: Row[] = sp.places.map(p => ({ key: p.key as string | null, name: p.name, self: p.self, units: p.units, view: 'storage' as const }));
+  // Owner, 2026-10-15: the houses apart — their furniture is counted and ordered there, never in a storage.
+  for (const h of sp.houses) rows.push({ key: h.key, name: h.name, self: h.self, units: h.units, view: 'house', supplies: h.supplies ?? null });
   for (const k of new Set(moveRows.map(m => m.place))) if (!rows.some(r => r.key === k))
-    rows.push({ key: k, name: k ? `${sp.names.get(k) ?? k} (no longer a place)` : '▲ No place', self: false, units: [] });
+    rows.push({ key: k, name: k ? `${sp.names.get(k) ?? k} (no longer a place)` : '▲ No place', self: false, units: [], view: 'storage' });
   const active = items.filter(i => i.active);
   const uses = new Map(active.flatMap(i => units.map(u => [`${i.id}|${u.id}`, unitUses(moveRows, i.id, u.id, since, answered.get(u.id))] as const)));
   const needs = new Map(active.map(i => [i.id, needByPlace(units.map(u => {
@@ -80,16 +84,29 @@ export async function overview(sql: SqlFn) {
     const t = unitIds.reduce((a, id) => { const x = uses.get(`${i.id}|${id}`); return x ? { qty: a.qty + x.qty, cleans: a.cleans + x.cleans } : a; }, { qty: 0, cleans: 0 });
     return { ...perClean(i, t.qty, t.cleans), cleans: t.cleans };
   };
+  /**
+   * Which items a view of a place lists: a storage (or a house's closet) its supplies, a house its furniture —
+   * plus anything of the other kind that has a record there (bought or counted there before), so nothing
+   * recorded ever disappears. A house that keeps its own closet shows its supplies under the closet only.
+   */
+  const recorded = new Set(moveRows.map(m => `${m.itemId}|${placeKey(m.place)}`));
+  const listed = (p: Row, i: InvItem) => {
+    const own = p.view === 'house' ? i.kind === 'furniture' : i.kind !== 'furniture';
+    if (own) return true;
+    const both = p.view === 'house' ? p.self : sp.houses.some(h => h.self && h.key === p.key);
+    return !both && recorded.has(`${i.id}|${placeKey(p.key)}`);
+  };
   const places = rows.map(p => ({
-    place: p.key, name: p.name, self: p.self,
+    place: p.key, name: p.name, self: p.self, view: p.view, ...(p.view === 'house' ? { supplies: p.supplies ?? null } : {}),
     units: p.units.map(u => ({ ...u, cleansAhead: ahead.get(u.id) ?? 0 })),
-    hidden: active.filter(i => hidden.has(`${i.id}|${p.key}`)).map(i => i.id),
-    items: active.filter(i => !hidden.has(`${i.id}|${p.key}`)).map(i => {
+    hidden: active.filter(i => hidden.has(`${i.id}|${p.key}`) && listed(p, i)).map(i => i.id),
+    items: active.filter(i => !hidden.has(`${i.id}|${p.key}`) && listed(p, i)).map(i => {
       const l = levels.get(`${i.id}|${placeKey(p.key)}`);
       const own = p.key ? mins.get(`${i.id}|${p.key}`) : undefined;
       const min = own ?? i.reorderAt;
-      const need = p.key ? needs.get(i.id)!.get(p.key) ?? 0 : 0;
-      const r = placeRate(i, p.units.map(u => u.id));
+      // A house is not drawn from by cleans: what it needs is its minimum (furniture is not used up per clean).
+      const need = p.key && p.view === 'storage' ? needs.get(i.id)!.get(p.key) ?? 0 : 0;
+      const r = p.view === 'storage' ? placeRate(i, p.units.map(u => u.id)) : { rate: null, learned: false, cleans: 0 };
       return { itemId: i.id, qty: l?.qty ?? null, countedAt: l?.countedAt ?? null, missingSince: l?.missingSince ?? null,
                perClean: r.rate, learned: r.learned, reportedCleans: r.cleans, need: Math.ceil(need), min, minOwn: own !== undefined,
                // Only a counted place is ordered for: a never-counted record is not a stock (§134).
@@ -113,7 +130,7 @@ export async function overview(sql: SqlFn) {
                                           to_char(created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS at
                                      FROM inventory_place_looks WHERE account_id = 1 ORDER BY place, id DESC` as
     ({ place: string } & PlaceLook)[]).map(({ place, ...l }) => [place, l]));
-  return { items, places: places.map(p => ({ ...p, look: (p.place && looks.get(p.place)) || null })), unassigned, recent, orders: await openOrders(sql), fieldTodos: await fieldTodos(sql),
+  return { items, places: places.map(p => ({ ...p, look: (p.place && looks.get(p.view === 'house' ? `${p.place}#house` : p.place)) || null })), unassigned, recent, orders: await openOrders(sql), fieldTodos: await fieldTodos(sql),
            draft: draft ?? null, lowStockTasks: !!acc?.low, toPayBack: await toPayBack(sql), aheadDays: AHEAD_DAYS, windowDays: WINDOW_DAYS };
 }
 
@@ -153,7 +170,7 @@ type Places = Awaited<ReturnType<typeof supplyPlaces>>;
  */
 function placeOf(sp: Places, who: Who, unitId: string | null, unit: string | null, asked: unknown) {
   if (who.source === 'team' && asked) {
-    const p = sp.places.find(x => x.key === String(asked));
+    const p = findPlace(sp, String(asked));
     if (!p) throw new Error('Which place?');
     return { key: p.key as string | null, name: p.name };
   }
@@ -387,9 +404,9 @@ export async function createOrder(sql: SqlFn, by: string, lines: { itemId: strin
   const [items, sp] = await Promise.all([invItems(sql), supplyPlaces(sql)]);
   const named = lines.filter(l => l.qty > 0).flatMap(l => {
     const item = items.find(i => i.id === String(l.itemId));
-    const p = sp.places.find(x => x.key === l.place);
+    const p = findPlace(sp, l.place);
     if (!p) throw new Error('Which place?');
-    return item ? [{ item, place: p.self ? `${p.name} closet` : p.name, qty: Math.ceil(l.qty) }] : [];
+    return item ? [{ item, place: placeWord(p, item.kind), qty: Math.ceil(l.qty) }] : [];
   });
   const list = orderList(named);
   if (!list) throw new Error('Nothing to order.');
@@ -449,7 +466,7 @@ export async function removeItem(sql: SqlFn, itemId: unknown) {
 
 /** "Not kept here" (§150): an item off a place's list — or back on it. */
 export async function hideItem(sql: SqlFn, by: string, place: unknown, itemId: unknown, hide: boolean) {
-  const p = (await supplyPlaces(sql)).places.find(x => x.key === String(place ?? ''));
+  const p = findPlace(await supplyPlaces(sql), String(place ?? ''));
   if (!p) throw new Error('Which place?');
   if (hide) await sql`INSERT INTO inventory_place_hidden (account_id, place, item_id, hidden_by) VALUES (1, ${p.key}, ${Number(itemId)}, ${by})
                       ON CONFLICT DO NOTHING`;
@@ -470,8 +487,34 @@ export async function newItem(sql: SqlFn, b: Record<string, unknown>) {
     if (!had.active) await sql`UPDATE inventory_items SET active = true, updated_at = now() WHERE id = ${Number(had.id)}`;
     return had.id;
   }
-  const [r] = await sql`INSERT INTO inventory_items (account_id, name, size, category, measure) VALUES (1, ${name}, ${size}, ${category}, ${measure}) RETURNING id::text` as { id: string }[];
+  // Owner, 2026-10-15: furniture goes to the house, supplies to the storage — a new item says which it is.
+  const kind = b.kind === 'furniture' ? 'furniture' : 'supply';
+  const [r] = await sql`INSERT INTO inventory_items (account_id, name, size, category, measure, kind) VALUES (1, ${name}, ${size}, ${category}, ${measure}, ${kind}) RETURNING id::text` as { id: string }[];
   return r!.id;
+}
+
+/**
+ * A NEW item corrected where it was made (owner, 2026-10-15: "it comes by unit, by kit, by pods — the
+ * person corrects what the AI saw"): name, size, measure and type. Only while nothing is recorded for it —
+ * changing "pack" to "pod" under a stock already counted would change what every number means; an item
+ * with a history is edited in Setup → Inventory.
+ */
+export async function editNewItem(sql: SqlFn, b: Record<string, unknown>) {
+  const id = Number(b.itemId) || 0;
+  const [it] = await sql`SELECT id FROM inventory_items WHERE account_id = 1 AND id = ${id} AND active` as { id: number }[];
+  if (!it) throw new Error('Which item?');
+  const [used] = await sql`SELECT 1 FROM inventory_moves WHERE account_id = 1 AND item_id = ${id} LIMIT 1`;
+  if (used) throw new Error('This item already has a record — edit it in Setup → Inventory.');
+  const name = String(b.name ?? '').trim().slice(0, 120);
+  const size = String(b.size ?? '').trim().slice(0, 30) || null;
+  const measure = String(b.measure ?? 'unit').trim().slice(0, 20) || 'unit';
+  const kind = b.kind === 'furniture' ? 'furniture' : 'supply';
+  if (!name) throw new Error('An item needs a name.');
+  const [dup] = await sql`SELECT 1 FROM inventory_items WHERE account_id = 1 AND id <> ${id} AND lower(name) = lower(${name})
+                            AND lower(coalesce(size, '')) = lower(${size ?? ''})`;
+  if (dup) throw new Error(`There is already an item called "${itemLabel(name, size)}".`);
+  await sql`UPDATE inventory_items SET name = ${name}, size = ${size}, measure = ${measure}, kind = ${kind}, updated_at = now()
+             WHERE account_id = 1 AND id = ${id}`;
 }
 
 /**
@@ -489,10 +532,10 @@ export async function saveTodoOrder(sql: SqlFn, by: string, todoId: unknown, lin
   const [items, sp] = await Promise.all([invItems(sql), supplyPlaces(sql)]);
   const named = keep.map(l => {
     const item = items.find(i => i.id === l.itemId);
-    const p = sp.places.find(x => x.key === l.place);
+    const p = findPlace(sp, l.place);
     if (!item) throw new Error('Which item?');
     if (!p) throw new Error('Which place?');
-    return { item, place: p.self ? `${p.name} closet` : p.name, qty: l.qty };
+    return { item, place: placeWord(p, item.kind), qty: l.qty };
   });
   await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(keep)}::jsonb, ${by})
             ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = EXCLUDED.lines, created_by = EXCLUDED.created_by, created_at = now()`;
@@ -526,11 +569,13 @@ export async function lowStock(sql: SqlFn, places: (string | null)[]): Promise<s
   const inv = await overview(sql);
   const made: string[] = [];
   for (const key of keys) {
-    const p = inv.places.find(x => x.place === key);
+    // A house that keeps its own closet is two views of one key: its supplies and its furniture.
+    const views = inv.places.filter(x => x.place === key);
+    const p = views.find(x => x.view === 'house') ?? views[0];
     if (!p) continue;
-    const low = p.items.filter(l => l.countedAt && l.qty !== null && l.min !== null && l.qty < l.min);
+    const low = views.flatMap(v => v.items).filter(l => l.countedAt && l.qty !== null && l.min !== null && l.qty < l.min);
     if (!low.length) continue;
-    const name = p.self ? `${p.name} closet` : p.name;
+    const name = p.view === 'house' ? p.name : p.self ? `${p.name} closet` : p.name;
     let [t] = await sql`SELECT id::text FROM todos WHERE account_id = 1 AND low_stock_place = ${key} AND parent_id IS NULL
                           AND status NOT IN ('completed', 'cancelled') ORDER BY id DESC LIMIT 1` as { id: string }[];
     // §162: what is low is listed in the order's description (and its lines), not as a sub-task per item —
@@ -545,7 +590,7 @@ export async function lowStock(sql: SqlFn, places: (string | null)[]): Promise<s
     if (!fresh.length) continue;
     if (!t) {
       const id = await newTodo(sql, `Low stock at ${name}`, `Below the minimum to keep — counted places only. Buy it: Inventory → 🧾 Record a purchase, ` +
-        `starting from this order. Switch these to-dos off in Setup → Inventory.`, p.units.length === 1 && p.self ? p.units[0]!.id : null, 'Kaizen', 'high');
+        `starting from this order. Switch these to-dos off in Setup → Inventory.`, p.units.length === 1 && (p.self || p.view === 'house') ? p.units[0]!.id : null, 'Kaizen', 'high');
       await sql`UPDATE todos SET low_stock_place = ${key} WHERE account_id = 1 AND id = ${Number(id)}`;
       t = { id };
       made.push(id);
@@ -643,7 +688,7 @@ async function checkPurchase(sql: SqlFn, b: Record<string, unknown>) {
   const [items, sp] = await Promise.all([invItems(sql), supplyPlaces(sql)]);
   const named = lines.map(l => {
     const item = items.find(i => i.id === l.itemId && i.active);
-    const place = sp.places.find(p => p.key === l.place);
+    const place = findPlace(sp, l.place);
     if (!item) throw new Error('Which item?');
     if (!place) throw new Error('Which place?');
     if (!Number.isFinite(l.qty) || l.qty > 10000) throw new Error('How many?');
@@ -672,10 +717,11 @@ async function writePurchase(sql: SqlFn, by: string, c: Awaited<ReturnType<typeo
                          RETURNING id::text` as { id: string }[];
   for (const l of named) await sql`INSERT INTO inventory_moves (account_id, item_id, place, kind, qty, note, by_name, source, purchase_id)
                                    VALUES (1, ${Number(l.itemId)}, ${l.place.key}, 'purchase', ${l.qty}, ${note}, ${by}, 'team', ${Number(pu!.id)})`;
-  const what = orderList(named.map(l => ({ item: l.item, place: l.place.self ? `${l.place.name} closet` : l.place.name, qty: l.qty })))!;
+  const what = orderList(named.map(l => ({ item: l.item, place: placeWord(l.place, l.item.kind), qty: l.qty })))!;
   const places = new Set(named.map(l => l.place.key));
   const only = places.size === 1 ? named[0]!.place : null;
-  const unit = only?.self && only.units.length === 1 ? only.units[0]!.id : null;
+  // Into one house (its closet or the house itself): the expense is that unit's.
+  const unit = only && (only.self || only.house) && only.units.length === 1 ? only.units[0]!.id : null;
   await sql`INSERT INTO expenses (account_id, unit_id, shared, start_date, category, frequency, amount, label, notes, source, external_ref, created_by)
             VALUES (1, ${unit}, ${!unit}, ${date}, 'Restock', 'One-time', ${total}, ${what.title.replace(/^Buy supplies/, 'Supplies bought').slice(0, 120)},
                     ${[...(paidBy ? [`Paid by ${paidBy} — to pay back`] : []), ...what.items.map(i => i.replace(/^Buy: /, '')), ...photos.map(p => `Receipt: ${p.url}`)].join('\n')}, 'inventory', ${`purchase-${pu!.id}`}, ${by})
@@ -687,8 +733,7 @@ async function writePurchase(sql: SqlFn, by: string, c: Awaited<ReturnType<typeo
 
 /** The minimum to keep of items in one place (§150); a blank goes back to the item's own. */
 export async function setMins(sql: SqlFn, by: string, place: unknown, mins: { itemId: unknown; qty: unknown }[]) {
-  const sp = await supplyPlaces(sql);
-  const p = sp.places.find(x => x.key === String(place ?? ''));
+  const p = findPlace(await supplyPlaces(sql), String(place ?? ''));
   if (!p) throw new Error('Which place?');
   for (const m of mins) {
     const itemId = Number(m.itemId);
@@ -708,7 +753,8 @@ export type PlaceLook = { note: string | null; photos: { name: string; url: stri
 export async function recordLook(sql: SqlFn, by: string, place: unknown, note: unknown, photos: { name: string; url: string }[], counted: number) {
   const n = String(note ?? '').trim().slice(0, 1000) || null;
   if (!photos.length && !n) return;
-  if (!(await supplyPlaces(sql)).places.some(p => p.key === String(place))) throw new Error('Which place?');
+  // A house's look is kept apart from its closet's ("<key>#house", owner 2026-10-15): two different rooms.
+  if (!findPlace(await supplyPlaces(sql), String(place).replace(/#house$/, ''))) throw new Error('Which place?');
   await sql`INSERT INTO inventory_place_looks (place, note, photos, by_name, counted)
             VALUES (${String(place)}, ${n}, ${JSON.stringify(photos)}::jsonb, ${by}, ${counted})`;
 }

@@ -1,5 +1,6 @@
 /**
- * /api/inventory — supplies by place (§134, §150): the Repository's storages and the houses' closets.
+ * /api/inventory — supplies by place (§134, §150): the Repository's storages and the houses' closets; and
+ * each house's furniture in the house itself (owner, 2026-10-15) — a place per view (`view` storage | house).
  *
  *   GET                                               every place: stock, average per clean, what its units need, to order
  *   POST { action: 'count', place, counts: [{ itemId, qty }], look? } (+ photos)  a count of a place — reconciles it;
@@ -11,7 +12,8 @@
  *   POST { action: 'todoOrder', todoId, lines }                         a to-do's own order, saved as a draft (replaces it)
  *   POST { action: 'paidBack', id }                                     a purchase someone paid, paid back to them
  *   POST { action: 'hide', place, itemId, hide }                        "not kept here" (or back)
- *   POST { action: 'newItem', name, measure?, category? }               a supply added on the spot
+ *   POST { action: 'newItem', name, measure?, category?, kind? }        an item added on the spot (kind 'furniture' = the house's)
+ *   POST { action: 'editItem', itemId, name, size?, measure, kind }    a NEW item corrected (nothing recorded for it yet)
  * A count, a correction or a take may leave a place below its minimum → "Low stock" to-do, if Setup has it on.
  *   POST { action: 'order', lines: [{ itemId, place, qty }], forTodo? }  the ORDER: ONE to-do (or onto a field to-do), a line per item
  *   POST { action: 'purchase', lines, total, todoId?, note?, paidBy?, date? } + receipt  what was BOUGHT: stock per place + one Restock expense
@@ -28,7 +30,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { commentToThread } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, fieldPhotos, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
+import { createOrder, editNewItem, fieldPhotos, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
 import { learnAliases, readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
 import { readRequestText } from '../_lib/request-read.ts';
 
@@ -59,7 +61,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const look = String(b.look ?? '').trim();
       if (!given.length && !files.length && !look) return bad('Count at least one item, or add a photo or a note.');
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `storage ${String(b.place ?? '')}`);
-      await recordLook(sql, who.email, b.place, look, photos, given.length);
+      // A house's look is apart from its closet's (owner, 2026-10-15: furniture in the house, supplies in the closet).
+      await recordLook(sql, who.email, b.view === 'house' ? `${String(b.place ?? '')}#house` : b.place, look, photos, given.length);
       for (const c of given) await recordMove(sql, me, { kind: 'count', itemId: c.itemId, place: b.place, qty: c.qty, note: b.note });
       waitUntil(lowStock(sql, [String(b.place ?? '')]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
     } else if (b.action === 'readRequest') {
@@ -97,6 +100,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       // Added from a place: kept there, even if it was "not kept here" before.
       if (b.place) await hideItem(sql, who.email, b.place, id, false);
       return Response.json({ ok: true, itemId: id, ...(await overview(sql)) });
+    } else if (b.action === 'editItem') {
+      await editNewItem(sql, b);
     } else if (b.action === 'paidBack') {
       await paidBack(sql, who.email, b.id);
     } else if (b.action === 'todoOrder') {

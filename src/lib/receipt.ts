@@ -29,6 +29,8 @@ export interface ReceiptLine {
   orderId: string | null;
   /** The size printed (King, 13 gal…), and a short generic name for it as a new item. */
   size: string | null; newName: string | null;
+  /** Not on the list (owner, 2026-10-15): what the AI thinks a new item is counted in and whether it is furniture — the person corrects it. */
+  newMeasure?: string | null; newKind?: 'supply' | 'furniture' | null;
 }
 
 export interface Receipt { store: string | null; date: string | null; total: number | null; tax: number | null; lines: ReceiptLine[] }
@@ -122,7 +124,9 @@ export function readReceipt(raw: unknown, items: ReceiptItem[], orders: ReceiptO
     const qty = num(l.qty), itemQty = num(l.itemQty);
     return { text, qty, unitPrice: num(l.unitPrice), amount: num(l.amount), kind, itemId, itemQty: itemQty && itemQty > 0 ? itemQty : qty,
              candidates, orderId: orderFor(itemId, orders, l.orderId == null ? null : String(l.orderId)), size,
-             newName: typeof l.name === 'string' && l.name.trim() ? l.name.trim().slice(0, 80) : null };
+             newName: typeof l.name === 'string' && l.name.trim() ? l.name.trim().slice(0, 80) : null,
+             newMeasure: typeof l.measure === 'string' && l.measure.trim() ? l.measure.trim().toLowerCase().slice(0, 20) : null,
+             newKind: l.furniture === true ? 'furniture' : l.furniture === false ? 'supply' : null };
   }).filter((l): l is ReceiptLine => !!l);
   return { store: typeof r.store === 'string' && r.store.trim() ? r.store.trim().slice(0, 80) : null, date,
            total: num(r.total), tax: num(r.tax), lines };

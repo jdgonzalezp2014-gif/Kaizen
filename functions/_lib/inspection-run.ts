@@ -404,9 +404,14 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
     const supplies = await sql`SELECT supply_id::text AS "itemId", supply_qty::float AS qty FROM inspection_checks
                                 WHERE account_id = 1 AND id = ANY(${buys.map(c => Number(c.id))}::bigint[]) AND supply_id IS NOT NULL` as { itemId: string; qty: number }[];
     if (supplies.length) {
-      const place = ins.unit_id ? (await supplyPlaces(sql)).byUnit.get(ins.unit_id)?.key ?? '' : '';
+      // Owner, 2026-10-15: furniture to the house itself, a supply to where the house draws its supplies from.
+      const sp = await supplyPlaces(sql);
+      const place = ins.unit_id ? sp.byUnit.get(ins.unit_id)?.key ?? '' : '';
+      const house = ins.unit_id ? sp.houses.find(h => h.units.some(u => u.id === ins.unit_id))?.key ?? '' : '';
+      const kinds = new Map((await sql`SELECT id::text, kind FROM inventory_items WHERE account_id = 1 AND id = ANY(${supplies.map(x => Number(x.itemId))}::bigint[])` as
+        { id: string; kind: string }[]).map(r => [r.id, r.kind]));
       await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by)
-                VALUES (1, ${Number(t!.id)}, ${JSON.stringify(supplies.map(s => ({ itemId: s.itemId, place, qty: s.qty })))}::jsonb, ${who})`;
+                VALUES (1, ${Number(t!.id)}, ${JSON.stringify(supplies.map(s => ({ itemId: s.itemId, place: kinds.get(s.itemId) === 'furniture' && house ? house : place, qty: s.qty })))}::jsonb, ${who})`;
     }
     toPush.push(t!.id);
     made.push({ kind: 'purchase', title: list.title, id: t!.id });

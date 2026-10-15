@@ -99,6 +99,13 @@ test('readReceipt: the size decides — a wrong-size match is a doubt with the r
   assert.equal(readReceipt({ lines: [{ text: 'KING PROTECTOR', size: 'King', itemId: 'pk', sure: true }] }, BED).lines[0]!.itemId, 'pk');
 });
 
+test('readReceipt: a new line carries what the AI thinks it is counted in, and whether it is furniture', () => {
+  const r = readReceipt({ lines: [{ text: 'TIDE PODS 42CT', qty: 1, itemQty: 42, name: 'Laundry pods', measure: 'Pod' },
+                                  { text: 'BATH TOWEL 4PK', qty: 1, name: 'Bath towel', measure: 'unit', furniture: true }] }, BED);
+  assert.equal(r.lines[0]!.newMeasure, 'pod'); assert.equal(r.lines[0]!.newKind, null); assert.equal(r.lines[0]!.itemQty, 42);
+  assert.equal(r.lines[1]!.newKind, 'furniture');
+});
+
 test('readReceipt: a learned alias wins over the model and needs no "sure"', () => {
   const aliases = new Map([[aliasKey('UTOPIA DUVET SET  $89.24'), 'pq']]);
   assert.equal(aliasKey('UTOPIA DUVET SET  $89.24'), 'utopia duvet set');

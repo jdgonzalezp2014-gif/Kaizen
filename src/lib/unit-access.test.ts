@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { inventoryPlaces, kindOf, placeLabel, repoMatch, supplyPlace, unitAccess, type RepoRow, type UnitRow } from './unit-access.ts';
+import { destFor, findPlace, inventoryPlaces, kindOf, placeWord, placeLabel, repoMatch, supplyPlace, unitAccess, type RepoRow, type UnitRow } from './unit-access.ts';
 
 const rec = (id: string, vals: Record<string, unknown>): RepoRow => ({ id, table: 't', vals });
 const RECS = [rec('a', { name: 'CL-1125' }), rec('b', { name: 'LP-4308' }), rec('c', { name: 'Timbercrest' }),
@@ -57,4 +57,20 @@ test('a unit draws supplies from the record its Storage names: a storage, or the
     [['CORTLAND STORAGE S13', []], ['S1105 Storage (stock)', ['P2-4315']], ['S4116 Storage (stock)', []], ['Preston Vineyard', ['Preston Vineyard']]]);
   assert.deepEqual(m.unassigned.map(u => u.name), ['P2-1201']);
   assert.equal(m.byUnit.get('4')?.key, 'cortland/S13');   // inactive: not listed, still resolved for its past
+  // Owner, 2026-10-15: every active unit with a record is a house of its own — its furniture is there.
+  const preston = m.houses.find(h => h.name === 'Preston Vineyard')!;
+  assert.equal(preston.self, true);
+  assert.equal(preston.supplies, 'houses/H1');
+  assert.equal(m.houses.find(h => h.units[0]!.id === '1')?.supplies, 'the_links/S1');
+  assert.ok(!m.houses.some(h => h.units[0]!.id === '4'));   // inactive: no house
+  assert.equal(findPlace(m, 'houses/H1')?.house, undefined);   // a house's closet is found as a place first
+  const h1 = m.houses.find(h => h.units[0]!.id === '1')!;
+  assert.equal(findPlace(m, h1.key)?.house, true);
+  assert.equal(findPlace(m, 'nowhere/X'), null);
+  // Furniture goes to the house; a supply to where the house draws from.
+  assert.equal(destFor(h1.key, 'furniture', m.houses), h1.key);
+  assert.equal(destFor(h1.key, 'supply', m.houses), 'the_links/S1');
+  assert.equal(destFor('cortland/S13', 'furniture', m.houses), 'cortland/S13');
+  assert.equal(placeWord({ name: 'Preston Vineyard', self: true }, 'supply'), 'Preston Vineyard closet');
+  assert.equal(placeWord({ name: 'Preston Vineyard', self: true }, 'furniture'), 'Preston Vineyard');
 });

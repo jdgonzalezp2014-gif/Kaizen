@@ -572,7 +572,9 @@ class Kaizen {
     if (t.parent_id || t.status === 'completed' || t.status === 'cancelled' || !this.may('/api/inventory', 'POST')) return null;
     const [items, sp] = await Promise.all([invItems(this.sql), supplyPlaces(this.sql)]);
     return { items: items.filter(i => i.active).slice(0, 100).map(i => ({ value: i.id, label: i.name.slice(0, 75) })),
-             places: sp.places.slice(0, 100).map(p => ({ value: p.key, label: (p.self ? `${p.name} closet` : p.name).slice(0, 75) })) };
+             // Storages and closets, then the houses (furniture goes to the house — owner, 2026-10-15).
+             places: [...sp.places.map(p => ({ value: p.key, label: (p.self ? `${p.name} closet` : p.name).slice(0, 75) })),
+                      ...sp.houses.filter(h => !h.self).map(h => ({ value: h.key, label: `${h.name} (house)`.slice(0, 75) }))].slice(0, 100) };
   }
   /** One line onto the to-do's order: a new item adds, the same item and place changes its quantity, 0 removes it. */
   private async orderLine(todoId: string, itemId: string, place: string, qty: number) {

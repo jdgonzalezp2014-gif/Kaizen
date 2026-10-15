@@ -520,7 +520,11 @@ export interface InvLevel {
   need: number; min: number | null; minOwn: boolean; toOrder: number;
 }
 /** A place (§150): a Repository record `table/ROW-id` — a storage or a house's closet; null = moves of units with no place. */
-export interface InvPlace { place: string | null; name: string; self: boolean; units: { id: string; name: string; recordId: string | null; cleansAhead: number }[]; items: InvLevel[];
+export interface InvPlace { place: string | null; name: string; self: boolean;
+  /** Owner, 2026-10-15: a storage (or a house's closet) holds supplies; a house holds its furniture. One key can be both views. */
+  view?: 'storage' | 'house';
+  /** A house: where its supplies come from (a storage key, or its own key when it keeps its closet). */
+  supplies?: string | null; units: { id: string; name: string; recordId: string | null; cleansAhead: number }[]; items: InvLevel[];
   /** §150: items "not kept here". */ hidden: string[];
   /** The latest photos / note of how the place looked at a count (owner, 2026-10-14). */
   look?: { note: string | null; photos: { name: string; url: string }[]; byName: string; counted: number; at: string } | null }

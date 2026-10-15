@@ -21,7 +21,9 @@ Answer ONLY JSON: {"store": string|null, "date": "YYYY-MM-DD"|null, "total": num
 "kind": "item"|"tax"|"fee"|"discount"|"other", "itemId": a supply id or null, "sure": true|false, "itemQty": number|null,
 "alternatives": [up to 4 supply ids], "orderId": an open order id or null,
 "size": the size printed that tells products apart (King, Queen, Twin, Full, 13 gal, 30 gal…) or null — not a weight or a count,
-"name": a short generic name for it as a supply (e.g. "Duvet cover set", "Mattress protector") — no brand, no size}]}.
+"name": a short generic name for it as a supply (e.g. "Duvet cover set", "Mattress protector") — no brand, no size,
+"measure": for a line with no sure supply, what it is counted in once opened (unit, pod, roll, bottle, kit, set, pair…) or null,
+"furniture": true when it is the house's own thing (linens, towels, dishes, appliances, decor, hardware) rather than a consumable supply}]}.
 Rules: one entry per purchased line; tax, bag fees, deposits, discounts and coupons are their own lines with their kind; subtotal/total/payment lines are NOT lines.
 "itemId" + "sure": true ONLY when the line is clearly that same product (brand names are fine: "Bounty" = paper towels) —
 a different product with a similar use (microfiber cloths vs washcloths) is NOT sure; a set of different things (a duvet cover set with
