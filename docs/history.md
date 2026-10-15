@@ -4223,3 +4223,27 @@ asked words are the description, ✨ builds the cart with the AI, "!" says what 
 gear an icon alone, put the date in the menu (the owner says the time is Central — the board still computes New York;
 a separate change to agree) and stopped the rail sticking open after a click.
 
+
+## §160 — Home without noise; work opens in a side panel (2026-10-15)
+
+Owner: Home's To-dos card repeated itself (a summary line "X overdue, Y today, Z urgent" over pills that already
+carry ▲) and "Show N more" buttons hid rows behind a click. Now the card's header is the title, the count, the "?",
+**All ↗** (to Operations → To-dos) and **+ Add** (adds to the pill you are on; none on Approvals). Urgency lives in the
+**Now** group and the ▲ on a pill. Every Home feed scrolls inside a fixed-height box (`--feed-h`, scrollbar hidden) —
+no folding, no endless page. Phone: the module strip and the pills swipe; ✓ / ✕ are 44 px.
+Operations → To-do: opening an item no longer expands the list (the accordion pushed everything down and lost the
+place). It opens in a **slide-over** (`SlideOver.tsx`: half the screen on desktop, all of it on a phone); the opened
+row is highlighted. The comment box is docked at the panel's foot (`useDock` portals `Timeline`'s form there). The
+four filter selects moved into one **Filters** popover with a count; Open work / Done log share its row.
+SOPs: drafts "Home: the day at a glance" and "Work a to-do in its side panel" (`scripts/seed-sops.mjs`, inserted
+2026-10-15) — to publish after the owner reads them.
+
+## §161 — Summary / Edit; status buttons are not "close" (2026-10-15)
+
+In the panel an item is one line — `status • urgency • listing • dates • owner` — and **✎ Edit** opens the fields
+(`TodoForm startEditing`). Each sub-task inside is a one-line row; its fields open only with its own ✎ Edit (clicking
+the line does nothing), in place — never a second panel. The description is edited by clicking it (two Edits read
+as one too many). Files: the size limit is an ⓘ tooltip; who added a file and from where is the file name's tooltip.
+Owner: ✓ and ✕ in a work header are the item's own done / cancel, so ✕ must never mean "close the panel". The header
+keeps **✓** and **⋯** (Mark as done, Cancel it, Register as a claim, Merge into…, Remove…) — a cancel is two clicks,
+never a stray one — and **Close →** at the far right; Esc and the dimmed list also close it.

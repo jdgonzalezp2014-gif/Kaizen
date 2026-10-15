@@ -2632,3 +2632,4 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .pop-panel > button.danger { background: none; color: var(--crit); border: 0; }
 .pop-panel > button.danger:hover { background: color-mix(in srgb, var(--crit) 10%, transparent); }
 .pop-panel > button.danger { padding: 8px 10px; margin: 0; }
+.pop-panel > button.danger { justify-content: flex-start; width: 100%; }
