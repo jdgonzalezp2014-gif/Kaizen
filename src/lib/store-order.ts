@@ -5,8 +5,9 @@
  * Total and "Download selection" (the whole page loses the items), on Amazon the order details page. Every product
  * comes with its link, so the store's own product number (Walmart item id, Amazon ASIN) is read as printed — no AI,
  * nothing guessed — and remembered on the supply as a buying option (`buy_options`, 075) with how many of the
- * supply's measure come in one (`pack`). The next receipt matches by that number; an order opens the store's cart
- * from those numbers (`cartLinks`). Kaizen never pays: the person checks the cart and pays in the store.
+ * supply's measure come in one (`pack`). ONE store product per supply for now (owner, 2026-10-15: not several
+ * platforms' links). The next receipt matches by that number; an order opens Walmart's cart from those numbers
+ * (`cartLinks`). Kaizen never pays: the person checks the cart and pays in the store.
  */
 import { aliasKey, orderFor, similarItems, wrongSize, type Receipt, type ReceiptItem, type ReceiptLine, type ReceiptOrder } from './receipt.ts';
 
@@ -147,27 +148,43 @@ export function readOrder(o: StoreOrder, items: (ReceiptItem & { buyOptions?: Bu
   return { store: o.store ? STORE_NAME[o.store] : null, date: o.date, total: o.total, tax: o.tax, orderNo: o.orderNo, lines };
 }
 
-/** The bought product remembered on its supply: first among its options (the store it was last bought at), with its pack. */
+/**
+ * The bought product remembered on its supply, first, with its pack. A supply has ONE Walmart/Amazon product
+ * (owner, 2026-10-15): bought elsewhere, the new one replaces it; other stores' links (Costco…) stay.
+ */
 export function withProduct(options: BuyOption[], url: string, pack: number | null): BuyOption[] {
   const p = storeProduct(url);
   if (!p) return options;
-  const same = (o: BuyOption) => { const q = storeProduct(o.url); return q?.store === p.store && q.id === p.id; };
-  const old = options.find(same);
+  const old = options.find(o => { const q = storeProduct(o.url); return q?.store === p.store && q.id === p.id; });
   const kept: BuyOption = { label: old?.label || STORE_NAME[p.store], url: old?.url ?? p.url, ...(pack && pack > 0 ? { pack } : old?.pack ? { pack: old.pack } : {}) };
-  return [kept, ...options.filter(o => !same(o))].slice(0, 10);
+  return [kept, ...options.filter(o => !storeProduct(o.url))].slice(0, 10);
 }
 
 /**
- * The store carts for an order (verified 2026-10-15): Amazon's "add to cart" form
- * (amazon.com/gp/aws/cart/add.html?ASIN.1=…&Quantity.1=…) and Walmart's add-to-cart link
- * (affil.walmart.com/cart/addToCart?items=<item id>|<qty>,…). Each supply goes to the store of its FIRST
- * Walmart/Amazon option (the one it was last bought at), as many as cover the order: ⌈qty ÷ pack⌉.
- * Supplies with neither are named, never dropped silently.
+ * What the saved page may have left out (owner, 2026-10-15 — checked on every read, not left to memory): the order
+ * number and date (Walmart's selection started below the title), and products (they do not add up to the subtotal).
+ */
+export function orderWarnings(o: StoreOrder): string[] {
+  const out: string[] = [];
+  const from = o.store === 'walmart' ? ' — select from the order\'s title ("Oct 15, 2026 order") down to Total' : '';
+  if (!o.orderNo || !o.date) out.push(`No ${!o.orderNo && !o.date ? 'order number or date' : !o.orderNo ? 'order number' : 'order date'} in the file${from}: a repeat is told only if the file is identical.`);
+  const sum = Math.round(o.lines.reduce((a, l) => a + (l.amount ?? 0), 0) * 100) / 100;
+  const n = o.lines.reduce((a, l) => a + l.qty, 0);
+  if (o.subtotal != null && Math.abs(sum - o.subtotal) >= 0.01) out.push(`The products add up to $${sum.toFixed(2)}, the subtotal says $${o.subtotal.toFixed(2)} — some may be missing from the file${from}.`);
+  else if (o.count != null && n !== o.count) out.push(`${n} items read, the order says ${o.count} — check the quantities.`);
+  return out;
+}
+
+/**
+ * Walmart's cart for an order (verified 2026-10-15: affil.walmart.com/cart/addToCart?items=<item id>|<qty>,… fills the
+ * signed-in cart). Amazon's add-to-cart form (gp/aws/cart/add.html) only opened the cart as it was, so an Amazon supply
+ * is its product page and how many. As many as cover the order: ⌈qty ÷ pack⌉. Supplies with neither are named.
  */
 export function cartLinks(lines: { itemId: string; qty: number }[], items: { id: string; name: string; buyOptions?: BuyOption[] }[]) {
   const want = new Map<string, number>();
   for (const l of lines) if (l.qty > 0) want.set(l.itemId, (want.get(l.itemId) ?? 0) + l.qty);
-  const carts: Record<Store, { id: string; qty: number; itemId: string }[]> = { walmart: [], amazon: [] };
+  const walmart: { id: string; qty: number; itemId: string }[] = [];
+  const amazon: { url: string; qty: number; itemId: string }[] = [];
   const none: string[] = [];
   for (const [itemId, qty] of want) {
     const it = items.find(i => i.id === itemId);
@@ -175,12 +192,12 @@ export function cartLinks(lines: { itemId: string; qty: number }[], items: { id:
     const p = opt ? storeProduct(opt.url)! : null;
     if (!p) { none.push(itemId); continue; }
     const n = Math.max(1, Math.ceil(Math.round(qty / (opt!.pack && opt!.pack > 0 ? opt!.pack : 1) * 1000) / 1000));
-    const had = carts[p.store].find(x => x.id === p.id);
-    if (had) had.qty += n; else carts[p.store].push({ id: p.id, qty: n, itemId });
+    if (p.store === 'amazon') { amazon.push({ url: p.url, qty: n, itemId }); continue; }
+    const had = walmart.find(x => x.id === p.id);
+    if (had) had.qty += n; else walmart.push({ id: p.id, qty: n, itemId });
   }
-  const walmart = carts.walmart.length ? `https://affil.walmart.com/cart/addToCart?items=${carts.walmart.map(x => `${x.id}|${x.qty}`).join(',')}` : null;
-  const amazon = carts.amazon.length ? `https://www.amazon.com/gp/aws/cart/add.html?${carts.amazon.map((x, i) => `ASIN.${i + 1}=${x.id}&Quantity.${i + 1}=${x.qty}`).join('&')}` : null;
-  return { walmart, amazon, carts, none };
+  const url = walmart.length ? `https://affil.walmart.com/cart/addToCart?items=${walmart.map(x => `${x.id}|${x.qty}`).join(',')}` : null;
+  return { walmart: { url, items: walmart }, amazon, none };
 }
 
 /**

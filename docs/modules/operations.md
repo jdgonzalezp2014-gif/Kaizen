@@ -59,11 +59,14 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   lists the items): ✓ as ordered · ▲ missing · ≠ fewer / more · + not in the order · ≈ not exact · ✕ no match; each receipt row
   gets a `RowFlag` (✓ exact / ✓ learned / ≈ / ✕ / +). Ordered items on no receipt are taken OFF the lines on the first read (not
   bought); a line chosen later goes back to the order's place.
-- **Store carts (owner, 2026-10-15; formats checked that day):** `CartLinks` in To order (OrderPlan) and in the purchase form
-  before a read: Walmart `https://affil.walmart.com/cart/addToCart?items=<itemId>|<qty>,…` (→ walmart.com/affil/cart/addToCart;
-  bot wall for curl) and Amazon `https://www.amazon.com/gp/aws/cart/add.html?ASIN.1=<ASIN>&Quantity.1=<n>&…` (owner: opened the
-  cart). qty = ⌈ordered ÷ pack⌉; a supply goes to the store of its FIRST Walmart/Amazon option; the rest are named ("Not in a
-  store cart"). Kaizen never pays.
+- **Store carts (owner, 2026-10-15; checked that day):** `CartLinks` in To order (OrderPlan) and in the purchase form before a
+  read. Walmart `https://affil.walmart.com/cart/addToCart?items=<itemId>|<qty>,…` — **works** (owner: it filled the cart).
+  Amazon `gp/aws/cart/add.html?ASIN.1=…&Quantity.1=…` **does NOT** (opened the cart as it was) → each Amazon item is a link to
+  its page "Amazon: <item> ×n". qty = ⌈ordered ÷ pack⌉; items with neither are named ("No store link"). Kaizen never pays.
+- **One store product per item (owner, 2026-10-15: "not several platforms' links yet"):** `withProduct` keeps ONE
+  Walmart/Amazon option (bought at the other store, it replaces it; Costco-type links stay); `inventory-items` save refuses two.
+- **Every read is checked (owner, 2026-10-15):** `orderWarnings` — no order number/date (a Walmart selection started below the
+  title), products ≠ subtotal (left out), items ≠ "Subtotal (N items)" → ▲ in the read message; also in SOP #15 v17.
   Tested on real data (read-only): Walmart 2000156-31789057 6 lines, 19 items, 38.67 + 3.19 = 41.86; Amazon 113-2518508-6894635;
   against production supplies every line was ≈ with the right supply first (no store products saved yet).
 - Script: `scripts/whatsapp-cleanings.mjs` (crew chat history, one-off).
@@ -472,11 +475,10 @@ key had no SOPs.
 
 ## Open items
 
-- **Store carts & .md receipts (2026-10-15):** the Walmart cart link is checked only up to Walmart's bot wall (curl) — the owner
-  opens one from a real order to confirm it fills the cart; Amazon's opened the cart. No supply has a store product yet: the first
-  .md receipts are all ≈ (one tap each, then matched by number). The Walmart "download selection" must start at the order's title
-  or the order number and date are lost (only the content hash then tells a repeat). The UI flow (read → flags → record → product
-  learned) was not run end to end — check it on the first real receipt.
+- **Store carts & .md receipts (2026-10-15):** Amazon has no working multi-item cart link (add.html opened the old cart; untried:
+  `gp/aws/cart/add-res.html`). Several stores' links per item: later, when the owner asks. No supply has a store product yet: the
+  first .md receipts are all ≈ (one tap each, then matched by number). The UI flow (read → flags → record → product learned) was
+  not run end to end — check it on the first real receipt.
 - **Access for cleaners (§136):** all 21 active units complete (2026-10-12, after the owner filled Bobcat
   House and the lockboxes of P2-4212 / P2-4315). A new unit shows in Setup → Crew pages → "How cleaners
   get in" with what it lacks.

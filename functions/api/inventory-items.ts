@@ -21,6 +21,7 @@ import { invItems } from '../_lib/inventory.ts';
 import { supplyPlaces } from '../_lib/unit-access.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
 import { CATEGORIES } from '../../src/lib/inventory.ts';
+import { storeProduct } from '../../src/lib/store-order.ts';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -43,6 +44,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const buy = raw.map(o => ({ label: String(o.label ?? '').trim().slice(0, 60), url: String(o.url ?? '').trim().slice(0, 500), pack: Number(o.pack) > 0 ? Math.round(Number(o.pack) * 100) / 100 : null }))
       .filter(o => o.label || o.url);
     if (buy.some(o => !/^https?:\/\/\S+$/i.test(o.url))) return bad('Each buying option needs a link that starts with https://');
+    // Owner, 2026-10-15: one Walmart or Amazon product per item for now — the one its receipts match and its order's cart uses.
+    if (buy.filter(o => storeProduct(o.url)).length > 1) return bad('One Walmart or Amazon link per item — keep the one you buy.');
     const buyJson = JSON.stringify(buy.map(o => ({ label: o.label || new URL(o.url).hostname.replace(/^www\./, ''), url: o.url, ...(o.pack ? { pack: o.pack } : {}) })));
     try {
       if (b.id) await sql`UPDATE inventory_items SET name = ${name}, size = ${size}, category = ${category}, measure = ${measure}, per_clean = ${perClean},

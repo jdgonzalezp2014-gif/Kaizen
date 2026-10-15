@@ -11,7 +11,7 @@ import { askJson, toBase64, type AiFile } from './ai-chain.ts';
 import { driveToken, fileIdFromUrl } from './gdrive.ts';
 import { invItems, openOrders } from './inventory.ts';
 import { aliasKey, readReceipt, type Receipt } from '../../src/lib/receipt.ts';
-import { parseOrderMd, readOrder, storeProduct, withProduct, type BuyOption } from '../../src/lib/store-order.ts';
+import { orderWarnings, parseOrderMd, readOrder, storeProduct, withProduct, type BuyOption } from '../../src/lib/store-order.ts';
 
 // Gemini takes ~20 MB per request in all; base64 adds a third. A long screenshot arrives as several parts (the browser cuts it).
 const MAX_BYTES = 12 * 1024 * 1024;
@@ -111,8 +111,8 @@ export async function learnAliases(sql: SqlFn, by: string, raw: unknown) {
   }
 }
 
-/** What reading Markdown orders answers: one receipt per file, in order, and which were read before. */
-export type OrdersResult = { ok: true; receipts: Receipt[]; repeats: ({ at: string; orderNo: string | null } | null)[] } | { ok: false; message: string };
+/** What reading Markdown orders answers: one receipt per file, in order, which were read before, and what each file may have left out. */
+export type OrdersResult = { ok: true; receipts: Receipt[]; repeats: ({ at: string; orderNo: string | null } | null)[]; warnings: string[] } | { ok: false; message: string };
 
 /**
  * The team's Walmart/Amazon orders saved with MarkDownload (owner, 2026-10-15): read as printed, no AI
@@ -125,7 +125,7 @@ export async function readOrderMds(sql: SqlFn, mds: string[], withOrders: boolea
   const [items, orders, learned] = await Promise.all([invItems(sql), withOrders ? openOrders(sql) : Promise.resolve([]),
     sql`SELECT text, item_id::text AS "itemId" FROM inventory_receipt_aliases WHERE account_id = 1` as Promise<{ text: string; itemId: string }[]>]);
   const aliases = new Map(learned.map(a => [a.text, a.itemId]));
-  const receipts: Receipt[] = [], repeats: ({ at: string; orderNo: string | null } | null)[] = [];
+  const receipts: Receipt[] = [], repeats: ({ at: string; orderNo: string | null } | null)[] = [], warnings: string[] = [];
   for (const md of list) {
     const o = parseOrderMd(md);
     if (!o.lines.length) {
@@ -139,11 +139,12 @@ export async function readOrderMds(sql: SqlFn, mds: string[], withOrders: boolea
                               AND (hash = ${hash} OR (${o.orderNo}::text IS NOT NULL AND order_no = ${o.orderNo})) ORDER BY created_at LIMIT 1` as { at: string; order_no: string | null }[];
     const receipt = readOrder(o, items, orders, aliases);
     receipts.push(receipt);
+    warnings.push(...orderWarnings(o).map(w => list.length > 1 ? `${receipt.store ?? 'Order'} ${o.orderNo ?? receipts.length}: ${w}` : w));
     repeats.push(seen ? { at: seen.at, orderNo: seen.order_no ?? o.orderNo } : null);
     await sql`INSERT INTO receipt_reads (account_id, hash, raw, by, store, order_no) VALUES (1, ${hash}, ${JSON.stringify(o)}::jsonb, 'Markdown', ${receipt.store}, ${o.orderNo})
               ON CONFLICT DO NOTHING`.catch(() => {});
   }
-  return { ok: true, receipts, repeats };
+  return { ok: true, receipts, repeats, warnings };
 }
 
 /**

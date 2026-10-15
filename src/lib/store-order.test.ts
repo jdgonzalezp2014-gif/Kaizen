@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { againstOrder, cartLinks, packFor, parseOrderMd, readOrder, storeProduct, withProduct } from './store-order.ts';
+import { againstOrder, cartLinks, orderWarnings, packFor, parseOrderMd, readOrder, storeProduct, withProduct } from './store-order.ts';
 
 // MarkDownload of walmart.com/orders/<n>, "Download selection" (owner, 2026-10-15) — the pickup person and card left out.
 const WALMART = `## Oct 15, 2026 order
@@ -270,22 +270,31 @@ test('packFor: the remembered pack, else the printed one when it counts the supp
   assert.equal(packFor({ pack: null, packWord: null }, 'roll', 6), 6);
 });
 
-test('withProduct: the product bought goes first, keeping its label; a new one is added in front', () => {
-  const opts = [{ label: 'Costco', url: 'https://www.costco.com/x' }, { label: 'WM tall', url: 'https://www.walmart.com/ip/344638043' }];
-  assert.deepEqual(withProduct(opts, 'https://www.walmart.com/ip/Great-Value/344638043', 40),
+test('withProduct: ONE store product per supply — the bought one replaces the other store\'s; other links stay', () => {
+  const opts = [{ label: 'Costco', url: 'https://www.costco.com/x' }, { label: 'WM tall', url: 'https://www.walmart.com/ip/344638043', pack: 40 }];
+  assert.deepEqual(withProduct(opts, 'https://www.walmart.com/ip/Great-Value/344638043', null),
     [{ label: 'WM tall', url: 'https://www.walmart.com/ip/344638043', pack: 40 }, opts[0]]);
-  assert.deepEqual(withProduct([], 'https://www.amazon.com/dp/B0C4Z6SKCS?ref=x', null), [{ label: 'Amazon', url: 'https://www.amazon.com/dp/B0C4Z6SKCS' }]);
+  assert.deepEqual(withProduct(opts, 'https://www.amazon.com/dp/B0C4Z6SKCS?ref=x', 50),
+    [{ label: 'Amazon', url: 'https://www.amazon.com/dp/B0C4Z6SKCS', pack: 50 }, opts[0]]);
   assert.equal(withProduct(opts, 'https://example.com', 2), opts);
 });
 
-test('cartLinks: one cart per store, packs rounded up, supplies with no store named', () => {
-  const its = [...items, { id: '6', name: 'Coffee filters', measure: 'filter', buyOptions: [{ label: 'Amazon', url: 'https://www.amazon.com/dp/B0C4Z6SKCS', pack: 200 }] },
-               { id: '7', name: 'Splenda', measure: 'box', buyOptions: [{ label: 'Amazon', url: 'https://www.amazon.com/dp/B005IHUYVA' }] }];
-  const c = cartLinks([{ itemId: '1', qty: 10 }, { itemId: '5', qty: 2 }, { itemId: '6', qty: 150 }, { itemId: '7', qty: 1 }, { itemId: '2', qty: 3 }, { itemId: '4', qty: 0 }], its);
-  assert.equal(c.walmart, 'https://affil.walmart.com/cart/addToCart?items=1275613286|3,34938309|2');
-  assert.equal(c.amazon, 'https://www.amazon.com/gp/aws/cart/add.html?ASIN.1=B0C4Z6SKCS&Quantity.1=1&ASIN.2=B005IHUYVA&Quantity.2=1');
+test('orderWarnings: no order number or date (a selection started below the title); products short of the subtotal', () => {
+  assert.deepEqual(orderWarnings(parseOrderMd(WALMART)), []);
+  const cut = parseOrderMd(WALMART.slice(WALMART.indexOf('19 items shopped')));
+  assert.match(orderWarnings(cut)[0]!, /^No order number or date in the file — select from the order's title/);
+  const short = parseOrderMd(WALMART.replace(/\[!\[\]\(https:\/\/i5\.walmartimages\.com\/seo\/Ajax[\s\S]*?___/, ''));
+  assert.match(orderWarnings(short)[0]!, /add up to \$32\.70, the subtotal says \$38\.67/);
+  assert.deepEqual(orderWarnings(parseOrderMd(AMAZON)), []);
+});
+
+test('cartLinks: Walmart\'s cart, packs rounded up; Amazon supplies as their product pages; the rest named', () => {
+  const its = [...items, { id: '6', name: 'Coffee filters', measure: 'filter', buyOptions: [{ label: 'Amazon', url: 'https://www.amazon.com/dp/B0C4Z6SKCS', pack: 200 }] }];
+  const c = cartLinks([{ itemId: '1', qty: 10 }, { itemId: '5', qty: 2 }, { itemId: '6', qty: 150 }, { itemId: '2', qty: 3 }, { itemId: '4', qty: 0 }], its);
+  assert.equal(c.walmart.url, 'https://affil.walmart.com/cart/addToCart?items=1275613286|3,34938309|2');
+  assert.deepEqual(c.amazon, [{ url: 'https://www.amazon.com/dp/B0C4Z6SKCS', qty: 1, itemId: '6' }]);
   assert.deepEqual(c.none, ['2']);
-  assert.equal(cartLinks([{ itemId: '2', qty: 1 }], its).walmart, null);
+  assert.equal(cartLinks([{ itemId: '2', qty: 1 }], its).walmart.url, null);
 });
 
 test('againstOrder: missing, fewer, more, not ordered', () => {

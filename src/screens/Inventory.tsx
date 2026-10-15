@@ -18,7 +18,7 @@ import { destFor, placeLabel } from '../lib/unit-access.ts';
 import { orderFor, receiptSum, similarItems, splitTotal, type Receipt, type ReceiptLine } from '../lib/receipt.ts';
 import { Sheet } from '../components/InspectionRun.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
-import { againstOrder, cartLinks, STORE_NAME, type Store } from '../lib/store-order.ts';
+import { againstOrder, cartLinks, STORE_NAME } from '../lib/store-order.ts';
 import { TX } from '../lib/crew-i18n.ts';
 import { Icon, ic } from '../components/Icon.tsx';
 
@@ -829,9 +829,10 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
         got = [r.receipt]; repeats = [r.repeat]; by = `✨ Read by ${r.by}`;
       } else {
         f.append('mds', JSON.stringify(await Promise.all((fresh ? files.slice(readN) : files).map(x => x.text()))));
-        const r = await api.upload(f) as unknown as { ok: true; receipts: Receipt[]; repeats: Repeat[] } | { ok: false; message?: string };
+        const r = await api.upload(f) as unknown as { ok: true; receipts: Receipt[]; repeats: Repeat[]; warnings: string[] } | { ok: false; message?: string };
         if (!r.ok) { setReadMsg(`Could not read the order — fill it in by hand. (${r.message ?? 'no answer'})`); return; }
-        got = r.receipts; repeats = r.repeats; by = 'Read from the order page as printed';
+        got = r.receipts; repeats = r.repeats;
+        by = `Read from the order page as printed${r.warnings.map(w => ` ▲ ${w}`).join('')}`;
       }
       if (!got.some(rc => rc.lines.length || rc.total != null)) { setReadMsg('Could not read the receipt — fill it in by hand. (nothing found on it)'); return; }
       const first = !fresh || !receipts.length;
@@ -1059,9 +1060,9 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
                  setFiles([...files, ...picked.filter(x => !bad.includes(x)).map(x => new File([x], x.name, { type: 'text/markdown' }))].slice(0, 5));
                  e.target.value = '';
                }} /></label>}
-      {fixedTotal == null && <Hint>On walmart.com → Purchase history → the order: select from its title down to Total, then MarkDownload → download the selection
-        (the whole page leaves the products out). On Amazon: Your orders → Order details → MarkDownload. Each product's link is its store number: the
-        next receipt matches it by itself and the order opens in the store's cart.</Hint>}
+      {fixedTotal == null && <Hint>On walmart.com → Purchase history → the order: select from its title ("Oct 15, 2026 order") down to Total, then MarkDownload →
+        download the selection (the whole page leaves the products out). On Amazon: Your orders → Order details → MarkDownload. Kaizen checks each file:
+        no order number or date, or products that do not add up to the subtotal, is said. Each product's link is its store number: the next receipt matches it by itself.</Hint>}
       {files.length > 0 && !read1 && <button className="link tiny" onClick={() => { setFiles([]); setReadN(0); }}>✕ files</button>}
       {canRead && (read1 && unread > 0
         ? <button className="secondary" disabled={reading || busy} onClick={() => void read(true)}>{ic(reading ? 'Reading…' : `✨ Read the new receipt${unread > 1 ? 's' : ''}`)}</button>
@@ -1114,15 +1115,14 @@ function RowFlag({ r, name, ordered }: { r: Row; name: (id: string) => string; o
  */
 function CartLinks({ inv, lines }: { inv: Inventory; lines: { itemId: string; qty: number }[] }) {
   const c = cartLinks(lines, inv.items);
-  if (!lines.length || (!c.walmart && !c.amazon && !c.none.length)) return null;
+  if (!lines.length || (!c.walmart.url && !c.amazon.length && !c.none.length)) return null;
   const name = (id: string) => inv.items.find(i => i.id === id)?.name ?? id;
-  const link = (s: Store, url: string | null) => url && <a className="chip" href={url} target="_blank" rel="noreferrer">
-    <Icon n="cart" /> Open cart at {STORE_NAME[s]} ({c.carts[s].length}) ↗</a>;
   return <div className="button-row cart-links">
-    {link('walmart', c.walmart)}{link('amazon', c.amazon)}
-    {(c.walmart || c.amazon) && <Hint>Opens the store's cart with these items added — check it there and pay there; Kaizen never pays. How many = what is ordered ÷
-      how many come in one (Setup → Items list → Buy at), rounded up. A supply goes to the store of its first Walmart/Amazon option — the one it was last bought at.</Hint>}
-    {c.none.length > 0 && <Flag tone="attn" label={`Not in a store cart: ${c.none.length}`} title="No Walmart or Amazon product yet — buy them by hand"
+    {c.walmart.url && <a className="chip" href={c.walmart.url} target="_blank" rel="noreferrer"><Icon n="cart" /> Open cart at Walmart ({c.walmart.items.length}) ↗</a>}
+    {c.amazon.map(a => <a key={a.itemId} className="chip" href={a.url} target="_blank" rel="noreferrer">Amazon: {name(a.itemId)} ×{a.qty} ↗</a>)}
+    {(c.walmart.url || c.amazon.length > 0) && <Hint>Walmart: opens the cart with these items added. Amazon has no cart link that works, so each item opens its page — add it there.
+      Check the cart and pay in the store; Kaizen never pays. How many = what is ordered ÷ how many come in one (Setup → Items list → Buy at ×), rounded up.</Hint>}
+    {c.none.length > 0 && <Flag tone="attn" label={`No store link: ${c.none.length}`} title="No Walmart or Amazon product yet — buy them by hand"
       list={[...c.none.map(name), 'A receipt (.md) that has them remembers their product.']} />}
   </div>;
 }
@@ -1529,8 +1529,8 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
       </div>
       <div className="buy-opts">
         <b>Buy at</b> <span className="sub-n">— where to buy it; each option with its link and how many come in one (×)</span>
-        <Hint>A Walmart (walmart.com/ip/…) or Amazon (amazon.com/dp/…) link is the store's product: receipts match it by number and an order opens it
-          in the store's cart — the first Walmart/Amazon option is the one used. Recording a receipt (.md) puts what was bought first, with its ×.</Hint>
+        <Hint>ONE Walmart (walmart.com/ip/…) or Amazon (amazon.com/dp/…) link per item: it is the store's product — receipts match it by number and an order
+          opens it (Walmart: in the cart). Recording a receipt (.md) sets it, with its ×; bought at the other store, that one replaces it.</Hint>
         {form.buyOptions.map((o, k) => (
           <div key={k} className="row" style={{ gap: 6, alignItems: 'center' }}>
             <input value={o.label} maxLength={60} placeholder="Store, e.g. Costco" aria-label="Store" onChange={e => setOpt(k, { label: e.target.value })} />
