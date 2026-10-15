@@ -8,6 +8,7 @@ import { useEffect, useState } from 'react';
 import { getOpsSettings, getSlack, slackAction, type SlackState } from '../api.ts';
 import { DEFAULT_DIGEST, DEFAULT_EVENTS, DEFAULT_TASK_CHECK, TOPICS, type SlackConfig, type Topic } from '../lib/slack.ts';
 import { crewChannelsOf } from '../lib/crew-slack.ts';
+import { Icon, ic } from './Icon.tsx';
 
 const EVENT_LABEL: Record<keyof typeof DEFAULT_EVENTS, string> = {
   taskCreated: 'A task is created', taskAssigned: 'A task is assigned', taskClosed: 'A task is completed, cancelled or reopened',
@@ -102,12 +103,12 @@ export function SlackPanel() {
           <button className="secondary small" onClick={() => setShowManifest(!showManifest)}>{showManifest ? 'Hide' : 'Show'} the manifest</button>
           <button className="secondary small" onClick={() => void navigator.clipboard.writeText(manifest(origin)).then(() => setMsg({ ok: true, text: 'Manifest copied.' }))}>Copy the manifest</button>
         </div>
-        {showManifest && <pre className="slack-manifest">{manifest(origin)}</pre>}
+        {showManifest && <pre className="slack-manifest">{ic(manifest(origin))}</pre>}
         {(() => {
           // The scopes this manifest asks for that the installed app does not have yet — paste it again and Reinstall.
           const want = (JSON.parse(manifest(origin)) as { oauth_config: { scopes: { bot: string[] } } }).oauth_config.scopes.bot;
           const missing = st?.grantedScopes ? want.filter(x => !st.grantedScopes!.includes(x)) : [];
-          return missing.length ? <p className="note warn">⚠ The installed Slack app is missing {missing.join(', ')} — so some features do not work yet.
+          return missing.length ? <p className="note warn"><Icon n="warning" /> The installed Slack app is missing {missing.join(', ')} — so some features do not work yet.
             Copy the manifest (reload this page first), paste it in Slack → App Manifest → Save → <b>Reinstall to Workspace</b>.</p> : null;
         })()}
       </section>
@@ -151,7 +152,7 @@ export function SlackPanel() {
           )}
           {!channels && cfg.channels && <p className="note">Now: {TOPICS.filter(t => cfg.channels?.[t.key]).map(t => `${t.label} → #${cfg.channels![t.key]!.name}`).join(' · ') || 'no channels yet'}</p>}
           <p className="note"><b>Add to…</b> channels <Hint>In these channels each new message gets a private, silent offer (only its author sees it)
-            to add it to a task, a purchase order, a work order or a claim. Replies in its thread are not all saved: react 📎 to one to add it.
+            to add it to a task, a purchase order, a work order or a claim. Replies in its thread are not all saved: react <Icon n="clip" /> to one to add it.
             No AI reads the messages.</Hint>{channels ? '' : ` — now: ${(cfg.addTo?.channels ?? []).map(c => `#${c.name}`).join(', ') || 'none'} (read the channels to change)`}</p>
           {channels && (
             <div className="slack-events">
@@ -160,7 +161,7 @@ export function SlackPanel() {
                 return <label key={c.id} className="check"><input type="checkbox" checked={on} onChange={e => setCfg(p => {
                   const now = (p.addTo?.channels ?? []).filter(x => x.id !== c.id);
                   return { ...p, addTo: { channels: e.target.checked ? [...now, { id: c.id, name: c.name }] : now } };
-                })} /> {c.private ? '🔒' : '#'}{c.name}</label>;
+                })} /> {ic(c.private ? '🔒' : '#')}{c.name}</label>;
               })}
             </div>
           )}
@@ -169,7 +170,7 @@ export function SlackPanel() {
             at its hour, in the time zone below. A GitHub Action is the backup.</Hint></h3>
           <div className="slack-events">
             {(Object.keys(EVENT_LABEL) as (keyof typeof DEFAULT_EVENTS)[]).map(k => (
-              <label key={k} className="check"><input type="checkbox" checked={ev[k]} onChange={e => setCfg(p => ({ ...p, events: { ...ev, [k]: e.target.checked } }))} /> {EVENT_LABEL[k]}</label>
+              <label key={k} className="check"><input type="checkbox" checked={ev[k]} onChange={e => setCfg(p => ({ ...p, events: { ...ev, [k]: e.target.checked } }))} /> {ic(EVENT_LABEL[k])}</label>
             ))}
           </div>
           <div className="row">
@@ -223,7 +224,7 @@ function Cleaners({ cfg, busy, run, onSaved }: {
   return (
     <>
       <h3>6 · Cleaners’ channels <Hint>One private channel per cleaner (<code>#cleaning-name</code>), invited with the email they use in Slack.
-        Private means only its members see it: whoever creates it joins it; anyone else of the team uses <b>👁 Add me</b>. Messages there
+        Private means only its members see it: whoever creates it joins it; anyone else of the team uses <b><Icon n="eye" /> Add me</b>. Messages there
         are in the cleaner’s language (English or Spanish, as on their page). Times are the team’s ({cfg.taskCheck?.tz ?? DEFAULT_TASK_CHECK.tz}).</Hint></h3>
       <div className="slack-events">
         {/* One option per line (2026-10-14: side by side they squeezed into narrow columns); how each works behind its ?. */}
@@ -248,7 +249,7 @@ function Cleaners({ cfg, busy, run, onSaved }: {
             return (
               <li key={n}>
                 <b>{n}</b>
-                {ch ? <span className="sub-n">🔒 #{ch.channelName}{ch.email ? ` · ${ch.email}` : ''}</span> : (
+                {ch ? <span className="sub-n"><Icon n="lock" /> #{ch.channelName}{ch.email ? ` · ${ch.email}` : ''}</span> : (
                   <input type="email" placeholder="their Slack email" value={emails[n] ?? ''} onChange={e => setEmails(p => ({ ...p, [n]: e.target.value }))} />
                 )}
                 <span className="slack-cl-tools">
@@ -257,7 +258,7 @@ function Cleaners({ cfg, busy, run, onSaved }: {
                     .then(r => setPreview(r.ok && r.message ? { name: n, lines: r.message.blocks.map(b => b.text?.text ?? '').filter(Boolean) } : null))}>Preview</button>
                   {ch && <button className="link" disabled={busy} onClick={() => { if (confirm(`Send ${n} their upcoming cleans in #${ch.channelName}?`)) void run({ action: 'cleanerSend', name: n }, () => `Sent to #${ch.channelName}.`); }}>Send now</button>}
                   {ch && <button className="link" disabled={busy} title="The channel is private: only its members see it"
-                                 onClick={() => void run({ action: 'cleanerJoin', name: n }, r => (r as { already?: boolean }).already ? `You are already in #${ch.channelName}.` : `You are in #${ch.channelName} now — it shows in Slack.`)}>👁 Add me</button>}
+                                 onClick={() => void run({ action: 'cleanerJoin', name: n }, r => (r as { already?: boolean }).already ? `You are already in #${ch.channelName}.` : `You are in #${ch.channelName} now — it shows in Slack.`)}><Icon n="eye" /> Add me</button>}
                 </span>
               </li>
             );
@@ -295,7 +296,7 @@ function People({ busy, run, onSaved }: {
   return (
     <>
       <h3>5 · People and direct messages <Hint>A task’s owner hears it directly in Slack — when it is given to them, and each morning if it is overdue — and
-        <b> 🙋 Take it</b> makes whoever presses it the owner. For that, each Hostaway user is linked to their Slack account here.</Hint></h3>
+        <b> <Icon n="hand" /> Take it</b> makes whoever presses it the owner. For that, each Hostaway user is linked to their Slack account here.</Hint></h3>
       {!p ? <button className="secondary small" disabled={busy} onClick={read}>Read the people</button> : (
         <>
           <ul className="slack-cleaners">

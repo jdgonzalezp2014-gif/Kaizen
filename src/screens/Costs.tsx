@@ -18,6 +18,7 @@ import {
 import { money2 as money } from '../lib/format.ts';
 import { Cleanings } from './Cleanings.tsx';
 import { COST_CATEGORIES, guessCategory as guessCat } from '../lib/costs.ts';
+import { Icon } from '../components/Icon.tsx';
 
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -332,7 +333,7 @@ function Variable({ units }: { units: UnitRow[] }) {
       <td>{r.unit_name ?? <span className="muted">Shared</span>}</td>
       <td>{r.category}</td>
       <td className="n">{money(Number(r.amount))}</td>
-      <td>{r.source === 'repair' ? <>🔧 {r.label}{r.notes ? <span className="muted"> · {r.notes}</span> : null}</> : r.notes ?? r.label}</td>
+      <td>{r.source === 'repair' ? <><Icon n="wrench" /> {r.label}{r.notes ? <span className="muted"> · {r.notes}</span> : null}</> : r.notes ?? r.label}</td>
       <td className="muted">{r.created_by?.split('@')[0]}</td>
       {/* §95: a repair's cost follows the repair — changed or removed there. */}
       <td>{r.source === 'repair'
@@ -423,17 +424,17 @@ function OpenOrders() {
   return (
     <div className="card costs-orders">
       {(inv.draft || waiting.length > 0) && <>
-        <b>🛒 Orders not bought yet</b>
+        <b><Icon n="cart" /> Orders not bought yet</b>
         <ul>
-          {inv.draft && <li>📝 Draft order — {n(inv.draft.lines)}, saved {inv.draft.savedAt} by {inv.draft.savedBy.split('@')[0]} · Operations → Inventory → To order</li>}
-          {waiting.map(o => <li key={o.todoId}>{o.at} · {o.title} — {n(o.lines)} · Operations → To-do → + 🛒 purchase</li>)}
+          {inv.draft && <li><Icon n="note" /> Draft order — {n(inv.draft.lines)}, saved {inv.draft.savedAt} by {inv.draft.savedBy.split('@')[0]} · Operations → Inventory → To order</li>}
+          {waiting.map(o => <li key={o.todoId}>{o.at} · {o.title} — {n(o.lines)} · Operations → To-do → + <Icon n="cart" /> purchase</li>)}
         </ul>
       </>}
       {inv.toPayBack.length > 0 && <>
-        <b>💵 To pay back</b> <span className="muted">— bought with their own money: {[...owed].map(([who, sum]) => `${who} ${money(sum)}`).join(' · ')}</span>
+        <b><Icon n="cash" /> To pay back</b> <span className="muted">— bought with their own money: {[...owed].map(([who, sum]) => `${who} ${money(sum)}`).join(' · ')}</span>
         <ul>
           {inv.toPayBack.map(p => <li key={p.id}>{p.at} · <b>{p.paidBy}</b> · {money(p.total)}{p.todo ? ` · ${p.todo}` : ''}{p.note ? ` — ${p.note}` : ''}
-            {p.photos.map((f, i) => <a key={i} href={f.url} target="_blank" rel="noreferrer"> 📎</a>)}
+            {p.photos.map((f, i) => <a key={i} href={f.url} target="_blank" rel="noreferrer"> <Icon n="clip" /></a>)}
             {' '}<button className="link" onClick={() => void paid(p.id)}>✓ Paid back</button></li>)}
         </ul>
         {msg && <p className="breach">{msg}</p>}

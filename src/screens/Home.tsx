@@ -31,6 +31,7 @@ import { todayIn, addDays } from '../lib/dates.ts';
 import { TodoList, type WorkSum, type WorkTab } from '../components/Todos.tsx';
 import { money, money2 } from '../lib/format.ts';
 import { hostawayReservationUrl, type BoardRow } from '../lib/operations.ts';
+import { Icon } from '../components/Icon.tsx';
 
 const TZ = 'America/New_York';
 const WEEK = 7;
@@ -464,9 +465,9 @@ function CleanItem({ r }: { r: BoardRow }) {
       <span className="home-time">{r.time}</span>
       <span className="home-main">
         <b>{r.unit}</b>{r.beds ? <span className="sub-n"> {r.beds}BR</span> : null}
-        {r.urgency === 'turnover' && <span className="ops-flag urgent">⚡ same-day</span>}
-        {r.deep && <span className="ops-flag deep">🧽 deep</span>}
-        {(r.inspection.key === 'req' || r.inspection.key === 'due') && <span className="ops-flag req">🔍 inspection</span>}
+        {r.urgency === 'turnover' && <span className="ops-flag urgent"><Icon n="zap" /> same-day</span>}
+        {r.deep && <span className="ops-flag deep"><Icon n="brush" /> deep</span>}
+        {(r.inspection.key === 'req' || r.inspection.key === 'due') && <span className="ops-flag req"><Icon n="search" /> inspection</span>}
       </span>
       <span className={`home-side ${who?.startsWith('▲') ? 'breach' : ''}`}>
         {who}{r.price != null && <span className="sub-n"> · {money2(r.price)}</span>}

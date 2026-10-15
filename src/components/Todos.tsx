@@ -29,6 +29,7 @@ import {
 import { addDays, type DateStr } from '../lib/dates.ts';
 import { money2 } from '../lib/format.ts';
 import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS, caseHost, cleanCaseUrl } from '../lib/claims.ts';
+import { Icon, ic } from './Icon.tsx';
 
 /** The claim's case on the platform, one tap away (§88). */
 const CaseLink = ({ url }: { url: string | null }) => url
@@ -37,7 +38,7 @@ const CaseLink = ({ url }: { url: string | null }) => url
 /** owner, Oct 2026: a pasted link (a Slack thread) is a 🔗, not 80 characters of URL. */
 const Linked = ({ text }: { text: string }) => <>{text.split(/(https?:\/\/\S+)/).map((p, i) => i % 2
   ? <a key={i} className="desc-link" href={p} target="_blank" rel="noreferrer" title={p} onClick={e => e.stopPropagation()}
-       aria-label={`Open the link (${p.includes('slack.com') ? 'Slack' : p.replace(/^https?:\/\/([^/]+).*/, '$1')})`}>🔗</a>
+       aria-label={`Open the link (${p.includes('slack.com') ? 'Slack' : p.replace(/^https?:\/\/([^/]+).*/, '$1')})`}><Icon n="link" /></a>
   : p)}</>;
 
 /** A comment from Slack ends "— From Slack: <url>": shown as a short "↗ Slack" link, not the URL (owner, 2026-10-14: noise). */
@@ -205,7 +206,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
         <span className={`todo-status sev s-${c.severity.toLowerCase()}`}>{c.severity}</span>
         <span className="todo-status">{c.status === 'Open' ? '○ Open' : '◐ In progress'}</span>
         <span className="sub-n">{ageDays(c, today) ? `${ageDays(c, today)}d open` : 'new today'}</span>
-        {c.reservation_label && <span className="todo-stay">🛏 {c.reservation_label}</span>}
+        {c.reservation_label && <span className="todo-stay"><Icon n="bed" /> {c.reservation_label}</span>}
         <CaseLink url={c.case_url} />
         {openWorkBy.get(String(c.id)) ? <span className="sub-n">· {openWorkBy.get(String(c.id))} open task{openWorkBy.get(String(c.id)) === 1 ? '' : 's'}</span>
           : <span className="todo-due">▲ no work yet</span>}
@@ -317,7 +318,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
       {!lanesOn && (!adding ? (
         <div className="todo-add-buttons">
           {kindFilter !== 'work_order' && kindFilter !== 'claims' && <button className="small secondary" onClick={() => setAdding('task')}>+ To-do</button>}
-          {kindFilter !== 'task' && kindFilter !== 'claims' && <button className="small secondary" onClick={() => setAdding('work_order')}>+ 🔧 Repair</button>}
+          {kindFilter !== 'task' && kindFilter !== 'claims' && <button className="small secondary" onClick={() => setAdding('work_order')}>+ <Icon n="wrench" /> Repair</button>}
           {showClaims && kindFilter === 'claims' && <button className="small secondary" onClick={() => setAdding('claim')}>+ ⚑ Claim</button>}
         </div>
       ) : adding === 'claim' ? (
@@ -479,7 +480,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           the row opens it (its own buttons, links and fields keep their job). */}
       <div className="todo-line todo-opener" onClick={e => { if (!renaming && !(e.target as HTMLElement).closest('button, a, input, select, textarea, label')) onOpen(); }}>
         {/* Owner, Oct 2026: the ✓ and ✕ at the right are enough — no box. */}
-        {t.kind === 'work_order' && <span title="Work order">🔧</span>}
+        {t.kind === 'work_order' && <span title="Work order"><Icon n="wrench" /></span>}
         {flat && parent && <span className="sub-n" title="Sub-task of">↳ {parent.title} ·</span>}
         {renaming ? (
           <input className="todo-rename" value={name} autoFocus maxLength={120} aria-label="Title"
@@ -503,7 +504,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
             and claim under the same parent are noise. */}
         {t.unitIds.filter(id => !(parent && !flat && parent.unitIds.includes(id))).map(id => <span key={id} className="todo-unit">{names.get(id) ?? 'unit'}</span>)}
         {t.reservationLabel && !(parent && !flat && parent.reservationId === t.reservationId) &&
-          <span className="todo-stay" title="The stay it is about">🛏 {t.reservationLabel}</span>}
+          <span className="todo-stay" title="The stay it is about"><Icon n="bed" /> {t.reservationLabel}</span>}
         {t.claimId && !inClaim && !(parent && !flat && parent.claimId === t.claimId) && (!claims.length || claimNames.has(t.claimId)) && <span className="todo-claim" title="Belongs to a claim">⚑ {claimNames.get(t.claimId) ?? 'claim'}</span>}
         {t.assignee && <span className="sub-n">→ {t.assignee}</span>}
         {t.kind === 'work_order' && t.vendor && <span className="sub-n">· {t.vendor}</span>}
@@ -516,10 +517,10 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           {t.hostawayExpenseId ? '↗ billed to owner' : '↗ owner pays'}</span>}
         {props.chat && !open
           ? <button type="button" className="link tiny" aria-expanded={talk} onClick={() => setTalk(v => !v)}
-                    title={talk ? 'Hide the comments' : 'Comments — read or leave one'}>{talk ? '▾' : '▸'} 💬 {t.updates > 1 ? t.updates : 'Comment'}</button>
-          : t.updates > 1 && <span className="sub-n" title="Updates">💬 {t.updates}</span>}
-        {!!t.files && <button type="button" className="link tiny" title="Files — open the to-do to see them" onClick={onOpen}>📎 {t.files}</button>}
-        {t.hostawayError ? <span className="todo-ha err" title={`Not yet in Hostaway: ${t.hostawayError} — retried on the next sync`}>⚠ Hostaway</span>
+                    title={talk ? 'Hide the comments' : 'Comments — read or leave one'}>{talk ? '▾' : '▸'} <Icon n="message" /> {t.updates > 1 ? t.updates : 'Comment'}</button>
+          : t.updates > 1 && <span className="sub-n" title="Updates"><Icon n="message" /> {t.updates}</span>}
+        {!!t.files && <button type="button" className="link tiny" title="Files — open the to-do to see them" onClick={onOpen}><Icon n="clip" /> {t.files}</button>}
+        {t.hostawayError ? <span className="todo-ha err" title={`Not yet in Hostaway: ${t.hostawayError} — retried on the next sync`}><Icon n="warning" /> Hostaway</span>
           : t.hostawayTaskId && <span className="todo-ha" title={`Hostaway task #${t.hostawayTaskId}${t.source === 'hostaway' ? ' — written in Hostaway' : ''}`}>⇄ Hostaway</span>}
         {/* A sub-task is removed from its own line, naming itself — never
             through the parent's Remove, which takes the whole task (§82). */}
@@ -547,7 +548,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           <p>This is what {asker} asked to buy, and no purchase is recorded for it. Closing it now reads as
             <b> the request was dismissed</b>.</p>
           <div className="button-row">
-            <button onClick={() => { setDismiss(null); if (!open) onOpen(); setSubsOpen(true); setBuying(true); }}>🛒 Record the purchase</button>
+            <button onClick={() => { setDismiss(null); if (!open) onOpen(); setSubsOpen(true); setBuying(true); }}><Icon n="cart" /> Record the purchase</button>
             <button className="secondary" onClick={() => { setDismiss(null); setWhy(''); }}>Keep it open</button>
           </div>
           <label>Or close it without buying — why? <span className="sub-n">(kept on the to-do)</span>
@@ -617,8 +618,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                             ) : !addingSub ? (
                               <div className="todo-add-buttons">
                                 <button className="link tiny" onClick={() => setAddingSub('task')}>+ sub-task</button>
-                                <button className="link tiny" onClick={() => setAddingSub('work_order')}>+ 🔧 work order</button>
-                                {!closed && <button className="link tiny" onClick={() => setBuying(true)}>+ 🛒 purchase order</button>}
+                                <button className="link tiny" onClick={() => setAddingSub('work_order')}>+ <Icon n="wrench" /> work order</button>
+                                {!closed && <button className="link tiny" onClick={() => setBuying(true)}>+ <Icon n="cart" /> purchase order</button>}
                               </div>
                             ) : (
                               <TodoForm key={addingSub} units={units} claims={claims} canClaims={false} submitLabel="Add" startKind={addingSub}
@@ -711,7 +712,7 @@ function VendorLink({ id }: { id: string }) {
   };
   if (!l) return (
     <div className="button-row">
-      <button type="button" className="small secondary" onClick={() => void get()}>📤 Send to vendor</button>
+      <button type="button" className="small secondary" onClick={() => void get()}><Icon n="share" /> Send to vendor</button>
       <span className="note">A link for the vendor — no account. Save first if you changed the vendor or the day.</span>
       {msg && <span className="breach">{msg}</span>}
     </div>
@@ -722,9 +723,9 @@ function VendorLink({ id }: { id: string }) {
     <div className="vendor-link">
       <p className="note">For <b>{l.vendor}</b> — the day {l.day}; the link works until {l.expires} or until the work order closes or goes to another vendor.</p>
       <div className="button-row">
-        <a className="chip" href={`https://wa.me/${digits.replace(/^\+/, '')}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">💬 WhatsApp</a>
-        {digits && <a className="chip" href={`sms:${digits}?&body=${encodeURIComponent(text)}`}>✉ SMS</a>}
-        <button type="button" className="chip" onClick={() => void navigator.clipboard.writeText(text).then(() => setMsg('Copied.'), () => setMsg(l.link))}>📋 Copy</button>
+        <a className="chip" href={`https://wa.me/${digits.replace(/^\+/, '')}?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer"><Icon n="message" /> WhatsApp</a>
+        {digits && <a className="chip" href={`sms:${digits}?&body=${encodeURIComponent(text)}`}><Icon n="mail" /> SMS</a>}
+        <button type="button" className="chip" onClick={() => void navigator.clipboard.writeText(text).then(() => setMsg('Copied.'), () => setMsg(l.link))}><Icon n="clipboard" /> Copy</button>
         {msg && <span className="note">{msg}</span>}
       </div>
     </div>
@@ -877,7 +878,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
               <div className="task-fold-row">
                 <div className="todo-kind" role="group" aria-label="Kind">
                   {(['task', 'work_order'] as TaskKind[]).map(k => (
-                    <button key={k} type="button" className={v.kind === k ? 'chip active' : 'chip'} onClick={() => set('kind', k)}>{KIND_LABEL[k]}</button>
+                    <button key={k} type="button" className={v.kind === k ? 'chip active' : 'chip'} onClick={() => set('kind', k)}>{ic(KIND_LABEL[k])}</button>
                   ))}
                 </div>
                 {v.unitIds.map(id => (
@@ -919,10 +920,10 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
         {initial ? (
           <div className="todo-kind" role="group" aria-label="Kind">
             {(['task', 'work_order'] as TaskKind[]).map(k => (
-              <button key={k} type="button" className={v.kind === k ? 'chip active' : 'chip'} onClick={() => set('kind', k)}>{KIND_LABEL[k]}</button>
+              <button key={k} type="button" className={v.kind === k ? 'chip active' : 'chip'} onClick={() => set('kind', k)}>{ic(KIND_LABEL[k])}</button>
             ))}
           </div>
-        ) : <b className="todo-adding">{wo ? '🔧 New work order' : 'New to-do'}</b>}
+        ) : <b className="todo-adding">{ic(wo ? '🔧 New work order' : 'New to-do')}</b>}
         <input className="todo-text" value={v.title} maxLength={120} autoFocus={!initial}
                placeholder={initial ? '' : wo ? 'Short title — e.g. Fix the AC' : 'Short title — e.g. Text the HOA'}
                onChange={e => set('title', e.target.value)}
@@ -1012,7 +1013,7 @@ export function Timeline({ load, post, version = 0, readOnly = false, title, def
     <div className="timeline compact">
       <div className="tl-summary">
         <button type="button" className="tl-toggle" aria-expanded={comments} onClick={() => setComments(!comments)}>
-          💬 Comments{list === null ? '' : ` · ${notes.length}`} <span aria-hidden="true">{comments ? '▾' : '▸'}</span>
+          <Icon n="message" /> Comments{list === null ? '' : ` · ${notes.length}`} <span aria-hidden="true">{comments ? '▾' : '▸'}</span>
         </button>
         <span className="rb-spacer" />
         {changes.length > 0 && <button type="button" className="link" onClick={() => setLog(true)}>Activity log · {changes.length}</button>}
@@ -1086,7 +1087,7 @@ export function StayPicker({ unitId, value, onChange, today }: {
   if (value && !picking) {
     return (
       <span className="stay-pick">
-        <span className="sub-n">Stay</span> <span className="todo-stay">🛏 {value.label || value.id}</span>
+        <span className="sub-n">Stay</span> <span className="todo-stay"><Icon n="bed" /> {value.label || value.id}</span>
         <button type="button" className="link tiny" onClick={() => setPicking(true)}>change</button>
         <button type="button" className="link tiny" onClick={() => onChange(null)}>clear</button>
       </span>
@@ -1096,7 +1097,7 @@ export function StayPicker({ unitId, value, onChange, today }: {
     return (
       <span className="stay-pick">
         <button type="button" className="link tiny" disabled={!unitId} onClick={() => setPicking(true)}
-                title={unitId ? 'Tie it to a reservation' : 'Pick a listing first'}>🛏 + stay{unitId ? '' : ' (pick a listing first)'}</button>
+                title={unitId ? 'Tie it to a reservation' : 'Pick a listing first'}><Icon n="bed" /> + stay{unitId ? '' : ' (pick a listing first)'}</button>
       </span>
     );
   }
@@ -1342,7 +1343,7 @@ function TodoFiles({ todoId }: { todoId: string }) {
   return (
     <section className="todo-files">
       <div className="todo-files-head">
-        <b>📎 Files</b> <span className="sub-n">{files ? files.length : '…'}</span>
+        <b><Icon n="clip" /> Files</b> <span className="sub-n">{files ? files.length : '…'}</span>
         <label className={`chip ${busy ? 'is-busy' : ''}`}>{busy ? 'Uploading…' : '+ Add files'}
           <input type="file" multiple hidden disabled={busy} onChange={e => { void add([...(e.target.files ?? [])]); e.target.value = ''; }} /></label>
         <span className="sub-n">up to 10 at a time, 15 MB each — photos, PDFs, documents</span>
@@ -1352,7 +1353,7 @@ function TodoFiles({ todoId }: { todoId: string }) {
         <ul className="todo-files-list">
           {files.map(f => (
             <li key={f.id}>
-              <a href={f.url} target="_blank" rel="noreferrer">{f.mime?.startsWith('image/') ? '🖼' : f.mime === 'application/pdf' ? '📄' : '📎'} {f.name}</a>
+              <a href={f.url} target="_blank" rel="noreferrer">{ic(f.mime?.startsWith('image/') ? '🖼' : f.mime === 'application/pdf' ? '📄' : '📎')} {f.name}</a>
               <span className="sub-n"> · {f.by.split('@')[0]}{f.source === 'slack' ? ' · from Slack' : ''}</span>
               <button type="button" className="link tiny" aria-label={`Remove ${f.name}`} title="Take it off the to-do (the Drive copy stays)"
                       onClick={() => void removeTodoFile(f.id).then(take)}>✕</button>
@@ -1446,7 +1447,7 @@ function DoneLog({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
         <label className="todo-inline">From <input type="date" value={from} max={to} onChange={e => setFrom(e.target.value)} /></label>
         <label className="todo-inline">to <input type="date" value={to} min={from} onChange={e => setTo(e.target.value)} /></label>
         <select value={kind} aria-label="Kind" onChange={e => setKind(e.target.value as '' | TaskKind)}>
-          <option value="">To-dos and repairs</option><option value="task">To-dos</option><option value="work_order">🔧 Repairs</option>
+          <option value="">To-dos and repairs</option><option value="task">To-dos</option><option value="work_order">Repairs</option>
         </select>
         <select value={who} aria-label="Closed by" onChange={e => setWho(e.target.value)}>
           <option value="">Anyone</option>{people.map(p => <option key={p} value={p}>{p.split('@')[0]}</option>)}
@@ -1476,11 +1477,11 @@ function DoneLog({ today, canClaims }: { today: DateStr; canClaims: boolean }) {
                   <li key={t.id} className={`todo done-row o-${o}`}>
                     <div className="todo-line">
                       <span className="done-when" title="New York time">{nyParts(t.deletedAt ?? t.doneAt ?? t.createdAt).short}</span>
-                      <span className={`done-outcome o-${o}`}>{OUTCOME_WORD[o]}</span>
-                      {t.kind === 'work_order' && <span title="Repair">🔧</span>}
+                      <span className={`done-outcome o-${o}`}>{ic(OUTCOME_WORD[o])}</span>
+                      {t.kind === 'work_order' && <span title="Repair"><Icon n="wrench" /></span>}
                       <button className="todo-title" onClick={() => setOpen(open === t.id ? null : t.id)}>{t.title}</button>
                       {t.unitIds.map(id => <span key={id} className="todo-unit">{names.get(id) ?? 'unit'}</span>)}
-                      {t.reservationLabel && <span className="todo-stay">🛏 {t.reservationLabel}</span>}
+                      {t.reservationLabel && <span className="todo-stay"><Icon n="bed" /> {t.reservationLabel}</span>}
                       {t.claimId && claimNames.has(t.claimId) && <span className="todo-claim">⚑ {claimNames.get(t.claimId)}</span>}
                       <span className="sub-n">by {closer(t) || '—'}</span>
                       {d !== null && <span className="sub-n">· took {d === 0 ? 'same day' : `${d}d`}</span>}

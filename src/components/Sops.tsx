@@ -12,6 +12,7 @@ import { FEATURES, featureLabel, forFeature, sectionPath, sectionTree, parseBody
          type SopStep, type SopVersion } from '../lib/sops.ts';
 import { todayIn } from '../lib/dates.ts';
 import { PRACTICE, PRACTICE_FOR, practiceUrl } from '../screens/Practice.tsx';
+import { Icon, ic } from './Icon.tsx';
 
 const TZ = 'America/New_York';
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -398,7 +399,7 @@ export function SopButton({ feature, onOpen }: { feature: string; onOpen: () => 
   const count = forFeature(data?.sops ?? [], feature).length;
   return (
     <button className={`sop-fab ${count ? '' : 'none'}`} onClick={onOpen} title={`SOPs for ${featureLabel(feature)}`}>
-      <span aria-hidden="true">📘</span><span className="sop-fab-word"> SOPs for this screen</span>
+      <span aria-hidden="true"><Icon n="book" /></span><span className="sop-fab-word"> SOPs for this screen</span>
       {count ? <span className="sop-count">{count}</span> : null}
     </button>
   );
@@ -436,7 +437,7 @@ export function SopPanel({ feature, canEdit, onClose, onLibrary }: {
            onKeyDown={e => { if (e.key === 'Escape') onClose(); }}>
       <div className="sop-drawer-head">
         <button className="sop-drawer-title" onClick={() => setMin(!min)} aria-expanded={!min} title={min ? 'Open' : 'Minimize'}>
-          <span className="sop-kicker">📘 {open ? featureLabel(feature) : 'SOPs'}</span>
+          <span className="sop-kicker"><Icon n="book" /> {open ? featureLabel(feature) : 'SOPs'}</span>
           <span className="sop-drawer-name">{open ? open.title : featureLabel(feature)}</span>
         </button>
         <span className="sop-drawer-btns">
@@ -466,11 +467,11 @@ export function SopPanel({ feature, canEdit, onClose, onLibrary }: {
             )}
             {PRACTICE_FOR[feature] && (
               <div className="sop-practice">
-                <p className="sop-kicker">🧪 Practice · Practicar</p>
+                <p className="sop-kicker"><Icon n="flask" /> Practice · Practicar</p>
                 <p className="note">Opens in a new tab with example data. Nothing is saved or sent. / Se abre en otra pestaña con datos de ejemplo; nada se guarda ni se envía.</p>
                 <ul className="sop-list">
                   {PRACTICE_FOR[feature]!.map(k => <li key={k}><a className="sop-row" href={practiceUrl(k)} target="_blank" rel="noreferrer">
-                    <span>{PRACTICE[k].en}</span><small className="sub-n">{PRACTICE[k].es}</small></a></li>)}
+                    <span>{ic(PRACTICE[k].en)}</span><small className="sub-n">{ic(PRACTICE[k].es)}</small></a></li>)}
                 </ul>
               </div>
             )}

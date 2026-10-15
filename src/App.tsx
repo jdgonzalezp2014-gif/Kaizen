@@ -19,6 +19,7 @@ import { getUnits, getSettings, can, type UnitRow } from './api.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 import { TabIcon } from './components/TabIcon.tsx';
 import { Modal } from './components/Modal.tsx';
+import { Icon } from './components/Icon.tsx';
 
 type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor';
 
@@ -102,7 +103,7 @@ function PreviewShell({ name }: { name: string }) {
   return (
     <main>
       {/* The cleaner's page has its own one-line top (§134): no big header here either. */}
-      <p className="banner warn">👁 Preview — {name}'s page exactly as they get it. Their buttons do nothing here. Close this tab to go back.</p>
+      <p className="banner warn"><Icon n="eye" /> Preview — {name}'s page exactly as they get it. Their buttons do nothing here. Close this tab to go back.</p>
       <CrewHome asCleaner={name} />
     </main>
   );

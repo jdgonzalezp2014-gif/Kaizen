@@ -16,6 +16,7 @@ import { money2 } from '../lib/format.ts';
 import { ClaimCase, StayPicker } from '../components/Todos.tsx';
 import { caseHost } from '../lib/claims.ts';
 import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
+import { Icon } from '../components/Icon.tsx';
 
 const SEVERITY = CLAIM_SEVERITY;
 const STATUS = CLAIM_STATUS;
@@ -139,7 +140,7 @@ export function Claims({ units, canWork = false }: {
                 </span>
               </div>
               {(c.description || c.reservation_label || c.case_url) && (
-                <p className="claim-desc">{c.reservation_label && <span className="todo-stay">🛏 {c.reservation_label}</span>} {c.description}
+                <p className="claim-desc">{c.reservation_label && <span className="todo-stay"><Icon n="bed" /> {c.reservation_label}</span>} {c.description}
                   {c.case_url && <> <a className="case-link" href={c.case_url} target="_blank" rel="noreferrer">↗ {caseHost(c.case_url)} case</a></>}</p>
               )}
               {openId === String(c.id) && (

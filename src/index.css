@@ -160,6 +160,9 @@ nav { display: flex; gap: 2px; align-items: center; margin-left: auto; }
 }
 @media (max-width: 720px) and (prefers-reduced-transparency: reduce) { .tabbar { background: var(--card); backdrop-filter: none; } }
 
+/* ── icons (Icon.tsx): sized and coloured by the text they sit in ── */
+.icon.tone-bad { color: var(--red); } .icon.tone-warn { color: var(--amber); } .icon.tone-off { color: var(--muted); }
+.icon { width: 1.05em; height: 1.05em; flex: none; display: inline-block; vertical-align: -0.16em; }
 /* ── cards ───────────────────────────────────────────────────────── */
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md);
   padding: var(--s-4) var(--s-5); margin-bottom: var(--s-4); box-shadow: var(--shadow); }
@@ -2068,6 +2071,7 @@ a.fr-btn { text-decoration: none; font-weight: 700; }
 .today-picks button { flex: 1 0 90px; min-width: 0; min-height: 58px; border-radius: var(--r-md); font-size: var(--fs-callout); font-weight: 700; line-height: 1.2;
   background: var(--card); color: var(--ink); border: 2px solid var(--line); display: flex; flex-direction: column; align-items: center;
   justify-content: center; gap: 2px; padding: 6px 12px; }
+.today-picks .pick-name { display: inline-flex; align-items: center; gap: 4px; flex-wrap: wrap; justify-content: center; }
 .today-picks button.on { background: var(--ink); color: var(--bg); border-color: var(--ink); }
 #today-card { scroll-margin-top: 84px; }
 .today-picks small { font-size: var(--fs-footnote); font-weight: 400; opacity: .8; }
@@ -2176,6 +2180,9 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: var(--
 .fr-more { position: sticky; bottom: 10px; z-index: 3; width: fit-content; margin: 6px auto; padding: 6px 14px; border-radius: var(--r-pill);
   background: var(--ink); color: var(--bg); font-size: var(--fs-callout); font-weight: 600; pointer-events: none; }
 .inv-adj { display: inline-grid; grid-template-columns: 32px 64px 32px 34px; align-items: center; gap: 4px; white-space: nowrap; }
+/* A stepper is a repeated control, not the screen's action: quiet, like the field it steps (§158). */
+.inv-adj button, .onsite-step button { background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); }
+.inv-adj button:hover:not(:disabled), .onsite-step button:hover:not(:disabled) { background: var(--tint); }
 .inv-adj button { width: 32px; height: 32px; padding: 0; font-size: var(--fs-headline); line-height: 1; }
 .inv-adj input { width: 64px; height: 32px; text-align: center; padding: 2px 4px; }
 .inv-delta { font-size: var(--fs-footnote); font-weight: 600; text-align: left; }

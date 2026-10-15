@@ -45,6 +45,7 @@ import { HOURS, hourOf, hourWord, nightToBlock, syncState, timeOfHour, type Sync
 import { channelLabel } from '../lib/breakdown.ts';
 import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
+import { Icon, ic } from '../components/Icon.tsx';
 
 type View = 'board' | 'todos' | 'calendar' | 'crew' | 'inspections' | 'inventory' | 'notes' | 'rates' | 'setup';
 const VIEWS: View[] = ['board', 'todos', 'calendar', 'crew', 'inspections', 'inventory', 'notes', 'rates', 'setup'];
@@ -193,7 +194,7 @@ export function Operations({ permissions, initialView, onView }: {
           {busy && data ? 'Refreshing…' : 'Refresh'}
         </button>
         {view !== 'setup' && can(data?.permissions, 'operations.setup') && (
-          <button className="chip" title="This section's settings" onClick={() => openSetup(SETUP_OF[view])}>⚙ Setup</button>
+          <button className="chip" title="This section's settings" onClick={() => openSetup(SETUP_OF[view])}><Icon n="gear" /> Setup</button>
         )}
         {data?.sheetUrl && data.mode === 'shadow' && (
           <a className="chip" href={data.sheetUrl} target="_blank" rel="noreferrer">Open the daily file ↗</a>
@@ -213,8 +214,8 @@ export function Operations({ permissions, initialView, onView }: {
         {view === 'todos' && canTodos && <WorkView today={data?.today ?? todayIn('America/New_York')} canClaims={can(permissions, 'claims')} />}
         {(view === 'crew' || view === 'calendar') && (
           <nav className="setup-secs" aria-label="Cleaners sections">
-            <button className={view === 'crew' ? 'chip active' : 'chip'} onClick={() => setView('crew')}>👥 Pages & approvals</button>
-            <button className={view === 'calendar' ? 'chip active' : 'chip'} onClick={() => setView('calendar')}>📅 Calendar</button>
+            <button className={view === 'crew' ? 'chip active' : 'chip'} onClick={() => setView('crew')}><Icon n="users" /> Pages & approvals</button>
+            <button className={view === 'calendar' ? 'chip active' : 'chip'} onClick={() => setView('calendar')}><Icon n="calendar" /> Calendar</button>
           </nav>
         )}
         {view === 'calendar' && <CleaningsMonth />}
@@ -459,7 +460,7 @@ function Board({ data, range, patch, reload }: {
         <input className="date-in" placeholder="Unit, guest or cleaner" value={q} onChange={e => setQ(e.target.value)} />
         {canEdit && <button className="small secondary" onClick={() => setAddingClean({})}>+ Manual clean</button>}
         {canEdit && <span className="note right">click or tap a row to change it</span>}
-        {data.crewView && <span className="note">👁 the cleaner already sees it on their page{data.crewView.published ? '' :
+        {data.crewView && <span className="note"><Icon n="eye" /> the cleaner already sees it on their page{data.crewView.published ? '' :
           ` (set by hand, or within ${data.crewView.autoDays} days)`}</span>}
       </div>
 
@@ -626,7 +627,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
             <span className={r.assignment === 'tbd' ? 'breach' : r.assignment === 'not_needed' ? 'note' : undefined}>
               {r.assignment === 'tbd' ? '▲ ' : ''}{r.assignment === 'assigned' ? r.cleaner : r.assignment === 'not_needed' ? 'no clean needed' : 'unassigned'}
             </span>
-            {seen && <span title={`${r.cleaner} sees this on their crew page`}> 👁</span>}
+            {seen && <span title={`${r.cleaner} sees this on their crew page`}> <Icon n="eye" /></span>}
             {r.manual.cleaner && <span className="sub-n"> · set by hand</span>}
             {r.carried && <div className="sub-n" title={r.auto.reason}>↪ kept from the {short(r.carried.fromDate)} checkout — a booking came in between</div>}
             {/* "★4 · Veronica ★5 ✓": what the clean needs against what the cleaner has. */}
@@ -656,22 +657,22 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
       </td>
       <td>
         {r.cancelled && <span className="ops-flag urgent" title={r.auto.reason}>▲ cancelled {r.cancelled} — {r.manual.cleaner ? 'confirmed' : 'confirm who cleaned'}</span>}
-        {cleanTasks?.length ? <span className="ops-flag due" title={cleanTasks.map(t => `🧾 ${t}`).join('\n')}>🧾 {cleanTasks.length} from the inspection</span> : null}
-        {r.deep && <span className="ops-flag deep">🧽 deep · confirmed</span>}
+        {cleanTasks?.length ? <span className="ops-flag due" title={cleanTasks.map(t => `${t}`).join('\n')}><Icon n="receipt" /> {cleanTasks.length} from the inspection</span> : null}
+        {r.deep && <span className="ops-flag deep"><Icon n="brush" /> deep · confirmed</span>}
         {r.kind === 'out' && !r.deep && r.deepSuggested && !r.manual.deep &&
           <span className="sub-n" title="A long stay — confirm it in the row if it will be cleaned as deep">○ deep suggested ({r.nights} nights)</span>}
         {shadow && r.differs.includes('deep') && <span className="ops-diff">sheet: {r.sheet?.deep ? 'deep' : 'not deep'}</span>}
-        {r.urgency && URGENCY[r.urgency] && <span className="ops-flag urgent">{URGENCY[r.urgency]}</span>}
-        {r.inspection.key === 'req' && <span className="ops-flag req" title={r.inspection.reason}>🔍 required</span>}
-        {r.inspection.key === 'due' && <span className="ops-flag due" title={r.inspection.reason}>🔍 monthly</span>}
+        {r.urgency && URGENCY[r.urgency] && <span className="ops-flag urgent">{ic(URGENCY[r.urgency])}</span>}
+        {r.inspection.key === 'req' && <span className="ops-flag req" title={r.inspection.reason}><Icon n="search" /> required</span>}
+        {r.inspection.key === 'due' && <span className="ops-flag due" title={r.inspection.reason}><Icon n="search" /> monthly</span>}
         {r.inspection.key === 'ok' && <span className="ops-flag ok" title={r.inspection.reason}>✓ inspected</span>}
         {(() => {
           // Open work on this unit: repairs said apart from to-dos, the titles on hover.
           const wo = (todos ?? []).filter(t => t.kind === 'work_order');
           const td = (todos ?? []).filter(t => t.kind !== 'work_order');
           return <>
-            {wo.length > 0 && <span className="ops-flag urgent" title={wo.map(t => `🔧 ${t.title}`).join('\n')}>
-              🔧 {wo.length} work order{wo.length === 1 ? '' : 's'}</span>}
+            {wo.length > 0 && <span className="ops-flag urgent" title={wo.map(t => `${t.title}`).join('\n')}>
+              <Icon n="wrench" /> {wo.length} work order{wo.length === 1 ? '' : 's'}</span>}
             {td.length > 0 && <span className="ops-flag due" title={td.map(t => `☐ ${t.title}`).join('\n')}>
               ☐ {td.length} to-do{td.length === 1 ? '' : 's'}</span>}
           </>;
@@ -775,7 +776,7 @@ function PastLine({ c, open, onToggle }: { c: Cleaning; open: boolean; onToggle:
       </td>
       <td className="n">{c.assignment === 'assigned' && (c.price == null ? <span className="note">not priced</span> : money2(Number(c.price)))}</td>
       <td>
-        {c.deep && <span className="ops-flag deep">🧽 deep</span>}
+        {c.deep && <span className="ops-flag deep"><Icon n="brush" /> deep</span>}
         {c.edit_note && <span className="ops-flag due" title={c.edit_note}>✎ corrected</span>}
       </td>
       <td className="ops-note">
@@ -956,7 +957,7 @@ function StayWork({ r, data }: { r: BoardRow; data: OperationsResponse }) {
 
   return (
     <div className="button-row ops-manual-actions">
-      <span className="note">🛏 {label}</span>
+      <span className="note"><Icon n="bed" /> {label}</span>
       {!mode && can(data.permissions, 'todos') && <button className="link tiny" onClick={() => setMode('todo')}>+ To-do for this stay</button>}
       {!mode && can(data.permissions, 'claims') && <button className="link tiny" onClick={() => setMode('claim')}>+ Claim for this stay</button>}
       {mode && (
@@ -1005,8 +1006,8 @@ function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks, today }: 
       <td className="sub-n">{c.kind === 'early_departure' ? 'checkout clean → not needed' : ''}</td>
       <td>{c.cleaner ?? <span className="breach">▲ unassigned</span>}</td>
       <td className="n">{c.price != null ? money2(c.price) : c.cleaner ? <span className="note">not priced</span> : null}</td>
-      <td>{c.deep && <span className="ops-flag deep">🧽 deep</span>}
-        {cleanTasks?.length ? <span className="ops-flag due" title={cleanTasks.map(t => `🧾 ${t}`).join('\n')}>🧾 {cleanTasks.length} from the inspection</span> : null}</td>
+      <td>{c.deep && <span className="ops-flag deep"><Icon n="brush" /> deep</span>}
+        {cleanTasks?.length ? <span className="ops-flag due" title={cleanTasks.map(t => `${t}`).join('\n')}><Icon n="receipt" /> {cleanTasks.length} from the inspection</span> : null}</td>
       <td className="ops-note">
         {c.note}
         {canEdit && c.cleaner ? <FlagControl cleanKey={c.key} flag={flag} onChanged={onFlag}
@@ -1258,14 +1259,14 @@ function Inspections({ data, reload }: { data: OperationsResponse; reload: () =>
               <td className="insp-sched-main"><b>{e.unit}</b><div className="sub-n">{e.date} · {e.by}</div>
                 {canEdit && <div className="insp-sched-actions">
                   <button className="small" onClick={() => void start({ inspectionId: e.id })}>▶ {e.sentBy ? 'Review' : e.started ? 'Continue' : 'Start'}</button>
-                  <button className="small secondary" onClick={() => setLinkFor(linkFor === e.id ? null : e.id)}>🔗 Link</button>
-                  <button className="small secondary" onClick={() => setMoveFor(moveFor === e.id ? null : e.id)}>📅 Move</button>
+                  <button className="small secondary" onClick={() => setLinkFor(linkFor === e.id ? null : e.id)}><Icon n="link" /> Link</button>
+                  <button className="small secondary" onClick={() => setMoveFor(moveFor === e.id ? null : e.id)}><Icon n="calendar" /> Move</button>
                   <button className="link tiny danger" onClick={() => void cancelInspection(e.id).then(reload)}>cancel</button>
                 </div>}
                 {moveFor === e.id && <MoveInspection date={e.date} inspector={e.by} onCancel={() => setMoveFor(null)}
                   onSave={async (date, by) => { const r = await rescheduleInspection(e.id, date, by);
                     if (!r.ok) return r.message ?? 'Not moved.'; setMoveFor(null); reload(); return null; }} />}</td>
-              <td className="ops-note">{e.sentBy && <div><b>📨 Sent from the link by {e.sentBy}</b> — review and finish</div>}{e.notes}</td>
+              <td className="ops-note">{e.sentBy && <div><b><Icon n="mail" /> Sent from the link by {e.sentBy}</b> — review and finish</div>}{e.notes}</td>
             </tr>
             {linkFor === e.id && <tr><td colSpan={2}><InspectionLinkPanel id={e.id} unit={e.unit} date={e.date} inspector={e.by} onClose={() => setLinkFor(null)} /></td></tr>}
             </Fragment>
@@ -1360,8 +1361,8 @@ function InspectionLinkPanel({ id, unit, date, inspector, onClose }: { id: strin
         The inspector answers and sends; findings become work only when you finish it here.</p>
       <p className="note" style={{ overflowWrap: 'anywhere', fontFamily: 'ui-monospace, monospace', userSelect: 'all' }}>{l.link}</p>
       <div className="button-row">
-        <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noreferrer')}>💬 Send on WhatsApp</button>
-        <button className="secondary" onClick={() => void navigator.clipboard.writeText(l.link).then(() => setMsg('Copied.'), () => setMsg('Select the link above and copy it.'))}>📋 Copy link</button>
+        <button onClick={() => window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank', 'noreferrer')}><Icon n="message" /> Send on WhatsApp</button>
+        <button className="secondary" onClick={() => void navigator.clipboard.writeText(l.link).then(() => setMsg('Copied.'), () => setMsg('Select the link above and copy it.'))}><Icon n="clipboard" /> Copy link</button>
         <a className="link" href={l.link} target="_blank" rel="noreferrer">Open it ↗</a>
         <button className="link" onClick={onClose}>Close</button>
         {msg && <span className="note">{msg}</span>}
@@ -1557,7 +1558,7 @@ function TimeSyncTag({ s }: { s: NonNullable<SyncState> }) {
   if (s.state === 'sent') {
     return <span className="sub-n" title={`On the Hostaway reservation${s.hour != null ? `: ${hourWord(s.hour)}` : ''}${s.standard ? " (the listing's standard)" : ''}`}>⇄ in Hostaway</span>;
   }
-  if (s.state === 'failed') return <span className="breach" title={s.detail}>⚠ not in Hostaway</span>;
+  if (s.state === 'failed') return <span className="breach" title={s.detail}><Icon n="warning" /> not in Hostaway</span>;
   return <span className="sub-n" title="Sent after saving — reload in a moment, or send again">… not in Hostaway yet</span>;
 }
 
@@ -1755,7 +1756,7 @@ function Setup({ data, reload, section, onSection }: { data: OperationsResponse;
             </p>
             <ol className="note">
               <li>Import the daily file's roster, rules and logs below (previewed first).</li>
-              <li>In the daily file: 🏠 Kaizen → 🚫 <b>Disable automatic Hostaway push</b>, and stop running 📅 Next 10 Days.</li>
+              <li>In the daily file: <Icon n="home" /> Kaizen → <Icon n="ban" /> <b>Disable automatic Hostaway push</b>, and stop running <Icon n="calendar" /> Next 10 Days.</li>
               <li>Confirm and switch.</li>
             </ol>
             <label className="check"><input type="checkbox" checked={sheetOff} onChange={e => setSheetOff(e.target.checked)} />
@@ -1888,7 +1889,7 @@ function AccessAudit({ rows }: { rows: NonNullable<OpsSettings['access']> }) {
                 <td>{r.lockType ?? <span className="breach">▲ not set</span>}</td>
                 <td>{mark(r.has.address)}</td>
                 <td>{r.has.code === 'repository' ? <span className="ok-tag">✓</span>
-                  : r.has.code === 'hostaway' ? <span className="chan-tag" title="Hostaway's door code — the guests'">⚠ guests' code</span>
+                  : r.has.code === 'hostaway' ? <span className="chan-tag" title="Hostaway's door code — the guests'"><Icon n="warning" /> guests' code</span>
                   : r.kind === 'fob' || r.kind === 'keys' ? <span className="sub-n">— not needed</span> : <span className="breach">▲ missing</span>}</td>
                 <td>{r.kind === 'fob' || r.kind === 'keys' ? mark(r.has.lockbox, r.has.fob ?? '') : <span className="sub-n">{r.has.fob ?? '—'}</span>}</td>
                 <td>{mark(r.has.wifi)}</td>
@@ -1971,7 +1972,7 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
       </div>
 
       <h3>What is coming <Hint>Nobody has to confirm anything. Each cleaner sees what a person assigned to them, and the rule's picks
-        <b> {autoDays || 0} days ahead</b> — close enough that they rarely move. On the board these carry 👁. A daily snapshot
+        <b> {autoDays || 0} days ahead</b> — close enough that they rarely move. On the board these carry <Icon n="eye" />. A daily snapshot
         tells them what changed since. Publishing the whole schedule shows them everything ahead.</Hint></h3>
       <label>The rule's picks show this many days ahead (0 = only what a person assigned)
         <input className="amt" value={autoDays} onChange={e => setAutoDays(e.target.value)} /></label>
@@ -2027,7 +2028,7 @@ function ChecklistSetup() {
       <h2>Inspection checklist <Hint>What the inspector checks, area by area, in walking order. Bedrooms and bathrooms repeat once per room in the unit.
         Each item says what a failure usually becomes — the inspector can change it at the end — and where it applies.</Hint></h2>
       <p className="sub-n">House or apartment comes from <b>Repository → Units → Property type</b>:
-        {' '}🏠 {houses.length} houses · 🏢 {flats.length} apartments
+        {' '}<Icon n="home" /> {houses.length} houses · <Icon n="building" /> {flats.length} apartments
         {untyped.length > 0 && <span className="breach"> · ▲ no type: {untyped.map(u => u.name).join(', ')} — they get only the items for all units and their own</span>}</p>
       {areas.map((a, ai) => {
         const list = items.filter(i => i.area === a.key);
@@ -2068,8 +2069,8 @@ function ChecklistSetup() {
               ) : (
                 <tr key={i.id} className={i.active ? undefined : 'muted-row'}>
                   <td>{i.label}{!i.active && <span className="sub-n"> · off</span>}</td>
-                  <td className="sub-n">{OUT[i.defaultOutcome]}{supplyName(i.supplyId) && <> · {supplyName(i.supplyId)}</>}</td>
-                  <td className="sub-n">{where(i)}</td>
+                  <td className="sub-n">{ic(OUT[i.defaultOutcome])}{supplyName(i.supplyId) && <> · {supplyName(i.supplyId)}</>}</td>
+                  <td className="sub-n">{ic(where(i))}</td>
                   <td className="n">
                     <button className="link tiny" title="Up" onClick={() => void send({ action: 'move', id: i.id, dir: -1 })}>↑</button>
                     <button className="link tiny" title="Down" onClick={() => void send({ action: 'move', id: i.id, dir: 1 })}>↓</button>{' '}
@@ -2120,7 +2121,7 @@ function ItemFields({ v, set, areas, units, OUT, supplies }: {
         {Object.entries(OUT).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
       {/* §150: a purchase item can preset its supply — the inspector then only says how many. */}
       {v.defaultOutcome === 'purchase' && <label>Supply to buy<select value={v.supplyId} onChange={e => set(p => ({ ...p, supplyId: e.target.value }))}>
-        <option value="">— the inspector picks (🔍)</option>
+        <option value="">— the inspector picks ()</option>
         {supplies.map(x => <option key={x.id} value={x.id}>{x.name} ({x.measure})</option>)}</select></label>}
       <label>Applies to<select value={v.appliesTo} onChange={e => set(p => ({ ...p, appliesTo: e.target.value as AppliesTo }))}>
         {APPLIES.map(k => <option key={k} value={k}>{WHERE[k]}</option>)}</select></label>
@@ -2149,7 +2150,7 @@ function VendorSetup() {
   return (
     <div className="card">
       <h2>Vendors &amp; handymen <Hint>Who does repairs and supplies, and how to reach them. A repair's vendor is picked from this list.
-        Each work order can go to its vendor by a link (📤 Send to vendor, no account); a vendor with an <b>email</b> here can also
+        Each work order can go to its vendor by a link (<Icon n="share" /> Send to vendor, no account); a vendor with an <b>email</b> here can also
         sign in and see all their open work orders — add that email to the Cloudflare Access policy, as for cleaners (§137).</Hint></h2>
       <table className="units compact">
         <thead><tr><th>Name</th><th>Trade</th><th>Phone</th><th>Email</th><th>Notes</th><th></th></tr></thead>

@@ -21,6 +21,7 @@ import { useState } from 'react';
 import type { SupplyItem } from '../api.ts';
 import type { Tx } from '../lib/crew-i18n.ts';
 import { PhotoPicker, shrink } from './PhotoPicker.tsx';
+import { ic } from './Icon.tsx';
 
 // What was taken from the storage is not here: it is a required step of the clean (CleanSteps, §134).
 export type Kind = 'purchase' | 'problem' | 'request';
@@ -57,18 +58,18 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
 
   if (done) return (
     <div className="fr fr-done" role="status">
-      <p className="fr-big">{tx.supDone}</p>
-      {done.task && <p>{tx.supDoneTask}</p>}
-      <button className="fr-btn" onClick={() => reset(null)}>{tx.supAnother}</button>
-      {onClose && <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>}
+      <p className="fr-big">{ic(tx.supDone)}</p>
+      {done.task && <p>{ic(tx.supDoneTask)}</p>}
+      <button className="fr-btn" onClick={() => reset(null)}>{ic(tx.supAnother)}</button>
+      {onClose && <button className="fr-btn secondary" onClick={onClose}>{ic(tx.supClose)}</button>}
     </div>
   );
 
   if (!kind) return (
     <div className="fr">
-      <p className="fr-q">{tx.supMenuQ}</p>
-      {kinds.map(k => <button key={k} className="fr-btn fr-choice" onClick={() => reset(k)}>{tx.supKind[k]}</button>)}
-      {onClose && <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>}
+      <p className="fr-q">{ic(tx.supMenuQ)}</p>
+      {kinds.map(k => <button key={k} className="fr-btn fr-choice" onClick={() => reset(k)}>{ic(tx.supKind[k])}</button>)}
+      {onClose && <button className="fr-btn secondary" onClick={onClose}>{ic(tx.supClose)}</button>}
     </div>
   );
 
@@ -92,44 +93,44 @@ export function FieldReport({ tx, items, start, send, onClose, kinds = KINDS }: 
 
   // The same photo buttons as everywhere else (PhotoPicker); five at most with one report.
   const photo = (label: string) => <>
-    <p className="fr-q">{label}</p>
+    <p className="fr-q">{ic(label)}</p>
     <PhotoPicker tx={tx} files={files} onChange={setFiles} max={5} disabled={busy} />
   </>;
 
   return (
     <div className="fr">
-      <button className="link fr-back" onClick={back}>{start ? tx.supClose : tx.supBack}</button>
-      <p className="fr-kind">{tx.supKind[kind]}</p>
+      <button className="link fr-back" onClick={back}>{ic(start ? tx.supClose : tx.supBack)}</button>
+      <p className="fr-kind">{ic(tx.supKind[kind])}</p>
 
       {kind === 'purchase' && <>
-        <p className="fr-q">{tx.supBuyQ}</p>
+        <p className="fr-q">{ic(tx.supBuyQ)}</p>
         <textarea className="fr-text" rows={3} maxLength={300} value={text} placeholder={tx.supBuyEg} onChange={e => setText(e.target.value)} />
-        <p className="fr-tip">{tx.supSpeakTip}</p>
+        <p className="fr-tip">{ic(tx.supSpeakTip)}</p>
         {photo(tx.supReceiptBtn)}
-        <label className="fr-field">{tx.supCost}
+        <label className="fr-field">{ic(tx.supCost)}
           <input type="number" inputMode="decimal" min="0" step="0.01" value={cost} onChange={e => setCost(e.target.value)} /></label>
       </>}
 
       {(kind === 'problem' || kind === 'request') && <>
-        <p className="fr-q">{kind === 'problem' ? tx.supProblemQ : tx.supRequestQ}</p>
+        <p className="fr-q">{ic(kind === 'problem' ? tx.supProblemQ : tx.supRequestQ)}</p>
         <textarea className="fr-text" rows={4} maxLength={300} value={text} onChange={e => setText(e.target.value)} />
-        <p className="fr-tip">{tx.supSpeakTip}</p>
+        <p className="fr-tip">{ic(tx.supSpeakTip)}</p>
         {photo(tx.supPhotoBtn)}
-        <p className="fr-q">{tx.urgQ}</p>
+        <p className="fr-q">{ic(tx.urgQ)}</p>
         <div className="fr-urg" role="radiogroup" aria-label={tx.urgQ}>
           {(['urgent', 'high', 'low'] as const).map(p => (
             <button key={p} type="button" role="radio" aria-checked={prio === p}
                     className={`fr-btn fr-choice urg-${p}${prio === p ? ' on' : ''}`} onClick={() => setPrio(p)}>
-              {prio === p ? '◉' : '○'} {tx.urg[p]}</button>
+              {ic(prio === p ? '◉' : '○')} {ic(tx.urg[p])}</button>
           ))}
         </div>
       </>}
 
       <div className="fr-send">
         <button className="fr-btn fr-go" disabled={busy || !!missing} onClick={() => void submit()}>
-          {busy ? tx.sending : tx.sendTeam}</button>
-        {missing && <p className="fr-missing">{missing}</p>}
-        {err && <p className="breach" role="alert">{err}</p>}
+          {ic(busy ? tx.sending : tx.sendTeam)}</button>
+        {missing && <p className="fr-missing">{ic(missing)}</p>}
+        {err && <p className="breach" role="alert">{ic(err)}</p>}
       </div>
     </div>
   );
@@ -142,12 +143,12 @@ export function SupplyCounter({ tx, items, counts, onCounts }: {
   const byCat = CATS.map(c => [c, items.filter(i => (CATS.includes(i.category) ? i.category : 'other') === c)] as const).filter(([, l]) => l.length);
   return <>{byCat.map(([c, list]) => (
     <div key={c} className="fr-group">
-      <p className="fr-cat">{tx.supCat[c] ?? c}</p>
+      <p className="fr-cat">{ic(tx.supCat[c] ?? c)}</p>
       {list.map(i => {
         const n = counts[i.id] ?? 0;
         return (
           <div key={i.id} className={n ? 'fr-line on' : 'fr-line'}>
-            <span>{i.name} <small>({i.measure})</small></span>
+            <span>{ic(i.name)} <small>({ic(i.measure)})</small></span>
             <Stepper n={n} onStep={d => onCounts(m => ({ ...m, [i.id]: Math.max(0, Math.min(999, (m[i.id] ?? 0) + d)) }))} />
           </div>
         );

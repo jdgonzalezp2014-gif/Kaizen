@@ -32,6 +32,7 @@ import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { ThemeToggle } from '../components/ThemeToggle.tsx';
 import { AccessBox } from '../components/AccessBox.tsx';
 import type { Cleaner } from '../lib/operations.ts';
+import { Icon, ic } from '../components/Icon.tsx';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -42,7 +43,7 @@ const MOVE_ICON: Record<Movement['kind'], string> = { added: '+', moved: '⇢', 
 const Moves = ({ list, who }: { list: (Movement & { cleaner?: string })[]; who?: boolean }) => (
   <ul className="crew-moves">
     {list.map((m, i) => <li key={i} className={m.kind === 'removed' ? 'breach' : undefined}>
-      {MOVE_ICON[m.kind]} {who && m.cleaner ? <b>{m.cleaner}: </b> : null}{movementText(m, day, !who)}</li>)}
+      {ic(MOVE_ICON[m.kind])} {who && m.cleaner ? <b>{ic(m.cleaner)}: </b> : null}{ic(movementText(m, day, !who))}</li>)}
   </ul>
 );
 const pay = (n: number | null) => n == null ? 'not priced' : money2(n);
@@ -52,7 +53,7 @@ const ACCEPT = 'image/*,application/pdf';
 
 /** Evidence on an extra: links the team opens in Drive. */
 const Files = ({ files }: { files?: { id: string; name: string; url: string }[] }) => !files?.length ? null : (
-  <span className="crew-files">{files.map(f => <a key={f.id} href={f.url} target="_blank" rel="noreferrer">📎 {f.name}</a>)}</span>
+  <span className="crew-files">{files.map(f => <a key={f.id} href={f.url} target="_blank" rel="noreferrer"><Icon n="clip" /> {ic(f.name)}</a>)}</span>
 );
 
 /* ── the cleaner's own page ───────────────────────────────────────── */
@@ -82,8 +83,8 @@ export function CrewHome({ token, asCleaner, practice }: { token?: string | null
   const act: Act = practice ? practice.act : asCleaner ? inert : body => crewAction(body, token);
   const choose = (l: Lang) => { setLang(l); void act({ action: 'setLang', lang: l }).catch(() => {}); };
 
-  if (err) return <p className="banner error">{err}</p>;
-  if (!page) return <p className="note loading-dot">{TX[shown].loading}</p>;
+  if (err) return <p className="banner error">{ic(err)}</p>;
+  if (!page) return <p className="note loading-dot">{ic(TX[shown].loading)}</p>;
   return <CrewView page={page} mode="cleaner" lang={shown} onLang={choose} onPeriod={setPeriod} reload={load}
                    act={act} upload={practice ? practice.upload : asCleaner ? inert : (f, files) => crewUpload(f, files, token)}
                    report={practice ? practice.report : asCleaner ? inert : (f, files) => crewReport(f, files, token)}
@@ -113,7 +114,7 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
 
   return (
     <>
-      {err && <p className="banner error">{err}</p>}
+      {err && <p className="banner error">{ic(err)}</p>}
       <div className="row-controls">
         <label>See a cleaner's page as they see it
           <select value={name} onChange={e => { setName(e.target.value); setPeriod(null); }}>
@@ -121,7 +122,7 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
             {roster.map(c => <option key={c.name} value={c.name}>{c.name}{c.active ? '' : ' (inactive)'}{c.email ? '' : ' — no sign-in address'}</option>)}
           </select></label>
         {/* A separate tab with only the cleaner's page — nothing of the team's around it. */}
-        {name && <a className="chip" href={`/#as-cleaner/${encodeURIComponent(name)}`} target="_blank" rel="noreferrer">👁 View as cleaner ↗</a>}
+        {name && <a className="chip" href={`/#as-cleaner/${encodeURIComponent(name)}`} target="_blank" rel="noreferrer"><Icon n="eye" /> View as cleaner ↗</a>}
       </div>
       {page && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={setPeriod} reload={load} act={crewAdminAction} />}
       {toConfirm.length > 0 && (
@@ -137,14 +138,14 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
         <div className="card">
           <h2>What cleaners see ahead</h2>
           <p className="note">
-            {schedule.enabled ? 'The whole schedule is published: cleaners see everything ahead.'
-              : `What a person assigned, and the rule's picks ${schedule.autoDays} days ahead — marked 👁 on the board. Nothing to confirm.`}
-            {' '}{schedule.confirmed
-              ? <>Last daily update {stamp(schedule.confirmed.at)}{schedule.confirmed.by === 'daily update' ? '' : ` (by ${schedule.confirmed.by})`}.</>
+            {ic(schedule.enabled ? 'The whole schedule is published: cleaners see everything ahead.'
+              : `What a person assigned, and the rule's picks ${schedule.autoDays} days ahead — marked 👁 on the board. Nothing to confirm.`)}
+            {ic(' ')}{schedule.confirmed
+              ? <>Last daily update {ic(stamp(schedule.confirmed.at))}{ic(schedule.confirmed.by === 'daily update' ? '' : ` (by ${schedule.confirmed.by})`)}.</>
               : 'The first daily update comes with the next daily pass.'}
-            {' '}Change it in Setup → Crew pages.
+            {ic(' ')}Change it in Setup → Crew pages.
           </p>
-          {schedule.problem && <p className="banner warn">▲ {schedule.problem}</p>}
+          {schedule.problem && <p className="banner warn">▲ {ic(schedule.problem)}</p>}
           {schedule.confirmed && schedule.movements.length > 0 && (
             <><b>Changes since that update — what cleaners are told ({schedule.movements.length})</b><Moves list={schedule.movements} who /></>
           )}
@@ -156,8 +157,8 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
           <div className="crew-list">
             {pending.map(e => (
               <div key={e.id} className="crew-row">
-                <div><b>{e.cleaner}</b> · {e.unit} · {day(e.date)}<div className="sub-n">clean paid {pay(e.price)} · asked {e.createdAt}</div></div>
-                <div><b>+{money2(e.amount)}</b> — {e.description} <Files files={e.files} /></div>
+                <div><b>{ic(e.cleaner)}</b> · {ic(e.unit)} · {ic(day(e.date))}<div className="sub-n">clean paid {ic(pay(e.price))} · asked {ic(e.createdAt)}</div></div>
+                <div><b>+{ic(money2(e.amount))}</b> — {ic(e.description)} <Files files={e.files} /></div>
                 {canEdit && <Decide id={e.id} onDone={load} />}
               </div>
             ))}
@@ -165,17 +166,17 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
         )}
       </div>
       <div className="card">
-        <h2>Purchases & charges waiting for approval <span className="chan-tag">{fieldPending.length}</span> <Hint>Paid in the field with its receipt — by a cleaner or a cleaner’s helper (🧹), or a handyman’s labor and
-          materials on a repair (🔧). A cleaner’s purchase is approved by recording it in the inventory — which items, to which place — and
+        <h2>Purchases & charges waiting for approval <span className="chan-tag">{fieldPending.length}</span> <Hint>Paid in the field with its receipt — by a cleaner or a cleaner’s helper (<Icon n="brush" />), or a handyman’s labor and
+          materials on a repair (<Icon n="wrench" />). A cleaner’s purchase is approved by recording it in the inventory — which items, to which place — and
           that purchase is its stock and its cost (owed back to whoever paid); a handyman’s
           charge becomes the repair’s cost and reaches Costs as Repairs. Denied, they read why. Nothing reaches Costs before a person approves it.</Hint></h2>
         {!fieldPending.length ? <p className="note">None waiting.</p> : (
           <div className="crew-list">
             {fieldPending.map(f => (
               <div key={f.id} className="crew-row">
-                <div>{f.source === 'vendor' ? '🔧 ' : '🧹 '}<b>{f.byName.replace(/^(.*)'s team: (.*)$/, '$2 ($1’s team)')}</b>{f.unit ? ` · ${f.unit}` : ''}
-                  <div className="sub-n">{f.category} · asked {f.at}</div></div>
-                <div><b>{money2(f.amount)}</b> — {f.description} <Files files={f.photos.map((p, i) => ({ id: String(i), ...p }))} />
+                <div>{ic(f.source === 'vendor' ? '🔧 ' : '🧹 ')}<b>{ic(f.byName.replace(/^(.*)'s team: (.*)$/, '$2 ($1’s team)'))}</b>{ic(f.unit ? ` · ${f.unit}` : '')}
+                  <div className="sub-n">{ic(f.category)} · asked {ic(f.at)}</div></div>
+                <div><b>{ic(money2(f.amount))}</b> — {ic(f.description)} <Files files={f.photos.map((p, i) => ({ id: String(i), ...p }))} />
                   {!f.photos.length && <span className="breach"> no receipt</span>}</div>
                 {canEdit && <Decide id={f.id} kind="decideField" onDone={load}
                   record={f.source === 'vendor' ? undefined : { unitId: f.unitId, said: f.description, amount: f.amount, hasReceipt: f.photos.length > 0 }} />}
@@ -206,8 +207,8 @@ function ConfirmRow({ t, roster, canEdit, onDone }: { t: ToConfirm; roster: Clea
   };
   return (
     <div className="crew-row">
-      <div><b>{t.unit}</b>{t.beds ? ` · ${t.beds}BR` : ''}<div className="sub-n">{t.guest ?? ''}</div></div>
-      <div className="breach">▲ {t.note}</div>
+      <div><b>{ic(t.unit)}</b>{ic(t.beds ? ` · ${t.beds}BR` : '')}<div className="sub-n">{ic(t.guest ?? '')}</div></div>
+      <div className="breach">▲ {ic(t.note)}</div>
       <div />
       {canEdit && (
         <div className="crew-decide">
@@ -221,7 +222,7 @@ function ConfirmRow({ t, roster, canEdit, onDone }: { t: ToConfirm; roster: Clea
           <button className="small secondary" onClick={() => void go(null)}>No clean needed</button>
         </div>
       )}
-      {msg && <div className="breach">{msg}</div>}
+      {msg && <div className="breach">{ic(msg)}</div>}
     </div>
   );
 }
@@ -240,7 +241,7 @@ function Decide({ id, onDone, kind = 'decideExtra', record }: {
   };
   if (recording && record) return <>
     <FieldPurchaseLines id={id} {...record} onSave={(lines, aliases) => go('approved', lines, aliases)} onCancel={() => setRecording(false)} />
-    {msg && <span className="breach">{msg}</span>}
+    {msg && <span className="breach">{ic(msg)}</span>}
   </>;
   return (
     <div className="crew-decide">
@@ -248,7 +249,7 @@ function Decide({ id, onDone, kind = 'decideExtra', record }: {
       {record ? <button className="small" onClick={() => { setMsg(''); setRecording(true); }}>✓ Approve — record in inventory</button>
               : <button className="small" onClick={() => void go('approved')}>✓ Approve</button>}
       <button className="small secondary" disabled={!note.trim()} onClick={() => void go('denied')}>■ Deny</button>
-      {msg && <span className="breach">{msg}</span>}
+      {msg && <span className="breach">{ic(msg)}</span>}
     </div>
   );
 }
@@ -280,14 +281,14 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
 
   const cleansList = (noExtraFor: Set<string>, fieldCtx?: FieldCtx) => (
     <div className="card no-print">
-      <h2>{tx.cleansTitle(periodLabel(lang, period, kind))}</h2>
+      <h2>{ic(tx.cleansTitle(periodLabel(lang, period, kind)))}</h2>
       <p className="note">
-        {tx.paidCount(inv.lines.length)} · {money2(inv.total)}{inv.open ? tx.soFar : ''}
-        {excluded > 0 && <> · {tx.notPaidCount(excluded)}</>}
-        {flagged > 0 && <> · <span className="breach">{tx.flaggedCount(flagged)}</span></>}
-        {inv.pendingExtras > 0 && <> · {tx.extrasWaiting(inv.pendingExtras)}</>}
+        {ic(tx.paidCount(inv.lines.length))} · {ic(money2(inv.total))}{ic(inv.open ? tx.soFar : '')}
+        {excluded > 0 && <> · {ic(tx.notPaidCount(excluded))}</>}
+        {flagged > 0 && <> · <span className="breach">{ic(tx.flaggedCount(flagged))}</span></>}
+        {inv.pendingExtras > 0 && <> · {ic(tx.extrasWaiting(inv.pendingExtras))}</>}
       </p>
-      {!shown.length ? <p className="note">{tx.noCleans}</p> : (
+      {!shown.length ? <p className="note">{ic(tx.noCleans)}</p> : (
         <div className="crew-list">
           {shown.map(c => (
             <CleanRow key={c.key} c={c} extras={extrasOf(c.key)} today={page.today} extraFrom={page.extraFrom}
@@ -300,7 +301,7 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
     </div>
   );
   const periodPick = (
-    <label>{tx.periodField(kind)}
+    <label>{ic(tx.periodField(kind))}
       <select value={period.from} onChange={e => onPeriod(e.target.value)}>
         {page.periods.map(p => <option key={p.from} value={p.from}>{periodLabel(lang, p, kind)}</option>)}
       </select></label>
@@ -322,17 +323,17 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
     return (
       <div className="crew">
         <div className="crew-top no-print">
-          <b className="crew-top-name">{tx.hi(page.cleaner.name)}{!page.cleaner.active && <span className="chan-tag">{tx.inactive}</span>}</b>
+          <b className="crew-top-name">{ic(tx.hi(page.cleaner.name))}{!page.cleaner.active && <span className="chan-tag">{ic(tx.inactive)}</span>}</b>
           <span className="mini-tools">
             {onLang && <span className="todo-kind" role="group" aria-label="Language / Idioma">
-              {LANGS.map(l => <button key={l} className={l === lang ? 'chip active' : 'chip'} aria-label={LANG_NAME[l]} onClick={() => onLang(l)}>{l.toUpperCase()}</button>)}
+              {LANGS.map(l => <button key={l} className={l === lang ? 'chip active' : 'chip'} aria-label={LANG_NAME[l]} onClick={() => onLang(l)}>{ic(l.toUpperCase())}</button>)}
             </span>}
-            {!!help.length && <button className={sec2 === 'help' ? 'chip active' : 'chip'} aria-label={tx.secHelp} onClick={() => setSec(sec2 === 'help' ? 'up' : 'help')}>❓</button>}
+            {!!help.length && <button className={sec2 === 'help' ? 'chip active' : 'chip'} aria-label={tx.secHelp} onClick={() => setSec(sec2 === 'help' ? 'up' : 'help')}><Icon n="help" /></button>}
             <ThemeToggle />
           </span>
         </div>
         <div className="crew-secs no-print" role="tablist">
-          {secs.map(([k, l]) => <button key={k} role="tab" aria-selected={sec2 === k} className={sec2 === k ? 'on' : ''} onClick={() => setSec(k)}>{l}</button>)}
+          {secs.map(([k, l]) => <button key={k} role="tab" aria-selected={sec2 === k} className={sec2 === k ? 'on' : ''} onClick={() => setSec(k)}>{ic(l)}</button>)}
         </div>
 
         {sec2 === 'today' && <TodayCleans list={todays} page={page} lang={lang} ctx={ctx} act={act} reload={reload} />}
@@ -350,10 +351,10 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
           <div className="card no-print">
             {help.map(h => (
               <details key={h.title} open={help.length === 1}>
-                <summary><b>❓ {h.title}</b></summary>
-                {h.purpose && <p className="note">{h.purpose}</p>}
-                <ol>{h.steps.map((st, i) => <li key={i}>{st.text}{st.detail && <div className="note crew-help">{st.detail}</div>}</li>)}</ol>
-                {h.body && <div className="note crew-help">{h.body}</div>}
+                <summary><b><Icon n="help" /> {ic(h.title)}</b></summary>
+                {h.purpose && <p className="note">{ic(h.purpose)}</p>}
+                <ol>{h.steps.map((st, i) => <li key={i}>{ic(st.text)}{st.detail && <div className="note crew-help">{ic(st.detail)}</div>}</li>)}</ol>
+                {h.body && <div className="note crew-help">{ic(h.body)}</div>}
               </details>
             ))}
           </div>
@@ -365,12 +366,12 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
   return (
     <div className="crew">
       <div className="card no-print">
-        <h2>{team ? page.cleaner.name : tx.hi(page.cleaner.name)}
-          {team && page.cleaner.level && <span className="chan-tag" title="Only the team sees this">{page.cleaner.level} level</span>}
-          {!page.cleaner.active && <span className="chan-tag">{tx.inactive}</span>}</h2>
+        <h2>{ic(team ? page.cleaner.name : tx.hi(page.cleaner.name))}
+          {team && page.cleaner.level && <span className="chan-tag" title="Only the team sees this">{ic(page.cleaner.level)} level</span>}
+          {!page.cleaner.active && <span className="chan-tag">{ic(tx.inactive)}</span>}</h2>
         {onLang && (
           <div className="todo-kind" role="group" aria-label="Language / Idioma">
-            {LANGS.map(l => <button key={l} className={l === lang ? 'chip active' : 'chip'} onClick={() => onLang(l)}>{LANG_NAME[l]}</button>)}
+            {LANGS.map(l => <button key={l} className={l === lang ? 'chip active' : 'chip'} onClick={() => onLang(l)}>{ic(LANG_NAME[l])}</button>)}
           </div>
         )}
         {periodPick}
@@ -380,10 +381,10 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
         <div className="card no-print">
           {page.help.filter(h => (h.lang ?? 'en') === lang).map(h => (
             <details key={h.title}>
-              <summary><b>❓ {h.title}</b></summary>
-              {h.purpose && <p className="note">{h.purpose}</p>}
-              <ol>{h.steps.map((st, i) => <li key={i}>{st.text}{st.detail && <div className="note crew-help">{st.detail}</div>}</li>)}</ol>
-              {h.body && <div className="note crew-help">{h.body}</div>}
+              <summary><b><Icon n="help" /> {ic(h.title)}</b></summary>
+              {h.purpose && <p className="note">{ic(h.purpose)}</p>}
+              <ol>{h.steps.map((st, i) => <li key={i}>{ic(st.text)}{st.detail && <div className="note crew-help">{ic(st.detail)}</div>}</li>)}</ol>
+              {h.body && <div className="note crew-help">{ic(h.body)}</div>}
             </details>
           ))}
         </div>
@@ -425,7 +426,7 @@ function clockMins(t: string | null): number | null {
 function checkInFlag(tx: (typeof TX)[Lang], c: { sameDay: boolean; checkIn: string | null }) {
   const mins = clockMins(c.checkIn);
   const time = mins != null && mins < 16 * 60 ? c.checkIn! : DEFAULT_CHECKIN; // earlier than 4 PM = early check-in
-  return <span className="ops-flag urgent">{c.sameDay ? tx.checkInConfirmed(time) : tx.checkInBy(time)}</span>;
+  return <span className="ops-flag urgent">{ic(c.sameDay ? tx.checkInConfirmed(time) : tx.checkInBy(time))}</span>;
 }
 
 /** Today's cleans (from Coming up, else the record), then the last 3 days' — newest first. */
@@ -467,23 +468,23 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onCl
     <div className={head ? 'clean-card' : 'clean-card bare'}>
       {head && <>
         <div className="clean-card-top">
-          <p className="clean-card-title"><b>{dayLabel(lang, a.date)}</b></p>
+          <p className="clean-card-title"><b>{ic(dayLabel(lang, a.date))}</b></p>
           {a.ahead && act && !declining && <DeclineButton tx={tx} onClick={() => setDeclining(true)} />}
         </div>
         {declining && act && <DeclineForm cleanKey={a.key} act={act} reload={reload} lang={lang} onCancel={() => setDeclining(false)} />}
-        <p className="clean-card-unit">🏠 {a.unit}{a.beds ? <span className="sub-n"> · {bedsWord(lang, a.beds)}</span> : null}
-          {a.price != null && <span className="sub-n"> · {money2(a.price)}</span>}</p>
-        <p className="note">{a.manual ? tx.manualClean(kindWord(lang, a.manual)) : a.time ? tx.checkout(a.time) : ''}
+        <p className="clean-card-unit"><Icon n="home" /> {ic(a.unit)}{a.beds ? <span className="sub-n"> · {ic(bedsWord(lang, a.beds))}</span> : null}
+          {a.price != null && <span className="sub-n"> · {ic(money2(a.price))}</span>}</p>
+        <p className="note">{ic(a.manual ? tx.manualClean(kindWord(lang, a.manual)) : a.time ? tx.checkout(a.time) : '')}
           {!a.manual && a.date >= ctx.today && checkInFlag(tx, a)}
-          {a.deep && <span className="ops-flag deep">{tx.deep}</span>}</p>
+          {a.deep && <span className="ops-flag deep">{ic(tx.deep)}</span>}</p>
         {page.access?.[a.key] && <AccessBox tx={tx} a={page.access[a.key]!} />}
-        {!!a.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{a.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
+        {!!a.tasks?.length && <div className="breach">{ic(tx.fromInspection)}<ul className="crew-moves">{a.tasks.map((t, i) => <li key={i}>{ic(t)}</li>)}</ul></div>}
         <FieldLine fs={fs} lang={lang} />
-        {extras.map(e => <p key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>💵 +{money2(e.amount)} — {e.description} · {tx.extraWord[e.status]}</p>)}
+        {extras.map(e => <p key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}><Icon n="cash" /> +{ic(money2(e.amount))} — {ic(e.description)} · {ic(tx.extraWord[e.status])}</p>)}
       </>}
       <>
         <div className={`report-tabs ${['', '', 'two', 'three', 'four'][tabs.length]}`} role="tablist">
-          {tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{l}</button>)}
+          {tabs.map(([k, l]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'on' : ''} onClick={() => setTab(k)}>{ic(l)}</button>)}
         </div>
         {tab === 'clean' && <CleanSteps tx={tx} items={ctx.supplies.items} state={fs} onState={setFs}
           place={page.access?.[a.key]?.supplies ?? page.places?.[a.key] ?? null}
@@ -496,7 +497,7 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onCl
         {tab === 'extra' && <ExtraPanel tx={tx} send={(f, files) => ctx.report({ action: 'addExtra', key: a.key, ...f }, files)}
           onClose={sent => { setTab('clean'); if (sent) reload(); }} />}
         {tab === 'share' && <SharePanel cleanKey={a.key} lang={lang} get={ctx.shareLink} onClose={() => setTab('clean')} />}
-        {onClose && <div className="clean-card-foot"><button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button></div>}
+        {onClose && <div className="clean-card-foot"><button className="fr-btn secondary" onClick={onClose}>{ic(tx.supClose)}</button></div>}
       </>
     </div>
   );
@@ -517,13 +518,13 @@ function TodayCleans({ list, page, lang, ctx, act, reload }: { list: ActiveClean
     // Back to the top of the chosen clean, just under the row that stays on top.
     requestAnimationFrame(() => document.getElementById('today-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   };
-  if (!a) return <div className="card no-print"><p className="note">{tx.activeNone}</p></div>;
+  if (!a) return <div className="card no-print"><p className="note">{ic(tx.activeNone)}</p></div>;
   return (
     <div className="card no-print">
       {list.length > 1 && (
         <div className="today-picks" role="tablist">
           {list.map(x => <button key={x.key} role="tab" aria-selected={x.key === a.key} className={x.key === a.key ? 'on' : ''} onClick={() => choose(x.key)}>
-            🏠 {x.unit}<small>{x.time ?? ''}{page.field?.[x.key]?.done ? ' · ✅' : ''}</small></button>)}
+            <span className="pick-name"><Icon n="home" /> {ic(x.unit)}</span><small>{ic(x.time ?? '')}{ic(page.field?.[x.key]?.done ? ' · ✅' : '')}</small></button>)}
         </div>
       )}
       <div id="today-card" />
@@ -536,15 +537,15 @@ function TodayCleans({ list, page, lang, ctx, act, reload }: { list: ActiveClean
 function PastCleans({ list, page, lang, ctx, act, reload }: { list: ActiveClean[]; page: CrewPage; lang: Lang; ctx: FieldCtx; act?: Act; reload: () => void }) {
   const tx = TX[lang];
   const [open, setOpen] = useState<string | null>(null);
-  if (!list.length) return <div className="card no-print"><p className="note">{tx.pastNone}</p></div>;
+  if (!list.length) return <div className="card no-print"><p className="note">{ic(tx.pastNone)}</p></div>;
   return (
     <div className="card no-print">
-      <p className="note">{tx.pastNote}</p>
+      <p className="note">{ic(tx.pastNote)}</p>
       {list.map(a => (
         <div key={a.key} className="past-row">
           <button className="past-head" aria-expanded={open === a.key} onClick={() => setOpen(open === a.key ? null : a.key)}>
-            <span><b>{dayLabel(lang, a.date)}</b> · {a.unit}</span>
-            <span className="sub-n">{page.field?.[a.key]?.done ? tx.doneShort : tx.notDoneYet} {open === a.key ? '▲' : '▼'}</span>
+            <span><b>{ic(dayLabel(lang, a.date))}</b> · {ic(a.unit)}</span>
+            <span className="sub-n">{ic(page.field?.[a.key]?.done ? tx.doneShort : tx.notDoneYet)} {ic(open === a.key ? '▲' : '▼')}</span>
           </button>
           {open === a.key && <PastCard a={a} page={page} lang={lang} ctx={ctx} reload={reload} onClose={() => setOpen(null)} />}
         </div>
@@ -569,19 +570,19 @@ function PastCard({ a, page, lang, ctx, reload, onClose }: { a: ActiveClean; pag
                                 onClose={sent => { setExtra(false); if (sent) reload(); }} />;
   return (
     <div className="clean-card bare">
-      <p className={fs?.done ? 'field-ok' : 'note'}>{fs?.done ? tx.doneBy(fs.done.by.replace(/^.*'s team: /, ''), fs.done.at.slice(11, 16)) : tx.notDoneYet}</p>
-      {fs?.supplies && <p className="note">{fs.supplies.none ? tx.takenNone(fromWords(tx, page.places?.[a.key] ?? null)) : `🧴 ${tx.takenCount(fs.supplies.lines)}`}</p>}
+      <p className={fs?.done ? 'field-ok' : 'note'}>{ic(fs?.done ? tx.doneBy(fs.done.by.replace(/^.*'s team: /, ''), fs.done.at.slice(11, 16)) : tx.notDoneYet)}</p>
+      {fs?.supplies && <p className="note">{ic(fs.supplies.none ? tx.takenNone(fromWords(tx, page.places?.[a.key] ?? null)) : `🧴 ${tx.takenCount(fs.supplies.lines)}`)}</p>}
       {(['before', 'after'] as const).map(st => {
         const list = photos.filter(p => p.stage === st);
         return list.length ? <div key={st}>
-          <p className="fr-cat">{st === 'before' ? tx.stepBefore : tx.stepAfter}</p>
+          <p className="fr-cat">{ic(st === 'before' ? tx.stepBefore : tx.stepAfter)}</p>
           <div className="fr-thumbs">{list.map(p => <CrewImg key={p.id} id={p.id} get={ctx.photo} />)}</div>
         </div> : null;
       })}
-      {!photos.length && <p className="note">{tx.noPhotos}</p>}
-      {extras.map(e => <p key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>💵 +{money2(e.amount)} — {e.description} · {tx.extraWord[e.status]}</p>)}
-      {extraOk && <button className="fr-btn secondary" onClick={() => setExtra(true)}>{tx.optExtra}</button>}
-      {onClose && <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>}
+      {!photos.length && <p className="note">{ic(tx.noPhotos)}</p>}
+      {extras.map(e => <p key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}><Icon n="cash" /> +{ic(money2(e.amount))} — {ic(e.description)} · {ic(tx.extraWord[e.status])}</p>)}
+      {extraOk && <button className="fr-btn secondary" onClick={() => setExtra(true)}>{ic(tx.optExtra)}</button>}
+      {onClose && <button className="fr-btn secondary" onClick={onClose}>{ic(tx.supClose)}</button>}
     </div>
   );
 }
@@ -618,7 +619,7 @@ function QuickActions({ q, cleanKey, lang, act, reload }: { q: Quick; cleanKey: 
   const extraOk = !!q.active && q.active.date <= q.ctx.today && q.active.date >= q.ctx.extraFrom;
   const past = !!q.active && q.active.date < q.ctx.today;
   const btn = (k: NonNullable<typeof open>, label: string) =>
-    <button className={open === k ? 'small' : 'small secondary'} onClick={() => setOpen(open === k ? null : k)}>{label}</button>;
+    <button className={open === k ? 'small' : 'small secondary'} onClick={() => setOpen(open === k ? null : k)}>{ic(label)}</button>;
   return (
     <div className="quick no-print">
       <div className="quick-row">
@@ -642,7 +643,7 @@ function QuickActions({ q, cleanKey, lang, act, reload }: { q: Quick; cleanKey: 
  * a reason, then the turn-down confirmed in place.
  */
 const DeclineButton = ({ tx, onClick }: { tx: Tx; onClick: () => void }) =>
-  <button className="decline-btn" onClick={onClick}>✕ {tx.cantDoIt}</button>;
+  <button className="decline-btn" onClick={onClick}>✕ {ic(tx.cantDoIt)}</button>;
 
 function DeclineForm({ cleanKey, act, reload, lang, onCancel }: { cleanKey: string; act: Act; reload: () => void; lang: Lang; onCancel: () => void }) {
   const tx = TX[lang];
@@ -659,10 +660,10 @@ function DeclineForm({ cleanKey, act, reload, lang, onCancel }: { cleanKey: stri
   return (
     <div className="crew-decide decline-form">
       <input value={reason} maxLength={300} placeholder={tx.whyOptional} onChange={e => setReason(e.target.value)} />
-      <button className="small" disabled={busy} onClick={() => void decline()}>{busy ? tx.sending : tx.declineBtn}</button>
-      <button className="small secondary" disabled={busy} onClick={onCancel}>{tx.keepIt}</button>
-      <span className="note">{tx.declineNote}</span>
-      {msg && <span className="breach">{msg}</span>}
+      <button className="small" disabled={busy} onClick={() => void decline()}>{ic(busy ? tx.sending : tx.declineBtn)}</button>
+      <button className="small secondary" disabled={busy} onClick={onCancel}>{ic(tx.keepIt)}</button>
+      <span className="note">{ic(tx.declineNote)}</span>
+      {msg && <span className="breach">{ic(msg)}</span>}
     </div>
   );
 }
@@ -680,8 +681,8 @@ function FieldLine({ fs, lang, link = false }: { fs?: CleanFieldState; lang: Lan
   const tx = TX[lang];
   return (
     <div className="sub-n clean-opts">
-      {link && fs.folderUrl ? <a href={fs.folderUrl} target="_blank" rel="noreferrer">{tx.stateLine(fs.before, fs.after)}</a> : tx.stateLine(fs.before, fs.after)}
-      {fs.done && <> · <b>{tx.stateDone(fs.done.by.replace(/^.*'s team: /, ''))}</b></>}
+      {link && fs.folderUrl ? <a href={fs.folderUrl} target="_blank" rel="noreferrer">{ic(tx.stateLine(fs.before, fs.after))}</a> : tx.stateLine(fs.before, fs.after)}
+      {fs.done && <> · <b>{ic(tx.stateDone(fs.done.by.replace(/^.*'s team: /, '')))}</b></>}
     </div>
   );
 }
@@ -702,8 +703,8 @@ function ExtraPanel({ tx, send, onClose }: { tx: Tx; send: Send; onClose: (sent:
   const missing = !(n > 0) || n > EXTRA_MAX_AMOUNT ? tx.extraNeedAmount(EXTRA_MAX_AMOUNT) : !text.trim() ? tx.extraNeedWhat : '';
   if (sent) return (
     <div className="fr fr-done" role="status">
-      <p className="fr-big">{tx.supDone}</p><p>{tx.extraSent}</p>
-      <button className="fr-btn" onClick={() => onClose(true)}>{tx.supClose}</button>
+      <p className="fr-big">{ic(tx.supDone)}</p><p>{ic(tx.extraSent)}</p>
+      <button className="fr-btn" onClick={() => onClose(true)}>{ic(tx.supClose)}</button>
     </div>
   );
   const go = async () => {
@@ -715,21 +716,21 @@ function ExtraPanel({ tx, send, onClose }: { tx: Tx; send: Send; onClose: (sent:
   };
   return (
     <div className="fr">
-      <button className="link fr-back" onClick={() => onClose(false)} disabled={busy}>{tx.supClose}</button>
-      <p className="fr-q">{tx.optExtra}</p>
-      <p className="fr-tip">{tx.extraNote}</p>
-      <p className="fr-q">{tx.extraAmount}</p>
+      <button className="link fr-back" onClick={() => onClose(false)} disabled={busy}>{ic(tx.supClose)}</button>
+      <p className="fr-q">{ic(tx.optExtra)}</p>
+      <p className="fr-tip">{ic(tx.extraNote)}</p>
+      <p className="fr-q">{ic(tx.extraAmount)}</p>
       <input className="fr-select" type="number" inputMode="decimal" min="0" step="0.01" value={amount} aria-label={tx.extraAmount}
              onChange={e => setAmount(e.target.value)} />
-      <p className="fr-q">{tx.extraWhat}</p>
+      <p className="fr-q">{ic(tx.extraWhat)}</p>
       <textarea className="fr-text" rows={3} maxLength={300} value={text} onChange={e => setText(e.target.value)} />
-      <p className="fr-tip">{tx.supSpeakTip}</p>
-      <p className="fr-q">{tx.receiptOptional}</p>
+      <p className="fr-tip">{ic(tx.supSpeakTip)}</p>
+      <p className="fr-q">{ic(tx.receiptOptional)}</p>
       <PhotoPicker tx={tx} files={files} onChange={setFiles} max={5} disabled={busy} />
       <div className="fr-send">
-        <button className="fr-btn fr-go" disabled={busy || !!missing} onClick={() => void go()}>{busy ? tx.sending : tx.sendTeam}</button>
-        {missing && <p className="fr-missing">{missing}</p>}
-        {err && <p className="breach" role="alert">{err}</p>}
+        <button className="fr-btn fr-go" disabled={busy || !!missing} onClick={() => void go()}>{ic(busy ? tx.sending : tx.sendTeam)}</button>
+        {missing && <p className="fr-missing">{ic(missing)}</p>}
+        {err && <p className="breach" role="alert">{ic(err)}</p>}
       </div>
     </div>
   );
@@ -743,22 +744,22 @@ function SharePanel({ cleanKey, lang, get, onClose }: { cleanKey: string; lang: 
   useEffect(() => {
     get(cleanKey).then(r => { if (r.ok && r.link) setL(r as CleanLink); else setMsg(r.message ?? tx.notSaved); }).catch(e => setMsg(String(e)));
   }, [cleanKey]);
-  if (!l) return <div className="fr">{msg ? <p className="breach">{msg}</p> : <p>{tx.sending}</p>}
-    <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button></div>;
+  if (!l) return <div className="fr">{msg ? <p className="breach">{ic(msg)}</p> : <p>{ic(tx.sending)}</p>}
+    <button className="fr-btn secondary" onClick={onClose}>{ic(tx.supClose)}</button></div>;
   const day = dayLabel(lang, l.date);
   const text = tx.shareMsg(l.unit, day, l.link);
   return (
     <div className="fr">
-      <p className="fr-q">{tx.shareFor(l.unit, day)}</p>
-      <p>{tx.shareWhat} {tx.shareUntil(dayLabel(lang, l.expires))}</p>
+      <p className="fr-q">{ic(tx.shareFor(l.unit, day))}</p>
+      <p>{ic(tx.shareWhat)} {ic(tx.shareUntil(dayLabel(lang, l.expires)))}</p>
       <div className="share-row">
-        <a className="fr-btn share-wa" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer">💬 {tx.shareWa}</a>
+        <a className="fr-btn share-wa" href={`https://wa.me/?text=${encodeURIComponent(text)}`} target="_blank" rel="noreferrer"><Icon n="message" /> {ic(tx.shareWa)}</a>
         {typeof navigator.share === 'function' &&
-          <button className="fr-btn secondary" onClick={() => void navigator.share({ text }).catch(() => {})}>📤 {tx.shareMore}</button>}
+          <button className="fr-btn secondary" onClick={() => void navigator.share({ text }).catch(() => {})}><Icon n="share" /> {ic(tx.shareMore)}</button>}
         <button className="fr-btn secondary" onClick={() => void navigator.clipboard.writeText(text).then(() => setMsg(tx.shareCopied), () => setMsg(l.link))}>
-          📋 {tx.shareCopy}</button>
-        {msg && <p className="fr-big" style={{ fontSize: 18 }}>{msg}</p>}
-        <button className="fr-btn secondary" onClick={onClose}>{tx.supClose}</button>
+          <Icon n="clipboard" /> {ic(tx.shareCopy)}</button>
+        {msg && <p className="fr-big" style={{ fontSize: 18 }}>{ic(msg)}</p>}
+        <button className="fr-btn secondary" onClick={onClose}>{ic(tx.supClose)}</button>
       </div>
     </div>
   );
@@ -820,33 +821,33 @@ function CrewCalendar({ page, lang }: { page: CrewPage; lang: Lang }) {
     <div className="card no-print">
       <div className="crew-cal-head">
         <button className="chip" disabled={at <= 0} onClick={() => setMonth(months[at - 1]!)}>‹</button>
-        <h2>{monthTitle(lang, y, m)}</h2>
+        <h2>{ic(monthTitle(lang, y, m))}</h2>
         <button className="chip" disabled={at >= months.length - 1} onClick={() => setMonth(months[at + 1]!)}>›</button>
       </div>
       <div className="crew-cal">
-        {DOW_LETTER[lang].map((d, i) => <div key={i} className="crew-cal-dow">{d}</div>)}
+        {DOW_LETTER[lang].map((d, i) => <div key={i} className="crew-cal-dow">{ic(d)}</div>)}
         {cells.map((d, i) => d === null ? <div key={i} /> : (
           <button key={d} className={`crew-cal-day${d === page.today ? ' today' : ''}${d === sel ? ' sel' : ''}`} onClick={() => setSel(d)}>
             <div className="crew-cal-n">{Number(d.slice(8))}</div>
             {(byDay.get(d) ?? []).map((it, j) => (
-              <div key={j} className={`crew-cal-item ${it.tone}`}>{it.mark} {shortUnit(it.unit)}</div>
+              <div key={j} className={`crew-cal-item ${it.tone}`}>{ic(it.mark)} {ic(shortUnit(it.unit))}</div>
             ))}
           </button>
         ))}
       </div>
       {/* The day tapped, in full — a cell only has room for a short name. */}
       <div className="crew-cal-detail">
-        <b>{day(sel)}</b>
-        {(byDay.get(sel) ?? []).length === 0 ? <span className="note">{tx.nothing}</span> : (
-          <ul>{(byDay.get(sel) ?? []).map((it, j) => <li key={j} className={`crew-cal-item ${it.tone}`}>{it.mark} {it.unit} — {it.title}</li>)}</ul>
+        <b>{ic(day(sel))}</b>
+        {(byDay.get(sel) ?? []).length === 0 ? <span className="note">{ic(tx.nothing)}</span> : (
+          <ul>{(byDay.get(sel) ?? []).map((it, j) => <li key={j} className={`crew-cal-item ${it.tone}`}>{ic(it.mark)} {ic(it.unit)} — {ic(it.title)}</li>)}</ul>
         )}
       </div>
-      <p className="note">{tx.calLegend}
-        {!page.upcoming.enabled && tx.calAuto(page.upcoming.autoDays)}</p>
+      <p className="note">{ic(tx.calLegend)}
+        {ic(!page.upcoming.enabled && tx.calAuto(page.upcoming.autoDays))}</p>
       {page.upcoming.rows.length > 0 && (
         <div className="button-row">
-          <button className="secondary" onClick={() => downloadIcs(page, lang)}>{tx.icsBtn}</button>
-          <span className="note">{tx.icsNote}</span>
+          <button className="secondary" onClick={() => downloadIcs(page, lang)}>{ic(tx.icsBtn)}</button>
+          <span className="note">{ic(tx.icsNote)}</span>
         </div>
       )}
     </div>
@@ -893,16 +894,16 @@ function Upcoming({ page, act, reload, lang, ctx, afterToday = false }: { page: 
   const day = (d: string) => dayLabel(lang, d);
   return (
     <div className="card no-print">
-      <h2>{tx.comingUp}</h2>
-      {u.problem ? <p className="banner warn">▲ {u.problem}</p> : (
+      <h2>{ic(tx.comingUp)}</h2>
+      {u.problem ? <p className="banner warn">▲ {ic(u.problem)}</p> : (
         <>
-          {u.confirmed && <p><b>{tx.lastUpdate(stampLabel(lang, u.confirmed.at))}</b></p>}
-          {u.confirmed && u.movements.length > 0 && <><b>{tx.changesSince}</b>
+          {u.confirmed && <p><b>{ic(tx.lastUpdate(stampLabel(lang, u.confirmed.at)))}</b></p>}
+          {u.confirmed && u.movements.length > 0 && <><b>{ic(tx.changesSince)}</b>
             <ul className="crew-moves">{u.movements.map((m, i) => <li key={i} className={m.kind === 'removed' ? 'breach' : undefined}>
-              {MOVE_ICON[m.kind]} {movementFor(lang, m)}</li>)}</ul></>}
-          {u.confirmed && u.movements.length === 0 && u.rows.length > 0 && <p className="note">{tx.noChanges}</p>}
-          <p className="note">{u.enabled ? tx.through(u.through ? day(u.through) : '—') : tx.autoNote(u.autoDays)}</p>
-          {!u.rows.length ? <p className="note">{u.enabled ? tx.nothingThrough(u.through ? day(u.through) : tx.theNextDays) : tx.nothingNext(u.autoDays)}</p> : (
+              {ic(MOVE_ICON[m.kind])} {ic(movementFor(lang, m))}</li>)}</ul></>}
+          {u.confirmed && u.movements.length === 0 && u.rows.length > 0 && <p className="note">{ic(tx.noChanges)}</p>}
+          <p className="note">{ic(u.enabled ? tx.through(u.through ? day(u.through) : '—') : tx.autoNote(u.autoDays))}</p>
+          {!u.rows.length ? <p className="note">{ic(u.enabled ? tx.nothingThrough(u.through ? day(u.through) : tx.theNextDays) : tx.nothingNext(u.autoDays))}</p> : (
             <div className="crew-list">
               {u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload} lang={lang} ctx={ctx} fs={page.field?.[r.key]} address={page.addresses?.[r.key]}
                 tag={(() => { const m = u.movements.find(x => x.key === r.key);
@@ -926,22 +927,22 @@ function UpcomingRow({ r, act, reload, tag, lang, ctx, fs, address }: { r: CrewU
   const [declining, setDeclining] = useState(false);
   return (
     <div className="crew-row">
-      <div><div className="clean-card-top"><span><b>{dayLabel(lang, r.date)}</b> · {r.unit}{r.beds ? ` · ${bedsWord(lang, r.beds)}` : ''}</span>
+      <div><div className="clean-card-top"><span><b>{ic(dayLabel(lang, r.date))}</b> · {ic(r.unit)}{ic(r.beds ? ` · ${bedsWord(lang, r.beds)}` : '')}</span>
           {act && !declining && <DeclineButton tx={tx} onClick={() => setDeclining(true)} />}</div>
-        {tag && <div className={tag.startsWith('○') ? 'sub-n' : 'breach'}>{tag}</div>}</div>
+        {tag && <div className={tag.startsWith('○') ? 'sub-n' : 'breach'}>{ic(tag)}</div>}</div>
       <div>
-        {r.manual ? tx.manualClean(kindWord(lang, r.manual)) : tx.checkout(r.time)}
+        {ic(r.manual ? tx.manualClean(kindWord(lang, r.manual)) : tx.checkout(r.time))}
         {!r.manual && checkInFlag(tx, r)}
-        {r.deep && <span className="ops-flag deep">{tx.deep}</span>}
-        {!!r.tasks?.length && <div className="breach">{tx.fromInspection}<ul className="crew-moves">{r.tasks.map((t, i) => <li key={i}>{t}</li>)}</ul></div>}
-        {address && <div className="sub-n">📍 <a href={`https://maps.google.com/?q=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer">{address}</a></div>}
+        {r.deep && <span className="ops-flag deep">{ic(tx.deep)}</span>}
+        {!!r.tasks?.length && <div className="breach">{ic(tx.fromInspection)}<ul className="crew-moves">{r.tasks.map((t, i) => <li key={i}>{ic(t)}</li>)}</ul></div>}
+        {address && <div className="sub-n"><Icon n="pin" /> <a href={`https://maps.google.com/?q=${encodeURIComponent(address)}`} target="_blank" rel="noreferrer">{ic(address)}</a></div>}
       </div>
-      <div className="n">{r.price == null ? tx.notPriced : money2(r.price)}</div>
+      <div className="n">{ic(r.price == null ? tx.notPriced : money2(r.price))}</div>
       {declining && act && <DeclineForm cleanKey={r.key} act={act} reload={reload} lang={lang} onCancel={() => setDeclining(false)} />}
       <FieldLine fs={fs} lang={lang} link={!act && !ctx} />
       {ctx && (
         <div className="future-actions no-print">
-          {!sharing ? <button className="fr-btn secondary" onClick={() => setSharing(true)}>{tx.optShare}</button>
+          {!sharing ? <button className="fr-btn secondary" onClick={() => setSharing(true)}>{ic(tx.optShare)}</button>
             : <SharePanel cleanKey={r.key} lang={lang} get={ctx.shareLink} onClose={() => setSharing(false)} />}
         </div>
       )}
@@ -991,23 +992,23 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
 
   return (
     <div className="crew-row">
-      <div><b>{dayLabel(lang, c.date)}</b> · {c.unit}{c.beds ? ` · ${bedsWord(lang, c.beds)}` : ''}{c.deep ? ` · ${tx.deep}` : ''}
-        {c.kind !== 'checkout' && <span className="sub-n">{tx.manualTag(kindWord(lang, c.kind))}</span>}</div>
+      <div><b>{ic(dayLabel(lang, c.date))}</b> · {ic(c.unit)}{ic(c.beds ? ` · ${bedsWord(lang, c.beds)}` : '')}{ic(c.deep ? ` · ${tx.deep}` : '')}
+        {c.kind !== 'checkout' && <span className="sub-n">{ic(tx.manualTag(kindWord(lang, c.kind)))}</span>}</div>
       <div>
-        {c.voidReason ? <span className="note">{tx.notPaidReason(voidReasonText(lang, c.voidReason))}</span>
-          : upcoming ? <span className="note">{tx.comingUpTag}</span>
-          : billed ? <span>✓ {c.price == null ? tx.notPriced : money2(c.price)}</span>
-          : <span className="note">{tx.notYours}</span>}
-        {c.flagNote && <div className="breach">{tx.flaggedNote(c.flagNote)}</div>}
-        {c.editNote && <div className="sub-n">{tx.corrected(c.editNote)}</div>}
+        {c.voidReason ? <span className="note">{ic(tx.notPaidReason(voidReasonText(lang, c.voidReason)))}</span>
+          : upcoming ? <span className="note">{ic(tx.comingUpTag)}</span>
+          : billed ? <span>✓ {ic(c.price == null ? tx.notPriced : money2(c.price))}</span>
+          : <span className="note">{ic(tx.notYours)}</span>}
+        {c.flagNote && <div className="breach">{ic(tx.flaggedNote(c.flagNote))}</div>}
+        {c.editNote && <div className="sub-n">{ic(tx.corrected(c.editNote))}</div>}
         {extras.map(e => (
           <div key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>
-            Extra +{money2(e.amount)} — {e.description} · {tx.extraWord[e.status]}
-            {e.decisionNote && <> · “{e.decisionNote}”</>} <Files files={e.files} />
+            Extra +{ic(money2(e.amount))} — {ic(e.description)} · {ic(tx.extraWord[e.status])}
+            {e.decisionNote && <> · “{ic(e.decisionNote)}”</>} <Files files={e.files} />
             {mode === 'cleaner' && e.status === 'pending' && <>
-              <label className="link tiny crew-attach">{tx.attach}
+              <label className="link tiny crew-attach">{ic(tx.attach)}
                 <input type="file" accept={ACCEPT} multiple hidden disabled={busy} onChange={ev => void attach(e.id, ev.target.files)} /></label>
-              <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'cancelExtra', id: e.id })}>{tx.withdraw}</button>
+              <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'cancelExtra', id: e.id })}>{ic(tx.withdraw)}</button>
             </>}
             {mode === 'team' && canEdit && e.status === 'pending' && <Decide id={e.id} onDone={reload} />}
           </div>
@@ -1018,7 +1019,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
       <div className="crew-actions no-print">
         {/* Recent cleans have their "Extra" tab in "Your cleans" (§134); older ones keep this link. */}
         {mode === 'cleaner' && !noExtra && billed && c.date >= extraFrom && !adding &&
-          <button className="link tiny" onClick={() => setAdding(true)}>{tx.addExtra}</button>}
+          <button className="link tiny" onClick={() => setAdding(true)}>{ic(tx.addExtra)}</button>}
         {mode === 'team' && canEdit && c.date < today && !correcting &&
           <button className="link tiny" onClick={() => { setCorrecting(true); setDeep(c.deep); setAmount(c.price == null ? '' : String(c.price)); }}>✎ Correct</button>}
         {mode === 'team' && canEdit && !flagging && (c.flagNote
@@ -1029,11 +1030,11 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
         <div className="crew-decide">
           <input className="amt" inputMode="decimal" value={amount} placeholder="$" onChange={e => setAmount(e.target.value)} />
           <input value={text} maxLength={300} placeholder={tx.whatFor} onChange={e => setText(e.target.value)} />
-          <label className="crew-attach">{tx.receiptOptional}
+          <label className="crew-attach">{ic(tx.receiptOptional)}
             <input type="file" accept={ACCEPT} multiple onChange={e => setFiles([...(e.target.files ?? [])])} /></label>
           <button className="small" disabled={busy || !(Number(amount) > 0) || Number(amount) > EXTRA_MAX_AMOUNT || !text.trim()}
-                  onClick={() => void sendExtra()}>{busy ? tx.sending : tx.sendTeam}</button>
-          <button className="small secondary" onClick={() => setAdding(false)}>{tx.cancel}</button>
+                  onClick={() => void sendExtra()}>{ic(busy ? tx.sending : tx.sendTeam)}</button>
+          <button className="small secondary" onClick={() => setAdding(false)}>{ic(tx.cancel)}</button>
         </div>
       )}
       {correcting && (
@@ -1056,11 +1057,11 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
                             title="Leave blank to keep the pay as it is" onChange={e => setAmount(e.target.value)} />}
           <button className="small" disabled={!text.trim() || busy || (amount !== '' && !(Number(amount) >= 0))}
                   onClick={() => void send({ action: 'flag', key: c.key, note: text, ...(billed && amount !== '' ? { price: Number(amount) } : {}) })}>
-            {billed && amount !== '' ? 'Flag and correct pay' : 'Flag'}</button>
+            {ic(billed && amount !== '' ? 'Flag and correct pay' : 'Flag')}</button>
           <button className="small secondary" onClick={() => setFlagging(false)}>Cancel</button>
         </div>
       )}
-      {msg && <div className="breach">{msg}</div>}
+      {msg && <div className="breach">{ic(msg)}</div>}
     </div>
   );
 }
@@ -1079,39 +1080,39 @@ function InvoiceView({ page, lang }: { page: CrewPage; lang: Lang }) {
   return (
     <div className="card crew-invoice">
       <div className="crew-invoice-head">
-        <div><h2>Invoice {inv.number}</h2>
-          <div>{tx.from}: <b>{page.cleaner.name}</b></div>
-          <div>{tx.to}: <b>Kaizen Guest Properties</b></div>
-          <div>{tx.period}: {periodLabel(lang, inv.period, kind)} ({inv.period.from} – {inv.period.to})</div>
-          <div>{tx.paid}: <b>{paid}</b></div></div>
-        <button className="secondary no-print" onClick={() => window.print()}>{tx.print}</button>
+        <div><h2>Invoice {ic(inv.number)}</h2>
+          <div>{ic(tx.from)}: <b>{ic(page.cleaner.name)}</b></div>
+          <div>{ic(tx.to)}: <b>Kaizen Guest Properties</b></div>
+          <div>{ic(tx.period)}: {ic(periodLabel(lang, inv.period, kind))} ({ic(inv.period.from)} – {ic(inv.period.to)})</div>
+          <div>{ic(tx.paid)}: <b>{ic(paid)}</b></div></div>
+        <button className="secondary no-print" onClick={() => window.print()}>{ic(tx.print)}</button>
       </div>
-      {inv.open && <p className="note">{tx.open(dayLabel(lang, inv.period.to), paid)}</p>}
+      {inv.open && <p className="note">{ic(tx.open(dayLabel(lang, inv.period.to), paid))}</p>}
       <table className="units compact">
-        <thead><tr><th>{tx.colDate}</th><th>{tx.colUnit}</th><th>{tx.colWork}</th><th className="n">{tx.colAmount}</th></tr></thead>
+        <thead><tr><th>{ic(tx.colDate)}</th><th>{ic(tx.colUnit)}</th><th>{ic(tx.colWork)}</th><th className="n">{ic(tx.colAmount)}</th></tr></thead>
         <tbody>
           {inv.lines.map(l => (
             <Fragment key={l.key}>
-              <tr><td>{l.date}</td><td>{l.unit}</td><td>{work(l.key, l.what)}{l.flag ? ' ⚑' : ''}</td>
-                <td className="n">{l.amount == null ? <span className="note">{tx.notPriced}</span> : money2(l.amount)}</td></tr>
+              <tr><td>{ic(l.date)}</td><td>{ic(l.unit)}</td><td>{ic(work(l.key, l.what))}{ic(l.flag ? ' ⚑' : '')}</td>
+                <td className="n">{l.amount == null ? <span className="note">{ic(tx.notPriced)}</span> : money2(l.amount)}</td></tr>
               {inv.extras.filter(e => e.key === l.key).map(e => (
-                <tr key={e.id}><td></td><td></td><td>{tx.extraLine(e.description)}</td><td className="n">{money2(e.amount)}</td></tr>
+                <tr key={e.id}><td></td><td></td><td>{ic(tx.extraLine(e.description))}</td><td className="n">{ic(money2(e.amount))}</td></tr>
               ))}
             </Fragment>
           ))}
-          {!inv.lines.length && <tr><td colSpan={4} className="note">{tx.noPaid}</td></tr>}
+          {!inv.lines.length && <tr><td colSpan={4} className="note">{ic(tx.noPaid)}</td></tr>}
         </tbody>
         <tfoot>
-          <tr><td colSpan={3}>{tx.cleans}</td><td className="n">{money2(inv.cleansTotal)}</td></tr>
-          {inv.extrasTotal > 0 && <tr><td colSpan={3}>{tx.approvedExtras}</td><td className="n">{money2(inv.extrasTotal)}</td></tr>}
-          <tr><td colSpan={3}><b>{tx.total}</b></td><td className="n"><b>{money2(inv.total)}</b></td></tr>
+          <tr><td colSpan={3}>{ic(tx.cleans)}</td><td className="n">{ic(money2(inv.cleansTotal))}</td></tr>
+          {inv.extrasTotal > 0 && <tr><td colSpan={3}>{ic(tx.approvedExtras)}</td><td className="n">{ic(money2(inv.extrasTotal))}</td></tr>}
+          <tr><td colSpan={3}><b>{ic(tx.total)}</b></td><td className="n"><b>{ic(money2(inv.total))}</b></td></tr>
         </tfoot>
       </table>
-      {inv.unpriced > 0 && <p className="breach">{tx.unpriced(inv.unpriced)}</p>}
-      {inv.pendingExtras > 0 && <p className="note">{tx.pendingExtras(inv.pendingExtras)}</p>}
+      {inv.unpriced > 0 && <p className="breach">{ic(tx.unpriced(inv.unpriced))}</p>}
+      {inv.pendingExtras > 0 && <p className="note">{ic(tx.pendingExtras(inv.pendingExtras))}</p>}
       {inv.excluded.length > 0 && (
-        <div className="note">{tx.notPaidIn}
-          <ul>{inv.excluded.map(x => <li key={x.key}>{x.date} · {x.unit} — {voidReasonText(lang, x.reason)}</li>)}</ul></div>
+        <div className="note">{ic(tx.notPaidIn)}
+          <ul>{inv.excluded.map(x => <li key={x.key}>{ic(x.date)} · {ic(x.unit)} — {ic(voidReasonText(lang, x.reason))}</li>)}</ul></div>
       )}
     </div>
   );

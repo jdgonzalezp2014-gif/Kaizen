@@ -18,6 +18,7 @@ import { orderFor, receiptSum, similarItems, splitTotal, type Receipt, type Rece
 import { Sheet } from '../components/InspectionRun.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { TX } from '../lib/crew-i18n.ts';
+import { Icon, ic } from '../components/Icon.tsx';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2026-10-12 …" → "Oct 12". */
@@ -66,11 +67,11 @@ function InventoryBody({ canEdit }: { canEdit: boolean }) {
     <div className="inv">
       <div className="card">
         <h2>Inventory <Hint>Supplies are kept in places — a storage, or a house's own closet — never in each unit. Each unit draws
-          from the place its Repository record names (⚙ Setup → Inventory shows the map). The stock is the last count plus what was bought,
+          from the place its Repository record names (<Icon n="gear" /> Setup → Inventory shows the map). The stock is the last count plus what was bought,
           minus what cleaners took. Counting a place resets its record and shows how far off it was. Cleaners and their helpers
           report from their pages; they cannot count or correct.</Hint></h2>
         <p className="note">
-          {flagged.length ? <span className="breach">⚠ {flagged.length} place{flagged.length === 1 ? '' : 's'} with something reported not there: {flagged.map(placeTitle).join(', ')}</span>
+          {flagged.length ? <span className="breach"><Icon n="warning" /> {flagged.length} place{flagged.length === 1 ? '' : 's'} with something reported not there: {flagged.map(placeTitle).join(', ')}</span>
                           : '✓ Nothing reported missing.'}
           {' · '}{never.length} of {inv.places.filter(p => p.place).length} places never counted.
           {inv.unassigned.length > 0 && <> · <span className="breach">▲ {inv.unassigned.length} unit{inv.unassigned.length === 1 ? '' : 's'} with no
@@ -150,7 +151,7 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
         {' '}<Hint label="What the columns mean"><b>Per clean</b> is the average of what cleaners reported taking (over the last {inv.windowDays} days, every clean that
         answered, “nothing” included) — the item's estimate until 3 cleans have reported. <b>To order</b> = what those cleans
         will take + the minimum to keep − what is here, once the place has been counted.</Hint></p>
-      {p.look && <p className="sub-n">📷 How it looked {short(p.look.at)}{p.look.counted ? '' : ' (no count)'} · {p.look.byName}
+      {p.look && <p className="sub-n"><Icon n="camera" /> How it looked {short(p.look.at)}{p.look.counted ? '' : ' (no count)'} · {p.look.byName}
         {p.look.note && <> — “{p.look.note}”</>}
         {p.look.photos.map((f, k) => <Fragment key={f.url}> · <a href={f.url} target="_blank" rel="noreferrer">photo {k + 1}</a></Fragment>)}</p>}
       <div className="grid-scroll">
@@ -170,7 +171,7 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
                       <input value={e.name ?? i.baseName ?? i.name} maxLength={120} aria-label="Name" onChange={x => ed(i.id, 'name', x.target.value)} />
                       <input value={e.measure ?? i.measure} maxLength={20} aria-label="Counted in" className="inv-measure" onChange={x => ed(i.id, 'measure', x.target.value)} />
                     </span> : <><b>{i.name}</b> <span className="sub-n">{i.measure}</span></>}
-                    {l?.missingSince && <div className="breach">⚠ reported not there {short(l.missingSince)} — count it</div>}</td>
+                    {l?.missingSince && <div className="breach"><Icon n="warning" /> reported not there {short(l.missingSince)} — count it</div>}</td>
                   <td className="n">{edit && mode === 'view' ? (
                     <span className="inv-adj">
                       <button type="button" aria-label={`One less ${i.name}`} disabled={busy || val <= 0} onClick={() => setTo(i.id, val - 1, now)}>−</button>
@@ -191,11 +192,11 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
                     : <>{fmt(l?.min)}{l?.min != null && <span className="sub-n">{l.minOwn ? ' here' : ' item'}</span>}</>}</td>
                   <td className="n">{l?.toOrder ? <b>{l.toOrder}</b> : '—'}</td>
                   {mode === 'edit' && <td className="n nowrap">
-                    <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'hide', place: p.place, itemId: i.id, hide: true }, `${i.name}: not kept here.`)}>🙈 Not here</button>{' '}
+                    <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'hide', place: p.place, itemId: i.id, hide: true }, `${i.name}: not kept here.`)}><Icon n="eyeOff" /> Not here</button>{' '}
                     {sure === i.id
                       ? <>Remove from every place? <button className="link tiny danger" disabled={busy} onClick={async () => { if (await send({ action: 'removeItem', itemId: i.id }, `${i.name} removed from the list (its history stays).`)) setSure(null); }}>Yes, remove</button>{' '}
                           <button className="link tiny" onClick={() => setSure(null)}>No</button></>
-                      : <button className="link tiny danger" onClick={() => setSure(i.id)}>🗑 Remove</button>}
+                      : <button className="link tiny danger" onClick={() => setSure(i.id)}><Icon n="trash" /> Remove</button>}
                   </td>}
                 </tr>
               );
@@ -229,9 +230,9 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
             <button className="secondary" onClick={() => { setFix({}); setWhy(''); }}>Undo</button>
           </>}
           {mode === 'view' && !fixes.length && <>
-            <button onClick={() => { setOnsite(true); setMsg(''); }}>📱 Count {placeTitle(p)}</button>
+            <button onClick={() => { setOnsite(true); setMsg(''); }}><Icon n="phone" /> Count {placeTitle(p)}</button>
             <button className="secondary" disabled={busy || !shortItems.length} title={shortItems.length ? '' : 'Nothing short here (counted places only)'}
-                    onClick={() => void draftShort()}>📝 Draft order for what's short{shortItems.length ? ` (${shortItems.length})` : ''}</button>
+                    onClick={() => void draftShort()}><Icon n="note" /> Draft order for what's short{shortItems.length ? ` (${shortItems.length})` : ''}</button>
             <button className="secondary" onClick={() => { setMode('edit'); setEds({}); setMsg(''); }}>✎ Edit settings</button>
           </>}
           {mode === 'edit' && <>
@@ -246,7 +247,7 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
         </div>
       )}
       {edit && mode === 'view' && <p className="note">Correcting a count <Hint>− [n] + on “On record” corrects it (say why); a full count replaces it. What was bought
-        goes in 🧾 Record a purchase (below), with its cost.</Hint></p>}
+        goes in <Icon n="receipt" /> Record a purchase (below), with its cost.</Hint></p>}
     </div>
   );
 }
@@ -294,7 +295,7 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
     <Sheet title={`Count · ${placeTitle(p)}`} sub={`${done} of ${shown.length} counted`} onClose={onClose}>
       <div className="insp-body">
         <div className="onsite-top">
-          <input value={q} placeholder="🔍 Find an item…" onChange={e => setQ(e.target.value)} />
+          <input value={q} placeholder="Find an item…" onChange={e => setQ(e.target.value)} />
           <span className="sub-n">Count what is really here. Untouched items keep their record.</span>
         </div>
         {list.map(i => {
@@ -308,7 +309,7 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
               <div className="onsite-name"><b>{i.name}</b> <span className="sub-n">{i.measure}</span>
                 <div className="sub-n">{l?.countedAt ? `record ${fmt(l.qty)} · counted ${short(l.countedAt)}` : 'never counted'}
                   {touched && <> · <b>{gap == null ? '✓ first count' : gap === 0 ? '✓ same' : `${gap > 0 ? '+' : ''}${gap}`}</b></>}</div>
-                {l?.missingSince && <div className="breach">⚠ reported not there {short(l.missingSince)}</div>}</div>
+                {l?.missingSince && <div className="breach"><Icon n="warning" /> reported not there {short(l.missingSince)}</div>}</div>
               <div className="onsite-step">
                 <button type="button" aria-label={`One less ${i.name}`} disabled={busy || val <= 0} onClick={() => set(i.id, val - 1)}>−</button>
                 <input type="number" inputMode="numeric" min="0" aria-label={`How many ${i.name}`} value={touched ? String(n) : ''}
@@ -317,7 +318,7 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
               </div>
               <div className="onsite-more">
                 {!touched && l?.qty != null && <button type="button" className="link tiny" onClick={() => set(i.id, l.qty!)}>= as recorded</button>}
-                <button type="button" className="link tiny" disabled={busy} onClick={() => void act({ action: 'hide', place: p.place, itemId: i.id, hide: true })}>🙈 Not kept here</button>
+                <button type="button" className="link tiny" disabled={busy} onClick={() => void act({ action: 'hide', place: p.place, itemId: i.id, hide: true })}><Icon n="eyeOff" /> Not kept here</button>
               </div>
             </div>
           );
@@ -343,7 +344,7 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
             onClick={() => void act({ action: 'hide', place: p.place, itemId: id, hide: false })}>↺ {i?.name ?? id}</button></Fragment>;
         })}</p>}
         <div className="onsite-look">
-          <b>📷 How the storage looks</b>
+          <b><Icon n="camera" /> How the storage looks</b>
           <span className="sub-n">Optional — damp, a mess, a broken shelf, pests. Up to 5 photos, kept in Drive with this count;
             the place shows the latest.</span>
           <PhotoPicker tx={TX.en} files={files} onChange={setFiles} max={5} disabled={busy} />
@@ -353,7 +354,7 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
       </div>
       <div className="insp-foot">
         <span className="note">{done ? `${done} counted — saving replaces their record` : 'Nothing counted yet'}
-          {(files.length > 0 || look.trim()) && ` · 📷 ${files.length} photo${files.length === 1 ? '' : 's'}${look.trim() ? ' + note' : ''}`}</span>
+          {ic((files.length > 0 || look.trim()) && ` · 📷 ${files.length} photo${files.length === 1 ? '' : 's'}${look.trim() ? ' + note' : ''}`)}</span>
         <button disabled={busy || (!done && !files.length && !look.trim())} onClick={() => void save()}>
           {busy ? 'Saving…' : done ? `Save the count (${done})` : 'Save photos & note'}</button>
       </div>
@@ -424,7 +425,7 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
       <select value={allTo} onChange={e => sendAll(e.target.value)}>
         {places.map(x => <option key={x.place} value={x.place!}>{placeTitle(x)}</option>)}</select>
       <span className="sub-n">items not split follow this; ⑂ splits one part to another place</span></label>}
-    {canEdit && <label>🔍 Add an item
+    {canEdit && <label><Icon n="search" /> Add an item
       <input value={q} placeholder="Search the supplies list…" onChange={e => setQ(e.target.value)} /></label>}
     {found.length > 0 && <div className="button-row">{found.map(i => (
       <button key={i.id} className="secondary" onClick={() => { set(i.id, [{ place: busiest, qty: '' }]); setQ(''); }}>+ {i.name}</button>))}</div>}
@@ -504,12 +505,12 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
   const uncounted = inv.places.filter(p => p.place && p.units.length && p.items.every(l => !l.countedAt));
   return (
     <div className="card">
-      <h2>🛒 To order — next {inv.aheadDays} days <Hint>An order is a shopping to-do: a line per item and where it goes. Suggested: what each place's units will take
+      <h2><Icon n="cart" /> To order — next {inv.aheadDays} days <Hint>An order is a shopping to-do: a line per item and where it goes. Suggested: what each place's units will take
         in the next {inv.aheadDays} days, plus its minimum, minus what it holds — places never counted are not guessed at. The stock
-        changes only when the purchase is recorded (🧾 below).</Hint></h2>
+        changes only when the purchase is recorded (<Icon n="receipt" /> below).</Hint></h2>
       {uncounted.length > 0 && <p className="note">▲ Count first (nothing is suggested for them until then): {uncounted.map(placeTitle).join(', ')}.</p>}
-      {inv.draft && <p className="note">📝 <b>Draft</b> saved {inv.draft.savedAt} by {inv.draft.savedBy} — it becomes a to-do only when you create the order.</p>}
-      {!order.size && <p className="note">Nothing to order from what has been counted. Add an item with 🔍 to order it anyway.</p>}
+      {inv.draft && <p className="note"><Icon n="note" /> <b>Draft</b> saved {inv.draft.savedAt} by {inv.draft.savedBy} — it becomes a to-do only when you create the order.</p>}
+      {!order.size && <p className="note">Nothing to order from what has been counted. Add an item with <Icon n="search" /> to order it anyway.</p>}
       <ItemLines inv={inv} value={order} onChange={setOrder} hints={suggested} canEdit={canEdit} onInv={onSaved} />
       {canEdit && order.size > 0 && inv.fieldTodos.length > 0 && <label>For
         <select value={forTodo} onChange={e => setForTodo(e.target.value)}>
@@ -527,9 +528,9 @@ function OrderPlan({ inv, canEdit, onSaved }: { inv: Inventory; canEdit: boolean
         }}>{forTodo ? 'Add the order to that to-do' : 'Create the order'} ({nItems} item{nItems === 1 ? '' : 's'})</button>
         <button className="secondary" disabled={busy || !lines.length} onClick={async () => {
           setBusy(true); setMsg('');
-          try { const r = await api.act({ action: 'draft', lines, forTodo: forTodo || undefined }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { onSaved(r); setMsg('📝 Draft saved.'); } }
+          try { const r = await api.act({ action: 'draft', lines, forTodo: forTodo || undefined }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { onSaved(r); setMsg('Draft saved.'); } }
           catch (e) { setMsg(String(e)); } finally { setBusy(false); }
-        }}>💾 Save draft</button>
+        }}><Icon n="save" /> Save draft</button>
         {inv.draft && <button className="secondary" disabled={busy} onClick={async () => {
           setBusy(true); setMsg('');
           try { const r = await api.act({ action: 'draft', lines: [] }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { onSaved(r); setMsg('Draft discarded.'); } }
@@ -731,7 +732,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     if (ai.has(`item:${id}`)) tags.set(id, [AI]);
     else if (read1 && !rows.some(r => r.got === id)) tags.set(id, ['▲ not on the receipt']);
   }
-  const mark = (k: string) => ai.has(k) ? <span className="sub-n"> {AI}</span> : null;
+  const mark = (k: string) => ai.has(k) ? <span className="sub-n"> {ic(AI)}</span> : null;
   return <>
     {head}
     {read1 && <div className="receipt-lines">
@@ -792,15 +793,15 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
       <label>Note{mark('note')}<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => { setNote(e.target.value); untouch('note'); }} /></label>
       {read1 && fixedTotal == null && <label>Bought on{mark('date')}<input type="date" value={date} onChange={e => { setDate(e.target.value); untouch('date'); }} /></label>}
       {/* Each pick ADDS files (another receipt, a long receipt's second photo) — up to 5. */}
-      {fixedTotal == null && <label className="chip">📎 {files.length ? `${files.length} file${files.length === 1 ? '' : 's'} · + another receipt` : 'Receipt'}
+      {fixedTotal == null && <label className="chip"><Icon n="clip" /> {files.length ? `${files.length} file${files.length === 1 ? '' : 's'} · + another receipt` : 'Receipt'}
         <input type="file" accept="image/*,application/pdf" multiple hidden
                onChange={e => { setFiles([...files, ...(e.target.files ?? [])].slice(0, 5)); e.target.value = ''; }} /></label>}
       {files.length > 0 && !read1 && <button className="link tiny" onClick={() => { setFiles([]); setReadN(0); }}>✕ files</button>}
       {canRead && (read1 && unread > 0
-        ? <button className="secondary" disabled={reading || busy} onClick={() => void read(true)}>{reading ? 'Reading…' : `✨ Read the new receipt${unread > 1 ? 's' : ''}`}</button>
-        : <button className="secondary" disabled={reading || busy} onClick={() => void read(false)}>{reading ? 'Reading…' : read1 ? '✨ Read it again' : '✨ Read receipt'}</button>)}
+        ? <button className="secondary" disabled={reading || busy} onClick={() => void read(true)}>{ic(reading ? 'Reading…' : `✨ Read the new receipt${unread > 1 ? 's' : ''}`)}</button>
+        : <button className="secondary" disabled={reading || busy} onClick={() => void read(false)}>{ic(reading ? 'Reading…' : read1 ? '✨ Read it again' : '✨ Read receipt')}</button>)}
     </div>
-    {readMsg && <p className={readMsg.startsWith('✨') ? 'note' : 'breach'} role="status">{readMsg}</p>}
+    {readMsg && <p className={readMsg.startsWith('') ? 'note' : 'breach'} role="status">{readMsg}</p>}
     {off != null && <p className="note">▲ The receipt's lines add up to {money(sumLines!)} — {money(Math.abs(off))} {off > 0 ? 'less' : 'more'} than the total.</p>}
     {groups.length > 1 && <div className="receipt-split">
       <p className="note"><b>One receipt, {groups.length} purchases</b> <Hint>Each order gets its share of the total, by what its lines cost (tax spread the same way).
@@ -813,7 +814,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     {extra}
     <div className="button-row">
       {buttons?.({ lines: out, busy })}
-      <button disabled={busy || !out.length || unplaced || !(totalN > 0) || pending > 0 || !!shareLeft} onClick={() => void record()}>{busy ? 'Saving…' : recordLabel}</button>
+      <button disabled={busy || !out.length || unplaced || !(totalN > 0) || pending > 0 || !!shareLeft} onClick={() => void record()}>{ic(busy ? 'Saving…' : recordLabel)}</button>
       {unplaced && <span className="note">▲ Say which place each item went to.</span>}
       {pending > 0 && <span className="note">▲ Decide the receipt's lines first.</span>}
       {unread > 0 && read1 && <span className="note">▲ {unread} receipt file{unread === 1 ? '' : 's'} not read yet.</span>}
@@ -847,9 +848,9 @@ function RecordPurchase({ inv, onSaved }: { inv: Inventory; onSaved: (i: Invento
   const o = inv.orders.find(x => x.todoId === todoId);
   return (
     <div className="card">
-      <h2>🧾 Record a purchase <Hint>What was really bought: it adds to each place's stock and goes to Costs as one Restock expense with its receipt.
-        Start from an open order (its lines come filled in) or add the items with 🔍. ✨ Read receipt fills the form in from the receipt's photo or PDF —
-        check it, then record it. More than one receipt: 📎 + another receipt → ✨ Read the new receipt adds its lines and total. Close the order in To-do once everything is bought.</Hint></h2>
+      <h2><Icon n="receipt" /> Record a purchase <Hint>What was really bought: it adds to each place's stock and goes to Costs as one Restock expense with its receipt.
+        Start from an open order (its lines come filled in) or add the items with <Icon n="search" />. <Icon n="sparkles" /> Read receipt fills the form in from the receipt's photo or PDF —
+        check it, then record it. More than one receipt: <Icon n="clip" /> + another receipt → <Icon n="sparkles" /> Read the new receipt adds its lines and total. Close the order in To-do once everything is bought.</Hint></h2>
       <PurchaseForm inv={inv} onInv={onSaved} todoId={todoId} start={o ? linesOf(o.lines) : undefined} canSplit recordLabel="Record the purchase"
         head={<label>For the order
           <select value={todoId} onChange={e => setTodoId(e.target.value)}>
@@ -880,8 +881,8 @@ function RecentMoves({ inv }: { inv: Inventory }) {
                 <tr key={m.id}>
                   <td>{m.at}</td><td>{m.byName}<div className="sub-n">{SOURCE_WORD[m.source]}</div></td>
                   <td>{m.place ?? '▲ no place'}{m.unit && <div className="sub-n">{m.kind === 'taken' ? '→ ' : ''}{m.unit}</div>}</td><td>{m.item}</td>
-                  <td className={m.kind === 'missing' ? 'breach' : undefined}>{KIND_WORD[m.kind]}</td><td className="n">{fmt(m.qty)}</td>
-                  <td className="ops-note">{m.note}{m.photos?.map((p, i) => <Fragment key={i}> <a href={p.url} target="_blank" rel="noreferrer">📎</a></Fragment>)}</td>
+                  <td className={m.kind === 'missing' ? 'breach' : undefined}>{ic(KIND_WORD[m.kind])}</td><td className="n">{fmt(m.qty)}</td>
+                  <td className="ops-note">{m.note}{m.photos?.map((p, i) => <Fragment key={i}> <a href={p.url} target="_blank" rel="noreferrer"><Icon n="clip" /></a></Fragment>)}</td>
                 </tr>
               ))}
             </tbody>
@@ -974,7 +975,7 @@ function LowStockSetting({ inv, onChanged }: { inv: Inventory; onChanged: () => 
         if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onChanged();
       }} /> {inv.lowStockTasks ? '✓ On' : '○ Off'} — create a to-do when a counted place falls below an item's minimum</label>
       <p className="note">What it creates <Hint>One open “Low stock at S1105” to-do per place, a sub-task per item (never twice while it is open), with its order
-        filled in — so 🧾 Record a purchase starts from it. Checked after every count, correction and take. Places never counted never
+        filled in — so <Icon n="receipt" /> Record a purchase starts from it. Checked after every count, correction and take. Places never counted never
         trigger it.</Hint></p>
       {msg && <p className="breach">{msg}</p>}
     </div>
@@ -1024,9 +1025,9 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
   const hadOrder = inv.orders.some(o => o.todoId === todoId);
   return (
     <div className="card task-buy">
-      <h3>🛒 Purchase order <Hint>💾 Save order keeps it on this to-do, with or without a price. Once it is bought, attach the receipt →
-        ✨ Read receipt fills it in (check every line) → 🧾 Record the purchase puts it into each place's stock and into Costs (Restock).
-        More than one receipt? 📎 + another receipt, then ✨ Read the new receipt — its lines and total are added.</Hint></h3>
+      <h3><Icon n="cart" /> Purchase order <Hint><Icon n="save" /> Save order keeps it on this to-do, with or without a price. Once it is bought, attach the receipt →
+        <Icon n="sparkles" /> Read receipt fills it in (check every line) → <Icon n="receipt" /> Record the purchase puts it into each place's stock and into Costs (Restock).
+        More than one receipt? <Icon n="clip" /> + another receipt, then <Icon n="sparkles" /> Read the new receipt — its lines and total are added.</Hint></h3>
       {hadOrder && <p className="note">The order as it was left.</p>}
       <PurchaseForm inv={inv} onInv={setInv} todoId={todoId} start={start} defaultPlace={home} canSplit
         extra={<label className="check"><input type="checkbox" checked={closeIt} onChange={e => setCloseIt(e.target.checked)} /> ✓ and close this to-do when recorded</label>}
@@ -1041,7 +1042,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought }: {
             setMsg('');
             try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onBought(false); }
             catch (e) { setMsg(String(e)); }
-          }}>💾 Save order</button>
+          }}><Icon n="save" /> Save order</button>
           <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
         </>} />
       {msg && <p className="breach" role="status">{msg}</p>}
@@ -1066,7 +1067,7 @@ export function FieldPurchaseLines({ id, unitId, said, amount, hasReceipt, onSav
   return (
     <div className="card">
       <p className="note">They wrote: <b>“{said.replace(/^Bought: /, '')}”</b> <Hint>Approving it records it in the inventory: say the items and where
-        each went (✨ Read receipt fills them in from their receipt — check every line). It adds to the stock and goes to Costs (Restock) with their receipt.</Hint></p>
+        each went (<Icon n="sparkles" /> Read receipt fills them in from their receipt — check every line). It adds to the stock and goes to Costs (Restock) with their receipt.</Hint></p>
       <PurchaseForm inv={inv} onInv={setInv} defaultPlace={home} fixedTotal={amount} fieldExpenseId={id} hasReceipt={hasReceipt}
         recordLabel="✓ Approve and record" onRecord={async p => { await onSave(p.lines, p.aliases); return null; }}
         buttons={({ busy }) => <button className="secondary" disabled={busy} onClick={onCancel}>Cancel</button>} />
@@ -1110,11 +1111,11 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
     setForm(f => ({ ...f, buyOptions: f.buyOptions.map((o, j) => j === k ? { ...o, ...patch } : o) }));
   return (
     <div className="card">
-      <h2>Items list <Hint>🧴 <b>Supplies</b> are what cleans consume — cleaners see only these, and only those their unit's place keeps. 🪑 <b>Furniture</b> is
+      <h2>Items list <Hint><Icon n="bottle" /> <b>Supplies</b> are what cleans consume — cleaners see only these, and only those their unit's place keeps. <Icon n="chair" /> <b>Furniture</b> is
         the house's things (linens, dishes, equipment): counted, never handed out. Per clean is the starting estimate (until 3 cleans have reported);
         Keep at least is the minimum unless a place sets its own. <b>Buy at</b>: where to buy it, with the link.</Hint></h2>
       <div className="chip-row">{(['all', 'supply', 'furniture'] as const).map(k =>
-        <button key={k} className={show === k ? 'chip active' : 'chip'} onClick={() => setShow(k)}>{k === 'all' ? `All (${items.length})` : `${TYPE_WORD[k]} (${items.filter(i => (i.kind ?? 'supply') === k).length})`}</button>)}</div>
+        <button key={k} className={show === k ? 'chip active' : 'chip'} onClick={() => setShow(k)}>{ic(k === 'all' ? `All (${items.length})` : `${TYPE_WORD[k]} (${items.filter(i => (i.kind ?? 'supply') === k).length})`)}</button>)}</div>
       <div className="grid-scroll">
         <table className="units compact">
           <thead><tr><th>Type</th><th>Item</th><th>Size</th><th>Category</th><th>Counted in</th><th className="n">Per clean (est.)</th><th className="n">Keep at least</th><th>Buy at</th><th></th></tr></thead>
@@ -1123,7 +1124,7 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
               <tr key={i.id} className={i.active ? undefined : 'muted-row'}>
                 <td><select value={i.kind ?? 'supply'} aria-label={`Type of ${i.name}`}
                             onChange={e => void send({ ...whole(i), kind: e.target.value }, `${i.name}: ${TYPE_WORD[e.target.value as Kind]}.`)}>
-                  <option value="supply">🧴 Supplies</option><option value="furniture">🪑 Furniture</option></select></td>
+                  <option value="supply">Supplies</option><option value="furniture">Furniture</option></select></td>
                 <td><b>{i.baseName ?? i.name}</b>{!i.active && <span className="sub-n"> · off</span>}</td><td>{i.size ?? <span className="sub-n">—</span>}</td><td>{i.category}</td><td>{i.measure}</td>
                 <td className="n">{fmt(i.perClean)}</td><td className="n">{fmt(i.reorderAt)}</td>
                 <td>{(i.buyOptions ?? []).length ? (i.buyOptions ?? []).map((o, k) => <Fragment key={k}>{k ? ' · ' : ''}<a href={o.url} target="_blank" rel="noreferrer">{o.label} ↗</a></Fragment>)
@@ -1142,7 +1143,7 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
       <h3>{form.id ? `Edit ${form.name}` : 'Add an item'}</h3>
       <div className="row">
         <label>Type<select value={form.kind} onChange={e => setForm(f => ({ ...f, kind: e.target.value as Kind }))}>
-          <option value="supply">🧴 Supplies</option><option value="furniture">🪑 Furniture</option></select></label>
+          <option value="supply">Supplies</option><option value="furniture">Furniture</option></select></label>
         <label>Name<input value={form.name} maxLength={120} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} /></label>
         <label>Size<input value={form.size} maxLength={30} placeholder="King, Queen, 13 gal… (optional)" onChange={e => setForm(f => ({ ...f, size: e.target.value }))} /></label>
         <label>Category<select value={form.category} onChange={e => setForm(f => ({ ...f, category: e.target.value }))}>

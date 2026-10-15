@@ -22,6 +22,7 @@ import { buildInvoice, periodOf, recentPeriods, type CrewClean, type CrewExtra }
 import { addDays, todayIn } from '../lib/dates.ts';
 import type { UnitAccess } from '../lib/unit-access.ts';
 import type { Lang } from '../lib/crew-i18n.ts';
+import { Icon, ic } from '../components/Icon.tsx';
 
 export type PracticeWhich = 'inspection' | 'work-link' | 'vendor' | 'cleaner' | 'helper' | 'inventory';
 export const PRACTICE: Record<PracticeWhich, { en: string; es: string }> = {
@@ -192,7 +193,7 @@ function InspectionPractice() {
   const es = lang === 'es';
   if (!lang) return (
     <div className="card">
-      <h2>🔍 {UNIT}</h2>
+      <h2><Icon n="search" /> {ic(UNIT)}</h2>
       <p className="note">A 2-bedroom, 2-bath house with a pool. Check the items, mark what needs work, then Review &amp; finish.
         <br />Una casa de 2 habitaciones y 2 baños con piscina. Revisa los ítems, marca lo que necesita trabajo y luego Review &amp; finish.</p>
       <div className="button-row">
@@ -203,7 +204,7 @@ function InspectionPractice() {
   );
   return <>
     <InspectionRun key={round} id="practice" canEdit transport={tr} onClose={() => { setLang(null); setRound(n => n + 1); }} />
-    <p className="note">{es ? 'Inspección de práctica abierta.' : 'Practice inspection open.'}</p>
+    <p className="note">{ic(es ? 'Inspección de práctica abierta.' : 'Practice inspection open.')}</p>
   </>;
 }
 
@@ -500,8 +501,8 @@ export function PracticePage({ which }: { which: PracticeWhich }) {
   const inventory = useMemo(inventoryPractice, []);
   return (
     <main>
-      <p className="banner warn practice-banner">🧪 <b>Practice — nothing here is real.</b> Example data; nothing is saved or sent (no Hostaway, Slack or Drive). Reload to start over.
-        <br />🧪 <b>Práctica — nada de esto es real.</b> Datos de ejemplo; nada se guarda ni se envía. Recarga para empezar de nuevo.</p>
+      <p className="banner warn practice-banner"><Icon n="flask" /> <b>Practice — nothing here is real.</b> Example data; nothing is saved or sent (no Hostaway, Slack or Drive). Reload to start over.
+        <br /><Icon n="flask" /> <b>Práctica — nada de esto es real.</b> Datos de ejemplo; nada se guarda ni se envía. Recarga para empezar de nuevo.</p>
       {which === 'inspection' && <InspectionPractice />}
       {which === 'work-link' && <WorkLinkPractice />}
       {which === 'vendor' && <VendorPractice />}

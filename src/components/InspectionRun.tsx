@@ -16,6 +16,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getRun, runAction, runPhotos, type InspectionRunData, type RunCheck } from '../api.ts';
 import { shrink } from './PhotoPicker.tsx';
 import { checkKey, overallResult, progress, readyToFinish, reviewSteps, type Area, type Outcome, type Section } from '../lib/inspection.ts';
+import { Icon, ic } from './Icon.tsx';
 
 const OUTCOME_LABEL: Record<Outcome, string> = {
   repair: '🔧 Repair (work order)', purchase: '🛒 Purchase (to-do)', clean_next: '🧽 Task for the next clean',
@@ -73,7 +74,7 @@ export function InspectionRun({ id, onClose, canEdit, transport, link = false }:
   useEffect(() => { void load(); }, [id]);
 
   const byKey = useMemo(() => new Map((data?.checks ?? []).map(c => [checkKey(c), c])), [data]);
-  if (err && !data) return <Sheet title="Inspection" onClose={() => onClose(false)}><p className="banner error">{err}</p></Sheet>;
+  if (err && !data) return <Sheet title="Inspection" onClose={() => onClose(false)}><p className="banner error">{ic(err)}</p></Sheet>;
   if (!data) return <Sheet title="Inspection" onClose={() => onClose(false)}><p className="note loading-dot">Loading the checklist…</p></Sheet>;
 
   const ins = data.inspection;
@@ -135,10 +136,10 @@ export function InspectionRun({ id, onClose, canEdit, transport, link = false }:
     return (
       <Sheet title={`Inspection · ${ins.unit}`} onClose={() => onClose(true)}>
         <div className="insp-body">
-          <p className="banner ok">✓ Inspection finished{made.length ? '' : ' — everything checked OK'}.</p>
+          <p className="banner ok">✓ Inspection finished{ic(made.length ? '' : ' — everything checked OK')}.</p>
           {made.length > 0 && <>
             <h3>What it made</h3>
-            <ul className="insp-made">{made.map((m, i) => <li key={i}>{m.kind === 'repair' ? '🔧' : m.kind === 'purchase' ? '🛒' : '🧽'} {m.title}</li>)}</ul>
+            <ul className="insp-made">{made.map((m, i) => <li key={i}>{ic(m.kind === 'repair' ? '🔧' : m.kind === 'purchase' ? '🛒' : '🧽')} {ic(m.title)}</li>)}</ul>
             <p className="note">Repairs and purchases are in Operations → To-do (and Hostaway). Each repair starts with “Assign and schedule”.
               Cleaning tasks show on the board's row and on the cleaner's page.</p>
           </>}
@@ -162,14 +163,14 @@ export function InspectionRun({ id, onClose, canEdit, transport, link = false }:
       }} />}
       {!readOnly && (
         <div className="insp-quick">
-          {QUICK.map(q => <button key={q.kind} className="chip" onClick={() => setQuick(q)}>{q.label}</button>)}
+          {QUICK.map(q => <button key={q.kind} className="chip" onClick={() => setQuick(q)}>{ic(q.label)}</button>)}
         </div>
       )}
       <div className="insp-progress" aria-label="Progress">
         <div className="insp-bar"><span style={{ width: `${prog.total ? Math.round(prog.done / prog.total * 100) : 0}%` }} /></div>
-        <span className="note">{prog.done} of {prog.total} checked{prog.attention ? ` · ▲ ${prog.attention} need attention` : ''}</span>
+        <span className="note">{prog.done} of {prog.total} checked{ic(prog.attention ? ` · ▲ ${prog.attention} need attention` : '')}</span>
       </div>
-      {err && <p className={err.startsWith('Uploading') ? 'note' : 'banner warn'}>{err}</p>}
+      {err && <p className={err.startsWith('Uploading') ? 'note' : 'banner warn'}>{ic(err)}</p>}
       {quick && <QuickAdd data={data} tr={tr} kind={quick.kind} onCancel={() => setQuick(null)}
                           onDone={async () => { setQuick(null); changed.current = true; await load(); }} />}
 
@@ -184,9 +185,9 @@ export function InspectionRun({ id, onClose, canEdit, transport, link = false }:
           return (
             <section key={k} className="insp-sec">
               <button className="insp-sec-head" onClick={() => setOpen(o => { const n = new Set(o); if (n.has(k)) n.delete(k); else n.add(k); return n; })}>
-                <b>{s.title}</b>
-                <span className="note">{answered}/{s.items.length}{flags ? ` · ▲ ${flags}` : answered === s.items.length ? ' ✓' : ''}</span>
-                <span>{isOpen ? '▾' : '▸'}</span>
+                <b>{ic(s.title)}</b>
+                <span className="note">{answered}/{s.items.length}{ic(flags ? ` · ▲ ${flags}` : answered === s.items.length ? ' ✓' : '')}</span>
+                <span>{ic(isOpen ? '▾' : '▸')}</span>
               </button>
               {isOpen && (
                 <div className="insp-items">
@@ -217,7 +218,7 @@ export function InspectionRun({ id, onClose, canEdit, transport, link = false }:
 
       {!readOnly && (
         <div className="insp-foot">
-          <span className="note">Saved as you go{prog.total - prog.done ? ` · ${prog.total - prog.done} not checked yet` : ''}</span>
+          <span className="note">Saved as you go{ic(prog.total - prog.done ? ` · ${prog.total - prog.done} not checked yet` : '')}</span>
           {link
             ? <button disabled={prog.total - prog.done > 0} onClick={async () => {
                 const r = await tr.act({ action: 'send' }).catch(() => null);
@@ -245,12 +246,12 @@ function ItemRow({ label, c, readOnly, adhoc, onResult, onNote, onPhotos, onRemo
   return (
     <div className={`insp-item ${r === 'attention' ? 'att' : r === 'ok' ? 'ok' : ''}`}>
       <div className="insp-item-top">
-        <span className="insp-label">{label}</span>
+        <span className="insp-label">{ic(label)}</span>
         {!adhoc && (
           <div className="insp-seg" role="group" aria-label={label}>
             {(['ok', 'attention', 'na'] as const).map(v => (
               <button key={v} disabled={readOnly} className={r === v ? `on ${v}` : ''} onClick={() => onResult(v)}>
-                {v === 'ok' ? '✓ OK' : v === 'attention' ? '▲ Fix' : 'N/A'}</button>
+                {ic(v === 'ok' ? '✓ OK' : v === 'attention' ? '▲ Fix' : 'N/A')}</button>
             ))}
           </div>
         )}
@@ -260,14 +261,14 @@ function ItemRow({ label, c, readOnly, adhoc, onResult, onNote, onPhotos, onRemo
           <input value={note} disabled={readOnly} maxLength={1000} placeholder="What is wrong (optional)" onChange={e => setNote(e.target.value)}
                  onBlur={() => { if (note !== (c?.note ?? '')) onNote(note); }} />
           <div className="insp-photos">
-            {(c?.photos ?? []).map((p, i) => <a key={i} href={p.url} target="_blank" rel="noreferrer">📷 {p.name}</a>)}
+            {(c?.photos ?? []).map((p, i) => <a key={i} href={p.url} target="_blank" rel="noreferrer"><Icon n="camera" /> {ic(p.name)}</a>)}
             {!readOnly && (
-              <label className="chip">📷 {c?.photos?.length ? 'Add photo' : 'Photo (optional)'}
+              <label className="chip"><Icon n="camera" /> {ic(c?.photos?.length ? 'Add photo' : 'Photo (optional)')}
                 <input type="file" accept="image/*" multiple hidden onChange={e => void onPhotos(e.target.files)} /></label>
             )}
             {!readOnly && onRemove && <button className="link tiny danger" onClick={onRemove}>remove</button>}
           </div>
-          {c?.outcome && <div className="sub-n">→ {OUTCOME_LABEL[c.outcome]}</div>}
+          {c?.outcome && <div className="sub-n">→ {ic(OUTCOME_LABEL[c.outcome])}</div>}
           {c?.outcome === 'purchase' && buy && onSupply && <BuyQty key={c.id} c={c} readOnly={readOnly} {...buy} onSave={onSupply} />}
         </div>
       )}
@@ -293,9 +294,9 @@ function BuyQty({ c, readOnly, supplies, preset, onSave }: {
     const hits = q.trim() ? supplies.filter(x => x.name.toLowerCase().includes(q.trim().toLowerCase())).slice(0, 6) : [];
     return (
       <div className="insp-buy">
-        <input value={q} placeholder="🛒 🔍 Which supply? (optional)" onChange={e => setQ(e.target.value)} />
+        <input value={q} placeholder="Which supply? (optional)" onChange={e => setQ(e.target.value)} />
         {hits.length > 0 && <div className="button-row">{hits.map(h =>
-          <button key={h.id} className="small secondary" onClick={() => { setChosen(h.id); setQ(''); }}>+ {h.name}</button>)}</div>}
+          <button key={h.id} className="small secondary" onClick={() => { setChosen(h.id); setQ(''); }}>+ {ic(h.name)}</button>)}</div>}
       </div>
     );
   }
@@ -306,10 +307,10 @@ function BuyQty({ c, readOnly, supplies, preset, onSave }: {
   };
   return (
     <div className="insp-buy row" style={{ gap: 6, alignItems: 'center' }}>
-      <span>🛒 How many <b>{sup.name}</b>?</span>
+      <span><Icon n="cart" /> How many <b>{ic(sup.name)}</b>?</span>
       <input className="inv-qty" type="number" min="1" step="1" inputMode="numeric" value={qty} disabled={readOnly} aria-label={`How many ${sup.name}`}
              onChange={e => setQty(e.target.value)} onBlur={commit} />
-      <span className="sub-n">{sup.measure.replace(/s?$/, 's')}</span>
+      <span className="sub-n">{ic(sup.measure.replace(/s?$/, 's'))}</span>
       {!readOnly && chosen !== preset && <button className="link tiny" onClick={() => { setChosen(preset); setQty(''); if (c.supplyId) onSave(null, null); }}>✕ not this</button>}
       {!qty && <span className="sub-n">blank = buy what the note says</span>}
     </div>
@@ -343,34 +344,34 @@ function QuickAdd({ data, tr, kind, onCancel, onDone }: {
   };
   return (
     <div className="insp-quick-form">
-      <b>{QUICK.find(q => q.kind === kind)!.label}</b>
+      <b>{ic(QUICK.find(q => q.kind === kind)!.label)}</b>
       {supply ? <div className="row" style={{ gap: 6, alignItems: 'center' }}>
-          <b>{supply.name}</b>
+          <b>{ic(supply.name)}</b>
           <input className="inv-qty" type="number" min="1" step="1" value={qty} aria-label="How many" onChange={e => setQty(e.target.value)} />
-          <span className="sub-n">{supply.measure.replace(/s?$/, 's')}</span>
+          <span className="sub-n">{ic(supply.measure.replace(/s?$/, 's'))}</span>
           <button className="link tiny" onClick={() => setSupply(null)}>✕ not this</button>
         </div> : <>
-        <input autoFocus value={label} maxLength={200} placeholder={kind === 'purchase' ? '🔍 Search the supplies, or write what to buy' : `What ${word}`}
+        <input autoFocus value={label} maxLength={200} placeholder={kind === 'purchase' ? 'Search the supplies, or write what to buy' : `What ${word}`}
                onChange={e => setLabel(e.target.value)} />
         {kind === 'purchase' && label.trim() && (() => {
           const hits = (data.supplies ?? []).filter(i => i.name.toLowerCase().includes(label.trim().toLowerCase())).slice(0, 6);
           return hits.length ? <div className="button-row">{hits.map(i =>
-            <button key={i.id} className="small secondary" onClick={() => { setSupply(i); setQty('1'); }}>+ {i.name}</button>)}</div>
+            <button key={i.id} className="small secondary" onClick={() => { setSupply(i); setQty('1'); }}>+ {ic(i.name)}</button>)}</div>
             // Nothing matching looked like a dead end; free text is a valid purchase.
-            : <p className="sub-n">Not in the supplies list — Add saves “{label.trim()}” as written.</p>;
+            : <p className="sub-n">Not in the supplies list — Add saves “{ic(label.trim())}” as written.</p>;
         })()}
       </>}
       <select value={where} onChange={e => setWhere(e.target.value)}>
         {data.sections.map(s => <option key={secKey(s)} value={secKey(s)}>{s.title}</option>)}
         {!data.sections.length && <option value="general:1">General</option>}
       </select>
-      <label className="chip">📷 {files.length ? `${files.length} photo${files.length === 1 ? '' : 's'}` : 'Photo (optional)'}
+      <label className="chip"><Icon n="camera" /> {ic(files.length ? `${files.length} photo${files.length === 1 ? '' : 's'}` : 'Photo (optional)')}
         <input type="file" accept="image/*" multiple hidden onChange={e => setFiles([...(e.target.files ?? [])])} /></label>
       <div className="button-row">
-        <button className="small" disabled={busy || (!label.trim() && !supply) || (!!supply && !(Number(qty) >= 1))} onClick={() => void save()}>{busy ? 'Saving…' : 'Add'}</button>
+        <button className="small" disabled={busy || (!label.trim() && !supply) || (!!supply && !(Number(qty) >= 1))} onClick={() => void save()}>{ic(busy ? 'Saving…' : 'Add')}</button>
         <button className="small secondary" disabled={busy} onClick={onCancel}>Cancel</button>
       </div>
-      {msg && <p className="breach">{msg}</p>}
+      {msg && <p className="breach">{ic(msg)}</p>}
     </div>
   );
 }
@@ -430,33 +431,33 @@ function Review({ data, tr, onBack, onSave, onPhotos, onFinished }: {
   return (
     <Sheet title={`Review · ${ins.unit}`} sub={`Step ${Math.min(idx, steps.length - 1) + 1} of ${steps.length}`} onClose={onBack} closeLabel="← Rooms">
       <div className="insp-steps">{steps.map((s2, i) => <span key={s2} className={i === Math.min(idx, steps.length - 1) ? 'on' : i < idx ? 'done' : ''}>
-        {s2 === 'repair' ? '🔧' : s2 === 'purchase' ? '🛒' : s2 === 'clean' ? '🧽' : '✓'}</span>)}</div>
+        {ic(s2 === 'repair' ? '🔧' : s2 === 'purchase' ? '🛒' : s2 === 'clean' ? '🧽' : '✓')}</span>)}</div>
       <div className="insp-body">
         {step !== 'finish' && <>
-          <h3>{HEAD[step]![0]} <span className="count">{group.length}</span></h3>
-          <p className="note">{HEAD[step]![1]}</p>
+          <h3>{ic(HEAD[step]![0])} <span className="count">{group.length}</span></h3>
+          <p className="note">{ic(HEAD[step]![1])}</p>
           {group.map(c => <FindingCard key={c.id} c={c} title={sectionTitle(c)} onSave={onSave} onPhotos={onPhotos} />)}
           {step === 'clean' && (
             <div className="insp-finding">
               <label className="check"><input type="radio" checked={cleanMode === 'next'} disabled={!data.nextClean} onChange={() => setCleanMode('next')} />
-                Notes for the next clean{data.nextClean ? ` — ${data.nextClean.date}${data.nextClean.cleaner ? ` · ${data.nextClean.cleaner}` : ''}` : ' (none scheduled)'}</label>
+                Notes for the next clean{ic(data.nextClean ? ` — ${data.nextClean.date}${data.nextClean.cleaner ? ` · ${data.nextClean.cleaner}` : ''}` : ' (none scheduled)')}</label>
               <label className="check"><input type="radio" checked={cleanMode === 'new'} onChange={() => setCleanMode('new')} /> A new clean, unassigned — the team gives it to a cleaner</label>
               {cleanMode === 'new' && <label>Day<input type="date" value={cleanDate} min={data.today} onChange={e => setCleanDate(e.target.value)} /></label>}
             </div>
           )}
         </>}
         {step === 'finish' && <>
-          {prog.total - prog.done > 0 && <p className="banner warn">▲ {prog.total - prog.done} item{prog.total - prog.done === 1 ? ' is' : 's are'} not checked —
-            {' '}they stay out of the report. <button className="link" onClick={onBack}>Back to the rooms</button></p>}
+          {prog.total - prog.done > 0 && <p className="banner warn">▲ {prog.total - prog.done} item{ic(prog.total - prog.done === 1 ? ' is' : 's are')} not checked —
+            {ic(' ')}they stay out of the report. <button className="link" onClick={onBack}>Back to the rooms</button></p>}
           {!findings.length ? <p className="banner ok">✓ Nothing needs attention.</p> : (
             <ul className="insp-made">
-              {count(c => c.outcome === 'repair') > 0 && <li>🔧 {count(c => c.outcome === 'repair') === 1
+              {count(c => c.outcome === 'repair') > 0 && <li><Icon n="wrench" /> {ic(count(c => c.outcome === 'repair') === 1
                 ? '1 work order, with “Assign and schedule”'
-                : `1 work order for ${count(c => c.outcome === 'repair')} repairs, with “Assign and schedule”`}</li>}
-              {count(c => c.outcome === 'purchase') > 0 && <li>🛒 1 to-do: buy {count(c => c.outcome === 'purchase')} item{count(c => c.outcome === 'purchase') === 1 ? '' : 's'}</li>}
-              {count(isClean) > 0 && <li>🧽 {cleanMode === 'next' && data.nextClean
+                : `1 work order for ${count(c => c.outcome === 'repair')} repairs, with “Assign and schedule”`)}</li>}
+              {count(c => c.outcome === 'purchase') > 0 && <li><Icon n="cart" /> 1 to-do: buy {count(c => c.outcome === 'purchase')} item{ic(count(c => c.outcome === 'purchase') === 1 ? '' : 's')}</li>}
+              {count(isClean) > 0 && <li><Icon n="brush" /> {ic(cleanMode === 'next' && data.nextClean
                 ? `${count(isClean)} task${count(isClean) === 1 ? '' : 's'} for the next clean (${data.nextClean.date})`
-                : `1 new clean on ${cleanDate} with ${count(isClean)} task${count(isClean) === 1 ? '' : 's'}`}</li>}
+                : `1 new clean on ${cleanDate} with ${count(isClean)} task${count(isClean) === 1 ? '' : 's'}`)}</li>}
               {count(c => c.outcome === 'none') > 0 && <li>— {count(c => c.outcome === 'none')} in the report only</li>}
             </ul>
           )}
@@ -467,13 +468,13 @@ function Review({ data, tr, onBack, onSave, onPhotos, onFinished }: {
           <label>Notes for the report (optional)
             <textarea rows={2} value={notes} maxLength={1500} onChange={e => setNotes(e.target.value)} /></label>
         </>}
-        {msg && <p className="banner error">{msg}</p>}
+        {msg && <p className="banner error">{ic(msg)}</p>}
       </div>
       <div className="insp-foot">
-        <button className="secondary" onClick={() => (idx === 0 ? onBack() : go(-1))}>{idx === 0 ? '← Rooms' : '← Back'}</button>
+        <button className="secondary" onClick={() => (idx === 0 ? onBack() : go(-1))}>{ic(idx === 0 ? '← Rooms' : '← Back')}</button>
         {step !== 'finish'
           ? <button onClick={() => go(1)}>Confirm & continue →</button>
-          : <button disabled={busy || !readyToFinish(findings).ok} onClick={() => void finish()}>{busy ? 'Finishing…' : 'Finish inspection'}</button>}
+          : <button disabled={busy || !readyToFinish(findings).ok} onClick={() => void finish()}>{ic(busy ? 'Finishing…' : 'Finish inspection')}</button>}
       </div>
     </Sheet>
   );
@@ -489,18 +490,18 @@ function FindingCard({ c, title, onSave, onPhotos }: {
   const kind = c.outcome === 'clean_next' || c.outcome === 'clean_new' ? 'clean' : c.outcome ?? 'repair';
   return (
     <div className="insp-finding">
-      <div><b>{title}</b> · {c.label}</div>
+      <div><b>{ic(title)}</b> · {ic(c.label)}</div>
       <div className="insp-photos">
-        {c.photos.map((p, i) => <a key={i} href={p.url} target="_blank" rel="noreferrer">📷 {p.name}</a>)}
-        <label className="chip">📷 {c.photos.length ? 'Add photo' : 'Photo (optional)'}
+        {c.photos.map((p, i) => <a key={i} href={p.url} target="_blank" rel="noreferrer"><Icon n="camera" /> {ic(p.name)}</a>)}
+        <label className="chip"><Icon n="camera" /> {ic(c.photos.length ? 'Add photo' : 'Photo (optional)')}
           <input type="file" accept="image/*" multiple hidden onChange={e => void onPhotos(c.id, e.target.files)} /></label>
       </div>
       <textarea rows={2} value={note} maxLength={1000} placeholder="Notes — what exactly, where, what to bring…"
                 onChange={e => setNote(e.target.value)} onBlur={() => { if (note !== (c.note ?? '')) void onSave(c, { note }); }} />
       <label className="sub-n">Kind
         <select value={kind} onChange={e => void onSave(c, { outcome: (e.target.value === 'clean' ? 'clean_next' : e.target.value) as Outcome })}>
-          <option value="repair">🔧 Repair</option><option value="purchase">🛒 Purchase</option>
-          <option value="clean">🧽 Cleaning</option><option value="none">No action — report only</option>
+          <option value="repair">Repair</option><option value="purchase">Purchase</option>
+          <option value="clean">Cleaning</option><option value="none">No action — report only</option>
         </select></label>
     </div>
   );
@@ -519,8 +520,8 @@ export function Sheet({ title, sub, onClose, closeLabel = '✕', children }: {
     <div className="insp-backdrop">
       <div className="insp-sheet" role="dialog" aria-modal="true" aria-label={title}>
         <div className="insp-head">
-          <div><h2>{title}</h2>{sub && <div className="sub-n">{sub}</div>}</div>
-          {onClose && <button className="link" onClick={onClose} aria-label="Close">{closeLabel}</button>}
+          <div><h2>{ic(title)}</h2>{sub && <div className="sub-n">{ic(sub)}</div>}</div>
+          {onClose && <button className="link" onClick={onClose} aria-label="Close">{ic(closeLabel)}</button>}
         </div>
         {children}
       </div>
@@ -534,7 +535,7 @@ function SentBanner({ sent, onReopen }: { sent: { at: string; by: string }; onRe
   const at = new Date(sent.at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
   return (
     <div className="banner ok">
-      ✓ Sent to the team by {sent.by}, {at}. The team reviews it and makes the work — you can close this page.
+      ✓ Sent to the team by {ic(sent.by)}, {ic(at)}. The team reviews it and makes the work — you can close this page.
       <div className="button-row">
         {!asking ? <button className="small secondary" onClick={() => setAsking(true)}>Reopen to change something</button> : <>
           <span className="note">Reopen? The team will see it as not sent.</span>

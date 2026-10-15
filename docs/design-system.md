@@ -100,6 +100,24 @@ decorative.
 | Loading | `Loading` (`.loading`) | Determinate bar with the step's name |
 | Empty | `.note` + verb | An empty state says what's missing and what to do |
 
+## Icons (no emoji)
+
+Owner feedback (2026-10-14): emoji were noise, each bringing its own colours. Now `src/components/Icon.tsx`:
+one set of inline SVGs (24 grid, 1.75 stroke, round joins), **1em, `currentColor`**. An icon takes colour
+only when its text does (a red error, an amber flag). The only coloured exceptions are the status shapes
+(■ red, ▲ amber, ○ muted) that replaced 🔴 🟠 ⚪.
+- `<Icon n="wrench" />` in JSX; `ic(text)` for text that may carry emoji (crew-i18n, label maps, practice
+  data) and turns them into icons at render time without touching the strings; `noEmoji()` where an SVG
+  can't go (`title`, `placeholder`, `<option>`).
+- `EMOJI_ICON` is the map (≈65 emoji → 50 icons). A new emoji in UI copy shows up as an icon if it's in the
+  map; if not, add it.
+- Kept as text: monochrome glyphs (✓ ✕ ↗ ★ ✎ ▲ ● ☐ ⚑), which are already one colour.
+- Not touched: Slack and SMS messages (`src/lib/slack*.ts`, `sms.ts`) — they're outgoing messages, not
+  this app's UI. The emoji in `title` attributes and `<option>` were removed (the word remains).
+- Field pages (Crew, CleanSteps, FieldReport, Report, Work, InspectionRun, Inspect, Practice,
+  AccessBox, PhotoPicker): every text child goes through `ic()`, because their copy reaches them via props
+  and arrays.
+
 ## Accessibility (quality floor)
 
 - Visible focus on everything (`:focus-visible`, accent ring).

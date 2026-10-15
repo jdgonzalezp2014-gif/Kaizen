@@ -19,6 +19,7 @@ import { AccessBox } from '../components/AccessBox.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { ThemeToggle } from '../components/ThemeToggle.tsx';
 import { TX as CREW_TX, dayLabel, isLang, type Lang, type Tx } from '../lib/crew-i18n.ts';
+import { Icon, ic } from '../components/Icon.tsx';
 
 const get = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const put = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
@@ -62,10 +63,10 @@ type Send = (fields: Record<string, string>, files: File[]) => Promise<{ ok: boo
 function Head({ title, lang, setLang }: { title: string; lang: Lang; setLang: (l: Lang) => void }) {
   return (
     <header className="mini-head">
-      <span className="mini-brand">{title}</span>
+      <span className="mini-brand">{ic(title)}</span>
       <span className="mini-tools">
         <span className="todo-kind" role="group" aria-label="Language / Idioma">
-          {(['en', 'es'] as const).map(l => <button key={l} className={l === lang ? 'chip active' : 'chip'} onClick={() => setLang(l)}>{l.toUpperCase()}</button>)}
+          {(['en', 'es'] as const).map(l => <button key={l} className={l === lang ? 'chip active' : 'chip'} onClick={() => setLang(l)}>{ic(l.toUpperCase())}</button>)}
         </span>
         <ThemeToggle />
       </span>
@@ -84,9 +85,9 @@ export function WorkLinkPage({ token, practice }: { token: string; practice?: { 
   const [err, setErr] = useState('');
   useEffect(() => { if (!practice) getWorkLink(token).then(r => r.ok ? setPage(r.page) : setErr(r.message ?? 'Not valid.')).catch(e => setErr(String(e))); }, [token]);
   return <>
-    <Head title={page?.work.unit ? `🔧 ${page.work.unit}` : 'Kaizen'} lang={lang} setLang={setLang} />
+    <Head title={page?.work.unit ? `${page.work.unit}` : 'Kaizen'} lang={lang} setLang={setLang} />
     <div className="report-page">
-      {err ? <p className="banner error">{err}</p> : !page ? <p className="note loading-dot">…</p>
+      {err ? <p className="banner error">{ic(err)}</p> : !page ? <p className="note loading-dot">…</p>
         : <WorkCard page={page} lang={lang} send={practice?.send ?? ((f, files) => workLinkAct(token, f, files))} onPage={setPage} />}
     </div>
   </>;
@@ -103,8 +104,8 @@ export function VendorHome({ practice }: { practice?: { vendor: string; works: W
   return <>
     <Head title={data ? w.hello(data.vendor) : 'Kaizen'} lang={lang} setLang={setLang} />
     <div className="report-page">
-      {err ? <p className="banner error">{err}</p> : !data ? <p className="note loading-dot">…</p>
-        : !data.works.length ? <div className="card"><p className="note">{w.none}</p></div>
+      {err ? <p className="banner error">{ic(err)}</p> : !data ? <p className="note loading-dot">…</p>
+        : !data.works.length ? <div className="card"><p className="note">{ic(w.none)}</p></div>
         : data.works.map(p => <WorkCard key={p.work.id} page={p} lang={lang}
             send={(f, files) => practice ? practice.send(p.work.id, f, files) : vendorAct(p.work.id, f, files)}
             onPage={np => setData(d => d && { ...d, works: d.works.map(x => x.work.id === np.work.id ? np : x) })} />)}
@@ -130,14 +131,14 @@ function WorkCard({ page, lang, send, onPage }: { page: WorkPage; lang: Lang; se
   };
   return (
     <div className="card work-card">
-      <p className="clean-card-unit">🔧 {p.title}</p>
-      {p.unit && <p>🏠 <b>{p.unit}</b>{page.address && <> · <a href={`https://maps.google.com/?q=${encodeURIComponent(page.address)}`} target="_blank" rel="noreferrer">📍 {page.address}</a></>}</p>}
-      <p className="fr-q">📅 {p.scheduledOn ? `${w.day}: ${dayLabel(lang, p.scheduledOn)}${p.startTime ? ` ${w.at} ${clock(p.startTime)}` : ''}` : w.noDay}</p>
+      <p className="clean-card-unit"><Icon n="wrench" /> {ic(p.title)}</p>
+      {p.unit && <p><Icon n="home" /> <b>{ic(p.unit)}</b>{page.address && <> · <a href={`https://maps.google.com/?q=${encodeURIComponent(page.address)}`} target="_blank" rel="noreferrer"><Icon n="pin" /> {ic(page.address)}</a></>}</p>}
+      <p className="fr-q"><Icon n="calendar" /> {ic(p.scheduledOn ? `${w.day}: ${dayLabel(lang, p.scheduledOn)}${p.startTime ? ` ${w.at} ${clock(p.startTime)}` : ''}` : w.noDay)}</p>
       {page.access && <AccessBox tx={tx} a={page.access} />}
-      {p.description && <details><summary><b>{w.what}</b></summary><p className="note" style={{ whiteSpace: 'pre-wrap' }}>{p.description}</p></details>}
-      {closed ? <p className="fr-done-line">{p.resolution ? w.done(p.resolution) : w.closed}</p> : <>
+      {p.description && <details><summary><b>{ic(w.what)}</b></summary><p className="note" style={{ whiteSpace: 'pre-wrap' }}>{ic(p.description)}</p></details>}
+      {closed ? <p className="fr-done-line">{ic(p.resolution ? w.done(p.resolution) : w.closed)}</p> : <>
         <Step n={1} title={w.s1} sub={p.accepted ? w.accepted : w.notYet} open={!p.accepted}>
-          {p.accepted ? <p className="field-ok">{w.accepted}</p> : <Accept w={w} busy={busy} go={go} />}
+          {p.accepted ? <p className="field-ok">{ic(w.accepted)}</p> : <Accept w={w} busy={busy} go={go} />}
         </Step>
         <Step n={2} title={w.s2} sub={w.photos(page.photos.before)}><Photos w={w} tx={tx} stage="before" go={go} /></Step>
         <Step n={3} title={w.s3} sub={w.photos(page.photos.after)}><Photos w={w} tx={tx} stage="after" go={go} /></Step>
@@ -145,7 +146,7 @@ function WorkCard({ page, lang, send, onPage }: { page: WorkPage; lang: Lang; se
         <Step n={5} title={w.s5}><Done w={w} busy={busy} go={go} /></Step>
         <Note w={w} busy={busy} go={go} />
       </>}
-      {msg && <p className="breach" role="alert">{msg}</p>}
+      {msg && <p className="breach" role="alert">{ic(msg)}</p>}
     </div>
   );
 }
@@ -156,7 +157,7 @@ function Step({ n, title, sub, open: first = false, children }: { n: number; tit
   return (
     <div className="work-step">
       <button className="fr-btn fr-choice fr-stepbtn" onClick={() => setOpen(o => !o)} aria-expanded={open}>
-        <span className="fr-num">{n}</span><span>{title}{sub && <small>{sub}</small>}</span></button>
+        <span className="fr-num">{n}</span><span>{ic(title)}{sub && <small>{ic(sub)}</small>}</span></button>
       {open && <div className="work-step-body">{children}</div>}
     </div>
   );
@@ -170,15 +171,15 @@ function Accept({ w, busy, go }: { w: Wx; busy: boolean; go: Go }) {
   if (cant) return (
     <div className="fr">
       <textarea className="fr-text" rows={2} maxLength={300} placeholder={w.why} value={why} onChange={e => setWhy(e.target.value)} />
-      <p className="fr-tip">{w.cantNote}</p>
-      <button className="fr-btn" disabled={busy} onClick={() => void go({ action: 'cant', reason: why })}>{busy ? w.sending : w.cantSend}</button>
+      <p className="fr-tip">{ic(w.cantNote)}</p>
+      <button className="fr-btn" disabled={busy} onClick={() => void go({ action: 'cant', reason: why })}>{ic(busy ? w.sending : w.cantSend)}</button>
       <button className="fr-btn secondary" onClick={() => setCant(false)}>←</button>
     </div>
   );
   return (
     <div className="fr">
-      <button className="fr-btn fr-go" disabled={busy} onClick={() => void go({ action: 'accept' })}>{busy ? w.sending : w.accept}</button>
-      <button className="fr-btn secondary" disabled={busy} onClick={() => setCant(true)}>{w.cant}</button>
+      <button className="fr-btn fr-go" disabled={busy} onClick={() => void go({ action: 'accept' })}>{ic(busy ? w.sending : w.accept)}</button>
+      <button className="fr-btn secondary" disabled={busy} onClick={() => setCant(true)}>{ic(w.cant)}</button>
     </div>
   );
 }
@@ -201,7 +202,7 @@ function Photos({ w, tx, stage, go }: { w: Wx; tx: Tx; stage: 'before' | 'after'
     <div className="fr">
       <PhotoPicker tx={tx} files={files} onChange={setFiles} disabled={busy} />
       <button className="fr-btn fr-go" disabled={busy || !files.length} onClick={() => void upload()}>
-        {busy ? `${w.sending} ${sent}/${files.length}` : w.sendPhotos(files.length)}</button>
+        {ic(busy ? `${w.sending} ${sent}/${files.length}` : w.sendPhotos(files.length))}</button>
     </div>
   );
 }
@@ -215,24 +216,24 @@ function Charges({ w, tx, page, busy, go }: { w: Wx; tx: Tx; page: WorkPage; bus
   const missing = !(Number(amount) > 0) ? w.needAmount : !what.trim() ? w.needWhat : '';
   return (
     <div className="fr">
-      <p className="fr-tip">{w.s4note}</p>
+      <p className="fr-tip">{ic(w.s4note)}</p>
       {page.charges.map(c => <p key={c.id} className={c.status === 'denied' ? 'breach' : 'sub-n'}>
-        ${c.amount.toFixed(2)} — {c.description.replace(/ — repair #\d+.*$/, '')} · {w.chargeState[c.status]}{c.decisionNote ? ` · “${c.decisionNote}”` : ''}</p>)}
-      {!adding ? <button className="fr-btn secondary" onClick={() => setAdding(true)}>{w.addCharge}</button> : <>
+        ${ic(c.amount.toFixed(2))} — {ic(c.description.replace(/ — repair #\d+.*$/, ''))} · {ic(w.chargeState[c.status])}{ic(c.decisionNote ? ` · “${c.decisionNote}”` : '')}</p>)}
+      {!adding ? <button className="fr-btn secondary" onClick={() => setAdding(true)}>{ic(w.addCharge)}</button> : <>
         <div className="report-tabs">
-          <button className={kind === 'labor' ? 'on' : ''} onClick={() => setKind('labor')}>{w.labor}</button>
-          <button className={kind === 'materials' ? 'on' : ''} onClick={() => setKind('materials')}>{w.materials}</button>
+          <button className={kind === 'labor' ? 'on' : ''} onClick={() => setKind('labor')}>{ic(w.labor)}</button>
+          <button className={kind === 'materials' ? 'on' : ''} onClick={() => setKind('materials')}>{ic(w.materials)}</button>
         </div>
-        <p className="fr-q">{w.amount}</p>
+        <p className="fr-q">{ic(w.amount)}</p>
         <input className="fr-select" type="number" inputMode="decimal" min="0" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} />
-        <p className="fr-q">{w.forWhat}</p>
+        <p className="fr-q">{ic(w.forWhat)}</p>
         <input className="fr-select" value={what} maxLength={200} onChange={e => setWhat(e.target.value)} />
-        <p className="fr-q">{w.receipt}</p>
+        <p className="fr-q">{ic(w.receipt)}</p>
         <PhotoPicker tx={tx} files={files} onChange={setFiles} max={5} disabled={busy} />
         <button className="fr-btn fr-go" disabled={busy || !!missing} onClick={async () => {
           if (await go({ action: 'charge', kind, amount, description: what.trim() }, files)) { setAmount(''); setWhat(''); setFiles([]); setAdding(false); }
-        }}>{busy ? w.sending : w.send}</button>
-        {missing && <p className="fr-missing">{missing}</p>}
+        }}>{ic(busy ? w.sending : w.send)}</button>
+        {missing && <p className="fr-missing">{ic(missing)}</p>}
       </>}
     </div>
   );
@@ -242,10 +243,10 @@ function Done({ w, busy, go }: { w: Wx; busy: boolean; go: Go }) {
   const [text, setText] = useState('');
   return (
     <div className="fr">
-      <p className="fr-q">{w.doneQ}</p>
+      <p className="fr-q">{ic(w.doneQ)}</p>
       <textarea className="fr-text" rows={3} maxLength={1500} value={text} onChange={e => setText(e.target.value)} />
-      <button className="fr-btn fr-go" disabled={busy || !text.trim()} onClick={() => void go({ action: 'done', text: text.trim() })}>{busy ? w.sending : w.markDone}</button>
-      {!text.trim() && <p className="fr-missing">{w.needDone}</p>}
+      <button className="fr-btn fr-go" disabled={busy || !text.trim()} onClick={() => void go({ action: 'done', text: text.trim() })}>{ic(busy ? w.sending : w.markDone)}</button>
+      {!text.trim() && <p className="fr-missing">{ic(w.needDone)}</p>}
     </div>
   );
 }
@@ -255,12 +256,12 @@ function Note({ w, busy, go }: { w: Wx; busy: boolean; go: Go }) {
   const [sent, setSent] = useState(false);
   return (
     <details className="work-note">
-      <summary><b>{w.note}</b></summary>
+      <summary><b>{ic(w.note)}</b></summary>
       <div className="fr">
         <textarea className="fr-text" rows={3} maxLength={1500} value={text} onChange={e => { setText(e.target.value); setSent(false); }} />
         <button className="fr-btn" disabled={busy || !text.trim()} onClick={async () => { if (await go({ action: 'note', text: text.trim() })) { setText(''); setSent(true); } }}>
-          {busy ? w.sending : w.noteSend}</button>
-        {sent && <p className="field-ok">{w.sent}</p>}
+          {ic(busy ? w.sending : w.noteSend)}</button>
+        {sent && <p className="field-ok">{ic(w.sent)}</p>}
       </div>
     </details>
   );

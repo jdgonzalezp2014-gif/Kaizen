@@ -7,6 +7,7 @@
  * where the page has no theme.
  */
 import { useEffect, useState } from 'react';
+import { ic } from './Icon.tsx';
 
 export type Theme = 'light' | 'dark';
 const KEY = 'kaizen-theme';
@@ -39,7 +40,7 @@ export function ThemeToggle() {
       {/* The icon shows what you get, not what you have — a sun on a light
           page reads as "you are in day mode" to half of people and "click
           for day mode" to the other half, so the label settles it. */}
-      <span aria-hidden="true">{theme === 'light' ? '☾' : '☀'}</span>
+      <span aria-hidden="true">{ic(theme === 'light' ? '☾' : '☀')}</span>
       <span className="theme-word">{next === 'dark' ? 'Night' : 'Day'}</span>
     </button>
   );

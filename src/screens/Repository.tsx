@@ -34,6 +34,7 @@ import { coerce, type ColumnType } from '../lib/repo.ts';
 import { usePhone } from '../components/usePhone.ts';
 import { HostawayCheck } from '../components/HostawayCheck.tsx';
 import { COMPOSED, UNIT_TABLES, composeParts, composeText, isSynced, partKeys, partOf } from '../lib/repo-checks.ts';
+import { ic, Icon } from '../components/Icon.tsx';
 
 interface Can { reveal: boolean; edit: boolean; structure: boolean }
 type DocEntry = { folderUrl: string; files: RepoFile[]; truncated?: boolean };
@@ -375,7 +376,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
         {!hits && importing === null && filter.trim().length >= 2 && here !== null && (
           <div className={`rb-searchall ${here === 0 ? 'none' : ''}`}>
             <span>{here === 0 ? `Nothing in ${table?.title ?? 'this table'} matches “${filter.trim()}”.` : `${here} in ${table?.title ?? 'this table'}.`}</span>
-            <button className={here === 0 ? '' : 'secondary small'} onClick={() => void runSearch()}>🔎 Search all tables for “{filter.trim()}”</button>
+            <button className={here === 0 ? '' : 'secondary small'} onClick={() => void runSearch()}><Icon n="search" /> Search all tables for “{filter.trim()}”</button>
           </div>
         )}
         {archivedTable && !hits && importing === null && (
@@ -680,7 +681,7 @@ function Value({ col, v, docs, editable }: { col: RepoColumn; v: RepoRow[string]
       if (!docs) return <span className="rb-hint">…</span>;
       if (!docs.files.length) return editable ? <span className="rb-docadd">+ Add files</span> : <span className="rb-hint">—</span>;
       const first = docs.files.slice(0, 4);
-      return <span className="rb-docs">{first.map(f => <span key={f.fileId} title={f.name}>{fileGlyph(f.mimeType)}</span>)}
+      return <span className="rb-docs">{first.map(f => <span key={f.fileId} title={f.name}>{ic(fileGlyph(f.mimeType))}</span>)}
         <span className="rb-doccount">{docs.files.length}{docs.truncated ? '+' : ''}</span></span>;
     }
     default: return <>{text(v)}</>;
@@ -983,7 +984,7 @@ function DocsBox({ table, row, col, entry, can, say, onChanged, bare = false }: 
         {entry && !entry.files.length && <div className="rb-hint">No files linked yet.</div>}
         {entry?.files.map(f => (
           <div key={f.fileId} className="rb-file">
-            <span className="rb-glyph">{fileGlyph(f.mimeType)}</span>
+            <span className="rb-glyph">{ic(fileGlyph(f.mimeType))}</span>
             {renaming === f.fileId
               ? <input className="rb-input" autoFocus defaultValue={f.name}
                        onKeyDown={e => {
@@ -1084,7 +1085,7 @@ function ColumnMenu({ table, col, run }: {
     <div className="rb-menu">
       <div className="rb-pop-title">{col.title} <span className="rb-hint">· {TYPE_LABEL[col.type] ?? col.type}</span></div>
       <button onClick={() => setView('rename')}>✎ Rename</button>
-      {col.type === 'select' && <button onClick={() => setView('options')}>☰ Edit options</button>}
+      {col.type === 'select' && <button onClick={() => setView('options')}><Icon n="menu" /> Edit options</button>}
       <button onClick={() => setView('type')}>⇆ Change type</button>
       <button disabled={at <= 0} onClick={() => void run({ op: 'columns.move', ...base, direction: 'left' }, 'Moved')}>← Move left</button>
       <button disabled={at >= cols.length - 1} onClick={() => void run({ op: 'columns.move', ...base, direction: 'right' }, 'Moved')}>→ Move right</button>
@@ -1133,7 +1134,7 @@ function TableMenu({ table, run }: { table: RepoTable; run: (body: Record<string
     <div className="rb-menu">
       <div className="rb-pop-title">{table.title}</div>
       <button onClick={() => setView('rename')}>✎ Rename</button>
-      <button className="danger" onClick={() => setView('archive')}>🗄 Archive table…</button>
+      <button className="danger" onClick={() => setView('archive')}><Icon n="archive" /> Archive table…</button>
     </div>
   );
 }

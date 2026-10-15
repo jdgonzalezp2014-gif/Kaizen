@@ -22,6 +22,7 @@ import { SupplyCounter } from './FieldReport.tsx';
 import type { Tx } from '../lib/crew-i18n.ts';
 import type { UnitAccess } from '../lib/unit-access.ts';
 import { PhotoPicker, shrink } from './PhotoPicker.tsx';
+import { ic } from './Icon.tsx';
 
 export type Result = { ok: boolean; message?: string; state?: StepState };
 export type SendPhoto = (stage: 'before' | 'after', file: File) => Promise<Result>;
@@ -61,31 +62,31 @@ export function CleanSteps({ tx, items, state, sendPhoto, taken, mark, onState, 
   };
   return (
     <div className="fr">
-      <p className="fr-q">{tx.stepsTitle}</p>
+      <p className="fr-q">{ic(tx.stepsTitle)}</p>
       <button className="fr-btn fr-choice fr-stepbtn" onClick={() => setStage('before')}>
-        <span className="fr-num">1</span><span>{tx.stepBefore}<small>{tx.stepCount(st.before)}</small></span></button>
+        <span className="fr-num">1</span><span>{ic(tx.stepBefore)}<small>{ic(tx.stepCount(st.before))}</small></span></button>
       <button className="fr-btn fr-choice fr-stepbtn" onClick={() => setStage('taken')}>
-        <span className="fr-num">2</span><span>{tx.stepTaken(from)}<small>{!st.supplies ? tx.takenNotYet
-          : st.supplies.none ? tx.takenNone(from) : tx.takenCount(st.supplies.lines)}</small></span></button>
+        <span className="fr-num">2</span><span>{ic(tx.stepTaken(from))}<small>{ic(!st.supplies ? tx.takenNotYet
+          : st.supplies.none ? tx.takenNone(from) : tx.takenCount(st.supplies.lines))}</small></span></button>
       <button className="fr-btn fr-choice fr-stepbtn" onClick={() => setStage('after')}>
-        <span className="fr-num">3</span><span>{tx.stepAfter}<small>{tx.stepCount(st.after)}</small></span></button>
+        <span className="fr-num">3</span><span>{ic(tx.stepAfter)}<small>{ic(tx.stepCount(st.after))}</small></span></button>
       {st.done ? <>
         {/* The helper's own name, not "<cleaner>'s team: <name>" — that is for the team's records. */}
-        <p className="fr-done-line">{tx.doneBy(st.done.by.replace(/^.*'s team: /, ''), st.done.at.slice(11, 16))}</p>
-        {!asking ? <button className="fr-btn secondary" onClick={() => setAsking(true)}>{tx.reopen}</button> : (
+        <p className="fr-done-line">{ic(tx.doneBy(st.done.by.replace(/^.*'s team: /, ''), st.done.at.slice(11, 16)))}</p>
+        {!asking ? <button className="fr-btn secondary" onClick={() => setAsking(true)}>{ic(tx.reopen)}</button> : (
           <div className="fr-confirm">
-            <p>{tx.reopenAsk}</p>
-            <button className="fr-btn" disabled={busy} onClick={() => void doMark('reopened')}>{busy ? tx.sending : tx.reopenYes}</button>
-            <button className="fr-btn secondary" onClick={() => setAsking(false)}>{tx.reopenNo}</button>
+            <p>{ic(tx.reopenAsk)}</p>
+            <button className="fr-btn" disabled={busy} onClick={() => void doMark('reopened')}>{ic(busy ? tx.sending : tx.reopenYes)}</button>
+            <button className="fr-btn secondary" onClick={() => setAsking(false)}>{ic(tx.reopenNo)}</button>
           </div>
         )}
       </> : <>
         <button className="fr-btn fr-go fr-stepbtn" disabled={busy || !!needs} onClick={() => void doMark('done')}>
-          <span className="fr-num">4</span><span>{busy ? tx.sending : tx.stepDone}</span></button>
-        {needs && <p className="fr-missing">{needs}</p>}
+          <span className="fr-num">4</span><span>{ic(busy ? tx.sending : tx.stepDone)}</span></button>
+        {needs && <p className="fr-missing">{ic(needs)}</p>}
       </>}
       {/* No Drive link here: the folder is the team's — cleaners and helpers cannot open it (§134). */}
-      {msg && <p className="breach" role="alert">{msg}</p>}
+      {msg && <p className="breach" role="alert">{ic(msg)}</p>}
     </div>
   );
 }
@@ -127,31 +128,31 @@ function TakenStep({ tx, items, send, from, code, onDone, onBack }: {
   };
   return (
     <div className="fr">
-      <button className="link fr-back" onClick={onBack} disabled={busy}>{tx.supBack}</button>
-      <p className="fr-q">{tx.stepTaken(from)}</p>
-      <p className="fr-tip">{tx.takenQ(from)}{code && <><br /><b>{tx.placeCode(code)}</b></>}</p>
+      <button className="link fr-back" onClick={onBack} disabled={busy}>{ic(tx.supBack)}</button>
+      <p className="fr-q">{ic(tx.stepTaken(from))}</p>
+      <p className="fr-tip">{ic(tx.takenQ(from))}{code && <><br /><b>{ic(tx.placeCode(code))}</b></>}</p>
       <div className="fr-sticky">
         <button type="button" className="link" aria-expanded={outOpen} disabled={busy} onClick={() => setOutOpen(o => !o)}>
-          {outOpen ? tx.outClose : tx.outBtn(from)}</button>
-        {out.length > 0 && <b role="status">{tx.outCount(out.length)}</b>}
+          {ic(outOpen ? tx.outClose : tx.outBtn(from))}</button>
+        {out.length > 0 && <b role="status">{ic(tx.outCount(out.length))}</b>}
       </div>
       {outOpen && <div className="fr-out">
-        <p className="fr-tip">{tx.outQ(from)}</p>
+        <p className="fr-tip">{ic(tx.outQ(from))}</p>
         <div className="fr-chips">{items.map(i => {
           const on = out.includes(i.id);
           return <button key={i.id} type="button" className={`chip${on ? ' active' : ''}`} aria-pressed={on} disabled={busy}
-                         onClick={() => setOut(o => on ? o.filter(x => x !== i.id) : [...o, i.id])}>{on ? '✓ ' : ''}{i.name}</button>;
+                         onClick={() => setOut(o => on ? o.filter(x => x !== i.id) : [...o, i.id])}>{ic(on ? '✓ ' : '')}{ic(i.name)}</button>;
         })}</div>
       </div>}
       <SupplyCounter tx={tx} items={items} counts={counts} onCounts={setCounts} />
       <div ref={end} />
-      {!atEnd && <div className="fr-more" aria-hidden="true">{tx.moreBelow}</div>}
+      {!atEnd && <div className="fr-more" aria-hidden="true">{ic(tx.moreBelow)}</div>}
       <div className="fr-send">
         <button className="fr-btn fr-go" disabled={busy || !picked.length}
                 onClick={() => void go(picked.map(([itemId, qty]) => ({ itemId, qty })))}>
-          {busy ? tx.sending : picked.length ? tx.supSendCount(picked.length) : tx.sendTeam}</button>
-        {!picked.length && <button className="fr-btn secondary" disabled={busy} onClick={() => void go(null)}>{tx.takenNothing(from)}</button>}
-        {err && <p className="breach" role="alert">{err}</p>}
+          {ic(busy ? tx.sending : picked.length ? tx.supSendCount(picked.length) : tx.sendTeam)}</button>
+        {!picked.length && <button className="fr-btn secondary" disabled={busy} onClick={() => void go(null)}>{ic(tx.takenNothing(from))}</button>}
+        {err && <p className="breach" role="alert">{ic(err)}</p>}
       </div>
     </div>
   );
@@ -168,8 +169,8 @@ function PhotoStep({ tx, stage, send, onDone, onBack }: {
 
   if (saved) return (
     <div className="fr fr-done" role="status">
-      <p className="fr-big">{tx.photoSaved(saved.n)}</p>
-      <button className="fr-btn" onClick={() => onDone(saved.state)}>{tx.photoContinue}</button>
+      <p className="fr-big">{ic(tx.photoSaved(saved.n))}</p>
+      <button className="fr-btn" onClick={() => onDone(saved.state)}>{ic(tx.photoContinue)}</button>
     </div>
   );
 
@@ -191,15 +192,15 @@ function PhotoStep({ tx, stage, send, onDone, onBack }: {
 
   return (
     <div className="fr">
-      <button className="link fr-back" onClick={onBack} disabled={busy}>{tx.supBack}</button>
-      <p className="fr-q">{stage === 'before' ? tx.stepBefore : tx.stepAfter}</p>
-      <p className="fr-tip">{tx.photoTip}</p>
+      <button className="link fr-back" onClick={onBack} disabled={busy}>{ic(tx.supBack)}</button>
+      <p className="fr-q">{ic(stage === 'before' ? tx.stepBefore : tx.stepAfter)}</p>
+      <p className="fr-tip">{ic(tx.photoTip)}</p>
       <PhotoPicker tx={tx} files={files} onChange={setFiles} disabled={busy} />
       <div className="fr-send">
         <button className="fr-btn fr-go" disabled={busy || !files.length} onClick={() => void upload()}>
-          {busy ? tx.photoSending(sent, files.length) : tx.photoSend(files.length)}</button>
-        {!files.length && <p className="fr-missing">{tx.photoNeed}</p>}
-        {err && <p className="breach" role="alert">{err}</p>}
+          {ic(busy ? tx.photoSending(sent, files.length) : tx.photoSend(files.length))}</button>
+        {!files.length && <p className="fr-missing">{ic(tx.photoNeed)}</p>}
+        {err && <p className="breach" role="alert">{ic(err)}</p>}
       </div>
     </div>
   );

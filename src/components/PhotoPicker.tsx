@@ -11,6 +11,7 @@
  */
 import { useEffect, useMemo } from 'react';
 import type { Tx } from '../lib/crew-i18n.ts';
+import { ic } from './Icon.tsx';
 
 export function PhotoPicker({ tx, files, onChange, max = 20, disabled = false }: {
   tx: Tx; files: File[]; onChange: (f: File[]) => void; max?: number; disabled?: boolean;
@@ -22,12 +23,12 @@ export function PhotoPicker({ tx, files, onChange, max = 20, disabled = false }:
   return (
     <div className="fr-photos">
       <label className={`fr-btn fr-pick${disabled || full ? ' off' : ''}`}>
-        {files.length ? tx.photoTakeMore : tx.photoTake}
+        {ic(files.length ? tx.photoTakeMore : tx.photoTake)}
         <input type="file" accept="image/*" capture="environment" hidden disabled={disabled || full}
                onChange={e => { add(e.target.files); e.target.value = ''; }} />
       </label>
       <label className={`fr-btn secondary${disabled || full ? ' off' : ''}`}>
-        {tx.photoGallery}
+        {ic(tx.photoGallery)}
         <input type="file" accept="image/*" multiple hidden disabled={disabled || full}
                onChange={e => { add(e.target.files); e.target.value = ''; }} />
       </label>
@@ -41,7 +42,7 @@ export function PhotoPicker({ tx, files, onChange, max = 20, disabled = false }:
           ))}
         </div>
       )}
-      {!!files.length && <p className="fr-tip">{tx.supPhotos(files.length)}</p>}
+      {!!files.length && <p className="fr-tip">{ic(tx.supPhotos(files.length))}</p>}
     </div>
   );
 }

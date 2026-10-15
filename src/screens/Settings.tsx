@@ -9,6 +9,7 @@ import { ImportPanel } from './ImportPanel.tsx';
 import { SlackPanel } from '../components/SlackPanel.tsx';
 import { newIngestToken, pullFeed, runCron, type FeedResult, type CronResult } from '../api.ts';
 import { sanitize, segments } from '../lib/sms.ts';
+import { Icon } from '../components/Icon.tsx';
 
 /**
  * Onboarding for a host who is not us.
@@ -426,7 +427,7 @@ function DailyFilePanel({ account, onSaved }: { account: Account; onSaved: () =>
         <b>one-time import</b> in Operations → Setup (roster, rates, rules, inspection and notes
         history) and for comparing against the sheet while in shadow mode. In the sheet: File →
         Share → Publish to web, pick the tab, choose CSV, and paste each link here. Guest-portal links are
-        written as HYPERLINK formulas, so a published CSV carries the 🌐 label and never the
+        written as HYPERLINK formulas, so a published CSV carries the <Icon n="globe" /> label and never the
         link's access token. The Cleanings Log link is the one under <b>Cleaning cost</b>.</Hint></h2>
       <label>
         Link to open the sheet (the normal editing link)
@@ -916,7 +917,7 @@ function FeedPanel({ account, onSaved }: { account: Account; onSaved: () => void
   return (
     <div className="card">
       <h2>Ratings feed <Hint>In the Apps Script project run <code>installKaizenTriggers()</code> once: it writes a
-        <code>🔁 Kaizen Feed</code> tab and schedules it for 6am and 6pm. Publish that tab —
+        <code><Icon n="repeat" /> Kaizen Feed</code> tab and schedules it for 6am and 6pm. Publish that tab —
         File → Share → Publish to web → CSV — and paste the URL here. After that it refreshes
         itself; this button is for the first pull and for “it should have updated by now”.</Hint></h2>
       <label>
