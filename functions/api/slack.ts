@@ -1105,6 +1105,9 @@ class Kaizen {
       const [prio = '', tid = ''] = id === 'task_make_repair' ? ['', value] : value.split('|');
       const r = await this.todo(id === 'task_make_repair' ? { action: 'update', id: tid, kind: 'work_order', via: 'slack-kind' } : { action: 'urgency', id: tid, priority: prio });
       if (!r.ok) await this.reply(url, { replace_original: false, response_type: 'ephemeral', text: `Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}` });
+      // §164: the private question in a cleaner's channel says what was decided (the channel's own message is redrawn by notifyTask).
+      else if (p.container?.is_ephemeral) await this.reply(url, { replace_original: true, text: id === 'task_make_repair' ? '🔧 Made a work order.'
+        : `⚑ Urgency set: ${prio}${r.dueOn ? ` — due ${String(r.dueOn)}` : ''}` });
       else if (id === 'task_make_repair') this.ctx.waitUntil(notifyTask(this.sql, this.ctx.env.ENCRYPTION_KEY, tid, 'kind', this.email).catch(() => {}));
       return ack();
     }

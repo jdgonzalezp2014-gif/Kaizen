@@ -169,6 +169,6 @@ UI only; tokens and shared components from `docs/design-system.md`.
   Open: drop `claims.repair_cost` once this is deployed (migration 087).
 - **Done log folded into Closed (owner, 2026-10-15, §163):** no Open work / Done log switch. `WorkView` passes `doneLog` to `TodoList`; its "Closed in the last 14 days" toggle, when open, shows chips *Last 14 days* (the rows, with ↺ Reopen) / *Done log* (`DoneLog`: From–to in sight, Kind / Closed by / Listing / Include removed behind its own **Filters** popover, Export CSV). The open-work **Filters** button now sits on the tabs' line after `+ Add` (the `work-bar` row renders only when there is a `lead` or no tabs).
 
-- **§164 field work (owner, 2026-10-15):** field problems come in high with a "Validate the urgency" sub-task; the team answers
+- **§164 field work (owner, 2026-10-15):** field problems come in at medium flagged `urgency_pending` (migration 088, no sub-task); the team answers
   in Slack (⚑ buttons) or by setting the priority — urgent = today, high = checkout of the stay ahead (attached), via
   `applyUrgency` (functions/_lib/urgency.ts, `/api/todos` action `urgency`). "Make it a work order" in the ⋯ menu. `claims.repair_cost` dropped (087).

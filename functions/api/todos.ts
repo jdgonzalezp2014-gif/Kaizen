@@ -39,7 +39,6 @@ import { settleRepair } from '../_lib/repair-costs.ts';
 import { workLinkFor } from '../_lib/vendor-work.ts';
 import { commentToThread, notifyTask, tellOwner, type TaskEvent } from '../_lib/slack.ts';
 import { applyUrgency } from '../_lib/urgency.ts';
-import { URGENCY_CHECK } from '../../src/lib/todos.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -67,7 +66,7 @@ interface Row {
   assignee_user_id?: number | null; supervisor_user_id?: number | null; supervisor?: string | null;
   start_time?: string | null; due_time?: string | null; resolution_note?: string | null;
   charge_owner?: boolean; hostaway_expense_id?: string | null;
-  clean_group?: string | null; purchases?: number; files?: number; purchase_total?: string | null; is_order?: boolean;
+  clean_group?: string | null; purchases?: number; files?: number; purchase_total?: string | null; is_order?: boolean; urgency_pending?: boolean;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
 const num = (v: string | null) => v == null ? null : Number(v);
@@ -84,7 +83,7 @@ const out = (r: Row) => ({
   chargeOwner: !!r.charge_owner, hostawayExpenseId: r.hostaway_expense_id ?? null,
   // §150: a cleaner's supplies request, and whether anything was bought for it — closing it unbought is asked.
   cleanGroup: r.clean_group ?? null, purchases: Number(r.purchases ?? 0), files: Number(r.files ?? 0),
-  purchaseTotal: Number(r.purchase_total ?? 0), order: !!r.is_order
+  purchaseTotal: Number(r.purchase_total ?? 0), order: !!r.is_order, urgencyPending: !!r.urgency_pending
 });
 
 async function list(sql: SqlFn, claim?: string) {
@@ -94,7 +93,7 @@ async function list(sql: SqlFn, claim?: string) {
            t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
            t.reservation_id, t.reservation_label, t.hostaway_task_id, t.hostaway_error, t.source,
            t.assignee_user_id, t.supervisor_user_id, t.supervisor, to_char(t.start_time, 'HH24:MI') AS start_time,
-           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note, t.charge_owner, t.hostaway_expense_id, t.clean_group,
+           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note, t.charge_owner, t.hostaway_expense_id, t.clean_group, t.urgency_pending,
            (SELECT count(*)::int FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id) AS purchases,
            (SELECT sum(p.total) FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id) AS purchase_total,
            -- §162: a purchase order wherever it is listed (a claim's work too) — the same rule as openOrders.
@@ -332,7 +331,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const before = (await sql`SELECT title, status, priority, assignee, supervisor, due_on::text AS due_on, claim_id, vendor,
                                    to_char(start_time, 'HH24:MI') AS start_time, to_char(due_time, 'HH24:MI') AS due_time, resolution_note, charge_owner,
                                    scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids, description,
-                                   reservation_id, reservation_label, parent_id, clean_group
+                                   reservation_id, reservation_label, parent_id, clean_group, urgency_pending
                               FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`)[0] as Record<string, any> | undefined;
   if (!before) return Response.json({ ok: false, message: 'That task is gone — someone removed it.' }, { status: 404 });
   const scope = b.claimScope ? String(b.claimScope) : undefined;
@@ -553,12 +552,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     else tell(id, 'status');
   }
   if (f.assigneeUserId !== undefined && (assigneeName ?? null) !== (before.assignee ?? null) && assigneeName) { tell(id, 'assigned'); dm(id); }
-  // §162: a priority set in Kaizen on a report still waiting for its urgency answers it — the same deadline rule as
+  // §164: a priority set in Kaizen on a report still waiting for its urgency answers it — the same deadline rule as
   // Slack's buttons, unless a date was set by hand in the same save.
-  if (f.priority !== undefined && f.priority !== before.priority && f.priority !== 'none') {
-    const [open] = await sql`SELECT 1 AS x FROM todos WHERE account_id = 1 AND parent_id = ${id} AND title = ${URGENCY_CHECK}
-                              AND status NOT IN ('completed', 'cancelled') AND deleted_at IS NULL LIMIT 1` as { x: number }[];
-    if (open) { await applyUrgency(sql, env.ENCRYPTION_KEY, id, f.priority, who.email, f.dueOn !== undefined && f.dueOn !== before.due_on); tell(id, 'urgency'); }
+  if (f.priority !== undefined && f.priority !== before.priority && f.priority !== 'none' && before.urgency_pending) {
+    await applyUrgency(sql, env.ENCRYPTION_KEY, id, f.priority, who.email, f.dueOn !== undefined && f.dueOn !== before.due_on); tell(id, 'urgency');
   }
 
   return Response.json({ ok: true, todos: await list(sql, scope) });

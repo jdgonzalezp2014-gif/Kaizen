@@ -9,7 +9,7 @@
  */
 import type { SqlFn } from './accounts.ts';
 import { decrypt } from './crypto.ts';
-import { PRIORITY_LABEL, STATUS_LABEL, URGENCY_CHECK } from '../../src/lib/todos.ts';
+import { PRIORITY_LABEL, STATUS_LABEL } from '../../src/lib/todos.ts';
 import { caseWord, claimMessage, dmTarget, esc, eventsOf, taskMessage, threadLine, type ClaimLite, type SlackConfig, type TaskLite, type Topic } from '../../src/lib/slack.ts';
 
 export interface SlackSetup { config: SlackConfig; token: string | null; secret: string | null }
@@ -79,8 +79,7 @@ export async function taskLite(sql: SqlFn, id: string): Promise<TaskLite | null>
                                t.description, t.parent_id, u.name AS unit,
                                (EXISTS (SELECT 1 FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id)
                                  OR (t.parent_id IS NULL AND t.clean_group IN ('request', 'inspection'))) AS is_order,
-                               EXISTS (SELECT 1 FROM todos k WHERE k.account_id = 1 AND k.parent_id = t.id AND k.title = ${URGENCY_CHECK}
-                                         AND k.status NOT IN ('completed', 'cancelled') AND k.deleted_at IS NULL) AS asks_urgency
+                               t.urgency_pending AS asks_urgency
                           FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
                          WHERE t.account_id = 1 AND t.id::text = ${id}` as
     { id: string; title: string; kind: TaskLite['kind']; status: string; priority: string; assignee: string | null; due_on: string | null;
@@ -131,7 +130,12 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
     : event === 'status' ? `→ ${STATUS_LABEL[t.status as keyof typeof STATUS_LABEL] ?? t.status}`
     : event === 'kind' ? (t.kind === 'work_order' ? 'made a work order' : 'made a to-do')
     : event === 'urgency' ? `urgency set: ${PRIORITY_LABEL[t.priority as keyof typeof PRIORITY_LABEL] ?? t.priority}${t.dueOn ? `, due ${t.dueOn}` : ''}${t.reservationLabel ? ` (stay ${t.reservationLabel})` : ''}` : event;
-  const home = await threadFor(sql, 'task', id);
+  const found = await threadFor(sql, 'task', id);
+  // §164: an item can have two threads — its #kaizen-ops message and a report in a cleaner's channel. The team's news
+  // goes to (and redraws) the ops one; the cleaner's channel keeps the cleaner's own words.
+  const [ops] = found?.own ? await sql`SELECT channel, ts FROM slack_threads WHERE account_id = 1 AND subject = 'task' AND subject_id = ${id}
+                                         AND channel = ${s.config.channels.tasks.id} ORDER BY created_at DESC LIMIT 1` as { channel: string; ts: string }[] : [];
+  const home = ops ? { ...ops, own: true } : found;
   const reply = (m: { text: string; blocks: unknown[] }) =>
     slackApi(s.token!, 'chat.postMessage', { channel: home!.channel, thread_ts: home!.ts, text: m.text, blocks: m.blocks, unfurl_links: false });
   if (home && !home.own) {
@@ -144,8 +148,9 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
   if (p?.parent_id) return;
   if (home && event !== 'created') {
     await reply(threadLine(`${ICON[event] ?? '•'} ${word[0]!.toUpperCase()}${word.slice(1)}`, who(by)));
-    // The first message says where it stands now. Not ours to edit (a person's message the task was made from): left as is.
-    await slackApi(s.token, 'chat.update', { channel: home.channel, ts: home.ts, ...taskMessage(t, `· ${STATUS_LABEL[t.status as keyof typeof STATUS_LABEL] ?? t.status}`, '', app) })
+    // The first message says where it stands now. Not ours to edit (a person's message the task was made from), or a
+    // report in a cleaner's channel (their language, their words): left as is.
+    if (home.channel === s.config.channels?.tasks?.id) await slackApi(s.token, 'chat.update', { channel: home.channel, ts: home.ts, ...taskMessage(t, `· ${STATUS_LABEL[t.status as keyof typeof STATUS_LABEL] ?? t.status}`, '', app) })
       .catch(() => null);
     return;
   }

@@ -765,6 +765,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                   onClick={() => props.filterBy?.({ unit: id })}><Icon n="home" />{names.get(id) ?? 'unit'}</button>))}
         {t.assignee && <button type="button" className="m m-btn m-link" title={`Show only what ${t.assignee} handles`}
                                onClick={() => props.filterBy?.({ owner: t.assignee! })}><Icon n="user" />{t.assignee}</button>}
+        {/* §164: a field report waiting for the team's urgency — asked in Slack; setting the priority answers it. */}
+        {t.urgencyPending && !closed && <span className="m m-attn" title="Asked in Slack (#kaizen-ops). Setting the priority here answers it: urgent = today, high = the checkout of the stay ahead (or 5 days)">Urgency to set</span>}
         {t.kind === 'work_order' && t.vendor && <span className="m"><Icon n="wrench" />{t.vendor}</span>}
         {prog.total > 0 && (!flat && !open && !compact && mine.some(k => !isClosed(k.status))
           ? <button type="button" className="m m-btn" aria-expanded={kidsShown} title={kidsShown ? 'Hide what is inside' : 'Show what is inside'}

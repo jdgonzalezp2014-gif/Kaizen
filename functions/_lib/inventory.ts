@@ -11,7 +11,7 @@ import { DriveError, createFolder, driveToken, uploadFile } from './gdrive.ts';
 import { mirrorOn, pushWork } from './hostaway-tasks.ts';
 import { notifyTask } from './slack.ts';
 import { addFieldExpense } from './field-costs.ts';
-import { URGENCY_CHECK, type Priority } from '../../src/lib/todos.ts';
+import type { Priority } from '../../src/lib/todos.ts';
 
 import { todayIn, addDays } from '../../src/lib/dates.ts';
 import { itemLabel, needByPlace, orderList, perClean, placeKey, stockLevels, toOrder, unitUses, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
@@ -179,14 +179,12 @@ async function newTodo(sql: SqlFn, title: string, description: string | null, un
 }
 
 /**
- * §162 (owner, 2026-10-15): the field no longer says how urgent — the team does. A report comes in high (so it is
- * seen today) with a high "Validate the urgency" sub-task due today; its Slack message carries the answer buttons,
- * and setting the priority in Kaizen answers it too (functions/_lib/urgency.ts).
+ * §164 (owner, 2026-10-15): the field no longer says how urgent — the team does, in Slack (its #kaizen-ops message,
+ * and privately to ops in the cleaner's channel) or by setting the priority in Kaizen (functions/_lib/urgency.ts).
+ * A flag, not a sub-task: a sub-task per report filled the urgent list.
  */
-async function askUrgency(sql: SqlFn, id: string, unitId: string | null, by: string) {
-  await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, due_on, parent_id)
-            VALUES (1, ${URGENCY_CHECK}, ${'Urgent = due today · High = due the checkout of the stay in the unit now or next (attached) · Medium / Low = no date. Answer with the buttons on its Slack message, or set the priority here.'},
-                    ${unitId ? [unitId] : []}, ${by}, 'task', 'pending', 'high', ${todayIn(TZ)}, ${Number(id)})`;
+async function askUrgency(sql: SqlFn, id: string) {
+  await sql`UPDATE todos SET urgency_pending = true WHERE account_id = 1 AND id = ${Number(id)}`;
 }
 
 const RANK: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3, urgent: 4 };
@@ -214,7 +212,7 @@ async function cleanTodo(sql: SqlFn, who: Who, cleaningKey: unknown, group: 'req
     // cleaner's words; the cart is built from it (✨) or filled when the receipt is read. Bought stays as it was.
     const id = await newTodo(sql, head, group === 'request' ? 'Asked for on this clean:'
       : `What ${who.name} reported on this clean — each one is a sub-task.`, c.unit_id, by, priority);
-    if (group === 'request') await askUrgency(sql, id, c.unit_id, by);
+    if (group === 'request') await askUrgency(sql, id);
     await sql`UPDATE todos SET clean_key = ${String(cleaningKey)}, clean_group = ${group} WHERE account_id = 1 AND id = ${Number(id)}`;
     t = { id, priority };
   }
@@ -345,9 +343,8 @@ export async function fieldTodo(sql: SqlFn, who: Who, b: Record<string, unknown>
   if (!text) throw new Error('Say what it is.');
   const unitId = b.unitId ? String(b.unitId) : null;
   const place = unitId ? await unitName(sql, unitId) : null;
-  // §162: the reporter is not asked how urgent — a problem comes in high until the team validates it (askUrgency); a
-  // request joins its clean's order at medium, so a second request never raises an order the team already rated.
-  const priority: Priority = b.kind === 'request' ? 'medium' : 'high';
+  // §164: the reporter is not asked how urgent — it comes in at medium, waiting for the team's answer (askUrgency).
+  const priority: Priority = 'medium';
   const description = `Reported by ${who.name}.${photos.map(p => `\nPhoto: ${p.url}`).join('')}`;
   // §150: a need joins its clean's to-do as a sub-task; "something is wrong" is always its own to-do.
   if (b.kind === 'request') {
@@ -355,7 +352,7 @@ export async function fieldTodo(sql: SqlFn, who: Who, b: Record<string, unknown>
     if (ct) return ct;
   }
   const id = await newTodo(sql, place ? `${what} at ${place}: ${text}` : `${what}: ${text}`, description, unitId, who.email ?? who.name, priority);
-  await askUrgency(sql, id, unitId, who.email ?? who.name);
+  await askUrgency(sql, id);
   // Each problem is its own to-do; marked with its clean so a purchase order can be attached to it.
   if (b.kind !== 'request' && b.cleaningKey) await sql`UPDATE todos SET clean_key = ${String(b.cleaningKey)}, clean_group = 'problem' WHERE account_id = 1 AND id = ${Number(id)}`;
   // §159: a request outside a clean (a helper, a link) is a purchase order too.

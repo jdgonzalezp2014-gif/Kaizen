@@ -4333,3 +4333,13 @@ inspections, inventory) fits how work is shaped now, and stop asking cleaners ho
 - **Inspection repairs are named by the finding:** "Missing one knob — the pantry door (Kitchen)" instead of
   "Kitchen: Cabinet doors, drawers, handles and countertop — …" (`repairTitle`); the checklist line is in the description.
 - SOPs: #22/#23 (cleaner page, EN/ES) v3 — "the team decides how urgent"; #8 (Slack) v18 — the urgency buttons.
+- **Round 2 (owner, same day): no sub-task.** A "Validate the urgency" sub-task per report would fill the urgent list
+  with work that is not work. Instead a flag, `todos.urgency_pending` (migration 088), set by a field problem/request
+  (which comes in at medium); cleared by `applyUrgency` or a priority set in Kaizen (row shows "Urgency to set"). The
+  question lives only in Slack: on the to-do's #kaizen-ops message, and in the cleaner's channel **privately to ops**
+  (`askOpsPrivately`: `chat.postEphemeral` under the report to each channel member who is not a cleaner or the bot);
+  an ephemeral answer is replaced by what was decided. The team's news and the redraw go to the #kaizen-ops thread
+  (`notifyTask` prefers it) — the cleaner's channel keeps the cleaner's own words. **High with no check-in within 5
+  days → due 5 days from today** (`HIGH_EMPTY_DAYS`). Tested in #kaizen-task with the real token and P2-4308's stays
+  (high → Oct 18, Reimundo Chavez attached), then the test to-do and its messages deleted. Buttons clicked in Slack go
+  to the deployed code: they work once this is pushed. SOP #8 v19.

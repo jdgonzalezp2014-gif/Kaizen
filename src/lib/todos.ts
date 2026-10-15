@@ -30,6 +30,8 @@ export interface Todo {
   cleanGroup?: 'problem' | 'request' | 'bought' | 'inspection' | null; purchases?: number;
   /** §162: what its recorded purchases cost, and whether it is a purchase order (a request, or one with order lines). */
   purchaseTotal?: number; order?: boolean;
+  /** §164: a field report waiting for the team's urgency (asked in Slack; setting the priority answers it). */
+  urgencyPending?: boolean;
   /** Owner, Oct 2026: files on it (📎). */ files?: number;
   /** The claim this work resolves, if any. */
   claimId: string | null;
@@ -283,18 +285,23 @@ export function auditCsv(rows: AuditRow[], unitName: (id: string) => string, cla
 /* ── a field report's urgency, decided by the team (§162) ──────────────── */
 
 /**
- * Owner, 2026-10-15: cleaners are no longer asked how urgent a problem is — the team decides. A report arrives with
- * this sub-task (high), answered in Slack (the buttons on its message) or by setting the priority in Kaizen.
+ * Owner, 2026-10-15: cleaners are no longer asked how urgent a problem is — the team decides. A report arrives
+ * flagged `urgencyPending` (no sub-task: that filled the urgent list), asked in Slack — on its #kaizen-ops message,
+ * and privately to ops in the cleaner's channel — or answered by setting the priority in Kaizen.
  */
-export const URGENCY_CHECK = 'Validate the urgency';
 export interface StayWindow { id: string; guest: string; arrival: DateStr; departure: DateStr }
+/** §164 (owner): high with no check-in ahead — the unit is empty — waits five days at most. */
+export const HIGH_EMPTY_DAYS = 5;
 /**
- * The deadline an urgency sets: urgent → today; high → the checkout of the stay that holds the unit now or next
- * (the next time the team can get in without a guest) — that stay is attached, so nobody plans around the wrong one.
- * Medium and low set no date. A stay leaving today does not count: its turnover is the moment of the report.
+ * The deadline an urgency sets: urgent → today; high → the checkout of the stay in the unit now, or of the next one
+ * arriving within five days (the next time the team can get in without a guest) — that stay is attached, so nobody
+ * plans around the wrong one; no check-in within five days → five days from today. Medium and low set no date.
+ * A stay leaving today does not count: its turnover is the moment of the report.
  */
 export function urgencyDue(priority: string, today: DateStr, stays: StayWindow[]): { dueOn: DateStr | null; stay: StayWindow | null } {
   if (priority !== 'urgent' && priority !== 'high') return { dueOn: null, stay: null };
-  const stay = stays.filter(s => s.departure > today).sort((a, b) => a.arrival.localeCompare(b.arrival))[0] ?? null;
-  return { dueOn: priority === 'urgent' ? today : stay?.departure ?? null, stay };
+  const limit = addDays(today, HIGH_EMPTY_DAYS);
+  const next = stays.filter(s => s.departure > today).sort((a, b) => a.arrival.localeCompare(b.arrival))[0] ?? null;
+  const stay = next && next.arrival <= limit ? next : null;
+  return { dueOn: priority === 'urgent' ? today : stay?.departure ?? limit, stay };
 }

@@ -140,7 +140,7 @@ test('a row does not repeat its listing in the title (§159)', () => {
   assert.equal(rowTitle('Amber Valley', ['Amber Valley']), 'Amber Valley');
 });
 
-test('§162: urgent is due today; high on the checkout of the stay in the unit now or next — never the one leaving today', async () => {
+test('§164: urgent is due today; high on the checkout of the stay in the unit now or next — never the one leaving today', async () => {
   const { urgencyDue } = await import('./todos.ts');
   const stays = [
     { id: 'leaving', guest: 'A', arrival: '2026-10-12', departure: '2026-10-15' },
@@ -149,6 +149,9 @@ test('§162: urgent is due today; high on the checkout of the stay in the unit n
   ];
   assert.deepEqual(urgencyDue('urgent', '2026-10-15', stays), { dueOn: '2026-10-15', stay: stays[1] });
   assert.deepEqual(urgencyDue('high', '2026-10-15', stays), { dueOn: '2026-10-19', stay: stays[1] });
-  assert.deepEqual(urgencyDue('high', '2026-10-15', []), { dueOn: null, stay: null });
+  // No check-in within five days: five days from today, no stay (owner, 2026-10-15).
+  assert.deepEqual(urgencyDue('high', '2026-10-15', []), { dueOn: '2026-10-20', stay: null });
+  assert.deepEqual(urgencyDue('high', '2026-10-15', [stays[0]!, stays[2]!].map(s => ({ ...s, arrival: '2026-10-25', departure: '2026-10-28' }))),
+    { dueOn: '2026-10-20', stay: null });
   assert.deepEqual(urgencyDue('medium', '2026-10-15', stays), { dueOn: null, stay: null });
 });

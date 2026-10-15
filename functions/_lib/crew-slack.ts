@@ -7,7 +7,8 @@
  */
 import type { SqlFn } from './accounts.ts';
 import type { HostawayCredentials } from './hostaway.ts';
-import { rememberThread, slackApi, slackSetup, type SlackSetup } from './slack.ts';
+import { rememberThread, slackApi, slackSetup, taskLite, type SlackSetup } from './slack.ts';
+import { urgencyAsk } from '../../src/lib/slack.ts';
 import { once } from './clean-slack.ts';
 import { cleanerSchedule } from './slack-digest.ts';
 import { crewChannelsOf, crewDayMessage, crewHelperMessage, type HelperEvent } from '../../src/lib/crew-slack.ts';
@@ -41,8 +42,26 @@ export async function tellCleaner(sql: SqlFn, encryptionKey: string, cleaner: st
     } else {
       const r = await slackApi<{ ts?: string; channel?: string }>(token, 'chat.postMessage', { channel, unfurl_links: false, ...msg });
       if (todoId) await rememberThread(sql, r, 'task', todoId);
+      if (todoId && r.ts) await askOpsPrivately(s, channel, r.ts, todoId, sql);
     }
   } catch { /* a courtesy: the report itself is saved */ }
+}
+
+/**
+ * §164 (owner, 2026-10-15): a report waiting for its urgency is asked of the TEAM, never the cleaner — in the cleaner's
+ * channel only privately (ephemeral, under the report) to each member who is not a cleaner and not the bot. The same
+ * buttons as on its #kaizen-ops message; the first answer wins (the to-do stops waiting).
+ */
+async function askOpsPrivately(s: SlackSetup, channel: string, ts: string, todoId: string, sql: SqlFn) {
+  const t = await taskLite(sql, todoId);
+  if (!t?.asksUrgency || !s.token) return;
+  const crew = new Set(Object.values(s.config.cleaners ?? {}).map(c => c.slackUserId).filter(Boolean));
+  const m = await slackApi<{ members?: string[] }>(s.token, 'conversations.members', { channel, limit: 200 });
+  const ops = (m.members ?? []).filter(u => !crew.has(u) && u !== s.config.botUserId);
+  const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: `🔒 *Only you see this* — ${t.title.replace(/[<>&]/g, '')}` } }, ...urgencyAsk(t)];
+  for (const user of ops) {
+    await slackApi(s.token, 'chat.postEphemeral', { channel, user, thread_ts: ts, text: `How urgent is it? ${t.title}`, blocks });
+  }
 }
 
 /**
