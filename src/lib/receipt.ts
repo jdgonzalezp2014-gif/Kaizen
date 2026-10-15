@@ -33,7 +33,8 @@ export interface ReceiptLine {
   newMeasure?: string | null; newKind?: 'supply' | 'furniture' | null;
 }
 
-export interface Receipt { store: string | null; date: string | null; total: number | null; tax: number | null; lines: ReceiptLine[] }
+/** `orderNo`: the store's order or invoice number, when printed — it tells a receipt read twice. */
+export interface Receipt { store: string | null; date: string | null; total: number | null; tax: number | null; orderNo: string | null; lines: ReceiptLine[] }
 
 const num = (v: unknown): number | null => {
   const n = typeof v === 'string' ? Number(v.replace(/[$,\s]/g, '')) : Number(v);
@@ -129,7 +130,8 @@ export function readReceipt(raw: unknown, items: ReceiptItem[], orders: ReceiptO
              newKind: l.furniture === true ? 'furniture' : l.furniture === false ? 'supply' : null };
   }).filter((l): l is ReceiptLine => !!l);
   return { store: typeof r.store === 'string' && r.store.trim() ? r.store.trim().slice(0, 80) : null, date,
-           total: num(r.total), tax: num(r.tax), lines };
+           total: num(r.total), tax: num(r.tax), lines,
+           orderNo: typeof r.orderNo === 'string' && /[0-9]/.test(r.orderNo) ? r.orderNo.replace(/^\s*(order|invoice)?\s*#?\s*/i, '').trim().slice(0, 40) || null : null };
 }
 
 /** What the bought lines add up to (items only — tax and fees are in the total, not in a line). */

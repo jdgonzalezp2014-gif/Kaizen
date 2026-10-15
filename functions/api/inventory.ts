@@ -73,7 +73,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       return Response.json(r.ok ? r : { ok: false, error: 'unreadable', message: r.message });
     } else if (b.action === 'readReceipt') {
       // Owner, 2026-10-14: the AI only fills the form in — this saves nothing.
-      const r = await readReceiptFiles(sql, env, await receiptFiles(sql, env, files, b.fieldExpenseId), b.orders !== 'no');
+      // A PDF with text comes as its text (`texts`, JSON), taken out in the browser; scans and photos as files.
+      const texts = typeof b.texts === 'string' && b.texts ? (JSON.parse(b.texts) as unknown[]).map(String) : [];
+      const r = await readReceiptFiles(sql, env, await receiptFiles(sql, env, files, b.fieldExpenseId), b.orders !== 'no', texts);
       return Response.json(r.ok ? r : { ok: false, error: 'unreadable', message: r.message });
     } else if (b.action === 'purchase') {
       // One receipt for several orders: uploaded once, every part checked before any is saved, a purchase per order.

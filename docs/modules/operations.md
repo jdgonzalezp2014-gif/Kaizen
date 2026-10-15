@@ -42,6 +42,13 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   `functions/_lib/receipt-read.ts` (`receiptFiles`, `readReceiptFiles`), `askJson(…, files)` in `ai-chain.ts` (Gemini
   `inlineData`); `recordPurchase` = `checkPurchase` + `writePurchase`, `recordPurchases` (splits); pure `src/lib/receipt.ts`
   (readReceipt, similarItems, orderFor, receiptSum, splitTotal, sizeKey, aliasKey, wrongSize).
+- **Walmart/Amazon invoices (owner, 2026-10-15):** `src/components/receipt-prep.ts` — a PDF with text goes as its TEXT
+  (pdf.js, lazy-loaded; field `texts`), a scan as the file; a screenshot taller than 2.2× its width is cut into ≤10 parts
+  (1300 × 1400, 120 px overlap — shrunk whole it was unreadable); Ctrl+V pastes a screenshot as a receipt. Prompt: amounts are
+  line totals as printed ("Qty 4 $3.76" never multiplied), pack counts → itemQty, order date never the pickup date, `orderNo`.
+  `receipt_reads` (094): the same bytes/text are never sent to the AI again (keyed by content, not file name — Walmart's are all
+  "Order details - Walmart.com.pdf"); the same `orderNo` read before → "⚠ already read on … — not recorded twice?".
+  Tested on order 2000156-31789057 (PDF text and screenshot): 6/6 matched, sum 38.67, tax 3.19, total 41.86.
 - Script: `scripts/whatsapp-cleanings.mjs` (crew chat history, one-off).
 
 ## Tables

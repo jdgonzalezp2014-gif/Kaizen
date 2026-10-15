@@ -25,7 +25,7 @@ export type AiTier = 'chat' | 'heavy';
 /** Each step's own limit; the chain stops at `budgetMs` (a Slack waitUntil has 30 s in all). */
 const STEP_MS: Record<AiTier, { gemini: number; lite: number; workers: number; claude: number }> = {
   chat: { gemini: 4000, lite: 4000, workers: 5000, claude: 6000 },
-  heavy: { gemini: 15000, lite: 8000, workers: 10000, claude: 20000 }
+  heavy: { gemini: 10000, lite: 10000, workers: 10000, claude: 20000 }
 };
 const CLAUDE: Record<AiTier, string> = { chat: 'claude-haiku-5-5', heavy: 'claude-sonnet-5-5' };
 

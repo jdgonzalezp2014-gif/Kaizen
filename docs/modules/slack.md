@@ -131,8 +131,8 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   only on a tick that sent nothing; the cleans' thread never in the summary's tick. `today`/`all` post "⏳ Putting the day
   together…" and replace it within 15 s (or say it took too long); `help`'s "Looking…" is always replaced.
   **AI chain by tier** (`functions/_lib/ai-chain.ts`): `chat` (help, SOP keywords) = flash-lite 4 s → Workers AI 5 s →
-  Claude Haiku 6 s, 15 s budget; `heavy` (receipts, carts, ✨ SOP from a thread with a 24 s budget) = configured Gemini 15 s →
-  lite 8 s → Workers AI 10 s → Claude Sonnet 20 s. No retries; when the first choice failed, `by` says who answered and why (help: "↪ Answered by…"; receipts,
+  Claude Haiku 6 s, 15 s budget; `heavy` (receipts, carts, ✨ SOP from a thread with a 24 s budget) = configured Gemini 10 s →
+  lite 10 s → Workers AI 10 s → Claude Sonnet 20 s. No retries; when the first choice failed, `by` says who answered and why (help: "↪ Answered by…"; receipts,
   carts, ✨ SOP already show `by`). Claude only with `accounts.claude_api_key_enc` (093,
   Settings → AI). Owner's rule: Claude key from prepaid credits, auto-reload off. Still open: Workers Paid ($5) would lift
   the 50 cap; `functions/_lib/gemini.ts` (pricing suggestions) has no timeout yet.

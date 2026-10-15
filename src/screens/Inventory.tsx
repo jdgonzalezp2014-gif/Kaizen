@@ -18,6 +18,7 @@ import { destFor, placeLabel } from '../lib/unit-access.ts';
 import { orderFor, receiptSum, similarItems, splitTotal, type Receipt, type ReceiptLine } from '../lib/receipt.ts';
 import { Sheet } from '../components/InspectionRun.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
+import { pastedImages, prepareReceipt } from '../components/receipt-prep.ts';
 import { TX } from '../lib/crew-i18n.ts';
 import { Icon, ic } from '../components/Icon.tsx';
 
@@ -768,6 +769,18 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   const [note, setNote] = useState('');
   const [date, setDate] = useState('');
   const [files, setFiles] = useState<File[]>([]);
+  // Owner, 2026-10-15: a screenshot of a Walmart/Amazon order pasted with Ctrl+V is a receipt, like a picked file.
+  useEffect(() => {
+    if (fixedTotal != null) return;
+    const onPaste = (e: ClipboardEvent) => {
+      const imgs = pastedImages(e);
+      if (!imgs.length) return;
+      e.preventDefault();
+      setFiles(f => [...f, ...imgs].slice(0, 5));
+    };
+    document.addEventListener('paste', onPaste);
+    return () => document.removeEventListener('paste', onPaste);
+  }, [fixedTotal]);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   // What the AI filled and nobody has touched since: 'total', 'note', 'date', 'item:<id>'.
@@ -813,8 +826,14 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
       f.append('action', 'readReceipt');
       if (!canSplit) f.append('orders', 'no');
       if (fieldExpenseId) f.append('fieldExpenseId', fieldExpenseId);
-      for (const x of fresh ? files.slice(readN) : files) f.append('file', x.type.startsWith('image/') ? await shrink(x) : x);
-      const r = await api.upload(f) as unknown as { ok: true; receipt: Receipt; by: string } | { ok: false; message?: string };
+      // Long screenshots cut into readable parts, a PDF's text taken out (receipt-prep.ts).
+      const texts: string[] = [];
+      for (const x of fresh ? files.slice(readN) : files) {
+        const p = await prepareReceipt(x);
+        p.files.forEach(y => f.append('file', y)); texts.push(...p.texts);
+      }
+      if (texts.length) f.append('texts', JSON.stringify(texts));
+      const r = await api.upload(f) as unknown as { ok: true; receipt: Receipt; by: string; repeat: { at: string; orderNo: string | null } | null } | { ok: false; message?: string };
       if (!r.ok) { setReadMsg(`Could not read the receipt — fill it in by hand. (${r.message ?? 'no answer'})`); return; }
       const rc = r.receipt;
       if (!rc.lines.length && rc.total == null) { setReadMsg('Could not read the receipt — fill it in by hand. (nothing found on it)'); return; }
@@ -845,7 +864,9 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
       setReadN(files.length);
       setOrderOf(o => { const n = new Map(first ? [] : o); sure.forEach(l => { if (!n.has(l.itemId!)) n.set(l.itemId!, l.orderId ?? todoId); }); return n; });
       setShares(new Map());
-      setReadMsg(`✨ Read by ${r.by} — check every line before recording.`);
+      // The same order read before (its PDF, then a screenshot of it): said, so it is not recorded twice.
+      const again = r.repeat ? ` ⚠ ${r.repeat.orderNo ? `Order ${r.repeat.orderNo}` : 'This receipt'} was already read on ${r.repeat.at.slice(0, 10)} — make sure it is not recorded twice.` : '';
+      setReadMsg(`✨ Read by ${r.by}${texts.length ? ' from the PDF\'s text' : ''} — check every line before recording.${again}`);
     } catch (e) { setReadMsg(`Could not read the receipt — fill it in by hand. (${String(e)})`); } finally { setReading(false); }
   };
   const setRow = (k: number, row: Row) => setRows(rs => rs.map((x, j) => j === k ? row : x));
@@ -993,8 +1014,8 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
       {fixedTotal == null && <PaidBy value={paidBy} onChange={setPaidBy} />}
       <label>Note{mark('note')}<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => { setNote(e.target.value); untouch('note'); }} /></label>
       {read1 && fixedTotal == null && <label>Bought on{mark('date')}<input type="date" value={date} onChange={e => { setDate(e.target.value); untouch('date'); }} /></label>}
-      {/* Each pick ADDS files (another receipt, a long receipt's second photo) — up to 5. */}
-      {fixedTotal == null && <label className="chip"><Icon n="clip" /> {files.length ? `${files.length} file${files.length === 1 ? '' : 's'} · + another receipt` : 'Receipt'}
+      {/* Each pick ADDS files (another receipt, a long receipt's second photo) — up to 5. A screenshot can also be pasted (Ctrl+V). */}
+      {fixedTotal == null && <label className="chip"><Icon n="clip" /> {files.length ? `${files.length} file${files.length === 1 ? '' : 's'} · + another receipt` : 'Receipt (or paste a screenshot)'}
         <input type="file" accept="image/*,application/pdf" multiple hidden
                onChange={e => { setFiles([...files, ...(e.target.files ?? [])].slice(0, 5)); e.target.value = ''; }} /></label>}
       {files.length > 0 && !read1 && <button className="link tiny" onClick={() => { setFiles([]); setReadN(0); }}>✕ files</button>}

@@ -12,11 +12,12 @@ import { driveToken, fileIdFromUrl } from './gdrive.ts';
 import { invItems, openOrders } from './inventory.ts';
 import { aliasKey, readReceipt, type Receipt } from '../../src/lib/receipt.ts';
 
-// Gemini takes ~20 MB per request in all; base64 adds a third.
+// Gemini takes ~20 MB per request in all; base64 adds a third. A long screenshot arrives as several parts (the browser cuts it).
 const MAX_BYTES = 12 * 1024 * 1024;
+const MAX_FILES = 12;
 
 const SYSTEM = `You read store receipts for a short-term-rental cleaning company and match what was bought to its supplies list.
-Answer ONLY JSON: {"store": string|null, "date": "YYYY-MM-DD"|null, "total": number|null, "tax": number|null,
+Answer ONLY JSON: {"store": string|null, "date": "YYYY-MM-DD"|null, "total": number|null, "tax": number|null, "orderNo": the order or invoice number printed (e.g. "2000156-31789057") or null,
 "lines": [{"text": the product as printed (no price, no quantity), "qty": number|null, "unitPrice": number|null, "amount": number|null (the line's price, negative for a discount),
 "kind": "item"|"tax"|"fee"|"discount"|"other", "itemId": a supply id or null, "sure": true|false, "itemQty": number|null,
 "alternatives": [up to 4 supply ids], "orderId": an open order id or null,
@@ -29,9 +30,17 @@ Rules: one entry per purchased line; tax, bag fees, deposits, discounts and coup
 a different product with a similar use (microfiber cloths vs washcloths) is NOT sure; a set of different things (a duvet cover set with
 pillowcases) is NOT sure unless the list has that set; a supply with a size (shown after "—") is sure only for that same size. If unsure, "sure": false, "itemId" null,
 and "alternatives" = the likely supplies. Never invent ids. "itemQty" = how many of the supply's own measure (a 12-pack of rolls bought once = 12 rolls).
-"orderId" only when that order asks for that supply. "total" = what was paid in all, tax included.`;
+"orderId" only when that order asks for that supply. "total" = what was paid in all, tax included.
+Online orders (Walmart, Amazon — a PDF's text, a screenshot of the order page, or a long page cut into several images in order;
+overlapping parts repeat a line: count it once): "amount" is the line's price AS PRINTED, which is the total for the line —
+"Qty 4  $3.76" with "$0.94 ea" is 4 for $3.76 (qty 4, unitPrice 0.94, amount 3.76): never multiply it again.
+"Multipack Quantity", "Count Per Pack", "42 Count", "4 Rolls", "40 Bags" tell "itemQty" in the supply's measure (qty × pack count).
+"Subtotal (19 items)" = the sum of the quantities: check your lines against it. Ignore pickup, delivery, tracking, payment card,
+store address, navigation and "how can we help" text. "date" = the day it was ordered or bought — never a pickup, delivery or
+arrival date ("Pick up by Oct 19", "Arrives Monday"); null when the order date is not shown. "store" from the page too (walmart.com = Walmart).`;
 
-export type ReadResult = { ok: true; receipt: Receipt; by: string } | { ok: false; message: string };
+/** `repeat`: this order (or these very files) was read before — the person checks it is not recorded twice. */
+export type ReadResult = { ok: true; receipt: Receipt; by: string; repeat: { at: string; orderNo: string | null } | null } | { ok: false; message: string };
 
 /** The receipt files the form sent, or a cleaner's purchase's own receipt from Drive. */
 export async function receiptFiles(sql: SqlFn, env: Env, files: File[], fieldExpenseId?: unknown): Promise<AiFile[]> {
@@ -43,7 +52,7 @@ export async function receiptFiles(sql: SqlFn, env: Env, files: File[], fieldExp
     if (bytes > MAX_BYTES) throw new Error('The receipt is too big to read (12 MB at most).');
     out.push({ mimeType, data: toBase64(buf) });
   };
-  for (const f of files.slice(0, 5)) add(f.type, await f.arrayBuffer());
+  for (const f of files.slice(0, MAX_FILES)) add(f.type, await f.arrayBuffer());
   if (!out.length && fieldExpenseId) {
     const [p] = await sql`SELECT photos FROM field_expenses WHERE account_id = 1 AND id = ${Number(fieldExpenseId) || 0}` as { photos: { url: string }[] | null }[];
     const ids = (p?.photos ?? []).map(x => fileIdFromUrl(x.url)).filter((x): x is string => !!x).slice(0, 5);
@@ -55,21 +64,41 @@ export async function receiptFiles(sql: SqlFn, env: Env, files: File[], fieldExp
       }
     }
   }
-  if (!out.length) throw new Error('Attach the receipt first — a photo or a PDF.');
   return out;
 }
 
-export async function readReceiptFiles(sql: SqlFn, env: Env, files: AiFile[], withOrders: boolean): Promise<ReadResult> {
+/**
+ * `texts`: a PDF's own text, taken out in the browser (exact numbers, and any model can read text).
+ * The same files read again come from receipt_reads, not the AI; the reading is re-checked against today's supplies.
+ */
+export async function readReceiptFiles(sql: SqlFn, env: Env, files: AiFile[], withOrders: boolean, texts: string[] = []): Promise<ReadResult> {
+  const said = texts.map(t => t.trim()).filter(Boolean).map(t => t.slice(0, 20000));
+  if (!files.length && !said.length) return { ok: false, message: 'Attach the receipt first — a photo, a screenshot or a PDF.' };
   const [items, orders, learned] = await Promise.all([invItems(sql), withOrders ? openOrders(sql) : Promise.resolve([]),
     sql`SELECT text, item_id::text AS "itemId" FROM inventory_receipt_aliases WHERE account_id = 1` as Promise<{ text: string; itemId: string }[]>]);
+  const aliases = new Map(learned.map(a => [a.text, a.itemId]));
+  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify([files.map(f => f.data), said])));
+  const hash = [...new Uint8Array(digest)].map(x => x.toString(16).padStart(2, '0')).join('');
+  const [seen] = await sql`SELECT raw, by, created_at::text AS at, order_no FROM receipt_reads WHERE account_id = 1 AND hash = ${hash}` as
+    { raw: Record<string, unknown>; by: string; at: string; order_no: string | null }[];
+  if (seen) {
+    return { ok: true, receipt: readReceipt(seen.raw, items, orders, aliases), by: `${seen.by} — read before, not asked again`,
+             repeat: { at: seen.at, orderNo: seen.order_no } };
+  }
   const active = items.filter(i => i.active);
   const name = new Map(active.map(i => [i.id, i.name]));
   const user = `Supplies list (id | name | measure):\n${active.map(i => `${i.id} | ${i.name} | ${i.measure}`).join('\n')}\n\n` +
     (orders.length ? `Open orders (id | title | supplies asked for):\n${orders.map(o => `${o.todoId} | ${o.title} | ${o.lines.map(l => name.get(l.itemId) ?? '').filter(Boolean).join(', ')}`).join('\n')}\n\n` : '') +
-    'Read the attached receipt.';
+    (said.length ? `The receipt's text (from its PDF):\n${said.join('\n\n---\n\n')}\n\n` : '') +
+    (files.length ? `Read the attached receipt${files.length > 1 ? ` (${files.length} images, in order)` : ''}.` : 'Read the receipt above.');
   const r = await askJson(sql, env, SYSTEM, user, files);
   if (!r.ok) return { ok: false, message: r.error };
-  return { ok: true, receipt: readReceipt(r.json, items, orders, new Map(learned.map(a => [a.text, a.itemId]))), by: r.by };
+  const receipt = readReceipt(r.json, items, orders, aliases);
+  const [before] = receipt.orderNo ? await sql`SELECT created_at::text AS at FROM receipt_reads WHERE account_id = 1 AND order_no = ${receipt.orderNo}
+                                                ORDER BY created_at LIMIT 1` as { at: string }[] : [];
+  await sql`INSERT INTO receipt_reads (account_id, hash, raw, by, store, order_no) VALUES (1, ${hash}, ${JSON.stringify(r.json)}::jsonb, ${r.by}, ${receipt.store}, ${receipt.orderNo})
+            ON CONFLICT DO NOTHING`.catch(() => {});
+  return { ok: true, receipt, by: r.by, repeat: before ? { at: before.at, orderNo: receipt.orderNo } : null };
 }
 
 /** The receipt lines a person decided (picked, changed, added as new): next time that text is that supply. */

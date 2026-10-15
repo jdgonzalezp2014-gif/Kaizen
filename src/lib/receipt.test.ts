@@ -41,7 +41,7 @@ test('readReceipt: a sure, existing supply is matched; anything else is a doubt 
 
 test('readReceipt: never sure unless the model says so; junk in → empty receipt', () => {
   assert.equal(readReceipt({ lines: [{ text: 'TP', itemId: '1' }] }, ITEMS).lines[0]!.itemId, null);
-  assert.deepEqual(readReceipt(null, ITEMS), { store: null, date: null, total: null, tax: null, lines: [] });
+  assert.deepEqual(readReceipt(null, ITEMS), { store: null, date: null, total: null, tax: null, lines: [], orderNo: null });
   assert.equal(readReceipt({ date: '10/12/2026' }, ITEMS).date, null);
 });
 
@@ -111,4 +111,9 @@ test('readReceipt: a learned alias wins over the model and needs no "sure"', () 
   assert.equal(aliasKey('UTOPIA DUVET SET  $89.24'), 'utopia duvet set');
   const r = readReceipt({ lines: [{ text: 'Utopia duvet set', itemId: 'p', sure: false }] }, BED, [], aliases);
   assert.equal(r.lines[0]!.itemId, 'pq');
+});
+
+test('readReceipt: the order number, without its label; none when it has no digit', () => {
+  assert.equal(readReceipt({ orderNo: 'Order# 2000156-31789057', lines: [] }, ITEMS).orderNo, '2000156-31789057');
+  assert.equal(readReceipt({ orderNo: 'n/a', lines: [] }, ITEMS).orderNo, null);
 });
