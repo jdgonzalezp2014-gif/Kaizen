@@ -192,27 +192,30 @@ export function Operations({ permissions, initialView, nav, onView }: {
 
   return (
     <section>
-      {/* §159: on a big screen the side bar lists the views; this line says which one is open. */}
-      <h2 className="screen-crumb">Operations <span>› {views.find(([k]) => k === view || (k === 'crew' && view === 'calendar'))?.[1] ?? ''}</span></h2>
+      {/* §159: on a big screen the side bar lists the views; this line says which one is open — and the gear,
+          dark and alone (owner: "everyone knows the gear"), the only control most views need on top. */}
+      <div className="ops-top">
+        <h2 className="screen-crumb">Operations <span>› {views.find(([k]) => k === view || (k === 'crew' && view === 'calendar'))?.[1] ?? ''}</span></h2>
+        {view !== 'setup' && can(data?.permissions, 'operations.setup') && (
+          <button className="ops-gear" onClick={() => openSetup(SETUP_OF[view])} aria-label="Settings for this section"
+                  title={`Settings for this section${data?.mode === 'live' ? ' — Live: Kaizen decides the cleans and writes the Host Note in Hostaway' : ''}`}>
+            <Icon n="gear" />{data?.mode === 'live' && <span className="live-dot" aria-hidden="true" />}</button>
+        )}
+      </div>
       <nav className="subtabs ops-subtabs">
         {views.map(([k, label]) => (
           <button key={k} className={view === k || (k === 'crew' && view === 'calendar') ? 'tab active' : 'tab'} onClick={() => setView(k)}>{label}</button>
         ))}
       </nav>
 
-      <div className="row-controls">
-        {/* §159 (owner, 2026-10-14): only what is used — the board's days and the gear. The dates of other views,
-            Refresh (the screen reads on opening) and the Live line (now on the gear's hover) were noise. */}
-        {view === 'board' && <MovementsRange range={range} today={nyToday} onChange={setRange} />}
-        {view !== 'setup' && can(data?.permissions, 'operations.setup') && (
-          <button className="chip ops-gear" onClick={() => openSetup(SETUP_OF[view])}
-                  title={`This section's settings${data?.mode === 'live' ? ' — Live: Kaizen decides the cleans and writes the Host Note in Hostaway' : ''}`}>
-            <Icon n="gear" /> Setup{data?.mode === 'live' && <span className="live-dot" aria-label="Live" />}</button>
-        )}
-        {data?.sheetUrl && data.mode === 'shadow' && (
-          <a className="chip" href={data.sheetUrl} target="_blank" rel="noreferrer">Open the daily file ↗</a>
-        )}
-      </div>
+      {(view === 'board' || (data?.sheetUrl && data.mode === 'shadow')) && (
+        <div className="row-controls">
+          {view === 'board' && <MovementsRange range={range} today={nyToday} onChange={setRange} />}
+          {data?.sheetUrl && data.mode === 'shadow' && (
+            <a className="chip" href={data.sheetUrl} target="_blank" rel="noreferrer">Open the daily file ↗</a>
+          )}
+        </div>
+      )}
 
       {err && <p className="banner error">{err}</p>}
       {!data && !err && (

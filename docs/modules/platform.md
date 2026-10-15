@@ -98,3 +98,8 @@ Hostaway client, sync, crypto, migrations.
   Operations' views inside it (`goOps` → Operations `nav` {v, n}); no top bar ≥ 721 px. Phone = header + bottom bar.
   Home: no summary pills (they repeated the cards); centred 1120 px with equal-height cards on a big screen; no uploads or
   Hostaway links on a phone. `scripts/screenshot.mjs` clicks `.side-link` (big) or the bottom bar / More (phone).
+- **Round 4 (§159):** the rail opens on hover or keyboard focus (`:has(:focus-visible)`) — not after a click (it stayed
+  stuck open). The day is in the menu (`Today` in App.tsx: a calendar leaf in the rail, a chip in the phone header); Home has
+  no heading. Home ≥ 1280 px: three columns (check-outs · check-ins · coming up / to-do ×2 · units in red, `data-card`).
+  **Open: the owner says the time is Central (CST); the board, ops and timelines still compute "today" in New York (43
+  places, the daily file's zone) — a separate, asked-for change.**

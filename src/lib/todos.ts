@@ -101,21 +101,21 @@ export const STATUSES: TaskStatus[] = ['pending', 'confirmed', 'in_progress', 'c
 
 /**
  * One life cycle, the same words in Kaizen, Slack and the SOPs (owner, 2026-10-14 — §159):
- * Open → In progress → Done, or Cancelled (owner, same day: "Scheduled" read as "has a date" — it is "New/Open").
- * "Pending" and "Confirmed" were two names for "not started"; both read Open (Hostaway keeps its own statuses —
+ * New → In progress → Done, or Cancelled (owner, same day: what the system made or someone just wrote is New; it is
+ * In progress once something is done on it). "Pending" and "Confirmed" were two names for "not started"; both read New (Hostaway keeps its own statuses —
  * this is only the word). A purchase order reads Ordered → Purchased; a claim the same as a to-do.
  */
-export type Stage = 'open' | 'in_progress' | 'done' | 'cancelled' | 'ordered' | 'purchased';
+export type Stage = 'new' | 'in_progress' | 'done' | 'cancelled' | 'ordered' | 'purchased';
 export type Category = 'task' | 'work_order' | 'order' | 'claim';
 const STAGE_WORD: Record<Stage, string> = {
   in_progress: 'In progress', done: 'Done', cancelled: 'Cancelled',
-  ordered: 'Ordered', purchased: 'Purchased', open: 'Open'
+  ordered: 'Ordered', purchased: 'Purchased', new: 'New'
 };
 export function stageOf(status: TaskStatus | string, order = false): { key: Stage; label: string } {
   const key: Stage = status === 'cancelled' ? 'cancelled'
     : status === 'completed' ? (order ? 'purchased' : 'done')
     : order ? 'ordered'
-    : status === 'in_progress' ? 'in_progress' : 'open';
+    : status === 'in_progress' ? 'in_progress' : 'new';
   return { key, label: STAGE_WORD[key] };
 }
 /** A claim's status (Open, In progress, Resolved, Refunded, Dismissed) in the same words. */
@@ -124,7 +124,7 @@ export function claimStage(status: string): { key: Stage; label: string } {
   if (status === 'Refunded') return { key: 'done', label: 'Done · refunded' };
   if (status === 'Dismissed') return { key: 'cancelled', label: 'Cancelled' };
   if (status === 'In progress') return { key: 'in_progress', label: 'In progress' };
-  return { key: 'open', label: 'Open' };
+  return { key: 'new', label: 'New' };
 }
 /**
  * The title as a row shows it beside its listing (owner, 2026-10-14 — §159): the listing's name is already on
@@ -158,7 +158,7 @@ export const categoryOf = (t: Pick<Todo, 'kind'>, order = false): Category => or
 
 /** For a status picker: the stored value stays Hostaway's, the word is ours. */
 export const STATUS_LABEL: Record<TaskStatus, string> = {
-  pending: 'Open', confirmed: 'Open · confirmed', in_progress: 'In progress', completed: 'Done', cancelled: 'Cancelled'
+  pending: 'New', confirmed: 'New · confirmed', in_progress: 'In progress', completed: 'Done', cancelled: 'Cancelled'
 };
 export const PRIORITIES: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
 export const PRIORITY_LABEL: Record<Priority, string> = { none: 'No priority', low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' };

@@ -541,3 +541,4 @@ UI only; tokens and shared components from `docs/design-system.md`.
   nights on hover. Top of Operations: only the board's days and the gear — no Refresh (it reads on opening), no date line
   on other views, no "Live" banner while live and healthy (a green dot on the gear, the sentence on its hover; failures
   and shadow mode still take a banner). On a big screen the view strip is replaced by the side rail + "Operations › View".
+- **Round 4:** Operations' top is one line — "Operations › View" and a dark gear alone (icon only, a green dot while live); the control bar shows only on Movements (its days).

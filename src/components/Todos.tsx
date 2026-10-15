@@ -574,7 +574,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
       <div className="todo-meta">
         {!compact && cat !== 'task' && <span className="m m-cat">{CATEGORY_LABEL[cat]}</span>}
         <span className={`m m-stage st-${stage.key}`}>{stage.label}
-          {!closed && stage.key === 'open' && t.scheduledOn && t.scheduledOn > today ? ` · ${shortDay(t.scheduledOn)}${t.startTime ? ` ${t.startTime}` : ''}` : ''}
+          {!closed && stage.key === 'new' && t.scheduledOn && t.scheduledOn > today ? ` · ${shortDay(t.scheduledOn)}${t.startTime ? ` ${t.startTime}` : ''}` : ''}
           {closed && t.doneAt ? ` · ${t.doneBy?.split('@')[0] ?? ''} ${t.doneAt.slice(5, 10)}` : ''}</span>
         {!closed && (t.priority === 'urgent' || t.priority === 'high') && <span className="m m-attn">{PRIORITY_LABEL[t.priority]}</span>}
         {!closed && t.dueOn && <span className={`m ${due === 'overdue' || due === 'today' ? 'm-attn' : ''}`}><Icon n="calendar" />{dueLabel(t, today)}{t.dueTime ? ` · ${t.dueTime}` : ''}</span>}

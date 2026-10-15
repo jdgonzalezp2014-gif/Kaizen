@@ -16,6 +16,7 @@ import { Sops } from './screens/Sops.tsx';
 import { SopButton, SopPanel } from './components/Sops.tsx';
 import { featureOf } from './lib/sops.ts';
 import { getUnits, getSettings, can, type UnitRow } from './api.ts';
+import { todayIn } from './lib/dates.ts';
 import { ThemeToggle } from './components/ThemeToggle.tsx';
 import { TabIcon } from './components/TabIcon.tsx';
 import { Modal } from './components/Modal.tsx';
@@ -210,6 +211,7 @@ function TeamApp() {
             argument about, and a slogan nobody reads is pure vertical
             space on a screen whose job is a list. */}
         <div className="brand"><span className="brand-mark" aria-hidden="true" /><h1>Kaizen OS</h1></div>
+        <Today compact />
         <span className="phone-theme"><ThemeToggle /></span>
       </header>}
       {!crewOnly && allowed && <SideNav tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab}
@@ -307,6 +309,18 @@ function TabBar({ tabs, tab, onTab }: { tabs: Tab[]; tab: Tab | null; onTab: (t:
   );
 }
 
+/** The day, in the menu (owner, 2026-10-14: the date and the city were a heading on Home). The board's day — New York's, for now. */
+function Today({ compact = false }: { compact?: boolean }) {
+  const d = new Date(`${todayIn('America/New_York')}T12:00:00Z`);
+  const f = (o: Intl.DateTimeFormatOptions) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', ...o }).format(d);
+  return compact
+    ? <span className="today-chip" title={f({ weekday: 'long', month: 'long', day: 'numeric' })}>{f({ weekday: 'short', month: 'short', day: 'numeric' })}</span>
+    : <span className="side-today" title={f({ weekday: 'long', month: 'long', day: 'numeric' })}>
+        <span className="side-cal" aria-hidden="true"><b>{f({ month: 'short' })}</b>{f({ day: 'numeric' })}</span>
+        <span className="side-word">{f({ weekday: 'long' })}, {f({ month: 'short', day: 'numeric' })}</span>
+      </span>;
+}
+
 /**
  * Tablet and desktop navigation (owner, 2026-10-14: "clean screens — the menu as a vertical slider, the
  * sub-menus open when the cursor is on them"): a rail of icons on the left that slides open on hover or
@@ -324,6 +338,7 @@ function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions }: {
   return (
     <aside className="side-nav" aria-label="Sections">
       <div className="side-brand"><span className="brand-mark" aria-hidden="true" /><span className="side-word">Kaizen OS</span></div>
+      <Today />
       <nav className="side-list">
         {tabs.map(t => (
           <div key={t} className={`side-item ${tab === t ? 'active' : ''} ${t === 'operations' ? 'has-sub' : ''}`}>

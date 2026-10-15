@@ -50,7 +50,7 @@ const UNSTARTED = ['pending', 'confirmed'];
 const PRIORITIES = ['none', 'low', 'medium', 'high', 'urgent'];
 const STATUS_WORD: Record<string, string> = {
   // §159: the timeline speaks the app's words (Hostaway's values stay what is stored).
-  pending: 'Open', confirmed: 'Open · confirmed', in_progress: 'In progress', completed: 'Done', cancelled: 'Cancelled'
+  pending: 'New', confirmed: 'New · confirmed', in_progress: 'In progress', completed: 'Done', cancelled: 'Cancelled'
 };
 const TIME = /^([01]\d|2[0-3]):[0-5]\d$/;
 

@@ -2345,7 +2345,7 @@ tr.rc-open > td { border-bottom: 0; }
 .st-in_progress, .st-ordered { color: var(--accent); }
 .st-done, .st-purchased { color: var(--green); }
 .st-cancelled { color: var(--muted); }
-.st-open { color: var(--ink); }
+.st-new { color: var(--ink); }
 .todo-meta .m-attn { color: var(--amber); font-weight: 600; }
 .todo-meta .m-btn { background: none; border: 0; padding: 2px 0; min-height: 0; color: inherit; font: inherit; cursor: pointer; }
 .todo-meta .m-btn:hover { color: var(--accent); }
@@ -2457,9 +2457,9 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
   .side-nav { position: fixed; z-index: 45; top: 0; left: 0; bottom: 0; width: 64px; display: flex; flex-direction: column; gap: 4px;
     padding: 14px 10px; overflow: hidden; background: var(--card); border-right: 1px solid var(--line);
     transition: width .18s ease, box-shadow .18s ease; }
-  .side-nav:hover, .side-nav:focus-within { width: 248px; box-shadow: var(--shadow-3); }
+  .side-nav:hover, .side-nav:has(:focus-visible) { width: 248px; box-shadow: var(--shadow-3); }
   .side-word { opacity: 0; white-space: nowrap; transition: opacity .12s ease; }
-  .side-nav:hover .side-word, .side-nav:focus-within .side-word { opacity: 1; }
+  .side-nav:hover .side-word, .side-nav:has(:focus-visible) .side-word { opacity: 1; }
   .side-brand { display: flex; align-items: center; gap: 14px; padding: 2px 11px 16px; font-weight: 700; font-size: var(--fs-headline); }
   .side-list { display: flex; flex-direction: column; gap: 2px; }
   .side-link { display: flex; align-items: center; gap: 16px; width: 100%; min-height: 40px; padding: 0 12px; background: none; border: 0;
@@ -2470,7 +2470,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
   .side-sub { display: none; flex-direction: column; padding: 2px 0 6px 48px; }
   .side-nav:hover .side-item.has-sub:hover .side-sub,
   .side-nav:hover .side-item.has-sub.active .side-sub,
-  .side-nav:focus-within .side-item.has-sub:focus-within .side-sub { display: flex; }
+  .side-nav:has(:focus-visible) .side-item.has-sub:focus-within .side-sub { display: flex; }
   .side-sublink { text-align: left; background: none; border: 0; padding: 6px 10px; border-radius: var(--r-sm); color: var(--muted);
     font: inherit; font-size: var(--fs-footnote); font-weight: 500; cursor: pointer; white-space: nowrap; }
   .side-sublink:hover { background: var(--hover); color: var(--ink); }
@@ -2478,7 +2478,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
   .side-foot { margin-top: auto; }
   .side-foot .theme-toggle { width: 100%; justify-content: flex-start; gap: 16px; padding: 0 12px; min-height: 40px; border: 0; background: none; }
   .side-foot .theme-word { opacity: 0; transition: opacity .12s ease; }
-  .side-nav:hover .side-foot .theme-word, .side-nav:focus-within .side-foot .theme-word { opacity: 1; }
+  .side-nav:hover .side-foot .theme-word, .side-nav:has(:focus-visible) .side-foot .theme-word { opacity: 1; }
   /* The rail lists Operations' views; the strip on the page would say it twice. A one-line crumb says where you are. */
   .ops-subtabs { display: none !important; }
   .screen-crumb { display: block; margin: 0 0 var(--s-3); font-size: var(--fs-title3); font-weight: 650; }
@@ -2488,3 +2488,38 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 @media (min-width: 721px) and (prefers-reduced-motion: reduce) { .side-nav, .side-word { transition: none; } }
 .phone-theme { display: inline-flex; margin-left: auto; }
 @media (min-width: 721px) { .side-nav .side-list { align-items: stretch; margin-left: 0; } .side-item { width: 100%; } }
+/* §159: Operations' top line — where you are, and the gear, dark and alone. */
+.ops-top { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); margin-bottom: var(--s-3); }
+.ops-top .screen-crumb { margin: 0; }
+.ops-gear { position: relative; display: inline-grid; place-items: center; width: 38px; height: 38px; padding: 0; margin-left: auto;
+  border-radius: var(--r-pill); background: var(--ink); color: var(--bg); border: 0; }
+.ops-gear:hover { background: color-mix(in srgb, var(--ink) 85%, var(--bg)); }
+.ops-gear .icon { width: 20px; height: 20px; }
+.ops-gear .live-dot { position: absolute; top: 3px; right: 3px; width: 9px; height: 9px; margin: 0; border: 2px solid var(--bg); }
+@media (max-width: 720px) { .ops-gear { width: 44px; height: 44px; } }
+/* The day in the menu: a small calendar leaf in the rail, the words when it opens; a chip in the phone's header. */
+.side-today { display: flex; align-items: center; gap: 16px; padding: 0 6px 14px; margin-bottom: 6px; border-bottom: 1px solid var(--line); }
+.side-cal { flex: none; display: grid; place-items: center; width: 32px; height: 34px; border: 1px solid var(--line-strong); border-radius: var(--r-sm);
+  font-size: var(--fs-callout); font-weight: 700; line-height: 1; padding-top: 1px; background: var(--card); }
+.side-cal b { display: block; width: 100%; font-size: 9px; text-transform: uppercase; letter-spacing: .06em; color: var(--accent); font-weight: 700; }
+.side-today .side-word { font-weight: 600; font-size: var(--fs-body); }
+.today-chip { margin-left: auto; font-size: var(--fs-footnote); color: var(--muted); font-weight: 600; white-space: nowrap; }
+.today-chip + .phone-theme { margin-left: 8px; }
+/* §159 (owner: "lots of space now — use it without cramming"): on a wide screen, three columns — the day's moves
+   and what is coming side by side; the to-do list wide under them, the units in red beside it. */
+@media (min-width: 1280px) {
+  .home { max-width: 1360px; }
+  .home-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px;
+    grid-template-areas: "cleans checkins coming" "todo todo red"; }
+  .home-grid > [data-card="cleans"] { grid-area: cleans; }
+  .home-grid > [data-card="checkins"] { grid-area: checkins; }
+  .home-grid > [data-card="coming"] { grid-area: coming; }
+  .home-grid > [data-card="todo"] { grid-area: todo; }
+  .home-grid > [data-card="red"] { grid-area: red; }
+  .home-grid > .home-card { padding: var(--s-5); }
+}
+@media (min-width: 1280px) {
+  /* A third of the width: the documents go under the stay instead of squeezing it. */
+  .home-grid > [data-card="checkins"] .home-list li { flex-wrap: wrap; }
+  .home-grid > [data-card="checkins"] .home-side { flex-basis: 100%; max-width: none; text-align: left; padding-left: 84px; display: flex; gap: 6px 10px; flex-wrap: wrap; align-items: center; }
+}

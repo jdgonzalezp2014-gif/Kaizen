@@ -88,8 +88,8 @@ test('the done log: how it ended, how long it took, and a CSV an auditor can ope
 });
 
 test('one life cycle in the same words (§159)', () => {
-  assert.equal(stageOf('pending').label, 'Open');
-  assert.equal(stageOf('confirmed').label, 'Open');
+  assert.equal(stageOf('pending').label, 'New');
+  assert.equal(stageOf('confirmed').label, 'New');
   assert.equal(stageOf('in_progress').label, 'In progress');
   assert.equal(stageOf('completed').label, 'Done');
   assert.equal(stageOf('cancelled').label, 'Cancelled');
@@ -98,7 +98,7 @@ test('one life cycle in the same words (§159)', () => {
   assert.equal(stageOf('completed', true).label, 'Purchased');
   assert.equal(stageOf('cancelled', true).label, 'Cancelled');
   assert.deepEqual(['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'].map(s => claimStage(s).label),
-    ['Open', 'In progress', 'Done', 'Done · refunded', 'Cancelled']);
+    ['New', 'In progress', 'Done', 'Done · refunded', 'Cancelled']);
   assert.equal(categoryOf({ kind: 'task' }, true), 'order');
   assert.equal(categoryOf({ kind: 'work_order' }), 'work_order');
 });

@@ -154,3 +154,4 @@ UI only; tokens and shared components from `docs/design-system.md`.
   inspection checks and field charges move to `into`; the claim if it has none; the description is appended; the other
   is cancelled "Merged into #N" (Hostaway closes it). Refused into a closed one, into its own child, or children under a
   sub-task. **Not exercised against real data** (the Hostaway mirror is on) — try it first on two test to-dos.
+- **Round 4:** not-started reads **New** (the owner's word: what the system made or someone just wrote is new).

@@ -40,7 +40,6 @@ type Load<T> = { data: T | null; err: string; busy: boolean };
 const idle = <T,>(): Load<T> => ({ data: null, err: '', busy: true });
 const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-const long = (d: string) => { const t = new Date(`${d}T12:00:00Z`); return `${DOW[t.getUTCDay()]}, ${MON[t.getUTCMonth()]} ${t.getUTCDate()}`; };
 const short = (d: string) => { const t = new Date(`${d}T12:00:00Z`); return `${DOW[t.getUTCDay()]!.slice(0, 3)} ${MON[t.getUTCMonth()]} ${t.getUTCDate()}`; };
 
 function useLoad<T>(enabled: boolean, fn: () => Promise<T>): Load<T> {
@@ -238,13 +237,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
 
   return (
     <section className="home">
-      <header className="home-head">
-        <div>
-          <h2>{long(today)}</h2>
-          <p className="note">New York time</p>
-        </div>
-        {/* §159 (owner, 2026-10-14): the summary pills repeated the cards below — gone. */}
-      </header>
+      {/* §159 (owner, 2026-10-14): the date lives in the menu now, and the summary pills (they repeated the cards) are gone. */}
 
       {ops.data?.mode === 'shadow' && (
         <p className="note">○ Operations is in shadow mode — cleaners shown are Kaizen's reading; the daily file still decides.</p>
@@ -349,7 +342,7 @@ function Card<T>({ id, title, count, summary, load, action, onAction, foot, busy
 }) {
   const [folded, toggle] = useFolded(id);
   return (
-    <div className={`card home-card ${folded ? 'folded' : ''} ${className}`}>
+    <div className={`card home-card ${folded ? 'folded' : ''} ${className}`} data-card={id}>
       <div className="home-card-head">
         <button className="home-fold" onClick={toggle} aria-expanded={!folded} title={folded ? 'Show' : 'Fold'}>
           <span className="home-caret" aria-hidden="true">{folded ? '▸' : '▾'}</span>
