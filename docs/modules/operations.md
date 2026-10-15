@@ -517,3 +517,15 @@ key had no SOPs.
   approval, split). Tested locally 2026-10-14 with two generated receipts (store + online order): totals added, King /
   Queen shown, bundle and King protector asked. flash-lite still marked microfiber → washcloths sure once — the learned
   lines fix it after the first correction.
+
+## Redesign (§158, 2026-10-14, branch `redesign`)
+
+UI only; tokens and shared components from `docs/design-system.md`.
+- **Movement kind badges** (`.ops-kind`) are neutral: OUT filled ink, IN outlined, CLEAN dashed. They were
+  amber/green/blue, which read as attention/confirmed/action — the kind is a fact, not a state.
+- **Flags** (`.ops-flag`): `urgent`/`req` (same-day, cancelled, open repair, inspection required, the crew
+  page's check-in time) are amber = attention; `due`/`deep` (monthly, deep, to-dos, corrected) are neutral.
+  Red is no longer used for any of them (red = failure).
+- Phone: Operations' eight views keep scrolling sideways (they cannot fit 390), with a faded right edge.
+- Open: the crew page's unit title is large on a phone (title1, 28 px) — kept, it is what the cleaner
+  scans for; revisit with a cleaner if it wraps on long unit names.
