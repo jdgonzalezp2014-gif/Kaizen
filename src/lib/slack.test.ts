@@ -58,7 +58,7 @@ test('a task message carries the buttons that act on it', () => {
   // and "Kaizen ↗" led to the front door rather than the task.
   assert.doesNotMatch(s, /task_start|open_kaizen/);
   assert.match(s, /task_open/);
-  assert.match(s, /▲ high/);
+  assert.match(s, / High · Scheduled/);  // §159: the shared words
   const done = JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'completed', priority: 'none' }, 'completed', '').blocks);
   assert.match(done, /task_reopen/);
   assert.doesNotMatch(done, /task_complete/);
@@ -112,7 +112,7 @@ test('the task card: facts, buttons, sub-tasks, latest updates, a box to add one
     dueOn: '2026-10-03', costEstimate: 120, children: [{ title: 'Buy filter', status: 'completed' }, { title: 'Install', status: 'pending' }],
     updates: [{ when: 'Oct 1, 9:00 AM', who: 'juan', body: 'Vendor booked' }] }, '✓ Started') as { title: { text: string }; callback_id: string; blocks: unknown[] };
   const s = JSON.stringify(v.blocks);
-  assert.equal(v.title.text, 'Repair');
+  assert.equal(v.title.text, 'Work order');  // §159
   assert.equal(v.callback_id, 'task_card');
   for (const k of ['card_complete', 'card_take', 'card_edit', 'Sub-tasks', '1/2', 'Vendor booked', '~$120.00 estimated', '✓ Started', '"block_id":"update"']) assert.ok(s.includes(k), k);
   // §143: Start dropped from the card too — the comment box right below it starts the work.

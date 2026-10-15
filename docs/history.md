@@ -4201,3 +4201,14 @@ action for primary buttons; banners as a status rail; a bottom tab bar on phones
 targets on phones. Kept on purpose: light by default and the day/night switch (§20). The full write-up
 and the per-module changes: `docs/design-system.md`, `docs/redesign-report.md`.
 
+## §159 — Work: one anatomy, one life cycle, what opens how (2026-10-14)
+
+Owner: tasks, sub-tasks, work orders, purchase orders and claims read as a mess — too many symbols and colours,
+unclear how they relate, and Slack must say the same. Decided: one row shape for all (title + one context line,
+a 2 px category bar, colour only on words); one life cycle (Scheduled → In progress → Done / Cancelled; orders
+Ordered → Purchased; claims Open → In progress → Done) — "Pending" and "Confirmed" were both "not started";
+related items of another kind open in a pop-up, same-kind children stay in place; explanations behind a hover,
+entities (listing, owner) as links that filter. A cleaner's request becoming a purchase order is the same item
+moving from Tasks to Purchase orders (already how it worked) — no second row. UI and words only; Hostaway
+statuses unchanged. See `docs/design-system.md` › Work items.
+

@@ -21,7 +21,7 @@ import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveClaim, todoAction,
   type Claim, type StayOnDay, type Todo, type WorkUpdate, syncHostawayTasks, getPeople, type Person } from '../api.ts';
 import {
-  KIND_LABEL, PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, auditCsv, childrenBy, daysTaken, nyParts, outcomeOf, stayLabel,
+  KIND_LABEL, PRIORITIES, PRIORITY_LABEL, STATUS_LABEL, STATUSES, CATEGORY_LABEL, categoryOf, sourceOf, stageOf, claimStage, auditCsv, childrenBy, daysTaken, nyParts, outcomeOf, stayLabel,
   type AuditRow, dueLabel, dueOf, isClosed, isFiltering, matchesFilter,
   progress, shortDay, sortTodos, workCost,
   type Priority, type TaskKind, type TaskStatus, type WorkFilter
@@ -29,6 +29,7 @@ import {
 import { addDays, type DateStr } from '../lib/dates.ts';
 import { money2 } from '../lib/format.ts';
 import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS, caseHost, cleanCaseUrl } from '../lib/claims.ts';
+import { Peek } from './Hint.tsx';
 import { Icon, ic } from './Icon.tsx';
 
 /** The claim's case on the platform, one tap away (§88). */
@@ -36,7 +37,7 @@ const CaseLink = ({ url }: { url: string | null }) => url
   ? <a className="case-link" href={url} target="_blank" rel="noreferrer" title={url}>↗ {caseHost(url)} case</a> : null;
 
 /** owner, Oct 2026: a pasted link (a Slack thread) is a 🔗, not 80 characters of URL. */
-const Linked = ({ text }: { text: string }) => <>{text.split(/(https?:\/\/\S+)/).map((p, i) => i % 2
+export const Linked = ({ text }: { text: string }) => <>{text.split(/(https?:\/\/\S+)/).map((p, i) => i % 2
   ? <a key={i} className="desc-link" href={p} target="_blank" rel="noreferrer" title={p} onClick={e => e.stopPropagation()}
        aria-label={`Open the link (${p.includes('slack.com') ? 'Slack' : p.replace(/^https?:\/\/([^/]+).*/, '$1')})`}><Icon n="link" /></a>
   : p)}</>;
@@ -74,8 +75,9 @@ export interface WorkTab { key: string; label: string; count: number; alert?: bo
 /** owner, Oct 2026: Home's buckets — what needs someone now, this week, later. Three chunks, the first one open. */
 type Bucket = 'now' | 'week' | 'later' | 'scheduled';
 const BUCKETS: [Bucket, string, string][] = [
-  ['now', '▲ Now', 'overdue, due today or urgent'], ['week', 'This week', 'due in 7 days or high priority'], ['later', 'Later', 'no rush, or no date'],
-  ['scheduled', '📅 Scheduled', 'dated more than a week out']];
+  ['now', 'Now', 'overdue, due today or urgent'], ['week', 'This week', 'due in 7 days or high priority'], ['later', 'Later', 'no rush, or no date'],
+  // §159: not "Scheduled" — that is a stage now; this group is only further out in time.
+  ['scheduled', 'Further out', 'dated more than a week out']];
 /** Owner, Oct 2026: work with a date far ahead (the landscaping) is planned, not pending — its own folded bucket, so it is not noise. */
 const farOff = (t: Todo, today: DateStr) => dueOf(t, today) === 'later' || (!t.dueOn && !!t.scheduledOn && t.scheduledOn > addDays(today, 7));
 const bucketOf = (t: Todo, today: DateStr): Bucket => {
@@ -105,6 +107,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   const [err, setErr] = useState('');
   const [open, setOpen] = useState<string | null>(null);
   const [unitFilter, setUnitFilter] = useState('');
+  const [ownerFilter, setOwnerFilter] = useState('');
   const [kindFilter, setKindFilter] = useState<'' | TaskKind | 'claims'>('');
   const [prioFilter, setPrioFilter] = useState<'' | 'high' | 'urgent'>('');
   const [dueFilter, setDueFilter] = useState<'' | 'overdue' | 'today' | 'week' | 'none'>('');
@@ -157,16 +160,21 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     setErr(r.message ?? 'Not saved.'); return false;
   };
 
-  const wf: WorkFilter = { kind: kindFilter === 'claims' ? '' : kindFilter, priority: prioFilter, due: dueFilter, unitId: unitFilter };
+  const wf: WorkFilter = { kind: kindFilter === 'claims' ? '' : kindFilter, priority: prioFilter, due: dueFilter, unitId: unitFilter, assignee: ownerFilter };
   const filtering = isFiltering(wf);
   const all = sortTodos(todos ?? []);
   const kids = useMemo(() => childrenBy(todos ?? []), [todos]);
   const byId = useMemo(() => new Map((todos ?? []).map(t => [t.id, t])), [todos]);
+  // §159: a child of another kind (a work order inside a to-do, an order inside a repair) is also listed in
+  // its own section, saying what it is part of; one of the same kind lives only inside its parent.
+  const catOf = (t: Todo) => categoryOf(t, !!orderIds?.has(t.id));
+  const crossCat = (t: Todo) => { const p = t.parentId ? byId.get(t.parentId) : undefined; return !!p && catOf(p) !== catOf(t); };
+  const [pop, setPop] = useState<{ todo?: string; claim?: string } | null>(null);
   // No filter: tasks at the top, their sub-tasks inside them. A filter:
   // every match, flat, each sub-task saying whose it is (§78).
   const top = kindFilter === 'claims' ? []
     : filtering ? all.filter(t => matchesFilter(t, wf, today))
-    : all.filter(t => !t.parentId || !byId.has(t.parentId));
+    : all.filter(t => !t.parentId || !byId.has(t.parentId) || crossCat(t));
   const openList = top.filter(t => !isClosed(t.status));
   const doneList = top.filter(t => isClosed(t.status));
   // Worst first, then the oldest: the case that has waited longest at the top.
@@ -181,7 +189,10 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
     return m;
   }, [todos]);
   const ctx = { today, names, units, claims, claimNames, act, inClaim: !!claim, kids, byId, flat: filtering,
-                canClaims: showClaims, onClaimsChanged: () => void loadClaims(), reload: () => void loadTodos(), compact };
+                canClaims: showClaims, onClaimsChanged: () => void loadClaims(), reload: () => void loadTodos(), compact,
+                orderIds, openPop: setPop,
+                // §159: a listing or an owner on a row is a link that filters the list by it.
+                filterBy: (x: { unit?: string; owner?: string }) => { if (x.unit) setUnitFilter(x.unit); if (x.owner) setOwnerFilter(x.owner); } };
 
   // The counts Home's card shows, folded or not.
   useEffect(() => {
@@ -197,20 +208,21 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
   }, [todos, claims]);
 
   const caseRow = (c: Claim) => (
-    <li key={`case-${c.id}`} className={`todo case sev-${c.severity.toLowerCase()}`}>
+    <li key={`case-${c.id}`} className={`todo case cat-claim sev-${c.severity.toLowerCase()}`}>
       <div className="todo-line">
-        <span className="case-flag" aria-hidden="true">⚑</span>
         <button className="todo-title" onClick={() => setOpenClaim(openClaim === String(c.id) ? null : String(c.id))}
-                title="Open the claim">{c.unit_name ?? 'Portfolio'} · {claimWhat(c)}</button>
-        {c.category && c.description && <span className="todo-unit">{c.category}</span>}
-        <span className={`todo-status sev s-${c.severity.toLowerCase()}`}>{c.severity}</span>
-        <span className="todo-status">{c.status === 'Open' ? '○ Open' : '◐ In progress'}</span>
-        <span className="sub-n">{ageDays(c, today) ? `${ageDays(c, today)}d open` : 'new today'}</span>
-        {c.reservation_label && <span className="todo-stay"><Icon n="bed" /> {c.reservation_label}</span>}
+                aria-expanded={openClaim === String(c.id)} title="Open the claim">
+          <span className="todo-caret" aria-hidden="true">{openClaim === String(c.id) ? '▾' : '▸'}</span>{c.unit_name ?? 'Portfolio'} · {claimWhat(c)}</button>
         <CaseLink url={c.case_url} />
-        {openWorkBy.get(String(c.id)) ? <span className="sub-n">· {openWorkBy.get(String(c.id))} open task{openWorkBy.get(String(c.id)) === 1 ? '' : 's'}</span>
-          : <span className="todo-due">▲ no work yet</span>}
-        {(c.description ?? '').trim().length > 48 && <span className="sub-n case-desc" title={c.description!}>— {c.description}</span>}
+      </div>
+      {/* §159: the same quiet line as a to-do — stage, what matters, how long, what is inside. */}
+      <div className="todo-meta">
+        <span className={`m m-stage st-${claimStage(c.status).key}`}>{claimStage(c.status).label}</span>
+        {['High', 'Critical'].includes(c.severity) && <span className="m m-attn">{c.severity}</span>}
+        {c.category && c.description && <span className="m">{c.category}</span>}
+        <span className="m"><Icon n="clock" />{ageDays(c, today) ? `${ageDays(c, today)}d open` : 'new today'}</span>
+        {openWorkBy.get(String(c.id)) ? <span className="m"><Icon n="list" />{openWorkBy.get(String(c.id))} open inside</span>
+          : <span className="m m-attn">No work yet</span>}
       </div>
       {openClaim === String(c.id) && (
         <ClaimCase claim={c} canWork today={today} onSaved={() => { void loadClaims(); void loadTodos(); }}
@@ -242,7 +254,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
               onCancel={() => setAdding(null)}
               onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAdding(null); return ok; }} />
   );
-  const taskRow = (t: Todo) => <TodoRow key={t.id} t={t} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
+  const taskRow = (t: Todo) => <TodoRow key={t.id} t={t} related={crossCat(t)} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
 
   const lane = (key: 'task' | 'work_order' | 'claims', title: string, rows: ReactNode[], alert: ReactNode, empty: string) => {
     const kind = key === 'claims' ? 'claim' : key;
@@ -269,7 +281,7 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
 
   const isOrder = (t: Todo) => !!orderIds?.has(t.id);
   // Purchase orders and work orders (owner, Oct 2026): their comments unfold on the row.
-  const chatRow = (t: Todo) => <TodoRow key={t.id} t={t} chat open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
+  const chatRow = (t: Todo) => <TodoRow key={t.id} t={t} chat related={crossCat(t)} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
   const bucketed = (key: string, list: Todo[], chat = false) => {
     const by: Record<Bucket, Todo[]> = { now: [], week: [], later: [], scheduled: [] };
     for (const t of list) by[bucketOf(t, today)].push(t);
@@ -349,9 +361,20 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
             <option value="">Every listing</option>
             {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
           </select>
+          <select value={ownerFilter} aria-label="Owner" onChange={e => setOwnerFilter(e.target.value)}>
+            <option value="">Anyone</option>
+            {[...new Set((todos ?? []).map(t => t.assignee).filter((x): x is string => !!x))].sort().map(n => <option key={n} value={n}>{n}</option>)}
+          </select>
           {(filtering || kindFilter !== '') && (
-            <button className="link tiny" onClick={() => { setKindFilter(''); setPrioFilter(''); setDueFilter(''); setUnitFilter(''); }}>clear filters</button>
+            <button className="link tiny" onClick={() => { setKindFilter(''); setPrioFilter(''); setDueFilter(''); setUnitFilter(''); setOwnerFilter(''); }}>clear filters</button>
           )}
+        </div>
+      )}
+      {/* §159: what a tap on a listing or an owner filtered by — visible everywhere (Home has no filter bar), with its way out. */}
+      {(unitFilter || ownerFilter) && (
+        <div className="filter-chips">
+          {unitFilter && <button className="fchip on" onClick={() => setUnitFilter('')}>{names.get(unitFilter) ?? 'Listing'} <span aria-hidden="true">✕</span><span className="sr-only"> — clear</span></button>}
+          {ownerFilter && <button className="fchip on" onClick={() => setOwnerFilter('')}>{ownerFilter} <span aria-hidden="true">✕</span><span className="sr-only"> — clear</span></button>}
         </div>
       )}
       {err && <p className="banner warn">▲ {err}</p>}
@@ -408,6 +431,18 @@ export function TodoList({ today, compact = false, onMore, canClaims = false, cl
           {showDone && <ul className="todo-list done">{doneList.map(taskRow)}</ul>}
         </>
       )}
+      {/* §159: a related item opens over the list, whole — the same card as in its own section. */}
+      {pop?.todo && byId.get(pop.todo) && (() => { const x = byId.get(pop.todo!)!; return (
+        <Modal wide title={`${CATEGORY_LABEL[catOf(x)]} · ${x.title}`} onClose={() => setPop(null)}>
+          <ul className="todo-list"><TodoRow {...ctx} flat={false} t={x} chat={false} open onOpen={() => setPop(null)} /></ul>
+        </Modal>
+      ); })()}
+      {pop?.claim && (() => { const c = claims.find(x => String(x.id) === pop.claim); return c ? (
+        <Modal wide title={`Claim · ${claimLabel(c)}`} onClose={() => setPop(null)}>
+          <ClaimCase claim={c} canWork today={today} onSaved={() => { void loadClaims(); void loadTodos(); }}
+                     onRemoved={x => { setRemovedClaim(x); setPop(null); }} />
+        </Modal>
+      ) : null; })()}
     </div>
   );
 }
@@ -425,6 +460,12 @@ type RowCtx = {
   reload: () => void;
   /** Home: sub-tasks are summed up (☑ 1/3), not listed. */
   compact?: boolean;
+  /** §159: which to-dos carry a purchase order, and the pop-up a related item opens in. */
+  orderIds?: Set<string>;
+  openPop?: (x: { todo?: string; claim?: string }) => void;
+  filterBy?: (x: { unit?: string; owner?: string }) => void;
+  /** Shown in its own section although it is inside another: it says what it is part of. */
+  related?: boolean;
 };
 
 function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; chat?: boolean }) {
@@ -448,6 +489,23 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   const mine = sortTodos(kids.get(t.id) ?? []);
   const prog = progress(mine);
   const parent = t.parentId ? byId.get(t.parentId) : undefined;
+  const isOrder = !!props.orderIds?.has(t.id);
+  const cat = categoryOf(t, isOrder);
+  const stage = stageOf(t.status, isOrder);
+  const openPop = props.openPop;
+  // §159: inside a parent, one of the same kind is a row; one of another kind is a line that opens in a pop-up.
+  const kidCat = (k: Todo) => categoryOf(k, !!props.orderIds?.has(k.id));
+  const relLine = (k: Todo) => (
+    <li key={k.id} className={`rel-line cat-${kidCat(k)} ${isClosed(k.status) ? 'is-done' : ''}`}>
+      <button type="button" onClick={() => openPop?.({ todo: k.id })} title="Open it">
+        <span className="rel-cat">{CATEGORY_LABEL[kidCat(k)]}</span>
+        <span className="rel-title">{k.title}</span>
+        <span className={`rel-stage st-${stageOf(k.status, !!props.orderIds?.has(k.id)).key}`}>{stageOf(k.status, !!props.orderIds?.has(k.id)).label}</span>
+      </button>
+    </li>
+  );
+  const kidRow = (k: Todo, o: boolean, onO: () => void) => kidCat(k) !== cat ? relLine(k)
+    : <TodoRow key={k.id} {...props} flat={false} related={false} t={k} open={o} onOpen={onO} />;
   const doTick = async () => { setBusy(true); await act({ action: 'done', id: t.id, done: !closed }); setBusy(false); };
   // §105: the row's own actions — done, cancel, reopen — and renaming in place.
   const doCancel = async () => { setBusy(true); await act({ action: 'update', id: t.id, status: 'cancelled' }); setBusy(false); };
@@ -475,13 +533,11 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   };
 
   return (
-    <li className={`todo due-${due} ${closed ? 'is-done' : ''} prio-${t.priority}`}>
+    <li className={`todo cat-${cat} stage-${stage.key} due-${due} ${closed ? 'is-done' : ''} prio-${t.priority}`}>
       {/* Owner, 2026-10-14: opening a task was not obvious — a ▸ before the title, and a click anywhere on
-          the row opens it (its own buttons, links and fields keep their job). */}
+          the row opens it (its own buttons, links and fields keep their job). §159: the title alone on the
+          first line; what describes it is one quiet line under it, always in the same order. */}
       <div className="todo-line todo-opener" onClick={e => { if (!renaming && !(e.target as HTMLElement).closest('button, a, input, select, textarea, label')) onOpen(); }}>
-        {/* Owner, Oct 2026: the ✓ and ✕ at the right are enough — no box. */}
-        {t.kind === 'work_order' && <span title="Work order"><Icon n="wrench" /></span>}
-        {flat && parent && <span className="sub-n" title="Sub-task of">↳ {parent.title} ·</span>}
         {renaming ? (
           <input className="todo-rename" value={name} autoFocus maxLength={120} aria-label="Title"
                  onChange={e => setName(e.target.value)} onBlur={() => void rename()}
@@ -490,41 +546,6 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           <button className="todo-title" onClick={onOpen} aria-expanded={open} title={open ? 'Close it' : 'Open it'}><span className="todo-caret" aria-hidden="true">{open ? '▾' : '▸'}</span>{t.title}</button>
           <button type="button" className="todo-pencil" title="Rename" aria-label={`Rename ${t.title}`} onClick={() => { setName(t.title); setRenaming(true); }}>✎</button>
         </>}
-        {/* Owner, 2026-10-14 (crowded): the title on its own line, what describes it on the next. */}
-        <span className="todo-break" aria-hidden="true" />
-        {prog.total > 0 && (!flat && !open && !compact && mine.some(k => !isClosed(k.status))
-          ? <button type="button" className={`todo-prog todo-prog-btn ${prog.done === prog.total ? 'all' : ''}`} aria-expanded={kidsShown}
-                    title={kidsShown ? 'Hide the sub-tasks' : 'Show the sub-tasks'} onClick={() => setKidsShown(v => !v)}>
-              {kidsShown ? '▾' : '▸'} ☑ {prog.done}/{prog.total}</button>
-          : <span className={`todo-prog ${prog.done === prog.total ? 'all' : ''}`} title="Sub-tasks done">☑ {prog.done}/{prog.total}</span>)}
-        {t.priority !== 'none' && !closed && <span className={`todo-prio ${t.priority}`}>{PRIORITY_LABEL[t.priority]}</span>}
-        {(t.status === 'confirmed' || t.status === 'in_progress' || t.status === 'cancelled') &&
-          <span className={`todo-status s-${t.status}`}>{STATUS_LABEL[t.status]}</span>}
-        {/* A sub-task says only what differs from its parent: the same unit
-            and claim under the same parent are noise. */}
-        {t.unitIds.filter(id => !(parent && !flat && parent.unitIds.includes(id))).map(id => <span key={id} className="todo-unit">{names.get(id) ?? 'unit'}</span>)}
-        {t.reservationLabel && !(parent && !flat && parent.reservationId === t.reservationId) &&
-          <span className="todo-stay" title="The stay it is about"><Icon n="bed" /> {t.reservationLabel}</span>}
-        {t.claimId && !inClaim && !(parent && !flat && parent.claimId === t.claimId) && (!claims.length || claimNames.has(t.claimId)) && <span className="todo-claim" title="Belongs to a claim">⚑ {claimNames.get(t.claimId) ?? 'claim'}</span>}
-        {t.assignee && <span className="sub-n">→ {t.assignee}</span>}
-        {t.kind === 'work_order' && t.vendor && <span className="sub-n">· {t.vendor}</span>}
-        {t.scheduledOn && !closed && t.scheduledOn > today && <span className="sub-n">· starts {shortDay(t.scheduledOn)}{t.startTime ? ` ${t.startTime}` : ''}</span>}
-        {!closed && t.dueOn && <span className="todo-due">{dueLabel(t, today)}{t.dueTime ? ` · ${t.dueTime}` : ''}</span>}
-        {closed && t.resolutionNote && <span className="sub-n todo-resolution" title="Resolution">— {t.resolutionNote}</span>}
-        {(t.costActual ?? t.costEstimate) != null &&
-          <span className="sub-n">{t.costActual != null ? money2(t.costActual) : `~${money2(t.costEstimate!)}`}</span>}
-        {t.kind === 'work_order' && t.chargeOwner && <span className="todo-ha" title={t.hostawayExpenseId ? `Expense #${t.hostawayExpenseId} in Hostaway` : 'Charged when completed with a cost'}>
-          {t.hostawayExpenseId ? '↗ billed to owner' : '↗ owner pays'}</span>}
-        {props.chat && !open
-          ? <button type="button" className="link tiny" aria-expanded={talk} onClick={() => setTalk(v => !v)}
-                    title={talk ? 'Hide the comments' : 'Comments — read or leave one'}>{talk ? '▾' : '▸'} <Icon n="message" /> {t.updates > 1 ? t.updates : 'Comment'}</button>
-          : t.updates > 1 && <span className="sub-n" title="Updates"><Icon n="message" /> {t.updates}</span>}
-        {!!t.files && <button type="button" className="link tiny" title="Files — open the to-do to see them" onClick={onOpen}><Icon n="clip" /> {t.files}</button>}
-        {t.hostawayError ? <span className="todo-ha err" title={`Not yet in Hostaway: ${t.hostawayError} — retried on the next sync`}><Icon n="warning" /> Hostaway</span>
-          : t.hostawayTaskId && <span className="todo-ha" title={`Hostaway task #${t.hostawayTaskId}${t.source === 'hostaway' ? ' — written in Hostaway' : ''}`}>⇄ Hostaway</span>}
-        {/* A sub-task is removed from its own line, naming itself — never
-            through the parent's Remove, which takes the whole task (§82). */}
-        {closed && t.doneAt && <span className="sub-n">{t.status === 'cancelled' ? '✕' : '✓'} {t.doneBy?.split('@')[0]} · {t.doneAt.slice(5, 10)}</span>}
         {/* §105: how a task ends, on its own row, at the right — faint until the row is pointed at. */}
         <span className="todo-quick">
           {closed
@@ -532,7 +553,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
             : <>
                 <button type="button" className="q-cancel" disabled={busy} onClick={() => void cancel()} title="Cancel it — kept, closed as cancelled"
                         aria-label={`Cancel: ${t.title}`}>✕</button>
-                <button type="button" className="q-done" disabled={busy} onClick={() => void tick()} title="Mark as done"
+                <button type="button" className="q-done" disabled={busy} onClick={() => void tick()} title={isOrder ? 'Mark as purchased' : 'Mark as done'}
                         aria-label={`Done: ${t.title}`}>✓</button>
               </>}
         </span>
@@ -542,6 +563,39 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           <button className="todo-x" title={`Remove the sub-task “${t.title}”`} aria-label={`Remove the sub-task ${t.title}`}
                   onClick={() => setLineDel(true)}>✕</button>
         )}
+      </div>
+      <div className="todo-meta">
+        {!compact && cat !== 'task' && <span className="m m-cat">{CATEGORY_LABEL[cat]}</span>}
+        <span className={`m m-stage st-${stage.key}`}>{stage.label}
+          {!closed && stage.key === 'scheduled' && t.scheduledOn && t.scheduledOn > today ? ` · ${shortDay(t.scheduledOn)}${t.startTime ? ` ${t.startTime}` : ''}` : ''}
+          {closed && t.doneAt ? ` · ${t.doneBy?.split('@')[0] ?? ''} ${t.doneAt.slice(5, 10)}` : ''}</span>
+        {!closed && (t.priority === 'urgent' || t.priority === 'high') && <span className="m m-attn">{PRIORITY_LABEL[t.priority]}</span>}
+        {!closed && t.dueOn && <span className={`m ${due === 'overdue' || due === 'today' ? 'm-attn' : ''}`}><Icon n="calendar" />{dueLabel(t, today)}{t.dueTime ? ` · ${t.dueTime}` : ''}</span>}
+        {/* A sub-task says only what differs from its parent: the same unit under the same parent is noise. */}
+        {t.unitIds.filter(id => !(parent && !flat && parent.unitIds.includes(id))).map(id => (
+          <button key={id} type="button" className="m m-btn m-link" title={`Show only the work on ${names.get(id) ?? 'this listing'}`}
+                  onClick={() => props.filterBy?.({ unit: id })}><Icon n="home" />{names.get(id) ?? 'unit'}</button>))}
+        {t.assignee && <button type="button" className="m m-btn m-link" title={`Show only what ${t.assignee} handles`}
+                               onClick={() => props.filterBy?.({ owner: t.assignee! })}><Icon n="user" />{t.assignee}</button>}
+        {t.kind === 'work_order' && t.vendor && <span className="m"><Icon n="wrench" />{t.vendor}</span>}
+        {prog.total > 0 && (!flat && !open && !compact && mine.some(k => !isClosed(k.status))
+          ? <button type="button" className="m m-btn" aria-expanded={kidsShown} title={kidsShown ? 'Hide what is inside' : 'Show what is inside'}
+                    onClick={() => setKidsShown(v => !v)}><Icon n="list" />{prog.done}/{prog.total} inside</button>
+          : <span className="m" title="Done inside"><Icon n="list" />{prog.done}/{prog.total}</span>)}
+        {props.chat && !open
+          ? <button type="button" className="m m-btn" aria-expanded={talk} onClick={() => setTalk(v => !v)}
+                    title={talk ? 'Hide the comments' : 'Comments — read or leave one'}><Icon n="message" />{t.updates > 1 ? t.updates : 'Comment'}</button>
+          : t.updates > 1 && <span className="m" title="Comments and updates"><Icon n="message" />{t.updates}</span>}
+        {!!t.files && <button type="button" className="m m-btn" title="Files — open it to see them" onClick={onOpen}><Icon n="clip" />{t.files}</button>}
+        {!open && sourceOf(t) && <span className="m">{t.description?.trim()
+          ? <Peek label={<><Icon n="note" />{sourceOf(t)}</>}><Linked text={t.description} /></Peek>
+          : <><Icon n="note" />{sourceOf(t)}</>}</span>}
+        {/* §159: what it belongs to opens in a pop-up — the list stays where it is. */}
+        {parent && (flat || props.related) && <button type="button" className="m m-btn m-rel" title="Open what this is part of" onClick={() => openPop?.({ todo: parent.id })}>Part of › {parent.title}</button>}
+        {t.claimId && !inClaim && !(parent && !flat && parent.claimId === t.claimId) && (!claims.length || claimNames.has(t.claimId)) &&
+          <button type="button" className="m m-btn m-rel" title="Open the claim" onClick={() => openPop?.({ claim: t.claimId! })}>Claim › {claimNames.get(t.claimId) ?? 'claim'}</button>}
+        {t.hostawayError && <span className="m m-attn" title={`Not yet in Hostaway: ${t.hostawayError} — retried on the next sync`}><Icon n="warning" />Not in Hostaway yet</span>}
+        {closed && t.resolutionNote && <span className="m todo-resolution" title="Resolution">— {t.resolutionNote}</span>}
       </div>
       {dismiss && (
         <Modal title={`Close ${asker === 'a cleaner' ? 'a cleaner’s' : 'an inspection’s'} request with nothing bought?`} onClose={() => { setDismiss(null); setWhy(''); }}>
@@ -577,16 +631,12 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
           <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} />
         </div>
       )}
-      {/* A description that is only a link ("From Slack: 🔗") says nothing on the row — the open to-do has it. */}
-      {t.description && !open && t.description.replace(/https?:\/\/\S+/g, '').replace(/from slack:?/ig, '').trim() &&
-        <div className="todo-desc" title={t.description}><Linked text={t.description} /></div>}
+      {/* §159: the description is behind a short "where it came from" on the context line, not a paragraph on the row. */}
       {/* Sub-tasks sit under their task when the list is not filtered (§78) — folded until asked (owner, §150:
           a clean's five reports open under it were noise); ▸ ☑ n/m on the row shows them. */}
       {!flat && !open && !compact && kidsShown && mine.some(k => !isClosed(k.status)) && (
         <ul className="todo-list todo-kids">
-          {mine.filter(k => !isClosed(k.status)).map(k => (
-            <TodoRow key={k.id} {...props} t={k} open={openSub === k.id} onOpen={() => setOpenSub(openSub === k.id ? null : k.id)} />
-          ))}
+          {mine.filter(k => !isClosed(k.status)).map(k => kidRow(k, openSub === k.id, () => setOpenSub(openSub === k.id ? null : k.id)))}
         </ul>
       )}
       {open && (
@@ -600,7 +650,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                       <section className={`task-fold ${subsOpen ? 'open' : ''}`}>
                         {mine.length > 0 && (
                           <button type="button" className="task-fold-head" aria-expanded={subsOpen} onClick={() => setSubsOpen(!subsOpen)}>
-                            <span className="task-fold-caret" aria-hidden="true">{subsOpen ? '▾' : '▸'}</span><b>Sub-tasks</b>
+                            <span className="task-fold-caret" aria-hidden="true">{subsOpen ? '▾' : '▸'}</span><b>Inside</b>
                             <span className="task-fold-sum">{prog.done}/{prog.total} done</span>
                           </button>
                         )}
@@ -608,8 +658,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                           <div className={mine.length ? 'task-fold-body' : ''}>
                             {mine.length > 0 && (
                               <ul className="todo-list todo-kids">
-                                {mine.map(k => <TodoRow key={k.id} {...props} flat={false} t={k} open={openSub === k.id}
-                                                        onOpen={() => setOpenSub(openSub === k.id ? null : k.id)} />)}
+                                {mine.map(k => kidRow(k, openSub === k.id, () => setOpenSub(openSub === k.id ? null : k.id)))}
                               </ul>
                             )}
                             {buying ? (
@@ -856,49 +905,102 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
   // Editing (§104): the content first — title, description, the conversation —
   // and everything else folded under one line that says where it stands.
   if (initial) {
+    // §159 (owner, 2026-10-14: the edit menu and the description were hard to read): an open item reads like an
+    // iOS settings sheet — what it is about first, then short grouped lists (label left, value right), each field
+    // editable where it sits; the rarely used ones under "More". One "Unsaved changes" bar saves them all.
+    const src = sourceOf({ ...initial, description: v.description });
     return (
-      <div className="task-edit">
-        {/* The row above is the heading (title and its marks); ✎ beside the title renames it (§105). */}
-        {/* Owner, 2026-10-14: the empty description box on top was confusing — the details sit there instead,
-            with a ✎ to edit them; the description is one of them (read here when it has text). */}
-        <section className={`task-fold ${details ? 'open' : ''}`}>
-          <button type="button" className="task-fold-head" aria-expanded={details} onClick={() => setDetails(!details)}>
-            <b>Details</b>
-            {/* No summary: the row above already shows status, priority, deadline, unit, owner (owner, 2026-10-14). */}
-            <span className="task-fold-edit">{details ? '▴ Close' : '✎ Edit'}</span>
-          </button>
-          {!details && (v.description ?? '').trim() && <div className="task-fold-desc"><Linked text={v.description!} /></div>}
-          {details && (
-            <div className="task-fold-body">
-              <label className="task-fold-descin">Description
-                <textarea className="task-desc" value={v.description ?? ''} maxLength={4000}
-                          rows={Math.min(8, Math.max(2, (v.description ?? '').split('\n').length + 1))}
-                          placeholder="Who, what exactly, anything to remember"
-                          onChange={e => set('description', e.target.value || null)} /></label>
-              <div className="task-fold-row">
-                <div className="todo-kind" role="group" aria-label="Kind">
-                  {(['task', 'work_order'] as TaskKind[]).map(k => (
-                    <button key={k} type="button" className={v.kind === k ? 'chip active' : 'chip'} onClick={() => set('kind', k)}>{ic(KIND_LABEL[k])}</button>
-                  ))}
-                </div>
-                {v.unitIds.map(id => (
-                  <span key={id} className="todo-unit">{name(id)}
-                    <button type="button" aria-label={`Remove ${name(id)}`} onClick={() => set('unitIds', [])}>×</button>
-                  </span>
-                ))}
-                {!v.unitIds.length && (
-                  <select value="" aria-label="Listing" onChange={e => { if (e.target.value) set('unitIds', [e.target.value]); }}>
-                    <option value="">Listing (optional)</option>
-                    {units.filter(u => u.active).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
-                  </select>
-                )}
-                <label className="todo-inline">Finish by
-                  <input type="date" value={v.dueOn ?? ''} onChange={e => set('dueOn', e.target.value || null)} /></label>
-              </div>
-              {detailGrid}
+      <div className="task-edit task-sheet">
+        <section className="sheet-about">
+          {src && src !== 'Details' && <div className="sheet-eyebrow"><Icon n="note" />{src}</div>}
+          {editDesc || !(v.description ?? '').trim() ? (
+            <textarea className="task-desc" value={v.description ?? ''} maxLength={4000} aria-label="Description"
+                      rows={Math.min(8, Math.max(2, (v.description ?? '').split('\n').length + 1))}
+                      placeholder="Add a description — who, what exactly, anything to remember"
+                      onChange={e => set('description', e.target.value || null)} />
+          ) : (
+            <div className="sheet-desc">
+              <div className="todo-desc-full"><Linked text={v.description!} /></div>
+              <button type="button" className="link tiny" onClick={() => setEditDesc(true)}>✎ Edit</button>
             </div>
           )}
         </section>
+        <div className="sheet-groups">
+          <div className="fl-group" role="group" aria-label="Status and people">
+            <label>Status
+              <select value={v.status} onChange={e => set('status', e.target.value as TaskStatus)}>
+                {STATUSES.map(x => <option key={x} value={x}>{STATUS_LABEL[x]}</option>)}
+              </select></label>
+            <label>Priority
+              <select value={v.priority} onChange={e => set('priority', e.target.value as Priority)}>
+                {PRIORITIES.map(p => <option key={p} value={p}>{PRIORITY_LABEL[p]}</option>)}
+              </select></label>
+            <PersonPick label="Owner" value={v.assigneeUserId} name={initial.assignee} people={people} onChange={x => set('assigneeUserId', x)} />
+            <PersonPick label="Supervisor" value={v.supervisorUserId} name={initial.supervisor} people={people} onChange={x => set('supervisorUserId', x)} />
+          </div>
+          <div className="fl-group" role="group" aria-label="When and where">
+            <label>Listing
+              <select value={v.unitIds[0] ?? ''} onChange={e => set('unitIds', e.target.value ? [e.target.value] : [])}>
+                <option value="">None</option>
+                {units.filter(u => u.active || v.unitIds.includes(u.id)).map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+              </select></label>
+            <label>Start from
+              <span className="todo-when">
+                <input type="date" value={v.scheduledOn ?? ''} onChange={e => set('scheduledOn', e.target.value || null)} />
+                <input type="time" value={v.startTime ?? ''} disabled={!v.scheduledOn} aria-label="Start time"
+                       onChange={e => set('startTime', e.target.value || null)} />
+              </span></label>
+            <label>Finish by
+              <span className="todo-when">
+                <input type="date" value={v.dueOn ?? ''} onChange={e => set('dueOn', e.target.value || null)} />
+                <input type="time" value={v.dueTime ?? ''} disabled={!v.dueOn} aria-label="Finish time"
+                       onChange={e => set('dueTime', e.target.value || null)} />
+              </span></label>
+            {v.unitIds.length <= 1 && (
+              <div className="fl-row">
+                <StayPicker unitId={v.unitIds[0] ?? null} value={v.reservationId ? { id: v.reservationId, label: v.reservationLabel ?? '' } : null}
+                            onChange={x => setV(p => ({ ...p, reservationId: x?.id ?? null, reservationLabel: x?.label ?? null }))} />
+              </div>
+            )}
+          </div>
+          <details className="fl-more" open={details} onToggle={e => setDetails((e.target as HTMLDetailsElement).open)}>
+            <summary>More <span className="sub-n">kind{canClaims ? ', claim' : ''}{wo ? ', vendor' : ''}, cost</span></summary>
+            <div className="fl-group" role="group" aria-label="More">
+              <div className="fl-row"><span className="fl-k">Kind</span>
+                <span className="todo-kind seg" role="group" aria-label="Kind">
+                  {(['task', 'work_order'] as TaskKind[]).map(k => (
+                    <button key={k} type="button" className={v.kind === k ? 'chip active' : 'chip'} onClick={() => set('kind', k)}>{KIND_LABEL[k]}</button>
+                  ))}
+                </span></div>
+              {canClaims && (
+                <label>Claim
+                  <select value={v.claimId ?? ''} onChange={e => set('claimId', e.target.value || null)}>
+                    <option value="">None</option>
+                    {openClaims.map(c => <option key={c.id} value={String(c.id)}>{claimLabel(c)}</option>)}
+                  </select></label>
+              )}
+              {wo && <>
+                <label>Vendor
+                  <input value={v.vendor ?? ''} placeholder="Plumber, handyman…" list="kaizen-vendors" onChange={e => set('vendor', e.target.value || null)} /></label>
+                <VendorOptions />
+                <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
+              </>}
+              <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
+              {wo && (
+                <label className="check todo-charge" title={v.unitIds.length ? 'When completed, the cost is also an expense on the listing in Hostaway (owner statements)' : 'Needs a listing — the expense goes on it'}>
+                  <input type="checkbox" checked={v.chargeOwner} disabled={!v.unitIds.length} onChange={e => set('chargeOwner', e.target.checked)} />
+                  Charge to owner
+                </label>
+              )}
+              {initial.hostawayTaskId && <div className="fl-row"><span className="fl-k">Hostaway</span><span className="sub-n">Task #{initial.hostawayTaskId}</span></div>}
+            </div>
+            {wo && <VendorLink id={initial.id} />}
+          </details>
+          {closing && (
+            <label className="todo-resolution-in">How it was resolved
+              <textarea rows={2} value={v.resolutionNote ?? ''} maxLength={2000} onChange={e => set('resolutionNote', e.target.value || null)} /></label>
+          )}
+        </div>
         {middle}
         {after}
         {dirty && (

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { auditCsv, childrenBy, daysTaken, dueLabel, dueOf, matchesFilter, outcomeOf, progress, sortTodos, stayLabel, workCost,
+import { auditCsv, isFiltering, sourceOf, categoryOf, claimStage, stageOf, childrenBy, daysTaken, dueLabel, dueOf, matchesFilter, outcomeOf, progress, sortTodos, stayLabel, workCost,
          type AuditRow, type Todo } from './todos.ts';
 
 test('a stay is named by its guest and dates', () => {
@@ -42,9 +42,9 @@ const TODAY = '2026-09-27';
 
 test('due, in words, with a shape as well as a colour', () => {
   assert.equal(dueOf({ dueOn: '2026-09-25' }, TODAY), 'overdue');
-  assert.equal(dueLabel({ dueOn: '2026-09-25' }, TODAY), '▲ overdue 2d · Fri Sep 25');
-  assert.equal(dueLabel({ dueOn: TODAY }, TODAY), '● today');
-  assert.equal(dueLabel({ dueOn: '2026-09-28' }, TODAY), '○ tomorrow · Mon Sep 28');
+  assert.equal(dueLabel({ dueOn: '2026-09-25' }, TODAY), 'Overdue 2d · Fri Sep 25');
+  assert.equal(dueLabel({ dueOn: TODAY }, TODAY), 'Today');
+  assert.equal(dueLabel({ dueOn: '2026-09-28' }, TODAY), 'Tomorrow · Mon Sep 28');
   assert.equal(dueOf({ dueOn: '2026-10-04' }, TODAY), 'soon');
   assert.equal(dueOf({ dueOn: '2026-10-05' }, TODAY), 'later');
   assert.equal(dueOf({ dueOn: null }, TODAY), 'none');
@@ -85,4 +85,38 @@ test('the done log: how it ended, how long it took, and a CSV an auditor can ope
   assert.match(head!, /^Closed \(New York\),Outcome,Closed by,Title/);
   // 09:00 UTC is 05:00 in New York (EDT) — the audit reads the team's clock.
   assert.match(line!, /^2026-09-23 05:00,completed,luis@x.com,"Fix ""AC"", unit 2",Repair,CL1250,/);
+});
+
+test('one life cycle in the same words (§159)', () => {
+  assert.equal(stageOf('pending').label, 'Scheduled');
+  assert.equal(stageOf('confirmed').label, 'Scheduled');
+  assert.equal(stageOf('in_progress').label, 'In progress');
+  assert.equal(stageOf('completed').label, 'Done');
+  assert.equal(stageOf('cancelled').label, 'Cancelled');
+  // A purchase order: ordered until bought, whatever Hostaway calls the step.
+  assert.equal(stageOf('in_progress', true).label, 'Ordered');
+  assert.equal(stageOf('completed', true).label, 'Purchased');
+  assert.equal(stageOf('cancelled', true).label, 'Cancelled');
+  assert.deepEqual(['Open', 'In progress', 'Resolved', 'Refunded', 'Dismissed'].map(s => claimStage(s).label),
+    ['Open', 'In progress', 'Done', 'Done · refunded', 'Cancelled']);
+  assert.equal(categoryOf({ kind: 'task' }, true), 'order');
+  assert.equal(categoryOf({ kind: 'work_order' }), 'work_order');
+});
+
+test('where a to-do came from, in a few words (§159)', () => {
+  assert.equal(sourceOf({ cleanGroup: 'request', description: 'What Karina reported…' }), 'Request from a cleaner');
+  assert.equal(sourceOf({ cleanGroup: 'inspection', description: null }), 'From an inspection');
+  assert.equal(sourceOf({ description: 'Fix it — From Slack: https://x.slack.com/a' }), 'From Slack');
+  assert.equal(sourceOf({ description: null, source: 'hostaway' }), 'From Hostaway');
+  assert.equal(sourceOf({ description: 'BGC page' }), 'Details');
+  assert.equal(sourceOf({ description: '  ' }), null);
+});
+
+test('filter by who handles it (§159)', () => {
+  const t = (assignee: string | null) => ({ id: '1', title: 'x', unitIds: [], dueOn: null, createdAt: '', createdBy: null, doneAt: null, doneBy: null,
+    kind: 'task', status: 'pending', priority: 'none', assignee, claimId: null, vendor: null, scheduledOn: null, costEstimate: null,
+    costActual: null, updates: 0, description: null, parentId: null, reservationId: null, reservationLabel: null }) as Todo;
+  assert.equal(matchesFilter(t('Juan'), { assignee: 'Juan' }, '2026-10-14'), true);
+  assert.equal(matchesFilter(t(null), { assignee: 'Juan' }, '2026-10-14'), false);
+  assert.equal(isFiltering({ assignee: 'Juan' }), true);
 });

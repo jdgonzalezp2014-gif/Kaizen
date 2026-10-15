@@ -136,3 +136,13 @@ UI only; tokens and shared components from `docs/design-system.md`.
 - Claims keep their shape + word for status; no change needed.
 - Open: the urgent to-do rail is red (priority Urgent). Kept: the owner chose red for High/Critical
   severity on claims and urgent priority reads the same way; revisit if red starts to mean only "failed".
+
+- **One anatomy and one life cycle (§159, owner 2026-10-14):** every work row = title line + one context line
+  (`.todo-meta`) in a fixed order; the category is a 2 px bar (`cat-task/work_order/order/claim`); the description is
+  behind a short source label (`sourceOf`: "Request from a cleaner", "From an inspection", "From Slack", "Details"; `Peek`
+  in Hint.tsx). Stages from `stageOf`/`claimStage` (src/lib/todos.ts) — also used by Slack (`taskFacts`, `taskCard`).
+  A child of another category (a work order in a to-do, an order in a repair) is listed in its own tab with
+  "Part of ›" and inside its parent as a line that opens a pop-up (`openPop` → Modal with the whole card); same
+  category stays nested. Listing and owner on a row filter the list (`filterBy`, `WorkFilter.assignee`), shown as
+  a ✕ chip. The open card is a sheet (`task-sheet`, `fl-group`). Claims screen rows use the same anatomy.
+  Bucket "Scheduled" renamed "Further out" (Scheduled is a stage now). No data or API change except Slack's words.

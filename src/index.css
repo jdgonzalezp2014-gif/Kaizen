@@ -1284,7 +1284,6 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 .todo-status.s-cancelled { color: var(--muted); }
 .todo-claim { font-size: var(--fs-caption); padding: 1px 7px; border-radius: var(--r-pill); white-space: nowrap;
   border: 1px solid color-mix(in srgb, var(--crit) 40%, transparent); color: var(--ink); }
-.todo.prio-urgent:not(.is-done) { box-shadow: inset 3px 0 0 var(--crit); padding-left: 8px; }
 .timeline { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); }
 .timeline-title { font-size: var(--fs-footnote); font-weight: 650; margin-bottom: 4px; }
 .timeline-list { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 4px; }
@@ -1297,8 +1296,6 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 .claim-case-head { display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; margin-bottom: 8px; }
 @media (max-width: 640px) { .timeline-list li { grid-template-columns: 1fr; gap: 0; } }
 /* Claims in the work list: cases above the work, worst first. */
-.todo.case { box-shadow: inset 3px 0 0 color-mix(in srgb, var(--crit) 55%, transparent); padding-left: 8px; }
-.todo.case.sev-low, .todo.case.sev-medium { box-shadow: inset 3px 0 0 var(--line); }
 .case-flag { color: var(--crit); }
 .todo-status.sev.s-critical, .todo-status.sev.s-high { color: var(--crit); border-color: color-mix(in srgb, var(--crit) 45%, transparent); }
 .case-desc { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 420px; }
@@ -2337,3 +2334,91 @@ tr.rc-open > td { border-bottom: 0; }
 .rc-foot button.link { color: var(--muted); font-weight: 400; text-decoration: underline; }
 .warn-text { color: var(--amber); font-size: var(--fs-body); }
 @media (max-width: 640px) { .rc-step { grid-template-columns: 1fr; gap: 6px; } }
+
+/* ══ §159: one shape for every piece of work — to-do, work order, purchase order, claim ══
+   A title line, then one quiet line of context in a fixed order (stage · urgency · date · unit · owner ·
+   inside · comments · files · part of · claim). Colour is spent sparingly and on text: the category is a
+   2 px bar, "In progress"/"Ordered" read in the action blue, "Done"/"Purchased" in green, what is late or
+   urgent in amber. Nothing else is coloured. */
+:root { --cat-task: #7b8794; --cat-work_order: #b07a3c; --cat-order: #3d8a86; --cat-claim: #8a6bb0; }
+:root[data-theme="dark"] { --cat-task: #8d99a6; --cat-work_order: #c99a62; --cat-order: #5fb0ab; --cat-claim: #a98ccf; }
+.todo { box-shadow: inset 2px 0 0 var(--cat, transparent); }
+.todo.cat-task { --cat: color-mix(in srgb, var(--cat-task) 70%, transparent); }
+.todo.cat-work_order { --cat: var(--cat-work_order); }
+.todo.cat-order { --cat: var(--cat-order); }
+.todo.cat-claim { --cat: var(--cat-claim); }
+.todo.is-done { --cat: var(--line); }
+.todo-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 2px 14px; margin-top: 3px;
+  font-size: var(--fs-footnote); color: var(--muted); line-height: 1.4; }
+.todo-meta .m { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; min-width: 0; }
+.todo-meta .m .icon { width: 1em; height: 1em; opacity: .8; }
+.todo-meta .m-cat { font-weight: 600; color: var(--ink); }
+.todo-meta .m-stage { font-weight: 600; }
+.st-in_progress, .st-ordered { color: var(--accent); }
+.st-done, .st-purchased { color: var(--green); }
+.st-cancelled { color: var(--muted); }
+.st-scheduled, .st-open { color: var(--ink); }
+.todo-meta .m-attn { color: var(--amber); font-weight: 600; }
+.todo-meta .m-btn { background: none; border: 0; padding: 2px 0; min-height: 0; color: inherit; font: inherit; cursor: pointer; }
+.todo-meta .m-btn:hover { color: var(--accent); }
+.todo-meta .m-rel { max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.todo.is-done .todo-meta { opacity: .85; }
+.todo-line > .todo-title { font-size: var(--fs-callout); }
+/* Something of another kind inside: one line that opens it in a pop-up. */
+.rel-line { list-style: none; }
+.rel-line + .rel-line, .todo + .rel-line, .rel-line + .todo { border-top: 1px solid var(--line); }
+.rel-line > button { display: flex; align-items: center; gap: 10px; width: 100%; min-height: 40px; padding: 6px 12px;
+  background: none; border: 0; border-radius: var(--r-sm); color: var(--ink); text-align: left; font: inherit; cursor: pointer;
+  box-shadow: inset 2px 0 0 var(--cat, var(--line)); }
+.rel-line.cat-task > button { --cat: color-mix(in srgb, var(--cat-task) 70%, transparent); }
+.rel-line.cat-work_order > button { --cat: var(--cat-work_order); }
+.rel-line.cat-order > button { --cat: var(--cat-order); }
+.rel-line > button:hover { background: var(--hover); }
+.rel-cat { font-size: var(--fs-footnote); color: var(--muted); font-weight: 600; flex: none; }
+.rel-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rel-stage { font-size: var(--fs-footnote); font-weight: 600; flex: none; }
+.rel-line.is-done .rel-title { color: var(--muted); text-decoration: line-through; }
+@media (max-width: 720px) { .todo-meta { gap: 2px 12px; } .rel-line > button { min-height: 44px; } }
+/* The pencil stays beside the title, also when the title wraps on a phone. */
+.todo-line.todo-opener { flex-wrap: nowrap; align-items: flex-start; }
+.todo-line.todo-opener > .todo-title { flex: 0 1 auto; min-width: 0; text-align: left; }
+.todo-line.todo-opener > .todo-pencil { flex: none; margin-top: 3px; }
+.todo-line.todo-opener > .todo-rename { flex: 1 1 auto; }
+
+/* A Peek's label reads as part of the context line; its popover is the Hint's. */
+.peek-label { display: inline-flex; align-items: center; gap: 4px; background: none; border: 0; padding: 2px 0; min-height: 0;
+  color: inherit; font: inherit; cursor: help; text-decoration: underline dotted color-mix(in srgb, currentColor 45%, transparent); text-underline-offset: 3px; }
+.peek-label:hover { color: var(--ink); }
+.peek .hint-pop { max-width: min(420px, 85vw); }
+/* §159: an open item as a settings sheet — about, then grouped lists (label left, value right). */
+.task-sheet { display: flex; flex-direction: column; gap: var(--s-4); }
+.sheet-about { display: flex; flex-direction: column; gap: 6px; }
+.sheet-eyebrow { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-footnote); font-weight: 600; color: var(--muted); }
+.sheet-desc { display: flex; gap: var(--s-3); align-items: flex-start; }
+.sheet-desc .todo-desc-full { flex: 1; white-space: pre-wrap; line-height: 1.55; }
+.task-sheet .task-desc { width: 100%; font-family: var(--font); font-size: var(--fs-body); margin: 0; }
+.sheet-groups { display: grid; gap: var(--s-3); grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); align-items: start; }
+.sheet-groups > .fl-more, .sheet-groups > .todo-resolution-in { grid-column: 1 / -1; }
+.fl-group { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.fl-group > label, .fl-group > .fl-row { display: grid; grid-template-columns: minmax(96px, 34%) 1fr; align-items: center; gap: var(--s-3);
+  margin: 0; padding: 6px 12px; min-height: 44px; font-size: var(--fs-body); color: var(--muted); font-weight: 500; }
+.fl-group > label + label, .fl-group > label + .fl-row, .fl-group > .fl-row + label, .fl-group > .fl-row + .fl-row { border-top: 1px solid var(--line); }
+.fl-group > label > input:not([type=checkbox]), .fl-group > label > select, .fl-group > label > .todo-when { margin: 0; width: 100%; color: var(--ink); }
+.fl-group > label > select, .fl-group > label > input:not([type=checkbox]) { border-color: transparent; background: transparent; padding-left: 4px; }
+.fl-group > label > select:hover, .fl-group > label > input:not([type=checkbox]):hover { border-color: var(--line-strong); }
+.fl-group > label.check { display: flex; color: var(--ink); }
+.fl-group .todo-when { display: flex; gap: 6px; }
+.fl-group .todo-when input { flex: 1; min-width: 0; border-color: transparent; background: transparent; }
+.fl-group > .fl-row:has(> .stay-pick, > div) { grid-template-columns: 1fr; }
+.fl-k { color: var(--muted); }
+.todo-kind.seg { display: inline-flex; gap: 4px; }
+.fl-more > summary { cursor: pointer; padding: 6px 2px; font-weight: 600; list-style: none; }
+.fl-more > summary::before { content: '▸ '; color: var(--muted); }
+.fl-more[open] > summary::before { content: '▾ '; }
+.fl-more > .fl-group { margin-top: 6px; }
+@media (max-width: 720px) { .sheet-groups { grid-template-columns: 1fr; } }
+
+.todo-meta .m-link:hover { text-decoration: underline; text-underline-offset: 2px; }
+.filter-chips { display: flex; gap: 6px; flex-wrap: wrap; margin: 0 0 var(--s-3); }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.claims-list { background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); padding: 4px 8px; margin: 0; }

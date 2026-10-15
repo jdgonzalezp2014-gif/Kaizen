@@ -59,15 +59,18 @@ export interface WorkFilter {
   priority?: '' | 'high' | 'urgent';
   due?: '' | 'overdue' | 'today' | 'week' | 'none';
   unitId?: string;
+  /** §159: who handles it — the owner's name as shown (a tap on it filters by it). */
+  assignee?: string;
 }
 
-export const isFiltering = (f: WorkFilter) => !!(f.kind || f.priority || f.due || f.unitId);
+export const isFiltering = (f: WorkFilter) => !!(f.kind || f.priority || f.due || f.unitId || f.assignee);
 
 export function matchesFilter(t: Todo, f: WorkFilter, today: DateStr): boolean {
   if (f.kind && t.kind !== f.kind) return false;
   if (f.priority === 'urgent' && t.priority !== 'urgent') return false;
   if (f.priority === 'high' && t.priority !== 'high' && t.priority !== 'urgent') return false;
   if (f.unitId && !t.unitIds.includes(f.unitId)) return false;
+  if (f.assignee && t.assignee !== f.assignee) return false;
   if (f.due) {
     const d = dueOf(t, today);
     if (f.due === 'overdue' && d !== 'overdue') return false;
@@ -96,13 +99,53 @@ export interface WorkUpdate {
 
 export const STATUSES: TaskStatus[] = ['pending', 'confirmed', 'in_progress', 'completed', 'cancelled'];
 
-/** Shape + word, never colour alone (the house rule). Hostaway's words. */
+/**
+ * One life cycle, the same words in Kaizen, Slack and the SOPs (owner, 2026-10-14 — §159):
+ * Scheduled → In progress → Done, or Cancelled. "Pending" and "Confirmed" were two names for
+ * "not started"; both read Scheduled (Hostaway keeps its own statuses — this is only the word).
+ * A purchase order reads Ordered → Purchased; a claim Open → In progress → Done.
+ */
+export type Stage = 'scheduled' | 'in_progress' | 'done' | 'cancelled' | 'ordered' | 'purchased' | 'open';
+export type Category = 'task' | 'work_order' | 'order' | 'claim';
+const STAGE_WORD: Record<Stage, string> = {
+  scheduled: 'Scheduled', in_progress: 'In progress', done: 'Done', cancelled: 'Cancelled',
+  ordered: 'Ordered', purchased: 'Purchased', open: 'Open'
+};
+export function stageOf(status: TaskStatus | string, order = false): { key: Stage; label: string } {
+  const key: Stage = status === 'cancelled' ? 'cancelled'
+    : status === 'completed' ? (order ? 'purchased' : 'done')
+    : order ? 'ordered'
+    : status === 'in_progress' ? 'in_progress' : 'scheduled';
+  return { key, label: STAGE_WORD[key] };
+}
+/** A claim's status (Open, In progress, Resolved, Refunded, Dismissed) in the same words. */
+export function claimStage(status: string): { key: Stage; label: string } {
+  if (status === 'Resolved') return { key: 'done', label: 'Done' };
+  if (status === 'Refunded') return { key: 'done', label: 'Done · refunded' };
+  if (status === 'Dismissed') return { key: 'cancelled', label: 'Cancelled' };
+  if (status === 'In progress') return { key: 'in_progress', label: 'In progress' };
+  return { key: 'open', label: 'Open' };
+}
+/** Where a to-do came from, in two or three words — the row shows this; the description is behind it (§159). */
+export function sourceOf(t: Pick<Todo, 'cleanGroup' | 'description' | 'source'>): string | null {
+  if (t.cleanGroup === 'problem') return 'Problem from a cleaner';
+  if (t.cleanGroup === 'request') return 'Request from a cleaner';
+  if (t.cleanGroup === 'bought') return 'Bought on a clean';
+  if (t.cleanGroup === 'inspection') return 'From an inspection';
+  if (/from slack/i.test(t.description ?? '')) return 'From Slack';
+  if (t.source === 'hostaway') return 'From Hostaway';
+  return t.description?.trim() ? 'Details' : null;
+}
+export const CATEGORY_LABEL: Record<Category, string> = { task: 'To-do', work_order: 'Work order', order: 'Purchase order', claim: 'Claim' };
+export const categoryOf = (t: Pick<Todo, 'kind'>, order = false): Category => order ? 'order' : t.kind;
+
+/** For a status picker: the stored value stays Hostaway's, the word is ours. */
 export const STATUS_LABEL: Record<TaskStatus, string> = {
-  pending: '○ Pending', confirmed: '◔ Confirmed', in_progress: '◐ In progress', completed: '✓ Completed', cancelled: '✕ Cancelled'
+  pending: 'Scheduled', confirmed: 'Scheduled · confirmed', in_progress: 'In progress', completed: 'Done', cancelled: 'Cancelled'
 };
 export const PRIORITIES: Priority[] = ['none', 'low', 'medium', 'high', 'urgent'];
-export const PRIORITY_LABEL: Record<Priority, string> = { none: 'No priority', low: 'Low', medium: 'Medium', high: '▲ High', urgent: '▲▲ Urgent' };
-export const KIND_LABEL: Record<TaskKind, string> = { task: 'To-do', work_order: '🔧 Work order' };
+export const PRIORITY_LABEL: Record<Priority, string> = { none: 'No priority', low: 'Low', medium: 'Medium', high: 'High', urgent: 'Urgent' };
+export const KIND_LABEL: Record<TaskKind, string> = { task: 'To-do', work_order: 'Work order' };
 
 export const isClosed = (s: TaskStatus) => s === 'completed' || s === 'cancelled';
 
@@ -128,10 +171,11 @@ export function dueLabel(t: Pick<Todo, 'dueOn'>, today: DateStr): string {
   if (!t.dueOn) return '';
   const day = shortDay(t.dueOn);
   const n = daysBetween(today, t.dueOn);
-  if (n < 0) return `▲ overdue ${-n}d · ${day}`;
-  if (n === 0) return '● today';
-  if (n === 1) return `○ tomorrow · ${day}`;
-  return `○ ${day}`;
+  // Words, no glyphs (§159): the row colours "Overdue" and "Today"; the rest is a date.
+  if (n < 0) return `Overdue ${-n}d · ${day}`;
+  if (n === 0) return 'Today';
+  if (n === 1) return `Tomorrow · ${day}`;
+  return day;
 }
 
 const closed = (t: Pick<Todo, 'status' | 'doneAt'>) => isClosed(t.status) || !!t.doneAt;

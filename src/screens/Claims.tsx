@@ -17,6 +17,13 @@ import { ClaimCase, StayPicker } from '../components/Todos.tsx';
 import { caseHost } from '../lib/claims.ts';
 import { CLAIM_CATEGORIES, CLAIM_SEVERITY, CLAIM_SOURCES, CLAIM_STATUS } from '../lib/claims.ts';
 import { Icon } from '../components/Icon.tsx';
+import { Peek } from '../components/Hint.tsx';
+import { Linked } from '../components/Todos.tsx';
+import { claimStage, shortDay } from '../lib/todos.ts';
+
+/** A claim's name on its row: what happened (the unit is the link beside it), without the "— From Slack: <url>" tail (§159). */
+const claimTitle = (c: Claim) =>
+  (c.description ?? '').replace(/\s*—?\s*From Slack:?\s*\S*\s*$/i, '').trim().slice(0, 80) || c.category || 'Claim';
 
 const SEVERITY = CLAIM_SEVERITY;
 const STATUS = CLAIM_STATUS;
@@ -41,6 +48,7 @@ export function Claims({ units, canWork = false }: {
   const [claims, setClaims] = useState<Claim[] | null>(null);
   const [editing, setEditing] = useState<Partial<Claim> | null>(null);
   const [openId, setOpenId] = useState<string | null>(null);
+  const [unitFilter, setUnitFilter] = useState('');
   const [removed, setRemoved] = useState<Claim | null>(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
@@ -113,42 +121,43 @@ export function Claims({ units, canWork = false }: {
           onCancel={() => setEditing(null)} onSave={save} onRemoved={x => { setRemoved(x); void load(); }} />
       )}
 
-      {claims && claims.length > 0 && (
-        <div className="ulist">
-          <div className="urow-head claim ulist-head" aria-hidden="true">
-            <span /><span>Unit</span><span>Raised</span><span>Category</span>
-            <span>Severity</span><span>Status</span><span className="n">Cost</span><span />
-          </div>
-          {claims.map(c => (
-            <div key={c.id} className={OPEN(c) ? 'urow' : 'urow muted-row'}>
-              <div className="urow-head claim">
-                <span className={`light tone-${
-                  c.severity === 'Critical' ? 'bad' : c.severity === 'High' ? 'warn'
-                  : OPEN(c) ? 'info' : 'ok'}`} aria-hidden="true" />
-                <span className="uname">{c.unit_name ?? <span className="muted">Portfolio</span>}</span>
-                <span className="note">{c.occurred_on.slice(0, 10)}
-                  {OPEN(c) && <> · {Math.round((Date.now() - Date.parse(c.occurred_on)) / 864e5)}d open</>}
-                </span>
-                <span className="note">{c.category ?? '—'}</span>
-                <span className="note">{c.severity}</span>
-                <span className="note">{c.status}</span>
-                <span className="n">{money2(Number(c.refund) + Number(c.repair_cost))}</span>
-                <span>
-                  <button className="link" onClick={() => setOpenId(openId === String(c.id) ? null : String(c.id))}>
-                    {openId === String(c.id) ? 'close' : 'open'}</button>{' '}
-                  <button className="link" onClick={() => setEditing(c)}>edit</button>
-                </span>
-              </div>
-              {(c.description || c.reservation_label || c.case_url) && (
-                <p className="claim-desc">{c.reservation_label && <span className="todo-stay"><Icon n="bed" /> {c.reservation_label}</span>} {c.description}
-                  {c.case_url && <> <a className="case-link" href={c.case_url} target="_blank" rel="noreferrer">↗ {caseHost(c.case_url)} case</a></>}</p>
-              )}
-              {openId === String(c.id) && (
-                <ClaimCase claim={c} canWork={canWork} onSaved={() => void load()} onRemoved={x => { setRemoved(x); setOpenId(null); }} />
-              )}
-            </div>
-          ))}
+      {/* §159 (owner, 2026-10-14: too much text): one row per claim — what happened on the first line, one quiet
+          line of context under it. The full description is behind "Details"; the unit filters the list. */}
+      {unitFilter && (
+        <div className="filter-chips">
+          <button className="fchip on" onClick={() => setUnitFilter('')}>{claims?.find(c => c.unit_id === unitFilter)?.unit_name ?? 'Listing'} <span aria-hidden="true">✕</span><span className="sr-only"> — clear</span></button>
         </div>
+      )}
+      {claims && claims.length > 0 && (
+        <ul className="todo-list claims-list">
+          {claims.filter(c => !unitFilter || c.unit_id === unitFilter).map(c => {
+            const st = claimStage(c.status), on = openId === String(c.id), title = claimTitle(c);
+            const cost = Number(c.refund) + Number(c.repair_cost);
+            const desc = (c.description ?? '').trim();
+            return (
+              <li key={c.id} className={`todo case cat-claim ${OPEN(c) ? '' : 'is-done'}`}>
+                <div className="todo-line todo-opener">
+                  <button className="todo-title" aria-expanded={on} onClick={() => setOpenId(on ? null : String(c.id))} title={on ? 'Close it' : 'Open it'}>
+                    <span className="todo-caret" aria-hidden="true">{on ? '▾' : '▸'}</span>{title}</button>
+                  <button type="button" className="todo-pencil" title="Edit the claim" aria-label={`Edit ${title}`} onClick={() => setEditing(c)}>✎</button>
+                </div>
+                <div className="todo-meta">
+                  <span className={`m m-stage st-${st.key}`}>{st.label}</span>
+                  {['High', 'Critical'].includes(c.severity) && <span className="m m-attn">{c.severity}</span>}
+                  {!c.unit_name && <span className="m"><Icon n="building" />Portfolio</span>}
+                  {c.unit_name && <button type="button" className="m m-btn m-link" title={`Show only ${c.unit_name}`} onClick={() => setUnitFilter(c.unit_id ?? '')}><Icon n="home" />{c.unit_name}</button>}
+                  {c.category && <span className="m">{c.category}</span>}
+                  <span className="m"><Icon n="calendar" />{shortDay(c.occurred_on.slice(0, 10))}{OPEN(c) ? ` · ${Math.round((Date.now() - Date.parse(c.occurred_on)) / 864e5)}d open` : ''}</span>
+                  {cost > 0 && <span className="m">{money2(cost)}</span>}
+                  {c.reservation_label && <span className="m"><Icon n="bed" />{c.reservation_label}</span>}
+                  {desc && desc !== title && <span className="m"><Peek label={<><Icon n="note" />{/from slack/i.test(desc) ? 'From Slack' : 'Details'}</>}><Linked text={desc} /></Peek></span>}
+                  {c.case_url && <a className="m m-link" href={c.case_url} target="_blank" rel="noreferrer">↗ {caseHost(c.case_url)} case</a>}
+                </div>
+                {on && <ClaimCase claim={c} canWork={canWork} onSaved={() => void load()} onRemoved={x => { setRemoved(x); setOpenId(null); }} />}
+              </li>
+            );
+          })}
+        </ul>
       )}
 
       {claims && claims.length === 0 && (

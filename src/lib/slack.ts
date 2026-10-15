@@ -7,6 +7,7 @@
  * the buttons that act on it — acting from Slack runs as the Kaizen member
  * whose email the Slack user has, with that member's permissions.
  */
+import { STATUS_LABEL, stageOf } from './todos.ts';
 import { channelLabel } from './breakdown.ts';
 import { COST_CATEGORIES, amountIn, guessCategory } from './costs.ts';
 
@@ -102,14 +103,16 @@ export interface TaskLite {
   id: string; title: string; kind: 'task' | 'work_order'; status: string; priority: string;
   unit?: string | null; assignee?: string | null; dueOn?: string | null; reservationLabel?: string | null; description?: string | null;
 }
-const STATUS_WORD: Record<string, string> = { pending: 'Pending', confirmed: 'Confirmed', in_progress: 'In progress', completed: 'Completed', cancelled: 'Cancelled' };
+// §159: Slack says what Kaizen says — Scheduled → In progress → Done (or Cancelled); an order Ordered → Purchased.
+const STATUS_WORD: Record<string, string> = STATUS_LABEL;
+const stageWord = (status: string, order = false) => stageOf(status, order).label;
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const day = (d: string) => `${MON[Number(d.slice(5, 7)) - 1]} ${Number(d.slice(8, 10))}`;
 
 export function taskFacts(t: TaskLite): string {
   return [t.unit, t.reservationLabel ? `🛏 ${t.reservationLabel}` : '', t.dueOn ? `finish by ${day(t.dueOn)}` : '',
-          t.assignee ? `owner ${t.assignee}` : '' /* §108: only when there is one */, ['high', 'urgent'].includes(t.priority) ? `▲ ${t.priority}` : '',
-          STATUS_WORD[t.status] ?? t.status].filter(Boolean).map(esc).join(' · ');
+          t.assignee ? `owner ${t.assignee}` : '' /* §108: only when there is one */, t.priority === 'urgent' ? 'Urgent' : t.priority === 'high' ? 'High' : '',
+          stageWord(t.status)].filter(Boolean).map(esc).join(' · ');
 }
 const what = (t: TaskLite) => t.kind === 'work_order' ? '🔧 Repair' : '☐ To-do';
 
@@ -566,7 +569,7 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
   const closed = t.status === 'completed' || t.status === 'cancelled';
   const f = (label: string, v: string | null | undefined) => v ? mrk(`*${label}*\n${esc(v)}`) : null;
   const fields = [
-    f('Status', STATUS_WORD[t.status] ?? t.status), f('Owner', t.assignee ?? 'Nobody'),
+    f('Status', stageWord(t.status, !!t.order?.length)), f('Owner', t.assignee ?? 'Nobody'),
     f('Priority', t.priority !== 'none' ? t.priority[0]!.toUpperCase() + t.priority.slice(1) : null), f('Listing', t.unit),
     f('Start from', t.scheduledOn ? day(t.scheduledOn) : null), f('Finish by', t.dueOn ? day(t.dueOn) : null),
     f('Supervisor', t.supervisor), f('Stay', t.reservationLabel), f('Claim', t.claim ? `⚑ ${t.claim}` : null), f('Vendor', t.vendor),
@@ -574,7 +577,7 @@ export function taskCard(t: TaskCard, note?: string, root?: 'tasks', focus = fal
   ].filter(Boolean).slice(0, 10);
   return {
     type: 'modal', callback_id: 'task_card', private_metadata: JSON.stringify({ id: t.id, ...(root ? { root } : {}) }),
-    title: plain(t.kind === 'work_order' ? 'Repair' : 'To-do'), submit: plain('Save'), close: plain('Close'),
+    title: plain(t.order?.length ? 'Purchase order' : t.kind === 'work_order' ? 'Work order' : 'To-do'), submit: plain('Save'), close: plain('Close'),
     blocks: [
       { type: 'header', text: plain(t.title.slice(0, 150)) },
       ...(note ? [context(note)] : []),

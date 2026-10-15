@@ -118,6 +118,31 @@ only when its text does (a red error, an amber flag). The only coloured exceptio
   AccessBox, PhotoPicker): every text child goes through `ic()`, because their copy reaches them via props
   and arrays.
 
+## Work items: one anatomy, one life cycle (§159)
+
+To-do, work order, purchase order and claim share **one row**: a title line (▸ title · ✎ · ✕ ✓) and **one
+quiet line of context** in a fixed order — stage · urgency · date · unit · owner · inside · comments · files ·
+where it came from · part of · claim. The category is a **2 px bar** (muted hue: to-do slate, work order
+ochre, order teal, claim violet). Colour is spent only on words: "In progress"/"Ordered" in blue, "Done"/
+"Purchased" in green, late or urgent in amber.
+
+Life cycle, the same in Kaizen, Slack and the SOPs (`stageOf` / `claimStage` in `src/lib/todos.ts`):
+Scheduled → In progress → Done · Cancelled; a purchase order Ordered → Purchased; a claim Open → In progress →
+Done (Refunded → "Done · refunded", Dismissed → Cancelled). Hostaway keeps its statuses; only the word changes.
+
+**What opens how** — the rule for every screen:
+
+| It is… | It opens as | Examples |
+|---|---|---|
+| Detail that explains | **Hover / tap (Peek)** — a short label, the text behind it | "Request from a cleaner", "From Slack", "Details", a reason |
+| A thing you might want more of | **A link that filters** the list, with a "✕" chip to undo | a listing, an owner |
+| A related item you act on | **A pop-up** with its whole card — the list stays where it was | the work order inside a to-do, the claim a repair belongs to |
+| A child of the same kind | **In place**, unfolded under its parent | a sub-task, a smaller work order |
+| Somewhere else entirely | **A link** (↗) | the Airbnb case, Hostaway |
+
+An open item reads like an iOS settings sheet: what it is about first, then grouped lists (label left, value
+right) editable in place, the rarely used fields under "More", one "Unsaved changes" bar.
+
 ## Accessibility (quality floor)
 
 - Visible focus on everything (`:focus-visible`, accent ring).
