@@ -542,7 +542,8 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
   const kindOf = (id: string) => item(id)?.kind;
   // Owner, 2026-10-15: pick a unit or a storage — a unit sends its furniture to the house and its supplies to the
   // place it draws from. Until someone says otherwise, where it was asked for, else the busiest storage.
-  const [allTo, setAllTo] = useState(defaultPlace ?? busiestPlace(inv));
+  // A to-do's order with no listing starts at "No place yet" (owner, 2026-10-15) — not a guess at a storage.
+  const [allTo, setAllTo] = useState(defaultPlace ?? (noPlace ? '' : busiestPlace(inv)));
   const to = (id: string, kind = kindOf(id)) => destFor(allTo, kind, houses);
   const set = (id: string, parts: Part[] | null) => { const n = new Map(value); if (parts?.length) n.set(id, parts); else n.delete(id); onChange(n); };
   // Lines not split follow "Goes to"; a split line keeps its parts.
@@ -589,7 +590,7 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
   const isNew = (id: string) => made.has(id) || !!fresh?.has(id);
   return <>
     <datalist id="inv-measures">{MEASURES.map(m => <option key={m} value={m} />)}</datalist>
-    {canEdit && keys.length > 1 && <label>Goes to
+    {canEdit && (keys.length > 1 || noPlace) && <label>Goes to
       <PlaceSelect inv={inv} value={allTo} onChange={sendAll} label="Everything goes to" none={none} />
       <span className="sub-n">a house: its furniture there, its supplies to its storage or closet (supplies never stay in a house) · ⑂ splits a part</span></label>}
     {canEdit && <label><Icon n="search" /> Add an item
@@ -804,7 +805,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     untouch(...[...new Set([...m.keys(), ...lines.keys()])].filter(id => JSON.stringify(m.get(id)) !== JSON.stringify(lines.get(id))).map(id => `item:${id}`));
     setLinesRaw(m);
   };
-  const place0 = defaultPlace ?? busiestPlace(inv);
+  const place0 = defaultPlace ?? (noPlace ? '' : busiestPlace(inv));
   const name = (id: string) => inv.items.find(i => i.id === id)?.name ?? id;
   const measureOf = (id: string) => inv.items.find(i => i.id === id)?.measure ?? '';
   // Items made from a receipt line in this form: still correctable in the lines (✎ new item).
@@ -1424,7 +1425,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
           onBought(closeIt); return null;
         }}
         buttons={({ lines, busy }) => <>
-            <FinalCart inv={inv} lines={lines} todoId={todoId} asks={asks} at={at} onAt={(id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; })} />
+            <FinalCart inv={inv} lines={lines} todoId={todoId} unitIds={unitIds} asks={asks} at={at} onAt={(id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; })} />
             {/* Not finished? Kept as this to-do's order — a draft it carries, replaced on every save, until it is bought. */}
             <button className="secondary" disabled={busy || (!lines.length && !hadOrder)} onClick={async () => {
               setMsg('');
@@ -1474,10 +1475,11 @@ function StorePick({ value, linked, onChange, name }: { value: string; linked: s
  * (ops sends the cleaner to look before buying, §159). Under it, what was asked and is on no line — so
  * nothing asked gets lost between the ask and the cart.
  */
-function FinalCart({ inv, lines, todoId, asks, at, onAt }: {
-  inv: Inventory; lines: { itemId: string; place: string; qty: number }[]; todoId: string; asks: { text: string; itemId: string | null }[];
+function FinalCart({ inv, lines, todoId, unitIds, asks, at, onAt }: {
+  inv: Inventory; lines: { itemId: string; place: string; qty: number }[]; todoId: string; unitIds: string[]; asks: { text: string; itemId: string | null }[];
   at: Map<string, string>; onAt: (itemId: string, store: string) => void;
 }) {
+  const [wide, setWide] = useState(false);
   const byItem = new Map<string, { qty: number; places: Set<string> }>();
   for (const l of lines) if (l.qty > 0) {
     const e = byItem.get(l.itemId) ?? { qty: 0, places: new Set<string>() };
@@ -1486,12 +1488,18 @@ function FinalCart({ inv, lines, todoId, asks, at, onAt }: {
   const ids = [...byItem.keys()];
   const missed = asks.filter(a => !a.itemId || !byItem.has(a.itemId));
   if (!ids.length && !missed.length) return null;
-  const hand = onHand(ids, inv.places.map(p => ({ name: placeTitle(p), items: p.items })));
+  // Owner, 2026-10-15: on hand = this listing's own places (its house, closet, the storage it draws from) — taking
+  // another listing's stock to open one makes no sense; "Look at other listings' places" widens it on purpose.
+  const mine = inv.places.filter(p => p.units.some(u => unitIds.includes(u.id)));
+  const hand = onHand(ids, (wide ? inv.places : mine).map(p => ({ name: placeTitle(p), items: p.items })));
   const onOther = (id: string) => inv.orders.filter(o => o.todoId !== todoId && o.lines.some(l => String(l.itemId) === id))
     .map(o => `${o.title} (${o.lines.filter(l => String(l.itemId) === id).reduce((a, l) => a + l.qty, 0)})`);
   return (
     <div className="final-cart">
-      <b><Icon n="cart" /> Final cart</b> <span className="sub-n">{ids.length} item{ids.length === 1 ? '' : 's'}</span>
+      <div className="row"><b><Icon n="cart" /> Final cart</b> <span className="sub-n">{ids.length} item{ids.length === 1 ? '' : 's'}</span>
+        <span className="rb-spacer" />
+        <label className="check sub-n"><input type="checkbox" checked={wide} onChange={e => setWide(e.target.checked)} /> On hand at other listings’ places too</label></div>
+      {!wide && !mine.length && <span className="sub-n">This to-do has no listing with a place yet — nothing on hand is shown for it.</span>}
       {ids.length > 0 && <div className="grid-scroll"><table className="units compact"><tbody>
         {ids.map(id => {
           const it = inv.items.find(i => i.id === id);
