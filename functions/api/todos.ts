@@ -516,11 +516,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const closedNow = status !== undefined && CLOSED.includes(status);
   // §150, owner: a cleaner's or an inspection's request is an ORDER; closing it with nothing bought reads as dismissing
   // it — refused without a reason, from any door (Kaizen, Slack), and the reason is kept on the to-do.
-  if (closedNow && !CLOSED.includes(before.status) && !before.parent_id && (before.clean_group === 'request' || before.clean_group === 'inspection')) {
+  // Owner, 2026-10-15: the same for any to-do that carries an order with lines ("Buy supplies…", one for later) — an
+  // order always ends bought, kept, moved to a new order, or closed with a reason; never lost without a word.
+  const [ordered] = closedNow && !CLOSED.includes(before.status) && !before.parent_id && before.clean_group !== 'request' && before.clean_group !== 'inspection'
+    ? await sql`SELECT 1 FROM inventory_orders WHERE account_id = 1 AND todo_id = ${id} AND jsonb_array_length(lines) > 0` : [];
+  if (closedNow && !CLOSED.includes(before.status) && !before.parent_id && (before.clean_group === 'request' || before.clean_group === 'inspection' || ordered)) {
     const [pu] = await sql`SELECT count(*)::int AS n FROM inventory_purchases WHERE account_id = 1 AND todo_id = ${id}` as { n: number }[];
     const reason = String(b.closeReason ?? '').trim().slice(0, 300);
     if (!pu!.n && !reason) return Response.json({ ok: false, error: 'unbought',
-      message: 'Nothing was bought for this request — record the purchase, or say why it is closed.' }, { status: 409 });
+      message: `Nothing was bought for this ${ordered ? 'order' : 'request'} — record the purchase, or say why it is closed.` }, { status: 409 });
     if (!pu!.n) await note(sql, 'task', id, 'note', `Closed without buying: ${reason}`, who.email);
   }
   const wrote = await sql`UPDATE todos SET

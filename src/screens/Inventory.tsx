@@ -13,7 +13,7 @@
 import { Hint, Peek } from '../components/Hint.tsx';
 import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { getInventory, inventoryAction, inventoryItemAction, inventoryUpload, type InvItemRow, type InvPlace, type Inventory } from '../api.ts';
-import { CATEGORIES, onHand, reconcile } from '../lib/inventory.ts';
+import { CATEGORIES, leftOver, onHand, reconcile } from '../lib/inventory.ts';
 import { destFor, placeLabel } from '../lib/unit-access.ts';
 import { orderFor, receiptSum, similarItems, splitTotal, type Receipt, type ReceiptLine } from '../lib/receipt.ts';
 import { Sheet } from '../components/InspectionRun.tsx';
@@ -769,7 +769,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   head?: React.ReactNode; extra?: React.ReactNode; recordLabel?: string;
   /** Records it; a message back = not saved. `true` = clear the form for the next one. */
   onRecord: (p: PurchaseOut) => Promise<string | true | null>;
-  buttons?: (p: { lines: PurchaseOut['lines']; busy: boolean }) => React.ReactNode;
+  buttons?: (p: { lines: PurchaseOut['lines']; busy: boolean; read: boolean }) => React.ReactNode;
   /** A to-do's order: its lines may wait for a place (saved as the order; recording asks for it). */
   noPlace?: boolean;
   /** Where each item of the order is to be bought (store name) — the receipt is checked against it. */
@@ -1100,7 +1100,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     </div>}
     {extra}
     <div className="button-row">
-      {buttons?.({ lines: out, busy })}
+      {buttons?.({ lines: out, busy, read: read1 })}
       <button disabled={busy || !out.length || unplaced || !(totalN > 0) || pending > 0 || !!shareLeft} onClick={() => void record()}>{ic(busy ? 'Saving…' : recordLabel)}</button>
       {unplaced && <span className="note">▲ Say which place each item went to{noPlace ? ' — Save order keeps it without one' : ''}.</span>}
       {pending > 0 && <span className="note">▲ Decide the receipt's lines first.</span>}
@@ -1352,7 +1352,8 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   const [inv, setInv] = useState<Inventory | null>(null);
   const [startArr, setStartArr] = useState<{ itemId: string; place: string; qty: number }[]>([]);
   const [formKey, setFormKey] = useState(0);
-  const [closeIt, setCloseIt] = useState(true);
+  // Owner, 2026-10-15: what was ordered and not bought is never lost — a new order for later (default), kept here, or dropped on purpose.
+  const [after, setAfter] = useState<'later' | 'keep' | 'drop'>('later');
   const [msg, setMsg] = useState('');
   const [building, setBuilding] = useState(false);
   const [unsure, setUnsure] = useState<{ text: string; candidates: string[] }[]>([]);
@@ -1392,6 +1393,19 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
     if (!r.lines.length) setMsg('Nothing in it read as something to buy — build the cart by hand.');
   };
   const start = startArr.length ? linesOf(startArr) : undefined;
+  const withAt = <L extends { itemId: string }>(ls: L[]) => ls.map(l => at.get(String(l.itemId)) ? { ...l, at: at.get(String(l.itemId)) } : l);
+  /** Items taken off the cart (or fewer of them) → a new order for later; this one saved without them. */
+  const later = async (off: { itemId: string; place: string; qty: number }[], lines: { itemId: string; place: string; qty: number }[]) => {
+    setMsg('');
+    try {
+      const l = await inventoryAction({ action: 'laterOrder', fromTodo: todoId, lines: withAt(off) });
+      if (!l.ok) { setMsg(l.message ?? 'The new order was not made.'); return; }
+      const r = await inventoryAction({ action: 'todoOrder', todoId, lines: withAt(lines) });
+      if (!r.ok) { setMsg(`New order for later made (#${l.todoId}) — but this order was not saved without them: ${r.message ?? ''}`); return; }
+      setStartArr(lines); setInv(r);
+      setMsg(`✓ New order for later (#${l.todoId}) with ${off.length} line${off.length === 1 ? '' : 's'}; this order saved without them.`);
+    } catch (e) { setMsg(String(e)); }
+  };
   return (
     <div className="card task-buy">
       <h3><Icon n="cart" /> Purchase order <Hint><Icon n="sparkles" /> Build the cart reads what was asked and adds the supplies it is sure of.
@@ -1418,23 +1432,47 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
       {hadOrder && <p className="note">The order as it was left.</p>}
       <PurchaseForm key={formKey} inv={inv} onInv={setInv} todoId={todoId} start={start} defaultPlace={home} canSplit noPlace
         plannedAt={new Map(inv.items.map(i => [i.id, storeAt(inv, i.id, at)] as const).filter(([, v]) => v))}
-        extra={<label className="check"><input type="checkbox" checked={closeIt} onChange={e => setCloseIt(e.target.checked)} /> ✓ and close this to-do when recorded</label>}
+        extra={<label>When recorded, what was ordered and not bought
+          <select value={after} onChange={e => setAfter(e.target.value as typeof after)}>
+            <option value="later">goes on a new order for later — close this to-do</option>
+            <option value="keep">stays on this to-do — keep it open</option>
+            <option value="drop">is dropped — close this to-do</option>
+          </select></label>}
         onRecord={async p => {
           const r = await sendPurchase(REAL, p, todoId);
           if (!r.ok) return r.message ?? 'Not saved.';
-          onBought(closeIt); return null;
+          // What this to-do's order still needs after what was bought for it (one receipt may have paid for several orders).
+          const mine = p.splits ? p.splits.find(x => x.todoId === todoId)?.lines ?? [] : p.forTodo && p.forTodo !== todoId ? [] : p.lines;
+          const rest = leftOver(withAt(startArr), mine);
+          const done = '✓ The purchase IS recorded — do not record it again.';
+          try {
+            if (after === 'later' && rest.length) {
+              const l = await inventoryAction({ action: 'laterOrder', fromTodo: todoId, lines: rest });
+              if (!l.ok) return `${done} But the new order for later was not made (${l.message ?? 'no answer'}) — Cancel, then Save order with what is left.`;
+            }
+            if (after === 'keep') {
+              const k = await inventoryAction({ action: 'todoOrder', todoId, lines: rest });
+              if (!k.ok) return `${done} But what is left was not saved (${k.message ?? 'no answer'}) — Cancel and check the order.`;
+            }
+          } catch (e) { return `${done} But what is left was not saved (${String(e)}).`; }
+          onBought(after !== 'keep'); return null;
         }}
-        buttons={({ lines, busy }) => <>
-            <FinalCart inv={inv} lines={lines} todoId={todoId} unitIds={unitIds} asks={asks} at={at} onAt={(id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; })} />
+        buttons={({ lines, busy, read }) => <>
+            {/* After a receipt is read the cart is bought: the receipt's check and "what was not bought" take over. */}
+            {!read && <FinalCart inv={inv} onInv={setInv} lines={lines} todoId={todoId} unitIds={unitIds} asks={asks} at={at}
+              off={leftOver(startArr, lines)} onLater={off => void later(off, lines)} onAt={(id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; })} />}
             {/* Not finished? Kept as this to-do's order — a draft it carries, replaced on every save, until it is bought. */}
             <button className="secondary" disabled={busy || (!lines.length && !hadOrder)} onClick={async () => {
+              // Lines taken off are not dropped without a word: the first tap says so; the second saves without them.
+              const off = leftOver(startArr, lines);
+              if (off.length && !msg.startsWith('▲ Taken off')) { setMsg(`▲ Taken off the cart: ${off.length} line${off.length === 1 ? '' : 's'} — “Save them as a new order for later” above, or tap Save order again to drop them.`); return; }
               setMsg('');
               try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines: lines.map(l => at.get(l.itemId) ? { ...l, at: at.get(l.itemId) } : l) }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onBought(false); }
               catch (e) { setMsg(String(e)); }
             }}><Icon n="save" /> Save order</button>
             <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
           </>} />
-      {msg && <p className="breach" role="status">{msg}</p>}
+      {msg && <p className={msg.startsWith('✓') ? 'note' : 'breach'} role="status">{msg}</p>}
     </div>
   );
 }
@@ -1475,11 +1513,22 @@ function StorePick({ value, linked, onChange, name }: { value: string; linked: s
  * (ops sends the cleaner to look before buying, §159). Under it, what was asked and is on no line — so
  * nothing asked gets lost between the ask and the cart.
  */
-function FinalCart({ inv, lines, todoId, unitIds, asks, at, onAt }: {
-  inv: Inventory; lines: { itemId: string; place: string; qty: number }[]; todoId: string; unitIds: string[]; asks: { text: string; itemId: string | null }[];
-  at: Map<string, string>; onAt: (itemId: string, store: string) => void;
+function FinalCart({ inv, onInv, lines, todoId, unitIds, asks, at, onAt, off, onLater }: {
+  inv: Inventory; onInv: (i: Inventory) => void; lines: { itemId: string; place: string; qty: number }[]; todoId: string; unitIds: string[];
+  asks: { text: string; itemId: string | null }[]; at: Map<string, string>; onAt: (itemId: string, store: string) => void;
+  /** What the order had and the cart no longer does (taken off, or fewer) — offered as a new order for later. */
+  off: { itemId: string; place: string; qty: number }[]; onLater: (off: { itemId: string; place: string; qty: number }[]) => void;
 }) {
   const [wide, setWide] = useState(false);
+  // A store link that does not work (owner, 2026-10-15): report it → paste the right product page, or remove it.
+  const [fix, setFix] = useState<{ id: string; url: string; pack: string; busy: boolean; err: string } | null>(null);
+  const saveLink = async (url: string) => {
+    if (!fix) return;
+    setFix({ ...fix, busy: true, err: '' });
+    const r = await inventoryAction({ action: 'storeLink', itemId: fix.id, url, pack: Number(fix.pack) || undefined }).catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setFix({ ...fix, busy: false, err: r.message ?? 'Not saved.' }); return; }
+    onInv(r); setFix(null);
+  };
   const byItem = new Map<string, { qty: number; places: Set<string> }>();
   for (const l of lines) if (l.qty > 0) {
     const e = byItem.get(l.itemId) ?? { qty: 0, places: new Set<string>() };
@@ -1487,7 +1536,7 @@ function FinalCart({ inv, lines, todoId, unitIds, asks, at, onAt }: {
   }
   const ids = [...byItem.keys()];
   const missed = asks.filter(a => !a.itemId || !byItem.has(a.itemId));
-  if (!ids.length && !missed.length) return null;
+  if (!ids.length && !missed.length && !off.length) return null;
   // Owner, 2026-10-15: on hand = this listing's own places (its house, closet, the storage it draws from) — taking
   // another listing's stock to open one makes no sense; "Look at other listings' places" widens it on purpose.
   const mine = inv.places.filter(p => p.units.some(u => unitIds.includes(u.id)));
@@ -1509,10 +1558,11 @@ function FinalCart({ inv, lines, todoId, unitIds, asks, at, onAt }: {
           const packs = opt?.pack && opt.pack > 0 ? Math.ceil(e.qty / opt.pack) : e.qty;
           const other = onOther(id);
           const asked = asks.find(a => a.itemId === id);
-          return <tr key={id}>
+          return <Fragment key={id}><tr>
             <td>{it?.name ?? id} × {e.qty}{asked && <div className="sub-n">asked as “{asked.text}”</div>}</td>
             <td className="sub-n">{[...e.places].map(p => p ? lineTitle(inv, p) : '▲ no place yet').join(' · ')}</td>
             <td className="nowrap"><StorePick value={at.get(id) ?? ''} linked={prod ? STORE_NAME[prod.store] : null} onChange={v => onAt(id, v)} name={it?.name ?? 'it'} />
+              {' '}<button className="link tiny" onClick={() => setFix(fix?.id === id ? null : { id, url: '', pack: String(opt?.pack ?? ''), busy: false, err: '' })}>{prod ? 'link broken?' : '+ link'}</button>
               {prod && !elsewhere(inv, id, at) && <Peek label="ⓘ" ariaLabel={`${it?.name ?? 'Its'} product`}>
                   <b>{STORE_NAME[prod.store]}</b> — {opt!.label}<br />
                   {opt!.pack && opt!.pack > 1 ? `Pack of ${opt!.pack}: buy ${packs}` : `Buy ${packs}`}<br />
@@ -1524,9 +1574,27 @@ function FinalCart({ inv, lines, todoId, unitIds, asks, at, onAt }: {
               {hand.has(id) && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>On hand</>} ariaLabel={`${it?.name ?? 'It'} is already on hand`}>
                 <b>Already on hand</b><br />{hand.get(id)!.map(a => `${a.place}: ${a.qty}`).join(' · ')}<br />Ask the cleaner to look there before buying.</Peek>}
             </td>
-          </tr>;
+          </tr>
+          {fix?.id === id && <tr><td colSpan={4}>
+            <div className="row">
+              <input value={fix.url} placeholder="Paste the product page — walmart.com/ip/… or amazon.com/dp/…" aria-label={`New store link for ${it?.name ?? 'the item'}`}
+                     onChange={ev => setFix({ ...fix, url: ev.target.value, err: '' })} />
+              <label>Pack of<input className="inv-qty" type="number" min="1" step="any" value={fix.pack} onChange={ev => setFix({ ...fix, pack: ev.target.value })} /></label>
+              <button className="small" disabled={fix.busy || !storeProduct(fix.url)} onClick={() => void saveLink(fix.url)}>{prod ? 'Replace the link' : 'Save the link'}</button>
+              {prod && <button className="secondary small" disabled={fix.busy} onClick={() => void saveLink('')}>Remove the broken link</button>}
+              <button className="link tiny" onClick={() => setFix(null)}>Cancel</button>
+            </div>
+            {fix.url && !storeProduct(fix.url) && <span className="sub-n">▲ Not a Walmart or Amazon product page.</span>}
+            {fix.err && <span className="breach">{fix.err}</span>}
+          </td></tr>}
+          </Fragment>;
         })}
       </tbody></table></div>}
+      {off.length > 0 && <p className="note"><span className="warn-text">Taken off the cart ({off.length}):</span>{' '}
+        {off.map(l => `${inv.items.find(i => i.id === l.itemId)?.name ?? l.itemId} × ${l.qty}`).join(' · ')}{' '}
+        <button className="secondary small" onClick={() => onLater(off)}>Save them as a new order for later</button>
+        {' '}<Hint>What this order had and the cart no longer has (removed, or fewer). A new to-do for the same listing gets them, with their place and store;
+          this order is saved without them. Leave it, and recording asks what happens to what was not bought.</Hint></p>}
       {missed.length > 0 && <p className="note"><span className="warn-text">▲ Asked, not on the cart ({missed.length}):</span> {missed.map(a => `“${a.text}”`).join(' · ')}
         {' '}<Hint>What ✨ read in the ask that is on no line — not matched, skipped, or taken off. Add it with “Add an item”, or leave it out on purpose.</Hint></p>}
     </div>

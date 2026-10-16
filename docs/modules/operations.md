@@ -80,7 +80,17 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   "! Already ordered" (another open order has it) · "! On hand" (`onHand`, only the to-do's listing's places — house, closet, the storage it draws from — unless "On hand at other listings' places too"; owner: never take one listing's stock to open another); "▲ Asked, not on the cart" = ✨ read lines on
   no line. After a read, `plannedAt` checks the store: "⇄ other store" (receipt store ≠ planned), "◇ bought elsewhere"
   (planned at a store no receipt is from — kept out of ▲ missing). `mergeOrder` keeps `at`. A to-do with no listing starts at "No place yet"
-  (not the busiest storage). Slack's draft has the same "No place yet" (`NO_PLACE` = '-'). SOP #15 v21, SOP #8 v23. Not yet seen on screen (owner's tokens) — check it in use.
+  (not the busiest storage). Slack's draft has the same "No place yet" (`NO_PLACE` = '-'). SOP #15 v22, SOP #8 v23.
+  **Every order has an outcome (owner, 2026-10-15, review of the whole flow):** recording on a to-do's order computes
+  `leftOver(ordered, bought for THIS order)` (splits/forTodo respected) and, as chosen in the form, puts it on a new
+  to-do for later (`laterOrder` — same listing, place/none and `at` kept, noted on both; default, then closes), keeps it
+  as this order (stays open) or drops it (closes). Before buying, lines taken off / reduced show as "Taken off the cart" →
+  "Save them as a new order for later" (laterOrder + todoOrder); Save order alone warns once. Broken link: "link broken?"
+  / "+ link" per Final cart row → `setStoreLink` (`storeLink` action: a Walmart/Amazon page replaces the store product,
+  pack kept unless given; '' removes it). The Final cart hides after a receipt is read. **Closing any to-do with an order
+  with lines and no purchase now needs a reason** (`/api/todos` 409 `unbought`, Todos.tsx `t.order`) — before, only
+  cleaner/inspection requests did. Open: report a broken link from Slack's draft (only in Kaizen); abandoned
+  `slack_order_drafts` rows are never cleaned. Not yet seen on screen (owner's tokens) — check it in use.
 - **Sets (owner, 2026-10-15):** one store product on several supplies = a set (Swirl flatware on Forks ×16 / Knives ×8 / Spoons ×24,
   Quatish on Plates ×8 / Bowls ×4; only when someone puts the same link on several items). `readOrder` splits its line into one
   line per supply (`match` 'product', its pieces, the price shared evenly, leftover cents on the first) and `cartLinks` buys it

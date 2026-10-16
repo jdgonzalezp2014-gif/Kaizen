@@ -17,6 +17,7 @@ import { todayIn, addDays } from '../../src/lib/dates.ts';
 import { itemKey, itemLabel, sameItem, needByPlace, orderList, perClean, placeKey, stockLevels, toOrder, unitUses, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
 import { supplyPlaces } from './unit-access.ts';
 import { findPlace, fitsPlace, placeWord } from '../../src/lib/unit-access.ts';
+import { storeProduct, withProduct, type BuyOption } from '../../src/lib/store-order.ts';
 
 const TZ = 'America/New_York';
 const WINDOW_DAYS = 60, AHEAD_DAYS = 14;
@@ -559,17 +560,33 @@ export async function editNewItem(sql: SqlFn, b: Record<string, unknown>) {
  * lines REPLACE its order (saving twice never doubles it), noted in its log;
  * no lines = no order. 🧾 Record the purchase starts from it.
  */
-export async function saveTodoOrder(sql: SqlFn, by: string, todoId: unknown, lines: { itemId: string; place: string; qty: number; at?: string }[]): Promise<string | null> {
+export async function saveTodoOrder(sql: SqlFn, by: string, todoId: unknown, lines: OrderIn[]): Promise<string | null> {
   const [t] = await sql`SELECT id::text FROM todos WHERE account_id = 1 AND id = ${Number(todoId) || 0} AND parent_id IS NULL
                           AND status NOT IN ('completed', 'cancelled')` as { id: string }[];
   if (!t) throw new Error('That to-do is closed or gone.');
-  // Owner, 2026-10-15: an order for a listing that is not set up yet has nowhere to go — its lines are kept with
-  // no place ('') and the place is picked when it is bought (Record the purchase asks for it).
-  // `at`: where it is bought when not its linked store (owner: every line says where it is bought).
-  const keep = lines.filter(l => l.qty > 0).map(l => ({ itemId: String(l.itemId), place: l.place, qty: Math.ceil(l.qty), ...(l.at ? { at: l.at } : {}) }));
+  const keep = orderLinesIn(lines);
   if (!keep.length) { await sql`DELETE FROM inventory_orders WHERE account_id = 1 AND todo_id = ${Number(t.id)}`; return null; }
+  const named = await nameOrderLines(sql, keep);
+  await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(keep)}::jsonb, ${by})
+            ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = EXCLUDED.lines, created_by = EXCLUDED.created_by, created_at = now()`;
+  const body = `Order draft saved:\n${orderList(named)!.items.map(i => i.replace(/^Buy: /, '• ')).join('\n')}`;
+  await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+            VALUES (1, 'task', ${t.id}, 'change', ${body}, ${by})`;
+  return body;
+}
+
+type OrderIn = { itemId: string; place: string; qty: number; at?: string };
+/**
+ * An order's lines as kept (owner, 2026-10-15): a listing not set up yet keeps them with no place ('') — picked
+ * when it is bought (Record the purchase asks for it); `at` = where it is bought when not its linked store.
+ */
+function orderLinesIn(lines: OrderIn[]) {
+  return lines.filter(l => l.qty > 0).map(l => ({ itemId: String(l.itemId), place: l.place, qty: Math.ceil(l.qty), ...(l.at ? { at: l.at } : {}) }));
+}
+/** Each line checked (the item, its place if it has one, a supply never in a house) and said in words. */
+async function nameOrderLines(sql: SqlFn, keep: ReturnType<typeof orderLinesIn>) {
   const [items, sp] = await Promise.all([invItems(sql), supplyPlaces(sql)]);
-  const named = keep.map(l => {
+  return keep.map(l => {
     const item = items.find(i => i.id === l.itemId);
     const p = l.place ? findPlace(sp, l.place) : null;
     if (!item) throw new Error('Which item?');
@@ -577,12 +594,46 @@ export async function saveTodoOrder(sql: SqlFn, by: string, todoId: unknown, lin
     if (p && !fitsPlace(p, item.kind)) throw new Error(`${item.name}: ${NOT_IN_HOUSE}`);
     return { item, place: `${p ? placeWord(p) : 'no place yet'}${l.at ? ` · at ${l.at}` : ''}`, qty: l.qty };
   });
-  await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(keep)}::jsonb, ${by})
-            ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = EXCLUDED.lines, created_by = EXCLUDED.created_by, created_at = now()`;
-  const body = `Order draft saved:\n${orderList(named)!.items.map(i => i.replace(/^Buy: /, '• ')).join('\n')}`;
+}
+
+/**
+ * What is left out of an order goes on a new one for later (owner, 2026-10-15: "generate a new purchase order for
+ * later with the removed items"): items taken off the cart, or not bought when the purchase was recorded. A new
+ * to-do for the same listing with those lines (place — or none yet — and store kept), noted on both, so nothing
+ * ordered is lost when the first one closes.
+ */
+export async function laterOrder(sql: SqlFn, by: string, fromTodo: unknown, lines: OrderIn[]) {
+  const [t] = await sql`SELECT id::text, title, unit_ids FROM todos WHERE account_id = 1 AND id = ${Number(fromTodo) || 0} AND parent_id IS NULL` as
+    { id: string; title: string; unit_ids: string[] | null }[];
+  if (!t) throw new Error('Which to-do?');
+  const keep = orderLinesIn(lines);
+  if (!keep.length) throw new Error('Nothing to order.');
+  const named = await nameOrderLines(sql, keep);
+  const list = orderList(named)!;
+  const said = list.items.map(i => i.replace(/^Buy: /, '• ')).join('\n');
+  const id = await newTodo(sql, `${list.title} (later)`, `Left for later from “${t.title}” (#${t.id}). When it is bought: Record the purchase on this to-do.\n${said}`,
+                           t.unit_ids?.[0] ?? null, by);
+  await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(id)}, ${JSON.stringify(keep)}::jsonb, ${by})`;
   await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
-            VALUES (1, 'task', ${t.id}, 'change', ${body}, ${by})`;
-  return body;
+            VALUES (1, 'task', ${t.id}, 'change', ${`Moved to a new order for later (#${id}):\n${said}`}, ${by})`;
+  return id;
+}
+
+/**
+ * A store link that does not work (owner, 2026-10-15: "report it and replace it"): a new Walmart/Amazon product
+ * page takes the place of the item's store product (its pack kept unless a new one is given); no link = the broken
+ * one is removed, and the item reads "no store link" until a person or a receipt gives it one. Other options stay.
+ */
+export async function setStoreLink(sql: SqlFn, b: Record<string, unknown>) {
+  const url = String(b.url ?? '').trim();
+  const [it] = await sql`SELECT buy_options FROM inventory_items WHERE account_id = 1 AND id = ${Number(b.itemId) || 0}` as { buy_options: BuyOption[] | null }[];
+  if (!it) throw new Error('Which item?');
+  if (url && !storeProduct(url)) throw new Error('Paste a Walmart (walmart.com/ip/…) or Amazon (amazon.com/dp/…) product page.');
+  const all = it.buy_options ?? [];
+  const pack = Number(b.pack) > 0 ? Math.round(Number(b.pack) * 100) / 100 : all.find(o => storeProduct(o.url))?.pack ?? null;
+  const rest = all.filter(o => !storeProduct(o.url));
+  const next = url ? withProduct(rest, url, pack) : rest;
+  await sql`UPDATE inventory_items SET buy_options = ${JSON.stringify(next)}::jsonb, updated_at = now() WHERE account_id = 1 AND id = ${Number(b.itemId)}`;
 }
 
 /** The order being written, saved as a draft (§150): no to-do until it is created. Empty lines = discard. */

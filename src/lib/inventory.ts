@@ -167,3 +167,22 @@ export function onHand(itemIds: string[], places: { name: string; items: { itemI
   }
   return out;
 }
+
+/**
+ * What is left of an order once some of it is kept (owner, 2026-10-15): per item, the ordered quantity less what
+ * was bought (or is still on the cart), taken from its parts in order — each left line keeps its place and store.
+ * Nothing ordered is lost: it stays on the to-do, or goes on a new order for later.
+ */
+export function leftOver<L extends { itemId: string; place: string; qty: number }>(ordered: L[], kept: { itemId: string; qty: number }[]): L[] {
+  const got = new Map<string, number>();
+  for (const k of kept) if (k.qty > 0) got.set(String(k.itemId), (got.get(String(k.itemId)) ?? 0) + k.qty);
+  const out: L[] = [];
+  for (const l of ordered) {
+    const id = String(l.itemId);
+    const take = Math.min(l.qty, got.get(id) ?? 0);
+    got.set(id, (got.get(id) ?? 0) - take);
+    const n = Math.ceil(l.qty - take);
+    if (n > 0) out.push({ ...l, itemId: id, qty: n });
+  }
+  return out;
+}

@@ -872,7 +872,7 @@ class Kaizen {
     if (!place && d.place !== NO_PLACE) return await show('That place is gone — pick another.');
     const kindOf = (l: DraftLine) => l.n?.kind ?? items.find(i => i.id === l.i)?.kind;
     const misfit = place && d.lines.find(l => !lineTarget(place, kindOf(l)));
-    if (place && misfit) return await show(`“${misfit.t}” is supplies, and ${place.name} has no closet or storage set in the Repository — pick a storage or a closet for the order.`);
+    if (place && misfit) return await show(`“${misfit.t}” is supplies, and ${place.name} has no closet or storage set in the Repository — pick a storage or a closet for the order, or “No place yet”.`);
     if (d.todo && !on.title) return await show('This thread’s to-do is gone — Confirm makes a new one.', { ...d, todo: null });
     // Once: a second tap on Confirm finds the key taken.
     const key = `order:${ch}:${ts}`;

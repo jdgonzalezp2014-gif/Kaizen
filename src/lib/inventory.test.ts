@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { itemKey, sameItem, needByPlace, orderList, perClean, reconcile, stockLevels, toOrder, unitUses, onHand, type InvItem, type Move } from './inventory.ts';
+import { itemKey, sameItem, needByPlace, orderList, perClean, reconcile, stockLevels, toOrder, unitUses, onHand, leftOver, type InvItem, type Move } from './inventory.ts';
 
 const S1105 = 'the_links/ROW-0010', S4116 = 'the_links/ROW-0011', S13 = 'cortland_legacy/ROW-0021', PRESTON = 'houses/ROW-0002';
 const mv = (kind: Move['kind'], qty: number, at: string, place: string | null = S1105, unitId: string | null = null,
@@ -99,4 +99,11 @@ test('one item per thing: case, punctuation and plurals do not make a second one
   assert.equal(sameItem(items, 'Sheet sets', 'King'), undefined);
   assert.equal(sameItem(items, 'Lockboxes', null)?.id, '2');
   assert.equal(sameItem(items, 'Lockbox', null, '2'), undefined, 'itself is not a duplicate');
+});
+
+test('leftOver: what an order still needs after a purchase or after items come off the cart', () => {
+  const ordered = [{ itemId: '1', place: 'a', qty: 4 }, { itemId: '1', place: 'b', qty: 2, at: 'Target' }, { itemId: '2', place: '', qty: 3 }];
+  assert.deepEqual(leftOver(ordered, [{ itemId: '1', qty: 5 }]), [{ itemId: '1', place: 'b', qty: 1, at: 'Target' }, { itemId: '2', place: '', qty: 3 }]);
+  assert.deepEqual(leftOver(ordered, [{ itemId: '1', qty: 6 }, { itemId: '2', qty: 9 }]), []);
+  assert.deepEqual(leftOver(ordered, []), ordered);
 });

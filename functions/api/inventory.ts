@@ -10,6 +10,8 @@
  *   POST { action: 'adjusts', place, note, adjusts: [{ itemId, qty }] } corrections (+/−) to the record, with why
  *   POST { action: 'draft', lines, forTodo? }                           the order kept as a draft (no lines = discard)
  *   POST { action: 'todoOrder', todoId, lines }                         a to-do's own order, saved as a draft (replaces it)
+ *   POST { action: 'laterOrder', fromTodo, lines }                      what is left of an order, on a new to-do for later
+ *   POST { action: 'storeLink', itemId, url, pack? }                    replace a broken store link ('' = remove it)
  *   POST { action: 'paidBack', id }                                     a purchase someone paid, paid back to them
  *   POST { action: 'hide', place, itemId, hide }                        "not kept here" (or back)
  *   POST { action: 'newItem', name, measure?, category?, kind? }        an item added on the spot (kind 'furniture' = the house's)
@@ -35,7 +37,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { commentToThread } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, editNewItem, fieldPhotos, refillCloset, setMeasure, transfer, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder } from '../_lib/inventory.ts';
+import { createOrder, editNewItem, fieldPhotos, refillCloset, setMeasure, transfer, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder, laterOrder, setStoreLink } from '../_lib/inventory.ts';
 import { learnAliases, learnProducts, readOrderMds, readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
 import { readRequestText } from '../_lib/request-read.ts';
 
@@ -127,6 +129,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0, at: String(l.at ?? '').trim().slice(0, 60) })) : [];
       const said = await saveTodoOrder(sql, who.email, b.todoId, lines);
       if (said) waitUntil(commentToThread(sql, env.ENCRYPTION_KEY, 'task', String(b.todoId), `🛒 ${said.replace(/^Order draft saved/, 'Purchase order saved')}`, who.email).catch(() => {}));
+    } else if (b.action === 'laterOrder') {
+      // Owner, 2026-10-15: what is taken off an order, or not bought, goes on a new order for later.
+      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown; at?: unknown }[])
+        .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0, at: String(l.at ?? '').trim().slice(0, 60) })) : [];
+      const id = await laterOrder(sql, who.email, b.fromTodo, lines);
+      waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [id], who.email, true).catch(() => {}));
+      return Response.json({ ok: true, todoId: id, ...(await overview(sql)) });
+    } else if (b.action === 'storeLink') {
+      await setStoreLink(sql, b);
     } else if (b.action === 'draft') {
       // §150: the order kept as a draft — no to-do until it is created; no lines = discard it.
       const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])

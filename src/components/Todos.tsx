@@ -700,7 +700,8 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   // §150, owner: closing a cleaner's supplies request with nothing bought for it reads as dismissing it — asked first.
   const [dismiss, setDismiss] = useState<null | 'done' | 'cancel'>(null);
   const [why, setWhy] = useState('');
-  const unbought = !closed && !t.parentId && (t.cleanGroup === 'request' || t.cleanGroup === 'inspection') && !t.purchases;
+  // Owner, 2026-10-15: any to-do carrying an order too (the server checks it has lines).
+  const unbought = !closed && !t.parentId && (t.cleanGroup === 'request' || t.cleanGroup === 'inspection' || t.order) && !t.purchases;
   const tick = async () => { if (unbought) setDismiss('done'); else await doTick(); };
   const cancel = async () => { if (unbought) setDismiss('cancel'); else await doCancel(); };
   const [renaming, setRenaming] = useState(false);
