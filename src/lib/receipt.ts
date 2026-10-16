@@ -25,6 +25,8 @@ export interface ReceiptLine {
   itemQty: number | null;
   /** 0–4 likely supplies when it is not sure (never includes itemId). */
   candidates: string[];
+  /** Of those, the ones the model itself named (not added for sharing a word) — Slack's order draft trusts only these. */
+  suggested?: string[];
   /** The open order it fits, if any. */
   orderId: string | null;
   /** The size printed (King, 13 gal…), and a short generic name for it as a new item. */
@@ -132,7 +134,7 @@ export function readReceipt(raw: unknown, items: ReceiptItem[], orders: ReceiptO
     const candidates = kind !== 'item' || itemId ? [] : [...new Set([...own, ...similarItems(`${text} ${size ?? ''}`, items, 8).filter(c => !wrongSize(byId(c)!, size, items))])].slice(0, 4);
     const qty = num(l.qty), itemQty = num(l.itemQty);
     return { text, qty, unitPrice: num(l.unitPrice), amount: num(l.amount), kind, itemId, itemQty: itemQty && itemQty > 0 ? itemQty : qty,
-             candidates, orderId: orderFor(itemId, orders, l.orderId == null ? null : String(l.orderId)), size,
+             candidates, ...(kind === 'item' && !itemId ? { suggested: [...new Set(own)].slice(0, 4) } : {}), orderId: orderFor(itemId, orders, l.orderId == null ? null : String(l.orderId)), size,
              newName: typeof l.name === 'string' && l.name.trim() ? l.name.trim().slice(0, 80) : null,
              newMeasure: typeof l.measure === 'string' && l.measure.trim() ? l.measure.trim().toLowerCase().slice(0, 20) : null,
              newKind: l.furniture === true ? 'furniture' : l.furniture === false ? 'supply' : null };

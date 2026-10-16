@@ -123,3 +123,16 @@ test('orderDraftMessage: questions, place, cart, and the draft id back from Conf
   const saved = orderSavedMessage({ ...d, place: 'storages/1', lines: [d.lines[0]!] }, { items: ITEMS, placeLabel: 'Frisco storage', todoId: '7', todoTitle: 'Buy supplies: Paper towels × 2', fresh: true, by: 'U1', appUrl: 'https://k.dev' });
   assert.match(JSON.stringify(saved.blocks), /\?todo=7/);
 });
+
+test('draftLinesFromRead: the AI\'s supply when sure, its own picks as the question, nothing named = not in Kaizen with its suggestion', async () => {
+  const { draftLinesFromRead } = await import('./order-text.ts');
+  const base = { qty: 2, unitPrice: null, amount: null, kind: 'item' as const, itemQty: null, orderId: null, size: null, newName: null };
+  const d = draftLinesFromRead([
+    { ...base, text: 'paper towels', itemId: '1', candidates: [] },
+    { ...base, text: 'queen comforters', itemId: null, candidates: ['4', '5', '7'], suggested: ['4'] },
+    { ...base, text: 'sofa beds', itemId: null, candidates: ['8'], suggested: [], newName: 'Sofa bed', newKind: 'furniture', newMeasure: 'unit' },
+    { ...base, text: 'washcloths 18 pack', itemQty: 18, itemId: '9', candidates: [] },
+    { ...base, text: 'tax', kind: 'tax', itemId: null, candidates: [] }]);
+  assert.deepEqual(d.map(l => [l.t, l.q, l.i, l.c]), [['paper towels', 2, '1', []], ['queen comforters', 2, null, ['4']], ['sofa beds', 2, null, []], ['washcloths 18 pack', 18, '9', []]]);
+  assert.deepEqual(d[2]!.s, { name: 'Sofa bed', kind: 'furniture', measure: 'unit' });
+});

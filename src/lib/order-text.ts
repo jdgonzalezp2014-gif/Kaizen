@@ -9,7 +9,7 @@
  * Confirm button carries its id — and a message holds 50 blocks, so what is settled is a text list with one
  * "Change a line…" menu; only the questions get buttons, and what is not in Kaizen is added all at once.
  */
-import { aliasKey, scoreItems, words, type ReceiptItem } from './receipt.ts';
+import { aliasKey, scoreItems, words, type ReceiptItem, type ReceiptLine } from './receipt.ts';
 import { cartLinks, type BuyOption } from './store-order.ts';
 import { esc, guessUnit, kaizenButton, type Opt } from './slack.ts';
 
@@ -32,6 +32,7 @@ export interface DraftLine {
   /** Already on the to-do's order at that place: add to it, or replace it. */ m?: 'sum' | 'replace';
   /** Picked by a person — taught as an alias on Confirm. */ p?: 1;
   /** Sent back to a question by "Change a line…" — asked one by one even with nothing alike. */ x?: 1;
+  /** What the AI thinks it is, when it is not in Kaizen: the new-item forms start from it. */ s?: NewItem;
 }
 export interface OrderDraft {
   /** Who asked (Slack user). */ by: string;
@@ -42,6 +43,7 @@ export interface OrderDraft {
   /** What came after "for"/"para" when it was not a place (a unit, said back so the person picks its place). */ said: string | null;
   /** The listing named in the text — for a new to-do. */ unit: string | null;
   /** Lines of a pasted list that read as prose, not items. */ sk?: number;
+  /** Who read it: "✨ Read by <model>", or why the rules did (the AI did not answer). */ ai?: string;
   lines: DraftLine[];
 }
 export type OrderLine = { itemId: string; place: string; qty: number };
@@ -120,6 +122,23 @@ export function matchOrderLine(text: string, items: ReceiptItem[], aliases: Map<
     return w.length > 0 && w.every(a => t.includes(a)) && !!head && w.includes(head);
   });
   return { i: whole.length === 1 ? whole[0]!.id : null, c };
+}
+
+/**
+ * The AI's reading (owner, 2026-10-15: "la idea es apoyarse en IA" — `readRequestText`, the same as ✨ Build the cart)
+ * as draft lines: its supply only when sure (a taught alias wins — `readReceipt`), else the supplies IT named as the
+ * question's buttons — not ones added for sharing a word, so "sofa beds" is not asked about "Bed sheets" — and nothing
+ * named = not in Kaizen, with the AI's name, type and measure ready for the new-item form.
+ */
+export function draftLinesFromRead(lines: ReceiptLine[]): DraftLine[] {
+  return lines.filter(l => l.kind === 'item').map(l => {
+    const t = l.text.slice(0, 100);
+    // In the supply's measure when it is one (an 18-pack of washcloths = 18); a new item is counted as written ("2 (18 pack)" = 2 packs).
+    const q = Math.max(1, Math.ceil((l.itemId ? l.itemQty : null) ?? l.qty ?? 1));
+    if (l.itemId) return { t, q, i: l.itemId, c: [] };
+    const s: NewItem = { name: itemName(l.newName ?? t), kind: l.newKind ?? guessKind(t), measure: l.newMeasure ?? guessMeasure(t) };
+    return { t, q, i: null, c: (l.suggested ?? []).slice(0, 3), s };
+  });
 }
 
 /* ── what is not in Kaizen yet: a name, a type and a measure guessed from the words, corrected in the form ── */
@@ -232,7 +251,8 @@ export function orderDraftMessage(d: OrderDraft, id: string, o: { items: DraftIt
   const clash = clashes(d, o.existing);
   const where = d.todo ? `Goes on *${esc(o.todoTitle ?? `to-do #${d.todo}`)}* — this thread’s to-do.`
     : `A new to-do *Buy supplies…* will be made${d.claim ? ' for this thread’s claim' : ''}.`;
-  const top: Block[] = [section(`🛒 *Purchase order — draft* · ${d.lines.length} line${d.lines.length === 1 ? '' : 's'}\n${where} Nothing is saved until *Confirm*.`)];
+  const top: Block[] = [section(`🛒 *Purchase order — draft* · ${d.lines.length} line${d.lines.length === 1 ? '' : 's'}\n${where} Nothing is saved until *Confirm*.`),
+                        ...(d.ai ? [context(esc(d.ai))] : [])];
 
   const done = d.lines.map((l, idx) => ({ l, idx })).filter(x => settled(x.l));
   const list = done.map(({ l, idx }) => {
@@ -315,14 +335,14 @@ export function pickItemModal(meta: string, written: string, items: DraftItem[],
 const KIND_OPTS = [{ text: plain('Supplies — used up by cleans'), value: 'supply' }, { text: plain('Furniture — linens, dishes, equipment'), value: 'furniture' }];
 
 /** "+ New item" — name as written, supplies or furniture, its measure. */
-export function newItemModal(meta: string, written: string): Block {
-  const kind = guessKind(written);
+export function newItemModal(meta: string, written: string, s?: NewItem): Block {
+  const kind = s?.kind ?? guessKind(written);
   return { type: 'modal', callback_id: 'order_new_item', private_metadata: meta, title: plain('New item'), submit: plain('Use it'), close: plain('Back'),
     blocks: [
-      { type: 'input', block_id: 'name', label: plain('Name'), element: { type: 'plain_text_input', action_id: 'v', initial_value: itemName(written), max_length: 60 } },
+      { type: 'input', block_id: 'name', label: plain('Name'), element: { type: 'plain_text_input', action_id: 'v', initial_value: s?.name ?? itemName(written), max_length: 60 } },
       { type: 'input', block_id: 'kind', label: plain('Type'), element: { type: 'radio_buttons', action_id: 'v', initial_option: KIND_OPTS.find(k => k.value === kind), options: KIND_OPTS } },
       { type: 'input', block_id: 'measure', label: plain('Counted by'), hint: plain('roll, bottle, pack, set, unit…'),
-        element: { type: 'plain_text_input', action_id: 'v', initial_value: guessMeasure(written), max_length: 20 } },
+        element: { type: 'plain_text_input', action_id: 'v', initial_value: s?.measure ?? guessMeasure(written), max_length: 20 } },
       context('The item is made when the order is confirmed. Its store link and minimums are set in Kaizen → Setup → Inventory.')] };
 }
 
@@ -330,12 +350,15 @@ export function newItemModal(meta: string, written: string): Block {
  * Everything not in Kaizen at once (≤45 — a form holds 100 blocks): per line its name and its type, guessed from
  * the words; what it is counted in is guessed too ("sets of…" = set) and changed later in Setup → Inventory.
  */
-export function newItemsModal(meta: string, rows: { idx: number; t: string; q: number }[]): Block {
+export function newItemsModal(meta: string, rows: { idx: number; t: string; q: number; s?: NewItem }[]): Block {
   return { type: 'modal', callback_id: 'order_new_items', private_metadata: meta, title: plain('New items'), submit: plain('Add them'), close: plain('Back'),
     blocks: [context('Each is made when the order is confirmed, counted as shown (set, pack, unit…) — change it later in Kaizen → Setup → Inventory.'),
       ...rows.slice(0, 45).flatMap(r => [
-        { type: 'input', block_id: `nn_${r.idx}`, label: plain(`${r.idx + 1}. ${r.t} × ${r.q} — counted by ${guessMeasure(r.t)}`),
-          element: { type: 'plain_text_input', action_id: 'v', initial_value: itemName(r.t), max_length: 60 } },
+        { type: 'input', block_id: `nn_${r.idx}`, label: plain(`${r.idx + 1}. ${r.t} × ${r.q} — counted by ${newMeasureOf(r)}`),
+          element: { type: 'plain_text_input', action_id: 'v', initial_value: r.s?.name ?? itemName(r.t), max_length: 60 } },
         { type: 'input', block_id: `nk_${r.idx}`, label: plain('Type'),
-          element: { type: 'static_select', action_id: 'v', initial_option: KIND_OPTS.find(k => k.value === guessKind(r.t)), options: KIND_OPTS } }])] };
+          element: { type: 'static_select', action_id: 'v', initial_option: KIND_OPTS.find(k => k.value === (r.s?.kind ?? guessKind(r.t))), options: KIND_OPTS } }])] };
 }
+
+/** What a new item from the grouped form is counted in: the AI's word, else guessed from the line. */
+export const newMeasureOf = (l: { t: string; s?: NewItem }) => l.s?.measure ?? guessMeasure(l.t);

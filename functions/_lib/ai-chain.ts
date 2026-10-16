@@ -106,7 +106,7 @@ async function claude(key: string, tier: AiTier, system: string, user: string, f
 }
 
 export async function askJson(sql: SqlFn, env: Env, system: string, user: string, files: AiFile[] = [],
-                              opts: { tier?: AiTier; budgetMs?: number } = {}): Promise<AiAnswer | AiFailure> {
+                              opts: { tier?: AiTier; budgetMs?: number; log?: boolean } = {}): Promise<AiAnswer | AiFailure> {
   const tier = opts.tier ?? 'heavy';
   const until = Date.now() + (opts.budgetMs ?? (tier === 'chat' ? 15000 : 45000));
   const [a] = await sql`SELECT gemini_api_key_enc, gemini_model, claude_api_key_enc FROM accounts WHERE id = 1` as
@@ -115,7 +115,8 @@ export async function askJson(sql: SqlFn, env: Env, system: string, user: string
   const claudeKey = a?.claude_api_key_enc ? await decrypt(a.claude_api_key_enc, env.ENCRYPTION_KEY).catch(() => null) : null;
   const errors: string[] = [];
   const done = async (by: string, json: Record<string, unknown>): Promise<AiAnswer> => {
-    await sql`UPDATE accounts SET ai_last = ${JSON.stringify({ at: new Date().toISOString(), by, errors, tier })}::jsonb WHERE id = 1`.catch(() => {});
+    // `log: false` — a part of a list read in parallel: one ai_last is enough, and each write is one of a request's 50 subrequests.
+    if (opts.log !== false) await sql`UPDATE accounts SET ai_last = ${JSON.stringify({ at: new Date().toISOString(), by, errors, tier })}::jsonb WHERE id = 1`.catch(() => {});
     const why = errors.filter(e => e !== 'no Gemini key' && e !== 'Workers AI cannot read images or PDFs');
     return { ok: true, json, by: why.length ? `${by} (${why.join('; ')})` : by, switched: why.length > 0 };
   };
@@ -137,6 +138,6 @@ export async function askJson(sql: SqlFn, env: Env, system: string, user: string
     if (r.json) return done(s.by, r.json);
     errors.push(r.error ?? s.by);
   }
-  await sql`UPDATE accounts SET ai_last = ${JSON.stringify({ at: new Date().toISOString(), by: null, errors, tier })}::jsonb WHERE id = 1`.catch(() => {});
+  if (opts.log !== false) await sql`UPDATE accounts SET ai_last = ${JSON.stringify({ at: new Date().toISOString(), by: null, errors, tier })}::jsonb WHERE id = 1`.catch(() => {});
   return { ok: false, error: errors.join(' · ') };
 }
