@@ -54,18 +54,25 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   `slack_config.botUserId`) so it is not saved twice.
 - **`@Kaizen order <text>` = a purchase order from free text (owner, 2026-10-15)** — e.g. _2 paper towels y 1 Tide para LP-4212_.
   Nothing is saved until **Confirm**: Kaizen answers in the thread with a draft (`src/lib/order-text.ts`, pure + tests): each line
-  matched to a supply by its words (`scoreItems` in receipt.ts: a whole word in common and ×1.5 ahead of the next) or a taught alias
-  (`inventory_receipt_aliases`); a doubtful line is a question — the 3 closest as buttons, "Another item…", **+ Add as new item** (modal:
-  name, supplies/furniture, measure; made on Confirm), ✕ Drop. The place is **always asked** (owner) unless the text names a storage/closet
-  exactly; "para LP-4212" is said back ("pick its storage or closet") and gives the new to-do its listing (the place knows it — the Repository
-  says LP- where Hostaway says P2-). Store links via `cartLinks`. In a task's thread (incl. a cleaner's request / an inspection's order; a
-  sub-task's → its parent) the lines go on THAT to-do's `inventory_orders`; a line already there at that place asks **Add → n / Replace → n**
-  (owner: ask, offer both). Otherwise a new to-do "Buy supplies: …" (`asOrder`, so it lists with the orders; for the claim in a claim's
-  thread; announced in the tasks channel like `@Kaizen new`). Who: **ops and up** (`/api/inventory` POST + `/api/todos` POST); cleaners are
-  not members. The draft lives in the Confirm button's value (≤2000 chars, ~10 lines; no table) — each click reads it back from the message
-  and redraws it (`order_*` actions, `orderAction`); Confirm is once (`slack_sent` `order:<ch>:<ts>`), re-checks (to-do still open, supplies
-  not to a house) and replaces the draft with what was saved + Open in Kaizen. What a person picked is learned as an alias. "+ Purchase
-  order" in the to-do offer opens the same draft. Before (§162) `order` made a line-less "Purchase order: …" to-do at once.
+  matched to a supply (`matchOrderLine`) only when ONE item has every word of its name in the line and holds the line's last word
+  (what it is), packing words (set/pack/case/of…) and (…) ignored — "queen mattresses" is not "Comforter — Queen", "paper towel holders"
+  not "Paper towels", "knife sets" not "Sheet sets" — or by a taught alias (`inventory_receipt_aliases`). The rest are questions (the 3
+  closest as buttons, **Another item…** = a modal with every item, **+ New item** modal, ✕ Drop); nothing alike = **Not in Kaizen yet**,
+  grouped: **+ Add all as new items…** (one form, ≤45: name and type per line, both guessed — `itemName`, `guessKind` by the last noun,
+  `guessMeasure` from "sets of"/"pack of") or ✕ Drop them. Settled lines are a numbered text list with one **Change a line…** menu.
+  **A pasted list** (owner, same day — a new unit's 58-line setup under a paragraph): the mention's own lines are kept (`parseMention`
+  joins words with spaces, so the handler re-reads `commentFromMention`), one item per line, prose lines skipped and counted ("2 lines of
+  text were not read as items"); one line is split at , ; + and y &. ≤80 lines. The place is **always asked** (owner) unless the text names
+  a storage/closet exactly; "para LP-4212" is said back and gives the new to-do its listing (the Repository says LP- where Hostaway says
+  P2-). Store links via `cartLinks`. In a task's thread (incl. a cleaner's request / an inspection's order; a sub-task's → its parent) the
+  lines go on THAT to-do's `inventory_orders`; a line already there at that place asks **Add → n / Replace → n** (owner). Otherwise a new
+  to-do "Buy supplies: …" (`asOrder`; for the claim in a claim's thread; announced in the tasks channel like `@Kaizen new`). Who: **ops and
+  up** (`/api/inventory` + `/api/todos` POST). The draft is a row of **`slack_order_drafts` (095)**; Confirm's value is its id; a message
+  holds 50 blocks, so questions beyond what fits wait ("… and n more to answer"). Each click: read row → change → save → `chat.update`.
+  Confirm once (`slack_sent` `order:<ch>:<ts>`), re-checks (to-do open, supplies not to a house), new items in ONE insert (`newItems`) and
+  aliases in ONE (`learnAliases` batched) — Workers Free allows 50 subrequests a request; then the row goes and the message becomes what
+  was saved + Open in Kaizen. "+ Purchase order" in the to-do offer opens the same draft. Before (§162) `order` made a line-less to-do.
+  Tested on the owner's 58-line list (read-only, real items): 16 sure, 15 questions, 27 new, 2 prose lines skipped; 37 blocks.
 - Costs (§117): `@Kaizen cost …` (button), `/kaizen cost …` and the help's **+ Cost** open
   `costModal` — what, amount, category, listing or shared, date, all required, prefilled from
   the words — and save to Costs → One-offs via /api/expenses as the member. Never at once.

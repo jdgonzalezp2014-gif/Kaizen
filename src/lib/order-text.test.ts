@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clashes, draftFromBlocks, draftProblem, lineQty, matchOrderLine, mergeOrder, orderDraftMessage, orderSavedMessage, parseOrderText, type OrderDraft } from './order-text.ts';
+import { clashes, draftIdFromBlocks, draftProblem, guessKind, guessMeasure, itemName, lineQty, matchOrderLine, mergeOrder, newItemsModal, orderDraftMessage, orderSavedMessage, parseOrderText, type OrderDraft } from './order-text.ts';
 
 const ITEMS = [
   { id: '1', name: 'Paper towels', measure: 'roll', buyOptions: [{ label: 'Walmart', url: 'https://www.walmart.com/ip/Bounty/123456' }] },
@@ -21,6 +21,8 @@ test('lineQty: digits, words, x-suffix, default 1', () => {
   assert.deepEqual(lineQty('una escoba'), { text: 'escoba', qty: 1 });
   assert.deepEqual(lineQty('Tide'), { text: 'Tide', qty: 1 });
   assert.deepEqual(lineQty('- 1.5 bleach'), { text: 'bleach', qty: 2 });
+  assert.deepEqual(lineQty('2sets of bowls'), { text: 'sets of bowls', qty: 2 });
+  assert.deepEqual(lineQty('2 (18 pack) of hangers white'), { text: '(18 pack) of hangers white', qty: 2 });
 });
 
 test('parseOrderText: lines split, a unit is said back (place still asked), a place is taken', () => {
@@ -51,6 +53,13 @@ test('matchOrderLine: sure, doubtful (never guessed), taught alias, inactive lef
   assert.deepEqual(matchOrderLine('Tide', ITEMS), { i: null, c: [] });
   assert.equal(matchOrderLine('Tide', ITEMS, new Map([['tide', '3']])).i, '3');
   assert.equal(matchOrderLine('broom', ITEMS).i, null);
+  // Never a guess from a shared word (2026-10-15, a new unit's list): packing words, a size, or the thing it holds.
+  const more = [...ITEMS, { id: '7', name: 'Sheet sets', measure: 'set' }, { id: '8', name: 'Pots and pans', measure: 'set' }, { id: '9', name: 'Dish soap', measure: 'bottle' }];
+  for (const t of ['knife sets', 'queen mattresses', 'paper towel holders', 'dish drying racks', 'sets of curtains'])
+    assert.equal(matchOrderLine(t, more).i, null, t);
+  assert.equal(matchOrderLine('sets of pots and pans', more).i, '8');
+  assert.equal(matchOrderLine('queen sheet set', more).i, '7');
+  assert.equal(matchOrderLine('case of paper towels', more).i, '1');
 });
 
 test('clashes, draftProblem and mergeOrder: add or replace what the to-do already orders', () => {
@@ -59,24 +68,58 @@ test('clashes, draftProblem and mergeOrder: add or replace what the to-do alread
   assert.deepEqual([...clashes(d, existing)], [[0, 3]]);
   assert.match(draftProblem(d, existing)!, /already on this order/);
   assert.equal(draftProblem({ ...d, lines: [{ ...d.lines[0]!, m: 'sum' }, d.lines[1]!] }, existing), null);
-  assert.match(draftProblem(draft({ lines: [{ t: 'x', q: 1, i: null, c: [] }] }), [])!, /Pick the item/);
+  assert.match(draftProblem(draft({ lines: [{ t: 'x', q: 1, i: null, c: [] }] }), [])!, /still open/);
   assert.match(draftProblem(draft({ lines: [{ t: 'x', q: 1, i: '1', c: [] }] }), [])!, /where it goes/);
   assert.deepEqual(mergeOrder(existing, [{ itemId: '1', place: 'storages/1', qty: 2, m: 'sum' }, { itemId: '3', place: 'storages/1', qty: 1 }]),
     [{ itemId: '2', place: 'units/9', qty: 1 }, { itemId: '1', place: 'storages/1', qty: 5 }, { itemId: '3', place: 'storages/1', qty: 1 }]);
   assert.deepEqual(mergeOrder(existing, [{ itemId: '1', place: 'storages/1', qty: 2, m: 'replace' }]).find(l => l.itemId === '1')!.qty, 2);
 });
 
-test('orderDraftMessage: questions, place, cart, and the draft back from Confirm', () => {
+test('parseOrderText: a pasted list — one item per line, prose skipped, "and" kept inside a line', () => {
+  const text = `Based on our standard 2 queen/ 2 bedroom and 1 queen/1 bedroom PGA setup here is the order list for the new units. Art and wall decor are Not included.
+New unit setup:
+6 nights stands
+2 sets of drinking glasses (large and small)
+2sets of bowls
+18 bath towles
+1 case of toilet paper`;
+  const p = parseOrderText(text, PLACES, UNITS);
+  assert.equal(p.skipped, 2);
+  assert.deepEqual(p.lines.map(l => [l.qty, l.text]), [[6, 'nights stands'], [2, 'sets of drinking glasses (large and small)'], [2, 'sets of bowls'], [18, 'bath towles'], [1, 'case of toilet paper']]);
+});
+
+test('new items: name, measure and type guessed from the words', () => {
+  assert.equal(itemName('sets of large plates'), 'Large plates');
+  assert.equal(itemName('(18 pack) of hangers white'), 'Hangers white');
+  assert.equal(guessMeasure('sets of large plates'), 'set');
+  assert.equal(guessMeasure('(18 pack) of hangers white'), 'pack');
+  assert.equal(guessMeasure('queen mattresses'), 'unit');
+  for (const t of ['body wash', 'tresemes conditioners', 'packs of laundry pods', 'box of trash bags', 'lamp light bulbs', 'case of toilet paper', 'multipurpose cleaners'])
+    assert.equal(guessKind(t), 'supply', t);
+  for (const t of ['nights stands', 'soap dispensers', 'paper towel holders', 'coffee tubs', 'sets of salt and pepper shakers', 'bath towles', 'queen comforters'])
+    assert.equal(guessKind(t), 'furniture', t);
+  const m = newItemsModal('{}', Array.from({ length: 60 }, (_, i) => ({ idx: i, t: `thing ${i}`, q: 1 })));
+  assert.ok((m.blocks as unknown[]).length <= 100);
+});
+
+test('orderDraftMessage: a 58-line list stays within Slack\'s 50 blocks', () => {
+  const lines = Array.from({ length: 58 }, (_, i) => ({ t: `thing ${i}`, q: 1, i: i % 4 === 0 ? '1' : null, c: i % 4 === 1 || i % 4 === 2 ? ['4', '5'] : [] }));
+  const m = orderDraftMessage(draft({ lines }), '9', { items: ITEMS, places: [{ value: 'storages/1', label: 'Frisco storage' }], existing: [] });
+  assert.ok(m.blocks.length <= 50, String(m.blocks.length));
+  assert.match(JSON.stringify(m.blocks), /more to answer/);
+  assert.match(JSON.stringify(m.blocks), /Add all 14 as new items/);
+});
+
+test('orderDraftMessage: questions, place, cart, and the draft id back from Confirm', () => {
   const d = draft({ said: 'LP-4212', lines: [{ t: 'paper towels', q: 2, i: '1', c: ['1', '2'] }, { t: 'comforter', q: 1, i: null, c: ['4', '5'] }] });
-  const m = orderDraftMessage(d, { items: ITEMS, places: [{ value: 'storages/1', label: 'Frisco storage' }], existing: [] });
+  const m = orderDraftMessage(d, '42', { items: ITEMS, places: [{ value: 'storages/1', label: 'Frisco storage' }], existing: [] });
   const s = JSON.stringify(m.blocks);
   assert.match(s, /order_pick/);
-  assert.match(s, /\+ Add as new item/);
+  assert.match(s, /\+ New item/);
   assert.match(s, /You wrote “LP-4212”/);
   assert.match(s, /addToCart\?items=123456\|2/);
   assert.ok(!s.includes('Old broom'), 'an inactive item is not offered');
-  assert.deepEqual(draftFromBlocks(m.blocks), d);
-  assert.ok(JSON.stringify(d).length < 2000);
+  assert.equal(draftIdFromBlocks(m.blocks), '42');
   const saved = orderSavedMessage({ ...d, place: 'storages/1', lines: [d.lines[0]!] }, { items: ITEMS, placeLabel: 'Frisco storage', todoId: '7', todoTitle: 'Buy supplies: Paper towels × 2', fresh: true, by: 'U1', appUrl: 'https://k.dev' });
   assert.match(JSON.stringify(saved.blocks), /\?todo=7/);
 });

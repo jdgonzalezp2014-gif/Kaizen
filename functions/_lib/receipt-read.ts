@@ -103,12 +103,16 @@ export async function readReceiptFiles(sql: SqlFn, env: Env, files: AiFile[], wi
 /** The receipt lines a person decided (picked, changed, added as new): next time that text is that supply. */
 export async function learnAliases(sql: SqlFn, by: string, raw: unknown) {
   const list = (Array.isArray(raw) ? raw : typeof raw === 'string' && raw ? JSON.parse(raw) as unknown[] : []) as { text?: unknown; itemId?: unknown }[];
+  // One statement for all (2026-10-15: a pasted Slack order teaches dozens; Workers Free allows 50 subrequests a request).
+  const rows = new Map<string, number>();
   for (const a of list.slice(0, 80)) {
     const text = aliasKey(String(a.text ?? '')), itemId = Number(a.itemId);
-    if (text.length < 3 || !itemId) continue;
-    await sql`INSERT INTO inventory_receipt_aliases (account_id, text, item_id, by_name) VALUES (1, ${text}, ${itemId}, ${by})
-              ON CONFLICT (account_id, text) DO UPDATE SET item_id = EXCLUDED.item_id, by_name = EXCLUDED.by_name, updated_at = now()`;
+    if (text.length >= 3 && itemId) rows.set(text, itemId);
   }
+  if (!rows.size) return;
+  await sql`INSERT INTO inventory_receipt_aliases (account_id, text, item_id, by_name)
+            SELECT 1, r.text, r.item_id, ${by} FROM jsonb_to_recordset(${JSON.stringify([...rows].map(([text, item_id]) => ({ text, item_id })))}::jsonb) AS r(text text, item_id bigint)
+            ON CONFLICT (account_id, text) DO UPDATE SET item_id = EXCLUDED.item_id, by_name = EXCLUDED.by_name, updated_at = now()`;
 }
 
 /** What reading Markdown orders answers: one receipt per file, in order, which were read before, and what each file may have left out. */

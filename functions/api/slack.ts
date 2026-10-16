@@ -21,9 +21,10 @@ import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import * as todos from './todos.ts';
 import * as claims from './claims.ts';
 import * as expenses from './expenses.ts';
-import { invItems, newItem, saveTodoOrder } from '../_lib/inventory.ts';
+import { invItems, newItems, saveTodoOrder } from '../_lib/inventory.ts';
 import { learnAliases } from '../_lib/receipt-read.ts';
-import { draftFromBlocks, draftProblem, matchOrderLine, mergeOrder, newItemModal, orderDraftMessage, orderSavedMessage, parseOrderText, type DraftItem, type OrderDraft, type OrderLine } from '../../src/lib/order-text.ts';
+import { draftIdFromBlocks, draftProblem, guessMeasure, matchOrderLine, mergeOrder, newItemModal, newItemsModal, orderDraftMessage, orderSavedMessage, parseOrderText, pickItemModal,
+         type DraftItem, type OrderDraft, type OrderLine } from '../../src/lib/order-text.ts';
 import { orderList } from '../../src/lib/inventory.ts';
 import { findPlace, fitsPlace, placeWord } from '../../src/lib/unit-access.ts';
 import * as sopsApi from './sops.ts';
@@ -203,7 +204,9 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   if (verb === 'order' && arg) {
     const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
     if (!member.ok) { await sayPrivate(member.why); return; }
-    const m = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user)).orderDraft(arg, from, String(ev.ts));
+    // The words with their lines (parseMention joins them with spaces): a pasted list is one item per line.
+    const words = commentFromMention(String(ev.text ?? '')).replace(/^\S+[ \t]*/, '').trim() || arg;
+    const m = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user)).orderDraft(words, from, String(ev.ts));
     if (m.ok) await say(m.text, m.blocks); else if (m.private) await sayPrivate(m.message); else await say(m.message);
     return;
   }
@@ -666,24 +669,27 @@ class Kaizen {
   /** Ops and up (operations.edit) — who orders in Kaizen; cleaners are not members. */
   private mayOrder() { return this.may('/api/inventory', 'POST') && this.may('/api/todos', 'POST'); }
 
-  /** The draft from the words: each line matched or asked, the place asked unless written exactly, this thread's to-do. */
+  /**
+   * The draft from the words: each line matched or asked, the place asked unless written exactly, this thread's
+   * to-do. Kept in `slack_order_drafts`; posted by the caller, whose message's Confirm carries its id.
+   */
   async orderDraft(words: string, from: { channel: string; ts: string }, msgTs: string):
     Promise<{ ok: true; text: string; blocks: unknown[] } | { ok: false; message: string; private?: boolean }> {
     if (!this.mayOrder()) return { ok: false, private: true, message: 'Your Kaizen role does not include ordering supplies.' };
     const [items, sp, units, aliases, [home]] = await Promise.all([invItems(this.sql), supplyPlaces(this.sql), this.units(),
       this.sql`SELECT text, item_id::text AS "itemId" FROM inventory_receipt_aliases WHERE account_id = 1` as Promise<{ text: string; itemId: string }[]>,
       this.sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${from.channel} AND ts = ${from.ts}` as Promise<{ subject: string; subject_id: string }[]>]);
-    const places = placeOptions(sp);
     const named = [...sp.places, ...sp.houses].map(x => ({ key: x.key, name: placeWord(x), unit: x.units[0]?.id ?? null }));
     const p = parseOrderText(words, named, units);
-    if (!p.lines.length) return { ok: false, message: 'Write what is needed: *@Kaizen order* _2 paper towels and 1 Tide for Napa storage_.' };
+    if (!p.lines.length) return { ok: false, message: 'Write what is needed: *@Kaizen order* _2 paper towels and 1 Tide for Napa storage_ — or one item per line.' };
     const known = new Map(aliases.map(a => [a.text, a.itemId]));
     const d: OrderDraft = { by: this.slackUser, ch: from.channel, root: from.ts, msg: msgTs,
       todo: home?.subject === 'task' ? await this.orderTodo(home.subject_id) : null, claim: home?.subject === 'claim' ? home.subject_id : null,
-      place: p.place, said: p.said, unit: p.unit, lines: p.lines.map(l => ({ t: l.text, q: l.qty, ...matchOrderLine(l.text, items, known) })) };
-    // Slack keeps 2000 characters in a button's value — the draft's home.
-    if (JSON.stringify(d).length > 1900) return { ok: false, message: 'That order is too long for one message — split it in two.' };
-    return { ok: true, ...await this.orderView(d, { items, places }) };
+      place: p.place, said: p.said, unit: p.unit, ...(p.skipped ? { sk: p.skipped } : {}),
+      lines: p.lines.map(l => ({ t: l.text, q: l.qty, ...matchOrderLine(l.text, items, known) })) };
+    const [row] = await this.sql`INSERT INTO slack_order_drafts (account_id, draft, created_by) VALUES (1, ${JSON.stringify(d)}::jsonb, ${this.email})
+                                 RETURNING id::text` as { id: string }[];
+    return { ok: true, ...await this.orderView(row!.id, d, { items, places: placeOptions(sp) }) };
   }
   /** The thread's to-do that can hold an order: itself, or its parent for a sub-task — open, top-level. */
   private async orderTodo(id: string): Promise<string | null> {
@@ -698,66 +704,130 @@ class Kaizen {
                                 WHERE t.account_id = 1 AND t.id::text = ${todoId}` as { title: string; lines: OrderLine[] | null }[];
     return { title: r?.title ?? null, lines: r?.lines ?? [] };
   }
-  private async orderView(d: OrderDraft, pre?: { items: DraftItem[]; places: Opt[] }, problem?: string | null) {
-    const [items, places, on] = await Promise.all([pre?.items ?? invItems(this.sql), pre?.places ?? supplyPlaces(this.sql).then(placeOptions), this.orderOn(d.todo)]);
-    return orderDraftMessage(d, { items, places, existing: on.lines, todoTitle: on.title, problem });
+  private async loadDraft(id: string): Promise<OrderDraft | null> {
+    const [r] = await this.sql`SELECT draft FROM slack_order_drafts WHERE account_id = 1 AND id::text = ${id}` as { draft: OrderDraft }[];
+    return r?.draft ?? null;
   }
-  private async orderRedraw(d: OrderDraft, ch: string, ts: string, problem?: string | null) {
-    const m = await this.orderView(d, undefined, problem);
+  private async storeDraft(id: string, d: OrderDraft) {
+    await this.sql`UPDATE slack_order_drafts SET draft = ${JSON.stringify(d)}::jsonb, updated_at = now() WHERE account_id = 1 AND id::text = ${id}`;
+  }
+  private async orderView(id: string, d: OrderDraft, pre?: { items: DraftItem[]; places: Opt[] }, problem?: string | null) {
+    const [items, places, on] = await Promise.all([pre?.items ?? invItems(this.sql), pre?.places ?? supplyPlaces(this.sql).then(placeOptions), this.orderOn(d.todo)]);
+    return orderDraftMessage(d, id, { items, places, existing: on.lines, todoTitle: on.title, problem });
+  }
+  /** Saved, then drawn again in its message. */
+  private async orderRedraw(id: string, d: OrderDraft, ch: string, ts: string, problem?: string | null) {
+    await this.storeDraft(id, d);
+    const m = await this.orderView(id, d, undefined, problem);
     await slackApi(this.s.token!, 'chat.update', { channel: ch, ts, text: m.text, blocks: m.blocks });
   }
 
-  /** A click on the draft: it is read back from the message, changed, and drawn again. */
+  /** A click on the draft: it is read from its row, changed, saved and drawn again. */
   async orderAction(id: string, value: string, p: Record<string, any>): Promise<Response> { // eslint-disable-line @typescript-eslint/no-explicit-any
     if (!this.mayOrder()) return this.deny('ordering supplies');
-    const d = draftFromBlocks(p.message?.blocks);
+    const did = draftIdFromBlocks(p.message?.blocks);
     const ch = String(p.container?.channel_id ?? ''), ts = String(p.container?.message_ts ?? '');
-    if (!d || !ch || !ts) return ack();
+    if (!did || !ch || !ts) return ack();
     if (id === 'order_cancel') {
+      await this.sql`DELETE FROM slack_order_drafts WHERE account_id = 1 AND id::text = ${did}`;
       await slackApi(this.s.token!, 'chat.update', { channel: ch, ts, text: `✕ Order draft discarded by <@${this.slackUser}> — nothing was saved.`, blocks: [] });
       return ack();
     }
+    if (id === 'order_confirm') { this.ctx.waitUntil(this.orderConfirm(did, ch, ts).catch(() => {})); return ack(); }
+    const d = await this.loadDraft(did);
+    if (!d) { await slackApi(this.s.token!, 'chat.update', { channel: ch, ts, text: 'This order draft is gone — write @Kaizen order again.', blocks: [] }); return ack(); }
     const [a = '', b = ''] = value.split(':');
     const idx = Number(a), line = d.lines[idx];
-    if (id === 'order_new') {
-      if (line) await this.open(p.trigger_id, newItemModal(JSON.stringify({ d, ch, ts, idx }), line.t));
+    const meta = (extra: Record<string, unknown> = {}) => JSON.stringify({ id: did, ch, ts, ...extra });
+    // The forms open on the click's trigger (3 s) — nothing read before them but the draft.
+    if (id === 'order_new') { if (line) await this.open(p.trigger_id, newItemModal(meta({ idx }), line.t)); return ack(); }
+    if (id === 'order_new_all') {
+      const rows = d.lines.map((l, i) => ({ idx: i, t: l.t, q: l.q, l })).filter(r => !r.l.i && !r.l.n && !r.l.c.length && !r.l.x).slice(0, 45);
+      if (rows.length) await this.open(p.trigger_id, newItemsModal(meta({ idxs: rows.map(r => r.idx) }), rows));
       return ack();
     }
-    if (id === 'order_confirm') { this.ctx.waitUntil(this.orderConfirm(d, ch, ts).catch(() => {})); return ack(); }
-    if ((id === 'order_pick' || id === 'order_pick_other') && line && b) { line.i = b; delete line.n; delete line.m; line.p = 1; }
-    if (id === 'order_change' && line) { line.i = null; delete line.n; delete line.m; delete line.p; }
+    if (id === 'order_other') {
+      if (line) await this.open(p.trigger_id, pickItemModal(meta({ idx }), line.t, await invItems(this.sql), line.c));
+      return ack();
+    }
+    if (id === 'order_pick' && line && b) { line.i = b; delete line.n; delete line.m; line.p = 1; }
+    if (id === 'order_change' && line) { line.i = null; delete line.n; delete line.m; delete line.p; line.x = 1; }
     if (id === 'order_drop' && line) d.lines.splice(idx, 1);
+    if (id === 'order_drop_all') d.lines = d.lines.filter(l => l.i || l.n || l.c.length || l.x);
     if (id === 'order_merge_sum' && line) line.m = 'sum';
     if (id === 'order_merge_replace' && line) line.m = 'replace';
     if (id === 'order_place' && value) { d.place = value; for (const l of d.lines) delete l.m; }
-    this.ctx.waitUntil(this.orderRedraw(d, ch, ts).catch(() => {}));
+    this.ctx.waitUntil(this.orderRedraw(did, d, ch, ts).catch(() => {}));
+    return ack();
+  }
+
+  /** The draft's forms: "Another item…", "+ New item", and every missing item at once. */
+  async orderDraftForm(callback: string, view: Record<string, any>): Promise<Response> { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!this.mayOrder()) return json({ response_action: 'errors', errors: {} });
+    const state = view.state?.values ?? {};
+    const m = JSON.parse(view.private_metadata || '{}') as { id?: string; ch?: string; ts?: string; idx?: number; idxs?: number[] };
+    if (!m.id || !m.ch || !m.ts) return ack();
+    if (callback === 'order_new_item' && !String(state.name?.v?.value ?? '').trim()) return json({ response_action: 'errors', errors: { name: 'Give it a name.' } });
+    const blank = (m.idxs ?? []).find(i => !String(state[`nn_${i}`]?.v?.value ?? '').trim());
+    if (blank != null) return json({ response_action: 'errors', errors: { [`nn_${blank}`]: 'Give it a name.' } });
+    const { id, ch, ts } = m as { id: string; ch: string; ts: string };
+    // After the answer: the form closes at once, the message is redrawn when ready.
+    this.ctx.waitUntil((async () => {
+      const d = await this.loadDraft(id);
+      if (!d) return;
+      const line = d.lines[m.idx ?? -1];
+      if (callback === 'order_pick_item' && line) {
+        const item = String(state.item?.v?.selected_option?.value ?? '');
+        if (item) { line.i = item; delete line.n; delete line.m; line.p = 1; }
+      }
+      if (callback === 'order_new_item' && line) {
+        line.n = { name: String(state.name.v.value).trim().slice(0, 60), kind: state.kind?.v?.selected_option?.value === 'furniture' ? 'furniture' : 'supply',
+                   measure: String(state.measure?.v?.value ?? '').trim().slice(0, 20) || 'unit' };
+        line.i = null; delete line.m; delete line.p;
+      }
+      if (callback === 'order_new_items') for (const i of m.idxs ?? []) {
+        const l = d.lines[i];
+        if (!l || l.i || l.n) continue;
+        l.n = { name: String(state[`nn_${i}`]?.v?.value ?? l.t).trim().slice(0, 60), kind: state[`nk_${i}`]?.v?.selected_option?.value === 'supply' ? 'supply' : 'furniture',
+                measure: guessMeasure(l.t) };
+      }
+      await this.orderRedraw(id, d, ch, ts);
+    })().catch(() => {}));
     return ack();
   }
 
   /**
-   * Confirm: checked again (the to-do may have changed), then saved once — new items made, the lines merged into
-   * this thread's to-do's order, or a new "Buy supplies…" to-do with them. What a person picked is learned as an alias.
+   * Confirm: checked again (the to-do may have changed), then saved once — new items made (all in one
+   * statement), the lines merged into this thread's to-do's order, or a new "Buy supplies…" to-do with them.
+   * What a person picked is learned as an alias. The draft's row goes.
    */
-  private async orderConfirm(d: OrderDraft, ch: string, ts: string) {
+  private async orderConfirm(did: string, ch: string, ts: string) {
+    const d = await this.loadDraft(did);
+    if (!d) return;
     const [on, items, sp] = await Promise.all([this.orderOn(d.todo), invItems(this.sql), supplyPlaces(this.sql)]);
+    const show = (why: string, draft = d) => this.orderRedraw(did, draft, ch, ts, why);
     const problem = draftProblem(d, on.lines);
-    if (problem) return await this.orderRedraw(d, ch, ts, problem);
+    if (problem) return await show(problem);
     const place = findPlace(sp, d.place!);
-    if (!place) return await this.orderRedraw(d, ch, ts, 'That place is gone — pick another.');
+    if (!place) return await show('That place is gone — pick another.');
     const misfit = d.lines.find(l => !fitsPlace(place, l.n?.kind ?? items.find(i => i.id === l.i)?.kind));
-    if (misfit) return await this.orderRedraw(d, ch, ts, `“${misfit.t}” is supplies: they go to a storage or a closet, not the house.`);
-    if (d.todo && !on.title) return await this.orderRedraw({ ...d, todo: null }, ch, ts, 'This thread’s to-do is gone — Confirm makes a new one.');
+    if (misfit) return await show(`“${misfit.t}” is supplies: they go to a storage or a closet, not the house. Drop it, or order it apart.`);
+    if (d.todo && !on.title) return await show('This thread’s to-do is gone — Confirm makes a new one.', { ...d, todo: null });
     // Once: a second tap on Confirm finds the key taken.
     const key = `order:${ch}:${ts}`;
     const [mine] = await this.sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${key}) ON CONFLICT DO NOTHING RETURNING key`;
     if (!mine) return;
     try {
-      for (const l of d.lines) if (!l.i && l.n) l.i = await newItem(this.sql, { ...l.n });
+      const fresh = d.lines.filter(l => !l.i && l.n);
+      if (fresh.length) {
+        const ids = await newItems(this.sql, fresh.map(l => l.n!), items);
+        fresh.forEach((l, k) => { l.i = ids[k]!; });
+      }
+      const all = fresh.length ? await invItems(this.sql) : items;
       const add = d.lines.map(l => ({ itemId: l.i!, place: d.place!, qty: l.q, m: l.m }));
       let todoId = d.todo, title = on.title ?? '';
       if (todoId) await saveTodoOrder(this.sql, this.email, todoId, mergeOrder(on.lines, add));
       else {
-        const all = await invItems(this.sql);
         title = orderList(add.map(l => ({ item: all.find(i => i.id === l.itemId)!, place: placeWord(place), qty: l.qty })).filter(l => l.item))!.title;
         const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: ch, message_ts: d.msg });
         const dm = dmChannel(ch);
@@ -775,14 +845,14 @@ class Kaizen {
             this.ctx.waitUntil(notifyTask(this.sql, this.ctx.env.ENCRYPTION_KEY, todoId, 'created', this.email).catch(() => {}));
         }
       }
-      const taught = d.lines.filter(l => l.p && l.i).map(l => ({ text: l.t, itemId: l.i }));
-      if (taught.length) await learnAliases(this.sql, this.email, taught);
-      const m = orderSavedMessage(d, { items: await invItems(this.sql), placeLabel: placeWord(place), todoId: todoId!, todoTitle: title, fresh: !d.todo,
+      await learnAliases(this.sql, this.email, d.lines.filter(l => l.p && l.i).map(l => ({ text: l.t, itemId: l.i })));
+      await this.sql`DELETE FROM slack_order_drafts WHERE account_id = 1 AND id::text = ${did}`;
+      const m = orderSavedMessage(d, { items: all, placeLabel: placeWord(place), todoId: todoId!, todoTitle: title, fresh: !d.todo,
                                        by: this.slackUser, appUrl: this.s.config.appUrl });
       await slackApi(this.s.token!, 'chat.update', { channel: ch, ts, text: m.text, blocks: m.blocks });
     } catch (e) {
       await this.sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;
-      await this.orderRedraw(d, ch, ts, `Not saved: ${e instanceof Error ? e.message : String(e)}`);
+      await show(`Not saved: ${e instanceof Error ? e.message : String(e)}`);
     }
   }
 
@@ -1517,19 +1587,8 @@ class Kaizen {
     const view = p.view ?? {};
     const meta = JSON.parse(view.private_metadata || '{}') as { id: string | null; kind?: string };
     const state = view.state?.values ?? {};
-    if (view.callback_id === 'order_new_item') {
-      if (!this.mayOrder()) return json({ response_action: 'errors', errors: { name: 'Your Kaizen role does not include ordering supplies.' } });
-      const m = JSON.parse(view.private_metadata || '{}') as { d?: OrderDraft; ch?: string; ts?: string; idx?: number };
-      const name = String(state.name?.v?.value ?? '').trim();
-      if (!name) return json({ response_action: 'errors', errors: { name: 'Give it a name.' } });
-      const line = m.d?.lines[m.idx ?? -1];
-      if (!m.d || !line || !m.ch || !m.ts) return ack();
-      line.n = { name: name.slice(0, 60), kind: state.kind?.v?.selected_option?.value === 'furniture' ? 'furniture' : 'supply',
-                 measure: String(state.measure?.v?.value ?? '').trim().slice(0, 20) || 'unit' };
-      line.i = null; delete line.m; delete line.p;
-      this.ctx.waitUntil(this.orderRedraw(m.d, m.ch, m.ts).catch(() => {}));
-      return ack();
-    }
+    // "@Kaizen order" drafts' forms (2026-10-15).
+    if (view.callback_id === 'order_new_item' || view.callback_id === 'order_new_items' || view.callback_id === 'order_pick_item') return await this.orderDraftForm(view.callback_id, view);
     if (view.callback_id === 'report_save') {
       const f = readReportModal(state);
       if (!f.body) return json({ response_action: 'errors', errors: { body: 'Say what went wrong, or what you need.' } });

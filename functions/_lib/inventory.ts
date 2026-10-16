@@ -512,6 +512,24 @@ export async function newItem(sql: SqlFn, b: Record<string, unknown>) {
 }
 
 /**
+ * Several new items at once (a pasted Slack order, 2026-10-15) — `newItem`'s rules (one with the same name and no
+ * size is reused, switched back on if off) in two statements, not two per item: a request has 50 subrequests.
+ * Returns the ids in the order given.
+ */
+export async function newItems(sql: SqlFn, list: { name: string; kind: 'supply' | 'furniture'; measure: string }[], known: InvItem[]): Promise<string[]> {
+  const clean = list.map(n => ({ name: n.name.trim().slice(0, 120), kind: n.kind === 'furniture' ? 'furniture' : 'supply', measure: n.measure.trim().slice(0, 20) || 'unit' }));
+  if (clean.some(n => !n.name)) throw new Error('An item needs a name.');
+  const had = (name: string) => known.find(i => (i.baseName ?? i.name).toLowerCase() === name.toLowerCase() && !i.size);
+  const off = [...new Set(clean.map(n => had(n.name)).filter(i => i && !i.active).map(i => i!.id))];
+  if (off.length) await sql`UPDATE inventory_items SET active = true, updated_at = now() WHERE account_id = 1 AND id::text = ANY(${off})`;
+  const fresh = [...new Map(clean.filter(n => !had(n.name)).map(n => [n.name.toLowerCase(), n])).values()];
+  const made = fresh.length ? await sql`INSERT INTO inventory_items (account_id, name, size, category, measure, kind)
+      SELECT 1, r.name, NULL, 'other', r.measure, r.kind FROM jsonb_to_recordset(${JSON.stringify(fresh)}::jsonb) AS r(name text, measure text, kind text)
+      RETURNING id::text, name` as { id: string; name: string }[] : [];
+  return clean.map(n => had(n.name)?.id ?? made.find(m => m.name.toLowerCase() === n.name.toLowerCase())!.id);
+}
+
+/**
  * A NEW item corrected where it was made (owner, 2026-10-15: "it comes by unit, by kit, by pods — the
  * person corrects what the AI saw"): name, size, measure and type. Only while nothing is recorded for it —
  * changing "pack" to "pod" under a stock already counted would change what every number means; an item

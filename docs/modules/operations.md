@@ -66,8 +66,9 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
 - **One store product per item (owner, 2026-10-15: "not several platforms' links yet"):** `withProduct` keeps ONE
   Walmart/Amazon option (bought at the other store, it replaces it; Costco-type links stay); `inventory-items` save refuses two.
 - **Orders from Slack (owner, 2026-10-15):** `@Kaizen order 2 paper towels y 1 Tide para LP-4212` → a draft in the thread (lines
-  matched or asked, place always asked, Walmart cart / Amazon links), saved on Confirm onto the thread's to-do's order (add/replace asked
-  per clash) or a new "Buy supplies: …" to-do — `saveTodoOrder`, `newItem`, `learnAliases`. Details in docs/modules/slack.md.
+  matched or asked, place always asked, Walmart cart / Amazon links; a pasted list = one item per line, the missing ones added all at once),
+  saved on Confirm onto the thread's to-do's order (add/replace asked per clash) or a new "Buy supplies: …" to-do — `saveTodoOrder`,
+  `newItems` (bulk, new), `learnAliases` (now one statement). Details in docs/modules/slack.md.
 - **Sets (owner, 2026-10-15):** one store product on several supplies = a set (Swirl flatware on Forks ×16 / Knives ×8 / Spoons ×24,
   Quatish on Plates ×8 / Bowls ×4; only when someone puts the same link on several items). `readOrder` splits its line into one
   line per supply (`match` 'product', its pieces, the price shared evenly, leftover cents on the first) and `cartLinks` buys it
