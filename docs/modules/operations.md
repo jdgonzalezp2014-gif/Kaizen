@@ -89,7 +89,14 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   / "+ link" per Final cart row → `setStoreLink` (`storeLink` action: a Walmart/Amazon page replaces the store product,
   pack kept unless given; '' removes it). The Final cart hides after a receipt is read. **Closing any to-do with an order
   with lines and no purchase now needs a reason** (`/api/todos` 409 `unbought`, Todos.tsx `t.order`) — before, only
-  cleaner/inspection requests did. Open: report a broken link from Slack's draft (only in Kaizen); abandoned
+  cleaner/inspection requests did. **Final cart, a way out per item (owner: "act as a logistics professional"):**
+  `CartEdit` (PurchaseForm's `buttons` gets `edit`: put/add lines without starting the form over — Build the cart uses it
+  via `editRef`, so typed lines survive); `Aside` = set aside on purpose (on hand / another order), excluded from
+  "taken off" and from what was not bought, ↺ put back, said on the to-do (`orderNote` action). On hand never discounts by
+  itself: "don't buy it", or "correct the record" (a `count` at that place, note "Checked while ordering"). Store: `StorePick`
+  + `linkOf` (store product, or a non-store option under the store's name) — `setStoreLink` now keeps other stores' pages
+  by `label`; `storeAt` falls back to that label. Asked-not-on-cart rows replace the old "Not sure" block. Peek's pop-up keeps
+  focus on a tap (mousedown prevented) so its buttons work on a phone. Splits show per part. SOP #15 v23. Open: report a broken link from Slack's draft (only in Kaizen); abandoned
   `slack_order_drafts` rows are never cleaned. Not yet seen on screen (owner's tokens) — check it in use.
 - **Sets (owner, 2026-10-15):** one store product on several supplies = a set (Swirl flatware on Forks ×16 / Knives ×8 / Spoons ×24,
   Quatish on Plates ×8 / Bowls ×4; only when someone puts the same link on several items). `readOrder` splits its line into one

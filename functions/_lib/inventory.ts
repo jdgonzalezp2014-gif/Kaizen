@@ -620,20 +620,42 @@ export async function laterOrder(sql: SqlFn, by: string, fromTodo: unknown, line
 }
 
 /**
- * A store link that does not work (owner, 2026-10-15: "report it and replace it"): a new Walmart/Amazon product
- * page takes the place of the item's store product (its pack kept unless a new one is given); no link = the broken
- * one is removed, and the item reads "no store link" until a person or a receipt gives it one. Other options stay.
+ * Where an item is bought, and its link (owner, 2026-10-15: "if there is a link, add where it is bought, or change
+ * it"; a broken one is reported and replaced). A Walmart/Amazon product page takes the place of the item's store
+ * product (one per item; its pack kept unless a new one is given); any other store's page is kept under that
+ * store's name (Home Depot…), replacing the one of that name. No link = that one is removed. Other options stay.
  */
 export async function setStoreLink(sql: SqlFn, b: Record<string, unknown>) {
   const url = String(b.url ?? '').trim();
+  const label = String(b.label ?? '').trim().slice(0, 60);
   const [it] = await sql`SELECT buy_options FROM inventory_items WHERE account_id = 1 AND id = ${Number(b.itemId) || 0}` as { buy_options: BuyOption[] | null }[];
   if (!it) throw new Error('Which item?');
-  if (url && !storeProduct(url)) throw new Error('Paste a Walmart (walmart.com/ip/…) or Amazon (amazon.com/dp/…) product page.');
+  const prod = url ? storeProduct(url) : null;
+  if (url && !prod && !/^https?:\/\/\S+$/i.test(url)) throw new Error('Paste the product page link (https://…).');
+  if (url && /^(walmart|amazon)$/i.test(label) && prod?.store.toLowerCase() !== label.toLowerCase()) throw new Error(`Paste a ${label} product page.`);
   const all = it.buy_options ?? [];
-  const pack = Number(b.pack) > 0 ? Math.round(Number(b.pack) * 100) / 100 : all.find(o => storeProduct(o.url))?.pack ?? null;
-  const rest = all.filter(o => !storeProduct(o.url));
-  const next = url ? withProduct(rest, url, pack) : rest;
+  const given = Number(b.pack) > 0 ? Math.round(Number(b.pack) * 100) / 100 : null;
+  let next: BuyOption[];
+  if (prod || (!url && (!label || /^(walmart|amazon)$/i.test(label)))) {
+    const rest = all.filter(o => !storeProduct(o.url));
+    next = prod ? withProduct(rest, url, given ?? all.find(o => storeProduct(o.url))?.pack ?? null) : rest;
+  } else {
+    if (!label) throw new Error('Which store?');
+    const same = (o: BuyOption) => !storeProduct(o.url) && o.label.toLowerCase() === label.toLowerCase();
+    const pack = given ?? all.find(same)?.pack ?? null;
+    next = [...all.filter(o => !same(o)), ...(url ? [{ label, url, ...(pack ? { pack } : {}) }] : [])].slice(0, 10);
+  }
   await sql`UPDATE inventory_items SET buy_options = ${JSON.stringify(next)}::jsonb, updated_at = now() WHERE account_id = 1 AND id = ${Number(b.itemId)}`;
+}
+
+/** Said on the to-do (owner, 2026-10-15): what was taken off its order on purpose — on hand, or another order buys it. */
+export async function orderNote(sql: SqlFn, by: string, todoId: unknown, notes: unknown) {
+  const list = (Array.isArray(notes) ? notes : []).map(n => String(n).trim().slice(0, 200)).filter(Boolean).slice(0, 30);
+  if (!list.length) return;
+  const [t] = await sql`SELECT id::text FROM todos WHERE account_id = 1 AND id = ${Number(todoId) || 0}` as { id: string }[];
+  if (!t) throw new Error('Which to-do?');
+  await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+            VALUES (1, 'task', ${t.id}, 'note', ${`Not bought on this order:\n${list.map(n => `• ${n}`).join('\n')}`}, ${by})`;
 }
 
 /** The order being written, saved as a draft (§150): no to-do until it is created. Empty lines = discard. */

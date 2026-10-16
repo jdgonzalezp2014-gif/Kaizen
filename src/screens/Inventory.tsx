@@ -11,7 +11,7 @@
  * report asks for a count instead of changing the number on one person's word.
  */
 import { Hint, Peek } from '../components/Hint.tsx';
-import { Fragment, createContext, useContext, useEffect, useMemo, useState } from 'react';
+import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { getInventory, inventoryAction, inventoryItemAction, inventoryUpload, type InvItemRow, type InvPlace, type Inventory } from '../api.ts';
 import { CATEGORIES, leftOver, onHand, reconcile } from '../lib/inventory.ts';
 import { destFor, placeLabel } from '../lib/unit-access.ts';
@@ -20,6 +20,7 @@ import { Sheet } from '../components/InspectionRun.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { againstOrder, cartLinks, STORE_NAME, storeProduct } from '../lib/store-order.ts';
 import { TX } from '../lib/crew-i18n.ts';
+import { guessKind, guessMeasure, itemName } from '../lib/order-text.ts';
 import { Icon, ic } from '../components/Icon.tsx';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -769,7 +770,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   head?: React.ReactNode; extra?: React.ReactNode; recordLabel?: string;
   /** Records it; a message back = not saved. `true` = clear the form for the next one. */
   onRecord: (p: PurchaseOut) => Promise<string | true | null>;
-  buttons?: (p: { lines: PurchaseOut['lines']; busy: boolean; read: boolean }) => React.ReactNode;
+  buttons?: (p: { lines: PurchaseOut['lines']; busy: boolean; read: boolean; edit: CartEdit }) => React.ReactNode;
   /** A to-do's order: its lines may wait for a place (saved as the order; recording asks for it). */
   noPlace?: boolean;
   /** Where each item of the order is to be bought (store name) — the receipt is checked against it. */
@@ -818,6 +819,11 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     if (!n && parts.length <= 1) m.delete(id); else m.set(id, [{ ...first, qty: String(n) }, ...parts.slice(1)]);
   };
   const qtyOf = (l: ReceiptLine) => l.itemQty ?? l.qty ?? 1;
+  // The lines changed from outside (the final cart, Build the cart): one item's parts set, or one added where its type goes.
+  const edit: CartEdit = {
+    put: (id, parts) => setLinesRaw(m => { const n = new Map(m); if (parts.length) n.set(id, parts.map(p => ({ place: p.place, qty: String(p.qty) }))); else n.delete(id); return n; }),
+    add: (id, qty, place) => setLinesRaw(m => m.has(id) ? m : new Map(m).set(id, [{ place: place ?? destFor(place0, inv.items.find(i => i.id === id)?.kind, housesOf(inv)), qty: String(qty) }])),
+  };
   const rowQty = (r: Row) => Math.max(0, Number(r.qty) || 0);
 
   /**
@@ -1100,7 +1106,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     </div>}
     {extra}
     <div className="button-row">
-      {buttons?.({ lines: out, busy, read: read1 })}
+      {buttons?.({ lines: out, busy, read: read1, edit })}
       <button disabled={busy || !out.length || unplaced || !(totalN > 0) || pending > 0 || !!shareLeft} onClick={() => void record()}>{ic(busy ? 'Saving…' : recordLabel)}</button>
       {unplaced && <span className="note">▲ Say which place each item went to{noPlace ? ' — Save order keeps it without one' : ''}.</span>}
       {pending > 0 && <span className="note">▲ Decide the receipt's lines first.</span>}
@@ -1356,9 +1362,13 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   const [after, setAfter] = useState<'later' | 'keep' | 'drop'>('later');
   const [msg, setMsg] = useState('');
   const [building, setBuilding] = useState(false);
-  const [unsure, setUnsure] = useState<{ text: string; candidates: string[] }[]>([]);
-  // What ✨ read in the ask, line by line, and the item each became (picked later too) — the final cart says what never made it.
-  const [asks, setAsks] = useState<{ text: string; itemId: string | null }[]>([]);
+  // What ✨ read in the ask, line by line, the item each became (picked later too) and the closest ones — the final cart
+  // offers a way out for each that is on no line.
+  const [asks, setAsks] = useState<Ask[]>([]);
+  // Taken off on purpose (on hand, or another order buys it) — kept out of "what was not bought", said on the to-do.
+  const [aside, setAside] = useState<Aside[]>([]);
+  // The form's lines, changed from outside it (Build the cart, the final cart) without starting the form over.
+  const editRef = useRef<CartEdit | null>(null);
   // Where each item is bought when it is not its linked store ("Home Depot") — kept on the order's lines as `at`.
   const [at, setAt] = useState<Map<string, string>>(new Map());
   // Owner, 2026-10-14: the to-do's order IS the "Record a purchase" form — items, total, paid by, note,
@@ -1376,9 +1386,12 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   const hadOrder = inv.orders.some(o => o.todoId === todoId && o.lines.length > 0);
   const nameOf = (id: string) => inv.items.find(i => i.id === id)?.name ?? 'item';
   const addLines = (ls: { itemId: string; qty: number }[]) => {
-    setStartArr(a => [...a, ...ls.filter(l => !a.some(x => x.itemId === l.itemId))
-      .map(l => ({ itemId: l.itemId, place: home ? destFor(home, inv.items.find(i => i.id === l.itemId)?.kind, housesOf(inv)) : '', qty: l.qty }))]);
-    setFormKey(k => k + 1);
+    const placed = ls.map(l => ({ itemId: l.itemId, place: home ? destFor(home, inv.items.find(i => i.id === l.itemId)?.kind, housesOf(inv)) : '', qty: l.qty }));
+    // What was asked counts as ordered (the base for "taken off the cart").
+    setStartArr(a => [...a, ...placed.filter(l => !a.some(x => x.itemId === l.itemId))]);
+    // Into the form as it is — what someone already typed or added stays; before it is drawn, it starts from startArr.
+    if (editRef.current) for (const l of placed) editRef.current.add(l.itemId, l.qty, l.place);
+    else setFormKey(k => k + 1);
   };
   // §159 (owner): the AI reads what was asked and fills the cart — sure lines in, the rest as "is it one of these?".
   const build = async () => {
@@ -1388,12 +1401,17 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
     setBuilding(false);
     if (!r.ok) { setMsg(`${r.message ?? 'Could not read it'} — build the cart by hand.`); return; }
     addLines(r.lines.filter(l => l.itemId).map(l => ({ itemId: l.itemId!, qty: Math.max(1, Math.ceil(l.itemQty ?? l.qty ?? 1)) })));
-    setUnsure(r.lines.filter(l => !l.itemId).map(l => ({ text: l.text, candidates: l.candidates })));
-    setAsks(r.lines.map(l => ({ text: l.text, itemId: l.itemId })));
+    setAsks(r.lines.map(l => ({ text: l.text, itemId: l.itemId, candidates: l.candidates })));
+    const open = r.lines.filter(l => !l.itemId).length;
     if (!r.lines.length) setMsg('Nothing in it read as something to buy — build the cart by hand.');
+    else if (open) setMsg(`${open} line${open === 1 ? '' : 's'} not sure — see “Asked, not on the cart” under the cart.`);
   };
   const start = startArr.length ? linesOf(startArr) : undefined;
   const withAt = <L extends { itemId: string }>(ls: L[]) => ls.map(l => at.get(String(l.itemId)) ? { ...l, at: at.get(String(l.itemId)) } : l);
+  const asideLines = aside.flatMap(a => a.parts.map(p => ({ itemId: a.itemId, place: p.place, qty: p.qty })));
+  /** Said on the to-do: what was set aside and why — on hand, or another order buys it. */
+  const noteAside = () => aside.length ? inventoryAction({ action: 'orderNote', todoId, notes: aside.map(a =>
+    `${nameOf(a.itemId)} × ${a.parts.reduce((s, p) => s + p.qty, 0)} — ${a.why === 'stock' ? `on hand (${a.from})` : `bought on ${a.from}`}`) }).catch(() => null) : Promise.resolve(null);
   /** Items taken off the cart (or fewer of them) → a new order for later; this one saved without them. */
   const later = async (off: { itemId: string; place: string; qty: number }[], lines: { itemId: string; place: string; qty: number }[]) => {
     setMsg('');
@@ -1402,6 +1420,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
       if (!l.ok) { setMsg(l.message ?? 'The new order was not made.'); return; }
       const r = await inventoryAction({ action: 'todoOrder', todoId, lines: withAt(lines) });
       if (!r.ok) { setMsg(`New order for later made (#${l.todoId}) — but this order was not saved without them: ${r.message ?? ''}`); return; }
+      await noteAside(); setAside([]);
       setStartArr(lines); setInv(r);
       setMsg(`✓ New order for later (#${l.todoId}) with ${off.length} line${off.length === 1 ? '' : 's'}; this order saved without them.`);
     } catch (e) { setMsg(String(e)); }
@@ -1415,18 +1434,6 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
       {(asked ?? '').trim() && (
         <div className="buy-asked">
           <button className="secondary small" disabled={building} onClick={() => void build()}><Icon n="sparkles" /> {building ? 'Reading what was asked…' : 'Build the cart from what was asked'}</button>
-          {unsure.length > 0 && (
-            <div className="buy-unsure">
-              <span className="note">Not sure — is it one of these?</span>
-              {unsure.map((u, k) => (
-                <div key={k} className="buy-unsure-line"><b>“{u.text}”</b>
-                  {u.candidates.length ? u.candidates.map(c => <button key={c} className="chip" onClick={() => { addLines([{ itemId: c, qty: 1 }]); setAsks(a => a.map(x => x.text === u.text ? { ...x, itemId: c } : x)); setUnsure(x => x.filter((_, n) => n !== k)); }}>{nameOf(c)}</button>)
-                    : <span className="note"> nothing like it in the supplies list — add it from the form</span>}
-                  <button className="link tiny" onClick={() => setUnsure(x => x.filter((_, n) => n !== k))}>Skip</button>
-                </div>
-              ))}
-            </div>
-          )}
         </div>
       )}
       {hadOrder && <p className="note">The order as it was left.</p>}
@@ -1443,7 +1450,8 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
           if (!r.ok) return r.message ?? 'Not saved.';
           // What this to-do's order still needs after what was bought for it (one receipt may have paid for several orders).
           const mine = p.splits ? p.splits.find(x => x.todoId === todoId)?.lines ?? [] : p.forTodo && p.forTodo !== todoId ? [] : p.lines;
-          const rest = leftOver(withAt(startArr), mine);
+          const rest = leftOver(withAt(startArr), [...mine, ...asideLines]);
+          await noteAside();
           const done = '✓ The purchase IS recorded — do not record it again.';
           try {
             if (after === 'later' && rest.length) {
@@ -1457,30 +1465,32 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
           } catch (e) { return `${done} But what is left was not saved (${String(e)}).`; }
           onBought(after !== 'keep'); return null;
         }}
-        buttons={({ lines, busy, read }) => <>
+        buttons={({ lines, busy, read, edit }) => { editRef.current = edit; return <>
             {/* After a receipt is read the cart is bought: the receipt's check and "what was not bought" take over. */}
             {!read && <FinalCart inv={inv} onInv={setInv} lines={lines} todoId={todoId} unitIds={unitIds} asks={asks} at={at}
-              off={leftOver(startArr, lines)} onLater={off => void later(off, lines)} onAt={(id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; })} />}
+              off={leftOver(startArr, [...lines, ...asideLines])} onLater={off => void later(off, lines)} edit={edit} aside={aside} setAside={setAside}
+              onAsk={(text, id) => setAsks(x => x.map(a => a.text === text ? { ...a, itemId: id } : a))} onAt={(id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; })} />}
             {/* Not finished? Kept as this to-do's order — a draft it carries, replaced on every save, until it is bought. */}
             <button className="secondary" disabled={busy || (!lines.length && !hadOrder)} onClick={async () => {
               // Lines taken off are not dropped without a word: the first tap says so; the second saves without them.
-              const off = leftOver(startArr, lines);
+              const off = leftOver(startArr, [...lines, ...asideLines]);
               if (off.length && !msg.startsWith('▲ Taken off')) { setMsg(`▲ Taken off the cart: ${off.length} line${off.length === 1 ? '' : 's'} — “Save them as a new order for later” above, or tap Save order again to drop them.`); return; }
               setMsg('');
-              try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines: lines.map(l => at.get(l.itemId) ? { ...l, at: at.get(l.itemId) } : l) }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onBought(false); }
+              try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines: withAt(lines) }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { await noteAside(); onBought(false); } }
               catch (e) { setMsg(String(e)); }
             }}><Icon n="save" /> Save order</button>
             <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
-          </>} />
+          </>; }} />
       {msg && <p className={msg.startsWith('✓') ? 'note' : 'breach'} role="status">{msg}</p>}
     </div>
   );
 }
 
-/** Where an item is bought: what the order says (`at`), else its linked store; '' = nobody knows yet. */
+/** Where an item is bought: what the order says (`at`), else its linked store, else the store of its other link; '' = nobody knows yet. */
 function storeAt(inv: Inventory, id: string, at: Map<string, string>) {
-  const opt = (inv.items.find(i => i.id === id)?.buyOptions ?? []).map(o => storeProduct(o.url)).find(Boolean);
-  return at.get(id) || (opt ? STORE_NAME[opt.store] : '');
+  const opts = inv.items.find(i => i.id === id)?.buyOptions ?? [];
+  const p = opts.map(o => storeProduct(o.url)).find(Boolean);
+  return at.get(id) || (p ? STORE_NAME[p.store] : opts.find(o => o.url)?.label ?? '');
 }
 /** Bought somewhere other than its linked product's store — it leaves the store cart. */
 function elsewhere(inv: Inventory, id: string, at: Map<string, string>) {
@@ -1488,115 +1498,212 @@ function elsewhere(inv: Inventory, id: string, at: Map<string, string>) {
   const s = at.get(id);
   return !!s && (!opt || s.toLowerCase() !== STORE_NAME[opt.store].toLowerCase());
 }
-/** The store of one cart line: its linked store (the default), Walmart, Amazon, or another one written in. */
-function StorePick({ value, linked, onChange, name }: { value: string; linked: string | null; onChange: (v: string) => void; name: string }) {
+/** The link to buy an item at a store: its Walmart/Amazon product, or the page kept under that store's name. */
+function linkOf(inv: Inventory, id: string, store: string) {
+  const opts = inv.items.find(i => i.id === id)?.buyOptions ?? [];
+  const po = opts.find(o => storeProduct(o.url));
+  const p = po ? storeProduct(po.url)! : null;
+  if (p && STORE_NAME[p.store].toLowerCase() === store.toLowerCase()) return { url: p.url, label: po!.label, pack: po!.pack ?? null };
+  const o = store ? opts.find(x => !storeProduct(x.url) && x.label.toLowerCase() === store.toLowerCase()) : undefined;
+  return o ? { url: o.url, label: o.label, pack: o.pack ?? null } : null;
+}
+/** The store of one cart line: its usual store (the default), Walmart, Amazon, or another one written in. */
+function StorePick({ value, usual, onChange, name }: { value: string; usual: string; onChange: (v: string) => void; name: string }) {
   const known = ['Walmart', 'Amazon'];
   const [typing, setTyping] = useState(!!value && !known.includes(value));
-  const sel = typing ? 'other' : value && value !== linked ? value : '';
+  const sel = typing ? 'other' : value && value !== usual ? value : '';
   return <>
-    <select value={sel} aria-label={`Where ${name} is bought`} onChange={e => {
-      const v = e.target.value;
-      setTyping(v === 'other');
-      onChange(v === 'other' ? '' : v);
-    }}>
-      <option value="">{linked ?? '▲ where?'}</option>
-      {known.filter(k => k !== linked).map(k => <option key={k} value={k}>{k}</option>)}
+    <select value={sel} aria-label={`Where ${name} is bought`} onChange={e => { const v = e.target.value; setTyping(v === 'other'); onChange(v === 'other' ? '' : v); }}>
+      <option value="">{usual || '▲ where?'}</option>
+      {known.filter(k => k !== usual).map(k => <option key={k} value={k}>{k}</option>)}
       <option value="other">Another store…</option>
     </select>
     {typing && <input className="inv-measure" value={value} maxLength={60} placeholder="Home Depot, Target…" aria-label={`Store for ${name}`} onChange={e => onChange(e.target.value)} />}
   </>;
 }
 
+/** Changes to a purchase form's lines from outside it (the final cart): take an item off, put it back, add one. */
+type CartEdit = { put: (id: string, parts: { place: string; qty: number }[]) => void; add: (id: string, qty: number, place?: string) => void };
+/** Taken off the cart on purpose — what is on hand covers it, or another order buys it — and how it was, to put it back. */
+type Aside = { itemId: string; parts: { place: string; qty: number }[]; why: 'stock' | 'order'; from: string };
+/** One line of what was asked, as ✨ read it: the item it became (or none) and the closest ones. */
+type Ask = { text: string; itemId: string | null; candidates: string[] };
+
 /**
- * The cart as it stands (owner, 2026-10-15): one row per item — where it goes, the store it is bought at (its
- * linked product by default — ⓘ: product, pack, link — or another store, which takes it out of the store cart), whether another open order already asks for it, and what is on hand somewhere
- * (ops sends the cleaner to look before buying, §159). Under it, what was asked and is on no line — so
- * nothing asked gets lost between the ask and the cart.
+ * The cart as it stands (owner, 2026-10-15) — each thing on it has a way out, and a person decides:
+ * - where it goes, part by part (a split order for several units shows each part);
+ * - where it is bought: its usual store or another; ⓘ shows the product, pack, how many and the link, and a wrong or
+ *   broken link is changed there ("+ link" when there is none) — another store's page is kept under its name;
+ * - "! On hand" (this listing's places, others on request): the record may be wrong, so nothing is taken off by itself —
+ *   it is there → don't buy it; not there → correct the record (the purchase then adds to the real number); unsure →
+ *   ask the cleaner, and buying anyway adds to it (a restock);
+ * - "! Already ordered": the same need → take it off (the other order buys it); another unit's → keep both;
+ * - what was asked and is on no line: the closest item, another one, a new item, or left out on purpose;
+ * - what came off the order: a new order for later. Whatever is set aside can be put back (↺).
  */
-function FinalCart({ inv, onInv, lines, todoId, unitIds, asks, at, onAt, off, onLater }: {
+function FinalCart({ inv, onInv, lines, todoId, unitIds, asks, onAsk, at, onAt, off, onLater, edit, aside, setAside }: {
   inv: Inventory; onInv: (i: Inventory) => void; lines: { itemId: string; place: string; qty: number }[]; todoId: string; unitIds: string[];
-  asks: { text: string; itemId: string | null }[]; at: Map<string, string>; onAt: (itemId: string, store: string) => void;
-  /** What the order had and the cart no longer does (taken off, or fewer) — offered as a new order for later. */
+  asks: Ask[]; onAsk: (text: string, itemId: string) => void; at: Map<string, string>; onAt: (itemId: string, store: string) => void;
   off: { itemId: string; place: string; qty: number }[]; onLater: (off: { itemId: string; place: string; qty: number }[]) => void;
+  edit: CartEdit; aside: Aside[]; setAside: (f: (a: Aside[]) => Aside[]) => void;
 }) {
   const [wide, setWide] = useState(false);
-  // A store link that does not work (owner, 2026-10-15): report it → paste the right product page, or remove it.
-  const [fix, setFix] = useState<{ id: string; url: string; pack: string; busy: boolean; err: string } | null>(null);
+  const [fix, setFix] = useState<{ id: string; store: string; url: string; pack: string; busy: boolean; err: string } | null>(null);
+  const [recount, setRecount] = useState<{ id: string; place: string; qty: string; busy: boolean; err: string } | null>(null);
+  const [left, setLeft] = useState<Set<string>>(new Set());
+  const [making, setMaking] = useState('');
+  const [askErr, setAskErr] = useState('');
+  const item = (id: string) => inv.items.find(i => i.id === id);
+  const nm = (id: string) => item(id)?.name ?? id;
+  const byItem = new Map<string, { place: string; qty: number }[]>();
+  for (const l of lines) if (l.qty > 0) byItem.set(l.itemId, [...byItem.get(l.itemId) ?? [], { place: l.place, qty: l.qty }]);
+  const ids = [...byItem.keys()];
+  const qtyOf = (id: string) => (byItem.get(id) ?? []).reduce((a, p) => a + p.qty, 0);
+  const asideIds = new Set(aside.map(a => a.itemId));
+  const missed = asks.filter(a => !left.has(a.text) && !(a.itemId && (byItem.has(a.itemId) || asideIds.has(a.itemId))));
+  if (!ids.length && !missed.length && !off.length && !aside.length) return null;
+  const mine = inv.places.filter(p => p.units.some(u => unitIds.includes(u.id)));
+  const handAt = (id: string) => (wide ? inv.places : mine).filter(p => p.place).flatMap(p => p.items.filter(i => i.itemId === id && (i.qty ?? 0) > 0)
+    .map(i => ({ key: p.place!, name: placeTitle(p), qty: i.qty!, own: mine.includes(p) }))).sort((a, b) => b.qty - a.qty);
+  const onOther = (id: string) => inv.orders.filter(o => o.todoId !== todoId && o.lines.some(l => String(l.itemId) === id))
+    .map(o => ({ id: o.todoId, title: o.title, qty: o.lines.filter(l => String(l.itemId) === id).reduce((a, l) => a + l.qty, 0) }));
+  const takeOff = (id: string, why: Aside['why'], from: string) => { setAside(a => [...a, { itemId: id, parts: byItem.get(id) ?? [], why, from }]); edit.put(id, []); };
+  const putBack = (k: number) => { const a = aside[k]!; edit.put(a.itemId, a.parts); setAside(x => x.filter((_, j) => j !== k)); };
+  const openFix = (id: string, store: string) => { const lk = linkOf(inv, id, store); setFix({ id, store, url: '', pack: String(lk?.pack ?? ''), busy: false, err: '' }); };
+  const shop = fix && /^(walmart|amazon)$/i.test(fix.store);
+  const fixOk = !!fix && (shop ? storeProduct(fix.url)?.store === fix.store.toLowerCase() : !!fix.store.trim() && /^https?:\/\/\S+$/i.test(fix.url.trim()));
   const saveLink = async (url: string) => {
     if (!fix) return;
     setFix({ ...fix, busy: true, err: '' });
-    const r = await inventoryAction({ action: 'storeLink', itemId: fix.id, url, pack: Number(fix.pack) || undefined }).catch(e => ({ ok: false as const, message: String(e) }));
+    const r = await inventoryAction({ action: 'storeLink', itemId: fix.id, url, label: fix.store.trim(), pack: Number(fix.pack) || undefined })
+      .catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setFix({ ...fix, busy: false, err: r.message ?? 'Not saved.' }); return; }
     onInv(r); setFix(null);
   };
-  const byItem = new Map<string, { qty: number; places: Set<string> }>();
-  for (const l of lines) if (l.qty > 0) {
-    const e = byItem.get(l.itemId) ?? { qty: 0, places: new Set<string>() };
-    e.qty += l.qty; e.places.add(l.place); byItem.set(l.itemId, e);
-  }
-  const ids = [...byItem.keys()];
-  const missed = asks.filter(a => !a.itemId || !byItem.has(a.itemId));
-  if (!ids.length && !missed.length && !off.length) return null;
-  // Owner, 2026-10-15: on hand = this listing's own places (its house, closet, the storage it draws from) — taking
-  // another listing's stock to open one makes no sense; "Look at other listings' places" widens it on purpose.
-  const mine = inv.places.filter(p => p.units.some(u => unitIds.includes(u.id)));
-  const hand = onHand(ids, (wide ? inv.places : mine).map(p => ({ name: placeTitle(p), items: p.items })));
-  const onOther = (id: string) => inv.orders.filter(o => o.todoId !== todoId && o.lines.some(l => String(l.itemId) === id))
-    .map(o => `${o.title} (${o.lines.filter(l => String(l.itemId) === id).reduce((a, l) => a + l.qty, 0)})`);
+  const saveCount = async () => {
+    if (!recount) return;
+    setRecount({ ...recount, busy: true, err: '' });
+    const r = await inventoryAction({ action: 'count', place: recount.place, counts: [{ itemId: recount.id, qty: Number(recount.qty) || 0 }],
+                                      note: `Checked while ordering (to-do #${todoId})` }).catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setRecount({ ...recount, busy: false, err: r.message ?? 'Not saved.' }); return; }
+    onInv(r); setRecount(null);
+  };
+  const addAsk = (a: Ask, id: string) => { edit.add(id, 1); onAsk(a.text, id); };
+  const newFromAsk = async (a: Ask) => {
+    setMaking(a.text); setAskErr('');
+    const r = await inventoryAction({ action: 'newItem', name: itemName(a.text), measure: guessMeasure(a.text), kind: guessKind(a.text), category: 'other' })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    setMaking('');
+    if (!r.ok || !r.itemId) { setAskErr(r.ok ? 'Not added.' : r.message ?? 'Not added.'); return; }
+    onInv(r); addAsk(a, r.itemId);
+  };
+  const noStore = ids.filter(id => !storeAt(inv, id, at)).length;
+  const active = inv.items.filter(i => i.active).sort((a, b) => a.name.localeCompare(b.name));
   return (
     <div className="final-cart">
       <div className="row"><b><Icon n="cart" /> Final cart</b> <span className="sub-n">{ids.length} item{ids.length === 1 ? '' : 's'}</span>
+        {noStore > 0 && <span className="warn-text sub-n">▲ {noStore} without a store</span>}
         <span className="rb-spacer" />
         <label className="check sub-n"><input type="checkbox" checked={wide} onChange={e => setWide(e.target.checked)} /> On hand at other listings’ places too</label></div>
       {!wide && !mine.length && <span className="sub-n">This to-do has no listing with a place yet — nothing on hand is shown for it.</span>}
       {ids.length > 0 && <div className="grid-scroll"><table className="units compact"><tbody>
         {ids.map(id => {
-          const it = inv.items.find(i => i.id === id);
-          const e = byItem.get(id)!;
-          const opt = (it?.buyOptions ?? []).find(o => storeProduct(o.url));
-          const prod = opt ? storeProduct(opt.url) : null;
-          const packs = opt?.pack && opt.pack > 0 ? Math.ceil(e.qty / opt.pack) : e.qty;
+          const parts = byItem.get(id)!;
+          const store = storeAt(inv, id, at);
+          const usual = storeAt(inv, id, new Map());
+          const lk = store ? linkOf(inv, id, store) : null;
+          const n = qtyOf(id);
+          const hand = handAt(id);
           const other = onOther(id);
           const asked = asks.find(a => a.itemId === id);
           return <Fragment key={id}><tr>
-            <td>{it?.name ?? id} × {e.qty}{asked && <div className="sub-n">asked as “{asked.text}”</div>}</td>
-            <td className="sub-n">{[...e.places].map(p => p ? lineTitle(inv, p) : '▲ no place yet').join(' · ')}</td>
-            <td className="nowrap"><StorePick value={at.get(id) ?? ''} linked={prod ? STORE_NAME[prod.store] : null} onChange={v => onAt(id, v)} name={it?.name ?? 'it'} />
-              {' '}<button className="link tiny" onClick={() => setFix(fix?.id === id ? null : { id, url: '', pack: String(opt?.pack ?? ''), busy: false, err: '' })}>{prod ? 'link broken?' : '+ link'}</button>
-              {prod && !elsewhere(inv, id, at) && <Peek label="ⓘ" ariaLabel={`${it?.name ?? 'Its'} product`}>
-                  <b>{STORE_NAME[prod.store]}</b> — {opt!.label}<br />
-                  {opt!.pack && opt!.pack > 1 ? `Pack of ${opt!.pack}: buy ${packs}` : `Buy ${packs}`}<br />
-                  <a href={prod.url} target="_blank" rel="noreferrer">Open the product ↗</a>
-                </Peek>}</td>
+            <td>{nm(id)} × {n}{asked && <div className="sub-n">asked as “{asked.text}”</div>}</td>
+            <td className="sub-n">{parts.map(p => `${p.place ? lineTitle(inv, p.place) : '▲ no place yet'}${parts.length > 1 ? ` ${p.qty}` : ''}`).join(' · ')}</td>
+            <td className="nowrap">
+              <StorePick value={at.get(id) ?? ''} usual={usual} name={nm(id)} onChange={v => {
+                onAt(id, v);
+                // A store picked with no link for this item: the link can be added right there.
+                if (v && !linkOf(inv, id, v)) openFix(id, v); else if (fix?.id === id) setFix(null);
+              }} />
+              {' '}{lk
+                ? <Peek label="ⓘ" ariaLabel={`Where ${nm(id)} is bought`}>
+                    <b>{store}</b>{lk.label && lk.label.toLowerCase() !== store.toLowerCase() ? ` — ${lk.label}` : ''}<br />
+                    {lk.pack && lk.pack > 1 ? `Pack of ${lk.pack}: buy ${Math.ceil(n / lk.pack)}` : `Buy ${n}`}<br />
+                    <a href={lk.url} target="_blank" rel="noreferrer">Open the product ↗</a><br />
+                    <button className="link tiny" onClick={() => openFix(id, store)}>Wrong or broken? Change the link</button>
+                  </Peek>
+                : <button className="link tiny" onClick={() => openFix(id, store)}>+ link</button>}
+            </td>
             <td>
-              {other.length > 0 && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>Already ordered</>} ariaLabel={`${it?.name ?? 'It'} is already on another order`}>
-                <b>Already on another open order</b><br />{other.join(' · ')}<br />Check it is not bought twice.</Peek>}
-              {hand.has(id) && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>On hand</>} ariaLabel={`${it?.name ?? 'It'} is already on hand`}>
-                <b>Already on hand</b><br />{hand.get(id)!.map(a => `${a.place}: ${a.qty}`).join(' · ')}<br />Ask the cleaner to look there before buying.</Peek>}
+              {other.length > 0 && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>Already ordered</>} ariaLabel={`${nm(id)} is on another open order`}>
+                <b>On another open order</b><br />
+                {other.map(o => <Fragment key={o.id}><a href={`/?todo=${o.id}`} target="_blank" rel="noreferrer">{o.title}</a> ({o.qty})<br /></Fragment>)}
+                The same need? <button className="link tiny" onClick={() => takeOff(id, 'order', other.map(o => o.title).join(', '))}>Take it off this cart</button><br />
+                <span className="sub-n">Another unit's need: keep both.</span>
+              </Peek>}
+              {hand.length > 0 && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>On hand</>} ariaLabel={`${nm(id)} is on record somewhere`}>
+                <b>On record{wide ? '' : ' at this listing'}</b><br />
+                {hand.map(h => <Fragment key={h.key}>{h.name}: {h.qty}{h.own ? '' : ' (another listing)'}<br /></Fragment>)}
+                The record can be wrong — ask the cleaner to look.<br />
+                <button className="link tiny" onClick={() => takeOff(id, 'stock', hand.map(h => h.name).join(', '))}>It is there — don't buy it</button><br />
+                <button className="link tiny" onClick={() => setRecount({ id, place: hand[0]!.key, qty: '', busy: false, err: '' })}>Not there — correct the record</button><br />
+                <span className="sub-n">Bought anyway, it adds to what is on record (a restock).</span>
+              </Peek>}
             </td>
           </tr>
           {fix?.id === id && <tr><td colSpan={4}>
             <div className="row">
-              <input value={fix.url} placeholder="Paste the product page — walmart.com/ip/… or amazon.com/dp/…" aria-label={`New store link for ${it?.name ?? 'the item'}`}
-                     onChange={ev => setFix({ ...fix, url: ev.target.value, err: '' })} />
-              <label>Pack of<input className="inv-qty" type="number" min="1" step="any" value={fix.pack} onChange={ev => setFix({ ...fix, pack: ev.target.value })} /></label>
-              <button className="small" disabled={fix.busy || !storeProduct(fix.url)} onClick={() => void saveLink(fix.url)}>{prod ? 'Replace the link' : 'Save the link'}</button>
-              {prod && <button className="secondary small" disabled={fix.busy} onClick={() => void saveLink('')}>Remove the broken link</button>}
+              {!fix.store.trim() && <input className="inv-measure" value={fix.store} maxLength={60} placeholder="Which store?" aria-label="Store" onChange={e => setFix({ ...fix, store: e.target.value, err: '' })} />}
+              <input value={fix.url} placeholder={shop ? `Paste the ${fix.store} product page` : `Paste the product page at ${fix.store.trim() || 'that store'} (https://…)`}
+                     aria-label={`Link for ${nm(id)}`} onChange={e => setFix({ ...fix, url: e.target.value, err: '' })} />
+              <label>Pack of<input className="inv-qty" type="number" min="1" step="any" value={fix.pack} onChange={e => setFix({ ...fix, pack: e.target.value })} /></label>
+              <button className="small" disabled={fix.busy || !fixOk} onClick={() => void saveLink(fix.url.trim())}>{linkOf(inv, id, fix.store) ? 'Replace the link' : 'Save the link'}</button>
+              {linkOf(inv, id, fix.store) && <button className="secondary small" disabled={fix.busy} onClick={() => void saveLink('')}>Remove the link</button>}
               <button className="link tiny" onClick={() => setFix(null)}>Cancel</button>
             </div>
-            {fix.url && !storeProduct(fix.url) && <span className="sub-n">▲ Not a Walmart or Amazon product page.</span>}
-            {fix.err && <span className="breach">{fix.err}</span>}
+            <span className="sub-n">{shop && fix.url && !fixOk ? `▲ Not a ${fix.store} product page.` : shop
+              ? `It becomes the item's ${fix.store} product — an item has one Walmart or Amazon link${usual && usual !== fix.store && /^(walmart|amazon)$/i.test(usual) ? `, so it replaces its ${usual} one` : ''}; carts and receipts use it.`
+              : 'Kept on the item under this store — it shows here next time.'}</span>
+            {fix.err && <span className="breach"> {fix.err}</span>}
+          </td></tr>}
+          {recount?.id === id && <tr><td colSpan={4}>
+            <div className="row">
+              <label>At<select value={recount.place} onChange={e => setRecount({ ...recount, place: e.target.value })}>
+                {hand.map(h => <option key={h.key} value={h.key}>{h.name} (record {h.qty})</option>)}</select></label>
+              <label>Really there<input className="inv-qty" type="number" min="0" step="any" value={recount.qty} onChange={e => setRecount({ ...recount, qty: e.target.value })} /></label>
+              <button className="small" disabled={recount.busy || recount.qty === ''} onClick={() => void saveCount()}>Save the count</button>
+              <button className="link tiny" onClick={() => setRecount(null)}>Cancel</button>
+            </div>
+            <span className="sub-n">Replaces the record for that place (a count). The purchase then adds to this number.</span>
+            {recount.err && <span className="breach"> {recount.err}</span>}
           </td></tr>}
           </Fragment>;
         })}
       </tbody></table></div>}
+      {aside.length > 0 && <p className="note"><b>Not bought on this order:</b>{' '}
+        {aside.map((a, k) => <span key={k} className="chip">{nm(a.itemId)} × {a.parts.reduce((s, p) => s + p.qty, 0)} — {a.why === 'stock' ? `on hand (${a.from})` : `on ${a.from}`}
+          {' '}<button className="link tiny" onClick={() => putBack(k)}>↺ put back</button></span>)}
+        {' '}<Hint>Taken off on purpose: what is on hand is used (move it with ⇄ in Inventory when it is taken), or the other order buys it. Said on this to-do when the order is saved or bought.</Hint></p>}
       {off.length > 0 && <p className="note"><span className="warn-text">Taken off the cart ({off.length}):</span>{' '}
-        {off.map(l => `${inv.items.find(i => i.id === l.itemId)?.name ?? l.itemId} × ${l.qty}`).join(' · ')}{' '}
+        {off.map(l => `${nm(l.itemId)} × ${l.qty}`).join(' · ')}{' '}
         <button className="secondary small" onClick={() => onLater(off)}>Save them as a new order for later</button>
         {' '}<Hint>What this order had and the cart no longer has (removed, or fewer). A new to-do for the same listing gets them, with their place and store;
           this order is saved without them. Leave it, and recording asks what happens to what was not bought.</Hint></p>}
-      {missed.length > 0 && <p className="note"><span className="warn-text">▲ Asked, not on the cart ({missed.length}):</span> {missed.map(a => `“${a.text}”`).join(' · ')}
-        {' '}<Hint>What ✨ read in the ask that is on no line — not matched, skipped, or taken off. Add it with “Add an item”, or leave it out on purpose.</Hint></p>}
+      {missed.length > 0 && <div className="buy-unsure">
+        <span className="note"><span className="warn-text">▲ Asked, not on the cart ({missed.length})</span>{' '}
+          <Hint>What ✨ read in the ask that is on no line: add the item it is (the closest first, or any other), make it a new item, or leave it out on purpose.</Hint></span>
+        {missed.map(a => <div key={a.text} className="buy-unsure-line"><b>“{a.text}”</b>
+          {[...new Set([...a.itemId ? [a.itemId] : [], ...a.candidates])].filter(c => item(c)?.active).slice(0, 3)
+            .map(c => <button key={c} className="chip" onClick={() => addAsk(a, c)}>+ {nm(c)}</button>)}
+          <select value="" aria-label={`Another item for “${a.text}”`} onChange={e => { if (e.target.value) addAsk(a, e.target.value); }}>
+            <option value="">Another item…</option>
+            {active.map(i => <option key={i.id} value={i.id}>{i.name}{i.size ? ` — ${i.size}` : ''}</option>)}
+          </select>
+          <button className="link tiny" disabled={making === a.text} onClick={() => void newFromAsk(a)}>{making === a.text ? 'Adding…' : `+ New item “${itemName(a.text)}”`}</button>
+          <button className="link tiny" onClick={() => setLeft(s => new Set(s).add(a.text))}>Leave it out</button>
+        </div>)}
+        {askErr && <span className="breach">{askErr}</span>}
+      </div>}
     </div>
   );
 }

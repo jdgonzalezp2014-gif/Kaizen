@@ -11,7 +11,8 @@
  *   POST { action: 'draft', lines, forTodo? }                           the order kept as a draft (no lines = discard)
  *   POST { action: 'todoOrder', todoId, lines }                         a to-do's own order, saved as a draft (replaces it)
  *   POST { action: 'laterOrder', fromTodo, lines }                      what is left of an order, on a new to-do for later
- *   POST { action: 'storeLink', itemId, url, pack? }                    replace a broken store link ('' = remove it)
+ *   POST { action: 'storeLink', itemId, url, label?, pack? }            where it is bought: its link added or replaced ('' = remove)
+ *   POST { action: 'orderNote', todoId, notes }                         what was taken off an order on purpose, said on it
  *   POST { action: 'paidBack', id }                                     a purchase someone paid, paid back to them
  *   POST { action: 'hide', place, itemId, hide }                        "not kept here" (or back)
  *   POST { action: 'newItem', name, measure?, category?, kind? }        an item added on the spot (kind 'furniture' = the house's)
@@ -37,7 +38,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { commentToThread } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, editNewItem, fieldPhotos, refillCloset, setMeasure, transfer, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder, laterOrder, setStoreLink } from '../_lib/inventory.ts';
+import { createOrder, editNewItem, fieldPhotos, refillCloset, setMeasure, transfer, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder, laterOrder, setStoreLink, orderNote } from '../_lib/inventory.ts';
 import { learnAliases, learnProducts, readOrderMds, readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
 import { readRequestText } from '../_lib/request-read.ts';
 
@@ -138,6 +139,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       return Response.json({ ok: true, todoId: id, ...(await overview(sql)) });
     } else if (b.action === 'storeLink') {
       await setStoreLink(sql, b);
+    } else if (b.action === 'orderNote') {
+      await orderNote(sql, who.email, b.todoId, b.notes);
     } else if (b.action === 'draft') {
       // §150: the order kept as a draft — no to-do until it is created; no lines = discard it.
       const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])

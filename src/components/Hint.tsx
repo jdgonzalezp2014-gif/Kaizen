@@ -30,7 +30,8 @@ export function Peek({ label, children, ariaLabel, className = '' }: { label: Re
       <button type="button" className="peek-label" aria-label={ariaLabel} aria-expanded={open} aria-describedby={open ? id : undefined}
               onClick={e => { e.stopPropagation(); setOpen(v => !v); }} onBlur={() => setOpen(false)}
               onFocus={() => setOpen(true)} onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}>{label}</button>
-      {open && <span role="tooltip" id={id} className="hint-pop">{children}</span>}
+      {/* A tap on a button inside (On hand → Use these) must not blur the label first and close it before the click. */}
+      {open && <span role="tooltip" id={id} className="hint-pop" onMouseDown={e => e.preventDefault()}>{children}</span>}
     </span>
   );
 }
