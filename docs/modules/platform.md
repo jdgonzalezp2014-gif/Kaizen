@@ -95,6 +95,8 @@ Hostaway client, sync, crypto, migrations.
   warnings and empty states stay on screen. Done (2026-10-14): Settings → Slack, Operations (16), Settings (17), Inventory (9), Crew's
   admin parts (2), Revenue, Cleanings (2), Costs. Kept on screen on purpose: Todos' notes and Units' data caveats (states),
   the cleaner-facing crew page, empty states.
+  Hover (Hint/Peek): closes 250 ms after the pointer leaves, and an invisible bridge covers the gap to the pop-up —
+  before, crossing the 6 px gap closed it (owner, 2026-10-15).
 - **Navigation (§159, owner 2026-10-14):** tablet/desktop = a side rail (`SideNav`, App.tsx) that slides open on hover,
   Operations' views inside it (`goOps` → Operations `nav` {v, n}); no top bar ≥ 721 px. Phone = header + bottom bar.
   Home: no summary pills (they repeated the cards); centred 1120 px with equal-height cards on a big screen; no uploads or
