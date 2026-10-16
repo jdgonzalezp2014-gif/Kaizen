@@ -516,7 +516,7 @@ function MeasureEdit({ it, canEdit, onInv }: { it: InvItemRow; canEdit: boolean;
 }
 const TYPE_OF: Record<'supply' | 'furniture', string> = { supply: 'Supplies (storage)', furniture: 'Furniture (house)' };
 type NewEdit = { name: string; size: string; measure: string; kind: 'supply' | 'furniture' };
-function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, tags, orderCol, fresh, noPlace }: {
+function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, tags, orderCol, fresh, noPlace, row }: {
   inv: Inventory; value: Lines; onChange: (m: Lines) => void; hints?: Lines; canEdit: boolean; defaultPlace?: string | null;
   /** §150, owner: a supply not on the list is added from the 🔍 — the caller takes the new inventory. */
   onInv?: (i: Inventory) => void;
@@ -528,6 +528,8 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
   fresh?: Set<string>;
   /** An order (not a purchase): "No place yet" may be picked — a new listing is not in the Repository yet. */
   noPlace?: boolean;
+  /** A to-do's cart (owner, 2026-10-15: one list, not two): where each item is bought, its flags, and what opens under it. */
+  row?: CartRow;
 }) {
   const api = useContext(InvApi);
   const none = noPlace ? NO_PLACE_LABEL : undefined;
@@ -606,16 +608,18 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
     {q.trim() && !found.length && (exact || !onInv) && <p className="note">No other item matches “{q.trim()}”.</p>}
     {value.size > 0 && (
       <div className="grid-scroll">
-        <table className="units compact">
-          <thead><tr><th>Item</th><th className="n">Total</th><th>Goes to</th>{orderCol && <th>For the order</th>}<th></th></tr></thead>
+        <table className={`units compact${row ? ' cart-lines' : ''}`}>
+          <thead><tr><th>Item</th><th className="n">Total</th><th>Goes to</th>{row && <th>Buy at</th>}{orderCol && <th>For the order</th>}<th></th></tr></thead>
           <tbody>
             {[...value].map(([id, parts]) => {
               const total = parts.reduce((a, p) => a + Math.ceil(Number(p.qty) || 0), 0);
               const hint = hints?.get(id);
               const it = item(id);
               const ed = editing?.id === id ? editing : null;
+              const under = row?.below(id);
               return (
-                <tr key={id}>
+                <Fragment key={id}>
+                <tr>
                   <td>{ed ? <div className="rc-new">
                       <input value={ed.name} maxLength={120} placeholder="Name" aria-label="Name" onChange={e => setEditing({ ...ed, name: e.target.value })} />
                       <input value={ed.size} maxLength={30} placeholder="Size (optional)" aria-label="Size" className="rc-size" onChange={e => setEditing({ ...ed, size: e.target.value })} />
@@ -629,7 +633,8 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
                       {canEdit && isNew(id) && it && <> <button className="link tiny" title="New item: correct its name, how it is counted, its type"
                         onClick={() => setEditing({ id, name: it.baseName ?? it.name, size: it.size ?? '', measure: it.measure, kind: it.kind ?? 'supply' })}>✎ new item</button></>}</>}
                     {hint && <div className="sub-n">suggested: {hint.map(h => `${h.place ? lineTitle(inv, h.place) : '▲ no place'} ${h.qty}`).join(' · ')}</div>}
-                    {tags?.get(id)?.map(t => <div key={t} className="sub-n">{t}</div>)}</td>
+                    {tags?.get(id)?.map(t => <div key={t} className="sub-n">{t}</div>)}
+                    {row?.sub(id)}</td>
                   <td className="n"><b>{total || '—'}</b></td>
                   <td>
                     {parts.map((p, k) => (
@@ -642,11 +647,14 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
                       </div>))}
                     {canEdit && parts.length > 1 && <button className="link tiny" onClick={() => set(id, [{ place: parts[0]!.place, qty: String(total) }])}>⇢ one place</button>}
                   </td>
+                  {row && <td className="nowrap">{row.cell(id)}</td>}
                   {orderCol && <td><select aria-label="For the order" value={orderCol.value.get(id) ?? ''} onChange={e => orderCol.onChange(id, e.target.value)}>
                     <option value="">no order</option>
                     {orderCol.options.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}</select></td>}
                   <td className="n">{canEdit && <button className="link tiny danger" onClick={() => set(id, null)}>remove</button>}</td>
                 </tr>
+                {under && <tr className="cart-under"><td colSpan={5 + (orderCol ? 1 : 0)}>{under}</td></tr>}
+                </Fragment>
               );
             })}
           </tbody>
@@ -759,7 +767,7 @@ const AI = '✨ from the receipt';
 const money = (n: number) => `$${n.toFixed(2)}`;
 
 function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal, fieldExpenseId, hasReceipt, canSplit, head, extra,
-                        recordLabel = '🧾 Record the purchase', onRecord, buttons, noPlace, plannedAt }: {
+                        recordLabel = '🧾 Record the purchase', onRecord, buttons, noPlace, plannedAt, tools }: {
   inv: Inventory; onInv: (i: Inventory) => void;
   /** The order this purchase is for, if any ('' = none). */
   todoId?: string; start?: Lines; defaultPlace?: string | null;
@@ -775,6 +783,8 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   noPlace?: boolean;
   /** Where each item of the order is to be bought (store name) — the receipt is checked against it. */
   plannedAt?: Map<string, string>;
+  /** A to-do's cart tools, drawn in the lines themselves (store, on hand, …) with their summary above and below. */
+  tools?: (p: { lines: PurchaseOut['lines']; edit: CartEdit; read: boolean }) => { top: React.ReactNode; row: CartRow; bottom: React.ReactNode } | null;
 }) {
   const api = useContext(InvApi);
   const [lines, setLinesRaw] = useState<Lines>(start ?? new Map());
@@ -989,6 +999,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     if (t.length) tags.set(id, t);
   }
   const mark = (k: string) => ai.has(k) ? <span className="sub-n"> {ic(AI)}</span> : null;
+  const cart = tools?.({ lines: out, edit, read: read1 }) ?? null;
   return <>
     {head}
     {read1 && <div className="receipt-lines">
@@ -1066,9 +1077,11 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
       {!vs.missing.length && !vs.fewer.length && !vs.extra.length && !notExact.length && !noMatch.length && !otherStore.length && <span className="note">✓ everything checks</span>}
     </div>}
     {!read1 && fixedTotal == null && <CartLinks inv={inv} lines={plannedAt ? out.filter(l => !elsewhere(inv, l.itemId, plannedAt)) : out} />}
-    <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={defaultPlace} onInv={onInv} tags={tags} fresh={fresh} noPlace={noPlace}
+    {cart?.top}
+    <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={defaultPlace} onInv={onInv} tags={tags} fresh={fresh} noPlace={noPlace} row={cart?.row}
                orderCol={splitting ? { options: inv.orders.map(o => ({ id: o.todoId, label: o.title })), value: new Map(out.map(l => [l.itemId, orderKey(l.itemId)])),
                                        onChange: (id, o) => { setOrderOf(new Map(orderOf).set(id, o)); setShares(new Map()); } } : undefined} />
+    {cart?.bottom}
     <div className="row">
       {fixedTotal == null
         ? <label>Total paid ($){mark('total')}<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => { setTotal(e.target.value); untouch('total'); setShares(new Map()); }} /></label>
@@ -1369,6 +1382,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   const [aside, setAside] = useState<Aside[]>([]);
   // The form's lines, changed from outside it (Build the cart, the final cart) without starting the form over.
   const editRef = useRef<CartEdit | null>(null);
+  const cartUi = useCartUi();
   // Where each item is bought when it is not its linked store ("Home Depot") — kept on the order's lines as `at`.
   const [at, setAt] = useState<Map<string, string>>(new Map());
   // Owner, 2026-10-14: the to-do's order IS the "Record a purchase" form — items, total, paid by, note,
@@ -1465,22 +1479,24 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
           } catch (e) { return `${done} But what is left was not saved (${String(e)}).`; }
           onBought(after !== 'keep'); return null;
         }}
-        buttons={({ lines, busy, read, edit }) => { editRef.current = edit; return <>
-            {/* After a receipt is read the cart is bought: the receipt's check and "what was not bought" take over. */}
-            {!read && <FinalCart inv={inv} onInv={setInv} lines={lines} todoId={todoId} unitIds={unitIds} asks={asks} at={at}
-              off={leftOver(startArr, [...lines, ...asideLines])} onLater={off => void later(off, lines)} edit={edit} aside={aside} setAside={setAside}
-              onAsk={(text, id) => setAsks(x => x.map(a => a.text === text ? { ...a, itemId: id } : a))} onAt={(id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; })} />}
+        // Owner, 2026-10-15: one cart — where to buy, on hand, already ordered are drawn in the lines themselves.
+        // After a receipt is read the cart is bought: the receipt's check and "what was not bought" take over.
+        tools={({ lines, edit, read }) => { editRef.current = edit; return read ? null : cartTools(cartUi, { inv, onInv: setInv, lines, todoId, unitIds, asks, at,
+          off: leftOver(startArr, [...lines, ...asideLines]), onLater: off => void later(off, lines), edit, aside, setAside,
+          onAsk: (text, id) => setAsks(x => x.map(a => a.text === text ? { ...a, itemId: id } : a)),
+          onAt: (id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; }) }); }}
+        buttons={({ lines, busy }) => <>
             {/* Not finished? Kept as this to-do's order — a draft it carries, replaced on every save, until it is bought. */}
             <button className="secondary" disabled={busy || (!lines.length && !hadOrder)} onClick={async () => {
               // Lines taken off are not dropped without a word: the first tap says so; the second saves without them.
               const off = leftOver(startArr, [...lines, ...asideLines]);
-              if (off.length && !msg.startsWith('▲ Taken off')) { setMsg(`▲ Taken off the cart: ${off.length} line${off.length === 1 ? '' : 's'} — “Save them as a new order for later” above, or tap Save order again to drop them.`); return; }
+              if (off.length && !msg.startsWith('▲ Taken off')) { setMsg(`▲ Taken off the cart: ${off.length} line${off.length === 1 ? '' : 's'} — “Save them as a new order for later” under the lines, or tap Save order again to drop them.`); return; }
               setMsg('');
               try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines: withAt(lines) }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { await noteAside(); onBought(false); } }
               catch (e) { setMsg(String(e)); }
             }}><Icon n="save" /> Save order</button>
             <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
-          </>; }} />
+          </>} />
       {msg && <p className={msg.startsWith('✓') ? 'note' : 'breach'} role="status">{msg}</p>}
     </div>
   );
@@ -1532,7 +1548,7 @@ type Ask = { text: string; itemId: string | null; candidates: string[] };
 /**
  * The cart as it stands (owner, 2026-10-15) — each thing on it has a way out, and a person decides:
  * - where it goes, part by part (a split order for several units shows each part);
- * - where it is bought: its usual store or another; ⓘ shows the product, pack, how many and the link, and a wrong or
+ * - where it is bought: its usual store or another; “product” shows the product, pack, how many and the link, and a wrong or
  *   broken link is changed there ("+ link" when there is none) — another store's page is kept under its name;
  * - "! On hand" (this listing's places, others on request): the record may be wrong, so nothing is taken off by itself —
  *   it is there → don't buy it; not there → correct the record (the purchase then adds to the real number); unsure →
@@ -1541,18 +1557,25 @@ type Ask = { text: string; itemId: string | null; candidates: string[] };
  * - what was asked and is on no line: the closest item, another one, a new item, or left out on purpose;
  * - what came off the order: a new order for later. Whatever is set aside can be put back (↺).
  */
-function FinalCart({ inv, onInv, lines, todoId, unitIds, asks, onAsk, at, onAt, off, onLater, edit, aside, setAside }: {
-  inv: Inventory; onInv: (i: Inventory) => void; lines: { itemId: string; place: string; qty: number }[]; todoId: string; unitIds: string[];
-  asks: Ask[]; onAsk: (text: string, itemId: string) => void; at: Map<string, string>; onAt: (itemId: string, store: string) => void;
-  off: { itemId: string; place: string; qty: number }[]; onLater: (off: { itemId: string; place: string; qty: number }[]) => void;
-  edit: CartEdit; aside: Aside[]; setAside: (f: (a: Aside[]) => Aside[]) => void;
-}) {
+/** The cart's own state (owner, 2026-10-15: one list — it lives with the to-do's form, drawn in its lines). */
+function useCartUi() {
   const [wide, setWide] = useState(false);
   const [fix, setFix] = useState<{ id: string; store: string; url: string; pack: string; busy: boolean; err: string } | null>(null);
   const [recount, setRecount] = useState<{ id: string; place: string; qty: string; busy: boolean; err: string } | null>(null);
   const [left, setLeft] = useState<Set<string>>(new Set());
   const [making, setMaking] = useState('');
   const [askErr, setAskErr] = useState('');
+  return { wide, setWide, fix, setFix, recount, setRecount, left, setLeft, making, setMaking, askErr, setAskErr };
+}
+/** What the cart adds to each line of the form: under its name, its "Buy at" cell, and what opens under it. */
+type CartRow = { sub: (id: string) => React.ReactNode; cell: (id: string) => React.ReactNode; below: (id: string) => React.ReactNode };
+function cartTools(ui: ReturnType<typeof useCartUi>, { inv, onInv, lines, todoId, unitIds, asks, onAsk, at, onAt, off, onLater, edit, aside, setAside }: {
+  inv: Inventory; onInv: (i: Inventory) => void; lines: { itemId: string; place: string; qty: number }[]; todoId: string; unitIds: string[];
+  asks: Ask[]; onAsk: (text: string, itemId: string) => void; at: Map<string, string>; onAt: (itemId: string, store: string) => void;
+  off: { itemId: string; place: string; qty: number }[]; onLater: (off: { itemId: string; place: string; qty: number }[]) => void;
+  edit: CartEdit; aside: Aside[]; setAside: (f: (a: Aside[]) => Aside[]) => void;
+}): { top: React.ReactNode; row: CartRow; bottom: React.ReactNode } {
+  const { wide, setWide, fix, setFix, recount, setRecount, left, setLeft, making, setMaking, askErr, setAskErr } = ui;
   const item = (id: string) => inv.items.find(i => i.id === id);
   const nm = (id: string) => item(id)?.name ?? id;
   const byItem = new Map<string, { place: string; qty: number }[]>();
@@ -1561,7 +1584,6 @@ function FinalCart({ inv, onInv, lines, todoId, unitIds, asks, onAsk, at, onAt, 
   const qtyOf = (id: string) => (byItem.get(id) ?? []).reduce((a, p) => a + p.qty, 0);
   const asideIds = new Set(aside.map(a => a.itemId));
   const missed = asks.filter(a => !left.has(a.text) && !(a.itemId && (byItem.has(a.itemId) || asideIds.has(a.itemId))));
-  if (!ids.length && !missed.length && !off.length && !aside.length) return null;
   const mine = inv.places.filter(p => p.units.some(u => unitIds.includes(u.id)));
   const handAt = (id: string) => (wide ? inv.places : mine).filter(p => p.place).flatMap(p => p.items.filter(i => i.itemId === id && (i.qty ?? 0) > 0)
     .map(i => ({ key: p.place!, name: placeTitle(p), qty: i.qty!, own: mine.includes(p) }))).sort((a, b) => b.qty - a.qty);
@@ -1599,87 +1621,97 @@ function FinalCart({ inv, onInv, lines, todoId, unitIds, asks, onAsk, at, onAt, 
   };
   const noStore = ids.filter(id => !storeAt(inv, id, at)).length;
   const active = inv.items.filter(i => i.active).sort((a, b) => a.name.localeCompare(b.name));
-  return (
-    <div className="final-cart">
-      <div className="row"><b><Icon n="cart" /> Final cart</b> <span className="sub-n">{ids.length} item{ids.length === 1 ? '' : 's'}</span>
-        {noStore > 0 && <span className="warn-text sub-n">▲ {noStore} without a store</span>}
-        <span className="rb-spacer" />
-        <label className="check sub-n"><input type="checkbox" checked={wide} onChange={e => setWide(e.target.checked)} /> On hand at other listings’ places too</label></div>
-      {!wide && !mine.length && <span className="sub-n">This to-do has no listing with a place yet — nothing on hand is shown for it.</span>}
-      {ids.length > 0 && <div className="grid-scroll"><table className="units compact"><tbody>
-        {ids.map(id => {
-          const parts = byItem.get(id)!;
-          const store = storeAt(inv, id, at);
-          const usual = storeAt(inv, id, new Map());
-          const lk = store ? linkOf(inv, id, store) : null;
-          const n = qtyOf(id);
-          const hand = handAt(id);
-          const other = onOther(id);
-          const asked = asks.find(a => a.itemId === id);
-          return <Fragment key={id}><tr>
-            <td>{nm(id)} × {n}{asked && <div className="sub-n">asked as “{asked.text}”</div>}</td>
-            <td className="sub-n">{parts.map(p => `${p.place ? lineTitle(inv, p.place) : '▲ no place yet'}${parts.length > 1 ? ` ${p.qty}` : ''}`).join(' · ')}</td>
-            <td className="nowrap">
-              <StorePick value={at.get(id) ?? ''} usual={usual} name={nm(id)} onChange={v => {
-                onAt(id, v);
-                // A store picked with no link for this item: the link can be added right there.
-                if (v && !linkOf(inv, id, v)) openFix(id, v); else if (fix?.id === id) setFix(null);
-              }} />
-              {' '}{lk
-                ? <Peek label="ⓘ" ariaLabel={`Where ${nm(id)} is bought`}>
-                    <b>{store}</b>{lk.label && lk.label.toLowerCase() !== store.toLowerCase() ? ` — ${lk.label}` : ''}<br />
-                    {lk.pack && lk.pack > 1 ? `Pack of ${lk.pack}: buy ${Math.ceil(n / lk.pack)}` : `Buy ${n}`}<br />
-                    <a href={lk.url} target="_blank" rel="noreferrer">Open the product ↗</a><br />
-                    <button className="link tiny" onClick={() => openFix(id, store)}>Wrong or broken? Change the link</button>
-                  </Peek>
-                : <button className="link tiny" onClick={() => openFix(id, store)}>+ link</button>}
-            </td>
-            <td>
-              {other.length > 0 && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>Already ordered</>} ariaLabel={`${nm(id)} is on another open order`}>
-                <b>On another open order</b><br />
-                {other.map(o => <Fragment key={o.id}><a href={`/?todo=${o.id}`} target="_blank" rel="noreferrer">{o.title}</a> ({o.qty})<br /></Fragment>)}
-                The same need? <button className="link tiny" onClick={() => takeOff(id, 'order', other.map(o => o.title).join(', '))}>Take it off this cart</button><br />
-                <span className="sub-n">Another unit's need: keep both.</span>
-              </Peek>}
-              {hand.length > 0 && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>On hand</>} ariaLabel={`${nm(id)} is on record somewhere`}>
-                <b>On record{wide ? '' : ' at this listing'}</b><br />
-                {hand.map(h => <Fragment key={h.key}>{h.name}: {h.qty}{h.own ? '' : ' (another listing)'}<br /></Fragment>)}
-                The record can be wrong — ask the cleaner to look.<br />
-                <button className="link tiny" onClick={() => takeOff(id, 'stock', hand.map(h => h.name).join(', '))}>It is there — don't buy it</button><br />
-                <button className="link tiny" onClick={() => setRecount({ id, place: hand[0]!.key, qty: '', busy: false, err: '' })}>Not there — correct the record</button><br />
-                <span className="sub-n">Bought anyway, it adds to what is on record (a restock).</span>
-              </Peek>}
-            </td>
-          </tr>
-          {fix?.id === id && <tr><td colSpan={4}>
-            <div className="row">
-              {!fix.store.trim() && <input className="inv-measure" value={fix.store} maxLength={60} placeholder="Which store?" aria-label="Store" onChange={e => setFix({ ...fix, store: e.target.value, err: '' })} />}
-              <input value={fix.url} placeholder={shop ? `Paste the ${fix.store} product page` : `Paste the product page at ${fix.store.trim() || 'that store'} (https://…)`}
-                     aria-label={`Link for ${nm(id)}`} onChange={e => setFix({ ...fix, url: e.target.value, err: '' })} />
-              <label>Pack of<input className="inv-qty" type="number" min="1" step="any" value={fix.pack} onChange={e => setFix({ ...fix, pack: e.target.value })} /></label>
-              <button className="small" disabled={fix.busy || !fixOk} onClick={() => void saveLink(fix.url.trim())}>{linkOf(inv, id, fix.store) ? 'Replace the link' : 'Save the link'}</button>
-              {linkOf(inv, id, fix.store) && <button className="secondary small" disabled={fix.busy} onClick={() => void saveLink('')}>Remove the link</button>}
-              <button className="link tiny" onClick={() => setFix(null)}>Cancel</button>
-            </div>
-            <span className="sub-n">{shop && fix.url && !fixOk ? `▲ Not a ${fix.store} product page.` : shop
-              ? `It becomes the item's ${fix.store} product — an item has one Walmart or Amazon link${usual && usual !== fix.store && /^(walmart|amazon)$/i.test(usual) ? `, so it replaces its ${usual} one` : ''}; carts and receipts use it.`
-              : 'Kept on the item under this store — it shows here next time.'}</span>
-            {fix.err && <span className="breach"> {fix.err}</span>}
-          </td></tr>}
-          {recount?.id === id && <tr><td colSpan={4}>
-            <div className="row">
-              <label>At<select value={recount.place} onChange={e => setRecount({ ...recount, place: e.target.value })}>
-                {hand.map(h => <option key={h.key} value={h.key}>{h.name} (record {h.qty})</option>)}</select></label>
-              <label>Really there<input className="inv-qty" type="number" min="0" step="any" value={recount.qty} onChange={e => setRecount({ ...recount, qty: e.target.value })} /></label>
-              <button className="small" disabled={recount.busy || recount.qty === ''} onClick={() => void saveCount()}>Save the count</button>
-              <button className="link tiny" onClick={() => setRecount(null)}>Cancel</button>
-            </div>
-            <span className="sub-n">Replaces the record for that place (a count). The purchase then adds to this number.</span>
-            {recount.err && <span className="breach"> {recount.err}</span>}
-          </td></tr>}
-          </Fragment>;
-        })}
-      </tbody></table></div>}
+  const per = (id: string) => {
+    const store = storeAt(inv, id, at);
+    const usual = storeAt(inv, id, new Map());
+    const lk = store ? linkOf(inv, id, store) : null;
+    const n = qtyOf(id);
+    const hand = handAt(id);
+    const other = onOther(id);
+    return { store, usual, lk, n, hand, other };
+  };
+  const row: CartRow = {
+    sub: id => {
+      const { hand, other } = per(id);
+      const asked = asks.find(a => a.itemId === id);
+      if (!asked && !hand.length && !other.length) return null;
+      return <div className="cart-flags">
+        {asked && <span className="sub-n">asked as “{asked.text}”</span>}
+        {other.length > 0 && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>Already ordered</>} ariaLabel={`${nm(id)} is on another open order`}>
+          <b>On another open order</b><br />
+          {other.map(o => <Fragment key={o.id}><a href={`/?todo=${o.id}`} target="_blank" rel="noreferrer">{o.title}</a> ({o.qty})<br /></Fragment>)}
+          The same need? <button className="link tiny" onClick={() => takeOff(id, 'order', other.map(o => o.title).join(', '))}>Take it off this cart</button><br />
+          <span className="sub-n">Another unit's need: keep both.</span>
+        </Peek>}
+        {hand.length > 0 && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>On hand</>} ariaLabel={`${nm(id)} is on record somewhere`}>
+          <b>On record{wide ? '' : ' at this listing'}</b><br />
+          {hand.map(h => <Fragment key={h.key}>{h.name}: {h.qty}{h.own ? '' : ' (another listing)'}<br /></Fragment>)}
+          The record can be wrong — ask the cleaner to look.<br />
+          <button className="link tiny" onClick={() => takeOff(id, 'stock', hand.map(h => h.name).join(', '))}>It is there — don't buy it</button><br />
+          <button className="link tiny" onClick={() => setRecount({ id, place: hand[0]!.key, qty: '', busy: false, err: '' })}>Not there — correct the record</button><br />
+          <span className="sub-n">Bought anyway, it adds to what is on record (a restock).</span>
+        </Peek>}
+      </div>;
+    },
+    cell: id => {
+      const { store, usual, lk, n } = per(id);
+      return <>
+      <StorePick value={at.get(id) ?? ''} usual={usual} name={nm(id)} onChange={v => {
+        onAt(id, v);
+        // A store picked with no link for this item: the link can be added right there.
+        if (v && !linkOf(inv, id, v)) openFix(id, v); else if (fix?.id === id) setFix(null);
+      }} />
+      {' '}{lk
+        ? <Peek label={<><Icon n="link" /> product</>} ariaLabel={`${nm(id)}: its product and link`}>
+            <b>{store}</b>{lk.label && lk.label.toLowerCase() !== store.toLowerCase() ? ` — ${lk.label}` : ''}<br />
+            {!n ? 'How many? — say it on the line' : lk.pack && lk.pack > 1 ? `Pack of ${lk.pack}: buy ${Math.ceil(n / lk.pack)}` : `Buy ${n}`}<br />
+            <a href={lk.url} target="_blank" rel="noreferrer">Open the product ↗</a><br />
+            <button className="link tiny" onClick={() => openFix(id, store)}>Wrong or broken? Change the link</button>
+          </Peek>
+        : <button className="link tiny" onClick={() => openFix(id, store)}>+ link</button>}
+      </>;
+    },
+    below: id => {
+      if (fix?.id !== id && recount?.id !== id) return null;
+      const { usual, hand } = per(id);
+      return <>
+      {fix?.id === id && <div className="cart-fix">
+        <div className="row">
+          {!fix.store.trim() && <input className="inv-measure" value={fix.store} maxLength={60} placeholder="Which store?" aria-label="Store" onChange={e => setFix({ ...fix, store: e.target.value, err: '' })} />}
+          <input value={fix.url} placeholder={shop ? `Paste the ${fix.store} product page` : `Paste the product page at ${fix.store.trim() || 'that store'} (https://…)`}
+                 aria-label={`Link for ${nm(id)}`} onChange={e => setFix({ ...fix, url: e.target.value, err: '' })} />
+          <label>Pack of<input className="inv-qty" type="number" min="1" step="any" value={fix.pack} onChange={e => setFix({ ...fix, pack: e.target.value })} /></label>
+          <button className="small" disabled={fix.busy || !fixOk} onClick={() => void saveLink(fix.url.trim())}>{linkOf(inv, id, fix.store) ? 'Replace the link' : 'Save the link'}</button>
+          {linkOf(inv, id, fix.store) && <button className="secondary small" disabled={fix.busy} onClick={() => void saveLink('')}>Remove the link</button>}
+          <button className="link tiny" onClick={() => setFix(null)}>Cancel</button>
+        </div>
+        <span className="sub-n">{shop && fix.url && !fixOk ? `▲ Not a ${fix.store} product page.` : shop
+          ? `It becomes the item's ${fix.store} product — an item has one Walmart or Amazon link${usual && usual !== fix.store && /^(walmart|amazon)$/i.test(usual) ? `, so it replaces its ${usual} one` : ''}; carts and receipts use it.`
+          : 'Kept on the item under this store — it shows here next time.'}</span>
+        {fix.err && <span className="breach"> {fix.err}</span>}
+      </div>}
+      {recount?.id === id && <div className="cart-fix">
+        <div className="row">
+          <label>At<select value={recount.place} onChange={e => setRecount({ ...recount, place: e.target.value })}>
+            {hand.map(h => <option key={h.key} value={h.key}>{h.name} (record {h.qty})</option>)}</select></label>
+          <label>Really there<input className="inv-qty" type="number" min="0" step="any" value={recount.qty} onChange={e => setRecount({ ...recount, qty: e.target.value })} /></label>
+          <button className="small" disabled={recount.busy || recount.qty === ''} onClick={() => void saveCount()}>Save the count</button>
+          <button className="link tiny" onClick={() => setRecount(null)}>Cancel</button>
+        </div>
+        <span className="sub-n">Replaces the record for that place (a count). The purchase then adds to this number.</span>
+        {recount.err && <span className="breach"> {recount.err}</span>}
+      </div>}
+      </>;
+    },
+  };
+  // Above the lines: what still has no store, and how far "on hand" looks.
+  const top = ids.length > 0 ? <div className="row cart-top">
+    {noStore > 0 && <span className="warn-text sub-n">▲ {noStore} without a store</span>}
+    {!wide && !mine.length && <span className="sub-n">No listing with a place yet — nothing on hand is shown.</span>}
+    <span className="rb-spacer" />
+    <label className="check sub-n"><input type="checkbox" checked={wide} onChange={e => setWide(e.target.checked)} /> On hand at other listings’ places too</label>
+  </div> : null;
+  const bottom = (aside.length > 0 || off.length > 0 || missed.length > 0) ? <div className="cart-bottom">
       {aside.length > 0 && <p className="note"><b>Not bought on this order:</b>{' '}
         {aside.map((a, k) => <span key={k} className="chip">{nm(a.itemId)} × {a.parts.reduce((s, p) => s + p.qty, 0)} — {a.why === 'stock' ? `on hand (${a.from})` : `on ${a.from}`}
           {' '}<button className="link tiny" onClick={() => putBack(k)}>↺ put back</button></span>)}
@@ -1704,8 +1736,8 @@ function FinalCart({ inv, onInv, lines, todoId, unitIds, asks, onAsk, at, onAt, 
         </div>)}
         {askErr && <span className="breach">{askErr}</span>}
       </div>}
-    </div>
-  );
+  </div> : null;
+  return { top, row, bottom };
 }
 
 /**

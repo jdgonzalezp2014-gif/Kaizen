@@ -96,7 +96,7 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   itself: "don't buy it", or "correct the record" (a `count` at that place, note "Checked while ordering"). Store: `StorePick`
   + `linkOf` (store product, or a non-store option under the store's name) — `setStoreLink` now keeps other stores' pages
   by `label`; `storeAt` falls back to that label. Asked-not-on-cart rows replace the old "Not sure" block. Peek's pop-up keeps
-  focus on a tap (mousedown prevented) so its buttons work on a phone. Splits show per part. SOP #15 v23. Open: report a broken link from Slack's draft (only in Kaizen); abandoned
+  focus on a tap (mousedown prevented) so its buttons work on a phone. Splits show per part. **One cart (owner: two carts were confusing):** `cartTools(useCartUi(), …)` returns `{ top, row, bottom }`; PurchaseForm's `tools` draws `row` IN ItemLines (`row` prop: `sub` under the name = asked as / ! Already ordered / ! On hand, `cell` = Buy at column, `below` = the link or count field in a `cart-under` row), `top`/`bottom` around it; no separate Final cart table. `.slide-over:has(.task-buy)` widens the panel to min(92vw, 1240px); `.cart-lines` are cards ≤720px. SOP #15 v24. Open: report a broken link from Slack's draft (only in Kaizen); abandoned
   `slack_order_drafts` rows are never cleaned. Not yet seen on screen (owner's tokens) — check it in use.
 - **Sets (owner, 2026-10-15):** one store product on several supplies = a set (Swirl flatware on Forks ×16 / Knives ×8 / Spoons ×24,
   Quatish on Plates ×8 / Bowls ×4; only when someone puts the same link on several items). `readOrder` splits its line into one
