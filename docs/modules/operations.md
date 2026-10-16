@@ -530,7 +530,14 @@ key had no SOPs.
   all-purpose cleaner, bathroom bags, whitener, pest control — each with one store product when an order page gave a link
   (purchase-history-only ones have none). Coffe → Coffee; Sheet sets / Mattress protectors (21) = Queen; 45 = Mattress
   protectors King. Still not assigned to a unit and no stock (where each one went is unknown — the inventory session).
-  Items list shows a pack as "pack of 200" (was "×200", read as buying 200).
+  Items list shows a pack as "pack of 200" (was "×200", read as buying 200). Then every bought thing got its product: links
+  looked up on walmart.com for the purchase-history-only ones (TV 43", curtains, rods, mirrors, key chains, charger, cable,
+  CR2032, trash can, paper towel holder, pillowcases, mouse repellent; throw blanket = the Amazon one), and each size bought is
+  its own item with its own product (Sheet sets Twin/Queen/King, Duvet covers and Mattress protectors Twin/Full/Queen/King,
+  Bed frame Full/Queen/King, comforters Twin/Queen/King, TV 43"/55") — 105 active. No link, never bought: Wine glasses,
+  Cooking utensils, Fire extinguisher, CO / Smoke detector, First aid kit, HVAC filter, Tub / Sink stopper, Cabinet knob, Ring.
+- **One item per thing (owner, 2026-10-15):** `itemKey`/`sameItem` (src/lib/inventory.ts) — case, punctuation, "&"/"and" and
+  plurals ignored; Setup's save refuses a second one of the same size, `newItem`/`newItems` (purchase form, Slack order) reuse it.
 - **Later (owner, 2026-10-15):** an inventory session (where things are, counts); a screen to upload a purchase and pick where
   each thing went.
 - **Access for cleaners (§136):** all 21 active units complete (2026-10-12, after the owner filled Bobcat

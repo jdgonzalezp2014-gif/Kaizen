@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { needByPlace, orderList, perClean, reconcile, stockLevels, toOrder, unitUses, onHand, type InvItem, type Move } from './inventory.ts';
+import { itemKey, sameItem, needByPlace, orderList, perClean, reconcile, stockLevels, toOrder, unitUses, onHand, type InvItem, type Move } from './inventory.ts';
 
 const S1105 = 'the_links/ROW-0010', S4116 = 'the_links/ROW-0011', S13 = 'cortland_legacy/ROW-0021', PRESTON = 'houses/ROW-0002';
 const mv = (kind: Move['kind'], qty: number, at: string, place: string | null = S1105, unitId: string | null = null,
@@ -85,4 +85,18 @@ test('what is already on hand, before buying (§159)', () => {
   assert.deepEqual(h.get('1'), [{ place: 'S100 Storage', qty: 26 }, { place: 'Napa closet', qty: 3 }]);
   assert.equal(h.has('2'), false);  // none left
   assert.equal(h.has('3'), false);  // never counted: not a reason to send anyone
+});
+
+test('one item per thing: case, punctuation and plurals do not make a second one; the size does', () => {
+  assert.equal(itemKey('Mattress protectors'), itemKey('mattress  Protector'));
+  assert.equal(itemKey('Toilet plungers'), itemKey('toilet plunger'));
+  assert.equal(itemKey('Batteries'), itemKey('battery'));
+  assert.equal(itemKey('Glasses'), itemKey('glass'));
+  assert.equal(itemKey('Salt & pepper'), itemKey('salt and pepper'));
+  assert.notEqual(itemKey('Bath mats'), itemKey('Bath towels'));
+  const items = [{ id: '1', name: 'Sheet sets — Queen', baseName: 'Sheet sets', size: 'Queen' }, { id: '2', name: 'Lockbox', size: null }];
+  assert.equal(sameItem(items, 'sheet set', 'queen')?.id, '1');
+  assert.equal(sameItem(items, 'Sheet sets', 'King'), undefined);
+  assert.equal(sameItem(items, 'Lockboxes', null)?.id, '2');
+  assert.equal(sameItem(items, 'Lockbox', null, '2'), undefined, 'itself is not a duplicate');
 });

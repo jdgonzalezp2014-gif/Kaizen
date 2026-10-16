@@ -20,7 +20,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { invItems } from '../_lib/inventory.ts';
 import { supplyPlaces } from '../_lib/unit-access.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
-import { CATEGORIES } from '../../src/lib/inventory.ts';
+import { CATEGORIES, itemLabel, sameItem } from '../../src/lib/inventory.ts';
 import { storeProduct } from '../../src/lib/store-order.ts';
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -47,6 +47,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     // Owner, 2026-10-15: one Walmart or Amazon product per item for now — the one its receipts match and its order's cart uses.
     if (buy.filter(o => storeProduct(o.url)).length > 1) return bad('One Walmart or Amazon link per item — keep the one you buy.');
     const buyJson = JSON.stringify(buy.map(o => ({ label: o.label || new URL(o.url).hostname.replace(/^www\./, ''), url: o.url, ...(o.pack ? { pack: o.pack } : {}) })));
+    // Owner, 2026-10-15: one item per thing — "Mattress protector" is refused beside "Mattress protectors" of the same size.
+    const all = await sql`SELECT id::text, name, size FROM inventory_items WHERE account_id = 1 AND active` as { id: string; name: string; size: string | null }[];
+    const twin = sameItem(all, name, size, b.id ? String(b.id) : undefined);
+    if (twin) return bad(`There is already "${itemLabel(twin.name, twin.size)}" — edit that one instead.`);
     try {
       if (b.id) await sql`UPDATE inventory_items SET name = ${name}, size = ${size}, category = ${category}, measure = ${measure}, per_clean = ${perClean},
                                  kind = ${kind}, buy_options = ${buyJson}::jsonb,

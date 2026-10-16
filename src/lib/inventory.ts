@@ -19,6 +19,16 @@
 export type MoveKind = 'count' | 'used' | 'purchase' | 'adjust' | 'missing' | 'taken';
 export const CATEGORIES = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'] as const;
 
+/**
+ * The name two items are the same thing by (owner, 2026-10-15: no "Mattress protector" beside "Mattress protectors"):
+ * case, punctuation, spacing and plurals ignored — "Lock box" stays apart from "Lockbox" only by its words.
+ */
+export const itemKey = (name: string) => name.toLowerCase().replace(/&/g, ' and ').replace(/[^a-z0-9]+/g, ' ').trim().split(' ')
+  .map(w => w.length > 3 ? w.replace(/ies$/, 'y').replace(/(ch|sh|x|ss)es$/, '$1').replace(/(?<!s)s$/, '') : w).join(' ');
+/** Another item that is the same thing in the same size (or none), if there is one. */
+export const sameItem = <T extends { id: string; name: string; baseName?: string; size?: string | null }>(items: T[], name: string, size: string | null, notId?: string) =>
+  items.find(i => i.id !== notId && itemKey(i.baseName ?? i.name) === itemKey(name) && (i.size ?? '').toLowerCase() === (size ?? '').toLowerCase());
+
 /** How an item reads everywhere: its name, and its size when it has one. */
 export const itemLabel = (name: string, size?: string | null) => size ? `${name} — ${size}` : name;
 

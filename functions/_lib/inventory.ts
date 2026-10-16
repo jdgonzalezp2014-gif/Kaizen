@@ -14,7 +14,7 @@ import { addFieldExpense } from './field-costs.ts';
 import type { Priority } from '../../src/lib/todos.ts';
 
 import { todayIn, addDays } from '../../src/lib/dates.ts';
-import { itemLabel, needByPlace, orderList, perClean, placeKey, stockLevels, toOrder, unitUses, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
+import { itemKey, itemLabel, sameItem, needByPlace, orderList, perClean, placeKey, stockLevels, toOrder, unitUses, type InvItem, type Move, type MoveKind } from '../../src/lib/inventory.ts';
 import { supplyPlaces } from './unit-access.ts';
 import { findPlace, fitsPlace, placeWord } from '../../src/lib/unit-access.ts';
 
@@ -498,8 +498,8 @@ export async function newItem(sql: SqlFn, b: Record<string, unknown>) {
   const category = ['kitchen', 'bathroom', 'cleaning', 'linens', 'other'].includes(String(b.category)) ? String(b.category) : 'other';
   const size = String(b.size ?? '').trim().slice(0, 30) || null;
   if (!name) throw new Error('An item needs a name.');
-  const [had] = await sql`SELECT id::text, active FROM inventory_items WHERE account_id = 1 AND lower(name) = lower(${name})
-                             AND lower(coalesce(size, '')) = lower(${size ?? ''})` as { id: string; active: boolean }[];
+  // The same thing under another spelling or plural is the item it already is (itemKey).
+  const had = sameItem(await sql`SELECT id::text, name, size, active FROM inventory_items WHERE account_id = 1` as { id: string; name: string; size: string | null; active: boolean }[], name, size);
   if (had) {
     // Switched off once: switched back on rather than refused.
     if (!had.active) await sql`UPDATE inventory_items SET active = true, updated_at = now() WHERE id = ${Number(had.id)}`;
@@ -519,14 +519,14 @@ export async function newItem(sql: SqlFn, b: Record<string, unknown>) {
 export async function newItems(sql: SqlFn, list: { name: string; kind: 'supply' | 'furniture'; measure: string }[], known: InvItem[]): Promise<string[]> {
   const clean = list.map(n => ({ name: n.name.trim().slice(0, 120), kind: n.kind === 'furniture' ? 'furniture' : 'supply', measure: n.measure.trim().slice(0, 20) || 'unit' }));
   if (clean.some(n => !n.name)) throw new Error('An item needs a name.');
-  const had = (name: string) => known.find(i => (i.baseName ?? i.name).toLowerCase() === name.toLowerCase() && !i.size);
+  const had = (name: string) => known.find(i => itemKey(i.baseName ?? i.name) === itemKey(name) && !i.size);
   const off = [...new Set(clean.map(n => had(n.name)).filter(i => i && !i.active).map(i => i!.id))];
   if (off.length) await sql`UPDATE inventory_items SET active = true, updated_at = now() WHERE account_id = 1 AND id::text = ANY(${off})`;
-  const fresh = [...new Map(clean.filter(n => !had(n.name)).map(n => [n.name.toLowerCase(), n])).values()];
+  const fresh = [...new Map(clean.filter(n => !had(n.name)).map(n => [itemKey(n.name), n])).values()];
   const made = fresh.length ? await sql`INSERT INTO inventory_items (account_id, name, size, category, measure, kind)
       SELECT 1, r.name, NULL, 'other', r.measure, r.kind FROM jsonb_to_recordset(${JSON.stringify(fresh)}::jsonb) AS r(name text, measure text, kind text)
       RETURNING id::text, name` as { id: string; name: string }[] : [];
-  return clean.map(n => had(n.name)?.id ?? made.find(m => m.name.toLowerCase() === n.name.toLowerCase())!.id);
+  return clean.map(n => had(n.name)?.id ?? made.find(m => itemKey(m.name) === itemKey(n.name))!.id);
 }
 
 /**
