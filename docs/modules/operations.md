@@ -235,10 +235,13 @@ key had no SOPs.
   (`declined by <name>`) or, for MAN-, the record set tbd; `crew_declines` row; the star rule
   never hands it back to them; board shows "▲ declined by X — reason"; live mode pushes the Host Note.
 
-- **Requests are not stays (2026-10-16).** Hostaway `unconfirmed` (Vrbo request to book) and `pending` (Airbnb) are
-  excluded with cancelled/inquiry — one list, `reservationCounts` in `src/lib/finance.ts` (hostaway.ts re-exports it).
-  A Vrbo request (DeLynn Smith, Timber Crest 16→17 Oct) had been given a clean; the next pass voids it with the generic
-  "booking cancelled in Hostaway" wording; accepted, it turns `new` and the clean comes back.
+- **Only confirmed stays (2026-10-16).** `reservationCounts` (`src/lib/finance.ts`, re-exported by hostaway.ts) is an
+  ALLOW-list: `new`, `modified`, `ownerStay`. Everything else — inquiry*, `unconfirmed` (Vrbo request to book), `pending`,
+  awaitingPayment, expired, declined, cancelled, any status Hostaway adds later — schedules no clean and counts no revenue.
+  Statuses seen in all 2,164 reservations (2026-10-16): those three + cancelled, inquiry, inquiryPreapproved,
+  inquiryNotPossible, expired, declined, unconfirmed. Trigger: a Vrbo request (DeLynn Smith, Timber Crest 16→17 Oct) was
+  given a clean; the next pass voids it with the generic "booking cancelled in Hostaway" wording; accepted, it turns `new`
+  and the clean comes back. Cancelled after arrival stays as §123.
 
 - **Cancellations (§123).** Hostaway's `cancellationDate` (taken as UTC → New York). Cancelled before
   the arrival day → no clean (void, as before). On or after it → the guest may have used the unit:

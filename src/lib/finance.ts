@@ -55,20 +55,19 @@ export interface UnitMetrics {
 const OPEN_ENDED = '2999-12-31';
 
 /**
- * Statuses that never occupied a night and never paid out. `unconfirmed`
- * (a Vrbo request to book) and `pending` (an Airbnb one) are requests the
- * host has not accepted yet — a clean was once scheduled for one. Accepted,
- * they turn `new` and count from then on.
+ * Only a confirmed stay counts — for revenue and for scheduling a clean.
+ * Hostaway's confirmed statuses are `new`, `modified` and `ownerStay`; every
+ * other one (inquiry*, `unconfirmed` = Vrbo request to book, `pending` =
+ * Airbnb's, awaitingPayment, expired, declined, cancelled) is a stay that has
+ * not happened yet or never will. An allow-list, so a status Hostaway adds
+ * later schedules nothing until someone looks at it (a Vrbo request was once
+ * given a clean, 2026-10-16). Cancelled after arrival is handled apart (§123).
  */
-const EXCLUDED = new Set([
-  'cancelled', 'declined', 'expired', 'inquiry', 'inquirypreapproved',
-  'inquirydenied', 'inquirytimedout', 'inquirynotpossible', 'awaitingpayment',
-  'unconfirmed', 'pending'
-]);
+const CONFIRMED = new Set(['new', 'modified', 'ownerstay']);
 
 export function reservationCounts(status?: string): boolean {
   if (!status) return true;
-  return !EXCLUDED.has(status.toLowerCase().replace(/[^a-z]/g, ''));
+  return CONFIRMED.has(status.toLowerCase().replace(/[^a-z]/g, ''));
 }
 
 /**
