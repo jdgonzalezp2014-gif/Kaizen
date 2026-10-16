@@ -522,6 +522,15 @@ key had no SOPs.
   Sep 9 pickup (Frisco Preston — the history page shows no total), 200015283257285 $185.88 (not delivered, returned to the store),
   2000156-31789057 $41.86 (ready for pickup Oct 15, not picked up). Walmart's purchase history page has no product links (pictures
   only) — good for totals, not for store products.
+- **Catalog filled from the Sept–Oct orders (owner, 2026-10-15):** 53 items added (98 active) so every thing bought has an
+  item: TV 55" / 43", TV wall mount, Bed frame Queen, Mattress topper, Nightstands, Floor / Table lamps, patio set, string
+  lights, outdoor rug, coffee maker, kettle, toaster, knife set, hair dryer, shower curtain + liner, bathroom trash can, soap
+  dispenser, plunger, broom, hangers, curtains, rods, mirrors, wall art, throw blanket, Duvet covers Queen/King, Sheet sets
+  King, comforter King, lockbox, fridge lock, key tags/chains, chargers/cables, AA/AAA/CR2032, coffee filters, salt & pepper,
+  all-purpose cleaner, bathroom bags, whitener, pest control — each with one store product when an order page gave a link
+  (purchase-history-only ones have none). Coffe → Coffee; Sheet sets / Mattress protectors (21) = Queen; 45 = Mattress
+  protectors King. Still not assigned to a unit and no stock (where each one went is unknown — the inventory session).
+  Items list shows a pack as "pack of 200" (was "×200", read as buying 200).
 - **Later (owner, 2026-10-15):** an inventory session (where things are, counts); a screen to upload a purchase and pick where
   each thing went.
 - **Access for cleaners (§136):** all 21 active units complete (2026-10-12, after the owner filled Bobcat

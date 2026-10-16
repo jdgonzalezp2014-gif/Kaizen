@@ -1121,7 +1121,7 @@ function CartLinks({ inv, lines }: { inv: Inventory; lines: { itemId: string; qt
     {c.walmart.url && <a className="chip" href={c.walmart.url} target="_blank" rel="noreferrer"><Icon n="cart" /> Open cart at Walmart ({c.walmart.items.length}) ↗</a>}
     {c.amazon.map(a => <a key={a.itemId} className="chip" href={a.url} target="_blank" rel="noreferrer">Amazon: {name(a.itemId)} ×{a.qty} ↗</a>)}
     {(c.walmart.url || c.amazon.length > 0) && <Hint>Walmart: opens the cart with these items added. Amazon has no cart link that works, so each item opens its page — add it there.
-      Check the cart and pay in the store; Kaizen never pays. How many = what is ordered ÷ how many come in one (Setup → Items list → Buy at ×), rounded up.</Hint>}
+      Check the cart and pay in the store; Kaizen never pays. How many = what is ordered ÷ how many come in one (Setup → Items list → Buy at, "pack of"), rounded up.</Hint>}
     {c.none.length > 0 && <Flag tone="attn" label={`No store link: ${c.none.length}`} title="No Walmart or Amazon product yet — buy them by hand"
       list={[...c.none.map(name), 'A receipt (.md) that has them remembers their product.']} />}
   </div>;
@@ -1502,7 +1502,7 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
                   <option value="supply">Supplies</option><option value="furniture">Furniture</option></select></td>
                 <td><b>{i.baseName ?? i.name}</b>{!i.active && <span className="sub-n"> · off</span>}</td><td>{i.size ?? <span className="sub-n">—</span>}</td><td>{i.category}</td><td>{i.measure}</td>
                 <td className="n">{fmt(i.perClean)}</td><td className="n">{fmt(i.reorderAt)}</td>
-                <td>{(i.buyOptions ?? []).length ? (i.buyOptions ?? []).map((o, k) => <Fragment key={k}>{k ? ' · ' : ''}<a href={o.url} target="_blank" rel="noreferrer">{o.label} ↗</a>{o.pack ? <span className="sub-n"> ×{o.pack}</span> : null}</Fragment>)
+                <td>{(i.buyOptions ?? []).length ? (i.buyOptions ?? []).map((o, k) => <Fragment key={k}>{k ? ' · ' : ''}<a href={o.url} target="_blank" rel="noreferrer">{o.label} ↗</a>{o.pack && o.pack > 1 ? <span className="sub-n"> · pack of {o.pack}</span> : null}</Fragment>)
                   : <span className="sub-n">—</span>}</td>
                 <td className="n nowrap">
                   <button className="link tiny" onClick={() => setForm({ id: i.id, kind: i.kind ?? 'supply', name: i.baseName ?? i.name, size: i.size ?? '', category: i.category, measure: i.measure,
@@ -1528,16 +1528,16 @@ function Catalog({ items, onSaved }: { items: InvItemRow[]; onSaved: () => void 
         <label>Keep at least<input type="number" min="0" step="any" value={form.reorderAt} onChange={e => setForm(f => ({ ...f, reorderAt: e.target.value }))} /></label>
       </div>
       <div className="buy-opts">
-        <b>Buy at</b> <span className="sub-n">— where to buy it; each option with its link and how many come in one (×)</span>
+        <b>Buy at</b> <span className="sub-n">— where to buy it; each option with its link and how many of its measure come in one pack</span>
         <Hint>ONE Walmart (walmart.com/ip/…) or Amazon (amazon.com/dp/…) link per item: it is the store's product — receipts match it by number and an order
-          opens it (Walmart: in the cart). Recording a receipt (.md) sets it, with its ×; bought at the other store, that one replaces it.
-          A set: put the same link on each item it holds, each with its own × (flatware: Forks ×16, Knives ×8, Spoons ×24) — a receipt
+          opens it (Walmart: in the cart). Recording a receipt (.md) sets it, with its pack; bought at the other store, that one replaces it.
+          A set: put the same link on each item it holds, each with its own pack (flatware: Forks 16, Knives 8, Spoons 24) — a receipt
           splits it into those items and the cart buys it once for all of them.</Hint>
         {form.buyOptions.map((o, k) => (
           <div key={k} className="row" style={{ gap: 6, alignItems: 'center' }}>
             <input value={o.label} maxLength={60} placeholder="Store, e.g. Costco" aria-label="Store" onChange={e => setOpt(k, { label: e.target.value })} />
             <input value={o.url} maxLength={500} placeholder="https://…" aria-label="Link" style={{ flex: 1 }} onChange={e => setOpt(k, { url: e.target.value })} />
-            <input className="inv-qty" type="number" min="0" step="any" value={o.pack ?? ''} placeholder="×" aria-label={`How many ${form.measure || 'units'} come in one`}
+            <input className="inv-qty" type="number" min="0" step="any" value={o.pack ?? ''} placeholder="per pack" aria-label={`How many ${form.measure || 'units'} come in one`}
                    title={`How many ${form.measure || 'units'} come in one`} onChange={e => setOpt(k, { pack: e.target.value })} />
             <button className="link tiny danger" onClick={() => setForm(f => ({ ...f, buyOptions: f.buyOptions.filter((_, j) => j !== k) }))}>✕</button>
           </div>))}
