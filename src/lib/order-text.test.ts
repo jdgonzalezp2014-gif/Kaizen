@@ -116,7 +116,7 @@ test('orderDraftMessage: questions, place, cart, and the draft id back from Conf
   const s = JSON.stringify(m.blocks);
   assert.match(s, /order_pick/);
   assert.match(s, /\+ New item/);
-  assert.match(s, /You wrote “LP-4212”/);
+  assert.match(s, /you wrote “LP-4212”/);
   assert.match(s, /addToCart\?items=123456\|2/);
   assert.ok(!s.includes('Old broom'), 'an inactive item is not offered');
   assert.equal(draftIdFromBlocks(m.blocks), '42');
@@ -135,4 +135,16 @@ test('draftLinesFromRead: the AI\'s supply when sure, its own picks as the quest
     { ...base, text: 'tax', kind: 'tax', itemId: null, candidates: [] }]);
   assert.deepEqual(d.map(l => [l.t, l.q, l.i, l.c]), [['paper towels', 2, '1', []], ['queen comforters', 2, null, ['4']], ['sofa beds', 2, null, []], ['washcloths 18 pack', 18, '9', []]]);
   assert.deepEqual(d[2]!.s, { name: 'Sofa bed', kind: 'furniture', measure: 'unit' });
+});
+
+test('rowsToRaw and lineTarget: the model\'s short rows by line number; supplies sent to a house go where it keeps them', async () => {
+  const { rowsToRaw, lineTarget } = await import('./order-text.ts');
+  const raw = rowsToRaw([[2, 0, 0, [], 'Sofa bed', 'unit', 1, 0], ['1: tide', '3', 1, [], 'Detergent', 'bottle', 0, 0], [9, '1', 1], 'junk', [1, '2', 1]],
+    [{ text: 'tide', qty: 2 }, { text: 'sofa beds', qty: 1 }, { text: 'lamp', qty: 1 }]);
+  assert.deepEqual(raw.map(r => r && [r.text, r.qty, r.itemId, r.sure, r.furniture]), [['tide', 2, '3', true, false], ['sofa beds', 1, null, false, true], null]);
+  const house = { key: 'r/1#house', house: true, supplies: 'r/1' };
+  assert.equal(lineTarget(house, 'furniture'), 'r/1#house');
+  assert.equal(lineTarget(house, 'supply'), 'r/1');
+  assert.equal(lineTarget({ ...house, supplies: null }, 'supply'), null);
+  assert.equal(lineTarget({ key: 'storages/1' }, 'supply'), 'storages/1');
 });

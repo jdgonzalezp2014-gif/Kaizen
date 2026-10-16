@@ -54,15 +54,19 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   `slack_config.botUserId`) so it is not saved twice.
 - **`@Kaizen order <text>` = a purchase order from free text (owner, 2026-10-15)** — e.g. _2 paper towels y 1 Tide para LP-4212_.
   Nothing is saved until **Confirm**: Kaizen answers in the thread with a draft (`src/lib/order-text.ts`, pure + tests): each line
-  **read by the AI (owner: "la idea es apoyarse en IA")** — `readRequestText` (request-read.ts, the same as ✨ Build the cart; its prompt
-  now keeps furniture/linens/electronics — flash-lite had dropped 17 of 58 lines as "not supplies" — and gives `itemQty`, `measure`,
-  `furniture`), checked by `readReceipt` (sure + existing, alias wins); `draftLinesFromRead`: the question's buttons are only the supplies the
-  model named (`suggested`, new on ReceiptLine), none = not in Kaizen with the AI's name/type/measure prefilled in the new-item forms. A list
-  over 12 lines is read in parts of 12 at once (`readOrder`; a model step has 10 s — one 20-line furniture part failed every model), 20 s
-  budget, only the first part writes `ai_last` (`askJson` `log: false`; subrequests). The draft says "✨ Read by …"; a part the AI could
-  not read falls back to the rules below, and the draft says so. Real list (58 lines, read-only test): all 58 read in 17 s — 22 sure,
-  8 asked, 28 new. "Reading the order…" is posted first and replaced (27 s cap). **`@Kaizen order` alone in a thread** = the thread's
-  first message is the order (not the bot's own; `conversations.replies`) — how the owner first tried it (2026-10-15). Fallback rules: a line is
+  **Rules first, then the AI for the rest (owner: "apoyarse en IA", and "refina … el gasto de tokens")** — a list: one item per line by
+  the rules; what they settle (a taught alias, or the one item with every word of its name) never reaches a model; the rest go numbered to
+  `readOrderLines` (request-read.ts) in parts of 30 at once, answered as one short row per line `[n, id, sure, [alts], name, measure,
+  furniture, itemQty]` (`rowsToRaw` — flash-lite wrote "1: nights stands" for n, so the number is read from its start), checked by
+  `readReceipt` (sure + existing, alias wins). One line of words: `readRequestText` splits it (as ✨ Build the cart; its prompt now keeps
+  furniture — flash-lite had dropped 17 of 58 lines as "not supplies"). `draftLinesFromRead`: buttons = only what the model named
+  (`suggested`), none = not in Kaizen with its name/type/measure prefilled in the forms. Only the first part writes `ai_last` (`askJson`
+  `log: false`; subrequests). The draft says "16 matched by Kaizen, 42 read by ✨ …"; a part the AI did not answer keeps the rules' reading.
+  Real list (58 lines, read-only test): 16 by rules + 42 by the AI in 2 parts, 10 s → 22 sure, 8 asked, 28 new. "Reading the order…" is
+  posted first and replaced (27 s cap). **`@Kaizen order` alone in a thread** = the thread's first message is the order (not the bot's;
+  `conversations.replies`) — how the owner first tried it. **One place, picked first (owner):** "Everything goes to:" is the draft's first
+  choice, never split; supplies sent to a house go where that house's supplies are kept (`lineTarget`, the Repository's closet/storage),
+  said under it ("🧴 3 supplies go to …"). Fallback rules: a line is
   matched to a supply (`matchOrderLine`) only when ONE item has every word of its name in the line and holds the line's last word
   (what it is), packing words (set/pack/case/of…) and (…) ignored — "queen mattresses" is not "Comforter — Queen", "paper towel holders"
   not "Paper towels", "knife sets" not "Sheet sets" — or by a taught alias (`inventory_receipt_aliases`). The rest are questions (the 3

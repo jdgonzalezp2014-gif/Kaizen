@@ -244,15 +244,22 @@ function cartLine(d: OrderDraft, items: DraftItem[]): string {
  * after — what is not in Kaizen grouped (add them all as new items, or drop them), where it goes, the store
  * links, and Confirm (the draft's id) / Cancel.
  */
-export function orderDraftMessage(d: OrderDraft, id: string, o: { items: DraftItem[]; places: Opt[]; existing: OrderLine[]; todoTitle?: string | null; problem?: string | null }):
+export function orderDraftMessage(d: OrderDraft, id: string, o: { items: DraftItem[]; places: Opt[]; existing: OrderLine[]; todoTitle?: string | null; problem?: string | null;
+  /** Said under the place: where a house's supplies go instead ("🧴 3 supplies go to S1105 Storage…"). */ routed?: string | null }):
   { text: string; blocks: Block[] } {
   const name = (iid: string) => o.items.find(i => i.id === iid)?.name ?? `item ${iid}`;
   const measure = (iid: string) => o.items.find(i => i.id === iid)?.measure ?? 'unit';
   const clash = clashes(d, o.existing);
   const where = d.todo ? `Goes on *${esc(o.todoTitle ?? `to-do #${d.todo}`)}* — this thread’s to-do.`
     : `A new to-do *Buy supplies…* will be made${d.claim ? ' for this thread’s claim' : ''}.`;
+  // Owner, 2026-10-15: the place first — a big order goes to one place (a new unit's setup); pick it once, everything goes there.
+  const opts = o.places.slice(0, 100).map(p => ({ text: plain(p.label), value: p.value }));
+  const chosen = opts.find(x => x.value === d.place);
   const top: Block[] = [section(`🛒 *Purchase order — draft* · ${d.lines.length} line${d.lines.length === 1 ? '' : 's'}\n${where} Nothing is saved until *Confirm*.`),
-                        ...(d.ai ? [context(esc(d.ai))] : [])];
+                        ...(d.ai ? [context(esc(d.ai))] : []),
+                        section(`📍 *Everything goes to:*${d.said && !chosen ? ` you wrote “${esc(d.said)}” — pick its place.` : ''}`,
+                          opts.length ? { type: 'static_select', action_id: 'order_place', placeholder: plain('Pick the place'), options: opts, ...(chosen ? { initial_option: chosen } : {}) } : undefined),
+                        ...(o.routed ? [context(esc(o.routed))] : [])];
 
   const done = d.lines.map((l, idx) => ({ l, idx })).filter(x => settled(x.l));
   const list = done.map(({ l, idx }) => {
@@ -272,13 +279,9 @@ export function orderDraftMessage(d: OrderDraft, id: string, o: { items: DraftIt
     { type: 'actions', block_id: 'order_missing', elements: [button(`+ Add ${gone.length === 1 ? 'it' : `all ${Math.min(gone.length, 45)}`} as new items…`, 'order_new_all', 'all', 'primary'),
       button(`✕ Drop ${gone.length === 1 ? 'it' : 'them'}`, 'order_drop_all', 'all')] }] : [];
 
-  const opts = o.places.slice(0, 100).map(p => ({ text: plain(p.label), value: p.value }));
-  const chosen = opts.find(x => x.value === d.place);
   const cart = cartLine(d, o.items);
   const bottom: Block[] = [
     ...(d.sk ? [context(`${d.sk} line${d.sk === 1 ? '' : 's'} of text ${d.sk === 1 ? 'was' : 'were'} not read as items.`)] : []),
-    section(`📍 *Where does it go?*${d.said && !chosen ? ` You wrote “${esc(d.said)}” — pick its storage or closet.` : ''}`,
-      opts.length ? { type: 'static_select', action_id: 'order_place', placeholder: plain('Pick the place'), options: opts, ...(chosen ? { initial_option: chosen } : {}) } : undefined),
     ...(cart ? [context(cart)] : []),
     ...(o.problem ? [context(`⚠ ${esc(o.problem)}`)] : []),
     { type: 'actions', block_id: 'order_go', elements: [button('Confirm', 'order_confirm', id, 'primary'), button('Cancel', 'order_cancel', 'cancel')] }];
@@ -362,3 +365,36 @@ export function newItemsModal(meta: string, rows: { idx: number; t: string; q: n
 
 /** What a new item from the grouped form is counted in: the AI's word, else guessed from the line. */
 export const newMeasureOf = (l: { t: string; s?: NewItem }) => l.s?.measure ?? guessMeasure(l.t);
+
+/**
+ * The model's compact rows ([n, id, sure, [alts], name, measure, furniture, itemQty], `readOrderLines`) as the
+ * raw lines `readReceipt` checks — the words and how many are the list's own, not the model's. A line with no
+ * row, or a row that is not one, is null.
+ */
+export function rowsToRaw(rows: unknown, lines: { text: string; qty: number }[]): (Record<string, unknown> | null)[] {
+  const out: (Record<string, unknown> | null)[] = lines.map(() => null);
+  (Array.isArray(rows) ? rows : []).forEach((r, k) => {
+    if (!Array.isArray(r)) return;
+    // flash-lite answered "1: nights stands" for 1 (2026-10-15): the number it starts with, else the row's place.
+    const lead = parseInt(String(r[0]), 10);
+    const n = Number.isFinite(lead) ? lead : k + 1;
+    const line = lines[n - 1];
+    if (!line || out[n - 1]) return;
+    const id = r[1] == null || r[1] === 0 || r[1] === '0' || r[1] === '' ? null : String(r[1]);
+    out[n - 1] = { text: line.text, qty: line.qty, kind: 'item', itemId: id, sure: r[2] === 1 || r[2] === true,
+      alternatives: Array.isArray(r[3]) ? r[3].map(String) : [], name: typeof r[4] === 'string' ? r[4] : null,
+      measure: typeof r[5] === 'string' ? r[5] : null, furniture: r[6] === 1 || r[6] === true ? true : r[6] === 0 || r[6] === false ? false : null,
+      itemQty: Number(r[7]) > 0 ? Number(r[7]) : null };
+  });
+  return out;
+}
+
+/**
+ * Where a line goes when the order goes to `place` (owner, 2026-10-15: one place, no splits): there — unless supplies
+ * are sent to a house, where nothing is kept: then where that house's supplies are kept (its closet or its storage,
+ * from the Repository). null = nowhere it can go. `kind` unknown (an open question) counts as going there.
+ */
+export function lineTarget(place: { key: string; house?: boolean; supplies?: string | null }, kind: 'supply' | 'furniture' | undefined): string | null {
+  if (!place.house || kind !== 'supply') return place.key;
+  return place.supplies ?? null;
+}

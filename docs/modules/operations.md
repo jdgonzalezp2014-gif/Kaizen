@@ -66,7 +66,8 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
 - **One store product per item (owner, 2026-10-15: "not several platforms' links yet"):** `withProduct` keeps ONE
   Walmart/Amazon option (bought at the other store, it replaces it; Costco-type links stay); `inventory-items` save refuses two.
 - **Orders from Slack (owner, 2026-10-15):** `@Kaizen order 2 paper towels y 1 Tide para LP-4212` → a draft in the thread (lines
-  read by the AI (`readRequestText`, as ✨ Build the cart; furniture now kept), place always asked, Walmart cart / Amazon links; a pasted
+  rules first, the AI only for the rest (`readOrderLines`, short rows; one line of words → `readRequestText`, furniture now kept), one place picked
+  first — a house's supplies go to its closet/storage (`lineTarget`), Walmart cart / Amazon links; a pasted
   list, or `@Kaizen order` alone in its thread; the missing ones added all at once),
   saved on Confirm onto the thread's to-do's order (add/replace asked per clash) or a new "Buy supplies: …" to-do — `saveTodoOrder`,
   `newItems` (bulk, new), `learnAliases` (now one statement). Details in docs/modules/slack.md.

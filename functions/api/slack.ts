@@ -23,12 +23,12 @@ import * as claims from './claims.ts';
 import * as expenses from './expenses.ts';
 import { invItems, newItems, saveTodoOrder } from '../_lib/inventory.ts';
 import { learnAliases } from '../_lib/receipt-read.ts';
-import { draftIdFromBlocks, draftLinesFromRead, draftProblem, matchOrderLine, newMeasureOf, mergeOrder, newItemModal, newItemsModal, orderDraftMessage, orderSavedMessage, parseOrderText, pickItemModal,
-         type DraftItem, type DraftLine, type OrderDraft, type OrderLine } from '../../src/lib/order-text.ts';
-import { readRequestText } from '../_lib/request-read.ts';
+import { draftIdFromBlocks, draftLinesFromRead, draftProblem, lineTarget, matchOrderLine, newMeasureOf, mergeOrder, newItemModal, newItemsModal, orderDraftMessage, orderSavedMessage, parseOrderText, pickItemModal,
+         type DraftLine, type OrderDraft, type OrderLine } from '../../src/lib/order-text.ts';
+import { readOrderLines, readRequestText } from '../_lib/request-read.ts';
 import type { InvItem } from '../../src/lib/inventory.ts';
 import { orderList } from '../../src/lib/inventory.ts';
-import { findPlace, fitsPlace, placeWord } from '../../src/lib/unit-access.ts';
+import { findPlace, placeWord } from '../../src/lib/unit-access.ts';
 import * as sopsApi from './sops.ts';
 import { askJson, within } from '../_lib/ai-chain.ts';
 import { gapsInThread, standardFrom, draftFromAi, draftFromThread, helpAnswerBlocks, helpFromAi, helpMissingBlocks, helpPrompt, rankSops, type SopDoc, partialSopForm, readSopForm, reviewFromAi, reviewNote, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
@@ -287,6 +287,16 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
  */
 /** A DM's channel id starts with D. */
 const dmChannel = (channel: string) => channel.startsWith('D');
+/** "🧴 3 supplies go to S1105 Storage — where this house's supplies are kept", when the order goes to a house. */
+const routedNote = (d: OrderDraft, items: InvItem[], sp: Awaited<ReturnType<typeof supplyPlaces>>): string | null => {
+  const place = d.place ? findPlace(sp, d.place) : null;
+  if (!place?.house) return null;
+  const n = d.lines.filter(l => (l.n?.kind ?? items.find(i => i.id === l.i)?.kind) === 'supply').length;
+  if (!n) return null;
+  const to = place.supplies ? findPlace(sp, place.supplies) : null;
+  return to ? `🧴 ${n} suppl${n === 1 ? 'y goes' : 'ies go'} to ${placeWord(to)} — where this house's supplies are kept.`
+            : `⚠ ${n} suppl${n === 1 ? 'y' : 'ies'} cannot go to a house, and ${place.name} has no closet or storage set — pick a storage or a closet.`;
+};
 /** Where an order can go: storages and closets, then the houses (furniture goes to the house — owner, 2026-10-15). */
 const placeOptions = (sp: Awaited<ReturnType<typeof supplyPlaces>>): Opt[] =>
   [...sp.places.map(p => ({ value: p.key, label: (p.self ? `${p.name} closet` : p.name).slice(0, 75) })),
@@ -704,31 +714,41 @@ class Kaizen {
       place: p.place, said: p.said, unit: p.unit, ...(read.skipped ? { sk: read.skipped } : {}), ai: read.note, lines: read.lines };
     const [row] = await this.sql`INSERT INTO slack_order_drafts (account_id, draft, created_by) VALUES (1, ${JSON.stringify(d)}::jsonb, ${this.email})
                                  RETURNING id::text` as { id: string }[];
-    return { ok: true, ...await this.orderView(row!.id, d, { items, places: placeOptions(sp) }) };
+    return { ok: true, ...await this.orderView(row!.id, d, { items, sp }) };
   }
   /**
-   * The lines, read by the AI (`readRequestText`, as ✨ Build the cart) — a long list in parts of 12 lines read at once:
-   * a model step has 10 s, and 20 furniture lines did not fit in it (2026-10-15; 10-line parts read the 58-line list in 17 s). A part the AI could not read is read line by line by the rules, and the draft says so.
+   * The lines (owner, 2026-10-15: "apoyarse en IA", and spend as few tokens as possible). A list: one item per line
+   * by the rules, and what they settle (a taught alias, or the one item with every word of its name) needs no
+   * model; only the rest go to it, numbered, in parts of 30 at once, answered as one short row each (`readOrderLines`).
+   * One line of words: the AI splits it (`readRequestText`, as ✨ Build the cart). A part the AI could not read keeps
+   * the rules' reading — its questions — and the draft says so.
    */
   private async readOrder(words: string, named: { key: string; name: string; unit?: string | null }[], units: Opt[], items: InvItem[],
                           learned: { text: string; itemId: string }[]): Promise<{ lines: DraftLine[]; note: string; skipped: number }> {
-    const rows = words.split('\n').filter(r => r.trim());
-    const parts = rows.length > 12 ? Array.from({ length: Math.ceil(rows.length / 12) }, (_, k) => rows.slice(k * 12, k * 12 + 12).join('\n')) : [words];
     const known = new Map(learned.map(a => [a.text, a.itemId]));
-    const reads = await Promise.all(parts.map((t, k) => readRequestText(this.sql, this.ctx.env, t, { budgetMs: 20000, items, learned, log: k === 0 })));
-    const lines: DraftLine[] = [];
-    let skipped = 0;
+    const p = parseOrderText(words, named, units);
+    const byRules = p.lines.map(l => ({ t: l.text, q: l.qty, ...matchOrderLine(l.text, items, known) }) as DraftLine);
+    if (words.split('\n').filter(r => r.trim()).length < 2) {
+      const r = await readRequestText(this.sql, this.ctx.env, words, { budgetMs: 20000, items, learned });
+      if (r.ok && r.lines.length) return { lines: draftLinesFromRead(r.lines).slice(0, 80), note: `✨ Read by ${r.by} — check every line.`, skipped: 0 };
+      return { lines: byRules, skipped: 0, note: `⚠ Read by rules — the AI did not answer (${(r.ok ? 'nothing read' : r.message).slice(0, 120)}).` };
+    }
+    const open = byRules.map((l, k) => ({ l, k })).filter(x => !x.l.i);
+    const parts: (typeof open)[] = [];
+    for (let k = 0; k < open.length; k += 30) parts.push(open.slice(k, k + 30));
+    const reads = await Promise.all(parts.map((part, k) => readOrderLines(this.sql, this.ctx.env, part.map(x => ({ text: x.l.t, qty: x.l.q })),
+      { budgetMs: 20000, items, learned, log: k === 0 })));
     const by = new Set<string>(), failed: string[] = [];
+    let read = 0;
     reads.forEach((r, k) => {
-      if (r.ok && r.lines.length) { lines.push(...draftLinesFromRead(r.lines)); by.add(r.by); return; }
-      failed.push(r.ok ? 'nothing read' : r.message);
-      const p = parseOrderText(parts[k]!, named, units);
-      skipped += p.skipped;
-      lines.push(...p.lines.map(l => ({ t: l.text, q: l.qty, ...matchOrderLine(l.text, items, known) })));
+      if (!r.ok) { failed.push(r.message); return; }
+      by.add(r.by);
+      parts[k]!.forEach((x, j) => { const l = r.lines[j]; if (l) { byRules[x.k] = draftLinesFromRead([l])[0] ?? byRules[x.k]!; read++; } });
     });
-    const note = !failed.length ? `✨ Read by ${[...by].join(', ')} — check every line.`
-      : `⚠ ${by.size ? 'Part of it was' : 'It was'} read line by line by rules — the AI did not answer (${failed[0]!.slice(0, 120)}).`;
-    return { lines: lines.slice(0, 80), note, skipped };
+    const sure = byRules.length - open.length;
+    const head = `${sure} matched by Kaizen${read ? `, ${read} read by ✨ ${[...by].join(', ')}` : ''} — check every line.`;
+    return { lines: byRules, skipped: p.skipped,
+             note: failed.length ? `⚠ ${head} The AI did not answer for ${open.length - read} line${open.length - read === 1 ? '' : 's'} (${failed[0]!.slice(0, 100)}).` : head };
   }
   /** The thread's to-do that can hold an order: itself, or its parent for a sub-task — open, top-level. */
   private async orderTodo(id: string): Promise<string | null> {
@@ -750,9 +770,9 @@ class Kaizen {
   private async storeDraft(id: string, d: OrderDraft) {
     await this.sql`UPDATE slack_order_drafts SET draft = ${JSON.stringify(d)}::jsonb, updated_at = now() WHERE account_id = 1 AND id::text = ${id}`;
   }
-  private async orderView(id: string, d: OrderDraft, pre?: { items: DraftItem[]; places: Opt[] }, problem?: string | null) {
-    const [items, places, on] = await Promise.all([pre?.items ?? invItems(this.sql), pre?.places ?? supplyPlaces(this.sql).then(placeOptions), this.orderOn(d.todo)]);
-    return orderDraftMessage(d, id, { items, places, existing: on.lines, todoTitle: on.title, problem });
+  private async orderView(id: string, d: OrderDraft, pre?: { items: InvItem[]; sp: Awaited<ReturnType<typeof supplyPlaces>> }, problem?: string | null) {
+    const [items, sp, on] = await Promise.all([pre?.items ?? invItems(this.sql), pre?.sp ?? supplyPlaces(this.sql), this.orderOn(d.todo)]);
+    return orderDraftMessage(d, id, { items, places: placeOptions(sp), existing: on.lines, todoTitle: on.title, problem, routed: routedNote(d, items, sp) });
   }
   /** Saved, then drawn again in its message. */
   private async orderRedraw(id: string, d: OrderDraft, ch: string, ts: string, problem?: string | null) {
@@ -849,8 +869,9 @@ class Kaizen {
     if (problem) return await show(problem);
     const place = findPlace(sp, d.place!);
     if (!place) return await show('That place is gone — pick another.');
-    const misfit = d.lines.find(l => !fitsPlace(place, l.n?.kind ?? items.find(i => i.id === l.i)?.kind));
-    if (misfit) return await show(`“${misfit.t}” is supplies: they go to a storage or a closet, not the house. Drop it, or order it apart.`);
+    const kindOf = (l: DraftLine) => l.n?.kind ?? items.find(i => i.id === l.i)?.kind;
+    const misfit = d.lines.find(l => !lineTarget(place, kindOf(l)));
+    if (misfit) return await show(`“${misfit.t}” is supplies, and ${place.name} has no closet or storage set in the Repository — pick a storage or a closet for the order.`);
     if (d.todo && !on.title) return await show('This thread’s to-do is gone — Confirm makes a new one.', { ...d, todo: null });
     // Once: a second tap on Confirm finds the key taken.
     const key = `order:${ch}:${ts}`;
@@ -863,11 +884,12 @@ class Kaizen {
         fresh.forEach((l, k) => { l.i = ids[k]!; });
       }
       const all = fresh.length ? await invItems(this.sql) : items;
-      const add = d.lines.map(l => ({ itemId: l.i!, place: d.place!, qty: l.q, m: l.m }));
+      // One place for everything; supplies sent to a house go where that house's supplies are kept (lineTarget).
+      const add = d.lines.map(l => ({ itemId: l.i!, place: lineTarget(place, kindOf(l))!, qty: l.q, m: l.m }));
       let todoId = d.todo, title = on.title ?? '';
       if (todoId) await saveTodoOrder(this.sql, this.email, todoId, mergeOrder(on.lines, add));
       else {
-        title = orderList(add.map(l => ({ item: all.find(i => i.id === l.itemId)!, place: placeWord(place), qty: l.qty })).filter(l => l.item))!.title;
+        title = orderList(add.map(l => ({ item: all.find(i => i.id === l.itemId)!, place: l.place, qty: l.qty })).filter(l => l.item))!.title;
         const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: ch, message_ts: d.msg });
         const dm = dmChannel(ch);
         const r = await this.todo({ action: 'create', kind: 'task', asOrder: true, title, unitIds: d.unit ? [d.unit] : [], priority: 'none',
@@ -886,7 +908,8 @@ class Kaizen {
       }
       await learnAliases(this.sql, this.email, d.lines.filter(l => l.p && l.i).map(l => ({ text: l.t, itemId: l.i })));
       await this.sql`DELETE FROM slack_order_drafts WHERE account_id = 1 AND id::text = ${did}`;
-      const m = orderSavedMessage(d, { items: all, placeLabel: placeWord(place), todoId: todoId!, todoTitle: title, fresh: !d.todo,
+      const routed = routedNote(d, all, sp);
+      const m = orderSavedMessage(d, { items: all, placeLabel: `${placeWord(place)}${routed ? ` (${routed.replace(/^🧴 /, '')})` : ''}`, todoId: todoId!, todoTitle: title, fresh: !d.todo,
                                        by: this.slackUser, appUrl: this.s.config.appUrl });
       await slackApi(this.s.token!, 'chat.update', { channel: ch, ts, text: m.text, blocks: m.blocks });
     } catch (e) {
