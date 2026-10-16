@@ -548,7 +548,7 @@ export interface Inventory {
   /** Active units whose Repository `storage` is blank or names no record (§150). */
   unassigned: { id: string; name: string; recordId: string | null; cleansAhead: number }[];
   /** Orders (shopping to-dos) not closed, with their lines — a purchase can start from one (§150). */
-  orders: { todoId: string; title: string; lines: { itemId: string; place: string; qty: number }[]; at: string; purchases: number }[];
+  orders: { todoId: string; title: string; lines: { itemId: string; place: string; qty: number; /** where it is bought, when not its linked store */ at?: string }[]; at: string; purchases: number }[];
   /** The field's open to-dos (a clean's supplies request, a problem) an order can be attached to (§150). */
   fieldTodos: { id: string; title: string; group: 'problem' | 'request' }[];
   /** The order kept as a draft (§150), if any. */

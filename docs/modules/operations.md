@@ -71,6 +71,16 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   list, or `@Kaizen order` alone in its thread; the missing ones added all at once),
   saved on Confirm onto the thread's to-do's order (add/replace asked per clash) or a new "Buy supplies: …" to-do — `saveTodoOrder`,
   `newItems` (bulk, new), `learnAliases` (now one statement). Details in docs/modules/slack.md.
+- **No place yet, Final cart, store per line (owner, 2026-10-15):** an order for a listing not in the Repository yet
+  (a new unit) keeps lines with `place: ''` — "▲ No place yet (new listing)" in `PlaceSelect` (`none`, only on a to-do's
+  order: `PurchaseForm noPlace`); `saveTodoOrder` keeps them (it used to DROP them silently — a to-do with no listing lost
+  Build the cart's lines on Save order); recording still needs every place (`unplaced`, `checkPurchase` names the item).
+  `FinalCart` (TaskPurchase, under the lines): per item place · store (`StorePick`: linked store by default, Walmart /
+  Amazon / Another store… → order line `at`, ≤60 chars, no migration; another store leaves `CartLinks`) · ⓘ product/pack/link ·
+  "! Already ordered" (another open order has it) · "! On hand" (`onHand`); "▲ Asked, not on the cart" = ✨ read lines on
+  no line. After a read, `plannedAt` checks the store: "⇄ other store" (receipt store ≠ planned), "◇ bought elsewhere"
+  (planned at a store no receipt is from — kept out of ▲ missing). `mergeOrder` keeps `at`. Slack's draft has the same
+  "No place yet" (`NO_PLACE` = '-'). SOP #15 v20, SOP #8 v23. Not yet seen on screen (owner's tokens) — check it in use.
 - **Sets (owner, 2026-10-15):** one store product on several supplies = a set (Swirl flatware on Forks ×16 / Knives ×8 / Spoons ×24,
   Quatish on Plates ×8 / Bowls ×4; only when someone puts the same link on several items). `readOrder` splits its line into one
   line per supply (`match` 'product', its pieces, the price shared evenly, leftover cents on the first) and `cartLinks` buys it

@@ -23,7 +23,7 @@ import * as claims from './claims.ts';
 import * as expenses from './expenses.ts';
 import { invItems, newItems, saveTodoOrder } from '../_lib/inventory.ts';
 import { learnAliases } from '../_lib/receipt-read.ts';
-import { draftIdFromBlocks, draftLinesFromRead, draftProblem, lineTarget, matchOrderLine, newMeasureOf, mergeOrder, newItemModal, newItemsModal, orderDraftMessage, orderSavedMessage, parseOrderText, pickItemModal,
+import { draftIdFromBlocks, draftLinesFromRead, draftProblem, lineTarget, NO_PLACE, matchOrderLine, newMeasureOf, mergeOrder, newItemModal, newItemsModal, orderDraftMessage, orderSavedMessage, parseOrderText, pickItemModal,
          type DraftLine, type OrderDraft, type OrderLine } from '../../src/lib/order-text.ts';
 import { readOrderLines, readRequestText } from '../_lib/request-read.ts';
 import type { InvItem } from '../../src/lib/inventory.ts';
@@ -867,11 +867,12 @@ class Kaizen {
     const show = (why: string, draft = d) => this.orderRedraw(did, draft, ch, ts, why);
     const problem = draftProblem(d, on.lines);
     if (problem) return await show(problem);
-    const place = findPlace(sp, d.place!);
-    if (!place) return await show('That place is gone — pick another.');
+    // No place yet (a listing not set up): the lines are saved with none; Record the purchase asks for it.
+    const place = d.place === NO_PLACE ? null : findPlace(sp, d.place!);
+    if (!place && d.place !== NO_PLACE) return await show('That place is gone — pick another.');
     const kindOf = (l: DraftLine) => l.n?.kind ?? items.find(i => i.id === l.i)?.kind;
-    const misfit = d.lines.find(l => !lineTarget(place, kindOf(l)));
-    if (misfit) return await show(`“${misfit.t}” is supplies, and ${place.name} has no closet or storage set in the Repository — pick a storage or a closet for the order.`);
+    const misfit = place && d.lines.find(l => !lineTarget(place, kindOf(l)));
+    if (place && misfit) return await show(`“${misfit.t}” is supplies, and ${place.name} has no closet or storage set in the Repository — pick a storage or a closet for the order.`);
     if (d.todo && !on.title) return await show('This thread’s to-do is gone — Confirm makes a new one.', { ...d, todo: null });
     // Once: a second tap on Confirm finds the key taken.
     const key = `order:${ch}:${ts}`;
@@ -885,7 +886,7 @@ class Kaizen {
       }
       const all = fresh.length ? await invItems(this.sql) : items;
       // One place for everything; supplies sent to a house go where that house's supplies are kept (lineTarget).
-      const add = d.lines.map(l => ({ itemId: l.i!, place: lineTarget(place, kindOf(l))!, qty: l.q, m: l.m }));
+      const add = d.lines.map(l => ({ itemId: l.i!, place: place ? lineTarget(place, kindOf(l))! : '', qty: l.q, m: l.m }));
       let todoId = d.todo, title = on.title ?? '';
       if (todoId) await saveTodoOrder(this.sql, this.email, todoId, mergeOrder(on.lines, add));
       else {
@@ -909,7 +910,7 @@ class Kaizen {
       await learnAliases(this.sql, this.email, d.lines.filter(l => l.p && l.i).map(l => ({ text: l.t, itemId: l.i })));
       await this.sql`DELETE FROM slack_order_drafts WHERE account_id = 1 AND id::text = ${did}`;
       const routed = routedNote(d, all, sp);
-      const m = orderSavedMessage(d, { items: all, placeLabel: `${placeWord(place)}${routed ? ` (${routed.replace(/^🧴 /, '')})` : ''}`, todoId: todoId!, todoTitle: title, fresh: !d.todo,
+      const m = orderSavedMessage(d, { items: all, placeLabel: place ? `${placeWord(place)}${routed ? ` (${routed.replace(/^🧴 /, '')})` : ''}` : 'no place yet (pick it when bought)', todoId: todoId!, todoTitle: title, fresh: !d.todo,
                                        by: this.slackUser, appUrl: this.s.config.appUrl });
       await slackApi(this.s.token!, 'chat.update', { channel: ch, ts, text: m.text, blocks: m.blocks });
     } catch (e) {

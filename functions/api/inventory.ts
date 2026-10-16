@@ -123,8 +123,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     } else if (b.action === 'paidBack') {
       await paidBack(sql, who.email, b.id);
     } else if (b.action === 'todoOrder') {
-      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
-        .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0 })) : [];
+      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown; at?: unknown }[])
+        .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0, at: String(l.at ?? '').trim().slice(0, 60) })) : [];
       const said = await saveTodoOrder(sql, who.email, b.todoId, lines);
       if (said) waitUntil(commentToThread(sql, env.ENCRYPTION_KEY, 'task', String(b.todoId), `🛒 ${said.replace(/^Order draft saved/, 'Purchase order saved')}`, who.email).catch(() => {}));
     } else if (b.action === 'draft') {

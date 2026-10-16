@@ -77,7 +77,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   joins words with spaces, so the handler re-reads `commentFromMention`), one item per line, prose lines skipped and counted ("2 lines of
   text were not read as items"); one line is split at , ; + and y &. ≤80 lines. The place is **always asked** (owner) unless the text names
   a storage/closet exactly; "para LP-4212" is said back and gives the new to-do its listing (the Repository says LP- where Hostaway says
-  P2-). Store links via `cartLinks`. In a task's thread (incl. a cleaner's request / an inspection's order; a sub-task's → its parent) the
+  P2-). **▲ No place yet (new listing)** (`NO_PLACE`, owner 2026-10-15) saves the lines with no place — picked when bought in Kaizen. Store links via `cartLinks`. In a task's thread (incl. a cleaner's request / an inspection's order; a sub-task's → its parent) the
   lines go on THAT to-do's `inventory_orders`; a line already there at that place asks **Add → n / Replace → n** (owner). Otherwise a new
   to-do "Buy supplies: …" (`asOrder`; for the claim in a claim's thread; announced in the tasks channel like `@Kaizen new`). Who: **ops and
   up** (`/api/inventory` + `/api/todos` POST). The draft is a row of **`slack_order_drafts` (095)**; Confirm's value is its id; a message

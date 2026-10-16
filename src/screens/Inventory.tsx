@@ -18,7 +18,7 @@ import { destFor, placeLabel } from '../lib/unit-access.ts';
 import { orderFor, receiptSum, similarItems, splitTotal, type Receipt, type ReceiptLine } from '../lib/receipt.ts';
 import { Sheet } from '../components/InspectionRun.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
-import { againstOrder, cartLinks, STORE_NAME } from '../lib/store-order.ts';
+import { againstOrder, cartLinks, STORE_NAME, storeProduct } from '../lib/store-order.ts';
 import { TX } from '../lib/crew-i18n.ts';
 import { Icon, ic } from '../components/Icon.tsx';
 
@@ -52,16 +52,18 @@ function lineTitle(inv: Inventory, key: string) {
 const shortPlace = (inv: Inventory, key: string) => { const p = inv.places.find(x => x.place === key && x.view !== 'house'); return p ? p.self ? 'its closet' : p.name : key; };
 const houseOption = (inv: Inventory, h: InvPlace) => `${h.name} (house)${h.supplies ? ` · supplies at ${shortPlace(inv, h.supplies)}` : ''}`;
 /** `kind` 'supply' leaves the houses out; none (the "Goes to" for every line) keeps them — a house routes by type. */
-function PlaceSelect({ inv, value, onChange, label, kind, except }: {
-  inv: Inventory; value: string; onChange: (key: string) => void; label: string; kind?: 'supply' | 'furniture'; except?: string | null }) {
+function PlaceSelect({ inv, value, onChange, label, kind, except, none }: {
+  inv: Inventory; value: string; onChange: (key: string) => void; label: string; kind?: 'supply' | 'furniture'; except?: string | null;
+  /** An order may wait for its place (a listing not set up yet): '' is offered under this name. */ none?: string }) {
   const d = destinations(inv);
   const houses = kind === 'supply' ? [] : d.houses.filter(h => h.place !== except);
   return <select value={value} aria-label={label} onChange={e => onChange(e.target.value)}>
-    {!value && <option value="">▲ choose a place</option>}
+    {none ? <option value="">{none}</option> : !value && <option value="">▲ choose a place</option>}
     <optgroup label="Storage & closets">{d.storages.filter(p => p.place !== except).map(p => <option key={p.place} value={p.place!}>{placeTitle(p)}</option>)}</optgroup>
     {houses.length > 0 && <optgroup label="Houses">{houses.map(h => <option key={h.place} value={h.place!}>{kind === 'furniture' ? `${h.name} (house)` : houseOption(inv, h)}</option>)}</optgroup>}
   </select>;
 }
+const NO_PLACE_LABEL = '▲ No place yet (new listing)';
 /** The Repository record that holds the assignment: the link opens it (§150). */
 export const repoHref = (recordId: string) => `/?repo=${encodeURIComponent(recordId)}`;
 
@@ -482,8 +484,8 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
  */
 type Part = { place: string; qty: string };
 type Lines = Map<string, Part[]>;
-const flat = (m: Lines) => [...m].flatMap(([itemId, parts]) => parts.map(p => ({ itemId, place: p.place, qty: Math.ceil(Number(p.qty) || 0) })))
-  .filter(l => l.qty > 0 && l.place);
+const flat = (m: Lines, unplaced = false) => [...m].flatMap(([itemId, parts]) => parts.map(p => ({ itemId, place: p.place, qty: Math.ceil(Number(p.qty) || 0) })))
+  .filter(l => l.qty > 0 && (unplaced || l.place));
 /** Where lines go when nobody said: the storage most units draw from. */
 const busiestPlace = (inv: Inventory) => [...inv.places.filter(p => p.place && p.view !== 'house')].sort((a, b) => b.units.length - a.units.length)[0]?.place ?? '';
 const MEASURES = ['unit', 'pack', 'kit', 'pod', 'roll', 'bottle', 'box', 'bag', 'set', 'pair', 'gallon'];
@@ -513,7 +515,7 @@ function MeasureEdit({ it, canEdit, onInv }: { it: InvItemRow; canEdit: boolean;
 }
 const TYPE_OF: Record<'supply' | 'furniture', string> = { supply: 'Supplies (storage)', furniture: 'Furniture (house)' };
 type NewEdit = { name: string; size: string; measure: string; kind: 'supply' | 'furniture' };
-function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, tags, orderCol, fresh }: {
+function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, tags, orderCol, fresh, noPlace }: {
   inv: Inventory; value: Lines; onChange: (m: Lines) => void; hints?: Lines; canEdit: boolean; defaultPlace?: string | null;
   /** §150, owner: a supply not on the list is added from the 🔍 — the caller takes the new inventory. */
   onInv?: (i: Inventory) => void;
@@ -523,8 +525,11 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
   orderCol?: { options: { id: string; label: string }[]; value: Map<string, string>; onChange: (id: string, order: string) => void };
   /** Items made in this form (a receipt's new line): still correctable — name, size, counted in, type. */
   fresh?: Set<string>;
+  /** An order (not a purchase): "No place yet" may be picked — a new listing is not in the Repository yet. */
+  noPlace?: boolean;
 }) {
   const api = useContext(InvApi);
+  const none = noPlace ? NO_PLACE_LABEL : undefined;
   const [creating, setCreating] = useState(false);
   const [err, setErr] = useState('');
   const [made, setMade] = useState<Set<string>>(new Set());
@@ -585,7 +590,7 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
   return <>
     <datalist id="inv-measures">{MEASURES.map(m => <option key={m} value={m} />)}</datalist>
     {canEdit && keys.length > 1 && <label>Goes to
-      <PlaceSelect inv={inv} value={allTo} onChange={sendAll} label="Everything goes to" />
+      <PlaceSelect inv={inv} value={allTo} onChange={sendAll} label="Everything goes to" none={none} />
       <span className="sub-n">a house: its furniture there, its supplies to its storage or closet (supplies never stay in a house) · ⑂ splits a part</span></label>}
     {canEdit && <label><Icon n="search" /> Add an item
       <input value={q} placeholder="Search the supplies and furniture…" onChange={e => setQ(e.target.value)} /></label>}
@@ -627,7 +632,7 @@ function ItemLines({ inv, value, onChange, hints, canEdit, defaultPlace, onInv, 
                   <td>
                     {parts.map((p, k) => (
                       <div key={k} className="row" style={{ gap: 6, alignItems: 'center' }}>
-                        <PlaceSelect inv={inv} value={p.place} label="Place" kind={it?.kind ?? 'supply'} onChange={v => set(id, parts.map((x, j) => j === k ? { ...x, place: v } : x))} />
+                        <PlaceSelect inv={inv} value={p.place} label="Place" kind={it?.kind ?? 'supply'} none={none} onChange={v => set(id, parts.map((x, j) => j === k ? { ...x, place: v } : x))} />
                         <input className="inv-qty" type="number" min="0" step="1" value={p.qty} aria-label="Quantity"
                                onChange={e => set(id, parts.map((x, j) => j === k ? { ...x, qty: e.target.value } : x))} />
                         {canEdit && <button className="link tiny" title="Split this part: half to another place" onClick={() => splitPart(id, parts, k)}>⑂ split</button>}
@@ -752,7 +757,7 @@ const AI = '✨ from the receipt';
 const money = (n: number) => `$${n.toFixed(2)}`;
 
 function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal, fieldExpenseId, hasReceipt, canSplit, head, extra,
-                        recordLabel = '🧾 Record the purchase', onRecord, buttons }: {
+                        recordLabel = '🧾 Record the purchase', onRecord, buttons, noPlace, plannedAt }: {
   inv: Inventory; onInv: (i: Inventory) => void;
   /** The order this purchase is for, if any ('' = none). */
   todoId?: string; start?: Lines; defaultPlace?: string | null;
@@ -764,6 +769,10 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   /** Records it; a message back = not saved. `true` = clear the form for the next one. */
   onRecord: (p: PurchaseOut) => Promise<string | true | null>;
   buttons?: (p: { lines: PurchaseOut['lines']; busy: boolean }) => React.ReactNode;
+  /** A to-do's order: its lines may wait for a place (saved as the order; recording asks for it). */
+  noPlace?: boolean;
+  /** Where each item of the order is to be bought (store name) — the receipt is checked against it. */
+  plannedAt?: Map<string, string>;
 }) {
   const api = useContext(InvApi);
   const [lines, setLinesRaw] = useState<Lines>(start ?? new Map());
@@ -905,7 +914,8 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
   };
 
-  const out = flat(lines);
+  // An order keeps its lines with no place yet (Save order); recording waits for every place (`unplaced`).
+  const out = flat(lines, noPlace);
   const unplaced = [...lines.values()].some(ps => ps.some(p => !p.place && Number(p.qty) > 0));
   const totalN = fixedTotal ?? Number(total);
   const read1 = receipts.length > 0;
@@ -955,6 +965,12 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   const notExact = rows.filter(r => r.open && r.line.kind === 'item' && r.line.candidates.length > 0);
   const noMatch = rows.filter(r => r.open && r.line.kind === 'item' && !r.line.candidates.length);
   const exact = rows.filter(r => r.got && !r.open && (r.line.match === 'product' || r.line.match === 'alias'));
+  // Owner, 2026-10-15: every line says where it is bought; the receipt confirms it — or asks where it was bought.
+  const planned = (id: string) => plannedAt?.get(id) ?? '';
+  const sameStore = (a: string, b: string | null | undefined) => !!b && a.toLowerCase() === b.toLowerCase();
+  const otherStore = [...new Set(rows.filter(r => r.got && !r.skip && !r.open && planned(r.got) && receipts[r.rc]?.store && !sameStore(planned(r.got), receipts[r.rc]!.store))
+    .map(r => `${name(r.got!)} — planned at ${planned(r.got!)}, on the ${receipts[r.rc]!.store} receipt`))];
+  const offReceipt = vs.missing.filter(id => planned(id) && !receipts.some(rc => sameStore(planned(id), rc.store)));
   const qn = (id: string, q: number | undefined) => `${name(id)} — ${fmt(q ?? 0)} ${measureOf(id)}`;
   const tags = new Map<string, string[]>();
   for (const id of lines.keys()) {
@@ -1029,18 +1045,21 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     {read1 && <div className="rc-check">
       <b>{ordered.size ? 'Against the order' : 'Matching'}</b>
       {ordered.size > 0 && vs.ok.length > 0 && <Flag label={`✓ ${vs.ok.length} as ordered`} title="Bought as ordered" list={vs.ok.map(id => qn(id, bought.get(id)))} />}
-      {vs.missing.length > 0 && <Flag tone="attn" label={`▲ ${vs.missing.length} missing`} title="Ordered, not on the receipt — not recorded as bought; the order stays open for them"
-        list={vs.missing.map(id => qn(id, ordered.get(id)))} />}
+      {vs.missing.length - offReceipt.length > 0 && <Flag tone="attn" label={`▲ ${vs.missing.length - offReceipt.length} missing`} title="Ordered, not on the receipt — not recorded as bought; the order stays open for them. Bought somewhere else? Say where on the order (Final cart) and attach that receipt"
+        list={vs.missing.filter(id => !offReceipt.includes(id)).map(id => qn(id, ordered.get(id)))} />}
+      {offReceipt.length > 0 && <Flag label={`◇ ${offReceipt.length} bought elsewhere`} title="Planned at another store — not on this receipt. Attach that store's receipt (+ another), or record it apart"
+        list={offReceipt.map(id => `${qn(id, ordered.get(id))} — at ${planned(id)}`)} />}
+      {otherStore.length > 0 && <Flag tone="attn" label={`⇄ ${otherStore.length} other store`} title="Bought at a different store than planned — check it" list={otherStore} />}
       {vs.fewer.length > 0 && <Flag tone="attn" label={`≠ ${vs.fewer.length} fewer`} title="Fewer than ordered" list={vs.fewer.map(id => `${name(id)} — ordered ${fmt(ordered.get(id))}, bought ${fmt(bought.get(id))}`)} />}
       {vs.more.length > 0 && <Flag label={`≠ ${vs.more.length} more`} title="More than ordered" list={vs.more.map(id => `${name(id)} — ordered ${fmt(ordered.get(id))}, bought ${fmt(bought.get(id))}`)} />}
       {ordered.size > 0 && vs.extra.length > 0 && <Flag tone="attn" label={`+ ${vs.extra.length} not in the order`} title="On the receipt, not in the order" list={vs.extra.map(id => qn(id, bought.get(id)))} />}
       {!ordered.size && exact.length > 0 && <Flag label={`✓ ${exact.length} exact`} title="Matched by the store's product number, or a text decided before" list={exact.map(r => `${r.line.text} → ${name(r.got!)}`)} />}
       {notExact.length > 0 && <Flag tone="attn" label={`≈ ${notExact.length} not exact`} title="Not an exact match — pick the supply on the line" list={notExact.map(r => r.line.text)} />}
       {noMatch.length > 0 && <Flag tone="attn" label={`✕ ${noMatch.length} no match`} title="Nothing on the supplies list is like it — add it as a new item, or skip it" list={noMatch.map(r => r.line.text)} />}
-      {!vs.missing.length && !vs.fewer.length && !vs.extra.length && !notExact.length && !noMatch.length && <span className="note">✓ everything checks</span>}
+      {!vs.missing.length && !vs.fewer.length && !vs.extra.length && !notExact.length && !noMatch.length && !otherStore.length && <span className="note">✓ everything checks</span>}
     </div>}
-    {!read1 && fixedTotal == null && <CartLinks inv={inv} lines={out} />}
-    <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={defaultPlace} onInv={onInv} tags={tags} fresh={fresh}
+    {!read1 && fixedTotal == null && <CartLinks inv={inv} lines={plannedAt ? out.filter(l => !elsewhere(inv, l.itemId, plannedAt)) : out} />}
+    <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={defaultPlace} onInv={onInv} tags={tags} fresh={fresh} noPlace={noPlace}
                orderCol={splitting ? { options: inv.orders.map(o => ({ id: o.todoId, label: o.title })), value: new Map(out.map(l => [l.itemId, orderKey(l.itemId)])),
                                        onChange: (id, o) => { setOrderOf(new Map(orderOf).set(id, o)); setShares(new Map()); } } : undefined} />
     <div className="row">
@@ -1082,7 +1101,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     <div className="button-row">
       {buttons?.({ lines: out, busy })}
       <button disabled={busy || !out.length || unplaced || !(totalN > 0) || pending > 0 || !!shareLeft} onClick={() => void record()}>{ic(busy ? 'Saving…' : recordLabel)}</button>
-      {unplaced && <span className="note">▲ Say which place each item went to.</span>}
+      {unplaced && <span className="note">▲ Say which place each item went to{noPlace ? ' — Save order keeps it without one' : ''}.</span>}
       {pending > 0 && <span className="note">▲ Decide the receipt's lines first.</span>}
       {unread > 0 && read1 && <span className="note">▲ {unread} receipt file{unread === 1 ? '' : 's'} not read yet.</span>}
       {lines.size > 0 && !out.length && <span className="note">Write how many of each item.</span>}
@@ -1336,12 +1355,16 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   const [msg, setMsg] = useState('');
   const [building, setBuilding] = useState(false);
   const [unsure, setUnsure] = useState<{ text: string; candidates: string[] }[]>([]);
+  // What ✨ read in the ask, line by line, and the item each became (picked later too) — the final cart says what never made it.
+  const [asks, setAsks] = useState<{ text: string; itemId: string | null }[]>([]);
+  // Where each item is bought when it is not its linked store ("Home Depot") — kept on the order's lines as `at`.
+  const [at, setAt] = useState<Map<string, string>>(new Map());
   // Owner, 2026-10-14: the to-do's order IS the "Record a purchase" form — items, total, paid by, note,
   // receipt in one place; 💾 Save order keeps it as a draft (no price needed) until it is bought.
   useEffect(() => { void getInventory().then(r => {
     if (!r.ok) { setMsg(r.message ?? 'Could not load the inventory.'); return; }
     const o = r.orders.find(x => x.todoId === todoId);
-    if (o) setStartArr(o.lines);
+    if (o) { setStartArr(o.lines); setAt(new Map(o.lines.filter(l => l.at).map(l => [String(l.itemId), l.at!]))); }
     setInv(r);
   }); }, [todoId]);
   if (!inv) return <p className={msg ? 'breach' : 'note loading-dot'}>{msg || 'Loading the supplies…'}</p>;
@@ -1364,6 +1387,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
     if (!r.ok) { setMsg(`${r.message ?? 'Could not read it'} — build the cart by hand.`); return; }
     addLines(r.lines.filter(l => l.itemId).map(l => ({ itemId: l.itemId!, qty: Math.max(1, Math.ceil(l.itemQty ?? l.qty ?? 1)) })));
     setUnsure(r.lines.filter(l => !l.itemId).map(l => ({ text: l.text, candidates: l.candidates })));
+    setAsks(r.lines.map(l => ({ text: l.text, itemId: l.itemId })));
     if (!r.lines.length) setMsg('Nothing in it read as something to buy — build the cart by hand.');
   };
   const start = startArr.length ? linesOf(startArr) : undefined;
@@ -1381,7 +1405,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
               <span className="note">Not sure — is it one of these?</span>
               {unsure.map((u, k) => (
                 <div key={k} className="buy-unsure-line"><b>“{u.text}”</b>
-                  {u.candidates.length ? u.candidates.map(c => <button key={c} className="chip" onClick={() => { addLines([{ itemId: c, qty: 1 }]); setUnsure(x => x.filter((_, n) => n !== k)); }}>{nameOf(c)}</button>)
+                  {u.candidates.length ? u.candidates.map(c => <button key={c} className="chip" onClick={() => { addLines([{ itemId: c, qty: 1 }]); setAsks(a => a.map(x => x.text === u.text ? { ...x, itemId: c } : x)); setUnsure(x => x.filter((_, n) => n !== k)); }}>{nameOf(c)}</button>)
                     : <span className="note"> nothing like it in the supplies list — add it from the form</span>}
                   <button className="link tiny" onClick={() => setUnsure(x => x.filter((_, n) => n !== k))}>Skip</button>
                 </div>
@@ -1391,35 +1415,112 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
         </div>
       )}
       {hadOrder && <p className="note">The order as it was left.</p>}
-      <PurchaseForm key={formKey} inv={inv} onInv={setInv} todoId={todoId} start={start} defaultPlace={home} canSplit
+      <PurchaseForm key={formKey} inv={inv} onInv={setInv} todoId={todoId} start={start} defaultPlace={home} canSplit noPlace
+        plannedAt={new Map(inv.items.map(i => [i.id, storeAt(inv, i.id, at)] as const).filter(([, v]) => v))}
         extra={<label className="check"><input type="checkbox" checked={closeIt} onChange={e => setCloseIt(e.target.checked)} /> ✓ and close this to-do when recorded</label>}
         onRecord={async p => {
           const r = await sendPurchase(REAL, p, todoId);
           if (!r.ok) return r.message ?? 'Not saved.';
           onBought(closeIt); return null;
         }}
-        buttons={({ lines, busy }) => {
-          // §159: what is already on hand somewhere — ops sends the cleaner to look before anyone buys it.
-          const hand = onHand(lines.map(l => l.itemId), inv.places.map(p => ({ name: placeTitle(p), items: p.items })));
-          return <>
-            {hand.size > 0 && (
-              <div className="buy-onhand">
-                {[...hand].map(([id, at]) => (
-                  <Peek key={id} className="onhand" label={<><b className="bang" aria-hidden="true">!</b>{nameOf(id)}</>} ariaLabel={`${nameOf(id)} is already on hand`}>
-                    <b>Already on hand</b><br />{at.map(a => `${a.place}: ${a.qty}`).join(' · ')}<br />Ask the cleaner to look there before buying.
-                  </Peek>))}
-              </div>
-            )}
+        buttons={({ lines, busy }) => <>
+            <FinalCart inv={inv} lines={lines} todoId={todoId} asks={asks} at={at} onAt={(id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; })} />
             {/* Not finished? Kept as this to-do's order — a draft it carries, replaced on every save, until it is bought. */}
             <button className="secondary" disabled={busy || (!lines.length && !hadOrder)} onClick={async () => {
               setMsg('');
-              try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onBought(false); }
+              try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines: lines.map(l => at.get(l.itemId) ? { ...l, at: at.get(l.itemId) } : l) }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else onBought(false); }
               catch (e) { setMsg(String(e)); }
             }}><Icon n="save" /> Save order</button>
             <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
-          </>;
-        }} />
+          </>} />
       {msg && <p className="breach" role="status">{msg}</p>}
+    </div>
+  );
+}
+
+/** Where an item is bought: what the order says (`at`), else its linked store; '' = nobody knows yet. */
+function storeAt(inv: Inventory, id: string, at: Map<string, string>) {
+  const opt = (inv.items.find(i => i.id === id)?.buyOptions ?? []).map(o => storeProduct(o.url)).find(Boolean);
+  return at.get(id) || (opt ? STORE_NAME[opt.store] : '');
+}
+/** Bought somewhere other than its linked product's store — it leaves the store cart. */
+function elsewhere(inv: Inventory, id: string, at: Map<string, string>) {
+  const opt = (inv.items.find(i => i.id === id)?.buyOptions ?? []).map(o => storeProduct(o.url)).find(Boolean);
+  const s = at.get(id);
+  return !!s && (!opt || s.toLowerCase() !== STORE_NAME[opt.store].toLowerCase());
+}
+/** The store of one cart line: its linked store (the default), Walmart, Amazon, or another one written in. */
+function StorePick({ value, linked, onChange, name }: { value: string; linked: string | null; onChange: (v: string) => void; name: string }) {
+  const known = ['Walmart', 'Amazon'];
+  const [typing, setTyping] = useState(!!value && !known.includes(value));
+  const sel = typing ? 'other' : value && value !== linked ? value : '';
+  return <>
+    <select value={sel} aria-label={`Where ${name} is bought`} onChange={e => {
+      const v = e.target.value;
+      setTyping(v === 'other');
+      onChange(v === 'other' ? '' : v);
+    }}>
+      <option value="">{linked ?? '▲ where?'}</option>
+      {known.filter(k => k !== linked).map(k => <option key={k} value={k}>{k}</option>)}
+      <option value="other">Another store…</option>
+    </select>
+    {typing && <input className="inv-measure" value={value} maxLength={60} placeholder="Home Depot, Target…" aria-label={`Store for ${name}`} onChange={e => onChange(e.target.value)} />}
+  </>;
+}
+
+/**
+ * The cart as it stands (owner, 2026-10-15): one row per item — where it goes, the store it is bought at (its
+ * linked product by default — ⓘ: product, pack, link — or another store, which takes it out of the store cart), whether another open order already asks for it, and what is on hand somewhere
+ * (ops sends the cleaner to look before buying, §159). Under it, what was asked and is on no line — so
+ * nothing asked gets lost between the ask and the cart.
+ */
+function FinalCart({ inv, lines, todoId, asks, at, onAt }: {
+  inv: Inventory; lines: { itemId: string; place: string; qty: number }[]; todoId: string; asks: { text: string; itemId: string | null }[];
+  at: Map<string, string>; onAt: (itemId: string, store: string) => void;
+}) {
+  const byItem = new Map<string, { qty: number; places: Set<string> }>();
+  for (const l of lines) if (l.qty > 0) {
+    const e = byItem.get(l.itemId) ?? { qty: 0, places: new Set<string>() };
+    e.qty += l.qty; e.places.add(l.place); byItem.set(l.itemId, e);
+  }
+  const ids = [...byItem.keys()];
+  const missed = asks.filter(a => !a.itemId || !byItem.has(a.itemId));
+  if (!ids.length && !missed.length) return null;
+  const hand = onHand(ids, inv.places.map(p => ({ name: placeTitle(p), items: p.items })));
+  const onOther = (id: string) => inv.orders.filter(o => o.todoId !== todoId && o.lines.some(l => String(l.itemId) === id))
+    .map(o => `${o.title} (${o.lines.filter(l => String(l.itemId) === id).reduce((a, l) => a + l.qty, 0)})`);
+  return (
+    <div className="final-cart">
+      <b><Icon n="cart" /> Final cart</b> <span className="sub-n">{ids.length} item{ids.length === 1 ? '' : 's'}</span>
+      {ids.length > 0 && <div className="grid-scroll"><table className="units compact"><tbody>
+        {ids.map(id => {
+          const it = inv.items.find(i => i.id === id);
+          const e = byItem.get(id)!;
+          const opt = (it?.buyOptions ?? []).find(o => storeProduct(o.url));
+          const prod = opt ? storeProduct(opt.url) : null;
+          const packs = opt?.pack && opt.pack > 0 ? Math.ceil(e.qty / opt.pack) : e.qty;
+          const other = onOther(id);
+          const asked = asks.find(a => a.itemId === id);
+          return <tr key={id}>
+            <td>{it?.name ?? id} × {e.qty}{asked && <div className="sub-n">asked as “{asked.text}”</div>}</td>
+            <td className="sub-n">{[...e.places].map(p => p ? lineTitle(inv, p) : '▲ no place yet').join(' · ')}</td>
+            <td className="nowrap"><StorePick value={at.get(id) ?? ''} linked={prod ? STORE_NAME[prod.store] : null} onChange={v => onAt(id, v)} name={it?.name ?? 'it'} />
+              {prod && !elsewhere(inv, id, at) && <Peek label="ⓘ" ariaLabel={`${it?.name ?? 'Its'} product`}>
+                  <b>{STORE_NAME[prod.store]}</b> — {opt!.label}<br />
+                  {opt!.pack && opt!.pack > 1 ? `Pack of ${opt!.pack}: buy ${packs}` : `Buy ${packs}`}<br />
+                  <a href={prod.url} target="_blank" rel="noreferrer">Open the product ↗</a>
+                </Peek>}</td>
+            <td>
+              {other.length > 0 && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>Already ordered</>} ariaLabel={`${it?.name ?? 'It'} is already on another order`}>
+                <b>Already on another open order</b><br />{other.join(' · ')}<br />Check it is not bought twice.</Peek>}
+              {hand.has(id) && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>On hand</>} ariaLabel={`${it?.name ?? 'It'} is already on hand`}>
+                <b>Already on hand</b><br />{hand.get(id)!.map(a => `${a.place}: ${a.qty}`).join(' · ')}<br />Ask the cleaner to look there before buying.</Peek>}
+            </td>
+          </tr>;
+        })}
+      </tbody></table></div>}
+      {missed.length > 0 && <p className="note"><span className="warn-text">▲ Asked, not on the cart ({missed.length}):</span> {missed.map(a => `“${a.text}”`).join(' · ')}
+        {' '}<Hint>What ✨ read in the ask that is on no line — not matched, skipped, or taken off. Add it with “Add an item”, or leave it out on purpose.</Hint></p>}
     </div>
   );
 }

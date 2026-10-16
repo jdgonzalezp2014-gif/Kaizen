@@ -559,20 +559,23 @@ export async function editNewItem(sql: SqlFn, b: Record<string, unknown>) {
  * lines REPLACE its order (saving twice never doubles it), noted in its log;
  * no lines = no order. 🧾 Record the purchase starts from it.
  */
-export async function saveTodoOrder(sql: SqlFn, by: string, todoId: unknown, lines: { itemId: string; place: string; qty: number }[]): Promise<string | null> {
+export async function saveTodoOrder(sql: SqlFn, by: string, todoId: unknown, lines: { itemId: string; place: string; qty: number; at?: string }[]): Promise<string | null> {
   const [t] = await sql`SELECT id::text FROM todos WHERE account_id = 1 AND id = ${Number(todoId) || 0} AND parent_id IS NULL
                           AND status NOT IN ('completed', 'cancelled')` as { id: string }[];
   if (!t) throw new Error('That to-do is closed or gone.');
-  const keep = lines.filter(l => l.qty > 0 && l.place).map(l => ({ itemId: String(l.itemId), place: l.place, qty: Math.ceil(l.qty) }));
+  // Owner, 2026-10-15: an order for a listing that is not set up yet has nowhere to go — its lines are kept with
+  // no place ('') and the place is picked when it is bought (Record the purchase asks for it).
+  // `at`: where it is bought when not its linked store (owner: every line says where it is bought).
+  const keep = lines.filter(l => l.qty > 0).map(l => ({ itemId: String(l.itemId), place: l.place, qty: Math.ceil(l.qty), ...(l.at ? { at: l.at } : {}) }));
   if (!keep.length) { await sql`DELETE FROM inventory_orders WHERE account_id = 1 AND todo_id = ${Number(t.id)}`; return null; }
   const [items, sp] = await Promise.all([invItems(sql), supplyPlaces(sql)]);
   const named = keep.map(l => {
     const item = items.find(i => i.id === l.itemId);
-    const p = findPlace(sp, l.place);
+    const p = l.place ? findPlace(sp, l.place) : null;
     if (!item) throw new Error('Which item?');
-    if (!p) throw new Error('Which place?');
-    if (!fitsPlace(p, item.kind)) throw new Error(`${item.name}: ${NOT_IN_HOUSE}`);
-    return { item, place: placeWord(p), qty: l.qty };
+    if (l.place && !p) throw new Error('Which place?');
+    if (p && !fitsPlace(p, item.kind)) throw new Error(`${item.name}: ${NOT_IN_HOUSE}`);
+    return { item, place: `${p ? placeWord(p) : 'no place yet'}${l.at ? ` · at ${l.at}` : ''}`, qty: l.qty };
   });
   await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(keep)}::jsonb, ${by})
             ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = EXCLUDED.lines, created_by = EXCLUDED.created_by, created_at = now()`;
@@ -728,7 +731,7 @@ async function checkPurchase(sql: SqlFn, b: Record<string, unknown>) {
     const item = items.find(i => i.id === l.itemId && i.active);
     const place = findPlace(sp, l.place);
     if (!item) throw new Error('Which item?');
-    if (!place) throw new Error('Which place?');
+    if (!place) throw new Error(l.place ? 'Which place?' : `${item.name}: say which place it went to.`);
     if (!fitsPlace(place, item.kind)) throw new Error(`${item.name}: ${NOT_IN_HOUSE}`);
     if (!Number.isFinite(l.qty) || l.qty > 10000) throw new Error('How many?');
     return { ...l, item, place };

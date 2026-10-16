@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { clashes, draftIdFromBlocks, draftProblem, guessKind, guessMeasure, itemName, lineQty, matchOrderLine, mergeOrder, newItemsModal, orderDraftMessage, orderSavedMessage, parseOrderText, type OrderDraft } from './order-text.ts';
+import { NO_PLACE, clashes, draftIdFromBlocks, draftProblem, guessKind, guessMeasure, itemName, lineQty, matchOrderLine, mergeOrder, newItemsModal, orderDraftMessage, orderSavedMessage, parseOrderText, type OrderDraft } from './order-text.ts';
 
 const ITEMS = [
   { id: '1', name: 'Paper towels', measure: 'roll', buyOptions: [{ label: 'Walmart', url: 'https://www.walmart.com/ip/Bounty/123456' }] },
@@ -147,4 +147,11 @@ test('rowsToRaw and lineTarget: the model\'s short rows by line number; supplies
   assert.equal(lineTarget(house, 'supply'), 'r/1');
   assert.equal(lineTarget({ ...house, supplies: null }, 'supply'), null);
   assert.equal(lineTarget({ key: 'storages/1' }, 'supply'), 'storages/1');
+});
+
+test('no place yet: clashes only with lines saved without a place; mergeOrder keeps where a line is bought', () => {
+  const existing = [{ itemId: '1', place: '', qty: 2, at: 'Home Depot' }, { itemId: '2', place: 'storages/1', qty: 1 }];
+  const d = { place: NO_PLACE, lines: [{ t: 'a', q: 1, i: '1', c: [] }, { t: 'b', q: 1, i: '2', c: [] }] };
+  assert.deepEqual([...clashes(d, existing)], [[0, 2]]);
+  assert.deepEqual(mergeOrder(existing, [{ itemId: '1', place: '', qty: 3, m: 'sum' }]).find(l => l.itemId === '1'), { itemId: '1', place: '', qty: 5, at: 'Home Depot' });
 });

@@ -46,7 +46,7 @@ export interface OrderDraft {
   /** Who read it: "✨ Read by <model>", or why the rules did (the AI did not answer). */ ai?: string;
   lines: DraftLine[];
 }
-export type OrderLine = { itemId: string; place: string; qty: number };
+export type OrderLine = { itemId: string; place: string; qty: number; /** where it is bought, set in Kaizen */ at?: string };
 
 const MAX_LINES = 80;
 const NUMBERS: Record<string, number> = {
@@ -167,12 +167,16 @@ const settled = (l: DraftLine) => !!(l.i || l.n);
 const asked = (l: DraftLine) => !settled(l) && (l.c.length > 0 || !!l.x);
 const missing = (l: DraftLine) => !settled(l) && !l.c.length && !l.x;
 
+/** "Everything goes to: No place yet" (owner, 2026-10-15: a new listing is not in the Repository yet) — saved with no place, picked when bought. */
+export const NO_PLACE = '-';
+
 /** The lines that already sit on the to-do's order at this place — the draft asks: add, or replace? */
 export function clashes(d: Pick<OrderDraft, 'lines' | 'place'>, existing: OrderLine[]): Map<number, number> {
   const out = new Map<number, number>();
   if (!d.place) return out;
+  const at = d.place === NO_PLACE ? '' : d.place;
   d.lines.forEach((l, idx) => {
-    const had = l.i ? existing.filter(e => String(e.itemId) === l.i && e.place === d.place).reduce((a, e) => a + e.qty, 0) : 0;
+    const had = l.i ? existing.filter(e => String(e.itemId) === l.i && (e.place ?? '') === at).reduce((a, e) => a + e.qty, 0) : 0;
     if (had > 0) out.set(idx, had);
   });
   return out;
@@ -191,12 +195,13 @@ export function draftProblem(d: OrderDraft, existing: OrderLine[]): string | nul
 
 /** The to-do's order after Confirm: a clashing line adds to what was there, or replaces it; the rest is appended. */
 export function mergeOrder(existing: OrderLine[], add: (OrderLine & { m?: 'sum' | 'replace' })[]): OrderLine[] {
-  let out = existing.map(e => ({ itemId: String(e.itemId), place: e.place, qty: e.qty }));
+  let out: OrderLine[] = existing.map(e => ({ itemId: String(e.itemId), place: e.place, qty: e.qty, ...(e.at ? { at: e.at } : {}) }));
   for (const a of add) {
     const had = out.filter(e => e.itemId === a.itemId && e.place === a.place).reduce((s, e) => s + e.qty, 0);
     if (!had) { out.push({ itemId: a.itemId, place: a.place, qty: a.qty }); continue; }
+    const at = out.find(e => e.itemId === a.itemId && e.place === a.place && e.at)?.at;
     out = out.filter(e => !(e.itemId === a.itemId && e.place === a.place));
-    out.push({ itemId: a.itemId, place: a.place, qty: a.m === 'replace' ? a.qty : had + a.qty });
+    out.push({ itemId: a.itemId, place: a.place, qty: a.m === 'replace' ? a.qty : had + a.qty, ...(at ? { at } : {}) });
   }
   return out;
 }
@@ -253,12 +258,13 @@ export function orderDraftMessage(d: OrderDraft, id: string, o: { items: DraftIt
   const where = d.todo ? `Goes on *${esc(o.todoTitle ?? `to-do #${d.todo}`)}* — this thread’s to-do.`
     : `A new to-do *Buy supplies…* will be made${d.claim ? ' for this thread’s claim' : ''}.`;
   // Owner, 2026-10-15: the place first — a big order goes to one place (a new unit's setup); pick it once, everything goes there.
-  const opts = o.places.slice(0, 100).map(p => ({ text: plain(p.label), value: p.value }));
+  const opts = [...o.places.slice(0, 99).map(p => ({ text: plain(p.label), value: p.value })),
+                { text: plain('▲ No place yet (new listing) — pick it when bought'), value: NO_PLACE }];
   const chosen = opts.find(x => x.value === d.place);
   const top: Block[] = [section(`🛒 *Purchase order — draft* · ${d.lines.length} line${d.lines.length === 1 ? '' : 's'}\n${where} Nothing is saved until *Confirm*.`),
                         ...(d.ai ? [context(esc(d.ai))] : []),
                         section(`📍 *Everything goes to:*${d.said && !chosen ? ` you wrote “${esc(d.said)}” — pick its place.` : ''}`,
-                          opts.length ? { type: 'static_select', action_id: 'order_place', placeholder: plain('Pick the place'), options: opts, ...(chosen ? { initial_option: chosen } : {}) } : undefined),
+                          { type: 'static_select', action_id: 'order_place', placeholder: plain('Pick the place'), options: opts, ...(chosen ? { initial_option: chosen } : {}) }),
                         ...(o.routed ? [context(esc(o.routed))] : [])];
 
   const done = d.lines.map((l, idx) => ({ l, idx })).filter(x => settled(x.l));

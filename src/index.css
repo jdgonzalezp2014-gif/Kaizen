@@ -2565,6 +2565,11 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .buy-unsure-line { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .buy-onhand { display: flex; flex-wrap: wrap; gap: 6px 14px; width: 100%; margin-bottom: 4px; }
 .onhand .peek-label { color: var(--amber); font-weight: 600; }
+/* Owner, 2026-10-15: the final cart — where each item goes, where it is bought, already ordered / on hand. */
+.final-cart { width: 100%; display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; margin-bottom: 6px; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.final-cart td { vertical-align: top; }
+.final-cart select { max-width: 150px; }
+.final-cart .onhand + .onhand { margin-left: 10px; }
 /* Owner, 2026-10-15: the receipt against the order — each check one word, its items on hover or a tap. */
 .rc-check { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; margin: 6px 0; }
 .rc-flag .peek-label { font-weight: 600; color: var(--ink); }
