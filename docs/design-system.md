@@ -125,11 +125,11 @@ only when its text does (a red error, an amber flag). The only coloured exceptio
 To-do, work order, purchase order and claim share **one row**: a title line (▸ title · ✎ · ✕ ✓) and **one
 quiet line of context** in a fixed order — stage · urgency · date · unit · owner · inside · comments · files ·
 where it came from · part of · claim. The category is a **2 px bar** (muted hue: to-do slate, work order
-ochre, order teal, claim violet). Colour is spent only on words: "In progress"/"Ordered" in blue, "Done"/
+ochre, order teal, claim violet). Colour is spent only on words: "In progress"/"Purchase" in blue, "Done"/
 "Purchased" in green, late or urgent in amber.
 
 Life cycle, the same in Kaizen, Slack and the SOPs (`stageOf` / `claimStage` in `src/lib/todos.ts`):
-Open → In progress → Done · Cancelled (a comment, or something done inside it, starts it); a purchase order Ordered → Purchased; a claim Open → In progress →
+Open → In progress → Done · Cancelled (a comment, or something done inside it, starts it); a purchase order Purchase → Purchased (2026-10-16: "Ordered" read as already bought); a claim Open → In progress →
 Done (Refunded → "Done · refunded", Dismissed → Cancelled). Hostaway keeps its statuses; only the word changes.
 
 **What opens how** — the rule for every screen:

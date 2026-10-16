@@ -2374,7 +2374,7 @@ tr.rc-open > td { border-bottom: 0; }
 /* ══ §159: one shape for every piece of work — to-do, work order, purchase order, claim ══
    A title line, then one quiet line of context in a fixed order (stage · urgency · date · unit · owner ·
    inside · comments · files · part of · claim). Colour is spent sparingly and on text: the category is a
-   2 px bar, "In progress"/"Ordered" read in the action blue, "Done"/"Purchased" in green, what is late or
+   2 px bar, "In progress"/"Purchase" read in the action blue, "Done"/"Purchased" in green, what is late or
    urgent in amber. Nothing else is coloured. */
 :root { --cat-task: #7b8794; --cat-work_order: #b07a3c; --cat-order: #3d8a86; --cat-claim: #8a6bb0; }
 :root[data-theme="dark"] { --cat-task: #8d99a6; --cat-work_order: #c99a62; --cat-order: #5fb0ab; --cat-claim: #a98ccf; }

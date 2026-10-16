@@ -111,7 +111,7 @@ test('one life cycle in the same words (§159)', () => {
   assert.equal(stageOf('completed').label, 'Done');
   assert.equal(stageOf('cancelled').label, 'Cancelled');
   // A purchase order: ordered until bought, whatever Hostaway calls the step.
-  assert.equal(stageOf('in_progress', true).label, 'Ordered');
+  assert.equal(stageOf('in_progress', true).label, 'Purchase');
   assert.equal(stageOf('completed', true).label, 'Purchased');
   assert.equal(stageOf('cancelled', true).label, 'Cancelled');
   assert.deepEqual(['Open', 'In progress', 'Resolved', 'Paid', 'Dismissed'].map(s => claimStage(s).label),

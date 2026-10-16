@@ -109,7 +109,7 @@ export interface TaskLite {
   asksUrgency?: boolean;
   unit?: string | null; assignee?: string | null; dueOn?: string | null; reservationLabel?: string | null; description?: string | null;
 }
-// §159: Slack says what Kaizen says — New → In progress → Done (or Cancelled); an order Ordered → Purchased.
+// §159: Slack says what Kaizen says — New → In progress → Done (or Cancelled); an order Purchase → Purchased.
 const STATUS_WORD: Record<string, string> = STATUS_LABEL;
 const stageWord = (status: string, order = false) => stageOf(status, order).label;
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];

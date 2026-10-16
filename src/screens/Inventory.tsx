@@ -1652,7 +1652,9 @@ function useCartUi() {
   const [left, setLeft] = useState<Set<string>>(new Set());
   const [making, setMaking] = useState('');
   const [askErr, setAskErr] = useState('');
-  return { wide, setWide, fix, setFix, recount, setRecount, left, setLeft, making, setMaking, askErr, setAskErr };
+  // Owner, 2026-10-16: a new item from what ✨ read opens a pop-up — the words read are only a start (name, size, how it is counted).
+  const [newAsk, setNewAsk] = useState<{ text: string; name: string; size: string; measure: string; kind: 'supply' | 'furniture'; qty: string } | null>(null);
+  return { wide, setWide, fix, setFix, recount, setRecount, left, setLeft, making, setMaking, askErr, setAskErr, newAsk, setNewAsk };
 }
 /** What the cart adds to each line of the form: under its name, its "Buy at" cell, and what opens under it. */
 type CartRow = { sub: (id: string) => React.ReactNode; cell: (id: string) => React.ReactNode; below: (id: string) => React.ReactNode };
@@ -1662,7 +1664,7 @@ function cartTools(ui: ReturnType<typeof useCartUi>, { act, inv, onInv, lines, t
   off: { itemId: string; place: string; qty: number }[]; onLater: (off: { itemId: string; place: string; qty: number }[]) => void;
   edit: CartEdit; aside: Aside[]; setAside: (f: (a: Aside[]) => Aside[]) => void;
 }): { top: React.ReactNode; row: CartRow; bottom: React.ReactNode } {
-  const { wide, setWide, fix, setFix, recount, setRecount, left, setLeft, making, setMaking, askErr, setAskErr } = ui;
+  const { wide, setWide, fix, setFix, recount, setRecount, left, setLeft, making, setMaking, askErr, setAskErr, newAsk, setNewAsk } = ui;
   const item = (id: string) => inv.items.find(i => i.id === id);
   const nm = (id: string) => item(id)?.name ?? id;
   const byItem = new Map<string, { place: string; qty: number }[]>();
@@ -1699,14 +1701,17 @@ function cartTools(ui: ReturnType<typeof useCartUi>, { act, inv, onInv, lines, t
     if (!r.ok) { setRecount({ ...recount, busy: false, err: r.message ?? 'Not saved.' }); return; }
     onInv(r); setRecount(null);
   };
-  const addAsk = (a: Ask, id: string) => { edit.add(id, 1); onAsk(a.text, id); };
-  const newFromAsk = async (a: Ask) => {
-    setMaking(a.text); setAskErr('');
-    const r = await act({ action: 'newItem', name: itemName(a.text), measure: guessMeasure(a.text), kind: guessKind(a.text), category: 'other' })
-      .catch(e => ({ ok: false as const, message: String(e) }));
+  const addAsk = (a: Ask, id: string, qty = 1) => { edit.add(id, qty); onAsk(a.text, id); };
+  const askNew = (a: Ask) => { setAskErr(''); setNewAsk({ text: a.text, name: itemName(a.text), size: '', measure: guessMeasure(a.text), kind: guessKind(a.text), qty: '1' }); };
+  const newFromAsk = async () => {
+    if (!newAsk) return;
+    const a = asks.find(x => x.text === newAsk.text);
+    setMaking(newAsk.text); setAskErr('');
+    const r = await act({ action: 'newItem', name: newAsk.name.trim(), size: newAsk.size.trim() || undefined, measure: newAsk.measure.trim() || 'unit',
+                          kind: newAsk.kind, category: 'other' }).catch(e => ({ ok: false as const, message: String(e) }));
     setMaking('');
     if (!r.ok || !r.itemId) { setAskErr(r.ok ? 'Not added.' : r.message ?? 'Not added.'); return; }
-    onInv(r); addAsk(a, r.itemId);
+    onInv(r); if (a) addAsk(a, r.itemId, Math.max(1, Number(newAsk.qty) || 1)); setNewAsk(null);
   };
   const noStore = ids.filter(id => !storeAt(inv, id, at)).length;
   const active = inv.items.filter(i => i.active).sort((a, b) => a.name.localeCompare(b.name));
@@ -1820,10 +1825,30 @@ function cartTools(ui: ReturnType<typeof useCartUi>, { act, inv, onInv, lines, t
             <option value="">Another item…</option>
             {active.map(i => <option key={i.id} value={i.id}>{i.name}{i.size ? ` — ${i.size}` : ''}</option>)}
           </select>
-          <button className="link tiny" disabled={making === a.text} onClick={() => void newFromAsk(a)}>{making === a.text ? 'Adding…' : `+ New item “${itemName(a.text)}”`}</button>
+          <button className="link tiny" disabled={making === a.text} onClick={() => askNew(a)}>+ New item…</button>
           <button className="link tiny" onClick={() => setLeft(s => new Set(s).add(a.text))}>Leave it out</button>
         </div>)}
-        {askErr && <span className="breach">{askErr}</span>}
+        {askErr && !newAsk && <span className="breach">{askErr}</span>}
+        {newAsk && <Modal title="A new item" onClose={() => { setNewAsk(null); setAskErr(''); }}>
+          <p className="note">Asked: “{newAsk.text}”. What ✨ read is only a start — write it as it should be on the supplies list.</p>
+          <div className="rc-new">
+            <input value={newAsk.name} maxLength={80} placeholder="Name" aria-label="New item name" autoFocus onChange={e => setNewAsk({ ...newAsk, name: e.target.value })} />
+            <input value={newAsk.size} maxLength={30} placeholder="Size (optional)" aria-label="Size" className="rc-size" onChange={e => setNewAsk({ ...newAsk, size: e.target.value })} />
+          </div>
+          <div className="rc-new">
+            <label>Counted in<input value={newAsk.measure} maxLength={20} list="ask-measures" placeholder="unit, pack, pod…" className="inv-measure" onChange={e => setNewAsk({ ...newAsk, measure: e.target.value })} /></label>
+            <datalist id="ask-measures">{MEASURES.map(m => <option key={m} value={m} />)}</datalist>
+            <label>Type<select value={newAsk.kind} onChange={e => setNewAsk({ ...newAsk, kind: e.target.value as 'supply' | 'furniture' })}>
+              <option value="supply">{TYPE_OF.supply}</option><option value="furniture">{TYPE_OF.furniture}</option></select></label>
+            <label>How many on this order<input className="inv-qty" type="number" min="1" step="1" value={newAsk.qty} onChange={e => setNewAsk({ ...newAsk, qty: e.target.value })} /></label>
+          </div>
+          <span className="sub-n">Counted in = how it is kept once opened: a pack of 24 pods → pod (24 per pack) or pack (1). The store link can be added later on the cart (+ link).</span>
+          {askErr && <p className="breach">{askErr}</p>}
+          <div className="button-row">
+            <button disabled={making === newAsk.text || !newAsk.name.trim()} onClick={() => void newFromAsk()}>{making === newAsk.text ? 'Adding…' : 'Add it to the list and the cart'}</button>
+            <button className="secondary" onClick={() => { setNewAsk(null); setAskErr(''); }}>Cancel</button>
+          </div>
+        </Modal>}
       </div>}
   </div> : null;
   return { top, row, bottom };

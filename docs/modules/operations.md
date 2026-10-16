@@ -107,7 +107,9 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   so — NOT sent to Hostaway (repairs do; ask the owner before doing it for purchases). Inspections need nothing: their
   purchases become one to-do whose order opens in this cart. "On hand" also looks where each line goes (an Inventory cart
   has no listing). SOP #15 v25. Open: report a broken link from Slack's draft (only in Kaizen); abandoned
-  `slack_order_drafts` rows are never cleaned. Not yet seen on screen (owner's tokens) — check it in use.
+  **2026-10-16 (owner):** an open order's stage pill reads **Purchase** (was "Ordered" — it read as already bought; Slack the same, `STAGE_WORD`);
+  "▲ Asked, not on the cart" → "+ New item…" opens a pop-up (name, size, counted in, type, how many — prefilled from what ✨ read,
+  never created as read; link later on the cart). `slack_order_drafts` rows are never cleaned. Not yet seen on screen (owner's tokens) — check it in use.
 - **Sets (owner, 2026-10-15):** one store product on several supplies = a set (Swirl flatware on Forks ×16 / Knives ×8 / Spoons ×24,
   Quatish on Plates ×8 / Bowls ×4; only when someone puts the same link on several items). `readOrder` splits its line into one
   line per supply (`match` 'product', its pieces, the price shared evenly, leftover cents on the first) and `cartLinks` buys it

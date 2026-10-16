@@ -109,13 +109,13 @@ export const STATUSES: TaskStatus[] = ['pending', 'confirmed', 'in_progress', 'c
  * One life cycle, the same words in Kaizen, Slack and the SOPs (owner, 2026-10-14 — §159):
  * New → In progress → Done, or Cancelled (owner, same day: what the system made or someone just wrote is New; it is
  * In progress once something is done on it). "Pending" and "Confirmed" were two names for "not started"; both read New (Hostaway keeps its own statuses —
- * this is only the word). A purchase order reads Ordered → Purchased; a claim the same as a to-do.
+ * this is only the word). A purchase order reads Purchase (record it there) → Purchased; a claim the same as a to-do.
  */
 export type Stage = 'new' | 'in_progress' | 'done' | 'cancelled' | 'ordered' | 'purchased';
 export type Category = 'task' | 'work_order' | 'order' | 'claim';
 const STAGE_WORD: Record<Stage, string> = {
   in_progress: 'In progress', done: 'Done', cancelled: 'Cancelled',
-  ordered: 'Ordered', purchased: 'Purchased', new: 'New'
+  ordered: 'Purchase', purchased: 'Purchased', new: 'New'
 };
 export function stageOf(status: TaskStatus | string, order = false): { key: Stage; label: string } {
   const key: Stage = status === 'cancelled' ? 'cancelled'
