@@ -251,7 +251,9 @@ key had no SOPs.
   **`reconcileRecent` had never run** (`/api/cron`, behind Access, nothing calls it): it now runs with `recordCleanings`
   on the hourly Host Notes tick in `/api/slack-cron`. Its first run (dry-run 2026-10-16) holds 4 cancelled-after-arrival
   cleans that had been voided (66756414, 66091503, 65840732, 67232727 — Cynthia DallOglio) and restores 2 shortened stays
-  voided as cancelled (66383376 P2-4308, 63723324 CL 1446 — back as TBD, nobody on them: assign who cleaned).
+  voided as cancelled (66383376 P2-4308, 63723324 CL 1446). Those two were restored by hand (owner): back to who had them,
+  Karina and Marvin $120 deep on 22 Sep, Michelle $35 on 26 Sep. A restore now gives the clean back to the cleaner the void
+  noted in decided_by ("— it was X's"), unpriced.
   Not fixed: 10 cancelled-after-arrival stays from before §123 (Aug–3 Oct, e.g. Christine/Kobie Dunbar) never had a row.
 
 - **Cancellations (§123).** Hostaway's `cancellationDate` (taken as UTC → New York). Cancelled before

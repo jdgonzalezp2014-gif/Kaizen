@@ -464,9 +464,14 @@ export async function reconcileRecent(sql: SqlFn, creds: HostawayCredentials, to
       }
     } else {
       if (r.void_reason === 'booking cancelled in Hostaway' || r.void_reason?.startsWith('booking request not confirmed')) {
-        // The booking came back: a clean again, unassigned until someone gives it to a cleaner (§130).
+        // The booking came back — or was only shortened, which the board once took for a cancellation:
+        // a clean again, back to whoever had it (the void kept the name in decided_by, owner 2026-10-16);
+        // nobody noted → unassigned. Unpriced either way: a person sets the pay (§128).
         await sql`UPDATE cleanings SET void_reason = NULL,
-                         assignment = CASE WHEN cleaner IS NULL THEN 'tbd' ELSE assignment END
+                         cleaner = COALESCE(cleaner, substring(decided_by from ' — it was (.+)''s$')),
+                         assignment = CASE WHEN COALESCE(cleaner, substring(decided_by from ' — it was (.+)''s$')) IS NULL
+                                           THEN 'tbd' ELSE 'assigned' END,
+                         decided_by = 'restored — the booking is live in Hostaway'
                    WHERE account_id = 1 AND key = ${r.key}`;
         out.restored++;
       }
