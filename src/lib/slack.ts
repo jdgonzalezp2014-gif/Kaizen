@@ -982,7 +982,8 @@ export function newButtons(title = '', only?: 'task' | 'work_order' | 'order' | 
 
 export const MENTION_HELP = [
   '*@Kaizen new* _Fix the AC in P2-4308_ — made at once (the listing found in the text); *✎ Add details* in the reply if you want',
-  '*@Kaizen repair* … — the same, as a repair · *@Kaizen order* _2 boxes of trash bags_ — a purchase order · *@Kaizen claim* … — the claim / upsell form',
+  '*@Kaizen repair* … — the same, as a repair · *@Kaizen claim* … — the claim / upsell form',
+  '*@Kaizen order* _2 paper towels and 1 Tide for Napa storage_ — a purchase order: a draft to check (items, place, store links), saved on *Confirm*; in a task’s thread it goes on that task',
   '*@Kaizen bug* _what happened_ · *@Kaizen pedir* _what you need_ — a problem with Kaizen, or a request, to whoever builds it',
   '*@Kaizen cost* _45 towels P2-4308_ — the cost form, with what it could read filled in; you confirm every field',
   '*@Kaizen tasks* — the open tasks, each with its menu · *@Kaizen claims* — the open claims (status, edit, remove)',

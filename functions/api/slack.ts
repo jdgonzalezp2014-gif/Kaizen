@@ -21,7 +21,11 @@ import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import * as todos from './todos.ts';
 import * as claims from './claims.ts';
 import * as expenses from './expenses.ts';
-import { invItems, saveTodoOrder } from '../_lib/inventory.ts';
+import { invItems, newItem, saveTodoOrder } from '../_lib/inventory.ts';
+import { learnAliases } from '../_lib/receipt-read.ts';
+import { draftFromBlocks, draftProblem, matchOrderLine, mergeOrder, newItemModal, orderDraftMessage, orderSavedMessage, parseOrderText, type DraftItem, type OrderDraft, type OrderLine } from '../../src/lib/order-text.ts';
+import { orderList } from '../../src/lib/inventory.ts';
+import { findPlace, fitsPlace, placeWord } from '../../src/lib/unit-access.ts';
 import * as sopsApi from './sops.ts';
 import { askJson, within } from '../_lib/ai-chain.ts';
 import { gapsInThread, standardFrom, draftFromAi, draftFromThread, helpAnswerBlocks, helpFromAi, helpMissingBlocks, helpPrompt, rankSops, type SopDoc, partialSopForm, readSopForm, reviewFromAi, reviewNote, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
@@ -187,16 +191,23 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     return;
   }
   // §110: "@Kaizen new <what>" is made at once — the reply in its thread has ✎ Add details. No words: the form.
-  // §162: "@Kaizen order <what is needed>" — a purchase order, made the same way.
-  if ((verb === 'new' || verb === 'repair' || verb === 'order') && arg) {
+  if ((verb === 'new' || verb === 'repair') && arg) {
     const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
     if (!member.ok) { await sayPrivate(member.why); return; }
     const r = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user))
-      .quickCreate(verb === 'repair' ? 'work_order' : verb === 'order' ? 'order' : 'task', arg, from, String(ev.ts), ev.files);
+      .quickCreate(verb === 'repair' ? 'work_order' : 'task', arg, from, String(ev.ts), ev.files);
     if (!r.ok) await say(`Not saved: ${String(r.message ?? r.error ?? 'Kaizen said no.')}`);
     return;
   }
-  if (verb === 'order') { await say('Write what is needed: *@Kaizen order* _2 boxes of trash bags for Napa_.'); return; }
+  // Owner, 2026-10-15: "@Kaizen order <what is needed>" — a draft (items, place, store links) saved only on Confirm.
+  if (verb === 'order' && arg) {
+    const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
+    if (!member.ok) { await sayPrivate(member.why); return; }
+    const m = await new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user)).orderDraft(arg, from, String(ev.ts));
+    if (m.ok) await say(m.text, m.blocks); else if (m.private) await sayPrivate(m.message); else await say(m.message);
+    return;
+  }
+  if (verb === 'order') { await say('Write what is needed: *@Kaizen order* _2 paper towels and 1 Tide for Napa storage_.'); return; }
   if (verb === 'new' || verb === 'repair' || verb === 'claim' || verb === 'cost') {
     // §117: a cost is never made at once — the button opens the form, every field to confirm.
     const only = verb === 'new' ? 'task' : verb === 'repair' ? 'work_order' : verb === 'cost' ? 'cost' : 'claim';
@@ -258,6 +269,10 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
  */
 /** A DM's channel id starts with D. */
 const dmChannel = (channel: string) => channel.startsWith('D');
+/** Where an order can go: storages and closets, then the houses (furniture goes to the house — owner, 2026-10-15). */
+const placeOptions = (sp: Awaited<ReturnType<typeof supplyPlaces>>): Opt[] =>
+  [...sp.places.map(p => ({ value: p.key, label: (p.self ? `${p.name} closet` : p.name).slice(0, 75) })),
+   ...sp.houses.map(h => ({ value: h.key, label: `${h.name} (house)`.slice(0, 75) }))].slice(0, 100);
 
 async function offerAddTo(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
   if (!(s.config.addTo?.channels ?? []).some(c => c.id === ev.channel)) return;
@@ -525,13 +540,10 @@ class Kaizen {
    * reply in the request's thread says it is tracked, with ✎ Add details,
    * and that thread becomes the task's.
    */
-  async quickCreate(kind: 'task' | 'work_order' | 'order', words: string, thread: { channel: string; ts: string }, messageTs: string, files?: unknown[]): Promise<Record<string, unknown>> {
+  async quickCreate(kind: 'task' | 'work_order', words: string, thread: { channel: string; ts: string }, messageTs: string, files?: unknown[]): Promise<Record<string, unknown>> {
     if (!this.may('/api/todos', 'POST')) return { ok: false, message: 'your role does not include the to-do list' };
     const units = await this.units();
-    const quick = quickTitle(words);
-    // §162: a purchase order is a to-do made as an order (listed with the orders; ✨ builds its cart in Kaizen).
-    const title = kind === 'order' ? `Purchase order: ${quick.title}`.slice(0, 120) : quick.title;
-    const description = kind === 'order' ? [quick.title, quick.description].filter(Boolean).join('\n') || null : quick.description;
+    const { title, description } = quickTitle(words);
     // Owner, Oct 2026: made inside a task's thread → its sub-task; inside a claim's → work on that claim. Either way it
     // lives in that thread (no new one): its news and comments go there (threadFor).
     const [home] = await this.sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${thread.channel} AND ts = ${thread.ts}` as
@@ -541,7 +553,7 @@ class Kaizen {
     const claim = home?.subject === 'claim' ? await this.claimRow(home.subject_id) : undefined;
     const unit = guessUnit(words, units) ?? parent?.unit_ids?.[0] ?? claim?.unit_id ?? null;
     const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: thread.channel, message_ts: messageTs });
-    const r = await this.todo({ action: 'create', kind: kind === 'order' ? 'task' : kind, ...(kind === 'order' && !parent ? { asOrder: true } : {}),
+    const r = await this.todo({ action: 'create', kind,
       title, unitIds: unit ? [unit] : [], priority: 'none', via: home ? 'slack-thread' : dmChannel(thread.channel) ? 'slack-dm' : 'slack',
       ...(parent ? { parentId: parent.id } : {}), ...(claim ? { claimId: String(claim.id) } : {}),
       description: [description, link.permalink ? `From Slack: ${link.permalink.split('?')[0]}` : ''].filter(Boolean).join('\n\n') || null });
@@ -632,10 +644,7 @@ class Kaizen {
   private async orderForm(t: { parent_id: string | null; status: string }) {
     if (t.parent_id || t.status === 'completed' || t.status === 'cancelled' || !this.may('/api/inventory', 'POST')) return null;
     const [items, sp] = await Promise.all([invItems(this.sql), supplyPlaces(this.sql)]);
-    return { items: items.filter(i => i.active).slice(0, 100).map(i => ({ value: i.id, label: i.name.slice(0, 75) })),
-             // Storages and closets, then the houses (furniture goes to the house — owner, 2026-10-15).
-             places: [...sp.places.map(p => ({ value: p.key, label: (p.self ? `${p.name} closet` : p.name).slice(0, 75) })),
-                      ...sp.houses.map(h => ({ value: h.key, label: `${h.name} (house)`.slice(0, 75) }))].slice(0, 100) };
+    return { items: items.filter(i => i.active).slice(0, 100).map(i => ({ value: i.id, label: i.name.slice(0, 75) })), places: placeOptions(sp) };
   }
   /** One line onto the to-do's order: a new item adds, the same item and place changes its quantity, 0 removes it. */
   private async orderLine(todoId: string, itemId: string, place: string, qty: number) {
@@ -651,6 +660,130 @@ class Kaizen {
         `🛒 ${said.replace(/^Order draft saved/, 'Purchase order saved')}`, this.email).catch(() => {}));
       return { ok: true };
     } catch (e) { return { ok: false, message: e instanceof Error ? e.message : String(e) }; }
+  }
+
+  /* ── "@Kaizen order <words>" (owner, 2026-10-15): a draft first, saved only on Confirm ── */
+  /** Ops and up (operations.edit) — who orders in Kaizen; cleaners are not members. */
+  private mayOrder() { return this.may('/api/inventory', 'POST') && this.may('/api/todos', 'POST'); }
+
+  /** The draft from the words: each line matched or asked, the place asked unless written exactly, this thread's to-do. */
+  async orderDraft(words: string, from: { channel: string; ts: string }, msgTs: string):
+    Promise<{ ok: true; text: string; blocks: unknown[] } | { ok: false; message: string; private?: boolean }> {
+    if (!this.mayOrder()) return { ok: false, private: true, message: 'Your Kaizen role does not include ordering supplies.' };
+    const [items, sp, units, aliases, [home]] = await Promise.all([invItems(this.sql), supplyPlaces(this.sql), this.units(),
+      this.sql`SELECT text, item_id::text AS "itemId" FROM inventory_receipt_aliases WHERE account_id = 1` as Promise<{ text: string; itemId: string }[]>,
+      this.sql`SELECT subject, subject_id FROM slack_threads WHERE account_id = 1 AND channel = ${from.channel} AND ts = ${from.ts}` as Promise<{ subject: string; subject_id: string }[]>]);
+    const places = placeOptions(sp);
+    const named = [...sp.places, ...sp.houses].map(x => ({ key: x.key, name: placeWord(x), unit: x.units[0]?.id ?? null }));
+    const p = parseOrderText(words, named, units);
+    if (!p.lines.length) return { ok: false, message: 'Write what is needed: *@Kaizen order* _2 paper towels and 1 Tide for Napa storage_.' };
+    const known = new Map(aliases.map(a => [a.text, a.itemId]));
+    const d: OrderDraft = { by: this.slackUser, ch: from.channel, root: from.ts, msg: msgTs,
+      todo: home?.subject === 'task' ? await this.orderTodo(home.subject_id) : null, claim: home?.subject === 'claim' ? home.subject_id : null,
+      place: p.place, said: p.said, unit: p.unit, lines: p.lines.map(l => ({ t: l.text, q: l.qty, ...matchOrderLine(l.text, items, known) })) };
+    // Slack keeps 2000 characters in a button's value — the draft's home.
+    if (JSON.stringify(d).length > 1900) return { ok: false, message: 'That order is too long for one message — split it in two.' };
+    return { ok: true, ...await this.orderView(d, { items, places }) };
+  }
+  /** The thread's to-do that can hold an order: itself, or its parent for a sub-task — open, top-level. */
+  private async orderTodo(id: string): Promise<string | null> {
+    const [t] = await this.sql`SELECT x.id::text FROM todos t JOIN todos x ON x.account_id = 1 AND x.id = coalesce(t.parent_id, t.id)
+                                WHERE t.account_id = 1 AND t.id::text = ${id} AND x.parent_id IS NULL AND x.deleted_at IS NULL
+                                  AND x.status NOT IN ('completed', 'cancelled')` as { id: string }[];
+    return t?.id ?? null;
+  }
+  private async orderOn(todoId: string | null): Promise<{ title: string | null; lines: OrderLine[] }> {
+    if (!todoId) return { title: null, lines: [] };
+    const [r] = await this.sql`SELECT t.title, o.lines FROM todos t LEFT JOIN inventory_orders o ON o.account_id = 1 AND o.todo_id = t.id
+                                WHERE t.account_id = 1 AND t.id::text = ${todoId}` as { title: string; lines: OrderLine[] | null }[];
+    return { title: r?.title ?? null, lines: r?.lines ?? [] };
+  }
+  private async orderView(d: OrderDraft, pre?: { items: DraftItem[]; places: Opt[] }, problem?: string | null) {
+    const [items, places, on] = await Promise.all([pre?.items ?? invItems(this.sql), pre?.places ?? supplyPlaces(this.sql).then(placeOptions), this.orderOn(d.todo)]);
+    return orderDraftMessage(d, { items, places, existing: on.lines, todoTitle: on.title, problem });
+  }
+  private async orderRedraw(d: OrderDraft, ch: string, ts: string, problem?: string | null) {
+    const m = await this.orderView(d, undefined, problem);
+    await slackApi(this.s.token!, 'chat.update', { channel: ch, ts, text: m.text, blocks: m.blocks });
+  }
+
+  /** A click on the draft: it is read back from the message, changed, and drawn again. */
+  async orderAction(id: string, value: string, p: Record<string, any>): Promise<Response> { // eslint-disable-line @typescript-eslint/no-explicit-any
+    if (!this.mayOrder()) return this.deny('ordering supplies');
+    const d = draftFromBlocks(p.message?.blocks);
+    const ch = String(p.container?.channel_id ?? ''), ts = String(p.container?.message_ts ?? '');
+    if (!d || !ch || !ts) return ack();
+    if (id === 'order_cancel') {
+      await slackApi(this.s.token!, 'chat.update', { channel: ch, ts, text: `✕ Order draft discarded by <@${this.slackUser}> — nothing was saved.`, blocks: [] });
+      return ack();
+    }
+    const [a = '', b = ''] = value.split(':');
+    const idx = Number(a), line = d.lines[idx];
+    if (id === 'order_new') {
+      if (line) await this.open(p.trigger_id, newItemModal(JSON.stringify({ d, ch, ts, idx }), line.t));
+      return ack();
+    }
+    if (id === 'order_confirm') { this.ctx.waitUntil(this.orderConfirm(d, ch, ts).catch(() => {})); return ack(); }
+    if ((id === 'order_pick' || id === 'order_pick_other') && line && b) { line.i = b; delete line.n; delete line.m; line.p = 1; }
+    if (id === 'order_change' && line) { line.i = null; delete line.n; delete line.m; delete line.p; }
+    if (id === 'order_drop' && line) d.lines.splice(idx, 1);
+    if (id === 'order_merge_sum' && line) line.m = 'sum';
+    if (id === 'order_merge_replace' && line) line.m = 'replace';
+    if (id === 'order_place' && value) { d.place = value; for (const l of d.lines) delete l.m; }
+    this.ctx.waitUntil(this.orderRedraw(d, ch, ts).catch(() => {}));
+    return ack();
+  }
+
+  /**
+   * Confirm: checked again (the to-do may have changed), then saved once — new items made, the lines merged into
+   * this thread's to-do's order, or a new "Buy supplies…" to-do with them. What a person picked is learned as an alias.
+   */
+  private async orderConfirm(d: OrderDraft, ch: string, ts: string) {
+    const [on, items, sp] = await Promise.all([this.orderOn(d.todo), invItems(this.sql), supplyPlaces(this.sql)]);
+    const problem = draftProblem(d, on.lines);
+    if (problem) return await this.orderRedraw(d, ch, ts, problem);
+    const place = findPlace(sp, d.place!);
+    if (!place) return await this.orderRedraw(d, ch, ts, 'That place is gone — pick another.');
+    const misfit = d.lines.find(l => !fitsPlace(place, l.n?.kind ?? items.find(i => i.id === l.i)?.kind));
+    if (misfit) return await this.orderRedraw(d, ch, ts, `“${misfit.t}” is supplies: they go to a storage or a closet, not the house.`);
+    if (d.todo && !on.title) return await this.orderRedraw({ ...d, todo: null }, ch, ts, 'This thread’s to-do is gone — Confirm makes a new one.');
+    // Once: a second tap on Confirm finds the key taken.
+    const key = `order:${ch}:${ts}`;
+    const [mine] = await this.sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${key}) ON CONFLICT DO NOTHING RETURNING key`;
+    if (!mine) return;
+    try {
+      for (const l of d.lines) if (!l.i && l.n) l.i = await newItem(this.sql, { ...l.n });
+      const add = d.lines.map(l => ({ itemId: l.i!, place: d.place!, qty: l.q, m: l.m }));
+      let todoId = d.todo, title = on.title ?? '';
+      if (todoId) await saveTodoOrder(this.sql, this.email, todoId, mergeOrder(on.lines, add));
+      else {
+        const all = await invItems(this.sql);
+        title = orderList(add.map(l => ({ item: all.find(i => i.id === l.itemId)!, place: placeWord(place), qty: l.qty })).filter(l => l.item))!.title;
+        const link = await slackApi<{ permalink?: string }>(this.s.token!, 'chat.getPermalink', { channel: ch, message_ts: d.msg });
+        const dm = dmChannel(ch);
+        const r = await this.todo({ action: 'create', kind: 'task', asOrder: true, title, unitIds: d.unit ? [d.unit] : [], priority: 'none',
+          via: d.claim ? 'slack-thread' : dm ? 'slack-dm' : 'slack', ...(d.claim ? { claimId: d.claim } : {}),
+          description: [`Ordered in Slack. When it is bought: Inventory → 🧾 Record a purchase.`, link.permalink ? `From Slack: ${link.permalink.split('?')[0]}` : ''].filter(Boolean).join('\n\n') });
+        if (!r.ok || !r.id) throw new Error(String(r.message ?? r.error ?? 'Kaizen said no.'));
+        todoId = String(r.id);
+        await saveTodoOrder(this.sql, this.email, todoId, add);
+        // As "@Kaizen new": this thread becomes the order's, and made outside the tasks channel it is announced there.
+        if (!d.claim && !dm) {
+          const [known] = await this.sql`SELECT 1 FROM slack_threads WHERE account_id = 1 AND channel = ${ch} AND ts = ${d.root}`;
+          if (!known) await rememberThread(this.sql, { ok: true, channel: ch, ts: d.root }, 'task', todoId);
+          if (this.s.config.channels?.tasks?.id && ch !== this.s.config.channels.tasks.id)
+            this.ctx.waitUntil(notifyTask(this.sql, this.ctx.env.ENCRYPTION_KEY, todoId, 'created', this.email).catch(() => {}));
+        }
+      }
+      const taught = d.lines.filter(l => l.p && l.i).map(l => ({ text: l.t, itemId: l.i }));
+      if (taught.length) await learnAliases(this.sql, this.email, taught);
+      const m = orderSavedMessage(d, { items: await invItems(this.sql), placeLabel: placeWord(place), todoId: todoId!, todoTitle: title, fresh: !d.todo,
+                                       by: this.slackUser, appUrl: this.s.config.appUrl });
+      await slackApi(this.s.token!, 'chat.update', { channel: ch, ts, text: m.text, blocks: m.blocks });
+    } catch (e) {
+      await this.sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;
+      await this.orderRedraw(d, ch, ts, `Not saved: ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   /* ── "Add to…" (owner, 2026-10-14) ── */
@@ -1058,6 +1191,8 @@ class Kaizen {
       })().catch(() => {}));
       return ack();
     }
+    // "@Kaizen order" drafts (2026-10-15) — only on the draft message itself (the task card's order fields are form inputs).
+    if (id.startsWith('order_') && p.container?.type === 'message') return await this.orderAction(id, value, p);
     // SOPs (owner, 2026-10-14).
     if (id === 'mention_new_sop') {
       if (!this.may('/api/sops', 'GET')) return this.deny('SOPs');
@@ -1276,9 +1411,19 @@ class Kaizen {
     }
     if (id.startsWith('mention_new_')) {
       const v = JSON.parse(value || '{}') as { kind?: string; title?: string; from?: { channel: string; ts: string } };
+      // "+ Purchase order" with words: the same draft as "@Kaizen order" (2026-10-15), in that thread; the offer goes.
+      if (v.kind === 'order' && v.title && v.from) {
+        const from = v.from;
+        this.ctx.waitUntil((async () => {
+          const m = await this.orderDraft(v.title!, from, from.ts);
+          if (m.ok) await slackApi(this.s.token!, 'chat.postMessage', { channel: from.channel, ...(dmChannel(from.channel) ? {} : { thread_ts: from.ts }), text: m.text, blocks: m.blocks, unfurl_links: false });
+          await this.reply(url, m.ok ? { delete_original: true } : { replace_original: true, response_type: 'ephemeral', text: m.message });
+        })().catch(() => {}));
+        return ack();
+      }
       // A to-do or repair with words: made at once, like "@Kaizen new" (§110); the offer goes.
-      if ((v.kind === 'task' || v.kind === 'work_order' || v.kind === 'order') && v.title && v.from) {
-        const r = await this.quickCreate(v.kind === 'work_order' ? 'work_order' : v.kind === 'order' ? 'order' : 'task', v.title, v.from, v.from.ts);
+      if ((v.kind === 'task' || v.kind === 'work_order') && v.title && v.from) {
+        const r = await this.quickCreate(v.kind === 'work_order' ? 'work_order' : 'task', v.title, v.from, v.from.ts);
         await this.reply(url, r.ok ? { delete_original: true } : { replace_original: true, response_type: 'ephemeral', text: `Not saved: ${String(r.message ?? 'Kaizen said no.')}` });
         return ack();
       }
@@ -1372,6 +1517,19 @@ class Kaizen {
     const view = p.view ?? {};
     const meta = JSON.parse(view.private_metadata || '{}') as { id: string | null; kind?: string };
     const state = view.state?.values ?? {};
+    if (view.callback_id === 'order_new_item') {
+      if (!this.mayOrder()) return json({ response_action: 'errors', errors: { name: 'Your Kaizen role does not include ordering supplies.' } });
+      const m = JSON.parse(view.private_metadata || '{}') as { d?: OrderDraft; ch?: string; ts?: string; idx?: number };
+      const name = String(state.name?.v?.value ?? '').trim();
+      if (!name) return json({ response_action: 'errors', errors: { name: 'Give it a name.' } });
+      const line = m.d?.lines[m.idx ?? -1];
+      if (!m.d || !line || !m.ch || !m.ts) return ack();
+      line.n = { name: name.slice(0, 60), kind: state.kind?.v?.selected_option?.value === 'furniture' ? 'furniture' : 'supply',
+                 measure: String(state.measure?.v?.value ?? '').trim().slice(0, 20) || 'unit' };
+      line.i = null; delete line.m; delete line.p;
+      this.ctx.waitUntil(this.orderRedraw(m.d, m.ch, m.ts).catch(() => {}));
+      return ack();
+    }
     if (view.callback_id === 'report_save') {
       const f = readReportModal(state);
       if (!f.body) return json({ response_action: 'errors', errors: { body: 'Say what went wrong, or what you need.' } });

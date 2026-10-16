@@ -52,6 +52,20 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   one Kaizen already knows (`slack_threads`) — everything else is left alone, no-op. An `@Kaizen …`
   reply is still the `app_mention` event's job; `threadReply` skips it (by the bot's own user id,
   `slack_config.botUserId`) so it is not saved twice.
+- **`@Kaizen order <text>` = a purchase order from free text (owner, 2026-10-15)** — e.g. _2 paper towels y 1 Tide para LP-4212_.
+  Nothing is saved until **Confirm**: Kaizen answers in the thread with a draft (`src/lib/order-text.ts`, pure + tests): each line
+  matched to a supply by its words (`scoreItems` in receipt.ts: a whole word in common and ×1.5 ahead of the next) or a taught alias
+  (`inventory_receipt_aliases`); a doubtful line is a question — the 3 closest as buttons, "Another item…", **+ Add as new item** (modal:
+  name, supplies/furniture, measure; made on Confirm), ✕ Drop. The place is **always asked** (owner) unless the text names a storage/closet
+  exactly; "para LP-4212" is said back ("pick its storage or closet") and gives the new to-do its listing (the place knows it — the Repository
+  says LP- where Hostaway says P2-). Store links via `cartLinks`. In a task's thread (incl. a cleaner's request / an inspection's order; a
+  sub-task's → its parent) the lines go on THAT to-do's `inventory_orders`; a line already there at that place asks **Add → n / Replace → n**
+  (owner: ask, offer both). Otherwise a new to-do "Buy supplies: …" (`asOrder`, so it lists with the orders; for the claim in a claim's
+  thread; announced in the tasks channel like `@Kaizen new`). Who: **ops and up** (`/api/inventory` POST + `/api/todos` POST); cleaners are
+  not members. The draft lives in the Confirm button's value (≤2000 chars, ~10 lines; no table) — each click reads it back from the message
+  and redraws it (`order_*` actions, `orderAction`); Confirm is once (`slack_sent` `order:<ch>:<ts>`), re-checks (to-do still open, supplies
+  not to a house) and replaces the draft with what was saved + Open in Kaizen. What a person picked is learned as an alias. "+ Purchase
+  order" in the to-do offer opens the same draft. Before (§162) `order` made a line-less "Purchase order: …" to-do at once.
 - Costs (§117): `@Kaizen cost …` (button), `/kaizen cost …` and the help's **+ Cost** open
   `costModal` — what, amount, category, listing or shared, date, all required, prefilled from
   the words — and save to Costs → One-offs via /api/expenses as the member. Never at once.
@@ -258,7 +272,7 @@ The messages Kaizen posts to Slack keep their emoji — they are Slack copy, not
   (functions/_lib/slack.ts): created/opened = one channel message (its thread); later events = `threadLine` reply with who
   + `chat.update` of the first message. Every status change is told (`'status'`). Slack-made work outside the tasks
   channel is announced there too (`quickCreate`). `@Kaizen order …` / "+ Purchase order"; 💲 Upsell for upsell kinds;
-  "Open in Kaizen ↗" (`kaizenButton`, `/?todo=` `/?claim=` deep links). Money left Slack's claim form and card (Finance's).
+  "Open in Kaizen ↗" (`kaizenButton`, `/?todo=` `/?claim=` deep links). (`@Kaizen order` became a draft with lines, 2026-10-15 — above.) Money left Slack's claim form and card (Finance's).
   Not yet seen in the real workspace — first real event will show it; check #kaizen-ops after the deploy.
 
 - **§164:** a field report's #kaizen-ops message asks "⚑ How urgent is it?" (and ops privately in the cleaner's channel, `askOpsPrivately`) (`urgencyAsk`: `task_urgency_<p>`, `task_make_repair`) until

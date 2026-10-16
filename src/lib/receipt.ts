@@ -59,18 +59,22 @@ export function words(s: string): string[] {
  * that starts another ("TOWL" ~ "towel"), at most `n`. None alike → empty.
  */
 export function similarItems(text: string, items: ReceiptItem[], n = 4): string[] {
+  return scoreItems(text, items).slice(0, n).map(x => x.id);
+}
+
+/** The same, with the scores — `whole` = the words that matched exactly, so a caller can tell a sure match from a guess. */
+export function scoreItems(text: string, items: ReceiptItem[]): { id: string; s: number; whole: number }[] {
   const t = words(text);
   if (!t.length) return [];
-  const scored = items.filter(i => i.active !== false).map(i => {
+  return items.filter(i => i.active !== false).map(i => {
     const w = words(i.name);
-    let s = 0;
+    let s = 0, whole = 0;
     for (const a of t) {
-      if (w.includes(a)) s += 2;
+      if (w.includes(a)) { s += 2; whole++; }
       else if (a.length >= 3 && w.some(b => b.length >= 3 && (b.startsWith(a) || a.startsWith(b)))) s += 1;
     }
-    return { id: i.id, s: s / Math.sqrt(w.length || 1) };
+    return { id: i.id, s: s / Math.sqrt(w.length || 1), whole };
   }).filter(x => x.s > 0).sort((a, b) => b.s - a.s);
-  return scored.slice(0, n).map(x => x.id);
 }
 
 /** A size compared loosely: "King size" = "king", "13 Gal" = "13gal". */
