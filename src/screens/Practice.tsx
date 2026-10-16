@@ -513,6 +513,21 @@ function inventoryPractice(): InvTransport {
       const had = t ? orders.find(o => o.todoId === t.id) : null;
       if (had) had.lines.push(...lines);
       else orders.unshift({ todoId: t?.id ?? `po${orders.length + 1}`, title: t?.title ?? list.title, lines: clone(lines), at: today, purchases: 0 });
+    } else if (b.action === 'todoOrder') {
+      // The to-do's order saved as it is (the same cart as on the real screen).
+      const o = orders.find(x => x.todoId === String(b.todoId));
+      const lines = (b.lines as { itemId: string; place: string; qty: number }[]).filter(l => l.qty > 0);
+      if (o) o.lines = clone(lines);
+    } else if (b.action === 'laterOrder') {
+      const lines = (b.lines as { itemId: string; place: string; qty: number }[]).filter(l => l.qty > 0);
+      if (!lines.length) return fail('Nothing to order.');
+      const id = `po${orders.length + 1}`;
+      orders.unshift({ todoId: id, title: `Buy supplies: ${lines.length} items (later)`, lines: clone(lines), at: today, purchases: 0 });
+      return { ...view(), todoId: id };
+    } else if (b.action === 'orderNote') {
+      // Said on the to-do on the real screen; nothing to keep here.
+    } else if (b.action === 'storeLink') {
+      return fail('Practice: store links are saved on the real screen only.');
     } else return fail('Unknown action.');
     return view();
   };

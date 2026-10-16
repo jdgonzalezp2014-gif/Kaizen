@@ -12,11 +12,12 @@
  */
 import { Hint, Peek } from '../components/Hint.tsx';
 import { Fragment, createContext, useContext, useEffect, useMemo, useRef, useState } from 'react';
-import { getInventory, inventoryAction, inventoryItemAction, inventoryUpload, type InvItemRow, type InvPlace, type Inventory } from '../api.ts';
+import { getInventory, inventoryAction, inventoryItemAction, inventoryUpload, todoAction, type InvItemRow, type InvPlace, type Inventory } from '../api.ts';
 import { CATEGORIES, leftOver, onHand, reconcile } from '../lib/inventory.ts';
 import { destFor, placeLabel } from '../lib/unit-access.ts';
 import { orderFor, receiptSum, similarItems, splitTotal, type Receipt, type ReceiptLine } from '../lib/receipt.ts';
 import { Sheet } from '../components/InspectionRun.tsx';
+import { Modal } from '../components/Modal.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { againstOrder, cartLinks, STORE_NAME, storeProduct } from '../lib/store-order.ts';
 import { TX } from '../lib/crew-i18n.ts';
@@ -130,8 +131,8 @@ function InventoryBody({ canEdit }: { canEdit: boolean }) {
         {!current && view === 'house' && <p className="note">No house has a Repository record yet — add them in Repository → Units.</p>}
       </div>
       {current && <PlaceStock key={vk(current)} inv={inv} p={current} canEdit={canEdit} onSaved={setInv} />}
-      <OrderPlan inv={inv} canEdit={canEdit} onSaved={setInv} />
-      {canEdit && <RecordPurchase inv={inv} onSaved={setInv} />}
+      {/* Owner, 2026-10-15: one cart — an order is a purchase without a price or a receipt. */}
+      {canEdit ? <CartCard inv={inv} onSaved={setInv} /> : <OrderPlan inv={inv} canEdit={false} onSaved={setInv} />}
       <RecentMoves inv={inv} />
     </div>
   );
@@ -756,6 +757,8 @@ export type PurchaseOut = {
   aliases: { text: string; itemId: string }[];
   /** The Walmart/Amazon products bought, and how many of the supply's measure come in one — kept on the supply. */
   products?: { itemId: string; url: string; pack: number | null }[];
+  /** The owner's expense (owner, 2026-10-15): marked so someone tells / charges the owner. */
+  ownerCharge?: boolean;
 };
 /** A receipt line in the form: which receipt (`rc`), the supply it went to, and whether a person decided it. */
 type Row = { rc: number; line: ReceiptLine; got: string | null; skip: boolean; open: boolean; name: string; size: string; decided: boolean;
@@ -767,7 +770,7 @@ const AI = '✨ from the receipt';
 const money = (n: number) => `$${n.toFixed(2)}`;
 
 function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal, fieldExpenseId, hasReceipt, canSplit, head, extra,
-                        recordLabel = '🧾 Record the purchase', onRecord, buttons, noPlace, plannedAt, tools }: {
+                        recordLabel = '🧾 Record the purchase', onRecord, buttons, noPlace, plannedAt, tools, hints }: {
   inv: Inventory; onInv: (i: Inventory) => void;
   /** The order this purchase is for, if any ('' = none). */
   todoId?: string; start?: Lines; defaultPlace?: string | null;
@@ -785,11 +788,16 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
   plannedAt?: Map<string, string>;
   /** A to-do's cart tools, drawn in the lines themselves (store, on hand, …) with their summary above and below. */
   tools?: (p: { lines: PurchaseOut['lines']; edit: CartEdit; read: boolean }) => { top: React.ReactNode; row: CartRow; bottom: React.ReactNode } | null;
+  /** What each place is short of (the Inventory cart's suggestion), shown under each item. */
+  hints?: Lines;
 }) {
   const api = useContext(InvApi);
   const [lines, setLinesRaw] = useState<Lines>(start ?? new Map());
   const [total, setTotal] = useState('');
   const [paidBy, setPaidBy] = useState('');
+  const [ownerCharge, setOwnerCharge] = useState(false);
+  // Owner, 2026-10-15: a purchase needs its price; the receipt is asked for, not required.
+  const [noReceipt, setNoReceipt] = useState(false);
   const [note, setNote] = useState('');
   const [date, setDate] = useState('');
   // Owner, 2026-10-15: the team's receipts are Walmart/Amazon orders saved with MarkDownload (.md) — nothing else.
@@ -965,7 +973,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
       const products = rows.filter(r => r.got && !r.skip && r.line.product).map(r => ({ itemId: r.got!, url: r.line.product!.url,
         pack: r.line.qty ? Math.round(rowQty(r) / r.line.qty * 100) / 100 : null }));
       // One order left after the split → the purchase is that order's.
-      const r = await onRecord({ lines: out, total: fixedTotal != null ? String(fixedTotal) : total, paidBy, note, files, date, splits, aliases, products,
+      const r = await onRecord({ lines: out, total: fixedTotal != null ? String(fixedTotal) : total, paidBy, note, files, date, splits, aliases, products, ownerCharge,
                                  ...(groups.length === 1 && groups[0] !== todoId ? { forTodo: groups[0] } : {}) });
       if (typeof r === 'string') { setMsg(r); return; }
       if (r === true) { clear(); setMsg('✓ Purchase recorded: in the stock and in Costs (Restock). Attach the next receipt to record another.'); }
@@ -1078,7 +1086,7 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     </div>}
     {!read1 && fixedTotal == null && <CartLinks inv={inv} lines={plannedAt ? out.filter(l => !elsewhere(inv, l.itemId, plannedAt)) : out} />}
     {cart?.top}
-    <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={defaultPlace} onInv={onInv} tags={tags} fresh={fresh} noPlace={noPlace} row={cart?.row}
+    <ItemLines inv={inv} value={lines} onChange={setLines} canEdit defaultPlace={defaultPlace} onInv={onInv} tags={tags} fresh={fresh} noPlace={noPlace} row={cart?.row} hints={hints}
                orderCol={splitting ? { options: inv.orders.map(o => ({ id: o.todoId, label: o.title })), value: new Map(out.map(l => [l.itemId, orderKey(l.itemId)])),
                                        onChange: (id, o) => { setOrderOf(new Map(orderOf).set(id, o)); setShares(new Map()); } } : undefined} />
     {cart?.bottom}
@@ -1087,6 +1095,8 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
         ? <label>Total paid ($){mark('total')}<input type="number" inputMode="decimal" min="0" step="0.01" value={total} onChange={e => { setTotal(e.target.value); untouch('total'); setShares(new Map()); }} /></label>
         : <label>Total paid ($)<input value={fixedTotal.toFixed(2)} disabled /><span className="sub-n">what they paid</span></label>}
       {fixedTotal == null && <PaidBy value={paidBy} onChange={setPaidBy} />}
+      {fixedTotal == null && <label className="check"><input type="checkbox" checked={ownerCharge} onChange={e => setOwnerCharge(e.target.checked)} /> 💼 Owner's expense
+        <Hint>The owner pays for it: Costs and the to-do say so, so someone tells / charges the owner. Nothing is sent to Hostaway.</Hint></label>}
       <label>Note{mark('note')}<input value={note} maxLength={500} placeholder="Store, card…" onChange={e => { setNote(e.target.value); untouch('note'); }} /></label>
       {read1 && fixedTotal == null && <label>Bought on{mark('date')}<input type="date" value={date} onChange={e => { setDate(e.target.value); untouch('date'); }} /></label>}
       {/* Each pick ADDS files (another order) — up to 5. Typed as Markdown: the browser often gives a .md no type at all. */}
@@ -1120,12 +1130,20 @@ function PurchaseForm({ inv, onInv, todoId = '', start, defaultPlace, fixedTotal
     {extra}
     <div className="button-row">
       {buttons?.({ lines: out, busy, read: read1, edit })}
-      <button disabled={busy || !out.length || unplaced || !(totalN > 0) || pending > 0 || !!shareLeft} onClick={() => void record()}>{ic(busy ? 'Saving…' : recordLabel)}</button>
+      <button disabled={busy || !out.length || unplaced || !(totalN > 0) || pending > 0 || !!shareLeft}
+              onClick={() => { if (!files.length && !hasReceipt) setNoReceipt(true); else void record(); }}>{ic(busy ? 'Saving…' : recordLabel)}</button>
+      {noReceipt && <Modal title="Record it without a receipt?" onClose={() => setNoReceipt(false)}>
+        <p>No receipt is attached. The purchase can be recorded without one — Costs will show it has none.</p>
+        <div className="button-row">
+          <button onClick={() => { setNoReceipt(false); void record(); }}>Record without a receipt</button>
+          <button className="secondary" onClick={() => setNoReceipt(false)}>Attach the receipt first</button>
+        </div>
+      </Modal>}
       {unplaced && <span className="note">▲ Say which place each item went to{noPlace ? ' — Save order keeps it without one' : ''}.</span>}
       {pending > 0 && <span className="note">▲ Decide the receipt's lines first.</span>}
       {unread > 0 && read1 && <span className="note">▲ {unread} receipt file{unread === 1 ? '' : 's'} not read yet.</span>}
       {lines.size > 0 && !out.length && <span className="note">Write how many of each item.</span>}
-      {out.length > 0 && !(totalN > 0) && <span className="note">The total paid is needed to record it.</span>}
+      {out.length > 0 && !(totalN > 0) && <span className="note">A purchase needs the total paid{buttons ? ' — not bought yet? Keep it as the order' : ''}.</span>}
     </div>
     {msg && <p className={msg.startsWith('✓') ? 'note' : 'breach'} role="status">{msg}</p>}
   </>;
@@ -1170,6 +1188,7 @@ function CartLinks({ inv, lines }: { inv: Inventory; lines: { itemId: string; qt
 async function sendPurchase(api: InvTransport, p: PurchaseOut, todoId: string) {
   const f = new FormData();
   f.append('action', 'purchase'); f.append('note', p.note); f.append('paidBy', p.paidBy);
+  if (p.ownerCharge) f.append('ownerCharge', 'true');
   if (p.date) f.append('date', p.date);
   if (p.aliases.length) f.append('aliases', JSON.stringify(p.aliases));
   if (p.products?.length) f.append('products', JSON.stringify(p.products));
@@ -1184,27 +1203,93 @@ async function sendPurchase(api: InvTransport, p: PurchaseOut, todoId: string) {
 }
 
 /** Inventory → 🧾 Record a purchase: from an open order (its lines filled in) or from scratch. */
-function RecordPurchase({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory) => void }) {
+/**
+ * The cart (owner, 2026-10-15: "an order is simply a purchase without a price and without a receipt" — one cart,
+ * not two). It starts from what is short in the coming cleans (or the saved draft), or it IS an open order (the same
+ * cart as in its to-do). Filled in, it is either sent as an order — a to-do, no price — or recorded as a purchase:
+ * the total paid is required, the receipt is asked for but not required, the owner's expense can be marked.
+ */
+function CartCard({ inv, onSaved }: { inv: Inventory; onSaved: (i: Inventory) => void }) {
   const api = useContext(InvApi);
   const [todoId, setTodoId] = useState('');
+  const suggested = useMemo(() => linesOf(inv.places.filter(p => p.place).flatMap(p => p.items.filter(l => l.toOrder > 0)
+    .map(l => ({ itemId: l.itemId, place: p.place!, qty: l.toOrder })))), [inv]);
+  // §150: a saved draft comes back as it was left; else the suggestion.
+  const [fresh, setFresh] = useState(0);
+  const start = inv.draft && !fresh ? linesOf(inv.draft.lines) : new Map(suggested);
+  const [forTodo, setForTodo] = useState(inv.draft?.forTodo ?? '');
+  useEffect(() => { setForTodo(inv.draft?.forTodo ?? ''); setAt(new Map((inv.draft?.lines ?? []).filter(l => l.at).map(l => [String(l.itemId), l.at!]))); }, [inv.draft?.savedAt]);
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const cartUi = useCartUi();
+  const [at, setAt] = useState<Map<string, string>>(new Map());
+  const [aside, setAside] = useState<Aside[]>([]);
   const o = inv.orders.find(x => x.todoId === todoId);
+  // Nothing is suggested for a place until it has been counted: its record would be a guess.
+  const uncounted = inv.places.filter(p => p.place && p.view !== 'house' && p.units.length && p.items.every(l => !l.countedAt));
+  const reload = () => void api.get().then(r => { if (r.ok) onSaved(r); });
+  const act = async (body: Record<string, unknown>, done: string) => {
+    setBusy(true); setMsg('');
+    try { const r = await api.act(body); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { onSaved(r); setMsg(done); return true; } }
+    catch (e) { setMsg(String(e)); } finally { setBusy(false); }
+    return false;
+  };
   return (
     <div className="card">
-      <h2><Icon n="receipt" /> Record a purchase <Hint>What was really bought: it adds to each place's stock and goes to Costs as one Restock expense with its receipt.
-        Start from an open order (its lines come filled in) or add the items with <Icon n="search" />. Attach the Walmart/Amazon order saved with MarkDownload (.md) →
-        <Icon n="sparkles" /> Read receipt fills the form in and checks it against the order (missing, fewer, not ordered, not exact) — check it, then record it.
-        More than one order: <Icon n="clip" /> + another → <Icon n="sparkles" /> Read the new receipt adds its lines and total. Close the order in To-do once everything is bought.</Hint></h2>
-      <PurchaseForm inv={inv} onInv={onSaved} todoId={todoId} start={o ? linesOf(o.lines) : undefined} canSplit recordLabel="Record the purchase"
-        head={<label>For the order
-          <select value={todoId} onChange={e => setTodoId(e.target.value)}>
-            <option value="">— none (a purchase on its own)</option>
-            {inv.orders.map(o => <option key={o.todoId} value={o.todoId}>{o.at} · {o.title}{o.purchases ? ` · ${o.purchases} purchase${o.purchases === 1 ? '' : 's'} so far` : ''}</option>)}
-          </select></label>}
-        onRecord={async p => {
-          const r = await sendPurchase(api, p, todoId);
-          if (!r.ok) return r.message ?? 'Not saved.';
-          onSaved(r); setTodoId(''); return true;
-        }} />
+      <h2><Icon n="cart" /> Cart <Hint>One cart for ordering and buying. <b>A new cart</b> starts from what each place will be short of in the next {inv.aheadDays} days
+        (its cleans, plus its minimum, minus what it holds — places never counted are not guessed at), or the saved draft; add anything with <Icon n="search" />.
+        Or pick <b>an open order</b>: the same cart as in its to-do. Then: <b>Send as order</b> — a to-do, no price — or, once bought, the total paid →
+        <Icon n="receipt" /> Record the purchase (stock + Costs). The receipt (.md) is asked for, not required. 💼 marks the owner's expense.</Hint></h2>
+      <label>Working on
+        <select value={todoId} onChange={e => { setTodoId(e.target.value); setMsg(''); }}>
+          <option value="">A new cart — what is short in the next {inv.aheadDays} days</option>
+          {inv.orders.map(x => <option key={x.todoId} value={x.todoId}>{x.at} · {x.title}{x.purchases ? ` · ${x.purchases} purchase${x.purchases === 1 ? '' : 's'} so far` : ''}</option>)}
+        </select></label>
+      {todoId ? <TaskPurchase key={todoId} todoId={todoId} unitIds={o?.unitIds ?? []} asked={o?.asked ?? null}
+          onClose={() => setTodoId('')}
+          onBought={async closeIt => {
+            // Closing the to-do is Kaizen's own (Practice keeps nothing outside the browser).
+            if (closeIt && api === REAL) await todoAction({ action: 'done', id: todoId, done: true }).catch(() => null);
+            setTodoId(''); reload();
+          }} />
+        : <>
+          {uncounted.length > 0 && <p className="note">▲ Count first (nothing is suggested for them until then): {uncounted.map(placeTitle).join(', ')}.</p>}
+          {inv.draft && !fresh && <p className="note"><Icon n="note" /> <b>Draft</b> saved {inv.draft.savedAt} by {inv.draft.savedBy} — it becomes a to-do only when it is sent as an order.</p>}
+          {!start.size && <p className="note">Nothing is short in what has been counted. Add an item with <Icon n="search" /> to order or record it anyway.</p>}
+          {/* Started over only by a new draft or "Back to the suggestion" — not by a count fixed while filling it. */}
+          <PurchaseForm key={`${inv.draft?.savedAt ?? ''}|${fresh}`} inv={inv} onInv={onSaved} start={start} hints={suggested} canSplit noPlace
+            defaultPlace={busiestPlace(inv) || null} recordLabel="Record the purchase"
+            plannedAt={new Map(inv.items.map(i => [i.id, storeAt(inv, i.id, at)] as const).filter(([, v]) => v))}
+            tools={({ lines, edit, read }) => read ? null : cartTools(cartUi, { act: api.act, inv, onInv: onSaved, lines, todoId: '', unitIds: [], asks: [], onAsk: () => {},
+              at, off: [], onLater: () => {}, edit, aside, setAside,
+              onAt: (id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; }) })}
+            extra={inv.fieldTodos.length > 0 ? <label>Send it for
+              <select value={forTodo} onChange={e => setForTodo(e.target.value)}>
+                <option value="">a new order to-do</option>
+                {inv.fieldTodos.map(t => <option key={t.id} value={t.id}>{t.group === 'problem' ? '⚠️' : '🧴'} {t.title}</option>)}
+              </select></label> : undefined}
+            onRecord={async p => {
+              const r = await sendPurchase(api, p, '');
+              if (!r.ok) return r.message ?? 'Not saved.';
+              onSaved(r); setAside([]); return true;
+            }}
+            buttons={({ lines, busy: b2 }) => {
+              const withAt = lines.map(l => at.get(l.itemId) ? { ...l, at: at.get(l.itemId) } : l);
+              const n = new Set(lines.map(l => l.itemId)).size;
+              return <>
+                <button className="secondary" disabled={busy || b2 || !lines.length} onClick={async () => {
+                  const ok = await act({ action: 'order', lines: withAt, forTodo: forTodo || undefined },
+                    forTodo ? '✓ Sent as an order on that to-do.' : '✓ Sent as an order — a to-do in Operations → To-do.');
+                  if (ok) { setForTodo(''); setAside([]); setFresh(0); }
+                }}><Icon n="cart" /> {forTodo ? 'Add to that to-do as an order' : 'Send as order'} ({n} item{n === 1 ? '' : 's'})</button>
+                <button className="secondary" disabled={busy || b2 || !lines.length} onClick={async () => { if (await act({ action: 'draft', lines: withAt, forTodo: forTodo || undefined }, 'Draft saved.')) setFresh(0); }}>
+                  <Icon n="save" /> Save draft</button>
+                {inv.draft && <button className="secondary" disabled={busy || b2} onClick={() => void act({ action: 'draft', lines: [] }, 'Draft discarded.')}>Discard draft</button>}
+                {suggested.size > 0 && <button className="link tiny" onClick={() => { setFresh(f => f + 1); setAside([]); }}>Back to the suggestion</button>}
+                {msg && <span className={msg.startsWith('✓') || msg.startsWith('Draft') ? 'note' : 'breach'}>{msg}</span>}
+              </>;
+            }} />
+        </>}
     </div>
   );
 }
@@ -1368,6 +1453,8 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   /** §159: what was asked, in the asker's words (the to-do's description) — ✨ builds the cart from it. */
   asked?: string | null;
 }) {
+  // The screen's transport: the real API, or Practice's (nothing leaves the browser there).
+  const api = useContext(InvApi);
   const [inv, setInv] = useState<Inventory | null>(null);
   const [startArr, setStartArr] = useState<{ itemId: string; place: string; qty: number }[]>([]);
   const [formKey, setFormKey] = useState(0);
@@ -1387,7 +1474,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   const [at, setAt] = useState<Map<string, string>>(new Map());
   // Owner, 2026-10-14: the to-do's order IS the "Record a purchase" form — items, total, paid by, note,
   // receipt in one place; 💾 Save order keeps it as a draft (no price needed) until it is bought.
-  useEffect(() => { void getInventory().then(r => {
+  useEffect(() => { void api.get().then(r => {
     if (!r.ok) { setMsg(r.message ?? 'Could not load the inventory.'); return; }
     const o = r.orders.find(x => x.todoId === todoId);
     if (o) { setStartArr(o.lines); setAt(new Map(o.lines.filter(l => l.at).map(l => [String(l.itemId), l.at!]))); }
@@ -1410,7 +1497,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   // §159 (owner): the AI reads what was asked and fills the cart — sure lines in, the rest as "is it one of these?".
   const build = async () => {
     setBuilding(true); setMsg('');
-    const r = await inventoryAction({ action: 'readRequest', text: asked ?? '' }).catch(e => ({ ok: false as const, message: String(e) })) as
+    const r = await api.act({ action: 'readRequest', text: asked ?? '' }).catch(e => ({ ok: false as const, message: String(e) })) as
       { ok: true; lines: ReceiptLine[] } | { ok: false; message?: string };
     setBuilding(false);
     if (!r.ok) { setMsg(`${r.message ?? 'Could not read it'} — build the cart by hand.`); return; }
@@ -1424,15 +1511,15 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
   const withAt = <L extends { itemId: string }>(ls: L[]) => ls.map(l => at.get(String(l.itemId)) ? { ...l, at: at.get(String(l.itemId)) } : l);
   const asideLines = aside.flatMap(a => a.parts.map(p => ({ itemId: a.itemId, place: p.place, qty: p.qty })));
   /** Said on the to-do: what was set aside and why — on hand, or another order buys it. */
-  const noteAside = () => aside.length ? inventoryAction({ action: 'orderNote', todoId, notes: aside.map(a =>
+  const noteAside = () => aside.length ? api.act({ action: 'orderNote', todoId, notes: aside.map(a =>
     `${nameOf(a.itemId)} × ${a.parts.reduce((s, p) => s + p.qty, 0)} — ${a.why === 'stock' ? `on hand (${a.from})` : `bought on ${a.from}`}`) }).catch(() => null) : Promise.resolve(null);
   /** Items taken off the cart (or fewer of them) → a new order for later; this one saved without them. */
   const later = async (off: { itemId: string; place: string; qty: number }[], lines: { itemId: string; place: string; qty: number }[]) => {
     setMsg('');
     try {
-      const l = await inventoryAction({ action: 'laterOrder', fromTodo: todoId, lines: withAt(off) });
+      const l = await api.act({ action: 'laterOrder', fromTodo: todoId, lines: withAt(off) });
       if (!l.ok) { setMsg(l.message ?? 'The new order was not made.'); return; }
-      const r = await inventoryAction({ action: 'todoOrder', todoId, lines: withAt(lines) });
+      const r = await api.act({ action: 'todoOrder', todoId, lines: withAt(lines) });
       if (!r.ok) { setMsg(`New order for later made (#${l.todoId}) — but this order was not saved without them: ${r.message ?? ''}`); return; }
       await noteAside(); setAside([]);
       setStartArr(lines); setInv(r);
@@ -1460,7 +1547,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
             <option value="drop">is dropped — close this to-do</option>
           </select></label>}
         onRecord={async p => {
-          const r = await sendPurchase(REAL, p, todoId);
+          const r = await sendPurchase(api, p, todoId);
           if (!r.ok) return r.message ?? 'Not saved.';
           // What this to-do's order still needs after what was bought for it (one receipt may have paid for several orders).
           const mine = p.splits ? p.splits.find(x => x.todoId === todoId)?.lines ?? [] : p.forTodo && p.forTodo !== todoId ? [] : p.lines;
@@ -1469,11 +1556,11 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
           const done = '✓ The purchase IS recorded — do not record it again.';
           try {
             if (after === 'later' && rest.length) {
-              const l = await inventoryAction({ action: 'laterOrder', fromTodo: todoId, lines: rest });
+              const l = await api.act({ action: 'laterOrder', fromTodo: todoId, lines: rest });
               if (!l.ok) return `${done} But the new order for later was not made (${l.message ?? 'no answer'}) — Cancel, then Save order with what is left.`;
             }
             if (after === 'keep') {
-              const k = await inventoryAction({ action: 'todoOrder', todoId, lines: rest });
+              const k = await api.act({ action: 'todoOrder', todoId, lines: rest });
               if (!k.ok) return `${done} But what is left was not saved (${k.message ?? 'no answer'}) — Cancel and check the order.`;
             }
           } catch (e) { return `${done} But what is left was not saved (${String(e)}).`; }
@@ -1481,7 +1568,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
         }}
         // Owner, 2026-10-15: one cart — where to buy, on hand, already ordered are drawn in the lines themselves.
         // After a receipt is read the cart is bought: the receipt's check and "what was not bought" take over.
-        tools={({ lines, edit, read }) => { editRef.current = edit; return read ? null : cartTools(cartUi, { inv, onInv: setInv, lines, todoId, unitIds, asks, at,
+        tools={({ lines, edit, read }) => { editRef.current = edit; return read ? null : cartTools(cartUi, { act: api.act, inv, onInv: setInv, lines, todoId, unitIds, asks, at,
           off: leftOver(startArr, [...lines, ...asideLines]), onLater: off => void later(off, lines), edit, aside, setAside,
           onAsk: (text, id) => setAsks(x => x.map(a => a.text === text ? { ...a, itemId: id } : a)),
           onAt: (id, v) => setAt(m => { const n = new Map(m); if (v) n.set(id, v); else n.delete(id); return n; }) }); }}
@@ -1492,7 +1579,7 @@ export function TaskPurchase({ todoId, unitIds, onClose, onBought, asked }: {
               const off = leftOver(startArr, [...lines, ...asideLines]);
               if (off.length && !msg.startsWith('▲ Taken off')) { setMsg(`▲ Taken off the cart: ${off.length} line${off.length === 1 ? '' : 's'} — “Save them as a new order for later” under the lines, or tap Save order again to drop them.`); return; }
               setMsg('');
-              try { const r = await inventoryAction({ action: 'todoOrder', todoId, lines: withAt(lines) }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { await noteAside(); onBought(false); } }
+              try { const r = await api.act({ action: 'todoOrder', todoId, lines: withAt(lines) }); if (!r.ok) setMsg(r.message ?? 'Not saved.'); else { await noteAside(); onBought(false); } }
               catch (e) { setMsg(String(e)); }
             }}><Icon n="save" /> Save order</button>
             <button className="secondary" disabled={busy} onClick={onClose}>Cancel</button>
@@ -1569,8 +1656,8 @@ function useCartUi() {
 }
 /** What the cart adds to each line of the form: under its name, its "Buy at" cell, and what opens under it. */
 type CartRow = { sub: (id: string) => React.ReactNode; cell: (id: string) => React.ReactNode; below: (id: string) => React.ReactNode };
-function cartTools(ui: ReturnType<typeof useCartUi>, { inv, onInv, lines, todoId, unitIds, asks, onAsk, at, onAt, off, onLater, edit, aside, setAside }: {
-  inv: Inventory; onInv: (i: Inventory) => void; lines: { itemId: string; place: string; qty: number }[]; todoId: string; unitIds: string[];
+function cartTools(ui: ReturnType<typeof useCartUi>, { act, inv, onInv, lines, todoId, unitIds, asks, onAsk, at, onAt, off, onLater, edit, aside, setAside }: {
+  act: InvTransport['act']; inv: Inventory; onInv: (i: Inventory) => void; lines: { itemId: string; place: string; qty: number }[]; todoId: string; unitIds: string[];
   asks: Ask[]; onAsk: (text: string, itemId: string) => void; at: Map<string, string>; onAt: (itemId: string, store: string) => void;
   off: { itemId: string; place: string; qty: number }[]; onLater: (off: { itemId: string; place: string; qty: number }[]) => void;
   edit: CartEdit; aside: Aside[]; setAside: (f: (a: Aside[]) => Aside[]) => void;
@@ -1585,8 +1672,10 @@ function cartTools(ui: ReturnType<typeof useCartUi>, { inv, onInv, lines, todoId
   const asideIds = new Set(aside.map(a => a.itemId));
   const missed = asks.filter(a => !left.has(a.text) && !(a.itemId && (byItem.has(a.itemId) || asideIds.has(a.itemId))));
   const mine = inv.places.filter(p => p.units.some(u => unitIds.includes(u.id)));
-  const handAt = (id: string) => (wide ? inv.places : mine).filter(p => p.place).flatMap(p => p.items.filter(i => i.itemId === id && (i.qty ?? 0) > 0)
-    .map(i => ({ key: p.place!, name: placeTitle(p), qty: i.qty!, own: mine.includes(p) }))).sort((a, b) => b.qty - a.qty);
+  // On hand looks where it matters: this listing's places and where the item's own lines go (an Inventory cart has no listing).
+  const near = (id: string) => inv.places.filter(p => mine.includes(p) || (byItem.get(id) ?? []).some(l => l.place && l.place === p.place));
+  const handAt = (id: string) => (wide ? inv.places : near(id)).filter(p => p.place).flatMap(p => p.items.filter(i => i.itemId === id && (i.qty ?? 0) > 0)
+    .map(i => ({ key: p.place!, name: placeTitle(p), qty: i.qty!, own: near(id).includes(p) }))).sort((a, b) => b.qty - a.qty);
   const onOther = (id: string) => inv.orders.filter(o => o.todoId !== todoId && o.lines.some(l => String(l.itemId) === id))
     .map(o => ({ id: o.todoId, title: o.title, qty: o.lines.filter(l => String(l.itemId) === id).reduce((a, l) => a + l.qty, 0) }));
   const takeOff = (id: string, why: Aside['why'], from: string) => { setAside(a => [...a, { itemId: id, parts: byItem.get(id) ?? [], why, from }]); edit.put(id, []); };
@@ -1597,7 +1686,7 @@ function cartTools(ui: ReturnType<typeof useCartUi>, { inv, onInv, lines, todoId
   const saveLink = async (url: string) => {
     if (!fix) return;
     setFix({ ...fix, busy: true, err: '' });
-    const r = await inventoryAction({ action: 'storeLink', itemId: fix.id, url, label: fix.store.trim(), pack: Number(fix.pack) || undefined })
+    const r = await act({ action: 'storeLink', itemId: fix.id, url, label: fix.store.trim(), pack: Number(fix.pack) || undefined })
       .catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setFix({ ...fix, busy: false, err: r.message ?? 'Not saved.' }); return; }
     onInv(r); setFix(null);
@@ -1605,7 +1694,7 @@ function cartTools(ui: ReturnType<typeof useCartUi>, { inv, onInv, lines, todoId
   const saveCount = async () => {
     if (!recount) return;
     setRecount({ ...recount, busy: true, err: '' });
-    const r = await inventoryAction({ action: 'count', place: recount.place, counts: [{ itemId: recount.id, qty: Number(recount.qty) || 0 }],
+    const r = await act({ action: 'count', place: recount.place, counts: [{ itemId: recount.id, qty: Number(recount.qty) || 0 }],
                                       note: `Checked while ordering (to-do #${todoId})` }).catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setRecount({ ...recount, busy: false, err: r.message ?? 'Not saved.' }); return; }
     onInv(r); setRecount(null);
@@ -1613,7 +1702,7 @@ function cartTools(ui: ReturnType<typeof useCartUi>, { inv, onInv, lines, todoId
   const addAsk = (a: Ask, id: string) => { edit.add(id, 1); onAsk(a.text, id); };
   const newFromAsk = async (a: Ask) => {
     setMaking(a.text); setAskErr('');
-    const r = await inventoryAction({ action: 'newItem', name: itemName(a.text), measure: guessMeasure(a.text), kind: guessKind(a.text), category: 'other' })
+    const r = await act({ action: 'newItem', name: itemName(a.text), measure: guessMeasure(a.text), kind: guessKind(a.text), category: 'other' })
       .catch(e => ({ ok: false as const, message: String(e) }));
     setMaking('');
     if (!r.ok || !r.itemId) { setAskErr(r.ok ? 'Not added.' : r.message ?? 'Not added.'); return; }
@@ -1644,7 +1733,7 @@ function cartTools(ui: ReturnType<typeof useCartUi>, { inv, onInv, lines, todoId
           <span className="sub-n">Another unit's need: keep both.</span>
         </Peek>}
         {hand.length > 0 && <Peek className="onhand" label={<><b className="bang" aria-hidden="true">!</b>On hand</>} ariaLabel={`${nm(id)} is on record somewhere`}>
-          <b>On record{wide ? '' : ' at this listing'}</b><br />
+          <b>On record{wide ? '' : ' here'}</b><br />
           {hand.map(h => <Fragment key={h.key}>{h.name}: {h.qty}{h.own ? '' : ' (another listing)'}<br /></Fragment>)}
           The record can be wrong — ask the cleaner to look.<br />
           <button className="link tiny" onClick={() => takeOff(id, 'stock', hand.map(h => h.name).join(', '))}>It is there — don't buy it</button><br />
@@ -1707,7 +1796,7 @@ function cartTools(ui: ReturnType<typeof useCartUi>, { inv, onInv, lines, todoId
   // Above the lines: what still has no store, and how far "on hand" looks.
   const top = ids.length > 0 ? <div className="row cart-top">
     {noStore > 0 && <span className="warn-text sub-n">▲ {noStore} without a store</span>}
-    {!wide && !mine.length && <span className="sub-n">No listing with a place yet — nothing on hand is shown.</span>}
+    {!wide && !mine.length && unitIds.length > 0 && <span className="sub-n">This listing has no place yet — on hand looks only where each line goes.</span>}
     <span className="rb-spacer" />
     <label className="check sub-n"><input type="checkbox" checked={wide} onChange={e => setWide(e.target.checked)} /> On hand at other listings’ places too</label>
   </div> : null;

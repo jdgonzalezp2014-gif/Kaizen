@@ -96,7 +96,17 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   itself: "don't buy it", or "correct the record" (a `count` at that place, note "Checked while ordering"). Store: `StorePick`
   + `linkOf` (store product, or a non-store option under the store's name) — `setStoreLink` now keeps other stores' pages
   by `label`; `storeAt` falls back to that label. Asked-not-on-cart rows replace the old "Not sure" block. Peek's pop-up keeps
-  focus on a tap (mousedown prevented) so its buttons work on a phone. Splits show per part. **One cart (owner: two carts were confusing):** `cartTools(useCartUi(), …)` returns `{ top, row, bottom }`; PurchaseForm's `tools` draws `row` IN ItemLines (`row` prop: `sub` under the name = asked as / ! Already ordered / ! On hand, `cell` = Buy at column, `below` = the link or count field in a `cart-under` row), `top`/`bottom` around it; no separate Final cart table. `.slide-over:has(.task-buy)` widens the panel to min(92vw, 1240px); `.cart-lines` are cards ≤720px. SOP #15 v24. Open: report a broken link from Slack's draft (only in Kaizen); abandoned
+  focus on a tap (mousedown prevented) so its buttons work on a phone. Splits show per part. **One cart (owner: two carts were confusing):** `cartTools(useCartUi(), …)` returns `{ top, row, bottom }`; PurchaseForm's `tools` draws `row` IN ItemLines (`row` prop: `sub` under the name = asked as / ! Already ordered / ! On hand, `cell` = Buy at column, `below` = the link or count field in a `cart-under` row), `top`/`bottom` around it; no separate Final cart table. `.slide-over:has(.task-buy)` widens the panel to min(92vw, 1240px); `.cart-lines` are cards ≤720px. SOP #15 v24.
+  **One cart everywhere (owner: "an order is a purchase without a price and without a receipt"):** Inventory's `CartCard`
+  replaces OrderPlan + RecordPurchase (OrderPlan stays only as the read-only view for roles without edit): "Working on" =
+  a new cart (suggestion/draft → PurchaseForm with `hints`, cart tools, Send as order / Save draft / Record) or an open
+  order (→ the same `TaskPurchase`; `openOrders` now returns `unitIds` + `asked`). TaskPurchase and `cartTools` use the
+  screen's `InvApi` (Practice works; Practice handles todoOrder/laterOrder/orderNote). `createOrder`/`saveDraft` keep
+  no-place lines and `at` (`orderLinesIn`/`nameOrderLines`). Recording: total required, no receipt → "Record it without a
+  receipt?" modal; 💼 **Owner's expense** → `inventory_purchases.owner_charge` (096), Restock label/notes and the to-do say
+  so — NOT sent to Hostaway (repairs do; ask the owner before doing it for purchases). Inspections need nothing: their
+  purchases become one to-do whose order opens in this cart. "On hand" also looks where each line goes (an Inventory cart
+  has no listing). SOP #15 v25. Open: report a broken link from Slack's draft (only in Kaizen); abandoned
   `slack_order_drafts` rows are never cleaned. Not yet seen on screen (owner's tokens) — check it in use.
 - **Sets (owner, 2026-10-15):** one store product on several supplies = a set (Swirl flatware on Forks ×16 / Knives ×8 / Spoons ×24,
   Quatish on Plates ×8 / Bowls ×4; only when someone puts the same link on several items). `readOrder` splits its line into one

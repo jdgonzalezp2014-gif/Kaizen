@@ -548,11 +548,12 @@ export interface Inventory {
   /** Active units whose Repository `storage` is blank or names no record (§150). */
   unassigned: { id: string; name: string; recordId: string | null; cleansAhead: number }[];
   /** Orders (shopping to-dos) not closed, with their lines — a purchase can start from one (§150). */
-  orders: { todoId: string; title: string; lines: { itemId: string; place: string; qty: number; /** where it is bought, when not its linked store */ at?: string }[]; at: string; purchases: number }[];
+  orders: { todoId: string; title: string; lines: { itemId: string; place: string; qty: number; /** where it is bought, when not its linked store */ at?: string }[]; at: string; purchases: number;
+    /** The to-do's listing and what was asked (its description) — the cart opens the same anywhere. */ unitIds?: string[] | null; asked?: string | null }[];
   /** The field's open to-dos (a clean's supplies request, a problem) an order can be attached to (§150). */
   fieldTodos: { id: string; title: string; group: 'problem' | 'request' }[];
   /** The order kept as a draft (§150), if any. */
-  draft: { lines: { itemId: string; place: string; qty: number }[]; forTodo: string | null; savedBy: string; savedAt: string } | null;
+  draft: { lines: { itemId: string; place: string; qty: number; at?: string }[]; forTodo: string | null; savedBy: string; savedAt: string } | null;
   /** Setup → Inventory: a "Low stock at <place>" to-do on its own. */
   lowStockTasks: boolean;
   /** §150: purchases someone paid with their own money, not paid back yet. */

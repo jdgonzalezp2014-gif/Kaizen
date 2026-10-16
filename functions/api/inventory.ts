@@ -143,8 +143,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       await orderNote(sql, who.email, b.todoId, b.notes);
     } else if (b.action === 'draft') {
       // §150: the order kept as a draft — no to-do until it is created; no lines = discard it.
-      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
-        .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0 })) : [];
+      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown; at?: unknown }[])
+        .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0, at: String(l.at ?? '').trim().slice(0, 60) })) : [];
       await saveDraft(sql, who.email, lines, b.forTodo ? String(b.forTodo) : null);
     } else if (b.action === 'settings') {
       await saveSettings(sql, who.email, b.place, b.items);
@@ -152,8 +152,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     } else if (b.action === 'removeItem') {
       await removeItem(sql, b.itemId);
     } else if (b.action === 'order') {
-      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown }[])
-        .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0 })) : [];
+      const lines = Array.isArray(b.lines) ? (b.lines as { itemId: unknown; place: unknown; qty: unknown; at?: unknown }[])
+        .map(l => ({ itemId: String(l.itemId), place: String(l.place ?? ''), qty: Number(l.qty) || 0, at: String(l.at ?? '').trim().slice(0, 60) })) : [];
       const o = await createOrder(sql, who.email, lines, b.forTodo ? String(b.forTodo) : null);
       waitUntil(mirrorTodos(sql, env.ENCRYPTION_KEY, [o.id], who.email, o.fresh));
       return Response.json({ ok: true, todoId: o.id, ...(await overview(sql)) });

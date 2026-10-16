@@ -418,18 +418,11 @@ export async function fieldPurchase(sql: SqlFn, who: Who, b: Record<string, unkn
 }
 
 /** What to order, as one to-do with a line per item and the place it goes to. */
-export async function createOrder(sql: SqlFn, by: string, lines: { itemId: string; place: string; qty: number }[], forTodo: string | null = null) {
-  const [items, sp] = await Promise.all([invItems(sql), supplyPlaces(sql)]);
-  const named = lines.filter(l => l.qty > 0).flatMap(l => {
-    const item = items.find(i => i.id === String(l.itemId));
-    const p = findPlace(sp, l.place);
-    if (!p) throw new Error('Which place?');
-    if (item && !fitsPlace(p, item.kind)) throw new Error(`${item.name}: ${NOT_IN_HOUSE}`);
-    return item ? [{ item, place: placeWord(p), qty: Math.ceil(l.qty) }] : [];
-  });
-  const list = orderList(named);
+export async function createOrder(sql: SqlFn, by: string, lines: OrderIn[], forTodo: string | null = null) {
+  // Owner, 2026-10-15: the same lines as any order — a place may wait (no place yet), each says where it is bought.
+  const data = orderLinesIn(lines);
+  const list = data.length ? orderList(await nameOrderLines(sql, data)) : null;
   if (!list) throw new Error('Nothing to order.');
-  const data = lines.filter(l => l.qty > 0).map(l => ({ itemId: String(l.itemId), place: l.place, qty: Math.ceil(l.qty) }));
   // §150: an order can belong to a to-do from the field (a request, a problem); a second order on it adds to the
   // first. Else it is a to-do of its own. §162 (owner, 2026-10-15): the lines are the ORDER's — never a sub-task per
   // item (sub-tasks are other work, like installing what is bought), as an inspection's order already does (§159).
@@ -659,8 +652,8 @@ export async function orderNote(sql: SqlFn, by: string, todoId: unknown, notes: 
 }
 
 /** The order being written, saved as a draft (§150): no to-do until it is created. Empty lines = discard. */
-export async function saveDraft(sql: SqlFn, by: string, lines: { itemId: string; place: string; qty: number }[], forTodo: string | null) {
-  const keep = lines.filter(l => l.qty > 0 && l.place);
+export async function saveDraft(sql: SqlFn, by: string, lines: OrderIn[], forTodo: string | null) {
+  const keep = orderLinesIn(lines);
   if (!keep.length) { await sql`DELETE FROM inventory_order_drafts WHERE account_id = 1`; return; }
   await sql`INSERT INTO inventory_order_drafts (account_id, lines, for_todo, saved_by) VALUES (1, ${JSON.stringify(keep)}::jsonb, ${forTodo ? Number(forTodo) : null}, ${by})
             ON CONFLICT (account_id) DO UPDATE SET lines = EXCLUDED.lines, for_todo = EXCLUDED.for_todo, saved_by = EXCLUDED.saved_by, saved_at = now()`;
@@ -747,18 +740,19 @@ export async function fieldTodos(sql: SqlFn) {
 // or the receipt's reading fills it). A to-do with lines is an order as before.
 export async function openOrders(sql: SqlFn) {
   return await sql`SELECT o.todo_id::text AS "todoId", t.title, o.lines, to_char(o.created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS at,
+                          t.unit_ids AS "unitIds", t.description AS asked,
                           (SELECT count(*)::int FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = o.todo_id) AS purchases
                      FROM inventory_orders o JOIN todos t ON t.id = o.todo_id
                     WHERE o.account_id = 1 AND t.status NOT IN ('completed', 'cancelled') AND t.deleted_at IS NULL
                    UNION ALL
-                   SELECT t.id::text, t.title, '[]'::jsonb, to_char(t.created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD'),
+                   SELECT t.id::text, t.title, '[]'::jsonb, to_char(t.created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD'), t.unit_ids, t.description,
                           (SELECT count(*)::int FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id)
                      FROM todos t
                     WHERE t.account_id = 1 AND t.clean_group IN ('request', 'inspection') AND t.parent_id IS NULL AND t.deleted_at IS NULL
                       AND t.status NOT IN ('completed', 'cancelled')
                       AND NOT EXISTS (SELECT 1 FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id)
                     ORDER BY 4 DESC` as
-    { todoId: string; title: string; lines: { itemId: string; place: string; qty: number }[]; at: string; purchases: number }[];
+    { todoId: string; title: string; lines: { itemId: string; place: string; qty: number }[]; at: string; unitIds: string[] | null; asked: string | null; purchases: number }[];
 }
 
 /**
@@ -785,7 +779,7 @@ export async function recordPurchases(sql: SqlFn, by: string, b: Record<string, 
   const checked = [];
   for (const [k, p] of parts.entries()) {
     const note = [String(b.note ?? '').trim(), `part ${k + 1} of ${parts.length} of one receipt`].filter(Boolean).join(' — ');
-    checked.push(await checkPurchase(sql, { ...p, note, paidBy: b.paidBy, date: b.date }));
+    checked.push(await checkPurchase(sql, { ...p, note, paidBy: b.paidBy, date: b.date, ownerCharge: b.ownerCharge }));
   }
   const ids: string[] = [];
   for (const c of checked) ids.push(await writePurchase(sql, by, c, photos, null));
@@ -818,17 +812,19 @@ async function checkPurchase(sql: SqlFn, b: Record<string, unknown>) {
   const note = String(b.note ?? '').trim().slice(0, 500) || null;
   // §150, owner: who paid — blank = the company; a name = brought with their own money, to be paid back.
   const paidBy = String(b.paidBy ?? '').trim().slice(0, 120) || null;
+  // Owner, 2026-10-15: the owner's expense — marked so someone tells / charges the owner (nothing is sent to Hostaway).
+  const ownerCharge = b.ownerCharge === true || b.ownerCharge === 'true';
   // The receipt's date (read from it, 2026-10-14) dates the expense in Costs — never ahead, at most 60 days back.
   const today = todayIn(TZ), d = String(b.date ?? '');
   const date = /^\d{4}-\d{2}-\d{2}$/.test(d) && d <= today && d >= addDays(today, -60) ? d : today;
-  return { named, total, todoId, note, paidBy, date };
+  return { named, total, todoId, note, paidBy, date, ownerCharge };
 }
 
 async function writePurchase(sql: SqlFn, by: string, c: Awaited<ReturnType<typeof checkPurchase>>, photos: { name: string; url: string }[],
                              fieldExpenseId: string | null) {
-  const { named, total, todoId, note, paidBy, date } = c;
-  const [pu] = await sql`INSERT INTO inventory_purchases (account_id, todo_id, total, note, photos, by_name, field_expense_id, paid_by)
-                         VALUES (1, ${todoId}, ${total}, ${note}, ${JSON.stringify(photos)}::jsonb, ${by}, ${fieldExpenseId ? Number(fieldExpenseId) : null}, ${paidBy})
+  const { named, total, todoId, note, paidBy, date, ownerCharge } = c;
+  const [pu] = await sql`INSERT INTO inventory_purchases (account_id, todo_id, total, note, photos, by_name, field_expense_id, paid_by, owner_charge)
+                         VALUES (1, ${todoId}, ${total}, ${note}, ${JSON.stringify(photos)}::jsonb, ${by}, ${fieldExpenseId ? Number(fieldExpenseId) : null}, ${paidBy}, ${ownerCharge})
                          RETURNING id::text` as { id: string }[];
   for (const l of named) await sql`INSERT INTO inventory_moves (account_id, item_id, place, kind, qty, note, by_name, source, purchase_id)
                                    VALUES (1, ${Number(l.itemId)}, ${l.place.key}, 'purchase', ${l.qty}, ${note}, ${by}, 'team', ${Number(pu!.id)})`;
@@ -838,11 +834,11 @@ async function writePurchase(sql: SqlFn, by: string, c: Awaited<ReturnType<typeo
   // Into one house (its closet or the house itself): the expense is that unit's.
   const unit = only && (only.self || only.house) && only.units.length === 1 ? only.units[0]!.id : null;
   await sql`INSERT INTO expenses (account_id, unit_id, shared, start_date, category, frequency, amount, label, notes, source, external_ref, created_by)
-            VALUES (1, ${unit}, ${!unit}, ${date}, 'Restock', 'One-time', ${total}, ${what.title.replace(/^Buy supplies/, 'Supplies bought').slice(0, 120)},
-                    ${[...(paidBy ? [`Paid by ${paidBy} — to pay back`] : []), ...what.items.map(i => i.replace(/^Buy: /, '')), ...photos.map(p => `Receipt: ${p.url}`)].join('\n')}, 'inventory', ${`purchase-${pu!.id}`}, ${by})
+            VALUES (1, ${unit}, ${!unit}, ${date}, 'Restock', 'One-time', ${total}, ${`${ownerCharge ? "Owner's expense — " : ''}${what.title.replace(/^Buy supplies/, 'Supplies bought')}`.slice(0, 120)},
+                    ${[...(ownerCharge ? ["Owner's expense — to tell / charge the owner"] : []), ...(paidBy ? [`Paid by ${paidBy} — to pay back`] : []), ...what.items.map(i => i.replace(/^Buy: /, '')), ...photos.map(p => `Receipt: ${p.url}`)].join('\n')}, 'inventory', ${`purchase-${pu!.id}`}, ${by})
             ON CONFLICT (source, external_ref) WHERE external_ref IS NOT NULL DO NOTHING`;
   if (todoId) await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
-                        VALUES (1, 'task', ${String(todoId)}, 'note', ${`Bought ($${total.toFixed(2)}):\n${what.items.map(i => i.replace(/^Buy: /, '• ')).join('\n')}`}, ${by})`;
+                        VALUES (1, 'task', ${String(todoId)}, 'note', ${`Bought ($${total.toFixed(2)})${ownerCharge ? " — 💼 owner's expense: tell / charge the owner" : ''}:\n${what.items.map(i => i.replace(/^Buy: /, '• ')).join('\n')}`}, ${by})`;
   return pu!.id;
 }
 
