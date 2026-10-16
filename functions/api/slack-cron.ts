@@ -22,7 +22,7 @@ import { remindCleaners } from '../_lib/crew-slack.ts';
 import { postCleanDay } from '../_lib/clean-slack.ts';
 import { dueCrewReminders } from '../../src/lib/crew-slack.ts';
 import { todayIn } from '../../src/lib/dates.ts';
-import { loadOps, pushHostNotes } from '../_lib/ops.ts';
+import { loadOps, pushHostNotes, reconcileRecent, recordCleanings } from '../_lib/ops.ts';
 import { pullAll } from '../_lib/hostaway-tasks.ts';
 
 
@@ -149,7 +149,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     try {
       const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
       const ops = await loadOps(sql, creds);
-      notes = ops.mode === 'live' ? await pushHostNotes(sql, creds, ops) : 'shadow';
+      if (ops.mode === 'live') {
+        // The cleanings record and the recent past against Hostaway, on the same hour — /api/cron was their only
+        // caller, so a booking cancelled after check-in once its checkout had passed was never held for a person
+        // (owner, 2026-10-16: four were found voided). Before the notes: a failure here frees the hour too.
+        await recordCleanings(sql, ops);
+        const reconciled = await reconcileRecent(sql, creds, ops.today);
+        notes = { notes: await pushHostNotes(sql, creds, ops), reconciled };
+      } else notes = 'shadow';
     } catch (e) {
       await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${notesKey}`;
       notes = { error: e instanceof Error ? e.message : String(e) };

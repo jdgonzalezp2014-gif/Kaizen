@@ -15,7 +15,8 @@
  *           Host Note. The sheet's import is no longer read, so the two
  *           never write the same key.
  */
-import { fetchCancelledTouching, fetchListings, fetchReservationsTouching, fetchHostNote, writeHostNote,
+import { fetchCancelledTouching, fetchListings, fetchReservationDetail, fetchReservationsTouching, fetchHostNote, writeHostNote,
+         reservationCounts,
          type HostawayCredentials } from './hostaway.ts';
 import { importCleanings } from './cleanings-import.ts';
 import type { SqlFn } from './accounts.ts';
@@ -119,6 +120,8 @@ export interface OpsState {
   overrideBy: Map<string, string>;
   sheet: { ok: boolean; problem: string | null; warning: string | null } | null;
   timings: Record<string, number>;
+  /** One reservation as Hostaway has it now — for a recorded clean that left the board's window (recordCleanings). */
+  lookup?: (reservationId: string) => Promise<Record<string, unknown> | null>;
 }
 
 export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
@@ -237,7 +240,8 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
 
   return { mode: cfg.mode, today, end, days, rules: cfg.rules, roster: cfg.roster, assignRule: cfg.assignRule, boardInput,
            extraInspectors: cfg.extraInspectors, guestDocUnits: cfg.guestDocUnits, rows, summary: summarize(rows), panel,
-           inspections, reservations, sheet, timings, lookaheadTo: addDays(end, NEXT_STAY_LOOKAHEAD), overrideBy };
+           inspections, reservations, sheet, timings, lookaheadTo: addDays(end, NEXT_STAY_LOOKAHEAD), overrideBy,
+           lookup: id => fetchReservationDetail(creds, id) };
 }
 
 /* ── live mode: the record and the push ───────────────────────────── */
@@ -321,7 +325,7 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
       await sql`UPDATE cleanings SET checkout_on = ${moved.departure}, imported_at = now()
                  WHERE account_id = 1 AND key = ${key}`;
     } else {
-      await voidCancelled(sql, key);
+      await settleGone(sql, key, s.lookup);
     }
   }
   await refreshCleaningRates(sql);
@@ -365,13 +369,41 @@ function cancelledFate(c: CancelledStay | undefined, active: Awaited<ReturnType<
 }
 
 /**
+ * A recorded clean whose stay is neither on the board nor in its cancelled
+ * list — the board only sees from today on, so "gone" may be a stay SHORTENED
+ * into the past, or CANCELLED after arrival with its checkout already behind
+ * us. Both used to be voided as "cancelled before arrival" (owner, 2026-10-16:
+ * a cancellation after check-in must never be lost). Hostaway is asked what
+ * the reservation is now: a confirmed stay moves its clean; a cancelled one
+ * follows §123 on its own dates; a request never confirmed (Vrbo's request
+ * to book, an inquiry) had no stay. No answer at all: voided, as before.
+ */
+async function settleGone(sql: SqlFn, key: string, lookup: OpsState['lookup']): Promise<void> {
+  const d = lookup ? await lookup(key).catch(() => null) : null;
+  const status = String(d?.status ?? '');
+  const arrival = String(d?.arrivalDate ?? '').slice(0, 10), departure = String(d?.departureDate ?? '').slice(0, 10);
+  if (!d || !arrival || !departure) return voidCancelled(sql, key);
+  if (reservationCounts(status)) {
+    await sql`UPDATE cleanings SET checkout_on = ${departure}, imported_at = now() WHERE account_id = 1 AND key = ${key}`;
+  } else if (status.toLowerCase() === 'cancelled') {
+    const at = utcToLocal(d.cancellationDate ? String(d.cancellationDate) : null, OPS_TZ);
+    const date = cancelledClean(arrival, departure, at);
+    if (date && at) await holdForConfirm(sql, key, date, at);
+    else await voidCancelled(sql, key);
+  } else {
+    await voidCancelled(sql, key, `booking request not confirmed in Hostaway (${status})`);
+  }
+}
+
+/**
  * A booking cancelled before its guest arrived (§130): no clean, and nobody
  * on it — a cleaner's name on a cancelled stay reads as work still to do.
  * Who had it stays in decided_by; the reason in void_reason.
  */
-async function voidCancelled(sql: SqlFn, key: string): Promise<void> {
-  await sql`UPDATE cleanings SET void_reason = 'booking cancelled in Hostaway', assignment = 'not_needed',
-                   decided_by = 'cancelled before arrival' || COALESCE(' — it was ' || cleaner || '''s', ''),
+async function voidCancelled(sql: SqlFn, key: string, reason = 'booking cancelled in Hostaway'): Promise<void> {
+  const before = reason === 'booking cancelled in Hostaway' ? 'cancelled before arrival' : 'never confirmed';
+  await sql`UPDATE cleanings SET void_reason = ${reason}, assignment = 'not_needed',
+                   decided_by = ${before} || COALESCE(' — it was ' || cleaner || '''s', ''),
                    cleaner = NULL, price = NULL, imported_at = now()
              WHERE account_id = 1 AND key = ${key}`;
 }
@@ -431,7 +463,7 @@ export async function reconcileRecent(sql: SqlFn, creds: HostawayCredentials, to
         out.cancelled++;
       }
     } else {
-      if (r.void_reason === 'booking cancelled in Hostaway') {
+      if (r.void_reason === 'booking cancelled in Hostaway' || r.void_reason?.startsWith('booking request not confirmed')) {
         // The booking came back: a clean again, unassigned until someone gives it to a cleaner (§130).
         await sql`UPDATE cleanings SET void_reason = NULL,
                          assignment = CASE WHEN cleaner IS NULL THEN 'tbd' ELSE assignment END

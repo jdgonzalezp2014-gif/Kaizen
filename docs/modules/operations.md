@@ -242,6 +242,17 @@ key had no SOPs.
   inquiryNotPossible, expired, declined, unconfirmed. Trigger: a Vrbo request (DeLynn Smith, Timber Crest 16→17 Oct) was
   given a clean; the next pass voids it with the generic "booking cancelled in Hostaway" wording; accepted, it turns `new`
   and the clean comes back. Cancelled after arrival stays as §123.
+- **A clean that leaves the window is asked about, not voided (2026-10-16, owner: "no se nos pierda una cancelada después
+  del check-in").** The board only sees today on, so a recorded clean missing from it used to be voided as "cancelled before
+  arrival" — also stays SHORTENED into the past and stays CANCELLED after arrival whose checkout had passed. `settleGone`
+  (ops.ts) asks Hostaway (`fetchReservationDetail`, via `OpsState.lookup`): confirmed → the clean moves to its checkout;
+  cancelled → §123 on its own dates (held or voided); a request never confirmed → void "booking request not confirmed in
+  Hostaway (<status>)", decided_by "never confirmed"; no answer → voided as before.
+  **`reconcileRecent` had never run** (`/api/cron`, behind Access, nothing calls it): it now runs with `recordCleanings`
+  on the hourly Host Notes tick in `/api/slack-cron`. Its first run (dry-run 2026-10-16) holds 4 cancelled-after-arrival
+  cleans that had been voided (66756414, 66091503, 65840732, 67232727 — Cynthia DallOglio) and restores 2 shortened stays
+  voided as cancelled (66383376 P2-4308, 63723324 CL 1446 — back as TBD, nobody on them: assign who cleaned).
+  Not fixed: 10 cancelled-after-arrival stays from before §123 (Aug–3 Oct, e.g. Christine/Kobie Dunbar) never had a row.
 
 - **Cancellations (§123).** Hostaway's `cancellationDate` (taken as UTC → New York). Cancelled before
   the arrival day → no clean (void, as before). On or after it → the guest may have used the unit:
