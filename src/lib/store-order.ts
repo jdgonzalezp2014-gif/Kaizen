@@ -153,7 +153,7 @@ export function readOrder(o: StoreOrder, items: (ReceiptItem & { buyOptions?: Bu
   const lines: ReceiptLine[] = o.lines.flatMap((l): ReceiptLine[] => {
     const owners = active.filter(i => optionOf(i, l.product));
     // A set (owner, 2026-10-15): one product on several supplies — the Swirl flatware on Forks ×16, Knives ×8 and
-    // Spoons ×24, a sheet set on Sheet sets ×1 and Pillowcases ×2 — is split into one line per supply, each counting
+    // Spoons ×24, a dish set on Plates ×8 and Bowls ×4 — is split into one line per supply, each counting
     // its own pieces; the price is shared evenly (the cents left over on the first) so the lines still add up.
     if (owners.length > 1) {
       const share = l.amount == null ? null : Math.floor(l.amount / owners.length * 100) / 100;
