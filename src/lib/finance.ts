@@ -54,8 +54,17 @@ export interface UnitMetrics {
 
 const OPEN_ENDED = '2999-12-31';
 
-/** Statuses that never occupied a night and never paid out. */
-const EXCLUDED = new Set(['cancelled', 'declined', 'expired', 'inquiry', 'awaitingpayment']);
+/**
+ * Statuses that never occupied a night and never paid out. `unconfirmed`
+ * (a Vrbo request to book) and `pending` (an Airbnb one) are requests the
+ * host has not accepted yet — a clean was once scheduled for one. Accepted,
+ * they turn `new` and count from then on.
+ */
+const EXCLUDED = new Set([
+  'cancelled', 'declined', 'expired', 'inquiry', 'inquirypreapproved',
+  'inquirydenied', 'inquirytimedout', 'inquirynotpossible', 'awaitingpayment',
+  'unconfirmed', 'pending'
+]);
 
 export function reservationCounts(status?: string): boolean {
   if (!status) return true;

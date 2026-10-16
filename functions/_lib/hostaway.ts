@@ -43,6 +43,9 @@ export class HostawayAuthError extends Error {}
 
 import type { DateStr } from '../../src/lib/dates.ts';
 import { addDays, daysBetween } from '../../src/lib/dates.ts';
+// One list of statuses that never occupied a night, shared with finance and urgency.
+import { reservationCounts } from '../../src/lib/finance.ts';
+export { reservationCounts };
 
 const BASE = 'https://api.hostaway.com/v1';
 
@@ -387,16 +390,6 @@ function wholeHour(v: unknown): number | null {
   if (v === null || v === undefined || v === '') return null;
   const n = Number(v);
   return Number.isInteger(n) && n >= 0 && n <= 23 ? n : null;
-}
-
-/** Reservation statuses that never occupied a night and never paid out. */
-const NON_COUNTING = new Set([
-  'cancelled', 'declined', 'expired', 'inquiry', 'inquirypreapproved',
-  'inquirydenied', 'inquirytimedout', 'inquirynotpossible', 'awaitingpayment'
-]);
-
-export function reservationCounts(status: string): boolean {
-  return !NON_COUNTING.has(String(status).toLowerCase().replace(/[^a-z]/g, ''));
 }
 
 /**
