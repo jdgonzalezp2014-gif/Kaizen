@@ -174,6 +174,10 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - **Cleans' thread missed 2026-10-15** (Concord had a clean): the 8 AM run claimed `cleanday:` and posted nothing, and the
   claim was never retried. Fix in `slack-cron.ts`: 0 cleans releases the claim; a claim with no `day:` message after 10 min
   is dropped and retried. The clock keeps no logs (`wrangler tail` is live only) — the 8 AM run's answer is lost.
+- **Cleaners' reminders, same guard (2026-10-17):** a finished pass writes `crewdone:<kind>:<day>`; a `crewpass:` with no
+  `crewdone:` after 10 min (a run killed at the 50 cap) is dropped and retried — each cleaner's `crew:` key keeps it to one
+  message. Audit that day: Oct 16 6 PM sent to Irene, the only cleaner with an Oct 17 clean — nothing was missed.
+  Still by design: a clean assigned after the pass ran is not in that evening's message.
 
 - Reports: SOP 8 "Kaizen in Slack" not yet updated for `/kaizen bug` / `@Kaizen bug` (the in-Slack help is).
 

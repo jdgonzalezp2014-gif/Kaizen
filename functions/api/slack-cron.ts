@@ -71,11 +71,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       // window; a cleaner with no cleans gets nothing. A failure frees the pass to try again next run.
       for (const d of due) {
         const pass = `crewpass:${d.kind}:${d.day}`;
+        const done = `crewdone:${d.kind}:${d.day}`;
+        // A pass with no "done" 10 minutes on is a run Cloudflare killed (50 subrequests) — no catch runs then,
+        // so it never freed itself. Let this run take over; each cleaner's own key still keeps it to one message.
+        await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${pass} AND sent_at < now() - interval '10 minutes'
+                    AND NOT EXISTS (SELECT 1 FROM slack_sent WHERE account_id = 1 AND key = ${done})`;
         if (!(await claim(pass))) continue;
         try {
           const r = await remindCleaners(sql, s, await getCredentials(sql, env.ENCRYPTION_KEY), d.kind, d.day, claim, release);
           out.push(...r.sent);
-          if (r.failed) await release(pass);
+          if (r.failed) await release(pass); else await claim(done);
         } catch (e) {
           await release(pass);
           out.push(`crew ${d.kind} failed: ${e instanceof Error ? e.message : String(e)}`);
