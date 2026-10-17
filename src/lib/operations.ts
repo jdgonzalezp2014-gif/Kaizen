@@ -92,8 +92,6 @@ export interface Cleaner {
   email?: string | null;
   invoicePeriod?: 'weekly' | 'monthly';
   hasLink?: boolean;
-  /** The link can be copied again (kept encrypted, 097); older ones only by their hash. */
-  linkKept?: boolean;
   /** The crew page's language (§129). */
   lang?: 'en' | 'es';
 }

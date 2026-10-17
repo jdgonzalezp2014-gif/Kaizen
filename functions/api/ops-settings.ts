@@ -32,7 +32,6 @@ import { pushWork } from '../_lib/hostaway-tasks.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadOps, opsConfig } from '../_lib/ops.ts';
 import { newToken, sha256 } from '../_lib/crew.ts';
-import { decrypt, encrypt } from '../_lib/crypto.ts';
 import {
   fetchPublishedCsv, isoDay, parseDailySettings, parseInspectionLog, parseNotesLog
 } from '../_lib/daily.ts';
@@ -183,16 +182,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       }
       // The roster is replaced whole; a secret link (§122) is not something
       // the screen sends back, so it is carried over by name.
-      const links = new Map((await sql`SELECT name, link_token_hash, link_token_enc FROM cleaners WHERE account_id = 1 AND link_token_hash IS NOT NULL` as
-        { name: string; link_token_hash: string; link_token_enc: string | null }[]).map(r => [r.name, r]));
+      const links = new Map((await sql`SELECT name, link_token_hash FROM cleaners WHERE account_id = 1 AND link_token_hash IS NOT NULL` as
+        { name: string; link_token_hash: string }[]).map(r => [r.name, r.link_token_hash]));
       await sql`DELETE FROM cleaners WHERE account_id = 1`;
       for (const r of rows) {
         await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates, active, stars, level, zones, max_per_day,
-                                        email, invoice_period, link_token_hash, link_token_enc, lang)
+                                        email, invoice_period, link_token_hash, lang)
                   VALUES (1, ${r.name}, ${r.tier}, ${r.position}, ${JSON.stringify(r.rates)}::jsonb,
                           ${JSON.stringify(r.deepRates)}::jsonb, ${r.active}, ${r.stars}, ${r.level ?? 'standard'}, ${r.zones}, ${r.maxPerDay},
-                          ${r.email ?? null}, ${r.invoicePeriod ?? 'monthly'}, ${links.get(r.name)?.link_token_hash ?? null},
-                          ${links.get(r.name)?.link_token_enc ?? null}, ${r.lang ?? 'en'})`;
+                          ${r.email ?? null}, ${r.invoicePeriod ?? 'monthly'}, ${links.get(r.name) ?? null}, ${r.lang ?? 'en'})`;
       }
     }
 
@@ -210,25 +208,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await sql`UPDATE accounts SET crew_calendar = ${body.crewCalendar}, crew_calendar_days = ${days}, crew_auto_days = ${auto} WHERE id = 1`;
     }
 
-    // §122: the fallback link. It stays the same until someone asks for a new one (owner, 2026-10-17: a link
-    // that changed each time it was shown broke the one the cleaner had) — kept encrypted to copy it again,
-    // matched by its hash. `copy` reads it, `revoke` ends it, anything else makes a new one (the old one stops).
+    // §122: the fallback link. Only its hash is kept, so it is shown once, here.
     if (body.action === 'crewLink') {
       const name = String(body.name ?? '');
-      const origin = new URL(request.url).origin;
-      if (body.copy === true) {
-        const [c] = await sql`SELECT link_token_enc FROM cleaners WHERE account_id = 1 AND name = ${name} AND link_token_hash IS NOT NULL` as
-          { link_token_enc: string | null }[];
-        if (!c) return bad(`${name} has no link.`);
-        if (!c.link_token_enc) return bad(`${name}'s link was made before Kaizen kept links, so it cannot be shown again — it still works. Make a new one once if you need to send it (the old one stops); that one stays.`);
-        return Response.json({ ok: true, link: `${origin}/crew#t=${await decrypt(c.link_token_enc, env.ENCRYPTION_KEY)}` });
-      }
       const token = body.revoke === true ? null : newToken();
-      const done = await sql`UPDATE cleaners SET link_token_hash = ${token ? await sha256(token) : null},
-                                                 link_token_enc = ${token ? await encrypt(token, env.ENCRYPTION_KEY) : null}
+      const done = await sql`UPDATE cleaners SET link_token_hash = ${token ? await sha256(token) : null}
                               WHERE account_id = 1 AND name = ${name} RETURNING name`;
       if (!done.length) return bad(`${name} is not on the roster.`);
-      return Response.json({ ok: true, link: token ? `${origin}/crew#t=${token}` : null });
+      return Response.json({ ok: true, link: token ? `${new URL(request.url).origin}/crew#t=${token}` : null });
     }
 
     if (body.assignRule === 'tiers' || body.assignRule === 'stars' || body.assignRule === 'levels') {

@@ -110,7 +110,7 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
                  else setErr(r.message ?? 'Could not load.'); })
     .catch(e => setErr(String(e)));
   useEffect(() => { void load(); }, [name, period]);
-  useEffect(() => { if (name) history.replaceState(null, '', `#crew/${encodeURIComponent(name)}`); }, [name]);
+  // Picking a cleaner leaves the address alone (owner, 2026-10-17); "View as cleaner ↗" is the separate tab.
 
   return (
     <>

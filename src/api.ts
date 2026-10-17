@@ -629,10 +629,9 @@ export async function crewPhoto(id: string, door: { token?: string | null; asCle
 }
 export const crewAdminAction = (body: Record<string, unknown>) =>
   call<{ ok: true } | Fail>('/api/crew-admin', { method: 'POST', body: JSON.stringify(body) });
-/** 'copy' = the same link again; 'new' = a new one (the old one stops); 'revoke' = none. */
-export const crewLink = (name: string, mode: 'copy' | 'new' | 'revoke') =>
+export const crewLink = (name: string, revoke = false) =>
   call<{ ok: true; link: string | null } | Fail>('/api/ops-settings', {
-    method: 'POST', body: JSON.stringify({ action: 'crewLink', name, copy: mode === 'copy', revoke: mode === 'revoke' })
+    method: 'POST', body: JSON.stringify({ action: 'crewLink', name, revoke })
   });
 
 /* ── inspections as a checklist (§133) ───────────────────────────── */

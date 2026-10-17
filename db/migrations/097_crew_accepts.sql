@@ -10,6 +10,3 @@ CREATE TABLE IF NOT EXISTS crew_accepts (
   created_at   timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (account_id, cleaning_key, cleaner)
 );
--- Owner, 2026-10-17: the crew link stays the same — kept encrypted (like an inspection's link) so the team can copy it again;
--- a new one only when someone asks for it.
-ALTER TABLE cleaners ADD COLUMN IF NOT EXISTS link_token_enc text;
