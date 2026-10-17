@@ -63,8 +63,13 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   read. Walmart `https://affil.walmart.com/cart/addToCart?items=<itemId>|<qty>,…` — **works** (owner: it filled the cart).
   Amazon `gp/aws/cart/add.html?ASIN.1=…&Quantity.1=…` **does NOT** (opened the cart as it was) → each Amazon item is a link to
   its page "Amazon: <item> ×n". qty = ⌈ordered ÷ pack⌉; items with neither are named ("No store link"). Kaizen never pays.
-- **One store product per item (owner, 2026-10-15: "not several platforms' links yet"):** `withProduct` keeps ONE
-  Walmart/Amazon option (bought at the other store, it replaces it; Costco-type links stay); `inventory-items` save refuses two.
+- **Plan A / plan B (owner, 2026-10-17; was ONE store product since 2026-10-15):** the FIRST Walmart/Amazon option is plan A
+  (cart, Buy at, store per line use it), a SECOND is plan B (Items list tags it "plan B"); save refuses a third. `withProduct`:
+  the bought product becomes plan A, the replaced plan A stays plan B. `setStoreLink` (broken link) replaces plan A, keeps plan B.
+  2026-10-17 Walmart cart loaded: Wine glasses, Cooking utensils (36-pc set), new Mixing bowls + Dish rack (2-pack); plan A
+  replaced (old → B): Blackout curtains (Sun Zero), Plates/Bowls (Walmart 2×12-pc, p16/p8), Knife set (Farberware 23-pc),
+  Bath towels (Mainstays), Paper towel holder (Amazon OBODING); plan B added from Walmart "usuals": Toilet paper, Paper towels,
+  Dish soap, Hand soap. Personal care (shampoo/conditioner/body wash…) skipped on purpose.
 - **Orders from Slack (owner, 2026-10-15):** `@Kaizen order 2 paper towels y 1 Tide para LP-4212` → a draft in the thread (lines
   rules first, the AI only for the rest (`readOrderLines`, short rows; one line of words → `readRequestText`, furniture now kept), one place picked
   first — a house's supplies go to its closet/storage (`lineTarget`), Walmart cart / Amazon links; a pasted
@@ -604,8 +609,7 @@ key had no SOPs.
   looked up on walmart.com for the purchase-history-only ones (TV 43", curtains, rods, mirrors, key chains, charger, cable,
   CR2032, trash can, paper towel holder, pillowcases, mouse repellent; throw blanket = the Amazon one), and each size bought is
   its own item with its own product (Sheet sets Twin/Queen/King, Duvet covers and Mattress protectors Twin/Full/Queen/King,
-  Bed frame Full/Queen/King, comforters Twin/Queen/King, TV 43"/55") — 105 active. No link, never bought: Wine glasses,
-  Cooking utensils, Fire extinguisher, CO / Smoke detector, First aid kit, HVAC filter, Tub / Sink stopper, Cabinet knob, Ring.
+  Bed frame Full/Queen/King, comforters Twin/Queen/King, TV 43"/55") — 107 active. No link, never bought: Fire extinguisher, CO / Smoke detector, First aid kit, HVAC filter, Tub / Sink stopper, Cabinet knob, Ring.
 - **One item per thing (owner, 2026-10-15):** `itemKey`/`sameItem` (src/lib/inventory.ts) — case, punctuation, "&"/"and" and
   plurals ignored; Setup's save refuses a second one of the same size, `newItem`/`newItems` (purchase form, Slack order) reuse it.
 - **Later (owner, 2026-10-15):** an inventory session (where things are, counts); a screen to upload a purchase and pick where

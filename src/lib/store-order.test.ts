@@ -270,12 +270,15 @@ test('packFor: the remembered pack, else the printed one when it counts the supp
   assert.equal(packFor({ pack: null, packWord: null }, 'roll', 6), 6);
 });
 
-test('withProduct: ONE store product per supply — the bought one replaces the other store\'s; other links stay', () => {
+test('withProduct: plan A is the bought product; the one it replaces stays as plan B; other links stay', () => {
   const opts = [{ label: 'Costco', url: 'https://www.costco.com/x' }, { label: 'WM tall', url: 'https://www.walmart.com/ip/344638043', pack: 40 }];
   assert.deepEqual(withProduct(opts, 'https://www.walmart.com/ip/Great-Value/344638043', null),
     [{ label: 'WM tall', url: 'https://www.walmart.com/ip/344638043', pack: 40 }, opts[0]]);
-  assert.deepEqual(withProduct(opts, 'https://www.amazon.com/dp/B0C4Z6SKCS?ref=x', 50),
-    [{ label: 'Amazon', url: 'https://www.amazon.com/dp/B0C4Z6SKCS', pack: 50 }, opts[0]]);
+  const ab = withProduct(opts, 'https://www.amazon.com/dp/B0C4Z6SKCS?ref=x', 50);
+  assert.deepEqual(ab, [{ label: 'Amazon', url: 'https://www.amazon.com/dp/B0C4Z6SKCS', pack: 50 }, opts[1], opts[0]]);
+  // Plan B bought: it becomes plan A, and plan A its plan B — never three.
+  assert.deepEqual(withProduct(ab, 'https://www.walmart.com/ip/344638043', null), [opts[1], ab[0], opts[0]]);
+  assert.deepEqual(withProduct(ab, 'https://www.walmart.com/ip/50015132', 1).map(o => o.url), ['https://www.walmart.com/ip/50015132', ab[0]!.url, opts[0]!.url]);
   assert.equal(withProduct(opts, 'https://example.com', 2), opts);
 });
 
