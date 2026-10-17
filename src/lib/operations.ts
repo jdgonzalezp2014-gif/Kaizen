@@ -271,6 +271,12 @@ export interface BoardRow {
    * checkout they had.
    */
   carried: { cleaner: string; from: string; fromUnit: string; fromDate: DateStr } | null;
+  /**
+   * Owner, 2026-10-17: the rule's pick already in the cleaner's view (within
+   * `crew_auto_days`) stays theirs — a booking landing that day takes what
+   * capacity is left, never a clean they have seen.
+   */
+  held: { cleaner: string } | null;
   cleaner: string | null;
   assignment: Assignment | 'unknown';
   price: number | null;
@@ -657,6 +663,9 @@ export function buildBoard(input: {
    * it to and which checkout it was — from the cleanings record.
    */
   carry?: Map<string, { cleaner: string; from: string }>;
+  /** The rule's recorded pick per checkout (cleaner, day), and how many days ahead it is held — `crew_auto_days`. */
+  held?: Map<string, { cleaner: string; day: DateStr }>;
+  holdDays?: number;
 }): BoardRow[] {
   const { today, windowDays, listings, reservations, roster, rules, overrides, notes, inspections } = input;
   const end = addDays(today, windowDays);
@@ -693,7 +702,7 @@ export function buildBoard(input: {
       beds: l.bedrooms, guest: x.guestName ?? '', docName: x.docName || x.guestName || 'Guest', agreement: x.agreement ?? null, idVerified: !!x.idVerified, guests: x.guests ?? null, nights: x.nights,
       channel: x.channel, total: x.totalPaid, time: '', note: '',
       next: null, auto: { cleaner: null, tier: 'none', reason: '' }, stars: null, levels: null,
-      declined: input.declines?.get(x.reservationId) ?? [], cancelled: cx, carried: null,
+      declined: input.declines?.get(x.reservationId) ?? [], cancelled: cx, carried: null, held: null,
       cleaner: null, assignment: 'unknown', price: null, deep: false, deepSuggested: false, urgency: null,
       manual: { cleaner: false, deep: false, time: false }, timeFrom: 'default', standardHour: null,
       inspection: { key: 'none', reason: '' }, sheet: null, inDailyFile: false, differs: [],
@@ -755,6 +764,7 @@ export function buildBoard(input: {
     (a.kind === b.kind ? 0 : a.kind === 'out' ? -1 : 1) || a.unit.localeCompare(b.unit));
   oneCleanPerUnitDay(rows, overrides);
   applyCarry(rows, input.carry ?? new Map(), roster);
+  applyHold(rows, input.held ?? new Map(), roster, addDays(today, input.holdDays ?? 0));
   assignByStars(rows, roster, rules, typical, byStars);
   assignByLevels(rows, roster, rules, input.midStays ?? new Map(), input.assignRule === 'levels', today);
   for (const r of rows) if (r.sheet) r.differs = sheetDiffers(r);
@@ -822,6 +832,30 @@ export function applyCarry(rows: BoardRow[], carry: Map<string, { cleaner: strin
     r.price = rateFor(roster, c.cleaner, r.beds, r.deep);
     r.auto = { cleaner: c.cleaner, tier: 'none',
       reason: `${c.cleaner} had the clean before this guest (${orig ? `the ${orig.date} checkout` : 'an earlier checkout'}); a booking came in between, so they take this checkout — as if the stay before had been extended` };
+  }
+}
+
+/**
+ * Owner, 2026-10-17: Karina saw Timber Crest on Sunday; a booking landed that
+ * day, the star rule re-ran and gave her the new one, Timber Crest went to
+ * Veronica. Within the days a cleaner already sees (`crew_auto_days`), the
+ * rule's earlier pick stays and takes its slot; only what is left is shared.
+ * Same day only — a moved checkout is a new decision. A declined clean has a
+ * person's override, so it is never held here.
+ */
+export function applyHold(rows: BoardRow[], held: Map<string, { cleaner: string; day: DateStr }>,
+                          roster: Cleaner[], through: DateStr): void {
+  if (!held.size) return;
+  for (const r of rows) {
+    if (r.kind !== 'out' || r.date > through || r.manual.cleaner || r.cancelled || r.sameDayOf || r.carried) continue;
+    const h = held.get(r.resId);
+    if (!h || h.day !== r.date || r.declined.some(d => d.cleaner === h.cleaner)) continue;
+    if (!roster.some(x => x.name === h.cleaner && x.active)) continue;
+    r.held = { cleaner: h.cleaner };
+    r.assignment = 'assigned';
+    r.cleaner = h.cleaner;
+    r.price = rateFor(roster, h.cleaner, r.beds, r.deep);
+    r.auto = { cleaner: h.cleaner, tier: 'none', reason: `already in ${h.cleaner}'s view — kept; the rule shares only what is left that day` };
   }
 }
 
@@ -901,7 +935,7 @@ export function assignByLevels(rows: BoardRow[], roster: Cleaner[], rules: OpsRu
   }
   for (const day of days.values()) {
     const load = new Map<string, number>();
-    for (const r of day) if ((r.manual.cleaner || r.carried) && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
+    for (const r of day) if ((r.manual.cleaner || r.carried || r.held) && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
     const need = day.map(r => {
       // The latest mid-stay inside the stay, before its checkout.
       const arrival = addDays(r.date, -r.nights);
@@ -914,11 +948,11 @@ export function assignByLevels(rows: BoardRow[], roster: Cleaner[], rules: OpsRu
       const pick = req.required ? pickByLevel(req.required, zoneOf(r.unit), r.beds, r.deep, roster, load, new Set(r.declined.map(d => d.cleaner)))
         : { cleaner: null, reason: daysBetween(today, r.date) <= 1 ? 'TBD — assign by hand now' : `TBD until a booking lands close enough, or assign by hand by ${addDays(r.date, -1)}` };
       r.levels = { required: req.required, why: req.why, waiting: req.waiting, ...pick };
-      if (apply && !r.cancelled && !r.carried) {
+      if (apply && !r.cancelled && !r.carried && !r.held) {
         r.auto = { cleaner: pick.cleaner, tier: 'none',
           reason: `${req.required ? `${LEVEL_WORD[req.required]} level` : 'no level yet'} (${req.why}) — ${pick.reason}` };
       }
-      if (r.manual.cleaner || r.cancelled || r.carried) continue;
+      if (r.manual.cleaner || r.cancelled || r.carried || r.held) continue;
       if (pick.cleaner) load.set(pick.cleaner, (load.get(pick.cleaner) ?? 0) + 1);
       if (!apply) continue;
       r.assignment = pick.cleaner ? 'assigned' : 'tbd';
@@ -960,7 +994,7 @@ export function assignByStars(rows: BoardRow[], roster: Cleaner[], rules: OpsRul
   for (const day of days.values()) {
     const load = new Map<string, number>();
     for (const r of day) {
-      if ((r.manual.cleaner || r.carried) && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
+      if ((r.manual.cleaner || r.carried || r.held) && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
     }
     const need = day.map(r => ({ r, req: requiredStars(r.next?.nightly ?? null, typical.get(r.unitId) ?? null,
                                                        r.nights, r.urgency === 'turnover', rules) }));
@@ -969,10 +1003,10 @@ export function assignByStars(rows: BoardRow[], roster: Cleaner[], rules: OpsRul
       const pick = pickByStars(req.stars, zoneOf(r.unit), r.beds, r.deep, roster, load,
                                new Set(r.declined.map(d => d.cleaner)));
       r.stars = { required: req.stars, why: req.why, ...pick };
-      if (apply && !r.cancelled && !r.carried) r.auto = { cleaner: pick.cleaner, tier: 'none', reason: `★${req.stars} needed (${req.why}) — ${pick.reason}` };
+      if (apply && !r.cancelled && !r.carried && !r.held) r.auto = { cleaner: pick.cleaner, tier: 'none', reason: `★${req.stars} needed (${req.why}) — ${pick.reason}` };
       // A row a person decided is shown what the rule would say, and takes no slot for it;
       // a cancelled stay waits for a person (§123).
-      if (r.manual.cleaner || r.cancelled || r.carried) continue;
+      if (r.manual.cleaner || r.cancelled || r.carried || r.held) continue;
       if (pick.cleaner) load.set(pick.cleaner, (load.get(pick.cleaner) ?? 0) + 1);
       if (!apply) continue;
       r.assignment = pick.cleaner ? 'assigned' : 'tbd';

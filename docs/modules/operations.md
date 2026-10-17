@@ -380,6 +380,12 @@ key had no SOPs.
   The daily cron pass takes one snapshot a day ("daily update", `crew_schedule_confirms` with
   `published/auto_days/day`); "Changes since" compares against it, only among what was in view — a clean
   that just came into the 4-day window is not "new". The manual "Confirm" button still takes one.
+- **What is in view is held (owner, 2026-10-17)** — `applyHold` (src/lib/operations.ts): a rule's pick
+  recorded for a checkout within `crew_auto_days` (same day, cleaner active, not declined) stays theirs and
+  counts toward their max that day; the star/levels rule shares only what is left. Recorded as
+  `rule:kept — already in the cleaner's view`. Trigger: Karina saw Timber Crest on Sun 18 Oct; P2-4212 landed
+  that day, the rule re-ran, she got P2-4212 and Timber Crest went to Veronica (who declined it). Before, only
+  overrides and carried cleans took a slot — every re-run re-shared the 4 days.
 - **One rule for what is ahead (crew page):** a clean after today reaches the cleaner — in Coming up,
   Cleans and the calendar alike — only if Coming up shows it (published schedule, else hand-assigned).
   The record holds the rule's picks for the board's window; unpublished, `loadCrewPage` drops them.

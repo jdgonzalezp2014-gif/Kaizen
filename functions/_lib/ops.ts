@@ -156,7 +156,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     }
   }
 
-  const [listings, reservations, inspections, overrideRows, noteRows, declineRows, cancelledRaw, midRows, carryRows] = await Promise.all([
+  const [listings, reservations, inspections, overrideRows, noteRows, declineRows, cancelledRaw, midRows, carryRows, heldRows] = await Promise.all([
     timed('listings', fetchListings(creds)),
     // One live question: every stay still in the building today or
     // arriving before the look-ahead ends. Stays that began months ago but
@@ -182,7 +182,12 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     // §131: who the rule gave the clean before each coming guest — kept if a booking lands in between.
     sql`SELECT key, cleaner, prepares_for FROM cleanings
          WHERE account_id = 1 AND prepares_for IS NOT NULL AND assignment = 'assigned' AND cleaner IS NOT NULL
-           AND void_reason IS NULL AND decided_by LIKE 'rule%' AND checkout_on >= ${today}::date`
+           AND void_reason IS NULL AND decided_by LIKE 'rule%' AND checkout_on >= ${today}::date`,
+    // Owner, 2026-10-17: the rule's picks already in the cleaners' view — kept (applyHold).
+    sql`SELECT key, cleaner, checkout_on::text AS day FROM cleanings
+         WHERE account_id = 1 AND source = 'kaizen' AND assignment = 'assigned' AND cleaner IS NOT NULL
+           AND void_reason IS NULL AND decided_by LIKE 'rule%'
+           AND checkout_on >= ${today}::date AND checkout_on <= ${addDays(today, cfg.crewAutoDays)}::date`
   ]) as [Awaited<ReturnType<typeof fetchListings>>, Awaited<ReturnType<typeof fetchReservationsTouching>>,
          Awaited<ReturnType<typeof inspectionLog>>,
          { reservation_id: string; assignment: Override['assignment']; cleaner: string | null;
@@ -191,7 +196,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
          { cleaning_key: string; cleaner: string; reason: string | null }[],
          Awaited<ReturnType<typeof fetchCancelledTouching>>,
          { unit_id: string; day: string }[],
-         { key: string; cleaner: string; prepares_for: string }[]];
+         { key: string; cleaner: string; prepares_for: string }[], { key: string; cleaner: string; day: string }[]];
 
   const overrides = new Map<string, Override>(overrideRows.map(o => [o.reservation_id, {
     assignment: o.assignment, cleaner: o.cleaner, deep: o.deep,
@@ -222,6 +227,7 @@ export async function loadOps(sql: SqlFn, creds: HostawayCredentials, opts: {
     overrides, notes, inspections: panel, sheet: sheetMap, assignRule: cfg.assignRule, declines,
     cancelled: cancelledRaw.map(r => ({ ...r, cancelledAt: utcToLocal(r.cancellationDate, OPS_TZ) })), midStays,
     carry: new Map(carryRows.map(c => [c.prepares_for, { cleaner: c.cleaner, from: c.key }])),
+    held: new Map(heldRows.map(h => [h.key, { cleaner: h.cleaner, day: h.day }])), holdDays: cfg.crewAutoDays,
     // With no inspection ever recorded here, "never inspected" would be a
     // claim about every unit made from no evidence (§63).
     inspectionLogRead: inspections.done.length + inspections.scheduled.length > 0
@@ -275,6 +281,7 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
   const decidedBy = (r: BoardRow) => r.manual.cleaner ? `override:${s.overrideBy.get(r.resId) ?? 'someone'}`
     : r.cancelled ? 'cancelled after arrival — to confirm'
     : r.carried ? `rule:carried from ${r.carried.from} — a booking came in between`
+    : r.held ? 'rule:kept — already in the cleaner\'s view'
     : r.sameDayOf ? `rule: one clean per unit per day (${r.sameDayOf})` : s.assignRule === 'levels' ? 'rule:levels' : s.assignRule === 'stars' ? 'rule:stars' : 'rule';
   // §123: a stay cancelled after arrival is unpaid until a person settles it; a person's choice on the board settles it.
   const toConfirm = (r: BoardRow) => r.cancelled && !r.manual.cleaner

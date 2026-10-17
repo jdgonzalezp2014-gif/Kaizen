@@ -563,3 +563,24 @@ test('nothing in between, or a person\'s choice on the new checkout: no carry', 
   assert.equal(out(hand, 'R2').cleaner, 'Karina and Marvin');
   assert.equal(out(hand, 'R2').carried, null);
 });
+
+/* ── the rule's pick in the cleaner's view is kept (owner, 2026-10-17) ── */
+
+test('within the days a cleaner sees, the rule\'s recorded pick stays theirs and takes its slot', () => {
+  const R1 = res('R1', '1', '2026-09-22', '2026-09-26', 400, 4);
+  const base = { listings: L, reservations: [R1], roster: LV, rules: RULES, overrides: new Map(), notes: new Map(),
+                 inspections: [], assignRule: 'levels' as const, today: TODAY, windowDays: 10 };
+  const ruled = out(buildBoard(base), 'R1').cleaner;
+  const other = LV.find(c => c.active && c.name !== ruled)!.name;
+  const held = new Map([['R1', { cleaner: other, day: '2026-09-26' }]]);
+  const kept = out(buildBoard({ ...base, held, holdDays: 10 }), 'R1');
+  assert.equal(kept.cleaner, other);
+  assert.deepEqual(kept.held, { cleaner: other });
+  // Beyond the days in view, or a moved checkout: the rule decides again.
+  assert.equal(out(buildBoard({ ...base, held, holdDays: 1 }), 'R1').cleaner, ruled);
+  const moved = new Map([['R1', { cleaner: other, day: '2026-09-25' }]]);
+  assert.equal(out(buildBoard({ ...base, held: moved, holdDays: 10 }), 'R1').held, null);
+  // A person's choice is never overridden.
+  const ov = new Map<string, Override>([['R1', { assignment: 'assigned', cleaner: ruled, deep: null, checkoutTime: null, checkinTime: null }]]);
+  assert.equal(out(buildBoard({ ...base, overrides: ov, held, holdDays: 10 }), 'R1').cleaner, ruled);
+});
