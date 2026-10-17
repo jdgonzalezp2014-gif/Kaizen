@@ -140,7 +140,7 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
 rate cards, `stars` 1–5, `zones` [] = all, `max_per_day` NULL = no limit, `email`, `invoice_period`,
 `link_token_hash`), `accounts.assign_rule`, `accounts.crew_calendar(_days)`, `crew_extras_folder`,
 `cleanings.flag_note/flagged_by/at`, `cleaning_extras` (+ `cleaning_extra_files`), `crew_declines`,
-`crew_schedule_confirms` (snapshot jsonb), `accounts.ops_rules` / `ops_mode`, `stay_notes`, `inspections`,
+`crew_schedule_confirms` (snapshot jsonb), `crew_accepts` (097), `cleaners.link_token_enc` (097), `accounts.ops_rules` / `ops_mode`, `stay_notes`, `inspections`,
 `extra_inspectors`, `host_note_pushes`, `stay_time_pushes` (078, 080), `inventory_items`, `inventory_moves` (057; kind `taken` 061; `place` 068, `purchase_id` 069),
 `inventory_place_mins` (068), `inventory_orders`, `inventory_purchases` (069), `inventory_items.size` + `inventory_receipt_aliases` (085), `todos.clean_key` (069) + `clean_group` (070), `inspection_checks.supply_id/qty` (069),
 `accounts.field_reports_folder`, `clean_links` (058), `clean_records` (+ `supplies_at/by/none` 061) / `clean_photos` /
@@ -236,6 +236,17 @@ key had no SOPs.
 - Decline: only with the calendar on, only a clean the board gives them now → override `tbd`
   (`declined by <name>`) or, for MAN-, the record set tbd; `crew_declines` row; the star rule
   never hands it back to them; board shows "▲ declined by X — reason"; live mode pushes the Host Note.
+- **Confirm a clean (owner, 2026-10-17, 097):** "✓ I'll do it" / "La hago" left of "Can't do it" (UpcomingRow + today's
+  CleanCard, `ConfirmButton` in Crew.tsx) → crew action `accept` (same "on your schedule" check as decline) → `crew_accepts`
+  (key, cleaner, clean_on). Shown back as "✓ Confirmed"; it locks nothing — a decline deletes it. Counts only for the same
+  cleaner AND day (moved/reassigned = asked again). Board: `loadOps` sets `row.confirmed` → ✓ (done icon) beside 👁, hover
+  "X confirmed it — Oct 17, 3:12 PM". Not on manual-clean rows of the board yet (MAN- can be confirmed; the page shows it).
+- **The crew link stays (owner, 2026-10-17, 097):** `cleaners.link_token_enc` (AES-GCM) beside the hash. Setup → Crew pages:
+  "copy link" (`crewLink` `copy`) gives the same link again; "new link" asks first (the old one stops); revoke clears both.
+  Roster save carries hash + enc by name. Links made before 097 have only the hash: they work but cannot be shown — "copy" says so.
+- **Invoice per cleaner on their page (owner, 2026-10-17):** Operations → Cleaners → pick a cleaner → "Invoice" select above the
+  page → crew-admin `invoicePeriod` (same `cleaners.invoice_period` Setup edits). An open Setup tab with an older roster
+  would write its value back on "Save addresses and invoices". SOPs #10 v3, #11 v2, #12 v3, #13 v3 (`.sop-097.mjs`, run after deploy).
 
 - **Only confirmed stays (2026-10-16).** `reservationCounts` (`src/lib/finance.ts`, re-exported by hostaway.ts) is an
   ALLOW-list: `new`, `modified`, `ownerStay`. Everything else — inquiry*, `unconfirmed` (Vrbo request to book), `pending`,

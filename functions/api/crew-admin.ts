@@ -169,6 +169,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ ok: true, price });
   }
 
+  // Owner, 2026-10-17: weekly or monthly, set from the cleaner's own page in Operations → Cleaners
+  // (the same column Setup → Crew pages edits). Their invoice and paydays follow at once.
+  if (body.action === 'invoicePeriod') {
+    const period = body.period === 'weekly' ? 'weekly' : body.period === 'monthly' ? 'monthly' : null;
+    if (!period) return refuse(400, 'bad_request', 'Weekly or monthly.');
+    const done = await sql`UPDATE cleaners SET invoice_period = ${period} WHERE account_id = 1 AND name = ${String(body.name ?? '')} RETURNING name`;
+    if (!done.length) return refuse(400, 'bad_request', `${String(body.name ?? '')} is not on the roster.`);
+    return Response.json({ ok: true });
+  }
+
   if (body.action === 'flag' || body.action === 'unflag') {
     const key = String(body.key ?? '');
     if (body.action === 'flag' && !note) return refuse(400, 'bad_request', 'A flag needs a note — it is what the cleaner reads.');

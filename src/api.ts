@@ -465,6 +465,8 @@ export interface CrewUpcoming {
   tasks?: string[];
   key: string; date: string; unit: string; beds: number | null; time: string; deep: boolean;
   sameDay: boolean; checkIn: string | null; price: number | null; manual: string | null;
+  /** When the cleaner confirmed it (owner, 2026-10-17); null = not yet. */
+  accepted?: string | null;
 }
 export interface CrewPage {
   /** `level` only reaches the team's view (§122): cleaners are not shown their rating. */
@@ -627,9 +629,10 @@ export async function crewPhoto(id: string, door: { token?: string | null; asCle
 }
 export const crewAdminAction = (body: Record<string, unknown>) =>
   call<{ ok: true } | Fail>('/api/crew-admin', { method: 'POST', body: JSON.stringify(body) });
-export const crewLink = (name: string, revoke = false) =>
+/** 'copy' = the same link again; 'new' = a new one (the old one stops); 'revoke' = none. */
+export const crewLink = (name: string, mode: 'copy' | 'new' | 'revoke') =>
   call<{ ok: true; link: string | null } | Fail>('/api/ops-settings', {
-    method: 'POST', body: JSON.stringify({ action: 'crewLink', name, revoke })
+    method: 'POST', body: JSON.stringify({ action: 'crewLink', name, copy: mode === 'copy', revoke: mode === 'revoke' })
   });
 
 /* ── inspections as a checklist (§133) ───────────────────────────── */

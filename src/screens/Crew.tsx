@@ -123,6 +123,17 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
           </select></label>
         {/* A separate tab with only the cleaner's page — nothing of the team's around it. */}
         {name && <a className="chip" href={`/#as-cleaner/${encodeURIComponent(name)}`} target="_blank" rel="noreferrer"><Icon n="eye" /> View as cleaner ↗</a>}
+        {/* Owner, 2026-10-17: each cleaner's invoice period, on their page — the invoice below follows at once. */}
+        {page && page.cleaner.name === name && (
+          <label>Invoice
+            <select value={page.cleaner.invoicePeriod} disabled={!canEdit}
+                    onChange={e => void crewAdminAction({ action: 'invoicePeriod', name, period: e.target.value })
+                      .then(r => { if (r.ok) { setPeriod(null); void load(); } else setErr(r.message ?? 'Could not save.'); })
+                      .catch(x => setErr(String(x)))}>
+              <option value="weekly">weekly (Sat–Fri, paid Saturday)</option>
+              <option value="monthly">monthly (paid early the next month)</option>
+            </select></label>
+        )}
       </div>
       {page && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={setPeriod} reload={load} act={crewAdminAction} />}
       {toConfirm.length > 0 && (
@@ -413,6 +424,8 @@ interface ActiveClean {
   sameDay: boolean; checkIn: string | null; price: number | null; tasks?: string[];
   /** Still in "Coming up" (today's): it can still be turned down. */
   ahead: boolean;
+  /** When the cleaner confirmed it — today's clean, from Coming up. */
+  accepted?: string | null;
 }
 
 /** §142: the check-in a cleaner must finish before — 4:00 PM by default, the
@@ -435,7 +448,7 @@ function activeCleans(page: CrewPage): ActiveClean[] {
   const out = new Map<string, ActiveClean>();
   for (const r of page.upcoming.rows) if (r.date === page.today) out.set(r.key, {
     key: r.key, date: r.date, unit: r.unit, beds: r.beds, deep: r.deep, time: r.time, manual: r.manual,
-    sameDay: r.sameDay, checkIn: r.checkIn, price: r.price, tasks: r.tasks, ahead: true });
+    sameDay: r.sameDay, checkIn: r.checkIn, price: r.price, tasks: r.tasks, ahead: true, accepted: r.accepted });
   for (const c of page.cleans) if (!out.has(c.key) && c.date <= page.today && c.date >= from && isBilled(c, page.today)) out.set(c.key, {
     key: c.key, date: c.date, unit: c.unit, beds: c.beds, deep: c.deep, time: null, manual: c.kind !== 'checkout' ? c.kind : null,
     sameDay: false, checkIn: null, price: c.price, ahead: false });
@@ -469,7 +482,8 @@ function CleanCard({ a, page, lang, ctx, act, reload, initialTab = 'clean', onCl
       {head && <>
         <div className="clean-card-top">
           <p className="clean-card-title"><b>{ic(dayLabel(lang, a.date))}</b></p>
-          {a.ahead && act && !declining && <DeclineButton tx={tx} onClick={() => setDeclining(true)} />}
+          {a.ahead && act && !declining && <span className="claim-btns"><ConfirmButton tx={tx} cleanKey={a.key} accepted={a.accepted} act={act} reload={reload} />
+            <DeclineButton tx={tx} onClick={() => setDeclining(true)} /></span>}
         </div>
         {declining && act && <DeclineForm cleanKey={a.key} act={act} reload={reload} lang={lang} onCancel={() => setDeclining(false)} />}
         <p className="clean-card-unit"><Icon n="home" /> {ic(a.unit)}{a.beds ? <span className="sub-n"> · {ic(bedsWord(lang, a.beds))}</span> : null}
@@ -644,6 +658,26 @@ function QuickActions({ q, cleanKey, lang, act, reload }: { q: Quick; cleanKey: 
  */
 const DeclineButton = ({ tx, onClick }: { tx: Tx; onClick: () => void }) =>
   <button className="decline-btn" onClick={onClick}>✕ {ic(tx.cantDoIt)}</button>;
+
+/**
+ * "I'll do it" left of "Can't do it" (owner, 2026-10-17): the team sees a ✓ on
+ * the board. Once confirmed it reads "✓ Confirmed" — they can still turn it down.
+ */
+function ConfirmButton({ tx, cleanKey, accepted, act, reload }: { tx: Tx; cleanKey: string; accepted?: string | null; act: Act; reload: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  if (accepted) return <span className="confirm-btn done"><Icon n="done" /> {ic(tx.confirmedIt)}</span>;
+  const go = async () => {
+    setBusy(true); setErr(null);
+    const res = await act({ action: 'accept', key: cleanKey }).catch(e => ({ ok: false, message: String(e) }));
+    setBusy(false);
+    if (!res.ok) setErr(res.message ?? null); else reload();
+  };
+  return <>
+    <button className="confirm-btn" disabled={busy} onClick={() => void go()}>✓ {ic(busy ? tx.sending : tx.confirmIt)}</button>
+    {err && <span className="breach">{ic(err)}</span>}
+  </>;
+}
 
 function DeclineForm({ cleanKey, act, reload, lang, onCancel }: { cleanKey: string; act: Act; reload: () => void; lang: Lang; onCancel: () => void }) {
   const tx = TX[lang];
@@ -928,7 +962,8 @@ function UpcomingRow({ r, act, reload, tag, lang, ctx, fs, address }: { r: CrewU
   return (
     <div className="crew-row">
       <div><div className="clean-card-top"><span><b>{ic(dayLabel(lang, r.date))}</b> · {ic(r.unit)}{ic(r.beds ? ` · ${bedsWord(lang, r.beds)}` : '')}</span>
-          {act && !declining && <DeclineButton tx={tx} onClick={() => setDeclining(true)} />}</div>
+          {act && !declining && <span className="claim-btns"><ConfirmButton tx={tx} cleanKey={r.key} accepted={r.accepted} act={act} reload={reload} />
+            <DeclineButton tx={tx} onClick={() => setDeclining(true)} /></span>}</div>
         {tag && <div className={tag.startsWith('○') ? 'sub-n' : 'breach'}>{ic(tag)}</div>}</div>
       <div>
         {ic(r.manual ? tx.manualClean(kindWord(lang, r.manual)) : tx.checkout(r.time))}

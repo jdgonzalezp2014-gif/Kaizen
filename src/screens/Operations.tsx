@@ -336,6 +336,9 @@ function cleanerSees(r: BoardRow, data: OperationsResponse): boolean {
   return visibleAhead({ date: r.date, byHand: r.manual.cleaner }, data.today, data.crewView);
 }
 
+/** "Oct 17, 3:12 PM", New York — when someone did something. */
+const stamp = (at: string) => new Date(at).toLocaleString('en-US', { timeZone: 'America/New_York', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
+
 const LEVEL_LABEL: Record<string, string> = { high: 'high level', standard: 'standard', manual: 'manual only' };
 
 function Board({ data, range, patch, reload }: {
@@ -655,6 +658,8 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
               {r.assignment === 'tbd' ? '▲ ' : ''}{r.assignment === 'assigned' ? r.cleaner : r.assignment === 'not_needed' ? 'no clean needed' : 'unassigned'}
             </span>
             {seen && <span title={`${r.cleaner} sees this on their crew page`}> <Icon n="eye" /></span>}
+            {/* Confirmed on their page — who and when on hover (owner, 2026-10-17). */}
+            {r.confirmed && <span className="ops-hover" title={`${r.cleaner} confirmed it — ${stamp(r.confirmed)}`}> <Icon n="done" /></span>}
             {/* Set by hand, and what levels would pick, read on hover — not on screen (owner, 2026-10-15). */}
             {(() => {
               const lv = !byLevels && r.levels && r.assignment !== 'not_needed' && r.levels.cleaner !== r.cleaner
@@ -1963,12 +1968,15 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
   const [link, setLink] = useState<{ name: string; url: string | null } | null>(null);
   const [err, setErr] = useState('');
   const set = (i: number, patch: Partial<Cleaner>) => setRoster(rs => rs.map((c, j) => j === i ? { ...c, ...patch } : c));
-  const makeLink = async (name: string, revoke: boolean) => {
-    setErr('');
-    const r = await crewLink(name, revoke).catch(e => ({ ok: false as const, message: String(e) }));
+  // The link stays the same (owner, 2026-10-17): "copy link" shows it again; "new link" asks first — the one they have stops.
+  const [renew, setRenew] = useState<string | null>(null);
+  const makeLink = async (name: string, mode: 'copy' | 'new' | 'revoke') => {
+    setErr(''); setRenew(null);
+    const r = await crewLink(name, mode).catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setErr(r.message ?? 'Failed.'); return; }
     setLink({ name, url: r.link });
-    await save({}, revoke ? `${name}'s link no longer opens anything.` : `New link for ${name} — copy it now, it is not shown again.`);
+    if (r.link) void navigator.clipboard?.writeText(r.link).catch(() => {});
+    if (mode !== 'copy') await save({}, mode === 'revoke' ? `${name}'s link no longer opens anything.` : `New link for ${name} — copied; the old one no longer opens.`);
   };
   const app = location.origin;
 
@@ -2002,8 +2010,13 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
                   <option value="en">English</option><option value="es">Español</option></select></td>
                 <td>
                   {c.hasLink ? <span className="sub-n">● link active </span> : <span className="sub-n">○ none </span>}
-                  {c.name && <button className="link tiny" onClick={() => void makeLink(c.name, false)}>{c.hasLink ? 'new link' : 'make link'}</button>}
-                  {c.hasLink && <button className="link tiny danger" onClick={() => void makeLink(c.name, true)}>revoke</button>}
+                  {c.name && c.hasLink && <button className="link tiny" onClick={() => void makeLink(c.name, 'copy')}>copy link</button>}
+                  {c.name && !c.hasLink && <button className="link tiny" onClick={() => void makeLink(c.name, 'new')}>make link</button>}
+                  {c.name && c.hasLink && (renew === c.name
+                    ? <> <span className="sub-n">the link they have stops —</span> <button className="link tiny danger" onClick={() => void makeLink(c.name, 'new')}>make a new one</button>
+                        {' '}<button className="link tiny" onClick={() => setRenew(null)}>keep it</button></>
+                    : <button className="link tiny" onClick={() => setRenew(c.name)}>new link</button>)}
+                  {c.hasLink && <button className="link tiny danger" onClick={() => void makeLink(c.name, 'revoke')}>revoke</button>}
                 </td>
               </tr>
             ))}
@@ -2011,7 +2024,7 @@ function CrewSetup({ cfg, roster, setRoster, save }: {
         </table>
       </div>
       {link?.url && (
-        <label>{link.name}'s link — copy it now; Kaizen keeps only a fingerprint of it
+        <label>{link.name}'s link — copied; it stays the same until someone makes a new one
           <input readOnly value={link.url} onFocus={e => e.target.select()} /></label>
       )}
       {err && <p className="banner error">{err}</p>}

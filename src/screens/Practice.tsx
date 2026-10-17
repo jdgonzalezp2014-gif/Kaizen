@@ -325,6 +325,7 @@ function crewPractice(): PracticeCrew {
       await sleep();
       if (b.action === 'setLang') page.cleaner.lang = b.lang === 'es' ? 'es' : 'en';
       else if (b.action === 'decline') page.upcoming.rows = page.upcoming.rows.filter(r => r.key !== b.key);
+      else if (b.action === 'accept') { const r = page.upcoming.rows.find(x => x.key === b.key); if (r) r.accepted = new Date().toISOString(); }
       else if (b.action === 'cancelExtra') { const e = page.extras.find(x => x.id === b.id); if (e) e.status = 'cancelled'; reInvoice(); }
       return { ok: true };
     },

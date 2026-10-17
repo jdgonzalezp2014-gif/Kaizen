@@ -2151,6 +2151,11 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: var(--
 .decline-btn { background: transparent; color: var(--muted); border: 1px solid var(--line); border-radius: var(--r-pill);
   font-size: var(--fs-footnote); font-weight: 600; padding: 4px 10px; min-height: 30px; white-space: nowrap; }
 .crew-row > .decline-form, .clean-card > .decline-form { grid-column: 1 / -1; }
+/* "I'll do it" left of "Can't do it" — same size; confirmed = icon + word in the done colour. */
+.claim-btns { display: inline-flex; align-items: center; gap: 6px; flex-wrap: nowrap; justify-content: flex-end; }
+.confirm-btn { background: transparent; color: var(--ink); border: 1px solid var(--line); border-radius: var(--r-pill);
+  font-size: var(--fs-footnote); font-weight: 600; padding: 4px 10px; min-height: 30px; white-space: nowrap; }
+.confirm-btn.done { display: inline-flex; align-items: center; gap: 4px; color: var(--good); border-color: transparent; }
 /* §137 a handyman's work order: the cleaner's step style. */
 .work-card { display: flex; flex-direction: column; gap: 10px; }
 .work-card p { margin: 0; }

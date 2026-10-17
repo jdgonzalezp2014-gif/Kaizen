@@ -43,6 +43,8 @@ export interface CrewUpcoming {
   manual: string | null;
   /** §133: what an inspection asked this clean to do. */
   tasks?: string[];
+  /** When the cleaner confirmed it on their page (owner, 2026-10-17); null = not yet. */
+  accepted?: string | null;
 }
 
 export interface CrewPage {
@@ -254,6 +256,11 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
         const ts = await sql`SELECT cleaning_key AS key, text FROM clean_tasks WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) ORDER BY id` as
           { key: string; text: string }[];
         for (const r of upcoming.rows) r.tasks = ts.filter(t => t.key === r.key).map(t => t.text);
+        // A confirm counts for the day it was given: moved to another day, it is asked again.
+        const ok = await sql`SELECT cleaning_key AS key, clean_on::text AS day, created_at AS at FROM crew_accepts
+                              WHERE account_id = 1 AND cleaner = ${c.name} AND cleaning_key = ANY(${keys}::text[])` as
+          { key: string; day: string; at: string }[];
+        for (const r of upcoming.rows) r.accepted = ok.find(a => a.key === r.key && a.day === r.date)?.at ?? null;
       }
       if (st.confirm) {
         upcoming.confirmed = { at: st.confirm.at, through: st.confirm.through };
@@ -475,6 +482,8 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
     const key = String(body.key ?? '');
     const reason = String(body.reason ?? '').trim().slice(0, 300) || null;
     const acc = await crewVisibility(sql);
+    // Turned down after confirming: the ✓ goes (it is gone from their schedule either way).
+    const dropAccept = () => sql`DELETE FROM crew_accepts WHERE account_id = 1 AND cleaning_key = ${key} AND cleaner = ${me.name}`;
     if (key.startsWith('MAN-')) {
       const [m] = await sql`UPDATE cleanings SET assignment = 'tbd', cleaner = NULL, price = NULL, decided_by = ${`declined by ${me.name}`}
                              WHERE account_id = 1 AND key = ${key} AND cleaner = ${me.name} AND assignment = 'assigned'
@@ -483,6 +492,7 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
       if (!m) return refuse(400, 'bad_request', say('That clean is not on your schedule any more.', 'Esa limpieza ya no está en tu agenda.'));
       await sql`INSERT INTO crew_declines (account_id, cleaning_key, cleaner, clean_on, unit_name, reason, created_by)
                 VALUES (1, ${key}, ${me.name}, ${m.date}, ${m.unit_name}, ${reason}, ${me.by})`;
+      await dropAccept();
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'declined', reason } },
                                 { unit: m.unit_name, date: m.date }));
       tellMine({ by: me.name, unit: m.unit_name, kind: 'declined', reason: reason ?? '' });
@@ -503,6 +513,7 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
                 updated_by = EXCLUDED.updated_by, updated_at = now()`;
     await sql`INSERT INTO crew_declines (account_id, cleaning_key, cleaner, clean_on, unit_name, reason, created_by)
               VALUES (1, ${key}, ${me.name}, ${row.date}, ${row.unit}, ${reason}, ${me.by})`;
+    await dropAccept();
     waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind: 'event', by: me.name, event: { kind: 'declined', reason } },
                               { unit: row.unit, date: row.date }));
     tellMine({ by: me.name, unit: row.unit, kind: 'declined', reason: reason ?? '' });
@@ -516,6 +527,31 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
         } catch { /* the scheduled pass retries whatever did not land */ }
       })());
     }
+    return Response.json({ ok: true });
+  }
+
+  // Owner, 2026-10-17: "I'll do it" on a clean ahead — the team sees a ✓ on the board. It does not
+  // lock anything: the cleaner can still turn it down, and a clean moved to another day is asked again.
+  if (body.action === 'accept') {
+    const key = String(body.key ?? '');
+    let mine: { date: string; unit: string } | null = null;
+    if (key.startsWith('MAN-')) {
+      const [m] = await sql`SELECT checkout_on::text AS date, unit_name AS unit FROM cleanings
+                             WHERE account_id = 1 AND key = ${key} AND cleaner = ${me.name} AND assignment = 'assigned'
+                               AND void_reason IS NULL AND checkout_on >= ${today}::date` as { date: string; unit: string }[];
+      mine = m ?? null;
+    } else {
+      const acc = await crewVisibility(sql);
+      const s = await loadOps(sql, await getCredentials(sql, env.ENCRYPTION_KEY), { days: acc.days });
+      const row = s.rows.find(r => r.kind === 'out' && r.resId === key);
+      if (row && row.assignment === 'assigned' && row.cleaner === me.name && row.date >= today &&
+          visibleAhead({ date: row.date, byHand: row.manual.cleaner }, today, acc)) mine = { date: row.date, unit: row.unit };
+    }
+    if (!mine) return refuse(400, 'bad_request', say('That clean is not on your schedule any more.', 'Esa limpieza ya no está en tu agenda.'));
+    await sql`INSERT INTO crew_accepts (account_id, cleaning_key, cleaner, clean_on, unit_name, created_by)
+              VALUES (1, ${key}, ${me.name}, ${mine.date}, ${mine.unit}, ${me.by})
+              ON CONFLICT (account_id, cleaning_key, cleaner) DO UPDATE SET clean_on = EXCLUDED.clean_on,
+                unit_name = EXCLUDED.unit_name, created_by = EXCLUDED.created_by, created_at = now()`;
     return Response.json({ ok: true });
   }
 

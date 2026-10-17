@@ -92,6 +92,8 @@ export interface Cleaner {
   email?: string | null;
   invoicePeriod?: 'weekly' | 'monthly';
   hasLink?: boolean;
+  /** The link can be copied again (kept encrypted, 097); older ones only by their hash. */
+  linkKept?: boolean;
   /** The crew page's language (§129). */
   lang?: 'en' | 'es';
 }
@@ -256,6 +258,8 @@ export interface BoardRow {
   levels: LevelDecision | null;
   /** Cleaners who turned this clean down on their page (§122), latest last. */
   declined: { cleaner: string; reason: string | null }[];
+  /** When the assigned cleaner confirmed it on their page (owner, 2026-10-17); set by the server, never by the rule. */
+  confirmed?: string | null;
   /**
    * Cancelled on or after its arrival day (§123), New York time: the unit
    * may have been used. Held as TBD for a person to confirm; never assigned
