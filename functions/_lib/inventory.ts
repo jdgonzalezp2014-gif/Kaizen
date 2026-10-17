@@ -630,8 +630,10 @@ export async function setStoreLink(sql: SqlFn, b: Record<string, unknown>) {
   const given = Number(b.pack) > 0 ? Math.round(Number(b.pack) * 100) / 100 : null;
   let next: BuyOption[];
   if (prod || (!url && (!label || /^(walmart|amazon)$/i.test(label)))) {
-    const rest = all.filter(o => !storeProduct(o.url));
-    next = prod ? withProduct(rest, url, given ?? all.find(o => storeProduct(o.url))?.pack ?? null) : rest;
+    // The link given replaces plan A (a broken one is not kept as plan B); plan B stays.
+    const planA = all.find(o => storeProduct(o.url));
+    const rest = all.filter(o => o !== planA && (!!prod || !storeProduct(o.url)));
+    next = prod ? withProduct(rest, url, given ?? planA?.pack ?? null) : rest;
   } else {
     if (!label) throw new Error('Which store?');
     const same = (o: BuyOption) => !storeProduct(o.url) && o.label.toLowerCase() === label.toLowerCase();

@@ -185,15 +185,18 @@ export function readOrder(o: StoreOrder, items: (ReceiptItem & { buyOptions?: Bu
 }
 
 /**
- * The bought product remembered on its supply, first, with its pack. A supply has ONE Walmart/Amazon product
- * (owner, 2026-10-15): bought elsewhere, the new one replaces it; other stores' links (Costco…) stay.
+ * The bought product remembered on its supply, first, with its pack. A supply has a plan A Walmart/Amazon product
+ * (the first: receipts and the cart use it) and at most a plan B (the second) — owner, 2026-10-17: what is replaced
+ * stays as plan B. Bought elsewhere, the new one becomes plan A and the old plan A its plan B; other stores' links stay.
  */
 export function withProduct(options: BuyOption[], url: string, pack: number | null): BuyOption[] {
   const p = storeProduct(url);
   if (!p) return options;
-  const old = options.find(o => { const q = storeProduct(o.url); return q?.store === p.store && q.id === p.id; });
+  const same = (o: BuyOption) => { const q = storeProduct(o.url); return q?.store === p.store && q.id === p.id; };
+  const old = options.find(same);
   const kept: BuyOption = { label: old?.label || STORE_NAME[p.store], url: old?.url ?? p.url, ...(pack && pack > 0 ? { pack } : old?.pack ? { pack: old.pack } : {}) };
-  return [kept, ...options.filter(o => !storeProduct(o.url))].slice(0, 10);
+  const planB = options.find(o => storeProduct(o.url) && !same(o));
+  return [kept, ...(planB ? [planB] : []), ...options.filter(o => !storeProduct(o.url))].slice(0, 10);
 }
 
 /**

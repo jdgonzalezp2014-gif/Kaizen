@@ -44,8 +44,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const buy = raw.map(o => ({ label: String(o.label ?? '').trim().slice(0, 60), url: String(o.url ?? '').trim().slice(0, 500), pack: Number(o.pack) > 0 ? Math.round(Number(o.pack) * 100) / 100 : null }))
       .filter(o => o.label || o.url);
     if (buy.some(o => !/^https?:\/\/\S+$/i.test(o.url))) return bad('Each buying option needs a link that starts with https://');
-    // Owner, 2026-10-15: one Walmart or Amazon product per item for now — the one its receipts match and its order's cart uses.
-    if (buy.filter(o => storeProduct(o.url)).length > 1) return bad('One Walmart or Amazon link per item — keep the one you buy.');
+    // Owner, 2026-10-15/17: plan A = the first Walmart/Amazon product (its order's cart uses it), plan B = a second; no third.
+    if (buy.filter(o => storeProduct(o.url)).length > 2) return bad('Two Walmart or Amazon links per item at most — the first is plan A, the second plan B.');
     const buyJson = JSON.stringify(buy.map(o => ({ label: o.label || new URL(o.url).hostname.replace(/^www\./, ''), url: o.url, ...(o.pack ? { pack: o.pack } : {}) })));
     // Owner, 2026-10-15: one item per thing — "Mattress protector" is refused beside "Mattress protectors" of the same size.
     const all = await sql`SELECT id::text, name, size FROM inventory_items WHERE account_id = 1 AND active` as { id: string; name: string; size: string | null }[];
