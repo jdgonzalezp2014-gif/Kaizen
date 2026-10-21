@@ -308,10 +308,9 @@ async function offerAddTo(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string
   if (!(s.config.addTo?.channels ?? []).some(c => c.id === ev.channel)) return;
   const botId = await botUserIdOf(sql, s);
   if (botId && String(ev.text ?? '').includes(`<@${botId}>`)) return;
-  if (ev.thread_ts) {
-    const [known] = await sql`SELECT 1 FROM slack_threads WHERE account_id = 1 AND channel = ${ev.channel} AND ts = ${ev.thread_ts}`;
-    if (known) return;
-  }
+  // Owner, 2026-10-21: asked on every reply of a conversation it was too much — a reply in a thread gets no question;
+  // 📎 on it (`clipped`) still adds it. Only a channel's own (top-level) messages are offered.
+  if (ev.thread_ts && ev.thread_ts !== ev.ts) return;
   const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
   if (!member.ok) return;
   const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));

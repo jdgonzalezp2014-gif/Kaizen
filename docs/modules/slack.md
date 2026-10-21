@@ -261,6 +261,9 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - **§157 (2026-10-14):** "Add to…" in listened channels (`offerAddTo`, `addto_*` actions, `Kaizen.addMessageTo`);
   SOPs from Slack (`newsop`/`sops` mention verbs, `/kaizen sop|sops`, `sop_from_message`, `sop_save`, `sops_section`,
   `sop_view`, `sop_suggest`, `@Kaizen help <question>` → `helpFromSops`; a top-level `newsop` makes its own reply's thread the source, so ✨ reads what is pasted there — 2026-10-20); the AI chain (`functions/_lib/ai-chain.ts`, Gemini → flash-lite → Workers AI `[ai]`).
+- **"Add to…" only on top-level messages (owner, 2026-10-21):** asked on every reply of a conversation it was overwhelming
+  (deleting it each time). A reply inside a thread gets no question (`offerAddTo` returns); 📎 on it still saves it / asks
+  (`clipped`). Task/claim threads still save plain replies (§153). SOP 34 v+1 via `.sop-034.mjs` at deploy.
 - **Clean photos in Drive: admins + each cleaner (owner, 2026-10-14).** The root "Kaizen — clean photos" was "anyone with the
   link"; now `functions/_lib/clean-access.ts`: link access off, members with role admin get writer on the root, each clean's
   folder is shared (reader, no Google email) with its cleaner's email (`cleaners.email`) when it is made (`addPhotos`).
