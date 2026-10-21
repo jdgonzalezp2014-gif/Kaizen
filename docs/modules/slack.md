@@ -260,7 +260,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   3 s) and tells it in the to-do's thread. The options load alongside the card's reads.
 - **§157 (2026-10-14):** "Add to…" in listened channels (`offerAddTo`, `addto_*` actions, `Kaizen.addMessageTo`);
   SOPs from Slack (`newsop`/`sops` mention verbs, `/kaizen sop|sops`, `sop_from_message`, `sop_save`, `sops_section`,
-  `sop_view`, `sop_suggest`, `@Kaizen help <question>` → `helpFromSops`); the AI chain (`functions/_lib/ai-chain.ts`, Gemini → flash-lite → Workers AI `[ai]`).
+  `sop_view`, `sop_suggest`, `@Kaizen help <question>` → `helpFromSops`; a top-level `newsop` makes its own reply's thread the source, so ✨ reads what is pasted there — 2026-10-20); the AI chain (`functions/_lib/ai-chain.ts`, Gemini → flash-lite → Workers AI `[ai]`).
 - **Clean photos in Drive: admins + each cleaner (owner, 2026-10-14).** The root "Kaizen — clean photos" was "anyone with the
   link"; now `functions/_lib/clean-access.ts`: link access off, members with role admin get writer on the root, each clean's
   folder is shared (reader, no Google email) with its cleaner's email (`cleaners.email`) when it is made (`addPhotos`).

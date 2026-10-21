@@ -187,10 +187,12 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   }
   // Owner, 2026-10-14: a mention cannot open a pop-up — the button does.
   if (verb === 'newsop') {
-    // In a thread, the form is that thread's: its words, and ✨ reads it (2026-10-14).
-    await say('New SOP', [{ type: 'section', text: { type: 'mrkdwn', text: `📝 New SOP${arg ? `: *${arg.replace(/[<>&*]/g, '')}*` : inThread ? ' from this thread' : ''} — tap to open the form.` },
+    // The form is the thread's — the one it was asked in, or the one this reply starts — so ✨ reads what is written there
+    // (2026-10-20: a top-level newsop with the SOP pasted under it had no ✨). A DM reply is not threaded: no source.
+    const own = !(dm && !inThread);
+    await say('New SOP', [{ type: 'section', text: { type: 'mrkdwn', text: `📝 New SOP${arg ? `: *${arg.replace(/[<>&*]/g, '')}*` : inThread ? ' from this thread' : ''} — ${inThread || !own ? 'tap to open the form.' : 'write or paste it here in this thread, then tap ✨ in the form.'}` },
       accessory: { type: 'button', action_id: 'mention_new_sop', text: { type: 'plain_text', text: 'Open the form' }, style: 'primary',
-                   value: JSON.stringify({ title: arg.slice(0, 120), ...(inThread ? { from: { channel: String(ev.channel), root: String(ev.thread_ts) } } : {}) }) } }]);
+                   value: JSON.stringify({ title: arg.slice(0, 120), ...(own ? { from: { channel: String(ev.channel), root: threadTsOf } } : {}) }) } }]);
     return;
   }
   // §110: "@Kaizen new <what>" is made at once — the reply in its thread has ✎ Add details. No words: the form.
