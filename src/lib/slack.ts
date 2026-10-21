@@ -25,7 +25,8 @@ export interface SlackConfig {
   /** Channel id per topic, and its name for display. */
   channels?: Partial<Record<Topic, { id: string; name: string }>>;
   /** Owner, 2026-10-14: where each new message gets the private "Add to…" offer (#kaizen-ops, #kgp-team). */
-  addTo?: { channels: { id: string; name: string }[] };
+  /** `ask`: the private question on each new message (owner, 2026-10-21: off — only 📎 asks). */
+  addTo?: { channels: { id: string; name: string }[]; ask?: boolean };
   events?: { taskCreated?: boolean; taskAssigned?: boolean; taskClosed?: boolean; fromHostaway?: boolean; claimOpened?: boolean; claimChanged?: boolean;
              /** §134: one thread per day of cleans in the Reservations channel — photos and ✅ done as they arrive. Off until switched on. */
              cleanThread?: boolean };

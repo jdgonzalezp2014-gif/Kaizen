@@ -77,7 +77,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         // Owner, 2026-10-14: the channels where a message is offered "Add to…".
         addTo: c.addTo && Array.isArray(c.addTo.channels)
           ? { channels: (c.addTo.channels as { id?: unknown; name?: unknown }[]).filter(x => /^[CG][A-Z0-9]+$/.test(String(x?.id))).slice(0, 20)
-                .map(x => ({ id: String(x.id), name: String(x.name ?? '').slice(0, 80) })) }
+                .map(x => ({ id: String(x.id), name: String(x.name ?? '').slice(0, 80) })), ask: c.addTo.ask === true }
           : s.config.addTo,
         // §107: the tasks' check-in / check-out — local times, a known US zone.
         taskCheck: c.taskCheck && typeof c.taskCheck === 'object' ? {

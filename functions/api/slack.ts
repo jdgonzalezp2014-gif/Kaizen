@@ -80,7 +80,7 @@ export const onRequestPost: PagesFunction<Env> = async (ctx) => {
       // A threaded reply, not the thread's own first message, and not itself an @-mention (app_mention above owns that one).
       else if (ev.type === 'message' && !ev.bot_id && (!ev.subtype || ev.subtype === 'file_share')) {
         if (ev.thread_ts && ev.thread_ts !== ev.ts) ctx.waitUntil(threadReply(ctx, sql, s, ev).catch(() => {}));
-        // Owner, 2026-10-14: in a listened channel, a message no thread of Kaizen's already takes gets "Add to…".
+        // Owner, 2026-10-14: in a listened channel, a message no thread of Kaizen's already takes gets "Add to…" (if `addTo.ask`).
         ctx.waitUntil(offerAddTo(ctx, sql, s, ev).catch(() => {}));
       }
     }
@@ -305,7 +305,8 @@ const placeOptions = (sp: Awaited<ReturnType<typeof supplyPlaces>>): Opt[] =>
    ...sp.houses.map(h => ({ value: h.key, label: `${h.name} (house)`.slice(0, 75) }))].slice(0, 100);
 
 async function offerAddTo(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, any>) { // eslint-disable-line @typescript-eslint/no-explicit-any
-  if (!(s.config.addTo?.channels ?? []).some(c => c.id === ev.channel)) return;
+  // Owner, 2026-10-21: a question on every message was overwhelming — off unless Settings turns it on; 📎 asks instead.
+  if (!s.config.addTo?.ask || !(s.config.addTo.channels ?? []).some(c => c.id === ev.channel)) return;
   const botId = await botUserIdOf(sql, s);
   if (botId && String(ev.text ?? '').includes(`<@${botId}>`)) return;
   // Owner, 2026-10-21: asked on every reply of a conversation it was too much — a reply in a thread gets no question;
@@ -350,8 +351,11 @@ async function clipped(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
   }
   const targets = await k.addTargets();
   if (!targets.length) return;
+  // Now the usual way in (2026-10-21), so it guesses like the automatic question did: what this channel last added to.
+  const [last] = await sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE ${`addto:${channel}:%`}
+                             AND sent_at > now() - interval '1 hour' ORDER BY sent_at DESC LIMIT 1` as { key: string }[];
   await slackApi(s.token!, 'chat.postEphemeral', { channel, user: ev.user, text: 'Add this to Kaizen?',
-    blocks: addToBlocks(targets, { channel, ts, thread: root !== ts ? root : null }, suggestTarget(String(m?.text ?? ''), targets)), ...(root !== ts ? { thread_ts: root } : {}) });
+    blocks: addToBlocks(targets, { channel, ts, thread: root !== ts ? root : null }, suggestTarget(String(m?.text ?? ''), targets, last ? last.key.split(':').slice(2).join(':') : null)), ...(root !== ts ? { thread_ts: root } : {}) });
 }
 
 /** The bot's own Slack user id, cached in slack_config — fetched once (auth.test) and saved if missing. */

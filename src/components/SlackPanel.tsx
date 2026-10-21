@@ -151,20 +151,22 @@ export function SlackPanel() {
             </div>
           )}
           {!channels && cfg.channels && <p className="note">Now: {TOPICS.filter(t => cfg.channels?.[t.key]).map(t => `${t.label} → #${cfg.channels![t.key]!.name}`).join(' · ') || 'no channels yet'}</p>}
-          <p className="note"><b>Add to…</b> channels <Hint>In these channels each new message gets a private, silent offer (only its author sees it)
-            to add it to a task, a purchase order, a work order or a claim. Replies in its thread are not all saved: react <Icon n="clip" /> to one to add it.
-            No AI reads the messages.</Hint>{channels ? '' : ` — now: ${(cfg.addTo?.channels ?? []).map(c => `#${c.name}`).join(', ') || 'none'} (read the channels to change)`}</p>
+          <p className="note"><b>Add to…</b> channels <Hint>React <Icon n="clip" /> to any message Kaizen can read to add it to a task, a purchase order, a work order or a
+            claim: Kaizen saves it or asks where, privately (only you see it). With "Ask on each new message", every new message
+            in the channels checked here (not replies in a thread) gets that private question by itself. No AI reads the messages.</Hint>{channels ? '' : ` — now: ${(cfg.addTo?.channels ?? []).map(c => `#${c.name}`).join(', ') || 'none'} (read the channels to change)`}</p>
           {channels && (
             <div className="slack-events">
               {channels.filter(c => !c.private || c.member).map(c => {
                 const on = (cfg.addTo?.channels ?? []).some(x => x.id === c.id);
                 return <label key={c.id} className="check"><input type="checkbox" checked={on} onChange={e => setCfg(p => {
                   const now = (p.addTo?.channels ?? []).filter(x => x.id !== c.id);
-                  return { ...p, addTo: { channels: e.target.checked ? [...now, { id: c.id, name: c.name }] : now } };
+                  return { ...p, addTo: { ...p.addTo, channels: e.target.checked ? [...now, { id: c.id, name: c.name }] : now } };
                 })} /> {ic(c.private ? '🔒' : '#')}{c.name}</label>;
               })}
             </div>
           )}
+          <label className="check"><input type="checkbox" checked={!!cfg.addTo?.ask} onChange={e => setCfg(p => ({ ...p, addTo: { channels: p.addTo?.channels ?? [], ask: e.target.checked } }))} />
+            {' '}Ask on each new message <span className="sub-n">— off: only when someone reacts <Icon n="clip" /></span></label>
 
           <h3>4 · What is said <Hint>A clock (the Cloudflare Worker <code>kaizen-clock</code>) calls Kaizen every 5 minutes; each message goes once a day
             at its hour, in the time zone below. A GitHub Action is the backup.</Hint></h3>

@@ -1,6 +1,6 @@
 /**
- * "Add to…" (owner, 2026-10-14): a message in a listened channel (#kaizen-ops, #kgp-team) gets a
- * private, silent reply — add it as a comment to a task, or to a purchase order, a work order or a
+ * "Add to…" (owner, 2026-10-14): a message reacted 📎 (or, with Settings' "Ask on each new message", each new
+ * one in a listened channel — off since 2026-10-21) gets a private, silent reply — add it as a comment to a task, or to a purchase order, a work order or a
  * claim. No model reads the messages (the owner: one that reads everything is money given away); the
  * first guess is by words — the listing's code, the claim's or task's own words. Pure.
  */
