@@ -61,6 +61,9 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   were copied as ciphertext (never decrypted), audited as `secret.copy`; the plain-text PINs
   became secrets. Each record's Notes says where it came from. NEC, ineed and Gallery new portal
   login are marked "To review" in Company tools.
+  2026-10-21: TOOL-0034…0060 (27) added from Monday's "Services" group (owner's screenshot) — passwords
+  (and Roku's PIN) as secrets, Notes "Added from the Monday "Services" list". Mereo has no login yet;
+  Austin Utilities is also in Unit services (SVC); Instacart / myQ URLs were cut off in the screenshot.
 - The Units section also has a **STR Log ins** table — not part of this reorganization.
 
 - **Units access/parking block (§147):** the three Units tables share one block, same keys, types
