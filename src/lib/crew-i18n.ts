@@ -42,13 +42,14 @@ export const monthTitle = (lang: Lang, y: number, m: number) => `${MONTH[lang][m
 /** An invoice period's name: "Oct 10 – Oct 16, 2026" / "10 oct – 16 oct 2026"; "Oct 2026" / "octubre 2026". */
 export function periodLabel(lang: Lang, p: Period, kind: InvoicePeriod): string {
   const a = parts(p.from), b = parts(p.to);
-  if (kind === 'weekly') {
+  if (kind === 'weekly' || p.custom) {
     return lang === 'es' ? `${a.d} ${MON.es[a.m]} – ${b.d} ${MON.es[b.m]} ${b.y}` : `${MON.en[a.m]} ${a.d} – ${MON.en[b.m]} ${b.d}, ${b.y}`;
   }
   return lang === 'es' ? `${MONTH.es[a.m]} ${a.y}` : `${MON.en[a.m]} ${a.y}`;
 }
 /** When it is paid: "Saturday, Oct 17" / "el sábado 17 oct"; "the first days of November" / "los primeros días de noviembre". */
 export function payNote(lang: Lang, p: Period, kind: InvoicePeriod): string {
+  if (p.custom) return lang === 'es' ? 'con el periodo de factura de cada limpieza' : p.payNote;
   const q = parts(p.payday);
   if (kind === 'weekly') return lang === 'es' ? `el sábado ${q.d} ${MON.es[q.m]}` : `Saturday, ${MON.en[q.m]} ${q.d}`;
   return lang === 'es' ? `los primeros días de ${MONTH.es[q.m]}` : `the first days of ${MONTH.en[q.m]}`;
@@ -58,6 +59,7 @@ export function payNote(lang: Lang, p: Period, kind: InvoicePeriod): string {
 export function voidReasonText(lang: Lang, reason: string): string {
   if (lang === 'en') return reason;
   if (reason === 'booking cancelled in Hostaway') return 'reserva cancelada en Hostaway';
+  if (reason.startsWith('not paid by the team — ')) return `no pagada por el equipo — ${reason.slice(23)}`;
   let m = /^same unit and day as reservation (\S+) — one clean$/.exec(reason);
   if (m) return `misma unidad y día que la reserva ${m[1]} — una sola limpieza`;
   m = /^booking changed — the guest booked again as reservation (\S+), which carries the clean$/.exec(reason);

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildInvoice, periodOf, recentPeriods, scheduleMovements, visibleAhead, type CrewClean, type CrewExtra, type ScheduleItem } from './crew.ts';
+import { buildInvoice, customPeriod, periodOf, recentPeriods, scheduleMovements, visibleAhead, type CrewClean, type CrewExtra, type ScheduleItem } from './crew.ts';
 
 const clean = (key: string, date: string, extra: Partial<CrewClean> = {}): CrewClean =>
   ({ key, unit: 'CL1250', date, beds: 1, deep: false, kind: 'checkout', price: 50, assignment: 'assigned',
@@ -87,4 +87,14 @@ test('a clean coming into view as the days pass is not "new"; one newly given in
   const now = [it('f', '2026-10-16'), it('g', '2026-10-15'), it('h', '2026-10-13')];
   const m = scheduleMovements('Irene', snap, now, '2026-10-11', v, () => ({ status: 'unassigned' }));
   assert.deepEqual(m.map(x => `${x.kind}:${x.key}`), ['added:h']);   // h was Veronica's and in view: newly Irene's
+});
+
+test('a span the team picks: its own dates, the invoice counts only the cleans in it', () => {
+  const p = customPeriod('2026-10-02', '2026-10-20');
+  assert.equal(p.custom, true);
+  assert.equal(p.label, 'Oct 2 – Oct 20, 2026');
+  const c = (key: string, date: string): CrewClean => ({ key, unit: 'U', date, beds: 2, deep: false, kind: 'checkout', price: 50,
+    assignment: 'assigned', voidReason: null, flagNote: null, editNote: null });
+  const inv = buildInvoice('Irene', p, [c('a', '2026-10-01'), c('b', '2026-10-02'), c('d', '2026-10-20')], [], '2026-10-24');
+  assert.deepEqual(inv.lines.map(l => l.key), ['b', 'd']);
 });

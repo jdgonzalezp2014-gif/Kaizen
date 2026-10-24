@@ -610,9 +610,9 @@ export interface PendingExtra {
 }
 /** A clean held after a cancellation on or after arrival (§123), waiting for a person. */
 export interface ToConfirm { key: string; unit: string; date: string; beds: number | null; deep: boolean; guest: string | null; note: string }
-export const getCrewAdmin = (cleaner?: string | null, period?: string | null) =>
+export const getCrewAdmin = (cleaner?: string | null, period?: string | null, to?: string | null) =>
   call<{ ok: true; pending: PendingExtra[]; fieldPending?: FieldExpense[]; page: CrewPage | null; schedule: CrewSchedule; toConfirm: ToConfirm[] } | Fail>(
-    `/api/crew-admin?${new URLSearchParams({ ...(cleaner ? { cleaner } : {}), ...(period ? { period } : {}) })}`);
+    `/api/crew-admin?${new URLSearchParams({ ...(cleaner ? { cleaner } : {}), ...(period ? { period } : {}), ...(period && to ? { to } : {}) })}`);
 /** A cleaner's page through the same server code that answers the cleaner — for "View as cleaner". */
 export const getCrewAsCleaner = (cleaner: string, period?: string | null) =>
   call<({ ok: true } & CrewPage) | Fail>(`/api/crew-admin?${new URLSearchParams({ view: 'cleaner', cleaner, ...(period ? { period } : {}) })}`);

@@ -40,7 +40,8 @@ export async function syncCleaningCosts(sql: SqlFn, by = 'Kaizen'): Promise<{ cl
            left('Extra — ' || e.description, 120), 'Cleaner: ' || e.cleaner || ' · clean ' || e.cleaning_key, 'cleaning_extra', e.id::text, ${by}
       FROM cleaning_extras e JOIN cleanings c ON c.account_id = e.account_id AND c.key = e.cleaning_key
       LEFT JOIN units u ON u.account_id = c.account_id AND u.id = c.unit_id
-     WHERE e.account_id = 1 AND e.status = 'approved'
+     -- An extra is paid with its clean (buildInvoice): a clean not paid takes its extras out of Costs too.
+     WHERE e.account_id = 1 AND e.status = 'approved' AND c.void_reason IS NULL
     ON CONFLICT (source, external_ref) WHERE external_ref IS NOT NULL DO UPDATE SET
       amount = EXCLUDED.amount, start_date = EXCLUDED.start_date, unit_id = EXCLUDED.unit_id, shared = EXCLUDED.shared,
       label = EXCLUDED.label, notes = EXCLUDED.notes
@@ -50,7 +51,8 @@ export async function syncCleaningCosts(sql: SqlFn, by = 'Kaizen'): Promise<{ cl
       (x.source = 'cleaning' AND NOT EXISTS (SELECT 1 FROM cleanings c WHERE c.account_id = 1 AND c.key = x.external_ref
          AND c.void_reason IS NULL AND c.assignment = 'assigned' AND c.price IS NOT NULL AND c.price > 0 AND c.checkout_on <= ${today}::date))
       OR (x.source = 'cleaning_extra' AND NOT EXISTS (SELECT 1 FROM cleaning_extras e WHERE e.account_id = 1 AND e.id::text = x.external_ref
-         AND e.status = 'approved')))
+         AND e.status = 'approved' AND NOT EXISTS (SELECT 1 FROM cleanings c WHERE c.account_id = 1 AND c.key = e.cleaning_key
+           AND c.void_reason IS NOT NULL))))
     RETURNING id` as unknown[];
   return { cleans: cleans.length, extras: extras.length, removed: removed.length };
 }

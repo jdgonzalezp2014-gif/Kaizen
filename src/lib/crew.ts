@@ -17,6 +17,8 @@ export interface Period {
   payday: DateStr;
   /** The same, in words: "Saturday, Oct 17" or "the first days of November". */
   payNote: string;
+  /** Dates the team picked (Operations → Cleaners), not one of the cleaner's invoice periods. */
+  custom?: boolean;
 }
 
 export interface CrewClean {
@@ -61,6 +63,15 @@ export function periodOf(d: DateStr, kind: InvoicePeriod): Period {
   const from = startOfMonth(d), to = endOfMonth(d), payday = addDays(to, 1);
   return { from, to, label: `${MON[Number(d.slice(5, 7)) - 1]} ${d.slice(0, 4)}`, payday,
            payNote: `the first days of ${MONTH[Number(payday.slice(5, 7)) - 1]}` };
+}
+
+/**
+ * Any span the team picks to review a cleaner's cleans (owner, 2026-10-24). It pays on
+ * no day of its own: each clean is still paid with the invoice period it falls in.
+ */
+export function customPeriod(from: DateStr, to: DateStr): Period {
+  return { from, to, label: `${md(from)} – ${md(to)}, ${to.slice(0, 4)}`, payday: periodOf(to, 'weekly').payday,
+           payNote: 'with the invoice period each clean falls in', custom: true };
 }
 
 /** The current period and the `n - 1` before it, newest first. */

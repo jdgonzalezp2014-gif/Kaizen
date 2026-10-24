@@ -8,6 +8,7 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
 
 - Screen: `src/screens/Operations.tsx` (Board, Setup incl. StarSetup/CrewSetup, Inspections, CleaningsMonth…),
   `src/screens/Crew.tsx` (CrewHome = the cleaner's page, CrewAdmin = Operations → Cleaners; one CrewView for both),
+  `src/components/CleanControls.tsx` (FlagControl, ManualCleanForm, MANUAL_WORD, LEVEL_LABEL — shared by Movements and Cleaners),
   `src/components/CleaningCalendar.tsx`, `DayPicker.tsx`.
 - API: `crew.ts` (cleaner, behind Access), `crew-link.ts` (secret link, SELF_AUTHENTICATING, reads
   no identity header), `crew-admin.ts` (team: GET `operations`, POST `operations.edit`),
@@ -229,6 +230,13 @@ key had no SOPs.
 - Flag by hand = a note the cleaner reads; does not change pay. Set from Operations → Cleaners or from
   Movements (§124): a departure's editor, a manual clean's row, a recorded day's row (same
   `crew-admin` flag/unflag; needs the record row, so not in shadow mode).
+- **Cleaners, the team's edits (owner, 2026-10-24):** a cleaner's page in Operations → Cleaners has the invoice periods as
+  presets plus "Last 7/30 days" and two dates (`?period=<from>&to=<to>`, team only; ≤92 days, ≤30 ahead; `customPeriod`,
+  `Period.custom` — pay never moves, each clean is paid with its invoice period). Per clean: the Movements `FlagControl`
+  (deduct $ or corrected pay), ✎ Correct, **○ Not paid…** (`notPaid`: before today only — the record rewrites today+;
+  `void_reason = 'not paid by the team — <why>'`, leaves the invoice and Costs; `restorePaid` undoes only that prefix),
+  and **+ Add a clean** (ManualCleanForm with the cleaner preset). Extras on a void clean leave Costs too (field-costs.ts).
+  SOP 10 v4 = `.sop-cleaners.mjs`, run at deploy.
 - Movements (§124) = the board in a date window, default today + 10. From today on it is live
   (Hostaway + rules, `days` up to 30, never fewer than 10 so the other views keep their window);
   days before today read `/api/cleaning-log` (the record: departures + manual cleans, no arrivals),

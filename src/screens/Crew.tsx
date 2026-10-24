@@ -28,6 +28,7 @@ import { addDays } from '../lib/dates.ts';
 import { FieldReport, KINDS, type Kind, type Send } from '../components/FieldReport.tsx';
 import { CleanSteps, fromWords, type Result } from '../components/CleanSteps.tsx';
 import { FieldPurchaseLines } from './Inventory.tsx';
+import { FlagControl, ManualCleanForm } from '../components/CleanControls.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { ThemeToggle } from '../components/ThemeToggle.tsx';
 import { AccessBox } from '../components/AccessBox.tsx';
@@ -99,17 +100,21 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
   const fromHash = decodeURIComponent(/^#crew\/(.+)$/.exec(location.hash)?.[1] ?? '');
   const [name, setName] = useState(roster.some(c => c.name === fromHash) ? fromHash : '');
   const [period, setPeriod] = useState<string | null>(null);
+  // Owner, 2026-10-24: any dates, not only the invoice periods — `to` set = the team's own span.
+  const [to, setTo] = useState<string | null>(null);
+  const [adding, setAdding] = useState(false);
   const [pending, setPending] = useState<PendingExtra[]>([]);
   const [fieldPending, setFieldPending] = useState<FieldExpense[]>([]);
   const [page, setPage] = useState<CrewPage | null>(null);
   const [schedule, setSchedule] = useState<CrewSchedule | null>(null);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
   const [err, setErr] = useState('');
-  const load = () => getCrewAdmin(name || null, period)
+  const load = () => getCrewAdmin(name || null, period, to)
     .then(r => { if (r.ok) { setPending(r.pending); setFieldPending(r.fieldPending ?? []); setPage(r.page); setSchedule(r.schedule); setToConfirm(r.toConfirm ?? []); setErr(''); }
                  else setErr(r.message ?? 'Could not load.'); })
     .catch(e => setErr(String(e)));
-  useEffect(() => { void load(); }, [name, period]);
+  useEffect(() => { void load(); }, [name, period, to]);
+  const pick = (from: string | null, until: string | null = null) => { setPeriod(from); setTo(until); };
   // Picking a cleaner leaves the address alone (owner, 2026-10-17); "View as cleaner ↗" is the separate tab.
 
   return (
@@ -117,7 +122,7 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
       {err && <p className="banner error">{ic(err)}</p>}
       <div className="row-controls">
         <label>See a cleaner's page as they see it
-          <select value={name} onChange={e => { setName(e.target.value); setPeriod(null); }}>
+          <select value={name} onChange={e => { setName(e.target.value); pick(null); setAdding(false); }}>
             <option value="">Choose…</option>
             {roster.map(c => <option key={c.name} value={c.name}>{c.name}{c.active ? '' : ' (inactive)'}{c.email ? '' : ' — no sign-in address'}</option>)}
           </select></label>
@@ -128,14 +133,20 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
           <label>Invoice
             <select value={page.cleaner.invoicePeriod} disabled={!canEdit}
                     onChange={e => void crewAdminAction({ action: 'invoicePeriod', name, period: e.target.value })
-                      .then(r => { if (r.ok) { setPeriod(null); void load(); } else setErr(r.message ?? 'Could not save.'); })
+                      .then(r => { if (r.ok) { if (period === null && to === null) void load(); else pick(null); } else setErr(r.message ?? 'Could not save.'); })
                       .catch(x => setErr(String(x)))}>
               <option value="weekly">weekly (Sat–Fri, paid Saturday)</option>
               <option value="monthly">monthly (paid early the next month)</option>
             </select></label>
         )}
+        {page && page.cleaner.name === name && canEdit && !adding &&
+          <button className="chip" onClick={() => setAdding(true)}>+ Add a clean</button>}
       </div>
-      {page && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={setPeriod} reload={load} act={crewAdminAction} />}
+      {adding && page && (
+        <ManualCleanForm today={page.today} roster={roster} initial={{ cleaner: name, kind: 'extra' }}
+                         onCancel={() => setAdding(false)} onDone={() => { setAdding(false); void load(); }} />
+      )}
+      {page && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={p => pick(p)} onRange={pick} reload={load} act={crewAdminAction} />}
       {toConfirm.length > 0 && (
         <div className="card">
           <h2>Cancelled after arrival — confirm <span className="chan-tag">{toConfirm.length}</span> <Hint>These bookings were cancelled on or after their arrival day, so the guest may have used the unit.
@@ -267,9 +278,16 @@ function Decide({ id, onDone, kind = 'decideExtra', record }: {
 
 /* ── the page itself ──────────────────────────────────────────────── */
 
-function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, report, shareLink, photo, lang = 'en', onLang }: {
+/** The team's shortcuts besides the invoice periods: the last N days, to today. */
+const RANGE_PRESETS: [string, number][] = [['Last 7 days', 6], ['Last 30 days', 29]];
+/** Same cap as the server's (functions/_lib/crew.ts). */
+const CUSTOM_MAX_DAYS = 92, CUSTOM_AHEAD = 30;
+
+function CrewView({ page, mode, canEdit = false, onPeriod, onRange, reload, act, upload, report, shareLink, photo, lang = 'en', onLang }: {
   page: CrewPage; mode: 'cleaner' | 'team'; canEdit?: boolean;
   onPeriod: (from: string) => void; reload: () => void;
+  /** The team's own dates (Operations → Cleaners); the cleaner's page has only their invoice periods. */
+  onRange?: (from: string, to: string) => void;
   act: Act; upload?: Upload;
   /** §134: supplies and problems, and the link for the people they hire — the cleaner's page only. */
   report?: Send; shareLink?: ShareLink; photo?: (id: string) => Promise<string>;
@@ -292,7 +310,10 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
 
   const cleansList = (noExtraFor: Set<string>, fieldCtx?: FieldCtx) => (
     <div className="card no-print">
-      <h2>{ic(tx.cleansTitle(periodLabel(lang, period, kind)))}</h2>
+      <h2>{ic(tx.cleansTitle(periodLabel(lang, period, kind)))}
+        {team && canEdit && <> <Hint label="Editing cleans">⚑ Flag: a note the cleaner reads — on a clean already done, with a deduction or a corrected pay.
+          ✎ Correct: deep or regular, and the price. ○ Not paid: takes a clean before today off the pay (and Costs), with the reason the cleaner reads; only those can be put back here.
+          Today and ahead belong to the board (Movements). + Add a clean: a manual clean for this cleaner, any day.</Hint></>}</h2>
       <p className="note">
         {ic(tx.paidCount(inv.lines.length))} · {ic(money2(inv.total))}{ic(inv.open ? tx.soFar : '')}
         {excluded > 0 && <> · {ic(tx.notPaidCount(excluded))}</>}
@@ -311,11 +332,31 @@ function CrewView({ page, mode, canEdit = false, onPeriod, reload, act, upload, 
       )}
     </div>
   );
-  const periodPick = (
+  const invoicePick = (
     <label>{ic(tx.periodField(kind))}
-      <select value={period.from} onChange={e => onPeriod(e.target.value)}>
+      <select value={period.custom ? '' : period.from} onChange={e => { if (e.target.value) onPeriod(e.target.value); }}>
+        {period.custom && <option value="">{ic(periodLabel(lang, period, kind))} (dates picked)</option>}
         {page.periods.map(p => <option key={p.from} value={p.from}>{periodLabel(lang, p, kind)}</option>)}
       </select></label>
+  );
+  // Owner, 2026-10-24: the invoice periods stay as the presets; the team can review any other span.
+  const periodPick = !onRange ? invoicePick : (
+    <div className="row-controls">
+      {invoicePick}
+      {RANGE_PRESETS.map(([label, days]) => {
+        const from = addDays(page.today, -days);
+        return <button key={label} className={period.custom && period.from === from && period.to === page.today ? 'chip active' : 'chip'}
+                       onClick={() => onRange(from, page.today)}>{label}</button>;
+      })}
+      <input type="date" className="date-in" title="From" value={period.from} max={period.to}
+             onChange={e => { const v = e.target.value; if (v) onRange(v, v > period.to ? v : addDays(v, CUSTOM_MAX_DAYS) < period.to ? addDays(v, CUSTOM_MAX_DAYS) : period.to); }} />
+      <span className="note">to</span>
+      <input type="date" className="date-in" title={`To — up to ${CUSTOM_MAX_DAYS} days after the first`} value={period.to} min={period.from} max={addDays(page.today, CUSTOM_AHEAD)}
+             onChange={e => { const v = e.target.value && (e.target.value > addDays(page.today, CUSTOM_AHEAD) ? addDays(page.today, CUSTOM_AHEAD) : e.target.value);
+               if (v) onRange(v < period.from ? v : addDays(v, -CUSTOM_MAX_DAYS) > period.from ? addDays(v, -CUSTOM_MAX_DAYS) : period.from, v); }} />
+      <Hint label="Dates">The invoice periods are the presets; any other dates show the cleans in them (up to {CUSTOM_MAX_DAYS} days). Pay does not move:
+        each clean is still paid with the invoice period it falls in.</Hint>
+    </div>
   );
   const help = page.help?.filter(h => (h.lang ?? 'en') === lang) ?? [];
 
@@ -985,6 +1026,9 @@ function UpcomingRow({ r, act, reload, tag, lang, ctx, fs, address }: { r: CrewU
   );
 }
 
+/** How a "not paid" the team set begins (functions/api/crew-admin.ts) — only those can be put back here. */
+const TEAM_VOID = 'not paid by the team — ';
+
 function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, reload, lang, noExtra = false, fs, quick }: {
   c: CrewClean; extras: CrewExtra[]; today: string; extraFrom: string; mode: 'cleaner' | 'team'; canEdit: boolean;
   /** §134: the same small actions as the sections above, on a recent or coming clean of the cleaner's. */ quick?: Quick;
@@ -993,7 +1037,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
 }) {
   const tx: Tx = TX[lang];
   const [adding, setAdding] = useState(false);
-  const [flagging, setFlagging] = useState(false);
+  const [voiding, setVoiding] = useState(false);
   const [correcting, setCorrecting] = useState(false);
   const [deep, setDeep] = useState(c.deep);
   const [amount, setAmount] = useState('');
@@ -1006,7 +1050,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
   const done = (r: { ok: boolean; message?: string }) => {
     setBusy(false);
     if (!r.ok) { setMsg(r.message ?? tx.notSaved); return; }
-    setAdding(false); setFlagging(false); setCorrecting(false); setAmount(''); setText(''); setFiles([]); reload();
+    setAdding(false); setVoiding(false); setCorrecting(false); setAmount(''); setText(''); setFiles([]); reload();
   };
   const send = async (body: Record<string, unknown>) => {
     setMsg(''); setBusy(true);
@@ -1034,7 +1078,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
           : upcoming ? <span className="note">{ic(tx.comingUpTag)}</span>
           : billed ? <span>✓ {ic(c.price == null ? tx.notPriced : money2(c.price))}</span>
           : <span className="note">{ic(tx.notYours)}</span>}
-        {c.flagNote && <div className="breach">{ic(tx.flaggedNote(c.flagNote))}</div>}
+        {c.flagNote && !(mode === 'team' && canEdit) && <div className="breach">{ic(tx.flaggedNote(c.flagNote))}</div>}
         {c.editNote && <div className="sub-n">{ic(tx.corrected(c.editNote))}</div>}
         {extras.map(e => (
           <div key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>
@@ -1057,10 +1101,13 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
           <button className="link tiny" onClick={() => setAdding(true)}>{ic(tx.addExtra)}</button>}
         {mode === 'team' && canEdit && c.date < today && !correcting &&
           <button className="link tiny" onClick={() => { setCorrecting(true); setDeep(c.deep); setAmount(c.price == null ? '' : String(c.price)); }}>✎ Correct</button>}
-        {mode === 'team' && canEdit && !flagging && (c.flagNote
-          ? <button className="link tiny" onClick={() => void send({ action: 'unflag', key: c.key })}>Remove flag</button>
-          : <button className="link tiny" onClick={() => { setFlagging(true); setAmount(''); }}>⚑ Flag</button>)}
+        {mode === 'team' && canEdit && c.date < today && !voiding && (c.voidReason
+          ? c.voidReason.startsWith(TEAM_VOID) && <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'restorePaid', key: c.key })}>Put back on the pay</button>
+          : <button className="link tiny" onClick={() => { setVoiding(true); setText(''); }}>○ Not paid…</button>)}
       </div>
+      {/* Owner, 2026-10-24: the same flag as Movements — with a deduction or a corrected pay. */}
+      {mode === 'team' && canEdit && <FlagControl cleanKey={c.key} flag={c.flagNote} onChanged={reload}
+                                                  date={billed ? c.date : undefined} today={today} price={billed ? c.price : null} hint={false} />}
       {adding && (
         <div className="crew-decide">
           <input className="amt" inputMode="decimal" value={amount} placeholder="$" onChange={e => setAmount(e.target.value)} />
@@ -1084,16 +1131,11 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
           <span className="note">Blank price = the cleaner's rate for the new type.</span>
         </div>
       )}
-      {flagging && (
+      {voiding && (
         <div className="crew-decide">
-          <input value={text} maxLength={500} placeholder="What the cleaner should know (they read this)" onChange={e => setText(e.target.value)} />
-          {/* §128: a clean already due can have its pay corrected in the same step; blank keeps it. */}
-          {billed && <input className="amt" inputMode="decimal" value={amount} placeholder={c.price != null ? `pays ${c.price}` : 'pay'}
-                            title="Leave blank to keep the pay as it is" onChange={e => setAmount(e.target.value)} />}
-          <button className="small" disabled={!text.trim() || busy || (amount !== '' && !(Number(amount) >= 0))}
-                  onClick={() => void send({ action: 'flag', key: c.key, note: text, ...(billed && amount !== '' ? { price: Number(amount) } : {}) })}>
-            {ic(billed && amount !== '' ? 'Flag and correct pay' : 'Flag')}</button>
-          <button className="small secondary" onClick={() => setFlagging(false)}>Cancel</button>
+          <input value={text} maxLength={480} placeholder="Why it is not paid (the cleaner reads it)" onChange={e => setText(e.target.value)} />
+          <button className="small" disabled={!text.trim() || busy} onClick={() => void send({ action: 'notPaid', key: c.key, note: text })}>Take off the pay</button>
+          <button className="small secondary" onClick={() => setVoiding(false)}>Cancel</button>
         </div>
       )}
       {msg && <div className="breach">{ic(msg)}</div>}

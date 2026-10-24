@@ -23,12 +23,14 @@ import { activeUnits, esMessage, fieldPhotos, fieldPurchase, fieldTodo, invItems
 import { addDays, todayIn, type DateStr } from '../../src/lib/dates.ts';
 import type { Level } from '../../src/lib/operations.ts';
 import {
-  buildInvoice, periodOf, recentPeriods, scheduleMovements, visibleAhead, EXTRA_MAX_AGE_DAYS, EXTRA_MAX_AMOUNT,
+  buildInvoice, customPeriod, periodOf, recentPeriods, scheduleMovements, visibleAhead, EXTRA_MAX_AGE_DAYS, EXTRA_MAX_AMOUNT,
   type CrewClean, type CrewExtra, type Fate, type InvoicePeriod, type Movement, type Period, type ScheduleItem, type Visibility
 } from '../../src/lib/crew.ts';
 
 const TZ = 'America/New_York';
 const PERIODS_SHOWN = 6;
+/** A span the team picks: up to ~3 months (one query on the record), up to the board's 30 days ahead. */
+export const CUSTOM_MAX_DAYS = 92, CUSTOM_AHEAD = 30;
 
 export interface CrewUpcoming {
   /** The reservation (a checkout) or MAN-<n> (a manual clean) — what a decline names. */
@@ -193,12 +195,18 @@ export function newToken(): string {
 }
 
 export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: string,
-                                   asked?: string | null, preloaded?: ScheduleState): Promise<CrewPage | null> {
+                                   asked?: string | null, preloaded?: ScheduleState,
+                                   /** The team's own span's last day (Operations → Cleaners); `asked` is its first. */
+                                   askedTo?: string | null): Promise<CrewPage | null> {
   const c = await findCleaner(sql, name);
   if (!c) return null;
   const today = todayIn(TZ);
   const periods = recentPeriods(today, c.invoice_period, PERIODS_SHOWN);
-  const period = asked && /^\d{4}-\d{2}-\d{2}$/.test(asked) && asked <= today ? periodOf(asked, c.invoice_period) : periods[0]!;
+  const isDay = (d?: string | null): d is string => !!d && /^\d{4}-\d{2}-\d{2}$/.test(d);
+  const custom = isDay(asked) && isDay(askedTo) && asked <= askedTo && askedTo <= addDays(today, CUSTOM_AHEAD) &&
+    askedTo <= addDays(asked, CUSTOM_MAX_DAYS);
+  const period = custom ? customPeriod(asked, askedTo)
+    : isDay(asked) && asked <= today ? periodOf(asked, c.invoice_period) : periods[0]!;
   const extraFrom = addDays(today, -EXTRA_MAX_AGE_DAYS);
   const from = period.from < extraFrom ? period.from : extraFrom;
   const to = period.to > today ? period.to : today;

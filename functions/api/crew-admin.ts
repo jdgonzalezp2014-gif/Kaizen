@@ -1,7 +1,7 @@
 /**
  * /api/crew-admin — the team's side of the crew pages (§122).
  *
- *   GET  [?cleaner=<name>&period=YYYY-MM-DD]     extras waiting on the team; with a
+ *   GET  [?cleaner=<name>&period=YYYY-MM-DD[&to=YYYY-MM-DD]]  extras waiting on the team; with a
  *                                               cleaner, their page for the team
  *   GET  ?view=cleaner&cleaner=<name>[&period]  that cleaner's page through the SAME code that
  *                                               answers the cleaner (crewGet) — nothing of the team's
@@ -10,6 +10,8 @@
  *   POST { action: 'flag', key, note, price? }  flag a clean; the cleaner sees the note — and, for a clean
  *                                               today or before, optionally correct what it pays (§128)
  *   POST { action: 'unflag', key }
+ *   POST { action: 'notPaid', key, note } / { action: 'restorePaid', key }   take a past clean off the pay,
+ *                                               or put back one the team took off (owner, 2026-10-24)
  *   POST { action: 'confirmClean', key, cleaner | null, date?, deep? }
  *                                               settle a clean held after a cancellation (§123):
  *                                               who cleaned it, or null = no clean was needed
@@ -70,7 +72,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           JOIN cleanings c ON c.account_id = e.account_id AND c.key = e.cleaning_key
          WHERE e.account_id = 1 AND e.status = 'pending'
          ORDER BY e.created_at`,
-    name ? loadCrewPage(sql, env.ENCRYPTION_KEY, name, url.searchParams.get('period'), st) : Promise.resolve(null),
+    name ? loadCrewPage(sql, env.ENCRYPTION_KEY, name, url.searchParams.get('period'), st, url.searchParams.get('to')) : Promise.resolve(null),
     // Cleans held after a cancellation, waiting for a person (§123).
     sql`SELECT key, unit_name AS unit, checkout_on::text AS date, beds, deep, guest, needs_confirm AS note
           FROM cleanings WHERE account_id = 1 AND needs_confirm IS NOT NULL AND void_reason IS NULL
@@ -205,5 +207,30 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ ok: true });
   }
 
+  // Owner, 2026-10-24: take a clean off the pay from the cleaner's page, as the record's own
+  // "not paid" rows are. Only before today — today and ahead the board rewrites the record and owns it.
+  // The row stays on the cleaner's page with the reason; only what the team wrote can be put back.
+  if (body.action === 'notPaid' || body.action === 'restorePaid') {
+    const key = String(body.key ?? '');
+    const [row] = await sql`SELECT checkout_on::text AS date, void_reason FROM cleanings WHERE account_id = 1 AND key = ${key}` as
+      { date: string; void_reason: string | null }[];
+    if (!row) return refuse(404, 'not_found', 'That clean is not in the record.');
+    if (row.date >= todayIn(TZ)) return refuse(400, 'bad_request', 'This clean is today or ahead — change it on the board (Movements).');
+    if (body.action === 'notPaid') {
+      if (!note) return refuse(400, 'bad_request', 'Say why it is not paid — the cleaner reads the reason.');
+      if (row.void_reason) return refuse(409, 'already_void', 'That clean is already not paid — reload.');
+      await sql`UPDATE cleanings SET void_reason = ${`${TEAM_VOID}${note}`}, edited_by = ${who.email}, edited_at = now()
+                 WHERE account_id = 1 AND key = ${key}`;
+    } else {
+      if (!row.void_reason?.startsWith(TEAM_VOID)) return refuse(409, 'not_team_void', 'Only a clean the team took off the pay can be put back here.');
+      await sql`UPDATE cleanings SET void_reason = NULL, edited_by = ${who.email}, edited_at = now() WHERE account_id = 1 AND key = ${key}`;
+    }
+    await syncCleaningCosts(sql, who.email);
+    return Response.json({ ok: true });
+  }
+
   return refuse(400, 'bad_request', 'Unknown action.');
 };
+
+/** How a "not paid" the team set begins — the cleaner reads the rest. */
+const TEAM_VOID = 'not paid by the team — ';
