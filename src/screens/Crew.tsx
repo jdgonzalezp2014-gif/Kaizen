@@ -158,14 +158,12 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
       )}
       {schedule && (
         <div className="card">
-          <h2>What cleaners see ahead</h2>
+          <h2>What cleaners see ahead <Hint>{ic(schedule.enabled ? 'The whole schedule is published: cleaners see everything ahead.'
+              : `What a person assigned, and the rule's picks ${schedule.autoDays} days ahead — marked 👁 on the board. Nothing to confirm.`)} Change it in Setup → Crew pages.</Hint></h2>
           <p className="note">
-            {ic(schedule.enabled ? 'The whole schedule is published: cleaners see everything ahead.'
-              : `What a person assigned, and the rule's picks ${schedule.autoDays} days ahead — marked 👁 on the board. Nothing to confirm.`)}
-            {ic(' ')}{schedule.confirmed
+            {schedule.confirmed
               ? <>Last daily update {ic(stamp(schedule.confirmed.at))}{ic(schedule.confirmed.by === 'daily update' ? '' : ` (by ${schedule.confirmed.by})`)}.</>
               : 'The first daily update comes with the next daily pass.'}
-            {ic(' ')}Change it in Setup → Crew pages.
           </p>
           {schedule.problem && <p className="banner warn">▲ {ic(schedule.problem)}</p>}
           {schedule.confirmed && schedule.movements.length > 0 && (
@@ -897,7 +895,7 @@ function CrewCalendar({ page, lang }: { page: CrewPage; lang: Lang }) {
     <div className="card no-print">
       <div className="crew-cal-head">
         <button className="chip" disabled={at <= 0} onClick={() => setMonth(months[at - 1]!)}>‹</button>
-        <h2>{ic(monthTitle(lang, y, m))}</h2>
+        <h2>{ic(monthTitle(lang, y, m))} <Hint>{ic(tx.calLegend)}{ic(!page.upcoming.enabled && tx.calAuto(page.upcoming.autoDays))}</Hint></h2>
         <button className="chip" disabled={at >= months.length - 1} onClick={() => setMonth(months[at + 1]!)}>›</button>
       </div>
       <div className="crew-cal">
@@ -918,12 +916,10 @@ function CrewCalendar({ page, lang }: { page: CrewPage; lang: Lang }) {
           <ul>{(byDay.get(sel) ?? []).map((it, j) => <li key={j} className={`crew-cal-item ${it.tone}`}>{ic(it.mark)} {ic(it.unit)} — {ic(it.title)}</li>)}</ul>
         )}
       </div>
-      <p className="note">{ic(tx.calLegend)}
-        {ic(!page.upcoming.enabled && tx.calAuto(page.upcoming.autoDays))}</p>
       {page.upcoming.rows.length > 0 && (
         <div className="button-row">
           <button className="secondary" onClick={() => downloadIcs(page, lang)}>{ic(tx.icsBtn)}</button>
-          <span className="note">{ic(tx.icsNote)}</span>
+          <Hint>{ic(tx.icsNote)}</Hint>
         </div>
       )}
     </div>
@@ -970,7 +966,7 @@ function Upcoming({ page, act, reload, lang, ctx, afterToday = false }: { page: 
   const day = (d: string) => dayLabel(lang, d);
   return (
     <div className="card no-print">
-      <h2>{ic(tx.comingUp)}</h2>
+      <h2>{ic(tx.comingUp)}{!u.enabled && <> <Hint>{ic(tx.autoNote(u.autoDays))}</Hint></>}</h2>
       {u.problem ? <p className="banner warn">▲ {ic(u.problem)}</p> : (
         <>
           {u.confirmed && <p><b>{ic(tx.lastUpdate(stampLabel(lang, u.confirmed.at)))}</b></p>}
@@ -978,7 +974,7 @@ function Upcoming({ page, act, reload, lang, ctx, afterToday = false }: { page: 
             <ul className="crew-moves">{u.movements.map((m, i) => <li key={i} className={m.kind === 'removed' ? 'breach' : undefined}>
               {ic(MOVE_ICON[m.kind])} {ic(movementFor(lang, m))}</li>)}</ul></>}
           {u.confirmed && u.movements.length === 0 && u.rows.length > 0 && <p className="note">{ic(tx.noChanges)}</p>}
-          <p className="note">{ic(u.enabled ? tx.through(u.through ? day(u.through) : '—') : tx.autoNote(u.autoDays))}</p>
+          {u.enabled && <p className="note">{ic(tx.through(u.through ? day(u.through) : '—'))}</p>}
           {!u.rows.length ? <p className="note">{ic(u.enabled ? tx.nothingThrough(u.through ? day(u.through) : tx.theNextDays) : tx.nothingNext(u.autoDays))}</p> : (
             <div className="crew-list">
               {u.rows.map(r => <UpcomingRow key={r.key} r={r} act={act} reload={reload} lang={lang} ctx={ctx} fs={page.field?.[r.key]} address={page.addresses?.[r.key]}
@@ -1039,6 +1035,7 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
   const tx: Tx = TX[lang];
   const [adding, setAdding] = useState(false);
   const [voiding, setVoiding] = useState(false);
+  const [flagOpen, setFlagOpen] = useState(false);
   const [correcting, setCorrecting] = useState(false);
   const [deep, setDeep] = useState(c.deep);
   const [amount, setAmount] = useState('');
@@ -1073,7 +1070,8 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
   return (
     <div className="crew-row">
       <div><b>{ic(dayLabel(lang, c.date))}</b> · {ic(c.unit)}{ic(c.beds ? ` · ${bedsWord(lang, c.beds)}` : '')}{ic(c.deep ? ` · ${tx.deep}` : '')}
-        {c.kind !== 'checkout' && <span className="sub-n">{ic(tx.manualTag(kindWord(lang, c.kind)))}</span>}</div>
+        {c.kind !== 'checkout' && <span className="sub-n">{ic(tx.manualTag(kindWord(lang, c.kind)))}</span>}
+        <FieldLine fs={fs} lang={lang} link={mode === 'team'} /></div>
       <div>
         {c.voidReason ? <span className="note">{ic(tx.notPaidReason(voidReasonText(lang, c.voidReason)))}</span>
           : upcoming ? <span className="note">{ic(tx.comingUpTag)}</span>
@@ -1081,20 +1079,22 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
           : <span className="note">{ic(tx.notYours)}</span>}
         {c.flagNote && !(mode === 'team' && canEdit) && <div className="breach">{ic(tx.flaggedNote(c.flagNote))}</div>}
         {c.editNote && <div className="sub-n">{ic(tx.corrected(c.editNote))}</div>}
+        {/* Owner, 2026-10-24: each extra one small line — its words, note and receipts open on a tap. */}
         {extras.map(e => (
-          <div key={e.id} className={e.status === 'denied' ? 'breach' : 'sub-n'}>
-            Extra +{ic(money2(e.amount))} — {ic(e.description)} · {ic(tx.extraWord[e.status])}
-            {e.decisionNote && <> · “{ic(e.decisionNote)}”</>} <Files files={e.files} />
+          <details key={e.id} className={`crew-extra ${e.status}`}>
+            <summary title={e.description}>Extra +{ic(money2(e.amount))} · {ic(tx.extraWord[e.status])}
+              {!!e.files?.length && <> <Icon n="clip" /></>}</summary>
+            <div className="sub-n">{ic(e.description)}{e.decisionNote && <> · “{ic(e.decisionNote)}”</>}</div>
+            <Files files={e.files} />
             {mode === 'cleaner' && e.status === 'pending' && <>
               <label className="link tiny crew-attach">{ic(tx.attach)}
                 <input type="file" accept={ACCEPT} multiple hidden disabled={busy} onChange={ev => void attach(e.id, ev.target.files)} /></label>
               <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'cancelExtra', id: e.id })}>{ic(tx.withdraw)}</button>
             </>}
             {mode === 'team' && canEdit && e.status === 'pending' && <Decide id={e.id} onDone={reload} />}
-          </div>
+          </details>
         ))}
       </div>
-      <FieldLine fs={fs} lang={lang} link={mode === 'team'} />
       {quick && <QuickActions q={quick} cleanKey={c.key} lang={lang} act={act} reload={reload} />}
       <div className="crew-actions no-print">
         {/* Recent cleans have their "Extra" tab in "Your cleans" (§134); older ones keep this link. */}
@@ -1105,10 +1105,12 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
         {mode === 'team' && canEdit && c.date < today && !voiding && (c.voidReason
           ? c.voidReason.startsWith(TEAM_VOID) && <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'restorePaid', key: c.key })}>Put back on the pay</button>
           : <button className="link tiny" onClick={() => { setVoiding(true); setText(''); }}>○ Not paid…</button>)}
+        {mode === 'team' && canEdit && !c.flagNote && !flagOpen && <button className="link tiny" onClick={() => setFlagOpen(true)}>⚑ Flag…</button>}
       </div>
       {/* Owner, 2026-10-24: the same flag as Movements — with a deduction or a corrected pay. */}
-      {mode === 'team' && canEdit && <FlagControl cleanKey={c.key} flag={c.flagNote} onChanged={reload}
-                                                  date={billed ? c.date : undefined} today={today} price={billed ? c.price : null} hint={false} />}
+      {mode === 'team' && canEdit && (c.flagNote || flagOpen) && <div className="crew-flag"><FlagControl cleanKey={c.key} flag={c.flagNote}
+                                                  open={flagOpen} onClose={() => setFlagOpen(false)} onChanged={() => { setFlagOpen(false); reload(); }}
+                                                  date={billed ? c.date : undefined} today={today} price={billed ? c.price : null} hint={false} /></div>}
       {adding && (
         <div className="crew-decide">
           <input className="amt" inputMode="decimal" value={amount} placeholder="$" onChange={e => setAmount(e.target.value)} />

@@ -1917,6 +1917,12 @@ button.sop-num { cursor: pointer; }
 .crew-files a { margin-right: 10px; white-space: nowrap; }
 .crew-attach { cursor: pointer; }
 .crew-actions { text-align: right; }
+.crew-row > .crew-flag { grid-column: 1 / -1; }
+.crew-extra { font-size: 12px; color: var(--muted); }
+.crew-extra > summary { cursor: pointer; list-style: none; display: inline; }
+.crew-extra > summary::-webkit-details-marker { display: none; }
+.crew-extra.denied > summary { text-decoration: line-through; }
+.crew-extra[open] { padding: 4px 0; }
 .crew-invoice-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
 @media (max-width: 640px) {
   .crew-row { grid-template-columns: 1fr; }

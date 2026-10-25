@@ -20,14 +20,17 @@ const short = (d: string) => { const t = new Date(`${d}T12:00:00Z`); return `${M
  * reads on their crew page — and, for a clean already due, the pay
  * corrected in the same step (§128), with the note as the reason.
  */
-export function FlagControl({ cleanKey, flag, onChanged, date, today, price, onPrice, hint = true }: {
+export function FlagControl({ cleanKey, flag, onChanged, date, today, price, onPrice, hint = true, open = false, onClose }: {
   cleanKey: string; flag: string | null; onChanged: (note: string | null) => void;
   /** When given and due (today or before), the flag can also correct the pay. */
   date?: string; today?: string; price?: number | null; onPrice?: (price: number) => void;
   /** Off on a list of many cleans, whose card already explains it. */
   hint?: boolean;
+  /** Opened from a link of the caller's (a cleaner's page): starts in the form; Cancel tells the caller. */
+  open?: boolean; onClose?: () => void;
 }) {
-  const [editing, setEditing] = useState(false);
+  const [editing, setEditingState] = useState(open);
+  const setEditing = (v: boolean) => { setEditingState(v); if (!v) onClose?.(); };
   const [text, setText] = useState('');
   const [pay, setPay] = useState('');
   const [cut, setCut] = useState('');

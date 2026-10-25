@@ -242,6 +242,11 @@ key had no SOPs.
   cleaner's) → on the invoice; never a second Costs row (the purchase is already Restock; `syncCleaningCosts` skips them). No clean
   with a cleaner → the purchase gets `paidBy` = Costs' "To pay back". A duplicate extra the cleaner also sent is denied by hand.
   098 backfilled the one approved before (Irene, $35.58, CL2450 Oct 18).
+  Its receipts = the purchase's photos (loadCrewPage adds them to the extra's files).
+- **Crew page, less text (owner, 2026-10-24):** each extra is one small `<details>` line ("Extra +$X · approved/denied", denied struck
+  through) — words, note, receipts and the team's Decide open on a tap. The clean's field line sits under the clean; ✎ Correct ·
+  ○ Not paid · ⚑ Flag in one place (the flag's form opens across the row). Calendar legend, the phone-calendar note, Coming up's
+  "N days ahead" and "What cleaners see ahead" are behind "?".
 - Movements (§124) = the board in a date window, default today + 10. From today on it is live
   (Hostaway + rules, `days` up to 30, never fewer than 10 so the other views keep their window);
   days before today read `/api/cleaning-log` (the record: departures + manual cleans, no arrivals),

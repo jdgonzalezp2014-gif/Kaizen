@@ -228,10 +228,22 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
   const keys = cleans.map(x => x.key);
   const extras = keys.length ? (await sql`
     SELECT id::text, cleaning_key AS key, amount::float AS amount, description, status, decision_note AS "decisionNote",
-           decided_by AS "decidedBy", to_char(created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS "createdAt"
+           decided_by AS "decidedBy", to_char(created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS "createdAt",
+           field_expense_id::text AS "fromPurchase"
       FROM cleaning_extras WHERE account_id = 1 AND cleaner = ${c.name} AND cleaning_key = ANY(${keys}::text[])
-     ORDER BY created_at` as CrewExtra[]) : [];
+     ORDER BY created_at` as (CrewExtra & { fromPurchase?: string | null })[]) : [];
   await attachFiles(sql, extras);
+  // A purchase paid back (098): its receipts are the purchase's.
+  const bought = extras.filter(e => e.fromPurchase);
+  if (bought.length) {
+    const fe = await sql`SELECT id::text, photos FROM field_expenses WHERE account_id = 1 AND id = ANY(${bought.map(e => Number(e.fromPurchase))}::bigint[])` as
+      { id: string; photos: { name: string; url: string }[] | null }[];
+    for (const e of bought) {
+      const ph = fe.find(f => f.id === e.fromPurchase)?.photos ?? [];
+      e.files = [...(e.files ?? []), ...ph.map((p, i) => ({ id: `fe${e.fromPurchase}-${i}`, name: p.name, url: p.url }))];
+    }
+  }
+  for (const e of extras) delete e.fromPurchase;
 
   const enabled = !!acc[0]?.crew_calendar;
   const days = acc[0]?.crew_calendar_days ?? 14;
