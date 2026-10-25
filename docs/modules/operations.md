@@ -236,7 +236,12 @@ key had no SOPs.
   (deduct $ or corrected pay), ✎ Correct, **○ Not paid…** (`notPaid`: before today only — the record rewrites today+;
   `void_reason = 'not paid by the team — <why>'`, leaves the invoice and Costs; `restorePaid` undoes only that prefix),
   and **+ Add a clean** (ManualCleanForm with the cleaner preset). Extras on a void clean leave Costs too (field-costs.ts).
-  SOP 10 v4 = `.sop-cleaners.mjs`, run at deploy.
+  SOP 10 v4 done.
+- **A cleaner's purchase pays her back (owner, 2026-10-24, 098):** approving it ("Approve — record in inventory") also writes an
+  approved `cleaning_extras` row with `field_expense_id` on the clean it was bought for (that clean's cleaner — a helper's is their
+  cleaner's) → on the invoice; never a second Costs row (the purchase is already Restock; `syncCleaningCosts` skips them). No clean
+  with a cleaner → the purchase gets `paidBy` = Costs' "To pay back". A duplicate extra the cleaner also sent is denied by hand.
+  098 backfilled the one approved before (Irene, $35.58, CL2450 Oct 18).
 - Movements (§124) = the board in a date window, default today + 10. From today on it is live
   (Hostaway + rules, `days` up to 30, never fewer than 10 so the other views keep their window);
   days before today read `/api/cleaning-log` (the record: departures + manual cleans, no arrivals),

@@ -190,7 +190,8 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
       <div className="card">
         <h2>Purchases & charges waiting for approval <span className="chan-tag">{fieldPending.length}</span> <Hint>Paid in the field with its receipt — by a cleaner or a cleaner’s helper (<Icon n="brush" />), or a handyman’s labor and
           materials on a repair (<Icon n="wrench" />). A cleaner’s purchase is approved by recording it in the inventory — which items, to which place — and
-          that purchase is its stock and its cost (owed back to whoever paid); a handyman’s
+          that purchase is its stock and its cost; the amount is paid back at once as an approved extra on the invoice of the clean it was bought for
+          (no clean → Costs’ “To pay back”). If the cleaner also sent it as an extra, deny that one: it would be paid twice. A handyman’s
           charge becomes the repair’s cost and reaches Costs as Repairs. Denied, they read why. Nothing reaches Costs before a person approves it.</Hint></h2>
         {!fieldPending.length ? <p className="note">None waiting.</p> : (
           <div className="crew-list">

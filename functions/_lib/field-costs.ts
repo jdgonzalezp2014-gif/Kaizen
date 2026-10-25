@@ -41,7 +41,8 @@ export async function syncCleaningCosts(sql: SqlFn, by = 'Kaizen'): Promise<{ cl
       FROM cleaning_extras e JOIN cleanings c ON c.account_id = e.account_id AND c.key = e.cleaning_key
       LEFT JOIN units u ON u.account_id = c.account_id AND u.id = c.unit_id
      -- An extra is paid with its clean (buildInvoice): a clean not paid takes its extras out of Costs too.
-     WHERE e.account_id = 1 AND e.status = 'approved' AND c.void_reason IS NULL
+     -- A purchase paid back (field_expense_id) is already in Costs as the purchase itself.
+     WHERE e.account_id = 1 AND e.status = 'approved' AND c.void_reason IS NULL AND e.field_expense_id IS NULL
     ON CONFLICT (source, external_ref) WHERE external_ref IS NOT NULL DO UPDATE SET
       amount = EXCLUDED.amount, start_date = EXCLUDED.start_date, unit_id = EXCLUDED.unit_id, shared = EXCLUDED.shared,
       label = EXCLUDED.label, notes = EXCLUDED.notes
@@ -51,7 +52,7 @@ export async function syncCleaningCosts(sql: SqlFn, by = 'Kaizen'): Promise<{ cl
       (x.source = 'cleaning' AND NOT EXISTS (SELECT 1 FROM cleanings c WHERE c.account_id = 1 AND c.key = x.external_ref
          AND c.void_reason IS NULL AND c.assignment = 'assigned' AND c.price IS NOT NULL AND c.price > 0 AND c.checkout_on <= ${today}::date))
       OR (x.source = 'cleaning_extra' AND NOT EXISTS (SELECT 1 FROM cleaning_extras e WHERE e.account_id = 1 AND e.id::text = x.external_ref
-         AND e.status = 'approved' AND NOT EXISTS (SELECT 1 FROM cleanings c WHERE c.account_id = 1 AND c.key = e.cleaning_key
+         AND e.status = 'approved' AND e.field_expense_id IS NULL AND NOT EXISTS (SELECT 1 FROM cleanings c WHERE c.account_id = 1 AND c.key = e.cleaning_key
            AND c.void_reason IS NOT NULL))))
     RETURNING id` as unknown[];
   return { cleans: cleans.length, extras: extras.length, removed: removed.length };
@@ -78,22 +79,34 @@ export async function addFieldExpense(sql: SqlFn, e: {
  * charge stays part of its repair.
  */
 export async function decideFieldExpense(sql: SqlFn, id: string, status: 'approved' | 'denied', note: string | null, by: string, lines?: unknown) {
-  const [p] = await sql`SELECT source, amount::float AS amount, description, by_name, photos FROM field_expenses
+  const [p] = await sql`SELECT source, amount::float AS amount, description, by_name, photos, cleaning_key FROM field_expenses
                          WHERE account_id = 1 AND id = ${Number(id) || 0} AND status = 'pending'` as
-    { source: string; amount: number; description: string; by_name: string; photos: { name: string; url: string }[] }[];
+    { source: string; amount: number; description: string; by_name: string; photos: { name: string; url: string }[]; cleaning_key: string | null }[];
+  let payBack: { cleaner: string; key: string } | null = null;
   if (!p) throw new Error('Only a pending one can be decided.');
   if (status === 'approved' && p.source !== 'vendor') {
     if (!Array.isArray(lines) || !lines.length) throw new Error('Record what was bought in the inventory first: the items and where each went.');
     // Checked and saved first: a wrong line leaves it pending, never approved without its purchase.
-    // Not on "To pay back" (owner, §150): a cleaner charges what she bought as an extra on her invoice — listing it
-    // here too would pay it twice. "Paid by" is for whoever does the inventory.
-    await recordPurchase(sql, by, { lines, total: p.amount, note: `Bought by ${p.by_name} — ${p.description}`.slice(0, 500) }, p.photos ?? [], id);
+    // Owner, 2026-10-24: approving it pays the cleaner back — an approved extra on the invoice of the clean it was
+    // bought for (a helper's purchase: their cleaner's, who pays them). Never also on "To pay back" (§150): twice.
+    // No clean with a cleaner to put it on → "To pay back", so it is never left unpaid.
+    const [clean] = p.cleaning_key ? await sql`SELECT cleaner FROM cleanings WHERE account_id = 1 AND key = ${p.cleaning_key} AND cleaner IS NOT NULL` as
+      { cleaner: string }[] : [];
+    await recordPurchase(sql, by, { lines, total: p.amount, note: `Bought by ${p.by_name} — ${p.description}`.slice(0, 500),
+                                    ...(clean ? {} : { paidBy: p.by_name }) }, p.photos ?? [], id);
+    payBack = clean ? { cleaner: clean.cleaner, key: p.cleaning_key! } : null;
   }
   const [f] = await sql`UPDATE field_expenses SET status = ${status}, decided_by = ${by}, decided_at = now(), decision_note = ${note}
                          WHERE account_id = 1 AND id = ${Number(id) || 0} AND status = 'pending'
                          RETURNING id::text, amount::float AS amount, description, source, todo_id::text AS todo_id` as
     { id: string; amount: number; description: string; source: string; todo_id: string | null }[];
   if (!f) throw new Error('Only a pending one can be decided.');
+  if (payBack) {
+    await sql`INSERT INTO cleaning_extras (account_id, cleaning_key, cleaner, amount, description, status, decision_note, decided_by, decided_at, created_by, field_expense_id)
+              VALUES (1, ${payBack.key}, ${payBack.cleaner}, ${p.amount}, ${p.description.slice(0, 300)}, 'approved',
+                      'Paid back: the purchase was approved into the inventory', ${by}, now(), 'Kaizen', ${Number(id)})
+              ON CONFLICT DO NOTHING`;
+  }
   // A handyman's charge is part of the repair: the approved ones ARE its cost, and the repair — once
   // completed — is the one expense in Costs (settleRepair, by the caller). Never a second row here.
   if (f.source === 'vendor' && f.todo_id) {
