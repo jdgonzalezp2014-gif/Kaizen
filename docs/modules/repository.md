@@ -83,7 +83,10 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
 - **§148 filled:** Wi-Fi + `internet_account` (AT&T account #, after the Wi-Fi password) from the owner's
   list; `storage` = CORTLAND STORAGE S13 on every Cortland apartment (houses: blank, by design);
   `manager_contact` / `landlord_contact` (POC, after Maintenance #) for Napa Valley, Amber Valley,
-  Timbercrest, Quest, Concord. Houses do not need the building block (floor, bldg, building link, lease
+  Timbercrest, Quest, Concord. 2026-10-26: `internet_account` set to AT&T's new-accounts list (CL-2211, Napa,
+  Concord, all LP-*; LP-4217/4222 from AT&T chat); units no longer active (Kingsford, CL-1235, …) blank on
+  purpose. `contract` (Lease / Management, migration 100) after Property type: active units Lease, Bobcat
+  Management; inactive blank. Houses do not need the building block (floor, bldg, building link, lease
   portal) — their POC is the manager or landlord.
 
 - **`?repo=<table>/<ROW-id>`** opens that record (Setup → Inventory's map links here, §150).
