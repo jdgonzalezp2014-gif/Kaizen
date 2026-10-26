@@ -14,7 +14,7 @@
 import { PayoutCard } from '../components/PayoutCard.tsx';
 import type { Payout } from '../lib/payouts.ts';
 import { Hint } from '../components/Hint.tsx';
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   crewAction, crewAdminAction, crewCleanLink, crewPhoto, crewReport, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
   type CleanFieldState, type CleanLink, type CrewPage, type FieldExpense, type CrewSchedule, type CrewUpcoming, type PendingExtra, type ToConfirm
@@ -112,17 +112,36 @@ export function CrewAdmin({ roster, canEdit, canPay = false }: { roster: Cleaner
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
   const [payout, setPayout] = useState<Payout | null>(null);
   const [err, setErr] = useState('');
-  const load = () => getCrewAdmin(name || null, period, to)
-    .then(r => { if (r.ok) { setPending(r.pending); setFieldPending(r.fieldPending ?? []); setPage(r.page); setSchedule(r.schedule); setToConfirm(r.toConfirm ?? []); setPayout(r.payout ?? null); setErr(''); }
-                 else setErr(r.message ?? 'Could not load.'); })
-    .catch(e => setErr(String(e)));
-  useEffect(() => { void load(); }, [name, period, to]);
+  const [loading, setLoading] = useState(false);
+  const seq = useRef(0);
+  // Owner, 2026-10-25: the schedule takes seconds (three Hostaway calls). A new cleaner or period asks twice at once:
+  // a fast answer without the schedule paints the page, the full one replaces it. A reload after an edit asks only
+  // the full one — what is on screen stays, under the bar, until it comes.
+  const load = (fast = false) => {
+    const n = ++seq.current;
+    let full = false;
+    setLoading(true);
+    const apply = (r: Awaited<ReturnType<typeof getCrewAdmin>>, isFull: boolean) => {
+      if (n !== seq.current || (!isFull && full)) return;
+      if (isFull) full = true;
+      if (!r.ok) { if (isFull) setErr(r.message ?? 'Could not load.'); return; }
+      setPending(r.pending); setFieldPending(r.fieldPending ?? []); setPage(r.page); setToConfirm(r.toConfirm ?? []); setPayout(r.payout ?? null); setErr('');
+      if (r.schedule) setSchedule(r.schedule);
+    };
+    if (fast) void getCrewAdmin(name || null, period, to, true).then(r => apply(r, false)).catch(() => {});
+    return getCrewAdmin(name || null, period, to)
+      .then(r => apply(r, true))
+      .catch(e => { if (n === seq.current) setErr(String(e)); })
+      .finally(() => { if (n === seq.current) setLoading(false); });
+  };
+  useEffect(() => { void load(true); }, [name, period, to]);
   const pick = (from: string | null, until: string | null = null) => { setPeriod(from); setTo(until); };
   // Picking a cleaner leaves the address alone (owner, 2026-10-17); "View as cleaner ↗" is the separate tab.
 
   return (
     <>
       {err && <p className="banner error">{ic(err)}</p>}
+      {loading && <div className="load-note" role="status"><div className="load-bar" />Loading…</div>}
       <div className="row-controls">
         <label>See a cleaner's page as they see it
           <select value={name} onChange={e => { setName(e.target.value); pick(null); setAdding(false); }}>
@@ -164,6 +183,10 @@ export function CrewAdmin({ roster, canEdit, canPay = false }: { roster: Cleaner
             {toConfirm.map(t => <ConfirmRow key={t.key} t={t} roster={roster} canEdit={canEdit} onDone={load} />)}
           </div>
         </div>
+      )}
+      {!schedule && loading && (
+        <div className="card"><h2>What cleaners see ahead</h2>
+          <div className="load-note" role="status"><div className="load-bar" />Reading the schedule from Hostaway…</div></div>
       )}
       {schedule && (
         <div className="card">
@@ -976,7 +999,8 @@ function Upcoming({ page, act, reload, lang, ctx, afterToday = false }: { page: 
   return (
     <div className="card no-print">
       <h2>{ic(tx.comingUp)}{!u.enabled && <> <Hint>{ic(tx.autoNote(u.autoDays))}</Hint></>}</h2>
-      {u.problem ? <p className="banner warn">▲ {ic(u.problem)}</p> : (
+      {u.loading ? <div className="load-note" role="status"><div className="load-bar" />{ic(lang === 'es' ? 'Leyendo la agenda…' : 'Reading the schedule…')}</div>
+        : u.problem ? <p className="banner warn">▲ {ic(u.problem)}</p> : (
         <>
           {u.confirmed && <p><b>{ic(tx.lastUpdate(stampLabel(lang, u.confirmed.at)))}</b></p>}
           {u.confirmed && u.movements.length > 0 && <><b>{ic(tx.changesSince)}</b>

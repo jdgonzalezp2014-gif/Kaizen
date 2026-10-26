@@ -1,8 +1,8 @@
 /**
  * /api/crew-admin — the team's side of the crew pages (§122).
  *
- *   GET  [?cleaner=<name>&period=YYYY-MM-DD[&to=YYYY-MM-DD]]  extras waiting on the team; with a
- *                                               cleaner, their page for the team
+ *   GET  [?cleaner=<name>&period=YYYY-MM-DD[&to=YYYY-MM-DD][&fast=1]]  extras waiting on the team; with a
+ *                                               cleaner, their page for the team; `fast` = without the schedule
  *   GET  ?view=cleaner&cleaner=<name>[&period]  that cleaner's page through the SAME code that
  *                                               answers the cleaner (crewGet) — nothing of the team's
  *   POST { action: 'decideExtra', id, status: 'approved' | 'denied', note }   an approved extra goes to Costs (§137)
@@ -46,13 +46,16 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const name = url.searchParams.get('cleaner');
   // "View as cleaner": exactly what the cleaner's own request returns, by the same function.
   if (url.searchParams.get('view') === 'cleaner' && name) return crewGet(request, env, sql, { name, by: who.email });
+  // Owner, 2026-10-25: the schedule costs three Hostaway calls (seconds). `fast=1` answers without it — the page
+  // paints at once — and the screen asks the full answer at the same time, which replaces it.
+  const fast = url.searchParams.get('fast') === '1';
   // The schedule once, for the movements of every cleaner and the page shown.
   const vis = await crewVisibility(sql);
   let schedule: { enabled: boolean; autoDays: number; confirmed: { at: string; by: string; through: string } | null;
                   movements: (Movement & { cleaner: string })[]; problem: string | null } =
     { enabled: vis.published, autoDays: vis.autoDays, confirmed: null, movements: [], problem: null };
   let st: Awaited<ReturnType<typeof scheduleState>> | undefined;
-  try {
+  if (!fast) try {
     st = await scheduleState(sql, env.ENCRYPTION_KEY, vis.days);
     const c = st.confirm;
     if (c) {
@@ -73,7 +76,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           JOIN cleanings c ON c.account_id = e.account_id AND c.key = e.cleaning_key
          WHERE e.account_id = 1 AND e.status = 'pending'
          ORDER BY e.created_at`,
-    name ? loadCrewPage(sql, env.ENCRYPTION_KEY, name, url.searchParams.get('period'), st, url.searchParams.get('to')) : Promise.resolve(null),
+    name ? loadCrewPage(sql, env.ENCRYPTION_KEY, name, url.searchParams.get('period'), st, url.searchParams.get('to'), fast) : Promise.resolve(null),
     // Cleans held after a cancellation, waiting for a person (§123).
     sql`SELECT key, unit_name AS unit, checkout_on::text AS date, beds, deep, guest, needs_confirm AS note
           FROM cleanings WHERE account_id = 1 AND needs_confirm IS NOT NULL AND void_reason IS NULL
@@ -85,7 +88,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const fieldPending = await pendingFieldExpenses(sql);
   // Owner, 2026-10-25: how this invoice was paid (Stripe or by hand) — none for the team's own span.
   const payout = page && !page.period.custom ? await payoutOf(sql, page.invoice.number) : null;
-  return Response.json({ ok: true, pending, fieldPending, page, schedule, toConfirm, payout });
+  return Response.json({ ok: true, pending, fieldPending, page, schedule: fast ? null : schedule, toConfirm, payout });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {

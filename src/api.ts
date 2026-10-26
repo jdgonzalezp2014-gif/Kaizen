@@ -490,6 +490,8 @@ export interface CrewPage {
   upcoming: {
     enabled: boolean; days: number; through: string | null; rows: CrewUpcoming[]; problem: string | null;
     autoDays: number; confirmed: { at: string; through: string } | null; movements: Movement[];
+    /** A fast answer without the schedule — the full one is on its way. */
+    loading?: boolean;
   };
 }
 export interface CrewSchedule {
@@ -611,10 +613,10 @@ export interface PendingExtra {
 }
 /** A clean held after a cancellation on or after arrival (§123), waiting for a person. */
 export interface ToConfirm { key: string; unit: string; date: string; beds: number | null; deep: boolean; guest: string | null; note: string }
-export const getCrewAdmin = (cleaner?: string | null, period?: string | null, to?: string | null) =>
-  call<{ ok: true; pending: PendingExtra[]; fieldPending?: FieldExpense[]; page: CrewPage | null; schedule: CrewSchedule; toConfirm: ToConfirm[];
+export const getCrewAdmin = (cleaner?: string | null, period?: string | null, to?: string | null, fast = false) =>
+  call<{ ok: true; pending: PendingExtra[]; fieldPending?: FieldExpense[]; page: CrewPage | null; schedule: CrewSchedule | null; toConfirm: ToConfirm[];
           payout?: import('./lib/payouts.ts').Payout | null } | Fail>(
-    `/api/crew-admin?${new URLSearchParams({ ...(cleaner ? { cleaner } : {}), ...(period ? { period } : {}), ...(period && to ? { to } : {}) })}`);
+    `/api/crew-admin?${new URLSearchParams({ ...(cleaner ? { cleaner } : {}), ...(period ? { period } : {}), ...(period && to ? { to } : {}), ...(fast ? { fast: '1' } : {}) })}`);
 /** A cleaner's page through the same server code that answers the cleaner — for "View as cleaner". */
 export const getCrewAsCleaner = (cleaner: string, period?: string | null) =>
   call<({ ok: true } & CrewPage) | Fail>(`/api/crew-admin?${new URLSearchParams({ view: 'cleaner', cleaner, ...(period ? { period } : {}) })}`);

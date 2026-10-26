@@ -82,6 +82,8 @@ export interface CrewPage {
     confirmed: { at: string; through: DateStr } | null;
     /** What moved for this cleaner since then. */
     movements: Movement[];
+    /** Owner, 2026-10-25: a fast answer without the schedule (Hostaway) — the full one follows. */
+    loading?: boolean;
   };
 }
 
@@ -197,7 +199,9 @@ export function newToken(): string {
 export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: string,
                                    asked?: string | null, preloaded?: ScheduleState,
                                    /** The team's own span's last day (Operations → Cleaners); `asked` is its first. */
-                                   askedTo?: string | null): Promise<CrewPage | null> {
+                                   askedTo?: string | null,
+                                   /** The team's fast first answer: no schedule (3 Hostaway calls); the full one follows. */
+                                   skipSchedule = false): Promise<CrewPage | null> {
   const c = await findCleaner(sql, name);
   if (!c) return null;
   const today = todayIn(TZ);
@@ -250,7 +254,8 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
   const vis: Visibility = { published: enabled, autoDays: Number(acc[0]?.crew_auto_days ?? 4) };
   const upcoming: CrewPage['upcoming'] = { enabled, days, autoDays: vis.autoDays, through: null, rows: [], problem: null, confirmed: null, movements: [] };
   // What a person assigned is shown even while the whole schedule is not (§123): it was checked by someone.
-  {
+  if (skipSchedule) upcoming.loading = true;
+  else {
     try {
       const st = preloaded ?? await scheduleState(sql, encryptionKey, days);
       const s = st.s;

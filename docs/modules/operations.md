@@ -247,6 +247,10 @@ key had no SOPs.
   The handyman's own page has a Pay tab (`/api/vendor` returns `pay`). **Payment card** (`components/PayoutCard.tsx`) under both
   a handyman's and a cleaner's page → `/api/payouts` (permission `payouts`), `functions/_lib/payouts.ts`: Stripe Connect Express
   (Settings → Payments, test keys only) or "Mark paid"; one `payouts` row per invoice number; the invoice is rebuilt on the server.
+- **Cleaners loads in two steps (owner, 2026-10-25):** the schedule costs three Hostaway calls (~3 s). A new cleaner or period asks
+  `/api/crew-admin?…&fast=1` (no schedule: `loadCrewPage(…, skipSchedule)` → `upcoming.loading`, `schedule: null`) and the full
+  answer at once; the fast one paints (~0.9 s), the full one replaces it. A reload after an edit asks only the full one, under a
+  `.load-bar` ("Loading…"); Coming up and "What cleaners see ahead" show their own bar until the schedule arrives.
 - **A cleaner's purchase pays her back (owner, 2026-10-24, 098):** approving it ("Approve — record in inventory") also writes an
   approved `cleaning_extras` row with `field_expense_id` on the clean it was bought for (that clean's cleaner — a helper's is their
   cleaner's) → on the invoice; never a second Costs row (the purchase is already Restock; `syncCleaningCosts` skips them). No clean
