@@ -14,7 +14,9 @@
  * The access (code, lockbox, Wi-Fi) shows on the day set only.
  */
 import { useEffect, useState } from 'react';
-import { getVendorWork, getWorkLink, vendorAct, workLinkAct, type WorkPage } from '../api.ts';
+import { getVendorWork, getWorkLink, vendorAct, workLinkAct, type VendorPage, type WorkPage } from '../api.ts';
+import { EN, VendorInvoiceView } from './Handymen.tsx';
+import { money2 } from '../lib/format.ts';
 import { AccessBox } from '../components/AccessBox.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { ThemeToggle } from '../components/ThemeToggle.tsx';
@@ -39,7 +41,10 @@ const W = {
     s5: '✅ Done', doneQ: 'What did you do?', markDone: 'Mark the repair done', done: (t: string) => `✅ Done — ${t}`,
     note: '💬 A note or a question for the team', noteSend: 'Send the note', sent: '✓ Sent',
     closed: 'This work order is closed.', none: 'No open work orders for you right now.', hello: (n: string) => `Hi, ${n}`,
-    needAmount: 'Write the amount.', needWhat: 'Say what it is for.', needDone: 'Say what was done.'
+    needAmount: 'Write the amount.', needWhat: 'Say what it is for.', needDone: 'Say what was done.',
+    tabWork: 'Work orders', tabPay: 'Pay', payPeriod: 'Period', jobs: (n: number, t: string) => `${n} job${n === 1 ? '' : 's'} paid · ${t}`,
+    flag: 'Note from the team', corrected: 'Pay corrected', notPaid: 'Not paid', paidOn: (d: string, how: string) => `Paid ${d} ${how}`,
+    byStripe: 'to your bank (Stripe)', byHand: 'by hand', unpaid: 'Not paid yet'
   },
   es: {
     day: 'Día acordado', at: 'a las', noDay: 'Aún no hay día', what: 'Qué hay que arreglar',
@@ -53,7 +58,10 @@ const W = {
     s5: '✅ Terminado', doneQ: '¿Qué hiciste?', markDone: 'Marcar la reparación como terminada', done: (t: string) => `✅ Terminado — ${t}`,
     note: '💬 Una nota o pregunta para el equipo', noteSend: 'Enviar la nota', sent: '✓ Enviado',
     closed: 'Esta orden está cerrada.', none: 'No tienes órdenes abiertas por ahora.', hello: (n: string) => `Hola, ${n}`,
-    needAmount: 'Escribe el monto.', needWhat: 'Di para qué es.', needDone: 'Di qué se hizo.'
+    needAmount: 'Escribe el monto.', needWhat: 'Di para qué es.', needDone: 'Di qué se hizo.',
+    tabWork: 'Órdenes', tabPay: 'Pago', payPeriod: 'Periodo', jobs: (n: number, t: string) => `${n} trabajo${n === 1 ? '' : 's'} pagado${n === 1 ? '' : 's'} · ${t}`,
+    flag: 'Nota del equipo', corrected: 'Pago corregido', notPaid: 'No pagado', paidOn: (d: string, how: string) => `Pagado ${d} ${how}`,
+    byStripe: 'a tu banco (Stripe)', byHand: 'en mano', unpaid: 'Aún no pagado'
   }
 };
 type Wx = typeof W.en;
@@ -96,15 +104,23 @@ export function WorkLinkPage({ token, practice }: { token: string; practice?: { 
 /** The account door: a handyman signed in sees their work orders. */
 export function VendorHome({ practice }: { practice?: { vendor: string; works: WorkPage[]; send: (id: string, fields: Record<string, string>, files: File[]) => ReturnType<Send> } } = {}) {
   const [lang, setLang] = useLang();
-  const [data, setData] = useState<{ vendor: string; works: WorkPage[] } | null>(practice ? { vendor: practice.vendor, works: practice.works } : null);
+  const [data, setData] = useState<{ vendor: string; works: WorkPage[]; pay?: VendorPage | null } | null>(practice ? { vendor: practice.vendor, works: practice.works } : null);
   const [err, setErr] = useState('');
-  const load = () => getVendorWork().then(r => r.ok ? setData(r) : setErr(r.message ?? 'Could not load.')).catch(e => setErr(String(e)));
-  useEffect(() => { if (!practice) void load(); }, []);
+  const [sec, setSec] = useState<'work' | 'pay'>('work');
+  const [period, setPeriod] = useState<string | null>(null);
+  const load = () => getVendorWork(period).then(r => r.ok ? setData(r) : setErr(r.message ?? 'Could not load.')).catch(e => setErr(String(e)));
+  useEffect(() => { if (!practice) void load(); }, [period]);
   const w = W[lang];
   return <>
     <Head title={data ? w.hello(data.vendor) : 'Kaizen'} lang={lang} setLang={setLang} />
+    {/* Owner, 2026-10-25: their pay, as a cleaner sees theirs. */}
+    {data?.pay && <div className="crew-secs no-print" role="tablist">
+      {(['work', 'pay'] as const).map(k => <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => setSec(k)}>
+        {ic(k === 'work' ? w.tabWork : w.tabPay)}</button>)}
+    </div>}
     <div className="report-page">
       {err ? <p className="banner error">{ic(err)}</p> : !data ? <p className="note loading-dot">…</p>
+        : sec === 'pay' && data.pay ? <VendorPay pay={data.pay} lang={lang} onPeriod={setPeriod} />
         : !data.works.length ? <div className="card"><p className="note">{ic(w.none)}</p></div>
         : data.works.map(p => <WorkCard key={p.work.id} page={p} lang={lang}
             send={(f, files) => practice ? practice.send(p.work.id, f, files) : vendorAct(p.work.id, f, files)}
@@ -266,3 +282,36 @@ function Note({ w, busy, go }: { w: Wx; busy: boolean; go: Go }) {
     </details>
   );
 }
+
+/** The handyman's pay (owner, 2026-10-25): the invoice periods, each job's pay and the team's notes, and whether it was paid. */
+function VendorPay({ pay, lang, onPeriod }: { pay: VendorPage; lang: Lang; onPeriod: (from: string) => void }) {
+  const w = W[lang];
+  const inv = pay.invoice;
+  const notes = pay.jobs.filter(j => j.flagNote || j.payNote);
+  return <>
+    <div className="card">
+      <label>{ic(w.payPeriod)}
+        <select value={pay.period.from} onChange={e => onPeriod(e.target.value)}>
+          {pay.periods.map(p => <option key={p.from} value={p.from}>{lang === 'es' ? `${p.from} – ${p.to}` : p.label}</option>)}
+        </select></label>
+      <p><b>{ic(w.jobs(inv.lines.length, money2(inv.total)))}</b></p>
+      <p className="note">{ic(pay.payout ? w.paidOn(pay.payout.at.slice(0, 10), pay.payout.method === 'stripe' ? w.byStripe : w.byHand) : w.unpaid)}</p>
+      {notes.map(j => (
+        <div key={j.id} className="sub-n">
+          {ic(j.title)}: {j.flagNote && <span className="breach">{ic(`${w.flag}: ${j.flagNote}`)}</span>}
+          {j.payNote && j.payNote !== j.flagNote && <> {ic(`${w.corrected}: ${j.payNote}`)}</>}
+        </div>
+      ))}
+    </div>
+    <VendorInvoiceView page={pay} labels={lang === 'es' ? ES_INVOICE : undefined} />
+  </>;
+}
+
+const ES_INVOICE: Partial<typeof EN> = {
+  invoice: 'Factura', from: 'De', to: 'Para', period: 'Periodo', paid: 'Pago', print: 'Imprimir / PDF', date: 'Fecha', unit: 'Propiedad',
+  work: 'Trabajo', amount: 'Monto', notPriced: 'sin precio', none: 'No hay trabajos pagados en este periodo.', total: 'Total',
+  open: 'El periodo sigue abierto — se suman los trabajos terminados antes de que cierre.',
+  unpriced: (n: number) => `${n} trabajo${n === 1 ? '' : 's'} aún sin precio — fuera del total.`,
+  pending: (n: number) => `${n} cobro${n === 1 ? '' : 's'} esperando aprobación del equipo.`,
+  notPaidIn: 'No pagado en este periodo:'
+};

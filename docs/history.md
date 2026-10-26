@@ -4481,3 +4481,36 @@ payouts: later, read-only, nothing written to Hostaway without the owner.
 - SOP #3 v5 (steps: Ops enters Requested/Received; closing Paid/Resolved/Dismissed; Rules and What the system does) and
   SOP #4 v3 (owner-charged repairs) written at deploy.
 
+
+## §168 — Handymen paid like cleaners, and payouts through Stripe Connect (2026-10-25)
+
+**Ask (owner):** replicate the cleaners' system — a page per person with any dates and the team's edits — for the handymen,
+coming from work orders; then get everything ready to plug in Stripe's test API. Choices: a page per vendor (not a
+Movements-like list); Stripe is for **paying** cleaners and handymen (Connect), not for charging.
+
+**What shipped (migration 099):**
+- Operations → Handymen (`vendors` view). A vendor = a directory name or a name typed on a work order. A job = a work order
+  with that name, dated by its NY completion day (open ones by day set / deadline / creation); pay = `cost_actual`.
+  Invoice per `vendors.invoice_period` (`buildVendorInvoice`, number `KZ-V-<NAME>-<from>`, never colliding with a cleaner's).
+- Edits as on a clean: flag (`pay_flag_*`, optional deduction or pay instead), correct (`pay_fixed` + `pay_note`; blank = back to
+  the approved charges), not paid (`pay_void`, prefix "not paid by the team — "), add a job (completed work order, not mirrored).
+  `decideFieldExpense` keeps a `pay_fixed`; `settleRepair` treats `pay_void` as not spent (Costs and the owner's Hostaway charge).
+  Every edit writes a `work_updates` line. The handyman's page gained a Pay tab (EN/ES).
+- Payment card under each cleaner's and handyman's invoice: state open / nothing / due / paid / changed; blockers said in words
+  (period not ended, unpriced jobs, decisions waiting); "Pay with Stripe" (two-step confirm) or "Mark paid" (how is required;
+  undoable). `payouts` has one row per invoice number; the server rebuilds the invoice before paying.
+- Stripe (`functions/_lib/payouts.ts`, fetch, no SDK): key in Settings → Payments (`sk_test_`/`rk_test_` only; checked with
+  /v1/balance; live refused in code). Express accounts per payee (`cleaners/vendors.stripe_account_id` + `stripe_mode`), made when
+  the team asks for the setup link. The link the team sends is Kaizen's (`/api/report-link?stripe=<HMAC-signed, 30 days>`, already
+  behind the Access bypass) — each open asks Stripe for a fresh account link (theirs last minutes) and redirects; return shows
+  "You are set / Listo". Transfers: `Idempotency-Key = kaizen-pay-<invoice>-<cents>`. New permission `payouts`.
+
+**Validated** on Neon branch `test-vendor-pay`: 59 API use cases (validation, charges vs pay set by hand, flags, not paid ↔ Costs,
+periods, typed names, manual payouts incl. double pay / changed after paid / undo, a cleaner's payout, key refusals, forged link,
+the handyman's own Pay). Not exercised: any call with a real Stripe key.
+
+**Turning on Stripe test:** 1) Stripe dashboard (test mode) → Connect → get started (platform, Express). 2) Developers → API keys →
+copy `sk_test_…` → Kaizen Settings → Payments → Save key (it is checked). 3) Balance → add test funds (card 4000 0000 0000 0077 makes
+them available at once). 4) Operations → Handymen / Cleaners → Payment → "Get their Stripe setup link" → open it yourself with
+Stripe's test data (SSN 000-00-0000, routing 110000000, account 000123456789). 5) Pay an ended invoice. Live: a code change
+(settings.ts refuses `sk_live_`), the owner's decision.

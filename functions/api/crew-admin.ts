@@ -34,6 +34,7 @@ import { decideFieldExpense, pendingFieldExpenses, syncCleaningCosts } from '../
 import { learnAliases } from '../_lib/receipt-read.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
 import { getCredentials } from '../_lib/accounts.ts';
+import { payoutOf } from '../_lib/payouts.ts';
 
 const TZ = 'America/New_York';
 
@@ -82,7 +83,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   await attachFiles(sql, pending as { id: string }[]);
   // §137: purchases paid in the field, waiting for approval before they reach Costs.
   const fieldPending = await pendingFieldExpenses(sql);
-  return Response.json({ ok: true, pending, fieldPending, page, schedule, toConfirm });
+  // Owner, 2026-10-25: how this invoice was paid (Stripe or by hand) — none for the team's own span.
+  const payout = page && !page.period.custom ? await payoutOf(sql, page.invoice.number) : null;
+  return Response.json({ ok: true, pending, fieldPending, page, schedule, toConfirm, payout });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {

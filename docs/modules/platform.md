@@ -35,8 +35,11 @@ Hostaway client, sync, crypto, migrations.
   the only credential, they never trust identity headers). Cloudflare Access has a **Bypass app "Kaizen —
   public links"** (Bypass Everyone, live 2026-10-12) for `/report`, `/api/report-link`, `/crew`,
   `/api/crew-link`, `/assets/*` — verified: those answer without sign-in, `/` and every other `/api/*`
-  still redirect. A new public page needs its path added there (§134).
+  still redirect. A new public page needs its path added there (§134). `/api/report-link?stripe=<signed>` is a payee's
+  Stripe setup link (§168) — same door, no new bypass.
   Empty list = any authenticated caller; DB failure = 503, never a pass (§29).
+- **Payouts (§168):** permission `payouts` (`/api/payouts`) — paying invoices is not part of Operations' edits. Settings → Payments
+  holds the Stripe secret key (`accounts.stripe_secret_key_enc`; test keys only, checked against Stripe's /balance before saving).
 - Roles are named sets of permissions (Settings grid, each tick saves at once); allow-list
   of routes — a new route is closed until listed; no member row = admin; unreadable role =
   nothing; a list with no admin or that demotes the saver is refused (§49, §65, §75).

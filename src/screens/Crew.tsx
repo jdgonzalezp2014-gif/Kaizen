@@ -11,6 +11,8 @@
  * Phone first: cleaners read it on a phone, so rows wrap instead of
  * scrolling sideways.
  */
+import { PayoutCard } from '../components/PayoutCard.tsx';
+import type { Payout } from '../lib/payouts.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Fragment, useEffect, useState } from 'react';
 import {
@@ -96,7 +98,7 @@ export function CrewHome({ token, asCleaner, practice }: { token?: string | null
 /* ── the team's side, in Operations ───────────────────────────────── */
 
 /** Operations → Cleaners: extras waiting on the team, and any cleaner's page as they see it. */
-export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boolean }) {
+export function CrewAdmin({ roster, canEdit, canPay = false }: { roster: Cleaner[]; canEdit: boolean; canPay?: boolean }) {
   const fromHash = decodeURIComponent(/^#crew\/(.+)$/.exec(location.hash)?.[1] ?? '');
   const [name, setName] = useState(roster.some(c => c.name === fromHash) ? fromHash : '');
   const [period, setPeriod] = useState<string | null>(null);
@@ -108,9 +110,10 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
   const [page, setPage] = useState<CrewPage | null>(null);
   const [schedule, setSchedule] = useState<CrewSchedule | null>(null);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
+  const [payout, setPayout] = useState<Payout | null>(null);
   const [err, setErr] = useState('');
   const load = () => getCrewAdmin(name || null, period, to)
-    .then(r => { if (r.ok) { setPending(r.pending); setFieldPending(r.fieldPending ?? []); setPage(r.page); setSchedule(r.schedule); setToConfirm(r.toConfirm ?? []); setErr(''); }
+    .then(r => { if (r.ok) { setPending(r.pending); setFieldPending(r.fieldPending ?? []); setPage(r.page); setSchedule(r.schedule); setToConfirm(r.toConfirm ?? []); setPayout(r.payout ?? null); setErr(''); }
                  else setErr(r.message ?? 'Could not load.'); })
     .catch(e => setErr(String(e)));
   useEffect(() => { void load(); }, [name, period, to]);
@@ -147,6 +150,12 @@ export function CrewAdmin({ roster, canEdit }: { roster: Cleaner[]; canEdit: boo
                          onCancel={() => setAdding(false)} onDone={() => { setAdding(false); void load(); }} />
       )}
       {page && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={p => pick(p)} onRange={pick} reload={load} act={crewAdminAction} />}
+      {/* Owner, 2026-10-25: the invoice paid — Stripe or by hand. Not for the team's own dates: pay goes by invoice period. */}
+      {page && page.cleaner.name === name && !page.period.custom && (
+        <PayoutCard kind="cleaner" payee={name} today={page.today} canPay={canPay} onChanged={load} payout={payout}
+                    invoice={{ number: page.invoice.number, period: page.invoice.period, open: page.invoice.open, total: page.invoice.total,
+                               unpriced: page.invoice.unpriced, pending: page.invoice.pendingExtras }} />
+      )}
       {toConfirm.length > 0 && (
         <div className="card">
           <h2>Cancelled after arrival — confirm <span className="chan-tag">{toConfirm.length}</span> <Hint>These bookings were cancelled on or after their arrival day, so the guest may have used the unit.

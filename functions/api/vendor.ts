@@ -2,7 +2,8 @@
  * /api/vendor — a handyman signed in with the email in the vendor directory
  * (§137): their open work orders, and the same steps as their link.
  *
- *   GET                          their work orders not closed (and those closed in the last 7 days)
+ *   GET [?period=YYYY-MM-DD]     their work orders not closed (and those closed in the last 7 days),
+ *                                and their pay: the invoice of that period (owner, 2026-10-25)
  *   POST { todoId, action, … }   a step (multipart for photos and receipts) — only on one of theirs
  *
  * The `vendor` permission opens only this route (roles.ts); who they are
@@ -12,6 +13,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { accessOf, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { workAct, workPage } from '../_lib/vendor-work.ts';
+import { loadVendorPage } from '../_lib/vendor-pay.ts';
 
 async function me(request: Request, env: Env, sql: SqlFn): Promise<string | Response> {
   const who = identify(request, env);
@@ -33,7 +35,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const v = await me(request, env, sql);
   if (v instanceof Response) return v;
   const works = (await Promise.all((await mine(sql, v)).map(id => workPage(sql, id)))).filter(Boolean);
-  return Response.json({ ok: true, vendor: v, works }, { headers: { 'Cache-Control': 'no-store' } });
+  // Owner, 2026-10-25: their pay, as a cleaner sees theirs — the invoice periods only, never the team's own dates.
+  const pay = await loadVendorPage(sql, v, new URL(request.url).searchParams.get('period'));
+  return Response.json({ ok: true, vendor: v, works, pay: pay && { ...pay, openJobs: [] } }, { headers: { 'Cache-Control': 'no-store' } });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {

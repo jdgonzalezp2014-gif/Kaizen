@@ -84,6 +84,10 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   approving it in Operations → Cleaners sets `cost_actual` = the sum of approved charges and runs
   `settleRepair` → Costs › Repairs (once completed). Denying needs a note the handyman reads.
 
+- **A handyman's pay (§168):** `todos.pay_fixed` = a pay the team set (Operations → Handymen) — `decideFieldExpense` then keeps it
+  (`coalesce(pay_fixed, sum approved)`); `todos.pay_void` = not paid → `settleRepair` treats it as not spent (out of Costs and, if charged
+  to the owner, off Hostaway). `pay_flag_note` is the note the handyman reads. Payouts per invoice: operations module.
+
 - **Live work (§166).** `todos.rev` / `claims.rev` come from one sequence (`live_rev`), bumped by a trigger on every
   insert or update — any door, no code needed (migration 091). Open screens ask `GET /api/todos?live=1&after=<id>`
   every 10 s while visible (`src/components/useLive.ts`, one poller per page): two signatures (count + sum(rev), comment

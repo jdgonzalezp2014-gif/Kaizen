@@ -19,6 +19,7 @@ import { CleaningCalendar } from '../components/CleaningCalendar.tsx';
 import { WorkView } from '../components/Todos.tsx';
 import { useLive } from '../components/useLive.ts';
 import { CrewAdmin } from './Crew.tsx';
+import { VendorAdmin } from './Handymen.tsx';
 import { InventorySetup, InventoryView } from './Inventory.tsx';
 import { InspectionRun } from '../components/InspectionRun.tsx';
 import { visibleAhead } from '../lib/crew.ts';
@@ -50,17 +51,17 @@ import { IconFlag, Peek } from '../components/Hint.tsx';
 import { Icon, ic } from '../components/Icon.tsx';
 import { FlagControl, LEVEL_LABEL, MANUAL_WORD, ManualCleanForm } from '../components/CleanControls.tsx';
 
-type View = 'board' | 'todos' | 'calendar' | 'crew' | 'inspections' | 'inventory' | 'notes' | 'rates' | 'setup';
+type View = 'board' | 'todos' | 'calendar' | 'crew' | 'vendors' | 'inspections' | 'inventory' | 'notes' | 'rates' | 'setup';
 /** §159: "2 to-dos" on the board opens To-do with that unit's work — a window event, so the board's rows need no prop. */
 const workFor = (unitId: string) => dispatchEvent(new CustomEvent('kaizen:work-for', { detail: unitId }));
-const VIEWS: View[] = ['board', 'todos', 'calendar', 'crew', 'inspections', 'inventory', 'notes', 'rates', 'setup'];
+const VIEWS: View[] = ['board', 'todos', 'calendar', 'crew', 'vendors', 'inspections', 'inventory', 'notes', 'rates', 'setup'];
 
 /** Setup, by section (§134, the owner: one long page was a mess); each view's ⚙ opens its own. */
 type SetupSection = 'general' | 'cleaners' | 'crew' | 'inspections' | 'inventory';
 const SETUP_SECTIONS: [SetupSection, string][] = [['general', '⚙ General'], ['cleaners', '👥 Cleaners & pay'], ['crew', '🧹 Crew pages'],
   ['inspections', '🔍 Inspections'], ['inventory', '📦 Inventory']];
 const SETUP_OF: Record<Exclude<View, 'setup'>, SetupSection> = {
-  board: 'cleaners', todos: 'general', calendar: 'cleaners', crew: 'crew', inspections: 'inspections', inventory: 'inventory',
+  board: 'cleaners', todos: 'general', calendar: 'cleaners', crew: 'crew', vendors: 'inspections', inspections: 'inspections', inventory: 'inventory',
   notes: 'general', rates: 'cleaners'
 };
 
@@ -189,7 +190,7 @@ export function Operations({ permissions, initialView, nav, onView, focus }: {
 
   const views: [View, string][] = [
     // The cleans' calendar lives inside Cleaners (the owner: it is the cleaners'); `calendar` stays a view for links and SOPs.
-    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['crew', 'Cleaners'], ['inspections', 'Inspections'], ['inventory', 'Inventory'],
+    ['board', 'Movements'], ...(canTodos ? [['todos', 'To-do'] as [View, string]] : []), ['crew', 'Cleaners'], ['vendors', 'Handymen'], ['inspections', 'Inspections'], ['inventory', 'Inventory'],
     ['notes', 'Notes log'], ['rates', 'Rates & rules'],
     ...(can(data?.permissions, 'operations.setup') ? [['setup', 'Setup'] as [View, string]] : [])
   ];
@@ -240,7 +241,9 @@ export function Operations({ permissions, initialView, nav, onView, focus }: {
           </nav>
         )}
         {view === 'calendar' && <CleaningsMonth />}
-        {data && view === 'crew' && <CrewAdmin roster={data.roster} canEdit={can(data.permissions, 'operations.edit')} />}
+        {data && view === 'crew' && <CrewAdmin roster={data.roster} canEdit={can(data.permissions, 'operations.edit')} canPay={can(data.permissions, 'payouts')} />}
+        {/* Owner, 2026-10-25: handymen's work and pay, as the cleaners' pages. */}
+        {data && view === 'vendors' && <VendorAdmin canEdit={can(data.permissions, 'operations.edit')} canPay={can(data.permissions, 'payouts')} />}
         {data && view === 'inspections' && <Inspections data={data} reload={() => load()} />}
         {data && view === 'inventory' && <InventoryView canEdit={can(data.permissions, 'operations.edit')} />}
         {data && view === 'notes' && <Notes data={data} />}

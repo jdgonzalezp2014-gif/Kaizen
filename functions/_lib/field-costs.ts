@@ -110,8 +110,9 @@ export async function decideFieldExpense(sql: SqlFn, id: string, status: 'approv
   // A handyman's charge is part of the repair: the approved ones ARE its cost, and the repair — once
   // completed — is the one expense in Costs (settleRepair, by the caller). Never a second row here.
   if (f.source === 'vendor' && f.todo_id) {
-    await sql`UPDATE todos SET cost_actual = (SELECT sum(amount) FROM field_expenses WHERE account_id = 1 AND todo_id = ${Number(f.todo_id)}
-                                                AND source = 'vendor' AND status = 'approved'), updated_at = now()
+    // A pay the team set by hand (Operations → Handymen: a correction or a flag's deduction) stays until they put it back.
+    await sql`UPDATE todos SET cost_actual = coalesce(pay_fixed, (SELECT sum(amount) FROM field_expenses WHERE account_id = 1 AND todo_id = ${Number(f.todo_id)}
+                                                AND source = 'vendor' AND status = 'approved')), updated_at = now()
                WHERE account_id = 1 AND id = ${Number(f.todo_id)}`;
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
               VALUES (1, 'task', ${f.todo_id}, 'change', ${`${status === 'approved' ? 'Approved' : 'Denied'}: $${f.amount.toFixed(2)} — ${f.description}${note ? ` · “${note}”` : ''}`.slice(0, 4000)}, ${by})`;

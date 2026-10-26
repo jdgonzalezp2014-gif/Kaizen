@@ -7,6 +7,8 @@
  * environment. That is the whole difference between one installation and
  * a product.
  */
+import { platformBalance } from '../_lib/payouts.ts';
+import { stripeMode } from '../../src/lib/payouts.ts';
 import { accessOf, getAccount, getCredentials, saveCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { getAccessToken, fetchListings } from '../_lib/hostaway.ts';
 import { db, type Env } from '../_lib/db.ts';
@@ -237,6 +239,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const enc = await encrypt(body.claudeApiKey.trim(), env.ENCRYPTION_KEY);
       await sql`UPDATE accounts SET claude_api_key_enc = ${enc} WHERE id = 1`;
     }
+    // Owner, 2026-10-25: Stripe pays cleaners and handymen (functions/_lib/payouts.ts). Test keys only for now:
+    // a live key moves real money, and turning that on is the owner's decision, made here in code.
+    if (typeof body.stripeSecretKey === 'string' && body.stripeSecretKey.trim()) {
+      const key = body.stripeSecretKey.trim();
+      const mode = stripeMode(key);
+      if (!mode) return Response.json({ ok: false, error: 'That is not a Stripe secret key (sk_test_… or rk_test_…).' }, { status: 400 });
+      if (mode === 'live') return Response.json({ ok: false, error: 'Live keys are not accepted yet — use the test key (sk_test_…) until live payouts are switched on.' }, { status: 400 });
+      try { await platformBalance(key); }
+      catch (e) { return Response.json({ ok: false, error: `Stripe refused the key: ${e instanceof Error ? e.message : String(e)}` }, { status: 400 }); }
+      await sql`UPDATE accounts SET stripe_secret_key_enc = ${await encrypt(key, env.ENCRYPTION_KEY)} WHERE id = 1`;
+    }
+    if (body.clearStripeKey === true) await sql`UPDATE accounts SET stripe_secret_key_enc = NULL WHERE id = 1`;
     if (typeof body.geminiModel === 'string' && body.geminiModel.trim()) {
       await sql`UPDATE accounts SET gemini_model = ${body.geminiModel.trim()} WHERE id = 1`;
     }

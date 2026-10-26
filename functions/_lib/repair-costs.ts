@@ -25,7 +25,7 @@ const money = (n: number) => `$${n.toFixed(2)}`;
 interface Row {
   id: string; kind: string; status: string; cost_actual: string | null; unit_ids: string[]; title: string; vendor: string | null;
   done_at: string | Date | null; deleted_at: string | Date | null; charge_owner: boolean; hostaway_expense_id: string | null;
-  hostaway_task_id: string | null; reservation_id: string | null;
+  hostaway_task_id: string | null; reservation_id: string | null; pay_void: string | null;
 }
 
 async function note(sql: SqlFn, id: string, body: string, by: string) {
@@ -44,11 +44,12 @@ async function hostaway<T>(creds: HostawayCredentials, method: string, path: str
 
 export async function settleRepair(sql: SqlFn, id: string, by: string, creds: () => Promise<HostawayCredentials>): Promise<void> {
   const [r] = await sql`SELECT id::text, kind, status, cost_actual, unit_ids, title, vendor, done_at, deleted_at, charge_owner,
-                               hostaway_expense_id, hostaway_task_id, reservation_id
+                               hostaway_expense_id, hostaway_task_id, reservation_id, pay_void
                           FROM todos WHERE account_id = 1 AND id = ${id}` as Row[];
   if (!r) return;
   const cost = r.cost_actual == null ? 0 : Number(r.cost_actual);
-  const counts = r.status === 'completed' && !r.deleted_at && cost > 0;
+  // Owner, 2026-10-25: a job the team took off the handyman's pay (Operations → Handymen) was not spent.
+  const counts = r.status === 'completed' && !r.deleted_at && cost > 0 && !r.pay_void;
   const repair = r.kind === 'work_order';
   const category = repair ? 'Repairs' : /^buy\b/i.test(r.title) ? 'Restock' : guessCategory(r.title, 'General') ?? 'General';
   const unit = r.unit_ids?.[0] ?? null;
@@ -75,7 +76,7 @@ export async function settleRepair(sql: SqlFn, id: string, by: string, creds: ()
     if (e.amount !== cost) await note(sql, id, `Costs updated: ${money(e.amount)} → ${money(cost)}`, by);
   } else if (!inCosts && e) {
     await sql`DELETE FROM expenses WHERE account_id = 1 AND id = ${e.id}`;
-    await note(sql, id, `Removed from Costs (${money(e.amount)}) — ${counts ? 'charged to the owner' : 'no longer completed with a cost'}.`, by);
+    await note(sql, id, `Removed from Costs (${money(e.amount)}) — ${counts ? 'charged to the owner' : r.pay_void ? 'not paid to the vendor' : 'no longer completed with a cost'}.`, by);
   }
 
   // ── The owner's charge, in Hostaway ──

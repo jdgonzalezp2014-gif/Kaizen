@@ -7,7 +7,7 @@ import {
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
 import { SlackPanel } from '../components/SlackPanel.tsx';
-import { newIngestToken, pullFeed, runCron, type FeedResult, type CronResult } from '../api.ts';
+import { getPayouts, newIngestToken, pullFeed, runCron, type FeedResult, type CronResult, type StripeStatus } from '../api.ts';
 import { sanitize, segments } from '../lib/sms.ts';
 import { Icon } from '../components/Icon.tsx';
 
@@ -165,6 +165,7 @@ export function Settings() {
       <RepositoryPanel account={account} onSaved={() => void load()} />
 
       <GeminiPanel account={account} onSaved={() => void load()} />
+      <StripePanel account={account} onSaved={() => void load()} />
 
       <MembersPanel members={members} audit={audit} user={user} roles={roles} onSaved={() => void load()} />
 
@@ -676,6 +677,50 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
         tries on every load and will start working the moment that changes; nothing else on a
         unit card depends on it.</Hint></p>
       <button onClick={() => void save()} disabled={busy}>{busy ? 'Saving…' : 'Save'}</button>
+      {msg && <p className="note">{msg}</p>}
+    </div>
+  );
+}
+
+/**
+ * Payments (owner, 2026-10-25): Stripe pays cleaners' and handymen's invoices
+ * (Operations → Cleaners / Handymen → Payment). Test keys only until live
+ * payouts are switched on; the key is checked with Stripe before it is kept,
+ * stored encrypted and never shown again.
+ */
+function StripePanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [key, setKey] = useState('');
+  const [status, setStatus] = useState<StripeStatus | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const check = () => void getPayouts().then(r => setStatus(r.ok ? r.stripe : null)).catch(() => setStatus(null));
+  useEffect(() => { if (account.hasStripeKey) check(); }, [account.hasStripeKey]);
+  const save = async (body: Record<string, unknown>) => {
+    setBusy(true); setMsg('');
+    const r = await saveSettings(body);
+    setBusy(false); setKey('');
+    setMsg(r.ok ? 'Saved.' : (r.error ?? 'Failed.'));
+    if (r.ok) { onSaved(); check(); }
+  };
+  return (
+    <div className="card">
+      <h2>Payments — Stripe <Hint>Kaizen pays cleaners' and handymen's invoices from its Stripe balance, through Stripe Connect: each payee sets up
+        their own account from a link the team sends (Operations → Cleaners / Handymen → Payment), and Stripe pays their bank. Paste the secret key
+        from Stripe's dashboard → Developers → API keys. Only test keys (sk_test_…) for now — no real money moves; turn on Connect in the dashboard
+        first. The key is checked with Stripe before it is kept, stored encrypted, and never shown again.</Hint></h2>
+      <label>
+        Secret key {account.hasStripeKey && <span className="ok-tag">one is stored</span>}
+        <input type="password" value={key} onChange={e => setKey(e.target.value)} autoComplete="off"
+               placeholder={account.hasStripeKey ? 'stored — type to replace' : 'sk_test_…'} />
+      </label>
+      {status && <p className="note">{status.configured
+        ? <>Stripe {status.mode === 'test' ? 'TEST mode' : 'LIVE mode'}{status.balance && ` · balance $${status.balance.available.toFixed(2)} available`}
+            {status.problem && <span className="breach"> · {status.problem}</span>}</>
+        : 'The stored key could not be read — paste it again.'}</p>}
+      <div className="button-row">
+        <button onClick={() => void save({ stripeSecretKey: key })} disabled={busy || !key.trim()}>{busy ? 'Checking…' : 'Save key'}</button>
+        {account.hasStripeKey && <button className="secondary" disabled={busy} onClick={() => void save({ clearStripeKey: true })}>Remove key</button>}
+      </div>
       {msg && <p className="note">{msg}</p>}
     </div>
   );

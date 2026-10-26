@@ -1,7 +1,8 @@
 # Module: operations
 
 Kaizen runs the day's operations (the daily file sheet is an archive). Tab **Operations**:
-Movements (the board, §124) · To-do (→ work module) · Cleaners (view key `crew`; inside it 👥 Pages & approvals and 📅 Calendar, view key `calendar`) · Inspections ·
+Movements (the board, §124) · To-do (→ work module) · Cleaners (view key `crew`; inside it 👥 Pages & approvals and 📅 Calendar, view key `calendar`) ·
+Handymen (view key `vendors`, §168) · Inspections ·
 Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page** each cleaner sees (§122).
 
 ## Files
@@ -237,6 +238,15 @@ key had no SOPs.
   `void_reason = 'not paid by the team — <why>'`, leaves the invoice and Costs; `restorePaid` undoes only that prefix),
   and **+ Add a clean** (ManualCleanForm with the cleaner preset). Extras on a void clean leave Costs too (field-costs.ts).
   SOP 10 v4 done.
+- **Handymen and payouts (owner, 2026-10-25, §168, migration 099):** Operations → Handymen (`src/screens/Handymen.tsx`, API
+  `vendor-admin.ts`, server `functions/_lib/vendor-pay.ts`, pure `src/lib/vendor-pay.ts`) = a cleaner's page for a handyman: their
+  work orders in invoice periods (`vendors.invoice_period`, monthly by default) or any dates, each job's pay (= `cost_actual`) and
+  charges (decided inline via crew-admin `decideField`), and the team's edits — ⚑ flag (`todos.pay_flag_note`, optional deduction /
+  pay instead → `pay_fixed`), ✎ correct (`pay_fixed`; blank = approved charges), ○ not paid (`pay_void`, leaves Costs), + add a job
+  (a completed work order, not mirrored). Names typed on work orders are listed too; picking their period adds them to `vendors`.
+  The handyman's own page has a Pay tab (`/api/vendor` returns `pay`). **Payment card** (`components/PayoutCard.tsx`) under both
+  a handyman's and a cleaner's page → `/api/payouts` (permission `payouts`), `functions/_lib/payouts.ts`: Stripe Connect Express
+  (Settings → Payments, test keys only) or "Mark paid"; one `payouts` row per invoice number; the invoice is rebuilt on the server.
 - **A cleaner's purchase pays her back (owner, 2026-10-24, 098):** approving it ("Approve — record in inventory") also writes an
   approved `cleaning_extras` row with `field_expense_id` on the clean it was bought for (that clean's cleaner — a helper's is their
   cleaner's) → on the invoice; never a second Costs row (the purchase is already Restock; `syncCleaningCosts` skips them). No clean
@@ -596,6 +606,9 @@ key had no SOPs.
   screens' actions needs its mock in Practice.tsx too (or the practice drifts from the real page).
 
 ## Open items
+
+- §168: Stripe never exercised with a real test key (no key yet): account creation, onboarding link, transfer. To do with the
+  owner's sk_test_ — see §168 "Turning on Stripe test". The Neon branch `test-vendor-pay` (br-noisy-frog-b5yhqotg) holds the e2e data.
 
 - **To evaluate (owner, 2026-10-15): the Amazon Business Cart API** for an "Add to Amazon cart (n)" like Walmart's — Kaizen has
   Amazon Business; `addItems` (ASIN + qty) fills a user's cart, the person checks and pays (Kaizen never pays). Needs the account's

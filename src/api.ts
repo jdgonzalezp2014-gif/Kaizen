@@ -6,6 +6,7 @@ export interface Account {
   hasHostawayKey: boolean;
   hasGeminiKey: boolean;
   hasClaudeKey: boolean;
+  hasStripeKey: boolean;
   hasJinaKey: boolean;
   hasIngestToken: boolean;
   hasQuoKey: boolean; quoFrom: string | null;
@@ -611,7 +612,8 @@ export interface PendingExtra {
 /** A clean held after a cancellation on or after arrival (§123), waiting for a person. */
 export interface ToConfirm { key: string; unit: string; date: string; beds: number | null; deep: boolean; guest: string | null; note: string }
 export const getCrewAdmin = (cleaner?: string | null, period?: string | null, to?: string | null) =>
-  call<{ ok: true; pending: PendingExtra[]; fieldPending?: FieldExpense[]; page: CrewPage | null; schedule: CrewSchedule; toConfirm: ToConfirm[] } | Fail>(
+  call<{ ok: true; pending: PendingExtra[]; fieldPending?: FieldExpense[]; page: CrewPage | null; schedule: CrewSchedule; toConfirm: ToConfirm[];
+          payout?: import('./lib/payouts.ts').Payout | null } | Fail>(
     `/api/crew-admin?${new URLSearchParams({ ...(cleaner ? { cleaner } : {}), ...(period ? { period } : {}), ...(period && to ? { to } : {}) })}`);
 /** A cleaner's page through the same server code that answers the cleaner — for "View as cleaner". */
 export const getCrewAsCleaner = (cleaner: string, period?: string | null) =>
@@ -927,7 +929,8 @@ export const getWorkLink = (token: string) =>
 export const workLinkAct = (token: string, fields: Record<string, string>, files: File[]) =>
   workSend('/api/report-link', { 'X-Work-Token': token }, fields, files);
 /** A handyman signed in: their work orders. */
-export const getVendorWork = () => call<({ ok: true; vendor: string; works: WorkPage[] }) | Fail>('/api/vendor');
+export const getVendorWork = (period?: string | null) =>
+  call<({ ok: true; vendor: string; works: WorkPage[]; pay: VendorPage | null }) | Fail>(`/api/vendor${period ? `?period=${period}` : ''}`);
 export const vendorAct = (todoId: string, fields: Record<string, string>, files: File[]) =>
   workSend('/api/vendor', {}, { ...fields, todoId }, files);
 /** The team: the link for a work order's vendor. */
@@ -940,3 +943,32 @@ import type { ReportRow } from './lib/reports.ts';
 export const getReports = () => call<{ ok: boolean; all: boolean; me: string; reports: ReportRow[]; message?: string }>('/api/reports');
 export const postReport = (body: Record<string, unknown>) =>
   call<{ ok: boolean; id?: string; message?: string }>('/api/reports', { method: 'POST', body: JSON.stringify(body) });
+
+/* ── handymen's pay and payouts (owner, 2026-10-25) ──────────────── */
+
+import type { VendorInvoice, VendorJob } from './lib/vendor-pay.ts';
+import type { Payout } from './lib/payouts.ts';
+
+export interface VendorInfo {
+  name: string; inDirectory: boolean; active: boolean; trade: string | null; email: string | null; phone: string | null;
+  invoicePeriod: InvoicePeriod; stripeAccount: string | null; stripeMode: string | null;
+}
+export interface VendorPage {
+  vendor: VendorInfo; today: string; periods: Period[]; period: Period; jobs: VendorJob[]; openJobs: VendorJob[];
+  invoice: VendorInvoice; payout: Payout | null;
+}
+export const getVendorAdmin = (vendor?: string | null, period?: string | null, to?: string | null) =>
+  call<{ ok: true; vendors: (VendorInfo & { open: number; done: number })[]; page: VendorPage | null } | Fail>(
+    `/api/vendor-admin?${new URLSearchParams({ ...(vendor ? { vendor } : {}), ...(period ? { period } : {}), ...(period && to ? { to } : {}) })}`);
+export const vendorAdminAction = (body: Record<string, unknown>) =>
+  call<{ ok: true; pay?: number | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify(body) });
+
+export interface StripeStatus { configured: boolean; mode: 'test' | 'live' | null; balance: { available: number; pending: number } | null; problem: string | null }
+export interface PayeeAccount {
+  id: string; mode: string | null; ready?: boolean; detailsSubmitted?: boolean; payoutsEnabled?: boolean; transfers?: string; due?: string[]; problem?: string;
+}
+export const getPayouts = (kind?: 'cleaner' | 'vendor', payee?: string) =>
+  call<{ ok: true; stripe: StripeStatus; payee?: { name: string; email: string | null; account: PayeeAccount | null } | null; payouts?: Payout[] } | Fail>(
+    `/api/payouts${kind && payee ? `?${new URLSearchParams({ kind, payee })}` : ''}`);
+export const payoutAction = (body: Record<string, unknown>) =>
+  call<{ ok: true; link?: string; phone?: string | null; mode?: string; payout?: Payout } | Fail>('/api/payouts', { method: 'POST', body: JSON.stringify(body) });

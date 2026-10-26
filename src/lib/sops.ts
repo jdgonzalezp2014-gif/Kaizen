@@ -77,6 +77,8 @@ export const FEATURES: { key: string; label: string; tab: string; view?: string;
   { key: 'operations.todos', label: 'Operations · To-do', tab: 'operations', view: 'todos', section: 'maintenance' },
   { key: 'operations.calendar', label: 'Operations · Cleaners · Calendar', tab: 'operations', view: 'calendar', section: 'turnover' },
   { key: 'operations.crew', label: 'Operations · Cleaners', tab: 'operations', view: 'crew', section: 'turnover' },
+  // Owner, 2026-10-25: handymen's work and pay, as the cleaners' pages.
+  { key: 'operations.vendors', label: 'Operations · Handymen', tab: 'operations', view: 'vendors', section: 'maintenance' },
   // The cleaner's own page (§122): its published SOPs show there as "How this page works".
   { key: 'crew.page', label: "Cleaner's page", tab: 'crew', section: 'turnover' },
   // The same page in Spanish (§129): a cleaner reading in Spanish sees these instead.

@@ -36,6 +36,8 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/operations', methods: ['GET'] },
     // The crew pages as each cleaner sees them, and what is waiting on the team (§122).
     { path: '/api/crew-admin', methods: ['GET'] },
+    // A handyman's page for the team, as a cleaner's (owner, 2026-10-25).
+    { path: '/api/vendor-admin', methods: ['GET'] },
     // Inspections as a checklist, its template, and the vendor directory (§133).
     { path: '/api/inspection-run', methods: ['GET'] }, { path: '/api/inspection-items', methods: ['GET'] },
     { path: '/api/vendors', methods: ['GET'] },
@@ -48,6 +50,8 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/manual-clean', methods: ['GET', 'POST'] }, { path: '/api/stays', methods: ['GET'] },
     // Approve or deny a cleaner's extra, flag a clean (§122).
     { path: '/api/crew-admin', methods: ['POST'] },
+    // Flag, correct, not paid, add a job on a handyman's page (owner, 2026-10-25).
+    { path: '/api/vendor-admin', methods: ['POST'] },
     // Walk an inspection: answers, photos, and the work it makes (§133).
     { path: '/api/inspection-run', methods: ['POST'] },
     // Counts, moves and orders of supplies (§134).
@@ -79,6 +83,9 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/repository-structure', methods: ['POST'] }, { path: '/api/repository-import', methods: ['POST'] }] },
   { key: 'costs', label: 'Costs — record expenses, see cleaning costs', tab: 'costs', routes: [
     { path: '/api/expenses', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/cleaning-log', methods: ['GET'] }] },
+  // Owner, 2026-10-25: money leaves Kaizen — its own permission, not part of Operations' edits.
+  { key: 'payouts', label: 'Payouts — pay cleaners\' and handymen\'s invoices (Stripe) or mark them paid', routes: [
+    { path: '/api/payouts', methods: ['GET', 'POST'] }] },
   // §162: the cases are followed in Operations → To-do (Claims & upselling tab); their money is Finance's, below.
   { key: 'claims', label: 'Claims & upselling — record and follow guest claims and upsells (no figures)', routes: [
     { path: '/api/claims', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/stays', methods: ['GET'] },
