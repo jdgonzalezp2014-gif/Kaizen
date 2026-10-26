@@ -745,6 +745,7 @@ button.fact-k:hover { color: var(--ink); }
 .more-list { list-style: none; margin: 0; padding: 0; }
 .more-item { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 52px; padding: 0 4px; background: none; border: 0;
   border-bottom: 1px solid var(--line); color: var(--ink); font-size: var(--fs-callout); font-weight: 550; text-align: left; border-radius: 0; }
+a.more-item, a.side-link { text-decoration: none; color: inherit; }
 .more-list li:last-child .more-item { border-bottom: 0; }
 .more-item .tab-icon { width: 24px; height: 24px; color: var(--muted); }
 .more-item.active, .more-item.active .tab-icon { color: var(--accent); }

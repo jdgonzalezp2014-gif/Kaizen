@@ -38,6 +38,8 @@ Hostaway client, sync, crypto, migrations.
   still redirect. A new public page needs its path added there (§134). `/api/report-link?stripe=<signed>` is a payee's
   Stripe setup link (§168) — same door, no new bypass.
   Empty list = any authenticated caller; DB failure = 503, never a pass (§29).
+- Sign out (2026-10-26): a link to `/cdn-cgi/access/logout` (Access ends the session) in the phone's More list
+  and the side rail's foot. The crew/vendor-only pages have no header and no sign-out yet.
 - **Payouts (§168):** permission `payouts` (`/api/payouts`) — paying invoices is not part of Operations' edits. Settings → Payments
   holds the Stripe secret key (`accounts.stripe_secret_key_enc`; test keys only, checked against Stripe's /balance before saving).
 - Roles are named sets of permissions (Settings grid, each tick saves at once); allow-list

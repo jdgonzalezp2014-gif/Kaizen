@@ -294,6 +294,9 @@ function TeamApp() {
   );
 }
 
+/** Cloudflare Access ends the session here and shows its own login page again (owner, 2026-10-26). */
+const SIGN_OUT = '/cdn-cgi/access/logout';
+
 /**
  * The phone's tab bar (§80, redesign 2026-10-14): the tabs at the bottom,
  * in reach of a thumb, instead of a strip that scrolls sideways and hides
@@ -334,6 +337,9 @@ function TabBar({ tabs, tab, onTab, onReport }: { tabs: Tab[]; tab: Tab | null; 
               <button className="more-item" onClick={() => { setMore(false); onReport(); }}>
                 <TabIcon name="report" /><span>Report a bug / request</span>
               </button>
+            </li>
+            <li>
+              <a className="more-item" href={SIGN_OUT}><TabIcon name="signout" /><span>Sign out</span></a>
             </li>
           </ul>
         </Modal>
@@ -395,6 +401,9 @@ function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions, onReport, bell 
         <button className="side-link" onClick={onReport} title="Report a bug / request">
           <TabIcon name="report" /><span className="side-word">Report / request</span>
         </button>
+        <a className="side-link" href={SIGN_OUT} title="Sign out">
+          <TabIcon name="signout" /><span className="side-word">Sign out</span>
+        </a>
         <ThemeToggle /><Today />
       </div>
     </aside>

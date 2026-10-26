@@ -16,6 +16,7 @@ const PATHS: Record<string, string> = {
   more: 'M5 12h.01M12 12h.01M19 12h.01',
   // Reports (owner, 2026-10-15): a speech bubble with an exclamation — "something to tell the builders".
   report: 'M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2zM12 7v4M12 14h.01',
+  signout: 'M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9',
 };
 
 export function TabIcon({ name }: { name: string }) {
