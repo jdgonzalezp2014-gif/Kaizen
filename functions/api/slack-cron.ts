@@ -10,7 +10,8 @@
  */
 import { syncTeamDriveAccess } from '../_lib/clean-access.ts';
 import { db, type Env } from '../_lib/db.ts';
-import { getCredentials, accessOf, type SqlFn } from '../_lib/accounts.ts';
+import { getAccount, getCredentials, accessOf, type SqlFn } from '../_lib/accounts.ts';
+import { syncUnits } from '../_lib/sync.ts';
 import { identify } from '../_lib/auth.ts';
 import { decrypt } from '../_lib/crypto.ts';
 import { can } from '../_lib/roles.ts';
@@ -180,6 +181,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (notes === null && (await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${driveKey}) ON CONFLICT DO NOTHING RETURNING key`).length) {
     try { await syncTeamDriveAccess(sql, env.ENCRYPTION_KEY); }
     catch { await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${driveKey}`; }
+  }
+
+  // A listing new to Hostaway reached `units` only when someone pressed Sync listings or the board saw a
+  // stay for it — two new apartments with no stays yet never got inspections or cleanings set up (owner,
+  // 2026-10-26: P2-4217, P2-4222, last sync 10-12). Once a day on a quiet tick: one calendar call per listing.
+  const unitsKey = `unitsync:${new Date().toISOString().slice(0, 10)}`;
+  if (notes === null && (await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${unitsKey}) ON CONFLICT DO NOTHING RETURNING key`).length) {
+    try { await syncUnits(await getCredentials(sql, env.ENCRYPTION_KEY), sql, (await getAccount(sql))?.offlineAfterDays ?? 45); }
+    catch { await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${unitsKey}`; }
   }
 
   return Response.json({ ok: true, sent: out, nudged, hour, notes, tasks });
