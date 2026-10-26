@@ -6,7 +6,7 @@
  * instead), ✎ correct the pay, ○ not paid, + add a job — then the payment.
  * A job = a work order with their name; its pay = the work order's cost.
  */
-import { Fragment, useEffect, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { crewAdminAction, getUnits, getVendorAdmin, vendorAdminAction, type VendorInfo, type VendorPage } from '../api.ts';
 import type { VendorJob } from '../lib/vendor-pay.ts';
 import { VENDOR_VOID } from '../lib/vendor-pay.ts';
@@ -33,9 +33,18 @@ export function VendorAdmin({ canEdit, canPay }: { canEdit: boolean; canPay: boo
   const [page, setPage] = useState<VendorPage | null>(null);
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState('');
-  const load = () => getVendorAdmin(name || null, period, to)
-    .then(r => { if (r.ok) { setVendors(r.vendors); setPage(r.page); setErr(''); } else setErr(r.message ?? 'Could not load.'); })
-    .catch(e => setErr(String(e)));
+  const [loading, setLoading] = useState(false);
+  const seq = useRef(0);
+  // The same bar as Operations → Cleaners: what is on screen stays under it until the answer comes. No Hostaway here
+  // (only the database, ~0.5 s), so no fast first answer is needed; a later answer never overwrites a newer one.
+  const load = () => {
+    const n = ++seq.current;
+    setLoading(true);
+    return getVendorAdmin(name || null, period, to)
+      .then(r => { if (n !== seq.current) return; if (r.ok) { setVendors(r.vendors); setPage(r.page); setErr(''); } else setErr(r.message ?? 'Could not load.'); })
+      .catch(e => { if (n === seq.current) setErr(String(e)); })
+      .finally(() => { if (n === seq.current) setLoading(false); });
+  };
   useEffect(() => { void load(); }, [name, period, to]);
   const pick = (from: string | null, until: string | null = null) => { setPeriod(from); setTo(until); };
   const shown = page && page.vendor.name.toLowerCase() === name.toLowerCase() ? page : null;
@@ -43,6 +52,7 @@ export function VendorAdmin({ canEdit, canPay }: { canEdit: boolean; canPay: boo
   return (
     <>
       {err && <p className="banner error">{ic(err)}</p>}
+      {loading && <div className="load-note" role="status"><div className="load-bar" />Loading…</div>}
       <div className="row-controls">
         <label>A handyman's work and pay
           <select value={name} onChange={e => { setName(e.target.value); pick(null); setAdding(false); }}>
