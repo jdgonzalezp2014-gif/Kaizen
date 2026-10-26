@@ -30,7 +30,7 @@ import {
   type RepoColumn, type RepoFile, type RepoHit, type RepoRow, type RepoSection, type RepoTable
 } from '../api.ts';
 import { proposeColumns, readBoard, type Board, type ProposedColumn } from '../lib/repo-import.ts';
-import { coerce, type ColumnType } from '../lib/repo.ts';
+import { applyView, BLANK, coerce, viewActive, viewValue, type ColumnType, type RepoView } from '../lib/repo.ts';
 import { usePhone } from '../components/usePhone.ts';
 import { HostawayCheck } from '../components/HostawayCheck.tsx';
 import { COMPOSED, UNIT_TABLES, composeParts, composeText, isSynced, partKeys, partOf } from '../lib/repo-checks.ts';
@@ -175,6 +175,15 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const [editing, setEditing] = useState<string | null>(null);   // `${id}|${col}`
   const [importing, setImporting] = useState<string | null>(null); // section key, while a Monday board is being imported
   const [checking, setChecking] = useState(false); // §149: the Hostaway check fills the main pane
+  // Sort and filters per table, per browser: how this person looks at it, not the table's order.
+  const [views, setViews] = useState<Record<string, RepoView>>(() => {
+    try { return JSON.parse(localStorage.getItem(VIEWS) ?? '{}') as Record<string, RepoView>; } catch { return {}; }
+  });
+  const setView = (key: string, v: RepoView) => setViews(m => {
+    const next = { ...m, [key]: v };
+    try { localStorage.setItem(VIEWS, JSON.stringify(next)); } catch { /* private window: forgets on reload */ }
+    return next;
+  });
   const [say, toast] = useToast();
   const searchRef = useRef<HTMLInputElement>(null);
   // ?repo=<table>/<ROW-id> (§150): open that record once, then forget the address.
@@ -286,8 +295,21 @@ export function Repository({ canReveal, canEdit, canStructure }: {
     if (!r.ok) { say(r.message ?? 'Not created.', true); return; }
     const row = r.data as RepoRow;
     setRowsBy(m => ({ ...m, [table.key]: [...(m[table.key] ?? []), row] }));
-    say(`Created ${row.id}`);
+    say('Created');
     setOpenId(String(row.id));
+  };
+  /** Optimistic, as a cell: the row moves at once and goes back if the server refuses. */
+  const moveRow = async (id: string, to: number) => {
+    if (!table) return;
+    const before = rowsBy[table.key] ?? [];
+    const from = before.findIndex(r => String(r.id) === id);
+    if (from < 0 || from === to) return;
+    const next = [...before];
+    next.splice(to, 0, ...next.splice(from, 1));
+    setRowsBy(m => ({ ...m, [table.key]: next }));
+    const r = await safe(repoEdit({ op: 'move', table: table.key, id, toIndex: to }));
+    if (r.ok) say('Row moved');
+    else { setRowsBy(m => ({ ...m, [table.key]: before })); say(r.message ?? 'Not moved.', true); }
   };
   const structure = async (body: Record<string, unknown>, done: string) => {
     const r = await safe(repoStructure(body));
@@ -397,6 +419,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
             <Grid table={table} rows={rows} filter={filter} can={can} docs={docs} editing={editing} openId={openId}
                   setEditing={setEditing} setPop={setPop} onOpen={setOpenId} onSave={saveCell} onCreate={createRow}
                   onReorder={(key, to) => void structure({ op: 'columns.reorder', table: table.key, columnKey: key, toIndex: to }, 'Column moved')}
+                  view={views[table.key]} onView={v => setView(table.key, v)} onMoveRow={(id, to) => void moveRow(id, to)}
                   say={say} />
             {openRow && (
               <RecordPanel key={openId!} table={table} row={openRow} can={can} docs={docs} setPop={setPop}
@@ -442,7 +465,8 @@ export function Repository({ canReveal, canEdit, canStructure }: {
       )}
       {pop && table && pop.kind === 'colmenu' && (
         <Popover anchor={pop.rect} onClose={() => setPop(null)} width={300}>
-          <ColumnMenu table={table} col={pop.col} run={structure} />
+          <ColumnMenu table={table} col={pop.col} run={structure} canStructure={can.structure} rows={rows ?? []}
+                      view={views[table.key]} onView={v => setView(table.key, v)} close={() => setPop(null)} />
         </Popover>
       )}
       {pop && table && pop.kind === 'addcol' && (
@@ -475,11 +499,12 @@ export function Repository({ canReveal, canEdit, canStructure }: {
 
 /* ── the grid ─────────────────────────────────────────────────────── */
 
-function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, setPop, onOpen, onSave, onCreate, onReorder, say }: {
+function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, setPop, onOpen, onSave, onCreate, onReorder, view, onView, onMoveRow, say }: {
   table: RepoTable; rows: RepoRow[] | undefined; filter: string; can: Can; docs: Record<string, DocEntry>;
   editing: string | null; openId: string | null; setEditing: (k: string | null) => void; setPop: (p: Pop) => void;
   onOpen: (id: string) => void; onSave: (row: RepoRow, col: RepoColumn, v: unknown) => Promise<void>;
   onCreate: (values: Record<string, unknown>) => Promise<void>; onReorder: (key: string, to: number) => void;
+  view: RepoView | undefined; onView: (v: RepoView) => void; onMoveRow: (id: string, to: number) => void;
   say: (m: string, bad?: boolean) => void;
 }) {
   const cols = userColumns(table);
@@ -491,10 +516,17 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
   const [fill, setFill] = useState<{ key: string; from: number; to: number } | null>(null);
   const [dragCol, setDragCol] = useState<string | null>(null);
   const [dropCol, setDropCol] = useState<string | null>(null);
+  const [dragRow, setDragRow] = useState<string | null>(null);
+  const [dropRow, setDropRow] = useState<number | null>(null);
   const shown = useMemo(() => {
     const n = filter.trim().toLowerCase();
-    return !n ? rows ?? [] : (rows ?? []).filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(n)));
-  }, [rows, filter]);
+    return applyView(!n ? rows ?? [] : (rows ?? []).filter(r => Object.values(r).some(v => String(v).toLowerCase().includes(n))), view);
+  }, [rows, filter, view]);
+  // A dragged row lands at an index of the table's own order, so only when nothing is sorted or hidden.
+  const viewing = viewActive(view);
+  const dragRows = can.edit && !filter.trim() && !viewing;
+  const dragFrom = dragRow ? shown.findIndex(r => String(r.id) === dragRow) : -1;
+  const titleOf = (k: string) => cols.find(c => c.key === k)?.title ?? k;
 
   const phone = usePhone();
 
@@ -526,8 +558,7 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
         {shown.map(r => (
           <li key={String(r.id)}>
             <button className="rb-phone-row" onClick={() => onOpen(String(r.id))}>
-              <b>{text(r[primary]) || String(r.id)}</b>
-              <span className="rb-hint">{String(r.id)}</span>
+              <b>{text(r[primary]) || '(no name)'}</b>
               <span className="rb-phone-go" aria-hidden="true">›</span>
             </button>
           </li>
@@ -539,6 +570,18 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
 
   return (
     <div className="rb-board">
+      {viewing && view && (
+        <div className="rb-viewbar">
+          {view.sort && <span className="rb-viewchip">Sorted: {titleOf(view.sort.key)} {view.sort.dir > 0 ? 'A → Z' : 'Z → A'}
+            <button className="rb-icon" title="Remove the sort" onClick={() => onView({ ...view, sort: undefined })}>✕</button></span>}
+          {Object.entries(view.filters).filter(([, vs]) => vs.length).map(([k, vs]) => (
+            <span key={k} className="rb-viewchip"><Icon n="filter" /> {titleOf(k)}: {vs.join(', ')}
+              <button className="rb-icon" title="Remove this filter" onClick={() => onView({ ...view, filters: { ...view.filters, [k]: [] } })}>✕</button></span>
+          ))}
+          <span className="rb-hint">{shown.length} of {rows.length} rows · clear to drag rows</span>
+          <button className="secondary small" onClick={() => onView({ filters: {} })}>Clear all</button>
+        </div>
+      )}
       <table className="rb-grid">
         <thead>
           {runs.some(r => r.section) && (
@@ -555,7 +598,7 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
             </tr>
           )}
           <tr>
-            <th className="rb-sticky rb-idcol">ID</th>
+            <th className="rb-sticky rb-idcol" aria-label="Record" />
             {slots.map(c => 'stub' in c
               ? <th key={c.stub} className="rb-stub" onClick={() => toggle(c.stub)}>{c.cols.length} columns</th>
               : (
@@ -571,8 +614,10 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
                   {synced && isSynced(c.key) && (AUTO_SYNC.has(c.key)
                     ? <span className="rb-sync" title="Wi-Fi: cleaners get Hostaway's on every sync; compare it here in ⇄ Check against Hostaway">⇄ sync</span>
                     : <span className="rb-sync" title="Never automatic: copied from or sent to Hostaway only with a button in ⇄ Check against Hostaway, after a before → after">⇄ button</span>)}
-                  {can.structure && <button className="rb-th-menu" title="Column options"
-                    onClick={e => setPop({ kind: 'colmenu', rect: e.currentTarget.getBoundingClientRect(), col: c })}>▾</button>}
+                  {view?.sort?.key === c.key && <span className="rb-th-mark" title={`Sorted ${view.sort.dir > 0 ? 'A → Z' : 'Z → A'}`}>{view.sort.dir > 0 ? '↑' : '↓'}</span>}
+                  {!!view?.filters[c.key]?.length && <span className="rb-th-mark" title="Filtered"><Icon n="filter" /></span>}
+                  <button className="rb-th-menu" title={can.structure ? 'Sort, filter and column options' : 'Sort and filter'}
+                    onClick={e => setPop({ kind: 'colmenu', rect: e.currentTarget.getBoundingClientRect(), col: c })}>▾</button>
                 </span>
               </th>
             ))}
@@ -586,8 +631,15 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
           {shown.map((row, i) => {
             const id = String(row.id);
             return (
-              <tr key={id} className={openId === id ? 'rb-open' : undefined}>
-                <td className="rb-sticky rb-idcol"><button className="rb-idlink" onClick={() => onOpen(id)} title="Open the record">{id}</button></td>
+              <tr key={id} className={[openId === id ? 'rb-open' : '', dropRow === i ? (i < dragFrom ? 'rb-droprow-up' : 'rb-droprow-down') : ''].join(' ')}
+                  onDragOver={e => { if (dragRow && dragRow !== id) { e.preventDefault(); setDropRow(i); } }}
+                  onDrop={() => { if (dragRow) onMoveRow(dragRow, i); setDragRow(null); setDropRow(null); }}>
+                <td className="rb-sticky rb-idcol">
+                  {dragRows && <span className="rb-grip" draggable title="Drag to move this row"
+                    onDragStart={e => { e.dataTransfer.setData('text/plain', id); setDragRow(id); }}
+                    onDragEnd={() => { setDragRow(null); setDropRow(null); }}>⠿</span>}
+                  <button className="rb-details" onClick={() => onOpen(id)} title="Open every field of this record">All details</button>
+                </td>
                 {slots.map(c => 'stub' in c
                   ? <Stub key={c.stub} group={c.stub} cols={c.cols} row={row} order={order} toggle={toggle} setPop={setPop} />
                   : (
@@ -598,12 +650,13 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
                         onFillStart={() => setFill({ key: c.key, from: i, to: i })}
                         onFillOver={() => setFill(f => f && f.key === c.key ? { ...f, to: i } : f)} />
                 ))}
-                <td className="rb-rowend"><button className="rb-open-btn" title="Open the record" onClick={() => onOpen(id)}>›</button></td>
+                <td className="rb-rowend" />
               </tr>
             );
           })}
           {filter && !shown.length && <tr><td className="rb-empty" colSpan={slots.length + 2}>Nothing in {table.title} matches “{filter}” — use “Search all tables” above.</td></tr>}
-          {can.edit && !filter && <GhostRow cols={slots} primary={primary} setPop={setPop} onCreate={onCreate} />}
+          {!filter && viewing && !shown.length && <tr><td className="rb-empty" colSpan={slots.length + 2}>No row passes the filters — “Clear all” above.</td></tr>}
+          {can.edit && !filter && !viewing && <GhostRow cols={slots} primary={primary} setPop={setPop} onCreate={onCreate} />}
         </tbody>
       </table>
       {!rows.length && !can.edit && <p className="rb-empty">No records yet.</p>}
@@ -767,7 +820,7 @@ function ComposedEditor({ table, row, base, focus, can, onClose, onSave, onAddPa
     <div className="rb-modal-back" onMouseDown={e => { if (e.target === e.currentTarget) close(); }}>
       <div className="rb-modal" role="dialog" aria-label={title(base)}>
         <div className="rb-modal-head">
-          <b>{title(base)}</b><span className="rb-hint">{text(row.name)} · {String(row.id)}</span><span className="rb-spacer" />
+          <b>{title(base)}</b><span className="rb-hint">{text(row.name)}</span><span className="rb-spacer" />
           <button className={`chip ${view === 'edit' ? 'active' : ''}`} onClick={() => setView('edit')}>Parts</button>
           <button className={`chip ${view === 'whole' ? 'active' : ''}`} onClick={() => setView('whole')}>Whole text</button>
           <button className="rb-icon" title="Close" onClick={close}>×</button>
@@ -812,6 +865,7 @@ function ComposedEditor({ table, row, base, focus, can, onClose, onSave, onAddPa
 type Slot = RepoColumn | { stub: string; cols: RepoColumn[] };
 interface Run { group: string; section: boolean; cols: RepoColumn[] }
 const UNFOLDED = 'kaizen.repo.unfolded';
+const VIEWS = 'kaizen.repo.views';
 
 /** The columns in their runs by group, and what shows: a folded section is one stub column. Unfolded ones are remembered per browser. */
 function useSections(table: RepoTable, cols: RepoColumn[]) {
@@ -977,7 +1031,7 @@ function DocsBox({ table, row, col, entry, can, say, onChanged, bare = false }: 
   }
   return (
     <div>
-      {!bare && <div className="rb-pop-title">{col.title} <span className="rb-hint">· {String(row.id)}</span><span className="rb-spacer" />
+      {!bare && <div className="rb-pop-title">{col.title} <span className="rb-hint">· {text(row[primaryKey(table)])}</span><span className="rb-spacer" />
         {entry?.folderUrl && <a href={entry.folderUrl} target="_blank" rel="noreferrer">Drive folder ↗</a>}</div>}
       <div className="rb-files">
         {!entry && <div className="rb-hint loading-dot">Listing files</div>}
@@ -1029,10 +1083,20 @@ function DocsBox({ table, row, col, entry, can, say, onChanged, bare = false }: 
 }
 
 /** Each column's own menu: the whole structure edit, without leaving the grid. */
-function ColumnMenu({ table, col, run }: {
+function ColumnMenu({ table, col, run, canStructure, rows, view: look, onView, close }: {
   table: RepoTable; col: RepoColumn; run: (body: Record<string, unknown>, done: string) => Promise<boolean>;
+  canStructure: boolean; rows: RepoRow[]; view: RepoView | undefined; onView: (v: RepoView) => void; close: () => void;
 }) {
-  const [view, setView] = useState<'menu' | 'rename' | 'options' | 'type' | 'delete'>('menu');
+  const [view, setView] = useState<'menu' | 'filter' | 'rename' | 'options' | 'type' | 'delete'>('menu');
+  const current: RepoView = look ?? { filters: {} };
+  const picked = current.filters[col.key] ?? [];
+  // Passwords are masked and files are lists: neither sorts nor filters by what it shows.
+  const viewable = !['secret', 'doc'].includes(col.type);
+  const values = useMemo(() => [...new Set(rows.map(r => viewValue(r[col.key])))]
+    .sort((a, b) => a === BLANK ? 1 : b === BLANK ? -1 : a.localeCompare(b, undefined, { numeric: true })), [rows, col.key]);
+  const sortBy = (dir: 1 | -1) => { onView({ ...current, sort: { key: col.key, dir } }); close(); };
+  const pick = (v: string) => onView({ ...current, filters: { ...current.filters,
+    [col.key]: picked.includes(v) ? picked.filter(x => x !== v) : [...picked, v] } });
   const [title, setTitle] = useState(col.title);
   const [opts, setOpts] = useState((col.options ?? []).join('\n'));
   const [type, setType] = useState(col.type);
@@ -1041,6 +1105,19 @@ function ColumnMenu({ table, col, run }: {
   const base = { table: table.key, columnKey: col.key };
   const list = (s: string) => s.split('\n').map(x => x.trim()).filter(Boolean);
 
+  if (view === 'filter') return (
+    <div>
+      <div className="rb-pop-title">Show only · {col.title}</div>
+      <div className="rb-filterlist">
+        {values.map(v => (
+          <label key={v} className="rb-filteropt"><input type="checkbox" checked={picked.includes(v)} onChange={() => pick(v)} /> {v}</label>
+        ))}
+      </div>
+      <div className="rb-pop-actions"><span className="rb-hint">{picked.length ? `${picked.length} chosen` : 'None chosen = all rows'}</span><span className="rb-spacer" />
+        <button className="secondary small" disabled={!picked.length} onClick={() => onView({ ...current, filters: { ...current.filters, [col.key]: [] } })}>Show all</button>
+        <button className="small" onClick={close}>Done</button></div>
+    </div>
+  );
   if (view === 'rename') return (
     <form onSubmit={e => { e.preventDefault(); if (title.trim() && title !== col.title) void run({ op: 'columns.update', ...base, changes: { title } }, 'Renamed'); }}>
       <div className="rb-pop-title">Rename column</div>
@@ -1084,13 +1161,22 @@ function ColumnMenu({ table, col, run }: {
   return (
     <div className="rb-menu">
       <div className="rb-pop-title">{col.title} <span className="rb-hint">· {TYPE_LABEL[col.type] ?? col.type}</span></div>
-      <button onClick={() => setView('rename')}>✎ Rename</button>
-      {col.type === 'select' && <button onClick={() => setView('options')}><Icon n="menu" /> Edit options</button>}
-      <button onClick={() => setView('type')}>⇆ Change type</button>
-      <button disabled={at <= 0} onClick={() => void run({ op: 'columns.move', ...base, direction: 'left' }, 'Moved')}>← Move left</button>
-      <button disabled={at >= cols.length - 1} onClick={() => void run({ op: 'columns.move', ...base, direction: 'right' }, 'Moved')}>→ Move right</button>
-      <button className="danger" onClick={() => setView('delete')}>✕ Delete column…</button>
-      <p className="rb-note">Tip: drag a column's header to move it further.</p>
+      {viewable && <>
+        <button onClick={() => sortBy(1)}>↑ Sort A → Z</button>
+        <button onClick={() => sortBy(-1)}>↓ Sort Z → A</button>
+        {current.sort?.key === col.key && <button onClick={() => { onView({ ...current, sort: undefined }); close(); }}>✕ Remove sort</button>}
+        <button onClick={() => setView('filter')}><Icon n="filter" /> Filter{picked.length ? ` · ${picked.length} chosen` : '…'}</button>
+      </>}
+      {canStructure && <>
+        <hr className="rb-menu-sep" />
+        <button onClick={() => setView('rename')}>✎ Rename</button>
+        {col.type === 'select' && <button onClick={() => setView('options')}><Icon n="menu" /> Edit options</button>}
+        <button onClick={() => setView('type')}>⇆ Change type</button>
+        <button disabled={at <= 0} onClick={() => void run({ op: 'columns.move', ...base, direction: 'left' }, 'Moved')}>← Move left</button>
+        <button disabled={at >= cols.length - 1} onClick={() => void run({ op: 'columns.move', ...base, direction: 'right' }, 'Moved')}>→ Move right</button>
+        <button className="danger" onClick={() => setView('delete')}>✕ Delete column…</button>
+      </>}
+      <p className="rb-note">Sort and filter are yours only (this browser). Drag a column's header, or a row by its ⠿, to move it for everyone.</p>
     </div>
   );
 }
@@ -1341,11 +1427,11 @@ function RecordPanel({ table, row, can, docs, setPop, onClose, onSave, onDocs, o
   const stamp = (k: string) => text(row[k]);
 
   return (
-    <aside className="rb-panel" aria-label={`Record ${id}`}>
+    <aside className="rb-panel" aria-label={`Record ${text(row[primary]) || id}`}>
       <header className="rb-panel-head">
         <div>
-          <div className="rb-hint">{table.title} · {id}</div>
-          <h3>{text(row[primary]) || id}</h3>
+          <div className="rb-hint">{table.title}</div>
+          <h3>{text(row[primary]) || '(no name)'}</h3>
         </div>
         <span className="rb-spacer" />
         {stamp('folder') && <a className="secondary small rb-btnlink" href={stamp('folder')} target="_blank" rel="noreferrer">Folder ↗</a>}
@@ -1380,7 +1466,7 @@ function RecordPanel({ table, row, can, docs, setPop, onClose, onSave, onDocs, o
       {can.edit && (
         <footer className="rb-panel-foot">
           {!confirm ? <button className="link danger" onClick={() => setConfirm(true)}>Delete record…</button>
-            : <Confirm title={`Delete ${id}?`} action="Delete record" onCancel={() => setConfirm(false)} onConfirm={() => void remove()}
+            : <Confirm title={`Delete ${text(row[primary]) || 'this record'}?`} action="Delete record" onCancel={() => setConfirm(false)} onConfirm={() => void remove()}
                 message="The record leaves every view. It is archived, not erased, and its Drive folder stays where it is." />}
         </footer>
       )}
@@ -1465,7 +1551,7 @@ function SearchResults({ hits, tables, onOpen }: {
             {h.rows.map(r => (
               <button key={String(r.id)} className="rb-hit" onClick={() => onOpen(h.table, String(r.id))}>
                 <b>{text(r[p]) || String(r.id)}</b>
-                <span className="rb-hint">{String(r.id)} · {Object.entries(r).filter(([k, v]) => k !== p && String(v).toLowerCase().includes(hits.q.toLowerCase())).map(([k]) => t.columns.find(c => c.key === k)?.title ?? k).slice(0, 3).join(', ')}</span>
+                <span className="rb-hint">{Object.entries(r).filter(([k, v]) => k !== p && String(v).toLowerCase().includes(hits.q.toLowerCase())).map(([k]) => t.columns.find(c => c.key === k)?.title ?? k).slice(0, 3).join(', ')}</span>
               </button>
             ))}
           </div>

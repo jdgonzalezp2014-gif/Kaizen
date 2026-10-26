@@ -109,3 +109,30 @@ export function matches(values: Record<string, unknown>, needle: string, secretK
   if (!n) return true;
   return Object.entries(values).some(([k, v]) => !secretKeys.has(k) && String(v ?? '').toLowerCase().includes(n));
 }
+
+/** How one person looks at a table: a sort and per-column value filters. Kept per browser, never data. */
+export type RepoView = { sort?: { key: string; dir: 1 | -1 }; filters: Record<string, string[]> };
+/** The filter value of a blank cell, so "only the empty ones" can be asked for. */
+export const BLANK = '(blank)';
+
+const cellText = (v: unknown) => v == null || v === false ? '' : String(v).trim();
+export const viewValue = (v: unknown) => cellText(v) || BLANK;
+
+/** Rows kept by every column filter, then sorted; blanks always last, numbers as numbers ("2" before "10"). */
+export function applyView<R extends Record<string, unknown>>(rows: R[], view: RepoView | undefined): R[] {
+  if (!view) return rows;
+  const filters = Object.entries(view.filters).filter(([, vs]) => vs.length);
+  let out = filters.length ? rows.filter(r => filters.every(([k, vs]) => vs.includes(viewValue(r[k])))) : rows;
+  const s = view.sort;
+  if (s) {
+    out = [...out].sort((a, b) => {
+      const x = cellText(a[s.key]), y = cellText(b[s.key]);
+      if (!x || !y) return !x && !y ? 0 : !x ? 1 : -1;
+      return s.dir * x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }
+  return out;
+}
+
+/** True when the view changes what shows or its order — rows can only be dragged in the table's own order. */
+export const viewActive = (view: RepoView | undefined) => !!view && (!!view.sort || Object.values(view.filters).some(v => v.length));

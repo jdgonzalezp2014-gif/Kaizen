@@ -4,6 +4,7 @@
  *   { op: 'create', table, values }
  *   { op: 'update', table, id, values }        only the fields that changed
  *   { op: 'delete', table, id }                archived: out of every view, never erased
+ *   { op: 'move', table, id, toIndex }         the row's place among the live rows (drag in the grid)
  *   { op: 'docs.link', table, id, column, name, url }   a Drive file or any https link
  *   { op: 'docs.create', table, id, column, name?, kind: 'doc' | 'sheet' }   a new Google file, in place
  *   { op: 'docs.rename', fileId, name }        renamed in Drive too, when it is a Drive file
@@ -27,7 +28,7 @@ import { KEY, audit, docFolder, getRow, tableCols } from '../_lib/repo-store.ts'
 import { DriveError, createGoogleFile, driveToken, renameFile, trashFile } from '../_lib/gdrive.ts';
 import { coerce, formatId, validate, type RepoCol } from '../../src/lib/repo.ts';
 
-const OPS = new Set(['create', 'update', 'delete', 'docs.link', 'docs.create', 'docs.rename', 'docs.delete']);
+const OPS = new Set(['create', 'update', 'delete', 'move', 'docs.link', 'docs.create', 'docs.rename', 'docs.delete']);
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const who = identify(request, env);
@@ -75,6 +76,25 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
                            RETURNING id`;
       if (!r.length) return fail(404, 'No such record.');
       await audit(sql, who.email, op, table, id, 'archived');
+      return Response.json({ ok: true, data: { id } });
+    }
+
+    if (op === 'move') {
+      // Rows are renumbered whole, as columns are: positions stay 1..n with no ties left from imports.
+      const order = (await sql`SELECT id FROM repo_records WHERE account_id = 1 AND table_key = ${table} AND archived_at IS NULL
+                                ORDER BY position, seq` as { id: string }[]).map(r => r.id);
+      const from = order.indexOf(id);
+      if (from < 0) return fail(404, 'No such record.');
+      let to = Number(b.toIndex);
+      if (!Number.isInteger(to)) return fail(400, 'Where to?');
+      to = Math.max(0, Math.min(order.length - 1, to));
+      if (to === from) return Response.json({ ok: true, data: { id } });
+      order.splice(from, 1);
+      order.splice(to, 0, id);
+      await sql`UPDATE repo_records r SET position = o.n
+                  FROM unnest(${order}::text[]) WITH ORDINALITY AS o(id, n)
+                 WHERE r.account_id = 1 AND r.table_key = ${table} AND r.id = o.id`;
+      await audit(sql, who.email, op, table, id, `→ row ${to + 1}`);
       return Response.json({ ok: true, data: { id } });
     }
 

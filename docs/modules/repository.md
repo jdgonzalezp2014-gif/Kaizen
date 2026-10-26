@@ -46,6 +46,12 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   (highlighted when nothing here matches). Enter still works but is no longer the way in.
 - SOP id 9 "Find, update and archive in the Data Repository" (screen `repository`).
 
+- **Grid (2026-10-26):** the ID is internal — the leading column is **All details** (opens the record) and a
+  ⠿ grip that drags the row (`repository-edit` op `move`, renumbers `position` 1..n, audited). Each column's ▾
+  (everyone) has Sort A→Z/Z→A and Filter… by value (`(blank)` = empty); structure items below it for
+  `repository.structure`. Sort/filters are per browser (`localStorage kaizen.repo.views`, `applyView` in
+  `src/lib/repo.ts`); while one is on, rows cannot be dragged and the ghost row hides. Units tables: **Active**
+  (Active / Inactive, after Name, migration 101) and **Contract** (Lease / Management, 100). SOP 9 v2.
 - **Property type** (§138): select House / Apartment in the three Units tables (Houses, Cortland_Legacy,
   The Links), after Type (bedrooms). The inspection checklist reads it to decide house-only and apartment-only
   items — fill it for a new unit.

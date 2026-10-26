@@ -1089,16 +1089,27 @@ table.rb-grid { border-collapse: separate; border-spacing: 0; width: max-content
 /* The record's identity stays in view while 38 columns scroll past. */
 .rb-grid .rb-sticky { position: sticky; background: var(--card); z-index: 2; }
 .rb-grid thead .rb-sticky { z-index: 4; }
-.rb-grid .rb-idcol { left: 0; width: 86px; min-width: 86px; max-width: 86px; }
-.rb-grid .rb-primary { left: 86px; font-weight: 600; box-shadow: 1px 0 0 var(--line); min-width: 120px; }
-.rb-idlink { background: none; border: 0; padding: 0; color: var(--muted); font-size: var(--fs-caption); cursor: pointer;
-  font-variant-numeric: tabular-nums; }
-.rb-idlink:hover { color: var(--series-1); text-decoration: underline; }
+.rb-grid .rb-idcol { left: 0; width: 96px; min-width: 96px; max-width: 96px; }
+.rb-grid .rb-primary { left: 96px; font-weight: 600; box-shadow: 1px 0 0 var(--line); min-width: 120px; }
+.rb-details { background: none; border: 0; padding: 0; color: var(--muted); font-size: var(--fs-caption); cursor: pointer; white-space: nowrap; }
+.rb-details:hover { color: var(--series-1); text-decoration: underline; }
+/* Rows move by a grip, not by the whole row: a drag that starts on a cell must still select or fill. */
+.rb-grip { cursor: grab; color: var(--muted); padding: 0 6px 0 0; user-select: none; }
+.rb-grip:hover { color: var(--ink); }
+.rb-grid tr.rb-droprow-up td { box-shadow: inset 0 2px 0 var(--series-1); }
+.rb-grid tr.rb-droprow-down td { box-shadow: inset 0 -2px 0 var(--series-1); }
+.rb-th-mark { color: var(--series-1); font-size: var(--fs-caption); }
+.rb-viewbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+.rb-viewchip { display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: var(--r-pill);
+  padding: 2px 4px 2px 10px; font-size: var(--fs-footnote); }
+.rb-filterlist { max-height: 260px; overflow: auto; display: grid; gap: 2px; margin: 6px 0; }
+.rb-filteropt { display: flex; gap: 8px; align-items: center; padding: 4px 6px; border-radius: var(--r-xs); cursor: pointer; }
+.rb-filteropt:hover { background: var(--tint); }
+.rb-filteropt input { width: auto; margin: 0; }
+.rb-menu-sep { border: 0; border-top: 1px solid var(--line); margin: 6px 0; }
 .rb-grid tbody tr:hover td, .rb-grid tbody tr:hover .rb-sticky { background: var(--tint); }
 .rb-grid tbody tr.rb-open td { background: color-mix(in srgb, var(--series-1) 7%, var(--card)); }
 .rb-rowend { width: 36px; text-align: right; }
-.rb-open-btn { background: none; border: 0; color: var(--muted); font-size: var(--fs-title3); cursor: pointer; padding: 2px 6px; border-radius: var(--r-xs); }
-.rb-open-btn:hover { background: var(--tint); color: var(--ink); }
 
 /* a cell that can be edited says so on hover — pointer, not a text caret */
 .rb-editable { cursor: pointer; }

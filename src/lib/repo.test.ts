@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { coerce, formatId, idNumber, matches, slug, validate, type RepoCol } from './repo.ts';
+import { applyView, BLANK, coerce, formatId, idNumber, matches, slug, validate, viewActive, type RepoCol } from './repo.ts';
 
 const col = (over: Partial<RepoCol>): RepoCol => ({
   key: 'k', title: 'K', type: 'text', required: false, uniq: false, options: null, refTable: null, refColumn: null, ...over
@@ -48,4 +48,14 @@ test('a secret is never validated against its value, and never searched', () => 
   assert.deepEqual(validate([col({ key: 'pw', title: 'Password', type: 'secret' })], { pw: 'x' }, [{ pw: 'x' }]), []);
   assert.equal(matches({ name: 'Hostaway', pw: 'hunter2' }, 'hunter', new Set(['pw'])), false);
   assert.equal(matches({ name: 'Hostaway', pw: 'hunter2' }, 'host', new Set(['pw'])), true);
+});
+
+test('a view filters by column values and sorts with blanks last', () => {
+  const rows = [{ n: 'CL-10', a: 'Active' }, { n: 'CL-2', a: 'Inactive' }, { n: '', a: 'Active' }, { n: 'Amber', a: '' }];
+  assert.deepEqual(applyView(rows, { sort: { key: 'n', dir: 1 }, filters: {} }).map(r => r.n), ['Amber', 'CL-2', 'CL-10', '']);
+  assert.deepEqual(applyView(rows, { sort: { key: 'n', dir: -1 }, filters: {} }).map(r => r.n), ['CL-10', 'CL-2', 'Amber', '']);
+  assert.deepEqual(applyView(rows, { filters: { a: ['Active'] } }).map(r => r.n), ['CL-10', '']);
+  assert.deepEqual(applyView(rows, { filters: { a: [BLANK] } }).map(r => r.n), ['Amber']);
+  assert.equal(viewActive({ filters: { a: [] } }), false);
+  assert.equal(viewActive({ sort: { key: 'n', dir: 1 }, filters: {} }), true);
 });
