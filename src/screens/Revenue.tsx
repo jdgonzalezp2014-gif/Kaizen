@@ -14,6 +14,7 @@ import { Loading } from '../components/Loading.tsx';
 import { rememberTiming, recallTiming } from '../lib/progress.ts';
 import { ClaimsMoney } from './Claims.tsx';
 import type { IncomeRow } from '../lib/finance.ts';
+import { useUrlState } from '../components/useUrlState.ts';
 
 interface Portfolio {
   meta: { targets: { perUnitNet: number; activeUnits: number; portfolioNet: number; basis: string };
@@ -32,6 +33,7 @@ const money = fmtMoney;
 /** §162: Revenue, and — for Finance — the claims and upsells as money, beside it. */
 export function Revenue({ canClaims = false }: { canClaims?: boolean }) {
   const [sub, setSub] = useState<'profit' | 'claims'>('profit');
+  useUrlState('view', sub, setSub, { def: 'profit', valid: v => v === 'profit' || v === 'claims' });
   return <>
     {canClaims && (
       <div className="row-controls">

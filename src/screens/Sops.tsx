@@ -12,6 +12,7 @@ import { sopAction } from '../api.ts';
 import { blankSop, SopEditor, SopRow, SopView, useSops } from '../components/Sops.tsx';
 import { coverage, keysUnder, matchesSearch, reviewOverdue, sectionPath, sectionTree, type Sop } from '../lib/sops.ts';
 import { todayIn } from '../lib/dates.ts';
+import { useUrlState } from '../components/useUrlState.ts';
 
 const ALL = '*';
 
@@ -26,6 +27,9 @@ export function Sops({ focus, onFocused }: { focus?: string; onFocused?: () => v
   const [secEdit, setSecEdit] = useState<{ key?: string; label: string; description: string; parentKey?: string } | null>(null);
   const [secErr, setSecErr] = useState('');
   const [onlyDue, setOnlyDue] = useState(false);
+  // ?section= is a step in history; the open SOP only rewrites the address (?sop=, as Slack's links) — useUrlState.ts.
+  useUrlState('section', section, setSection, { def: ALL });
+  useUrlState('sop', openId, setOpenId, { replace: true });
 
   // Arriving from a screen's SOP panel, at one SOP.
   useEffect(() => { if (focus) { setOpenId(focus); onFocused?.(); } }, [focus]);

@@ -26,6 +26,14 @@ Hostaway client, sync, crypto, migrations.
 
 ## Rules that bite
 
+- **Links follow the screen (2026-10-26, `src/components/useUrlState.ts`):** the query says the tab and its
+  sections — `?tab=` (App `go`/`goOps`, whole query replaced on a new tab), Operations `view` + Setup `section`,
+  To-do `list` (+ `todo`/`claim`), Costs/Revenue `view`, SOPs `section` (+ `sop`), Repository `table`
+  (+ `repo=<table>/<id>`), cleaner/handyman pages `sec`. Sections push a history step (back/forward work);
+  an open record only replaces (copyable, back leaves the section). Defaults are left out of the address.
+  Old links (`?tab=` `?sop=` `?todo=` `?claim=` `?repo=` `#crew/` `?drive=` `?report=`) still land, now
+  rewritten to the canonical form instead of stripped. Path and hash are never touched. Filters, search,
+  pop-ups and Home's card are not in the address on purpose.
 - Two gates: Access decides who reaches the app; `allowed_emails` decides who is ours.
   Exception (§122): an address on the cleaners roster gets role `cleaner` (only its own crew page),
   checked in accessOf BEFORE "no member row = admin", and skips the allow-list.

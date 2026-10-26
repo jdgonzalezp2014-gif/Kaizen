@@ -1,3 +1,4 @@
+import { setParams } from '../components/useUrlState.ts';
 import { useEffect, useRef, useState } from 'react';
 import { Hint } from '../components/Hint.tsx';
 import {
@@ -543,7 +544,7 @@ function DrivePanel() {
   useEffect(() => {
     void load();
     // The word from Google is shown once; a reload must not repeat it.
-    if (location.search.includes('drive=')) history.replaceState(null, '', location.pathname + location.hash);
+    if (location.search.includes('drive=')) setParams({ drive: null }, { replace: true });
   }, []);
 
   const run = async (body: Record<string, unknown>, done: string) => {

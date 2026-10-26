@@ -36,6 +36,7 @@ import { ThemeToggle } from '../components/ThemeToggle.tsx';
 import { AccessBox } from '../components/AccessBox.tsx';
 import type { Cleaner } from '../lib/operations.ts';
 import { Icon, ic } from '../components/Icon.tsx';
+import { useUrlState } from '../components/useUrlState.ts';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -338,6 +339,8 @@ function CrewView({ page, mode, canEdit = false, onPeriod, onRange, reload, act,
     ? { report, shareLink, photo, supplies: page.supplies, today: page.today, extraFrom: page.extraFrom, reload } : undefined;
   const aheadKeys = new Set(page.upcoming.rows.map(r => r.key));
   const [sec, setSec] = useState<'up' | 'today' | 'past' | 'future' | 'pay' | 'help'>('up');
+  // The phone's back gesture steps back through the sections instead of leaving the page (useUrlState.ts).
+  useUrlState('sec', sec, setSec, { def: 'up', valid: v => ['up', 'today', 'past', 'future', 'pay', 'help'].includes(v) });
 
   const cleansList = (noExtraFor: Set<string>, fieldCtx?: FieldCtx) => (
     <div className="card no-print">

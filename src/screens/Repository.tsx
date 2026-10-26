@@ -31,6 +31,7 @@ import {
 } from '../api.ts';
 import { proposeColumns, readBoard, type Board, type ProposedColumn } from '../lib/repo-import.ts';
 import { applyView, BLANK, coerce, viewActive, viewValue, type ColumnType, type RepoView } from '../lib/repo.ts';
+import { setParams, useUrlState } from '../components/useUrlState.ts';
 import { usePhone } from '../components/usePhone.ts';
 import { HostawayCheck } from '../components/HostawayCheck.tsx';
 import { COMPOSED, UNIT_TABLES, composeParts, composeText, isSynced, partKeys, partOf } from '../lib/repo-checks.ts';
@@ -222,13 +223,20 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   }, [say]);
 
   useEffect(() => { void loadMeta(); }, [loadMeta]);
+  // ?table= is a step in history (the first table only settles in); the open record only rewrites the
+  // address as ?repo=<table>/<id>, the form the Inventory map already links to (useUrlState.ts).
+  useUrlState('table', tableKey, setTableKey);
+  useEffect(() => {
+    if (wanted.current) return; // a ?repo= link still waiting for its rows
+    setParams({ repo: tableKey && openId ? `${tableKey}/${openId}` : null }, { replace: true });
+  }, [tableKey, openId]);
   useEffect(() => { if (tableKey) { setOpenId(null); void loadRows(tableKey, !!rowsBy[tableKey]); } }, [tableKey]);
   useEffect(() => {
     const w = wanted.current;
     if (!w || w.table !== tableKey || !rows) return;
     wanted.current = null;
-    history.replaceState(null, '', location.pathname);
     if (rows.some(r => String(r.id) === w.id)) setOpenId(w.id);
+    else setParams({ repo: null }, { replace: true });
   }, [tableKey, rows]);
 
   // Files for every visible row: one call per document column, as the

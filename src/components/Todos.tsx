@@ -41,6 +41,7 @@ import { changedKeys, merge3, resolve, type Merge } from '../lib/merge.ts';
 import { Icon, ic } from './Icon.tsx';
 import { hostawayReservationUrl } from '../lib/operations.ts';
 import { SlackMark } from './ChannelMark.tsx';
+import { setParams, useUrlState } from './useUrlState.ts';
 
 /**
  * What a to-do or claim is about, beside its title (owner, 2026-10-15): a light grey ! whose hover is the
@@ -189,6 +190,10 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   // owner, Oct 2026: Home shows one kind at a time, and inside it the buckets folded but the first.
   const [tab, setTab] = useState('task');
   const [bucketOpen, setBucketOpen] = useState<Record<string, boolean>>({});
+  // Operations → To-do only (not Home's card): ?list=<kind> is a step in history; the open task or claim only
+  // rewrites the address (?todo= / ?claim=, the same keys Slack's links use) so it can be copied (useUrlState.ts).
+  useUrlState('list', tab, setTab, { def: 'task', on: doneLog });
+  useEffect(() => { if (doneLog) setParams({ todo: open, claim: openClaim }, { replace: true }); }, [doneLog, open, openClaim]);
   const openAt = useRef<{ id: string; b: Bucket } | null>(null);
   // Open claims sit in the list as cases (§77), above the work — not inside a claim.
   const showClaims = canClaims && !claim;
@@ -264,14 +269,16 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   // §162: a link from Slack opens the item where it lives — its tab, its side panel (a claim: opened in its tab).
   // A closed one is not in an open list: it opens in the pop-up instead.
   useEffect(() => {
-    if (focus?.claim && claims.some(c => String(c.id) === focus.claim)) { setTab('claims'); setOpenClaim(focus.claim); return; }
+    // A link lands, it is not a step: the address takes the kind first, so the tab change is not pushed.
+    const land = (k: string) => { if (doneLog) setParams({ list: k === 'task' ? null : k }, { replace: true }); setTab(k); };
+    if (focus?.claim && claims.some(c => String(c.id) === focus.claim)) { land('claims'); setOpenClaim(focus.claim); return; }
     const t = focus?.todo ? todos?.find(x => x.id === focus.todo) : undefined;
     if (!t) return;
     if (isClosed(t.status)) { setPop({ todo: t.id }); return; }
     const p = t.parentId ? todos?.find(x => x.id === t.parentId) : undefined;
     const top = p && categoryOf(p, !!allOrders?.has(p.id)) === categoryOf(t, !!allOrders?.has(t.id)) ? p : t;
     const c = categoryOf(top, !!allOrders?.has(top.id));
-    setTab(c === 'order' ? 'orders' : c); setOpen(top.id);
+    land(c === 'order' ? 'orders' : c); setOpen(top.id);
   }, [focus, todos === null, claims.length]);
   // §159: orders made from here this session (the order list is read by the screen above, once).
   const [madeOrders, setMadeOrders] = useState<Set<string>>(new Set());

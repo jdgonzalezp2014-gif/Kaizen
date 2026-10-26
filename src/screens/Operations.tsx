@@ -49,6 +49,7 @@ import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
 import { IconFlag, Peek } from '../components/Hint.tsx';
 import { Icon, ic } from '../components/Icon.tsx';
+import { setParams, useUrlState } from '../components/useUrlState.ts';
 import { FlagControl, LEVEL_LABEL, MANUAL_WORD, ManualCleanForm } from '../components/CleanControls.tsx';
 
 type View = 'board' | 'todos' | 'calendar' | 'crew' | 'vendors' | 'inspections' | 'inventory' | 'notes' | 'rates' | 'setup';
@@ -147,6 +148,11 @@ export function Operations({ permissions, initialView, nav, onView, focus }: {
   const [view, setView] = useState<View>(VIEWS.includes(initialView as View) ? initialView as View : 'board');
   const [setupSec, setSetupSec] = useState<SetupSection>('general');
   const openSetup = (sec: SetupSection) => { setSetupSec(sec); setView('setup'); };
+  // ?view=… and, in Setup, ?section=… — back / forward and shared links (useUrlState.ts).
+  useUrlState('view', view, setView, { def: 'board', valid: v => VIEWS.includes(v as View) });
+  useUrlState('section', view === 'setup' ? setupSec : null, setSetupSec, { valid: v => SETUP_SECTIONS.some(([k]) => k === v) });
+  // To-do's own keys leave with it — on the new step, after the view's push (same render: one step).
+  useEffect(() => { if (view !== 'todos') setParams({ list: null, todo: null, claim: null }, { replace: true }); }, [view]);
   const [workUnit, setWorkUnit] = useState<string | undefined>(undefined);
   useEffect(() => {
     const go = (e: Event) => { setWorkUnit((e as CustomEvent<string>).detail); setView('todos'); scrollTo(0, 0); };

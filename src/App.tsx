@@ -23,6 +23,7 @@ import { Icon } from './components/Icon.tsx';
 import { LiveBell } from './components/LiveBell.tsx';
 import { usePhone } from './components/usePhone.ts';
 import { ReportsDialog } from './components/Reports.tsx';
+import { param, setParams } from './components/useUrlState.ts';
 
 type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor';
 
@@ -144,7 +145,16 @@ function TeamApp() {
   const [opsView, setOpsView] = useState<string | undefined>(undefined);
   // §159: a click in the side bar on an Operations view — a counter, so the same view twice still navigates.
   const [opsNav, setOpsNav] = useState<{ v: string; n: number } | undefined>(undefined);
-  const goOps = (v: string) => { setOpsView(v); setOpsNav({ v, n: Date.now() }); setTab('operations'); };
+  const goOps = (v: string, extra: Record<string, string> = {}) => {
+    setParams({ tab: 'operations', view: v === 'board' ? null : v, ...extra }, { whole: true });
+    setOpsView(v); setOpsNav({ v, n: Date.now() }); setTab('operations');
+  };
+  // The tab is in the address (?tab=…, useUrlState.ts): a new tab is a step back can undo, and starts clean.
+  // The tab already open keeps its address — its sections are still showing.
+  const go = (t: Tab, extra: Record<string, string> = {}) => {
+    if (t !== tab) setParams({ tab: t, ...extra }, { whole: true });
+    setTab(t);
+  };
   // Which Operations view is showing — its SOPs button lists that view's procedures (§92).
   const [opsNow, setOpsNow] = useState<string | undefined>(undefined);
   /** An SOP to open when the library tab opens from a screen's SOPs panel. */
@@ -180,6 +190,7 @@ function TeamApp() {
         getUnits().then(u => setUnits(u.units ?? [])).catch(() => {});
         // A link to one cleaner's page, as they see it: #crew/<name> (§122).
         if (location.hash.startsWith('#crew/') && tabs.includes('operations')) {
+          setParams({ tab: 'operations', view: 'crew' }, { replace: true });
           setOpsView('crew'); setTab('operations');
           return;
         }
@@ -191,7 +202,7 @@ function TeamApp() {
         const sop = new URLSearchParams(location.search).get('sop');
         if (sop && tabs.includes('sops')) {
           setSopFocus(sop); setTab('sops');
-          history.replaceState(null, '', location.pathname);
+          setParams({ tab: 'sops', sop }, { replace: true, whole: true });
           return;
         }
         // §162: Slack's "Open in Kaizen" on a task or a claim — what Slack cannot do is one click away.
@@ -199,19 +210,25 @@ function TeamApp() {
         if ((q.get('todo') || q.get('claim')) && tabs.includes('operations')) {
           setWorkFocus(q.get('todo') ? { todo: q.get('todo')! } : { claim: q.get('claim')! });
           setOpsView('todos'); setTab('operations');
-          history.replaceState(null, '', location.pathname);
+          setParams({ tab: 'operations', view: 'todos', todo: q.get('todo'), claim: q.get('todo') ? null : q.get('claim') }, { replace: true, whole: true });
           return;
         }
-        // A link to a tab (owner, 2026-10-14 — "@Kaizen sops" links the SOP library): ?tab=<tab>.
+        // A link to a tab (owner, 2026-10-14 — "@Kaizen sops" links the SOP library): ?tab=<tab>, and since
+        // 2026-10-26 its sections too (?tab=operations&view=todos) — each screen reads its own keys.
         const tabQ = new URLSearchParams(location.search).get('tab');
         if (tabQ && tabs.includes(tabQ as Tab)) {
+          if (tabQ === 'operations') setOpsView(param('view') ?? undefined);
           setTab(tabQ as Tab);
-          history.replaceState(null, '', location.pathname);
           return;
         }
         // A link to one Repository record (§150 — Setup → Inventory's map): ?repo=<table>/<ROW-id>, opened by Repository itself.
-        if (new URLSearchParams(location.search).get('repo') && tabs.includes('repository')) { setTab('repository'); return; }
-        setTab(prev => (prev && tabs.includes(prev)) ? prev : ((back ?? tabs[0]) as Tab));
+        if (new URLSearchParams(location.search).get('repo') && tabs.includes('repository')) {
+          setParams({ tab: 'repository' }, { replace: true });
+          setTab('repository'); return;
+        }
+        const first = (back ?? tabs[0]) as Tab;
+        setParams({ tab: first }, { replace: true });
+        setTab(first);
       })
       .catch(e => {
         // Silently falling back to the ops tab set made a transient
@@ -225,13 +242,29 @@ function TeamApp() {
       });
   }, []);
 
+  // Back / forward: the tab the address names (the screens follow their own keys). No tab = where the app lands.
+  const allowedRef = useRef<string[] | null>(null);
+  allowedRef.current = allowed;
+  useEffect(() => {
+    const pop = () => {
+      const a = allowedRef.current;
+      if (!a?.length) return;
+      const t = param('tab');
+      const next = (t && a.includes(t) ? t : a[0]) as Tab;
+      if (next === 'operations') setOpsView(param('view') ?? 'board');
+      setTab(next);
+    };
+    addEventListener('popstate', pop);
+    return () => removeEventListener('popstate', pop);
+  }, []);
+
   // A cleaner signed in sees only their page, which has its own one-line top (§134).
   const crewOnly = allowed?.length === 1 && (allowed[0] === 'crew' || allowed[0] === 'vendor');
   // §166: new work from anyone, while the app is open — for whoever can see the to-dos. One bell: the header on a
   // phone, the side rail's foot on a bigger screen (the header is hidden there).
   const phone = usePhone();
   const bell = allowed && can(permissions, 'todos') && allowed.includes('operations')
-    ? <LiveBell onOpen={id => { setWorkFocus({ todo: id }); goOps('todos'); }} /> : null;
+    ? <LiveBell onOpen={id => { setWorkFocus({ todo: id }); goOps('todos', { todo: id }); }} /> : null;
   return (
     <main>
       {!crewOnly && <header className="app-header">
@@ -243,9 +276,9 @@ function TeamApp() {
         {phone && bell}
         <span className="phone-theme"><ThemeToggle /></span>
       </header>}
-      {!crewOnly && allowed && <SideNav tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab}
+      {!crewOnly && allowed && <SideNav tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={go}
                                          opsNow={opsNow} onOps={goOps} permissions={permissions} onReport={() => setReporting('new')} bell={phone ? null : bell} />}
-      {!crewOnly && allowed && <TabBar tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={setTab} onReport={() => setReporting('new')} />}
+      {!crewOnly && allowed && <TabBar tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={go} onReport={() => setReporting('new')} />}
       {reporting && <ReportsDialog initial={reporting} where={whereNow(tab, opsNow)} onClose={() => setReporting(null)} />}
 
       {/* Only shown to someone who can act on it. Telling an ops account
@@ -271,7 +304,7 @@ function TeamApp() {
       {tab === 'revenue'  && <Revenue canClaims={can(permissions, 'claims.money')} />}
       {tab === 'home' && <Home permissions={permissions} onGo={to => {
         const [t, sub] = to.split(':');
-        if (allowed?.includes(t!)) { if (t === 'operations' && sub) goOps(sub); else { setOpsView(sub); setTab(t as Tab); } }
+        if (allowed?.includes(t!)) { if (t === 'operations' && sub) goOps(sub); else { setOpsView(sub); go(t as Tab); } }
       }} />}
       {tab === 'operations' && <Operations permissions={permissions} initialView={opsView} nav={opsNav} onView={setOpsNow} focus={workFocus} />}
       {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')}
@@ -288,7 +321,7 @@ function TeamApp() {
       )}
       {sopPanel && tab !== 'sops' && (
         <SopPanel key={sopPanel} feature={sopPanel} canEdit={can(permissions, 'sops.edit')} onClose={() => setSopPanel(null)}
-                  onLibrary={id => { setSopPanel(null); setSopFocus(id); setTab('sops'); }} />
+                  onLibrary={id => { setSopPanel(null); setSopFocus(id); go('sops', id ? { sop: id } : {}); }} />
       )}
     </main>
   );

@@ -19,6 +19,7 @@ import { money2 as money } from '../lib/format.ts';
 import { Cleanings } from './Cleanings.tsx';
 import { COST_CATEGORIES, guessCategory as guessCat } from '../lib/costs.ts';
 import { Icon } from '../components/Icon.tsx';
+import { useUrlState } from '../components/useUrlState.ts';
 
 
 const thisMonth = () => new Date().toISOString().slice(0, 7);
@@ -33,6 +34,7 @@ export function Costs({ units }: { units: UnitRow[] }) {
   // Cleanings belong here rather than in a tab of their own: they are a
   // cost, and the third kind alongside the monthly lines and the one-offs.
   const [mode, setMode] = useState<'fixed' | 'variable' | 'cleanings'>('fixed');
+  useUrlState('view', mode, setMode, { def: 'fixed', valid: v => ['fixed', 'variable', 'cleanings'].includes(v) });
   return (
     <section>
       <nav className="subtabs">

@@ -22,6 +22,7 @@ import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { ThemeToggle } from '../components/ThemeToggle.tsx';
 import { TX as CREW_TX, dayLabel, isLang, type Lang, type Tx } from '../lib/crew-i18n.ts';
 import { Icon, ic } from '../components/Icon.tsx';
+import { useUrlState } from '../components/useUrlState.ts';
 
 const get = (k: string) => { try { return localStorage.getItem(k); } catch { return null; } };
 const put = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private mode */ } };
@@ -107,6 +108,8 @@ export function VendorHome({ practice, token }: { practice?: { vendor: string; w
   const [data, setData] = useState<{ vendor: string; works: WorkPage[]; pay?: VendorPage | null } | null>(practice ? { vendor: practice.vendor, works: practice.works } : null);
   const [err, setErr] = useState('');
   const [sec, setSec] = useState<'work' | 'pay'>('work');
+  // The phone's back gesture steps back through the sections instead of leaving the page (useUrlState.ts).
+  useUrlState('sec', sec, setSec, { def: 'work', valid: v => v === 'work' || v === 'pay' });
   const [period, setPeriod] = useState<string | null>(null);
   const load = () => getVendorWork(period, token).then(r => r.ok ? setData(r) : setErr(r.message ?? 'Could not load.')).catch(e => setErr(String(e)));
   useEffect(() => { if (!practice) void load(); }, [period]);
