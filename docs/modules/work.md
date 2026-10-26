@@ -70,7 +70,9 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   can stand alone (late checkout) (§46, §77, §86).
 - Times in timelines and the done log are New York (§87).
 - Comments posted in Kaizen also go to the task's Slack thread (`commentToThread`, slack module).
-- **Handymen work like cleaners (§137).** Three ways, all valid: an account (their email in Operations →
+- **Handymen work like cleaners (§137).** Their own page by link too (owner, 2026-10-25, §168): Operations → Handymen →
+  "Copy their link" = `/crew#v=<token>` → `/api/crew-link` with `X-Vendor-Token` (`functions/_lib/vendor-door.ts`, same page as
+  `/api/vendor`); `vendors.link_token_hash` finds them, `link_token_enc` lets the team copy the same link again. Three ways, all valid: an account (their email in Operations →
   Vendors, signed in through Access → role `vendor`, only `/api/vendor`: their work orders), a link
   ("📤 Send to vendor" in an open work order → `/report#w=…` by WhatsApp/SMS, no account), or none
   (the team runs the repair itself). The link needs a vendor and a day set; it lasts until the day + 7,

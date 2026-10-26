@@ -247,6 +247,7 @@ key had no SOPs.
   The handyman's own page has a Pay tab (`/api/vendor` returns `pay`). **Payment card** (`components/PayoutCard.tsx`) under both
   a handyman's and a cleaner's page → `/api/payouts` (permission `payouts`), `functions/_lib/payouts.ts`: Stripe Connect Express
   (Settings → Payments, test keys only) or "Mark paid"; one `payouts` row per invoice number; the invoice is rebuilt on the server.
+  Header: "Copy their link" copies the handyman's own page link (`/crew#v=…`, the same each time; New link / Turn off) — see work.md.
 - **Cleaners loads in two steps (owner, 2026-10-25):** the schedule costs three Hostaway calls (~3 s). A new cleaner or period asks
   `/api/crew-admin?…&fast=1` (no schedule: `loadCrewPage(…, skipSchedule)` → `upcoming.loading`, `schedule: null`) and the full
   answer at once; the fast one paints (~0.9 s), the full one replaces it. A reload after an edit asks only the full one, under a

@@ -12,8 +12,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import { accessOf, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { workAct, workPage } from '../_lib/vendor-work.ts';
-import { loadVendorPage } from '../_lib/vendor-pay.ts';
+import { vendorGet, vendorPost } from '../_lib/vendor-door.ts';
 
 async function me(request: Request, env: Env, sql: SqlFn): Promise<string | Response> {
   const who = identify(request, env);
@@ -25,34 +24,14 @@ async function me(request: Request, env: Env, sql: SqlFn): Promise<string | Resp
   return a.vendor ?? Response.json({ ok: false, error: 'not_a_vendor', message: 'This page is for handymen signing in with the email the team has for them.' }, { status: 403 });
 }
 
-const mine = async (sql: SqlFn, vendor: string) => (await sql`
-  SELECT id::text FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND kind = 'work_order' AND lower(vendor) = lower(${vendor})
-     AND (status NOT IN ('completed', 'cancelled') OR done_at > now() - interval '7 days')
-   ORDER BY scheduled_on NULLS LAST, id` as { id: string }[]).map(r => r.id);
-
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
   const v = await me(request, env, sql);
-  if (v instanceof Response) return v;
-  const works = (await Promise.all((await mine(sql, v)).map(id => workPage(sql, id)))).filter(Boolean);
-  // Owner, 2026-10-25: their pay, as a cleaner sees theirs — the invoice periods only, never the team's own dates.
-  const pay = await loadVendorPage(sql, v, new URL(request.url).searchParams.get('period'));
-  return Response.json({ ok: true, vendor: v, works, pay: pay && { ...pay, openJobs: [] } }, { headers: { 'Cache-Control': 'no-store' } });
+  return v instanceof Response ? v : vendorGet(request, sql, v);
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const sql = db(env) as unknown as SqlFn;
   const v = await me(request, env, sql);
-  if (v instanceof Response) return v;
-  let b: Record<string, unknown> = {};
-  const files: File[] = [];
-  if ((request.headers.get('Content-Type') ?? '').startsWith('multipart/form-data')) {
-    const form = await request.formData();
-    for (const [k, x] of form.entries()) { if (k === 'file') { if (typeof x !== 'string') files.push(x); } else b[k] = x; }
-  } else b = await request.json().catch(() => ({})) as Record<string, unknown>;
-  const id = String(b.todoId ?? '');
-  if (!(await mine(sql, v)).includes(id)) return Response.json({ ok: false, error: 'bad_request', message: 'That work order is not yours.' }, { status: 400 });
-  try { await workAct(sql, env.ENCRYPTION_KEY, id, { name: v, source: 'vendor' }, b, files, waitUntil); }
-  catch (e) { return Response.json({ ok: false, error: 'bad_request', message: e instanceof Error ? e.message : String(e) }, { status: 400 }); }
-  return Response.json({ ok: true, page: await workPage(sql, id) });
+  return v instanceof Response ? v : vendorPost(request, env, sql, v, waitUntil);
 };

@@ -7,7 +7,7 @@
  * A job = a work order with their name; its pay = the work order's cost.
  */
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { crewAdminAction, getUnits, getVendorAdmin, vendorAdminAction, type VendorInfo, type VendorPage } from '../api.ts';
+import { crewAdminAction, getUnits, getVendorAdmin, vendorAdminAction, vendorPageLink, type VendorInfo, type VendorPage } from '../api.ts';
 import type { VendorJob } from '../lib/vendor-pay.ts';
 import { VENDOR_VOID } from '../lib/vendor-pay.ts';
 import { addDays } from '../lib/dates.ts';
@@ -69,6 +69,7 @@ export function VendorAdmin({ canEdit, canPay }: { canEdit: boolean; canPay: boo
             <option value="monthly">monthly (paid early the next month)</option>
           </select></label>}
         {shown && canEdit && !adding && <button className="chip" onClick={() => setAdding(true)}>+ Add a job</button>}
+        {shown && canEdit && <PageLink vendor={shown.vendor.name} />}
         <Hint label="Handymen">Everyone with work orders: the vendor directory (Setup → Inspections, Vendors & handymen) and names only typed on a work order.
           A job is a work order with their name; it is on the invoice of the period in which it was done, and it pays the work order's cost — the
           charges the handyman sent and the team approved, or what the team typed. Picking an invoice period for a name not in the directory adds it there.</Hint>
@@ -337,3 +338,34 @@ export const EN = {
   pending: (n: number) => `${n} charge${n === 1 ? '' : 's'} waiting for the team's approval.`,
   notPaidIn: 'Not paid in this period:'
 };
+
+/**
+ * The handyman's own page, as a link the team pastes into WhatsApp or SMS
+ * (owner, 2026-10-25): no sign-in, the same link each time it is copied.
+ */
+function PageLink({ vendor }: { vendor: string }) {
+  const [msg, setMsg] = useState('');
+  const [more, setMore] = useState(false);
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setMsg(''); setMore(false); }, [vendor]);
+  const go = async (mode?: 'new' | 'off') => {
+    setBusy(true); setMsg('');
+    const r = await vendorPageLink(vendor, mode).catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
+    if (!r.ok) { setMsg(r.message ?? 'Not done.'); return; }
+    if (!r.link) { setMsg('Link turned off — the old one no longer opens.'); return; }
+    await navigator.clipboard.writeText(r.link).then(() => setMsg(mode === 'new' ? 'New link copied — the old one no longer opens.' : 'Link copied.'),
+      () => setMsg(r.link!));
+  };
+  return <>
+    <button className="chip" disabled={busy} onClick={() => void go()} title={`Copy ${vendor}'s page link`}><Icon n="clipboard" /> Copy their link</button>
+    {msg && <span className="note" role="status">{ic(msg)}</span>}
+    {msg && !more && <button className="link tiny" onClick={() => setMore(true)}>…</button>}
+    {more && <>
+      <button className="link tiny" disabled={busy} onClick={() => void go('new')}>New link</button>
+      <button className="link tiny" disabled={busy} onClick={() => void go('off')}>Turn off</button>
+    </>}
+    <Hint label="Their link">Opens {vendor}'s own page — work orders and pay — without signing in. Copy it and paste it in WhatsApp or SMS.
+      It is the same link every time; "New link" replaces it (the old one stops working) and "Turn off" closes it.</Hint>
+  </>;
+}

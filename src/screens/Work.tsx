@@ -102,13 +102,13 @@ export function WorkLinkPage({ token, practice }: { token: string; practice?: { 
 }
 
 /** The account door: a handyman signed in sees their work orders. */
-export function VendorHome({ practice }: { practice?: { vendor: string; works: WorkPage[]; send: (id: string, fields: Record<string, string>, files: File[]) => ReturnType<Send> } } = {}) {
+export function VendorHome({ practice, token }: { practice?: { vendor: string; works: WorkPage[]; send: (id: string, fields: Record<string, string>, files: File[]) => ReturnType<Send> }; token?: string } = {}) {
   const [lang, setLang] = useLang();
   const [data, setData] = useState<{ vendor: string; works: WorkPage[]; pay?: VendorPage | null } | null>(practice ? { vendor: practice.vendor, works: practice.works } : null);
   const [err, setErr] = useState('');
   const [sec, setSec] = useState<'work' | 'pay'>('work');
   const [period, setPeriod] = useState<string | null>(null);
-  const load = () => getVendorWork(period).then(r => r.ok ? setData(r) : setErr(r.message ?? 'Could not load.')).catch(e => setErr(String(e)));
+  const load = () => getVendorWork(period, token).then(r => r.ok ? setData(r) : setErr(r.message ?? 'Could not load.')).catch(e => setErr(String(e)));
   useEffect(() => { if (!practice) void load(); }, [period]);
   const w = W[lang];
   return <>
@@ -123,7 +123,7 @@ export function VendorHome({ practice }: { practice?: { vendor: string; works: W
         : sec === 'pay' && data.pay ? <VendorPay pay={data.pay} lang={lang} onPeriod={setPeriod} />
         : !data.works.length ? <div className="card"><p className="note">{ic(w.none)}</p></div>
         : data.works.map(p => <WorkCard key={p.work.id} page={p} lang={lang}
-            send={(f, files) => practice ? practice.send(p.work.id, f, files) : vendorAct(p.work.id, f, files)}
+            send={(f, files) => practice ? practice.send(p.work.id, f, files) : vendorAct(p.work.id, f, files, token)}
             onPage={np => setData(d => d && { ...d, works: d.works.map(x => x.work.id === np.work.id ? np : x) })} />)}
     </div>
   </>;

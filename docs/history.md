@@ -4514,3 +4514,9 @@ copy `sk_test_…` → Kaizen Settings → Payments → Save key (it is checked)
 them available at once). 4) Operations → Handymen / Cleaners → Payment → "Get their Stripe setup link" → open it yourself with
 Stripe's test data (SSN 000-00-0000, routing 110000000, account 000123456789). 5) Pay an ended invoice. Live: a code change
 (settings.ts refuses `sk_live_`), the owner's decision.
+
+**A handyman's own link (owner, same day).** "Copy their link" on Operations → Handymen copies `/crew#v=<token>`: their page
+(work orders + pay) without signing in, as a cleaner's `/crew#t=`. It rides the cleaners' door — `/api/crew-link` with
+`X-Vendor-Token` — so Cloudflare Access needs no new bypass. Unlike the cleaners' link (shown once, hash only), the token is
+also kept encrypted (`vendors.link_token_enc`, in 099) so copying again gives the same link and one already sent keeps working;
+"New link" replaces it, "Turn off" clears it. Only an active directory vendor's token opens.

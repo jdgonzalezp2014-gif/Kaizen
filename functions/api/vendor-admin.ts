@@ -12,6 +12,7 @@
  *   POST { action: 'notPaid', id, note } / { action: 'restorePaid', id }   a job done taken off the pay (and Costs), or put back
  *   POST { action: 'addJob', vendor, date, title, unitId?, pay, chargeOwner? }   a job done that has no work order yet
  *   POST { action: 'invoicePeriod', vendor, period: 'weekly' | 'monthly' }
+ *   POST { action: 'link', vendor, mode?: 'new' | 'off' }   the handyman's own link (/crew#v=…), the same one each time
  * A handyman's charges are decided where they always were (crew-admin `decideField`).
  *
  * GET needs `operations`, POST `operations.edit` (roles.ts). Every edit is a
@@ -21,7 +22,8 @@
 import { db, type Env } from '../_lib/db.ts';
 import { getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { refuse } from '../_lib/crew.ts';
+import { newToken, refuse, sha256 } from '../_lib/crew.ts';
+import { decrypt, encrypt } from '../_lib/crypto.ts';
 import { findVendor, loadVendorPage, vendorNames } from '../_lib/vendor-pay.ts';
 import { ensureVendor } from '../_lib/payouts.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
@@ -56,6 +58,27 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const log = (id: string, body: string) =>
     sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by) VALUES (1, 'task', ${id}, 'change', ${body.slice(0, 4000)}, ${who.email})`;
   const settle = (id: string) => settleRepair(sql, id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY)).catch(() => {});
+
+  // Owner, 2026-10-25: the handyman's own link, copied by the team. The same
+  // link every time (kept encrypted) so one already sent keeps working; "new"
+  // replaces it, "off" turns it off.
+  if (b.action === 'link') {
+    const n = String(b.vendor ?? '').trim();
+    if (!n || !(await findVendor(sql, n))) return refuse(400, 'bad_request', 'Pick a handyman.');
+    const name = await ensureVendor(sql, n);
+    const [v] = await sql`SELECT link_token_enc, phone FROM vendors WHERE account_id = 1 AND lower(name) = lower(${name})` as { link_token_enc: string | null; phone: string | null }[];
+    if (b.mode === 'off') {
+      await sql`UPDATE vendors SET link_token_hash = NULL, link_token_enc = NULL, updated_at = now() WHERE account_id = 1 AND lower(name) = lower(${name})`;
+      return Response.json({ ok: true, link: null });
+    }
+    let token = b.mode === 'new' || !v?.link_token_enc ? null : await decrypt(v.link_token_enc, env.ENCRYPTION_KEY).catch(() => null);
+    if (!token) {
+      token = newToken();
+      await sql`UPDATE vendors SET link_token_hash = ${await sha256(token)}, link_token_enc = ${await encrypt(token, env.ENCRYPTION_KEY)}, updated_at = now()
+                 WHERE account_id = 1 AND lower(name) = lower(${name})`;
+    }
+    return Response.json({ ok: true, link: `${new URL(request.url).origin}/crew#v=${token}`, phone: v?.phone ?? null });
+  }
 
   if (b.action === 'invoicePeriod') {
     const period = b.period === 'weekly' ? 'weekly' : b.period === 'monthly' ? 'monthly' : null;

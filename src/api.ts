@@ -931,10 +931,13 @@ export const getWorkLink = (token: string) =>
 export const workLinkAct = (token: string, fields: Record<string, string>, files: File[]) =>
   workSend('/api/report-link', { 'X-Work-Token': token }, fields, files);
 /** A handyman signed in: their work orders. */
-export const getVendorWork = (period?: string | null) =>
-  call<({ ok: true; vendor: string; works: WorkPage[]; pay: VendorPage | null }) | Fail>(`/api/vendor${period ? `?period=${period}` : ''}`);
-export const vendorAct = (todoId: string, fields: Record<string, string>, files: File[]) =>
-  workSend('/api/vendor', {}, { ...fields, todoId }, files);
+/** …or by their own link (owner, 2026-10-25): the cleaners' door, with X-Vendor-Token. */
+const vendorPath = (token?: string | null) => token ? '/api/crew-link' : '/api/vendor';
+const vendorHeaders = (token?: string | null): Record<string, string> => token ? { 'X-Vendor-Token': token } : {};
+export const getVendorWork = (period?: string | null, token?: string | null) =>
+  call<({ ok: true; vendor: string; works: WorkPage[]; pay: VendorPage | null }) | Fail>(`${vendorPath(token)}${period ? `?period=${period}` : ''}`, { headers: vendorHeaders(token) });
+export const vendorAct = (todoId: string, fields: Record<string, string>, files: File[], token?: string | null) =>
+  workSend(vendorPath(token), vendorHeaders(token), { ...fields, todoId }, files);
 /** The team: the link for a work order's vendor. */
 export const vendorLink = (id: string) =>
   call<({ ok: true; link: string; vendor: string; phone: string | null; title: string; unit: string | null; day: string; expires: string }) | Fail>(
@@ -964,6 +967,8 @@ export const getVendorAdmin = (vendor?: string | null, period?: string | null, t
     `/api/vendor-admin?${new URLSearchParams({ ...(vendor ? { vendor } : {}), ...(period ? { period } : {}), ...(period && to ? { to } : {}) })}`);
 export const vendorAdminAction = (body: Record<string, unknown>) =>
   call<{ ok: true; pay?: number | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify(body) });
+export const vendorPageLink = (vendor: string, mode?: 'new' | 'off') =>
+  call<{ ok: true; link: string | null; phone?: string | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify({ action: 'link', vendor, mode }) });
 
 export interface StripeStatus { configured: boolean; mode: 'test' | 'live' | null; balance: { available: number; pending: number } | null; problem: string | null }
 export interface PayeeAccount {

@@ -30,6 +30,15 @@ type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' 
  * A cleaner's secret link (§122): /crew#t=<token>. Read once, then taken
  * out of the address bar so it is not left on screen or in a screenshot.
  */
+/** A handyman's own link (owner, 2026-10-25): /crew#v=<token>, the same door and handling as a cleaner's. */
+const VENDOR_TOKEN = (() => {
+  if (location.pathname !== '/crew') return null;
+  const h = new URLSearchParams(location.hash.slice(1));
+  const v = h.get('v');
+  if (v) { history.replaceState(null, '', '/crew'); try { sessionStorage.setItem('vendorToken', v); } catch { /* private mode */ } return v; }
+  if (h.get('t')) { try { sessionStorage.removeItem('vendorToken'); } catch { /* private mode */ } return null; }
+  try { return sessionStorage.getItem('vendorToken'); } catch { return null; }
+})();
 const CREW_TOKEN = (() => {
   if (location.pathname !== '/crew') return null;
   const t = new URLSearchParams(location.hash.slice(1)).get('t');
@@ -81,7 +90,7 @@ const REPORT_TOKEN = (() => {
 
 export function App() {
   // The link door has no sign-in: the page and nothing else.
-  if (location.pathname === '/crew') return <CrewShell token={CREW_TOKEN} />;
+  if (location.pathname === '/crew') return VENDOR_TOKEN ? <main><VendorHome token={VENDOR_TOKEN} /></main> : <CrewShell token={CREW_TOKEN} />;
   // The helpers' page has its own one-line header: the language sits beside day/night (§134).
   if (location.pathname === '/report') return <main>{WORK_TOKEN ? <WorkLinkPage token={WORK_TOKEN} />
     : INSPECT_TOKEN ? <InspectPage token={INSPECT_TOKEN} /> : <ReportPage token={REPORT_TOKEN} />}</main>;

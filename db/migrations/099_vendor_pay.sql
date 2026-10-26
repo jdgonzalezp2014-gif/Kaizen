@@ -50,3 +50,9 @@ CREATE TABLE payouts (
   created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (account_id, invoice_number)
 );
+
+-- A handyman's own link (owner, 2026-10-25): /crew#v=<token> opens their page
+-- without a sign-in, as a cleaner's does. The hash finds them; the encrypted
+-- copy lets the team copy the same link again instead of breaking the old one.
+ALTER TABLE vendors ADD COLUMN link_token_hash TEXT;
+ALTER TABLE vendors ADD COLUMN link_token_enc TEXT;
