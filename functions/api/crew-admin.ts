@@ -76,7 +76,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           JOIN cleanings c ON c.account_id = e.account_id AND c.key = e.cleaning_key
          WHERE e.account_id = 1 AND e.status = 'pending'
          ORDER BY e.created_at`,
-    name ? loadCrewPage(sql, env.ENCRYPTION_KEY, name, url.searchParams.get('period'), st, url.searchParams.get('to'), fast) : Promise.resolve(null),
+    name ? loadCrewPage(sql, env.ENCRYPTION_KEY, name, url.searchParams.get('period'), st, url.searchParams.get('to'), fast, true) : Promise.resolve(null),
     // Cleans held after a cancellation, waiting for a person (§123).
     sql`SELECT key, unit_name AS unit, checkout_on::text AS date, beds, deep, guest, needs_confirm AS note
           FROM cleanings WHERE account_id = 1 AND needs_confirm IS NOT NULL AND void_reason IS NULL

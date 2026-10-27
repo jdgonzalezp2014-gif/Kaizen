@@ -565,6 +565,9 @@ key had no SOPs.
   crew-only sign-in) drop the app header for it.
   Photos reach the cleaner through Kaizen (`GET /api/crew?photo=<id>`, same on crew-link and the team's
   preview): only a photo of a clean whose `clean_records.cleaner` is them; the team's Drive stays theirs.
+  The team's audit (Operations → Cleaners, 2026-10-27): each clean row with photos has "📷 Photos (n)" — before/after
+  thumbnails inline (same `CrewImg`, via `?view=cleaner&photo=`); the team page loads photos for every clean of the span
+  (`loadCrewPage(..., allPhotos)`), not only the last 3 days.
   In "Changes since", a clean taken off a cleaner (reassigned or unassigned) reads just "cancelled" to
   them; the team's view still says what happened.
 - **A clean's 4 steps (§134):** 1 photos BEFORE · 2 🧴 what I took from <its place> — "from S1105", "from the closet"

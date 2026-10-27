@@ -201,7 +201,9 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
                                    /** The team's own span's last day (Operations → Cleaners); `asked` is its first. */
                                    askedTo?: string | null,
                                    /** The team's fast first answer: no schedule (3 Hostaway calls); the full one follows. */
-                                   skipSchedule = false): Promise<CrewPage | null> {
+                                   skipSchedule = false,
+                                   /** The team audits any clean of the span: its photos too, not only the last days'. */
+                                   allPhotos = false): Promise<CrewPage | null> {
   const c = await findCleaner(sql, name);
   if (!c) return null;
   const today = todayIn(TZ);
@@ -311,7 +313,7 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
     invoice: buildInvoice(c.name, period, shown, extras, today),
     upcoming,
     ...await (async () => {
-      const keys = [...new Set([...shown.filter(x => x.date >= addDays(today, -LINK_PAST_DAYS)).map(x => x.key), ...ahead])];
+      const keys = [...new Set([...shown.filter(x => allPhotos || x.date >= addDays(today, -LINK_PAST_DAYS)).map(x => x.key), ...ahead])];
       const photos = keys.length ? await sql`SELECT id::text, cleaning_key AS key, stage FROM clean_photos
                                               WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) ORDER BY id` as { id: string; key: string; stage: Stage }[] : [];
       const fieldPhotos: Record<string, { id: string; stage: Stage }[]> = {};

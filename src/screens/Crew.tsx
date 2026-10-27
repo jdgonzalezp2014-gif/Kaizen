@@ -360,6 +360,8 @@ function CrewView({ page, mode, canEdit = false, onPeriod, onRange, reload, act,
             <CleanRow key={c.key} c={c} extras={extrasOf(c.key)} today={page.today} extraFrom={page.extraFrom}
                       fs={aheadKeys.has(c.key) ? undefined : page.field?.[c.key]} noExtra={noExtraFor.has(c.key)}
                       quick={fieldCtx ? quickFor(page, c.key, fieldCtx) : undefined}
+                      photos={team ? page.fieldPhotos?.[c.key] : undefined}
+                      getPhoto={id => crewPhoto(id, { asCleaner: page.cleaner.name })}
                       mode={mode} canEdit={canEdit} act={act} upload={upload} reload={reload} lang={lang} />
           ))}
         </div>
@@ -1062,13 +1064,16 @@ function UpcomingRow({ r, act, reload, tag, lang, ctx, fs, address }: { r: CrewU
 /** How a "not paid" the team set begins (functions/api/crew-admin.ts) — only those can be put back here. */
 const TEAM_VOID = 'not paid by the team — ';
 
-function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, reload, lang, noExtra = false, fs, quick }: {
+function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, reload, lang, noExtra = false, fs, quick, photos, getPhoto }: {
   c: CrewClean; extras: CrewExtra[]; today: string; extraFrom: string; mode: 'cleaner' | 'team'; canEdit: boolean;
   /** §134: the same small actions as the sections above, on a recent or coming clean of the cleaner's. */ quick?: Quick;
   /** Worked in "Your cleans" above, where its extra is (§134). */ noExtra?: boolean; fs?: CleanFieldState;
   act: Act; upload?: Upload; reload: () => void; lang: Lang;
+  /** The team's audit: the clean's photos, seen here instead of in Drive. */
+  photos?: { id: string; stage: 'before' | 'after' }[]; getPhoto?: (id: string) => Promise<string>;
 }) {
   const tx: Tx = TX[lang];
+  const [seePhotos, setSeePhotos] = useState(false);
   const [adding, setAdding] = useState(false);
   const [voiding, setVoiding] = useState(false);
   const [flagOpen, setFlagOpen] = useState(false);
@@ -1142,7 +1147,19 @@ function CleanRow({ c, extras, today, extraFrom, mode, canEdit, act, upload, rel
           ? c.voidReason.startsWith(TEAM_VOID) && <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'restorePaid', key: c.key })}>Put back on the pay</button>
           : <button className="link tiny" onClick={() => { setVoiding(true); setText(''); }}>○ Not paid…</button>)}
         {mode === 'team' && canEdit && !c.flagNote && !flagOpen && <button className="link tiny" onClick={() => setFlagOpen(true)}>⚑ Flag…</button>}
+        {!!photos?.length && getPhoto &&
+          <button className="link tiny" aria-expanded={seePhotos} onClick={() => setSeePhotos(v => !v)}><Icon n="camera" /> {seePhotos ? 'Hide photos' : `Photos (${photos.length})`}</button>}
       </div>
+      {seePhotos && photos && getPhoto && <div className="crew-flag">
+        {(['before', 'after'] as const).map(st => {
+          const list = photos.filter(p => p.stage === st);
+          return <div key={st}>
+            <p className="fr-cat">{st === 'before' ? 'Before' : 'After'} ({list.length})</p>
+            {list.length ? <div className="fr-thumbs">{list.map(p => <CrewImg key={p.id} id={p.id} get={getPhoto} />)}</div>
+              : <p className="note">None sent.</p>}
+          </div>;
+        })}
+      </div>}
       {/* Owner, 2026-10-24: the same flag as Movements — with a deduction or a corrected pay. */}
       {mode === 'team' && canEdit && (c.flagNote || flagOpen) && <div className="crew-flag"><FlagControl cleanKey={c.key} flag={c.flagNote}
                                                   open={flagOpen} onClose={() => setFlagOpen(false)} onChanged={() => { setFlagOpen(false); reload(); }}
