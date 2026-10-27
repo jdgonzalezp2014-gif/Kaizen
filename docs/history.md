@@ -4520,3 +4520,17 @@ Stripe's test data (SSN 000-00-0000, routing 110000000, account 000123456789). 5
 `X-Vendor-Token` — so Cloudflare Access needs no new bypass. Unlike the cleaners' link (shown once, hash only), the token is
 also kept encrypted (`vendors.link_token_enc`, in 099) so copying again gives the same link and one already sent keeps working;
 "New link" replaces it, "Turn off" clears it. Only an active directory vendor's token opens.
+
+## §169 — Calendar log: when a unit was blocked and opened (2026-10-27)
+
+The owner asked to see when a calendar was blocked and when it was opened, "directly too" — changes made in Hostaway, not only
+in Kaizen (Kaizen never blocks). Hostaway's calendar API has no history: a day carries `status` (available / blocked /
+reserved), a `note` and counts — no time, no author (checked on real data). So the only way is to look and compare.
+
+- Hourly, a year ahead, every unit in `units`. One string of codes per listing is the memory (27 rows, not 10k); only changed
+  nights are written. Resolution is the hour; the row says the look before, so "between 2:05 and 3:05 PM".
+- Its own call from the scheduler (`?job=calendar` on `/api/slack-cron`, already bypassed in Access): 27 calendar reads beside
+  the clock's tick would break Cloudflare's 50-subrequest cap (§ 2026-10-15). Every query is one statement for all listings.
+- Not more often: each extra wake keeps Neon's compute up (the 2026-10-24 quota outage). Hourly rides the existing wake.
+- Who made a change is unknowable from Hostaway; the screen says so.
+

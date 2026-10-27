@@ -407,7 +407,7 @@ function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions, onReport, bell 
   const label = (t: Tab) => TABS.find(x => x[0] === t)?.[1] ?? t;
   // The same views, words and permissions as Operations' own strip (which the rail replaces on a big screen).
   const opsViews: [string, string][] = [['board', 'Movements'], ...(can(permissions, 'todos') ? [['todos', 'To-do'] as [string, string]] : []),
-    ['crew', 'Cleaners'], ['vendors', 'Handymen'], ['inspections', 'Inspections'], ['inventory', 'Inventory'], ['notes', 'Notes log'], ['rates', 'Rates & rules'],
+    ['crew', 'Cleaners'], ['vendors', 'Handymen'], ['inspections', 'Inspections'], ['inventory', 'Inventory'], ['notes', 'Notes log'], ['blocks', 'Calendar log'], ['rates', 'Rates & rules'],
     ...(can(permissions, 'operations.setup') ? [['setup', 'Setup'] as [string, string]] : [])];
   return (
     <aside className="side-nav" aria-label="Sections">

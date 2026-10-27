@@ -24,3 +24,13 @@ jobs:
         run: |
           if [ -z "$KAIZEN_URL" ] || [ -z "$KAIZEN_INGEST_TOKEN" ]; then echo "Secrets not set yet — skipping."; exit 0; fi
           curl -sS --fail-with-body -X POST "$KAIZEN_URL/api/slack-cron" -H "X-Kaizen-Ingest: $KAIZEN_INGEST_TOKEN"
+      # The calendar log (§169): an hourly look at every unit's calendar, in a call of its own.
+      - name: Look at calendars
+        # Even when the clock's call failed; not on the 11:55 PM check-out run (the hour's run already looked).
+        if: ${{ !cancelled() && github.event.schedule != '55 4,5 * * *' }}
+        env:
+          KAIZEN_URL: ${{ secrets.KAIZEN_URL }}
+          KAIZEN_INGEST_TOKEN: ${{ secrets.KAIZEN_INGEST_TOKEN }}
+        run: |
+          if [ -z "$KAIZEN_URL" ] || [ -z "$KAIZEN_INGEST_TOKEN" ]; then exit 0; fi
+          curl -sS --fail-with-body -X POST "$KAIZEN_URL/api/slack-cron?job=calendar" -H "X-Kaizen-Ingest: $KAIZEN_INGEST_TOKEN"

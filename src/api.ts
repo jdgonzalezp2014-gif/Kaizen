@@ -374,6 +374,15 @@ export const manualClean = (body: Record<string, unknown>) =>
     method: 'POST', body: JSON.stringify(body)
   });
 
+export interface CalendarLogResponse {
+  runs: import('./lib/calendar-watch.ts').ChangeRun[];
+  units: Record<string, string>;
+  watchingSince: string | null;
+  lastLook: string | null;
+  days: number;
+}
+export const getCalendarLog = (days = 90) => call<CalendarLogResponse>(`/api/calendar-log?days=${days}`);
+
 export const getOperations = (days = 10, refresh = false) =>
   call<OperationsResponse>(`/api/operations?days=${days}${refresh ? '&refresh=1' : ''}`);
 

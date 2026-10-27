@@ -86,6 +86,7 @@ export const FEATURES: { key: string; label: string; tab: string; view?: string;
   { key: 'operations.inspections', label: 'Operations · Inspections', tab: 'operations', view: 'inspections', section: 'inspections' },
   { key: 'operations.inventory', label: 'Operations · Inventory', tab: 'operations', view: 'inventory', section: 'turnover' },
   { key: 'operations.notes', label: 'Operations · Notes log', tab: 'operations', view: 'notes', section: 'guest' },
+  { key: 'operations.blocks', label: 'Operations · Calendar log', tab: 'operations', view: 'blocks', section: 'revenue' },
   { key: 'operations.rates', label: 'Operations · Rates & rules', tab: 'operations', view: 'rates', section: 'turnover' },
   { key: 'operations.setup', label: 'Operations · Setup', tab: 'operations', view: 'setup', section: 'systems' },
   { key: 'repository', label: 'Repository', tab: 'repository', section: 'systems' },

@@ -26,6 +26,12 @@ Hostaway client, sync, crypto, migrations.
 
 ## Rules that bite
 
+- **Calendar log (§169, 2026-10-27):** Operations › Calendar log (`src/components/CalendarLog.tsx`, GET `/api/calendar-log`,
+  permission `operations`) — when nights were blocked, opened or booked, Hostaway's own changes included. Hostaway keeps no
+  history (a day = status + note), so `functions/_lib/calendar-watch.ts` looks hourly (`/api/slack-cron?job=calendar`, a second
+  step in `slack-cron.yml` — its own 50-subrequest budget) a year ahead and keeps one code string per listing (`calendar_watch`);
+  changed nights go to `calendar_changes` (`was`/`became`, `since` = the look before). Known to the hour, never who. The first
+  look is the baseline; a calendar that came back partial is skipped, never diffed. Pure: `src/lib/calendar-watch.ts`.
 - **Links follow the screen (2026-10-26, `src/components/useUrlState.ts`):** the query says the tab and its
   sections — `?tab=` (App `go`/`goOps`, whole query replaced on a new tab), Operations `view` + Setup `section`,
   To-do `list` (+ `todo`/`claim`), Costs/Revenue `view`, SOPs `section` (+ `sop`), Repository `table`

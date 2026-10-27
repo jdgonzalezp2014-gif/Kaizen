@@ -43,6 +43,8 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/vendors', methods: ['GET'] },
     // Supplies per unit and in storage (§134).
     { path: '/api/inventory', methods: ['GET'] },
+    // When nights were blocked, opened or booked — Hostaway's changes included (§169).
+    { path: '/api/calendar-log', methods: ['GET'] },
     // The cleanings calendar lives in Operations; it reads the record.
     { path: '/api/cleaning-log', methods: ['GET'] }] },
   { key: 'operations.edit', label: 'Operations — assign cleaners, times, notes, log inspections', routes: [

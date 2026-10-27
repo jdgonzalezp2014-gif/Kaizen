@@ -25,6 +25,7 @@ import { dueCrewReminders } from '../../src/lib/crew-slack.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { loadOps, pushHostNotes, reconcileRecent, recordCleanings } from '../_lib/ops.ts';
 import { pullAll } from '../_lib/hostaway-tasks.ts';
+import { watchCalendars } from '../_lib/calendar-watch.ts';
 
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -38,6 +39,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (!expected || (request.headers.get('X-Kaizen-Ingest') ?? '') !== expected) {
       return Response.json({ ok: false, error: 'unauthenticated' }, { status: 403 });
     }
+  }
+  // §169: the calendar log's hourly look — its own call from the scheduler (27 calendar reads would not fit
+  // beside the rest of a tick under the 50-subrequest cap). Same door as the clock: already bypassed in Access.
+  if (new URL(request.url).searchParams.get('job') === 'calendar') {
+    try { return Response.json({ ok: true, calendar: await watchCalendars(sql, await getCredentials(sql, env.ENCRYPTION_KEY)) }); }
+    catch (e) { return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
   }
   // 2026-10-15: a tick may make 50 subrequests (Cloudflare's free plan; every query and call counts). The 8 AM and 3 PM
   // ticks ran Host Notes + Hostaway's tasks + the reminders in one and died at 50, leaving the cleans' thread claimed.

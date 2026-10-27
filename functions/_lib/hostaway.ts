@@ -188,6 +188,8 @@ export interface CalendarDay {
    * price, so discounting it does nothing at all.
    */
   minStay: number | null;
+  /** Hostaway's own note on the day — on a block, its reason when someone wrote one. */
+  note?: string | null;
 }
 
 /**
@@ -571,7 +573,8 @@ export async function fetchCalendar(
         price: Number(d.price) || null,
         status: String(d.status ?? ''),
         available: String(d.status ?? '').toLowerCase() === 'available' && d.isAvailable !== 0,
-        minStay: Number(d.minimumStay) || null
+        minStay: Number(d.minimumStay) || null,
+        note: d.note ? String(d.note) : null
       }))
       .filter(d => d.date && d.date >= from && d.date <= to)
       .sort((a, b) => a.date.localeCompare(b.date)) as CalendarDay[];
