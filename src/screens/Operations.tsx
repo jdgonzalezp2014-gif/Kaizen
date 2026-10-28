@@ -535,6 +535,7 @@ function Board({ data, range, patch, reload }: {
                         {open === key && (
                           <tr className="ops-edit-row"><td colSpan={9}>
                             <div className="ops-editor" onClick={e => e.stopPropagation()}>
+                              <button className="ops-editor-close" title="Close" aria-label="Close" onClick={() => setOpen(null)}>×</button>
                               <FlagControl cleanKey={c.key} flag={c.flag_note ?? null} onChanged={note =>
                                 setPast(p => p && { ...p, rows: p.rows.map(x => x.key === c.key ? { ...x, flag_note: note } : x) })}
                                 date={c.checkout_on.slice(0, 10)} today={data.today} price={c.price == null ? null : Number(c.price)}
@@ -591,7 +592,7 @@ function Board({ data, range, patch, reload }: {
                                  }} />
                       {open === key && (
                         <tr className="ops-edit-row"><td colSpan={9}>
-                          <Editor r={r} data={data} reload={reload}
+                          <Editor r={r} data={data} reload={reload} onClose={() => setOpen(null)}
                                   flag={flags[r.resId] ?? null} onFlag={note => setFlag(r.resId, note)}
                                   onManualClean={kind => setAddingClean({ unitId: r.unitId, resId: r.resId, kind })}
                                   onDocs={canDocs && r.kind === 'in' ? d => setDocs(m => ({ ...m, [r.resId]: d })) : undefined}
@@ -828,7 +829,9 @@ function PastLine({ c, open, onToggle }: { c: Cleaning; open: boolean; onToggle:
 }
 
 /** One stay's controls, opened in place under its row. */
-function Editor({ r, data, onSaved, onDocs, onManualClean, flag, onFlag, reload }: {
+function Editor({ r, data, onSaved, onDocs, onManualClean, flag, onFlag, reload, onClose }: {
+  /** Fold the editor back up — the same as clicking the row again, said out loud. */
+  onClose: () => void;
   /** An arrival's documents changed: opening it files a signed agreement Hostaway already has (§89). */
   onDocs?: (d: StayDocs) => void;
   r: BoardRow; data: OperationsResponse; onSaved: (set: TurnoverSet | null, note?: string) => void;
@@ -884,6 +887,7 @@ function Editor({ r, data, onSaved, onDocs, onManualClean, flag, onFlag, reload 
 
   return (
     <div className="ops-editor" onClick={e => e.stopPropagation()}>
+      <button className="ops-editor-close" title="Close" aria-label="Close" onClick={onClose}>×</button>
       {!r.listed && <div className="note">○ This listing is archived in Hostaway. Changes are kept in Kaizen; Hostaway refuses notes on an archived listing, so none is sent.</div>}
       {/* §159 (owner: the rule's reasoning was a paragraph on every open row): who the rule picks, the why behind a hover. */}
       {out && (

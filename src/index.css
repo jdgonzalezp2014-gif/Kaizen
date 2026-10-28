@@ -2868,3 +2868,7 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 @media (prefers-reduced-motion: reduce) { .load-bar::after { animation: none; width: 100%; opacity: .5; } }
 .load-note { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: var(--fs-footnote); }
 .load-note .load-bar { flex: 1; margin: 0; max-width: 240px; }
+/* The open row's editor folds back with this ×, top right — clicking the row again still works. */
+.ops-editor { position: relative; padding-right: 40px; } /* room so the × never sits on a field */
+.ops-editor-close { position: absolute; top: 0; right: 0; z-index: 1; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: var(--card, #fff); color: var(--muted); font-size: 18px; line-height: 1; cursor: pointer; }
+.ops-editor-close:hover { color: var(--ink); border-color: var(--ink); }
