@@ -8,7 +8,7 @@ import {
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
 import { SlackPanel } from '../components/SlackPanel.tsx';
-import { getPayouts, newIngestToken, pullFeed, runCron, type FeedResult, type CronResult, type StripeStatus } from '../api.ts';
+import { getPayouts, newIngestToken, pullFeed, runCron, type FeedResult, type CronResult, type WiseStatus } from '../api.ts';
 import { sanitize, segments } from '../lib/sms.ts';
 import { Icon } from '../components/Icon.tsx';
 
@@ -166,7 +166,7 @@ export function Settings() {
       <RepositoryPanel account={account} onSaved={() => void load()} />
 
       <GeminiPanel account={account} onSaved={() => void load()} />
-      <StripePanel account={account} onSaved={() => void load()} />
+      <WisePanel account={account} onSaved={() => void load()} />
 
       <MembersPanel members={members} audit={audit} user={user} roles={roles} onSaved={() => void load()} />
 
@@ -684,43 +684,64 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
 }
 
 /**
- * Payments (owner, 2026-10-25): Stripe pays cleaners' and handymen's invoices
- * (Operations → Cleaners / Handymen → Payment). Test keys only until live
- * payouts are switched on; the key is checked with Stripe before it is kept,
- * stored encrypted and never shown again.
+ * Payments (owner, 2026-10-28): Wise pays cleaners' and handymen's invoices
+ * (Operations → Cleaners / Handymen → Payment). Sandbox only until live
+ * payouts are switched on; the token is checked with Wise before it is kept,
+ * stored encrypted and never shown again. Kaizen signs each payment with its
+ * own key; the public half is uploaded to Wise once.
  */
-function StripePanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
-  const [key, setKey] = useState('');
-  const [status, setStatus] = useState<StripeStatus | null>(null);
+function WisePanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [token, setToken] = useState('');
+  const [status, setStatus] = useState<WiseStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
-  const check = () => void getPayouts().then(r => setStatus(r.ok ? r.stripe : null)).catch(() => setStatus(null));
-  useEffect(() => { if (account.hasStripeKey) check(); }, [account.hasStripeKey]);
+  const check = () => void getPayouts().then(r => setStatus(r.ok ? r.wise : null)).catch(() => setStatus(null));
+  useEffect(() => { if (account.hasWiseToken) check(); }, [account.hasWiseToken]);
   const save = async (body: Record<string, unknown>) => {
     setBusy(true); setMsg('');
     const r = await saveSettings(body);
-    setBusy(false); setKey('');
+    setBusy(false); setToken('');
     setMsg(r.ok ? 'Saved.' : (r.error ?? 'Failed.'));
     if (r.ok) { onSaved(); check(); }
   };
+  const pem = account.wisePublicKey;
+  const download = () => {
+    if (!pem) return;
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([pem], { type: 'application/x-pem-file' }));
+    a.download = 'kaizen-wise-public-key.pem'; a.click(); URL.revokeObjectURL(a.href);
+  };
   return (
     <div className="card">
-      <h2>Payments — Stripe <Hint>Kaizen pays cleaners' and handymen's invoices from its Stripe balance, through Stripe Connect: each payee sets up
-        their own account from a link the team sends (Operations → Cleaners / Handymen → Payment), and Stripe pays their bank. Paste the secret key
-        from Stripe's dashboard → Developers → API keys. Only test keys (sk_test_…) for now — no real money moves; turn on Connect in the dashboard
-        first. The key is checked with Stripe before it is kept, stored encrypted, and never shown again.</Hint></h2>
+      <h2>Payments — Wise <Hint>Kaizen pays cleaners' and handymen's invoices from its Wise USD balance (Operations → Cleaners / Handymen → Payment).
+        Each payee types their bank once on a link the team sends; Wise pays it, about $1.13 per $1,000. Set up: in Wise → Settings → API tokens, add a
+        token with full access and paste it here. Then download Kaizen's public key below and add it in Wise → API tokens → Manage public keys — Wise
+        asks for Kaizen's signature on every payment, and refuses it without that key. Only the sandbox for now: no real money moves. The token is
+        checked with Wise before it is kept, stored encrypted and never shown again.</Hint></h2>
       <label>
-        Secret key {account.hasStripeKey && <span className="ok-tag">one is stored</span>}
-        <input type="password" value={key} onChange={e => setKey(e.target.value)} autoComplete="off"
-               placeholder={account.hasStripeKey ? 'stored — type to replace' : 'sk_test_…'} />
+        Token {account.hasWiseToken && <span className="ok-tag">one is stored{account.wiseEnv === 'sandbox' ? ' · sandbox' : ''}</span>}
+        <input type="password" value={token} onChange={e => setToken(e.target.value)} autoComplete="off"
+               placeholder={account.hasWiseToken ? 'stored — type to replace' : 'Wise sandbox API token'} />
       </label>
-      {status && <p className="note">{status.configured
-        ? <>Stripe {status.mode === 'test' ? 'TEST mode' : 'LIVE mode'}{status.balance && ` · balance $${status.balance.available.toFixed(2)} available`}
-            {status.problem && <span className="breach"> · {status.problem}</span>}</>
-        : 'The stored key could not be read — paste it again.'}</p>}
+      {status && account.hasWiseToken && <p className="note">
+        {status.problem ? <span className="breach">{status.problem}</span>
+          : status.profile ? <>Paying from <b>{status.profile.name}</b>{status.balance != null && ` · USD balance $${status.balance.toFixed(2)}`}</>
+          : 'Pick the business profile Kaizen pays from:'}
+      </p>}
+      {status && status.profiles.length > 1 && (
+        <label>Business profile
+          <select value={status.profile?.id ?? ''} disabled={busy} onChange={e => void save({ wiseProfileId: Number(e.target.value) })}>
+            {!status.profile && <option value="">—</option>}
+            {status.profiles.map(p => <option key={p.id} value={p.id}>{p.name}{p.country ? ` (${p.country})` : ''}</option>)}
+          </select>
+        </label>
+      )}
+      {pem && <p className="note">Kaizen's public key — add it once in Wise → API tokens → Manage public keys.{' '}
+        <button className="link tiny" onClick={download}>Download .pem</button>{' '}
+        <button className="link tiny" onClick={() => void navigator.clipboard?.writeText(pem)}>Copy</button></p>}
       <div className="button-row">
-        <button onClick={() => void save({ stripeSecretKey: key })} disabled={busy || !key.trim()}>{busy ? 'Checking…' : 'Save key'}</button>
-        {account.hasStripeKey && <button className="secondary" disabled={busy} onClick={() => void save({ clearStripeKey: true })}>Remove key</button>}
+        <button onClick={() => void save({ wiseToken: token, wiseEnv: 'sandbox' })} disabled={busy || !token.trim()}>{busy ? 'Checking…' : 'Save token'}</button>
+        {account.hasWiseToken && <button className="secondary" disabled={busy} onClick={() => void save({ clearWise: true })}>Remove token</button>}
       </div>
       {msg && <p className="note">{msg}</p>}
     </div>

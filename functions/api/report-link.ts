@@ -20,8 +20,8 @@
  * matched by its SHA-256. SELF_AUTHENTICATING in the middleware.
  *
  * §135: the same door answers an inspector's link — a request with
- * `X-Inspect-Token` instead goes to inspect-link.ts, so no new path needs a bypass. And `?stripe=` is a
- * payee's Stripe setup link (owner, 2026-10-25; payouts.ts `stripeOnboard`).
+ * `X-Inspect-Token` instead goes to inspect-link.ts, so no new path needs a bypass. And `?bank=` is a
+ * payee's bank form for Wise (owner, 2026-10-28; payouts.ts `bankLink`).
  */
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
@@ -35,7 +35,7 @@ import type { HelperEvent } from '../../src/lib/crew-slack.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type Stage } from '../_lib/clean-record.ts';
 import { inspectGet, inspectPost } from '../_lib/inspect-link.ts';
 import { workAct, workOfToken, workPage, workPhoto } from '../_lib/vendor-work.ts';
-import { stripeOnboard } from '../_lib/payouts.ts';
+import { bankLink } from '../_lib/payouts.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
 
@@ -62,8 +62,8 @@ const gone = (ended = false) => Response.json({ ok: false, error: 'bad_link', me
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
   if (request.headers.has('X-Inspect-Token')) return inspectGet(sql, request);
-  // Owner, 2026-10-25: a cleaner's or handyman's Stripe setup link — the same public door, no new bypass.
-  if (new URL(request.url).searchParams.has('stripe')) return stripeOnboard(sql, env.ENCRYPTION_KEY, request);
+  // Owner, 2026-10-28: a cleaner's or handyman's bank form for Wise — the same public door, no new bypass.
+  if (new URL(request.url).searchParams.has('bank')) return bankLink(sql, env.ENCRYPTION_KEY, request);
   // §137: a handyman's link for one work order — the same door, its own header.
   if (request.headers.has('X-Work-Token')) {
     const w = await workOfToken(sql, request);
@@ -85,6 +85,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const sql = db(env) as unknown as SqlFn;
   if (request.headers.has('X-Inspect-Token')) return inspectPost(sql, env.ENCRYPTION_KEY, request);
+  if (new URL(request.url).searchParams.has('bank')) return bankLink(sql, env.ENCRYPTION_KEY, request);
   if (request.headers.has('X-Work-Token')) {
     const w = await workOfToken(sql, request);
     if (w instanceof Response) return w;

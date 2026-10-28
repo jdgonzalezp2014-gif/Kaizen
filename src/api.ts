@@ -6,7 +6,9 @@ export interface Account {
   hasHostawayKey: boolean;
   hasGeminiKey: boolean;
   hasClaudeKey: boolean;
-  hasStripeKey: boolean;
+  hasWiseToken: boolean;
+  wiseEnv: string | null;
+  wisePublicKey: string | null;
   hasJinaKey: boolean;
   hasIngestToken: boolean;
   hasQuoKey: boolean; quoFrom: string | null;
@@ -1000,7 +1002,7 @@ import type { Payout } from './lib/payouts.ts';
 
 export interface VendorInfo {
   name: string; inDirectory: boolean; active: boolean; trade: string | null; email: string | null; phone: string | null;
-  invoicePeriod: InvoicePeriod; stripeAccount: string | null; stripeMode: string | null;
+  invoicePeriod: InvoicePeriod;
 }
 export interface VendorPage {
   vendor: VendorInfo; today: string; periods: Period[]; period: Period; jobs: VendorJob[]; openJobs: VendorJob[];
@@ -1017,15 +1019,17 @@ export const vendorSlackChannel = (vendor: string, channel?: string) =>
 export const vendorPageLink = (vendor: string, mode?: 'new' | 'off') =>
   call<{ ok: true; link: string | null; phone?: string | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify({ action: 'link', vendor, mode }) });
 
-export interface StripeStatus { configured: boolean; mode: 'test' | 'live' | null; balance: { available: number; pending: number } | null; problem: string | null }
-export interface PayeeAccount {
-  id: string; mode: string | null; ready?: boolean; detailsSubmitted?: boolean; payoutsEnabled?: boolean; transfers?: string; due?: string[]; problem?: string;
+export interface WiseStatus {
+  configured: boolean; env: 'sandbox' | 'live' | null; profiles: { id: number; name: string; country: string | null }[];
+  profile: { id: number; name: string } | null; balance: number | null; problem: string | null;
 }
+/** The payee's bank on file in Wise — only its last 4; `current` = in the environment Kaizen pays from now. */
+export interface PayeeBank { last4: string | null; env: string | null; current: boolean }
 export const getPayouts = (kind?: 'cleaner' | 'vendor', payee?: string) =>
-  call<{ ok: true; stripe: StripeStatus; payee?: { name: string; email: string | null; account: PayeeAccount | null } | null; payouts?: Payout[] } | Fail>(
+  call<{ ok: true; wise: WiseStatus; payee?: { name: string; email: string | null; bank: PayeeBank | null } | null; payouts?: Payout[] } | Fail>(
     `/api/payouts${kind && payee ? `?${new URLSearchParams({ kind, payee })}` : ''}`);
 export const payoutAction = (body: Record<string, unknown>) =>
-  call<{ ok: true; link?: string; phone?: string | null; mode?: string; payout?: Payout } | Fail>('/api/payouts', { method: 'POST', body: JSON.stringify(body) });
+  call<{ ok: true; link?: string; phone?: string | null; env?: string; payout?: Payout } | Fail>('/api/payouts', { method: 'POST', body: JSON.stringify(body) });
 
 /** Owner, 2026-10-28: one line of Costs and where it comes from (functions/_lib/expense-audit.ts). */
 export interface ExpenseAudit {

@@ -20,7 +20,7 @@ export const CUSTOM_MAX_DAYS = 92, CUSTOM_AHEAD = 30;
 
 export interface VendorInfo {
   name: string; inDirectory: boolean; active: boolean; trade: string | null; email: string | null; phone: string | null;
-  invoicePeriod: InvoicePeriod; stripeAccount: string | null; stripeMode: string | null;
+  invoicePeriod: InvoicePeriod;
 }
 
 /** Everyone with work to pay: the directory, then names only typed on a work order. */
@@ -38,7 +38,6 @@ export async function vendorNames(sql: SqlFn): Promise<(VendorInfo & { open: num
        GROUP BY lower(btrim(w.vendor)))
     SELECT coalesce(v.name, t.name) AS name, v.id IS NOT NULL AS "inDirectory", coalesce(v.active, true) AS active,
            v.trade, v.email, v.phone, coalesce(v.invoice_period, 'monthly') AS "invoicePeriod",
-           v.stripe_account_id AS "stripeAccount", v.stripe_mode AS "stripeMode",
            coalesce(t.open, 0) AS open, coalesce(t.done, 0) AS done
       FROM (SELECT * FROM vendors WHERE account_id = 1) v FULL JOIN typed t ON t.k = lower(v.name)
      ORDER BY (v.id IS NULL), coalesce(v.active, true) DESC, lower(coalesce(v.name, t.name))` as (VendorInfo & { open: number; done: number })[];

@@ -1,14 +1,14 @@
 /**
  * Paying an invoice — a cleaner's or a handyman's (owner, 2026-10-25). One
- * payout per invoice number: through Stripe Connect (a transfer to the
- * payee's connected account) or marked paid by hand. Pure: the server and
- * both pages read the same state.
+ * payout per invoice number: through Wise (a transfer from Kaizen's Wise
+ * balance to the payee's bank, owner 2026-10-28) or marked paid by hand.
+ * Pure: the server and both pages read the same state.
  */
 import type { DateStr } from './dates.ts';
 
 export interface Payout {
-  id: string; invoiceNumber: string; amount: number; method: 'stripe' | 'manual';
-  stripeMode: 'test' | 'live' | null; transferId: string | null; note: string | null; by: string; at: string;
+  id: string; invoiceNumber: string; amount: number; method: 'wise' | 'manual';
+  env: WiseEnv | null; transferId: string | null; status: string | null; fee: number | null; note: string | null; by: string; at: string;
 }
 
 export type PayState =
@@ -38,11 +38,34 @@ export function payBlockers(inv: { open: boolean; total: number; unpriced: numbe
   return out;
 }
 
-/** The mode a Stripe secret (or restricted) key works in; null = not a Stripe key. */
-export function stripeMode(key: string): 'test' | 'live' | null {
-  const m = /^(sk|rk)_(test|live)_[A-Za-z0-9]{10,}$/.exec(key.trim());
-  return m ? m[2] as 'test' | 'live' : null;
+export type WiseEnv = 'sandbox' | 'live';
+
+/** A US routing number (ABA): 9 digits whose weighted sum (3, 7, 1, …) is a multiple of 10 — catches a typo before Wise does. */
+export function routingValid(v: string): boolean {
+  if (!/^\d{9}$/.test(v)) return false;
+  const d = [...v].map(Number);
+  return (3 * (d[0]! + d[3]! + d[6]!) + 7 * (d[1]! + d[4]! + d[7]!) + (d[2]! + d[5]! + d[8]!)) % 10 === 0;
+}
+export const accountNumberValid = (v: string) => /^\d{4,17}$/.test(v);
+
+/** Wise's transfer states that will not move again; any other is refreshed when the card opens. */
+export const WISE_FINAL = ['outgoing_payment_sent', 'cancelled', 'funds_refunded', 'bounced_back', 'charged_back'];
+
+/** Wise's state in a few words for the card; null = nothing worth saying (sent). */
+export function wiseStatusLabel(s: string | null): { text: string; bad: boolean } | null {
+  if (!s || s === 'outgoing_payment_sent') return null;
+  if (['cancelled', 'funds_refunded', 'bounced_back', 'charged_back'].includes(s))
+    return { text: `Wise: ${s.replace(/_/g, ' ')} — the money came back; pay again or by hand`, bad: true };
+  return { text: 'Wise: on its way', bad: false };
 }
 
-/** Dollars to Stripe's cents, without float drift ($19.99 → 1999). */
+/** A stable id per invoice and amount: a retry finds Wise's same transfer instead of paying twice. */
+export function transferUuid(hex: string): string {
+  const h = hex.slice(0, 32).split('');
+  h[12] = '5'; h[16] = ((parseInt(h[16]!, 16) & 0x3) | 0x8).toString(16);
+  const x = h.join('');
+  return `${x.slice(0, 8)}-${x.slice(8, 12)}-${x.slice(12, 16)}-${x.slice(16, 20)}-${x.slice(20, 32)}`;
+}
+
+/** Dollars to cents, without float drift ($19.99 → 1999). */
 export const toCents = (amount: number) => Math.round(amount * 100);

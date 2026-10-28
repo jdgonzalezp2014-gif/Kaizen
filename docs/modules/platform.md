@@ -49,13 +49,14 @@ Hostaway client, sync, crypto, migrations.
   the only credential, they never trust identity headers). Cloudflare Access has a **Bypass app "Kaizen —
   public links"** (Bypass Everyone, live 2026-10-12) for `/report`, `/api/report-link`, `/crew`,
   `/api/crew-link`, `/assets/*` — verified: those answer without sign-in, `/` and every other `/api/*`
-  still redirect. A new public page needs its path added there (§134). `/api/report-link?stripe=<signed>` is a payee's
-  Stripe setup link (§168) — same door, no new bypass.
+  still redirect. A new public page needs its path added there (§134). `/api/report-link?bank=<signed>` is a payee's
+  bank form for Wise (§172; GET form, POST saves) — same door, no new bypass.
   Empty list = any authenticated caller; DB failure = 503, never a pass (§29).
 - Sign out (2026-10-26): a link to `/cdn-cgi/access/logout` (Access ends the session) in the phone's More list
   and the side rail's foot. The crew/vendor-only pages have no header and no sign-out yet.
 - **Payouts (§168):** permission `payouts` (`/api/payouts`) — paying invoices is not part of Operations' edits. Settings → Payments
-  holds the Stripe secret key (`accounts.stripe_secret_key_enc`; test keys only, checked against Stripe's /balance before saving).
+  holds the Wise token (`accounts.wise_token_enc`, `wise_env`; sandbox only, checked against /v2/profiles), the business profile it pays
+  from, and Kaizen's signing key pair (private encrypted; the public PEM is shown to upload to Wise once) — §172.
 - Roles are named sets of permissions (Settings grid, each tick saves at once); allow-list
   of routes — a new route is closed until listed; no member row = admin; unreadable role =
   nothing; a list with no admin or that demotes the saver is refused (§49, §65, §75).

@@ -168,7 +168,7 @@ export function CrewAdmin({ roster, canEdit, canPay = false }: { roster: Cleaner
                          onCancel={() => setAdding(false)} onDone={() => { setAdding(false); void load(); }} />
       )}
       {page && <CrewView page={page} mode="team" canEdit={canEdit} onPeriod={p => pick(p)} onRange={pick} reload={load} act={crewAdminAction} />}
-      {/* Owner, 2026-10-25: the invoice paid — Stripe or by hand. Not for the team's own dates: pay goes by invoice period. */}
+      {/* Owner, 2026-10-25: the invoice paid — Wise or by hand. Not for the team's own dates: pay goes by invoice period. */}
       {page && page.cleaner.name === name && !page.period.custom && (
         <PayoutCard kind="cleaner" payee={name} today={page.today} canPay={canPay} onChanged={load} payout={payout}
                     invoice={{ number: page.invoice.number, period: page.invoice.period, open: page.invoice.open, total: page.invoice.total,

@@ -86,7 +86,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   await attachFiles(sql, pending as { id: string }[]);
   // §137: purchases paid in the field, waiting for approval before they reach Costs.
   const fieldPending = await pendingFieldExpenses(sql);
-  // Owner, 2026-10-25: how this invoice was paid (Stripe or by hand) — none for the team's own span.
+  // Owner, 2026-10-25: how this invoice was paid (Wise or by hand) — none for the team's own span.
   const payout = page && !page.period.custom ? await payoutOf(sql, page.invoice.number) : null;
   return Response.json({ ok: true, pending, fieldPending, page, schedule: fast ? null : schedule, toConfirm, payout });
 };

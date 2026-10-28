@@ -246,8 +246,10 @@ key had no SOPs.
   pay instead → `pay_fixed`), ✎ correct (`pay_fixed`; blank = approved charges), ○ not paid (`pay_void`, leaves Costs), + add a job
   (a completed work order, not mirrored). Names typed on work orders are listed too; picking their period adds them to `vendors`.
   The handyman's own page has a Pay tab (`/api/vendor` returns `pay`). **Payment card** (`components/PayoutCard.tsx`) under both
-  a handyman's and a cleaner's page → `/api/payouts` (permission `payouts`), `functions/_lib/payouts.ts`: Stripe Connect Express
-  (Settings → Payments, test keys only) or "Mark paid"; one `payouts` row per invoice number; the invoice is rebuilt on the server.
+  a handyman's and a cleaner's page → `/api/payouts` (permission `payouts`), `functions/_lib/payouts.ts`: **Wise** since §172
+  (Settings → Payments, sandbox only) or "Mark paid"; one `payouts` row per invoice number; the invoice is rebuilt on the server.
+  The payee types their bank once on `/api/report-link?bank=<signed>` (30 days; Kaizen keeps the Wise recipient id + last 4);
+  "Pay $X with Wise" = quote → transfer (id from invoice+amount, so a retry finds the same one) → paid from the USD balance, signed.
   Header: "Copy their link" copies the handyman's own page link (`/crew#v=…`, the same each time; New link / Turn off) — see work.md.
 - **Cleaners loads in two steps (owner, 2026-10-25):** the schedule costs three Hostaway calls (~3 s). A new cleaner or period asks
   `/api/crew-admin?…&fast=1` (no schedule: `loadCrewPage(…, skipSchedule)` → `upcoming.loading`, `schedule: null`) and the full
@@ -617,8 +619,9 @@ key had no SOPs.
 
 ## Open items
 
-- §168: Stripe never exercised with a real test key (no key yet): account creation, onboarding link, transfer. To do with the
-  owner's sk_test_ — see §168 "Turning on Stripe test". The Neon branch `test-vendor-pay` (br-noisy-frog-b5yhqotg) holds the e2e data.
+- §172 Wise: tested end to end in the sandbox on Neon branch `test-wise-pay` (br-cold-queen-b5aa6gz9 — delete only after asking).
+  Left: deploy (106 + `.sop-106.mjs`), the owner pastes the sandbox token and uploads Kaizen's public key; then live (a code switch in
+  settings.ts, the boss's US Wise Business account + EIN) and the weekly "Pay all due" with the boss's approval.
 
 - **To evaluate (owner, 2026-10-15): the Amazon Business Cart API** for an "Add to Amazon cart (n)" like Walmart's — Kaizen has
   Amazon Business; `addItems` (ASIN + qty) fills a user's cart, the person checks and pays (Kaizen never pays). Needs the account's
