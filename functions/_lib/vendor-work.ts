@@ -37,40 +37,56 @@ interface Row {
  * Owner, 2026-10-27: a repair's items are each a work order, given like cleans (Give items, todos.ts) — an item with
  * no day or listing of its own is on the repair's. The vendor is never inherited: "all but this one" must stay possible.
  */
+async function workRows(sql: SqlFn, ids: string[]): Promise<Row[]> {
+  return await sql`SELECT t.id::text, t.title, t.description, coalesce(t.unit_ids[1], p.unit_ids[1]) AS unit_id, u.name AS unit,
+                          coalesce(t.scheduled_on, p.scheduled_on)::text AS scheduled_on,
+                          CASE WHEN t.scheduled_on IS NULL THEN p.start_time ELSE t.start_time END AS start_time,
+                          t.due_on::text, t.status, t.vendor, t.kind,
+                          t.vendor_accepted_at::text, t.vendor_accepted_by, t.resolution_note, t.cost_actual::float AS cost_actual
+                     FROM todos t LEFT JOIN todos p ON p.account_id = t.account_id AND p.id = t.parent_id AND p.kind = 'work_order' AND p.deleted_at IS NULL
+                     LEFT JOIN units u ON u.account_id = t.account_id AND u.id = coalesce(t.unit_ids[1], p.unit_ids[1])
+                    WHERE t.account_id = 1 AND t.id = ANY(${ids.map(x => Number(x) || 0)}::bigint[]) AND t.deleted_at IS NULL` as Row[];
+}
 async function workRow(sql: SqlFn, id: string): Promise<Row | null> {
-  const [r] = await sql`SELECT t.id::text, t.title, t.description, coalesce(t.unit_ids[1], p.unit_ids[1]) AS unit_id, u.name AS unit,
-                                coalesce(t.scheduled_on, p.scheduled_on)::text AS scheduled_on,
-                                CASE WHEN t.scheduled_on IS NULL THEN p.start_time ELSE t.start_time END AS start_time,
-                                t.due_on::text, t.status, t.vendor, t.kind,
-                                t.vendor_accepted_at::text, t.vendor_accepted_by, t.resolution_note, t.cost_actual::float AS cost_actual
-                           FROM todos t LEFT JOIN todos p ON p.account_id = t.account_id AND p.id = t.parent_id AND p.kind = 'work_order' AND p.deleted_at IS NULL
-                           LEFT JOIN units u ON u.account_id = t.account_id AND u.id = coalesce(t.unit_ids[1], p.unit_ids[1])
-                          WHERE t.account_id = 1 AND t.id = ${Number(id) || 0} AND t.deleted_at IS NULL` as Row[];
-  return r ?? null;
+  return (await workRows(sql, [id]))[0] ?? null;
 }
 
 /** What the handyman sees of one work order. The access only on the day set and while it is open; never the team's notes beyond the description. */
 export async function workPage(sql: SqlFn, id: string) {
-  const r = await workRow(sql, id);
-  if (!r) return null;
+  return (await workPages(sql, [id]))[0] ?? null;
+}
+
+/**
+ * Several work orders in a fixed number of queries, in the order asked (2026-10-27: one page per work order cost ~7
+ * queries each, and a handyman with 9 passed Cloudflare's 50 subrequests — their page threw).
+ */
+export async function workPages(sql: SqlFn, ids: string[]) {
+  if (!ids.length) return [];
+  const nums = ids.map(x => Number(x) || 0);
   const today = todayIn(TZ);
-  const [photos, charges, acc] = await Promise.all([
-    sql`SELECT stage, name, url FROM work_photos WHERE account_id = 1 AND todo_id = ${Number(id)} ORDER BY id`,
-    sql`SELECT id::text, amount::float AS amount, description, status, decision_note AS "decisionNote", photos
-          FROM field_expenses WHERE account_id = 1 AND todo_id = ${Number(id)} AND source = 'vendor' ORDER BY id`,
-    r.unit && r.scheduled_on === today && !['completed', 'cancelled'].includes(r.status) ? accessByUnit(sql) : Promise.resolve(null)
-  ]) as [{ stage: 'before' | 'after'; name: string; url: string }[], { id: string; amount: number; description: string; status: string; decisionNote: string | null; photos: unknown }[], Awaited<ReturnType<typeof accessByUnit>> | null];
-  const access = acc && r.unit ? acc.get(r.unit) : null;
-  return {
-    work: { id: r.id, title: r.title, description: r.description, unit: r.unit, scheduledOn: r.scheduled_on, startTime: r.start_time,
-            dueOn: r.due_on, status: r.status, vendor: r.vendor, accepted: r.vendor_accepted_at ? { at: r.vendor_accepted_at, by: r.vendor_accepted_by } : null,
-            resolution: r.resolution_note },
-    today,
-    address: access?.address ?? (r.unit ? (await accessByUnit(sql)).get(r.unit)?.address ?? null : null),
-    access: access ? strip(access) : null,
-    photos: { before: photos.filter(p => p.stage === 'before').length, after: photos.filter(p => p.stage === 'after').length },
-    charges
-  };
+  const [rows, photos, charges, acc] = await Promise.all([
+    workRows(sql, ids),
+    sql`SELECT todo_id::text AS "todoId", stage FROM work_photos WHERE account_id = 1 AND todo_id = ANY(${nums}::bigint[]) ORDER BY id`,
+    sql`SELECT todo_id::text AS "todoId", id::text, amount::float AS amount, description, status, decision_note AS "decisionNote", photos
+          FROM field_expenses WHERE account_id = 1 AND todo_id = ANY(${nums}::bigint[]) AND source = 'vendor' ORDER BY id`,
+    accessByUnit(sql)
+  ]) as [Row[], { todoId: string; stage: 'before' | 'after' }[], ({ todoId: string; id: string; amount: number; description: string; status: string; decisionNote: string | null; photos: unknown })[], Awaited<ReturnType<typeof accessByUnit>>];
+  const byId = new Map(rows.map(r => [r.id, r]));
+  return ids.map(id => byId.get(String(Number(id)))).filter((r): r is Row => !!r).map(r => {
+    const unit = r.unit ? acc.get(r.unit) : undefined;
+    const today_ = r.scheduled_on === today && !['completed', 'cancelled'].includes(r.status);
+    const mine = photos.filter(p => p.todoId === r.id);
+    return {
+      work: { id: r.id, title: r.title, description: r.description, unit: r.unit, scheduledOn: r.scheduled_on, startTime: r.start_time,
+              dueOn: r.due_on, status: r.status, vendor: r.vendor, accepted: r.vendor_accepted_at ? { at: r.vendor_accepted_at, by: r.vendor_accepted_by } : null,
+              resolution: r.resolution_note },
+      today,
+      address: unit?.address ?? null,
+      access: today_ && unit ? strip(unit) : null,
+      photos: { before: mine.filter(p => p.stage === 'before').length, after: mine.filter(p => p.stage === 'after').length },
+      charges: charges.filter(c => c.todoId === r.id).map(({ todoId: _, ...c }) => c)
+    };
+  });
 }
 
 async function note(sql: SqlFn, encryptionKey: string, id: string, body: string, by: string, kind: 'note' | 'change' | 'status' = 'change') {

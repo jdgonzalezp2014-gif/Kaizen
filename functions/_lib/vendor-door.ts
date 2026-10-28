@@ -5,7 +5,7 @@
  */
 import type { Env } from './db.ts';
 import type { SqlFn } from './accounts.ts';
-import { workAct, workPage, workPhoto } from './vendor-work.ts';
+import { workAct, workPage, workPages, workPhoto } from './vendor-work.ts';
 import { loadVendorPage } from './vendor-pay.ts';
 import { sha256 } from './crew.ts';
 
@@ -34,7 +34,7 @@ export async function vendorGet(request: Request, env: Env, sql: SqlFn, v: strin
     if (!(await mine(sql, v)).includes(id)) return Response.json({ ok: false, error: 'not_found', message: 'No such photo.' }, { status: 404 });
     return workPhoto(sql, env.ENCRYPTION_KEY, id, q.get('photo') ?? '');
   }
-  const works = (await Promise.all((await mine(sql, v)).map(id => workPage(sql, id)))).filter(Boolean);
+  const works = await workPages(sql, await mine(sql, v));
   // Owner, 2026-10-25: their pay, as a cleaner sees theirs — the invoice periods only, never the team's own dates.
   const pay = await loadVendorPage(sql, v, new URL(request.url).searchParams.get('period'));
   return Response.json({ ok: true, vendor: v, works, pay: pay && { ...pay, openJobs: [] } }, { headers: { 'Cache-Control': 'no-store' } });
