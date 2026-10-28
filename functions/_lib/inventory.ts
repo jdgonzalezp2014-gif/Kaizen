@@ -398,7 +398,7 @@ export async function fieldTodo(sql: SqlFn, who: Who, b: Record<string, unknown>
 /**
  * "I bought something" from a cleaner (§150), in their own words with the
  * total and the receipt. Nothing reaches the stock or Costs yet: the team
- * approves it in Operations → Cleaners by recording it as a purchase — which
+ * approves it in Operations → Approvals by recording it as a purchase — which
  * items, to which place — and that purchase is its stock and its cost.
  */
 export async function fieldPurchase(sql: SqlFn, who: Who, b: Record<string, unknown>, photos: { name: string; url: string }[] = []) {
@@ -411,7 +411,7 @@ export async function fieldPurchase(sql: SqlFn, who: Who, b: Record<string, unkn
   const id = await addFieldExpense(sql, { source: who.source as 'cleaner' | 'link', by: who.name, amount: cost, description: `Bought: ${text}`,
     category: 'Restock', cleaningKey: b.cleaningKey ? String(b.cleaningKey) : null, unitId, photos });
   const title = `Bought by ${who.name}: ${text} — $${cost.toFixed(2)}`;
-  const description = `Approve it in Operations → Cleaners: record what was bought in Inventory (items and where each went).` +
+  const description = `Approve it in Operations → Approvals: record what was bought in Inventory (items and where each went).` +
     photos.map(p => `\nReceipt: ${p.url}`).join('');
   const ct = await cleanTodo(sql, who, b.cleaningKey, 'bought', title, description, 'medium');
   return { fieldExpense: id, todoId: ct?.todoId ?? null, fresh: ct?.fresh ?? false };

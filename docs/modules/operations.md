@@ -800,3 +800,11 @@ UI only; tokens and shared components from `docs/design-system.md`.
 - **§164 (owner, 2026-10-15):** the field report form no longer asks urgency (the team validates it — work module); purchase
   orders from Inventory / low stock / a field to-do keep their items as order lines, not sub-tasks; inspection repairs are titled
   by the inspector's note (`repairTitle`).
+
+- **Operations → Approvals (owner, 2026-10-28, §171):** what people outside the team spent or charged — cleaners' extras,
+  purchases paid in the field, a handyman's labor and materials — moved out of Operations → Cleaners into a tab of its own
+  (src/screens/Approvals.tsx; data = `getCrewAdmin(…, fast)`: `pending` + `fieldPending`). Each line has the shape of a cost
+  line anywhere: amount — what for, who · house · kind, receipts (`PhotoStrip`), small **Approve / Deny…** (`Decide`, Crew.tsx,
+  now exported and compact — the note only when denying; a cleaner's purchase still approves by recording it in Inventory),
+  and **Open the repair ›** (the to-do's own panel, `TodoList task`). Home's $ Approvals tab's Review → opens it. Cleaners'
+  chip reads "Pages".

@@ -73,18 +73,13 @@ test('Stripe keys: test or live, anything else refused; cents without drift', ()
   assert.equal(toCents(0.1 + 0.2), 30);
 });
 
-test('a pay check: its title and lines say who, what and how much; flags and missing prices block it', async () => {
-  const { payCheckTitle, payCheckText, payCheckBlock } = await import('./vendor-pay.ts');
-  const j = (id: string, over = {}) => ({ id, title: `Fix ${id}`, vendor: 'Tim', cost: null, flag: null, pending: 1, pendingSum: 40, charges: 1, ...over });
-  assert.equal(payCheckTitle([j('1')]), 'Validate pay — Tim: Fix 1 · $40.00 charged');
-  assert.equal(payCheckTitle([j('1', { pending: 2, pendingSum: 60 }), j('2'), j('3', { pending: 0, pendingSum: 0, charges: 0 })]),
-               'Validate pay — Tim: 3 jobs · $100.00 charged, 1 with no price');
-  assert.equal(payCheckTitle([j('3', { pending: 0, pendingSum: 0 })]), 'Validate pay — Tim: Fix 3 · no price yet');
-  assert.equal(payCheckText([j('1', { pending: 2, pendingSum: 60, flag: 'two charges for one fix?' }), j('3', { pending: 0, pendingSum: 0 })]),
-               '#1 Fix 1 — $60.00 in 2 charges waiting · ⚑ flagged: two charges for one fix?\n#3 Fix 3 — no price yet');
-  assert.equal(payCheckBlock([j('1'), j('2')]), null);
-  assert.match(payCheckBlock([j('1', { flag: 'x' })])!, /^#1 is flagged/);
-  // A flag on a job with nothing waiting does not hold the others.
-  assert.equal(payCheckBlock([j('1'), j('2', { flag: 'x', pending: 0, pendingSum: 0, cost: 30 })]), null);
-  assert.match(payCheckBlock([j('3', { pending: 0, pendingSum: 0 })])!, /^#3 has no price/);
+test('closing a repair: the charges waiting are asked about; a flagged job keeps them waiting', async () => {
+  const { closeAsk } = await import('./vendor-pay.ts');
+  const c = (id: string, todoId: string, amount: number, flag: string | null = null) => ({ id, todoId, job: `Fix ${todoId}`, vendor: 'Tim', amount, description: 'Labor', flag });
+  const a = closeAsk([c('1', '109', 50), c('2', '110', 40), c('3', '108', 30, 'twice?'), c('4', '108', 30, 'twice?')]);
+  assert.deepEqual(a.approve.map(x => x.id), ['1', '2']);
+  assert.equal(a.sum, 90);
+  assert.equal(a.message, "Tim's 2 charges ($90.00) wait for approval. #108 is flagged — those charges stay waiting.");
+  assert.equal(closeAsk([c('1', '109', 50)]).message, "Tim's charge ($50.00) waits for approval.");
+  assert.equal(closeAsk([c('3', '108', 30, 'x')]).message, '#108 is flagged — its charge stays waiting.');
 });

@@ -33,7 +33,6 @@ import { opsConfig } from '../_lib/ops.ts';
 import { decideFieldExpense, pendingFieldExpenses, syncCleaningCosts } from '../_lib/field-costs.ts';
 import { learnAliases } from '../_lib/receipt-read.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
-import { syncPayCheck } from '../_lib/pay-check.ts';
 import { getCredentials } from '../_lib/accounts.ts';
 import { payoutOf } from '../_lib/payouts.ts';
 
@@ -124,8 +123,6 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (status === 'approved' && body.aliases) await learnAliases(sql, who.email, body.aliases).catch(() => {});
     // §137: a handyman's charge decided → the repair's cost follows, and its expense if it is completed.
     if (f.todo_id) await settleRepair(sql, f.todo_id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY)).catch(() => {});
-    // Decided here, it is not validated twice: the job's pay check follows (closes once nothing waits).
-    if (f.todo_id) await syncPayCheck(sql, f.todo_id, who.email).catch(() => {});
     return Response.json({ ok: true });
   }
 

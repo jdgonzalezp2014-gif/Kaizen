@@ -32,8 +32,6 @@ export interface Todo {
   purchaseTotal?: number; order?: boolean;
   /** §164: a field report waiting for the team's urgency (asked in Slack; setting the priority answers it). */
   urgencyPending?: boolean;
-  /** Owner, 2026-10-28: the "Validate pay" sub-task of a handyman's job done — completing it approves the charges waiting. */
-  payCheck?: boolean;
   /** Owner, Oct 2026: files on it (📎). */ files?: number;
   /** The claim this work resolves, if any. */
   claimId: string | null;

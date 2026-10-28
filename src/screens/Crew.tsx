@@ -17,7 +17,7 @@ import { Hint } from '../components/Hint.tsx';
 import { Fragment, useEffect, useRef, useState } from 'react';
 import {
   crewAction, crewAdminAction, crewCleanLink, crewPhoto, crewReport, crewUpload, getCrew, getCrewAdmin, getCrewAsCleaner,
-  type CleanFieldState, type CleanLink, type CrewPage, type FieldExpense, type CrewSchedule, type CrewUpcoming, type PendingExtra, type ToConfirm
+  type CleanFieldState, type CleanLink, type CrewPage, type CrewSchedule, type CrewUpcoming, type ToConfirm
 } from '../api.ts';
 import type { CrewClean, CrewExtra } from '../lib/crew.ts';
 import { isBilled, movementText, EXTRA_MAX_AMOUNT, type Movement } from '../lib/crew.ts';
@@ -56,7 +56,7 @@ type Upload = (fields: Record<string, string>, files: File[]) => Promise<{ ok: b
 const ACCEPT = 'image/*,application/pdf';
 
 /** Evidence on an extra: links the team opens in Drive. */
-const Files = ({ files }: { files?: { id: string; name: string; url: string }[] }) => !files?.length ? null : (
+export const Files = ({ files }: { files?: { id: string; name: string; url: string }[] }) => !files?.length ? null : (
   <span className="crew-files">{files.map(f => <a key={f.id} href={f.url} target="_blank" rel="noreferrer"><Icon n="clip" /> {ic(f.name)}</a>)}</span>
 );
 
@@ -98,7 +98,7 @@ export function CrewHome({ token, asCleaner, practice }: { token?: string | null
 
 /* ── the team's side, in Operations ───────────────────────────────── */
 
-/** Operations → Cleaners: extras waiting on the team, and any cleaner's page as they see it. */
+/** Operations → Cleaners: any cleaner's page as they see it (their extras and purchases wait in Operations → Approvals). */
 export function CrewAdmin({ roster, canEdit, canPay = false }: { roster: Cleaner[]; canEdit: boolean; canPay?: boolean }) {
   const fromHash = decodeURIComponent(/^#crew\/(.+)$/.exec(location.hash)?.[1] ?? '');
   const [name, setName] = useState(roster.some(c => c.name === fromHash) ? fromHash : '');
@@ -106,8 +106,6 @@ export function CrewAdmin({ roster, canEdit, canPay = false }: { roster: Cleaner
   // Owner, 2026-10-24: any dates, not only the invoice periods — `to` set = the team's own span.
   const [to, setTo] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
-  const [pending, setPending] = useState<PendingExtra[]>([]);
-  const [fieldPending, setFieldPending] = useState<FieldExpense[]>([]);
   const [page, setPage] = useState<CrewPage | null>(null);
   const [schedule, setSchedule] = useState<CrewSchedule | null>(null);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
@@ -126,7 +124,7 @@ export function CrewAdmin({ roster, canEdit, canPay = false }: { roster: Cleaner
       if (n !== seq.current || (!isFull && full)) return;
       if (isFull) full = true;
       if (!r.ok) { if (isFull) setErr(r.message ?? 'Could not load.'); return; }
-      setPending(r.pending); setFieldPending(r.fieldPending ?? []); setPage(r.page); setToConfirm(r.toConfirm ?? []); setPayout(r.payout ?? null); setErr('');
+      setPage(r.page); setToConfirm(r.toConfirm ?? []); setPayout(r.payout ?? null); setErr('');
       if (r.schedule) setSchedule(r.schedule);
     };
     if (fast) void getCrewAdmin(name || null, period, to, true).then(r => apply(r, false)).catch(() => {});
@@ -204,42 +202,6 @@ export function CrewAdmin({ roster, canEdit, canPay = false }: { roster: Cleaner
           )}
         </div>
       )}
-      <div className="card">
-        <h2>Extras waiting on the team <span className="chan-tag">{pending.length}</span></h2>
-        {!pending.length ? <p className="note">None waiting.</p> : (
-          <div className="crew-list">
-            {pending.map(e => (
-              <div key={e.id} className="crew-row">
-                <div><b>{ic(e.cleaner)}</b> · {ic(e.unit)} · {ic(day(e.date))}<div className="sub-n">clean paid {ic(pay(e.price))} · asked {ic(e.createdAt)}</div></div>
-                <div><b>+{ic(money2(e.amount))}</b> — {ic(e.description)} <Files files={e.files} /></div>
-                {canEdit && <Decide id={e.id} onDone={load} />}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-      <div className="card">
-        <h2>Purchases & charges waiting for approval <span className="chan-tag">{fieldPending.length}</span> <Hint>Paid in the field with its receipt — by a cleaner or a cleaner’s helper (<Icon n="brush" />), or a handyman’s labor and
-          materials on a repair (<Icon n="wrench" />). A cleaner’s purchase is approved by recording it in the inventory — which items, to which place — and
-          that purchase is its stock and its cost; the amount is paid back at once as an approved extra on the invoice of the clean it was bought for
-          (no clean → Costs’ “To pay back”). If the cleaner also sent it as an extra, deny that one: it would be paid twice. A handyman’s
-          charge becomes the repair’s cost and reaches Costs as Repairs. Denied, they read why. Nothing reaches Costs before a person approves it.</Hint></h2>
-        {!fieldPending.length ? <p className="note">None waiting.</p> : (
-          <div className="crew-list">
-            {fieldPending.map(f => (
-              <div key={f.id} className="crew-row">
-                <div>{ic(f.source === 'vendor' ? '🔧 ' : '🧹 ')}<b>{ic(f.byName.replace(/^(.*)'s team: (.*)$/, '$2 ($1’s team)'))}</b>{ic(f.unit ? ` · ${f.unit}` : '')}
-                  <div className="sub-n">{ic(f.category)} · asked {ic(f.at)}</div></div>
-                <div><b>{ic(money2(f.amount))}</b> — {ic(f.description)} <Files files={f.photos.map((p, i) => ({ id: String(i), ...p }))} />
-                  {!f.photos.length && <span className="breach"> no receipt</span>}</div>
-                {canEdit && <Decide id={f.id} kind="decideField" onDone={load}
-                  record={f.source === 'vendor' ? undefined : { unitId: f.unitId, said: f.description, amount: f.amount, hasReceipt: f.photos.length > 0 }} />}
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
     </>
   );
 }
@@ -282,12 +244,13 @@ function ConfirmRow({ t, roster, canEdit, onDone }: { t: ToConfirm; roster: Clea
 }
 
 /** `record`: a cleaner's purchase — approved only by recording it in the inventory (§150). */
-function Decide({ id, onDone, kind = 'decideExtra', record }: {
+export function Decide({ id, onDone, kind = 'decideExtra', record }: {
   id: string; onDone: () => void; kind?: 'decideExtra' | 'decideField'; record?: { unitId: string | null; said: string; amount: number; hasReceipt: boolean };
 }) {
   const [note, setNote] = useState('');
   const [msg, setMsg] = useState('');
   const [recording, setRecording] = useState(false);
+  const [denying, setDenying] = useState(false);
   const go = async (status: 'approved' | 'denied', lines?: unknown[], aliases?: unknown[]) => {
     const r = await crewAdminAction({ action: kind, id, status, note, ...(lines ? { lines } : {}), ...(aliases?.length ? { aliases } : {}) }).catch(e => ({ ok: false as const, message: String(e) }));
     if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
@@ -297,14 +260,21 @@ function Decide({ id, onDone, kind = 'decideExtra', record }: {
     <FieldPurchaseLines id={id} {...record} onSave={(lines, aliases) => go('approved', lines, aliases)} onCancel={() => setRecording(false)} />
     {msg && <span className="breach">{ic(msg)}</span>}
   </>;
+  // Owner, 2026-10-28: minimal — two small buttons; the note the person reads is asked only when denying.
   return (
-    <div className="crew-decide">
-      <input value={note} maxLength={500} placeholder="Note for the cleaner (needed to deny)" onChange={e => setNote(e.target.value)} />
-      {record ? <button className="small" onClick={() => { setMsg(''); setRecording(true); }}>✓ Approve — record in inventory</button>
-              : <button className="small" onClick={() => void go('approved')}>✓ Approve</button>}
-      <button className="small secondary" disabled={!note.trim()} onClick={() => void go('denied')}>■ Deny</button>
+    <span className="charge-decide">
+      {!denying ? <>
+        {record ? <button className="mini" title="Approve it by recording what was bought, and where it went, in the inventory"
+                          onClick={() => { setMsg(''); setRecording(true); }}><Icon n="done" /> Approve…</button>
+                : <button className="mini" title="Approve — it is paid and reaches Costs" onClick={() => void go('approved')}><Icon n="done" /> Approve</button>}
+        <button className="mini secondary" title="Deny — you write why; they read it" onClick={() => setDenying(true)}>Deny…</button>
+      </> : <>
+        <input value={note} maxLength={500} autoFocus placeholder="Why — they read it" onChange={e => setNote(e.target.value)} />
+        <button className="mini secondary" disabled={!note.trim()} onClick={() => void go('denied')}>Deny</button>
+        <button className="link tiny" onClick={() => { setDenying(false); setNote(''); }}>Cancel</button>
+      </>}
       {msg && <span className="breach">{ic(msg)}</span>}
-    </div>
+    </span>
   );
 }
 

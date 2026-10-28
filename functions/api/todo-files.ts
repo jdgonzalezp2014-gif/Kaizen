@@ -6,7 +6,7 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
-import { workProof } from '../_lib/pay-check.ts';
+import { workProof } from '../_lib/repair-charges.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { attachTodoFiles, listTodoFiles } from '../_lib/todo-files.ts';
 

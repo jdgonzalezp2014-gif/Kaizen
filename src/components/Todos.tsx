@@ -228,6 +228,13 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   // The last removal, for Undo (§82): what went, and how many sub-tasks with it.
   const [removed, setRemoved] = useState<{ id: string; title: string; kids: number } | null>(null);
   const [removedClaim, setRemovedClaim] = useState<Claim | null>(null);
+  // Owner, 2026-10-28: closing a repair while a handyman's charges wait asks first — approve them all and close, or cancel.
+  const [chargeAsk, setChargeAsk] = useState<{ text: string; count: number; sum: number; resend: () => Promise<unknown> } | null>(null);
+  const asked = (r: unknown, resend: () => Promise<unknown>) => {
+    const c = r as { error?: string; ask?: { text: string; count: number; sum: number } };
+    if (c.error !== 'charges_pending' || !c.ask) return false;
+    setChargeAsk({ ...c.ask, resend }); setErr(''); return true;
+  };
   const act: Act = async body => {
     const gone = body.action === 'delete' ? (todos ?? []).find(t => t.id === body.id) : undefined;
     const r = await todoAction({ ...body, ...(claim ? { claimScope: claim.id } : {}) })
@@ -239,6 +246,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
       if (body.action === 'restore') setRemoved(null);
       return true;
     }
+    if (asked(r, () => act({ ...body, approveCharges: true }))) return false;
     // §166: refused because it already moved (Done twice) — the list as it is now, and why.
     const now = (r as { todos?: Todo[] }).todos;
     if (now) take(now);
@@ -248,6 +256,11 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
     const r = await todoAction({ action: 'update', id, ...patch, baseRev, ...(claim ? { claimScope: claim.id } : {}) })
       .catch(e => ({ ok: false as const, message: String(e) }));
     if (r.ok) { take(r.todos); setErr(''); return { ok: true }; }
+    if (asked(r, async () => {
+      const again = await todoAction({ action: 'update', id, ...patch, baseRev, approveCharges: true, ...(claim ? { claimScope: claim.id } : {}) })
+        .catch(e => ({ ok: false as const, message: String(e) }));
+      if (again.ok) take(again.todos); else setErr(again.message ?? 'Not saved.');
+    })) return { ok: false };
     const c = r as { error?: string; message?: string; todos?: Todo[]; current?: Todo | null; by?: string | null; at?: string | null };
     if (c.error === 'conflict') {
       if (c.todos) take(c.todos);
@@ -266,8 +279,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   // its own section, saying what it is part of; one of the same kind lives only inside its parent.
   const catOf = (t: Todo) => categoryOf(t, !!orderIds?.has(t.id));
   // Owner, same day: sub-tasks are born inside their parent and stay there; only a work order or an order inside
-  // something of another kind is also listed in its own section. Owner, 2026-10-28: and a "Validate pay" sub-task, in
-  // Tasks — its job is often already done (closed), which would hide it inside.
+  // something of another kind is also listed in its own section.
   const crossCat = (t: Todo) => { const p = t.parentId ? byId.get(t.parentId) : undefined; return !!p && catOf(t) !== 'task' && catOf(p) !== catOf(t); };
   const [pop, setPop] = useState<{ todo?: string; claim?: string } | null>(task ? { todo: task } : null);
   useEffect(() => { if (task && !pop) onClose?.(); }, [pop]);
@@ -306,7 +318,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   // every match, flat, each sub-task saying whose it is (§78).
   const top = kindFilter === 'claims' ? []
     : filtering ? all.filter(t => matchesFilter(t, wf, today))
-    : all.filter(t => !t.parentId || !byId.has(t.parentId) || crossCat(t) || !!t.payCheck);
+    : all.filter(t => !t.parentId || !byId.has(t.parentId) || crossCat(t));
   const openList = top.filter(t => !isClosed(t.status));
   const doneList = top.filter(t => isClosed(t.status));
   // Worst first, then the oldest: the case that has waited longest at the top.
@@ -394,7 +406,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
               onCancel={() => setAdding(null)}
               onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAdding(null); return ok; }} />
   );
-  const taskRow = (t: Todo) => <TodoRow key={t.id} t={t} related={crossCat(t) || !!t.payCheck} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
+  const taskRow = (t: Todo) => <TodoRow key={t.id} t={t} related={crossCat(t)} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
 
   const lane = (key: 'task' | 'work_order' | 'claims', title: string, rows: ReactNode[], alert: ReactNode, empty: string) => {
     const kind = key === 'claims' ? 'claim' : key;
@@ -506,13 +518,24 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
               ))}
 </>);
 
+  const askUi = chargeAsk && (
+    <Modal title="Charges waiting" onClose={() => setChargeAsk(null)}>
+      <p>{chargeAsk.text}</p>
+      <div className="button-row">
+        <button className="small" title="Each charge is approved: the job's cost, on the handyman's invoice and in Costs"
+                onClick={() => { const go = chargeAsk.resend; setChargeAsk(null); void go(); }}>Approve all ({money2(chargeAsk.sum)}) and close</button>
+        <button className="small secondary" onClick={() => setChargeAsk(null)}>Cancel</button>
+      </div>
+    </Modal>
+  );
+
   // Owner, 2026-10-28: opened from a line in Costs — the task's own card, the same as in its list, and nothing else.
   if (task) {
     const x = byId.get(task);
     if (!pop) return null;
     // The open row draws its side panel (a portal); the row itself is not shown — only the card, as in To-do.
     return x ? (
-      <div hidden><ul className="todo-list"><TodoRow {...ctx} flat={false} t={x} chat={false} open onOpen={() => setPop(null)} /></ul></div>
+      <><div hidden><ul className="todo-list"><TodoRow {...ctx} flat={false} t={x} chat={false} open onOpen={() => setPop(null)} /></ul></div>{askUi}</>
     ) : <Modal title="To-do" onClose={() => setPop(null)}><p className={err ? 'breach' : 'note'}>{err || (todos ? 'That to-do is gone.' : 'Loading…')}</p></Modal>;
   }
 
@@ -639,6 +662,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
           <ul className="todo-list"><TodoRow {...ctx} flat={false} t={x} chat={false} open onOpen={() => setPop(null)} /></ul>
         </Modal>
       ); })()}
+      {askUi}
       {pop?.claim && (() => { const c = claims.find(x => String(x.id) === pop.claim); return c ? (
         <Modal wide title={`Claim · ${claimLabel(c)}`} onClose={() => setPop(null)}>
           <ClaimCase claim={c} canWork today={today} onSaved={() => { void loadClaims(); void loadTodos(); }}
@@ -771,7 +795,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                       approve: () => act({ action: 'update', id: t.id, vendor: t.createdBy!.slice(0, -' (handyman)'.length) }),
                       decline: () => act({ action: 'update', id: t.id, status: 'cancelled' }) } : undefined}
                     onSubmit={v => act({ action: 'update', id: t.id, ...v })} onSave={props.save}
-                    middle={<><TodoFiles todoId={t.id} payCheck={!!t.payCheck} />
+                    middle={<><TodoFiles todoId={t.id} />
                       <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} /></>}
                     after={t.parentId ? null : (
                       <section className={`task-fold ${subsOpen ? 'open' : ''}`}>
@@ -1989,7 +2013,7 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
  * A to-do's files (owner, Oct 2026): photos, PDFs, documents — several at once, kept in Drive. Files sent
  * with the Slack message @Kaizen made the to-do from (or later in its thread) land here too.
  */
-function TodoFiles({ todoId, payCheck = false }: { todoId: string; payCheck?: boolean }) {
+function TodoFiles({ todoId }: { todoId: string }) {
   const [files, setFiles] = useState<TodoFile[] | null>(null);
   // Owner, 2026-10-28: the handyman's photos and charges of the work it holds, read with the files.
   const [work, setWork] = useState<ProofJob[]>([]);
@@ -2005,7 +2029,7 @@ function TodoFiles({ todoId, payCheck = false }: { todoId: string; payCheck?: bo
     try { take(await uploadTodoFiles(todoId, list.slice(0, 10))); } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
   };
   return (<>
-    <WorkProof jobs={work} payCheck={payCheck} reload={load} />
+    <WorkProof jobs={work} reload={load} />
     <section className="todo-files">
       <div className="todo-files-head">
         <b><Icon n="clip" /> Files</b> <span className="sub-n">{files ? files.length : '…'}</span>

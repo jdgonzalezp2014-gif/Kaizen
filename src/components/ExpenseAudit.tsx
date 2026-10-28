@@ -10,13 +10,13 @@ import { todayIn } from '../lib/dates.ts';
 import { Modal } from './Modal.tsx';
 import { Icon, ic } from './Icon.tsx';
 import { TodoList } from './Todos.tsx';
+import { PhotoStrip } from './WorkProof.tsx';
 
 /** What each automatic source is, in a word and an icon — the Costs table says it on every line. */
 export const SOURCE: Record<string, { icon: string; word: string }> = {
   repair: { icon: 'wrench', word: 'Repair' }, inventory: { icon: 'cart', word: 'Purchase' }, field: { icon: 'receipt', word: 'Paid in the field' },
   cleaning: { icon: 'brush', word: 'Clean' }, cleaning_extra: { icon: 'brush', word: 'Cleaner extra' }, 'store-order': { icon: 'box', word: 'Store order' }
 };
-const driveId = (url: string) => /\/d\/([\w-]{10,200})/.exec(url)?.[1] ?? null;
 
 export function ExpenseAuditPop({ id, source, todoRef, onClose }: { id: string; source: string | null; todoRef: string | null; onClose: () => void }) {
   const today = todayIn('America/New_York');
@@ -43,15 +43,7 @@ export function ExpenseAuditPop({ id, source, todoRef, onClose }: { id: string; 
             <dl className="audit-facts">{a.origin.facts.map(([k, v]) => <div key={k}><dt>{ic(k)}</dt><dd>{ic(v)}</dd></div>)}</dl>
           )}
           {a.origin.text && <pre className="audit-text">{a.origin.text}</pre>}
-          {a.origin.photos.length > 0 && (
-            <span className="work-photos-strip">
-              {a.origin.photos.map((p, i) => {
-                const d = driveId(p.url);
-                return <a key={i} className="note-photo" href={p.url} target="_blank" rel="noreferrer" title={`${p.name} — open in Drive`}>
-                  {d ? <img src={`/api/comment-image?id=${d}`} alt={p.name} loading="lazy" /> : <><Icon n="clip" /> {ic(p.name)}</>}</a>;
-              })}
-            </span>
-          )}
+          <PhotoStrip photos={a.origin.photos} />
           {a.origin.todoId && <button className="link tiny" onClick={() => setTask(a.origin.todoId)}>Open the to-do #{a.origin.todoId} ›</button>}
         </div>
       )}

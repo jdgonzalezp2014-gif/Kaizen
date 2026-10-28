@@ -97,41 +97,21 @@ export function flaggedPay(current: number | null, how: 'none' | 'deduct' | 'pay
   return Math.round((current - value) * 100) / 100;
 }
 
-/**
- * A job waiting for its pay check (owner, 2026-10-28): done, with a vendor, and either charges the team has not
- * decided or no price at all. `charges` counts every charge it ever had, decided ones too.
- */
-export interface PayCheckJob {
-  id: string; title: string; vendor: string; cost: number | null; flag: string | null;
-  pending: number; pendingSum: number; charges: number;
-}
-
+/** A handyman's charge still waiting, on a repair being closed (or one of its items). */
 const m2 = (n: number) => `$${n.toFixed(2)}`;
 
-/** "Validate pay — Tim: Towel bar is broken · $40.00 charged" / "Validate pay — Tim: 4 jobs · $160.00 charged, 1 with no price". */
-export function payCheckTitle(jobs: PayCheckJob[]): string {
-  const who = [...new Set(jobs.map(j => j.vendor))].join(', ');
-  const sum = jobs.reduce((a, j) => a + j.pendingSum, 0);
-  const unpriced = jobs.filter(j => !j.pending).length;
-  const what = jobs.length === 1 ? jobs[0]!.title : `${jobs.length} jobs`;
-  const money = [sum > 0 && `${m2(sum)} charged`, unpriced > 0 && (jobs.length === 1 ? 'no price yet' : `${unpriced} with no price`)].filter(Boolean).join(', ');
-  return `Validate pay — ${who}: ${what}${money ? ` · ${money}` : ''}`.slice(0, 300);
-}
-
-/** One line per job — what the team checks, in the sub-task's description. */
-export function payCheckText(jobs: PayCheckJob[]): string {
-  return jobs.map(j => `#${j.id} ${j.title} — ${j.pending ? `${m2(j.pendingSum)} in ${j.pending} charge${j.pending === 1 ? '' : 's'} waiting` : 'no price yet'}`
-    + (j.flag ? ` · ⚑ flagged: ${j.flag}` : '')).join('\n');
-}
+export interface WaitingCharge { id: string; todoId: string; job: string; vendor: string; amount: number; description: string; flag: string | null }
 
 /**
- * Why the pay check cannot be completed yet, or null. A flagged job's charges are never approved in bulk — the team
- * decides them one by one (or removes the flag); a job with no price would go on the invoice as "not priced".
+ * Owner, 2026-10-28: closing a repair with charges waiting asks first — approve them all and close, or cancel. A charge
+ * on a ⚑ flagged job is never approved in bulk: it stays waiting for its own decision, and the question says so.
  */
-export function payCheckBlock(jobs: PayCheckJob[]): string | null {
-  const flagged = jobs.filter(j => j.flag && j.pending);
-  if (flagged.length) return `${flagged.map(j => `#${j.id}`).join(', ')} ${flagged.length === 1 ? 'is' : 'are'} flagged — approve or deny ${flagged.length === 1 ? 'its' : 'their'} charges one by one, or remove the flag, then validate.`;
-  const unpriced = jobs.filter(j => !j.pending && j.cost == null);
-  if (unpriced.length) return `${unpriced.map(j => `#${j.id}`).join(', ')} ${unpriced.length === 1 ? 'has' : 'have'} no price — set the Cost on the job, or take it off the pay (Operations → Handymen → Not paid), then validate.`;
-  return null;
+export function closeAsk(waiting: WaitingCharge[]): { approve: WaitingCharge[]; held: WaitingCharge[]; sum: number; message: string } {
+  const approve = waiting.filter(c => !c.flag), held = waiting.filter(c => c.flag);
+  const sum = Math.round(approve.reduce((a, c) => a + c.amount, 0) * 100) / 100;
+  const who = [...new Set(approve.map(c => c.vendor))].join(', ');
+  const n = approve.length;
+  const heldJobs = [...new Set(held.map(c => `#${c.todoId}`))];
+  return { approve, held, sum, message: (n ? `${who}'s ${n === 1 ? 'charge' : `${n} charges`} (${m2(sum)}) ${n === 1 ? 'waits' : 'wait'} for approval.` : '')
+    + (heldJobs.length ? `${n ? ' ' : ''}${heldJobs.join(', ')} ${heldJobs.length === 1 ? 'is' : 'are'} flagged — ${held.length === 1 ? 'its charge stays' : 'those charges stay'} waiting.` : '') };
 }

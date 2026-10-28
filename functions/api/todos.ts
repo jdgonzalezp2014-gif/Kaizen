@@ -42,7 +42,8 @@ import { commentToThread, notifyTask, tellOwner, type TaskEvent } from '../_lib/
 import { applyUrgency } from '../_lib/urgency.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { tellHandyman } from '../_lib/vendor-slack.ts';
-import { syncPayCheck, validatePay } from '../_lib/pay-check.ts';
+import { approveWaiting, chargesWaiting } from '../_lib/repair-charges.ts';
+import { closeAsk } from '../../src/lib/vendor-pay.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -71,7 +72,6 @@ interface Row {
   start_time?: string | null; due_time?: string | null; resolution_note?: string | null;
   charge_owner?: boolean; hostaway_expense_id?: string | null;
   rev?: string | number;
-  pay_check?: boolean;
   clean_group?: string | null; purchases?: number; files?: number; purchase_total?: string | null; is_order?: boolean; urgency_pending?: boolean;
 }
 const iso = (d: string | Date | null) => d == null ? null : new Date(d).toISOString();
@@ -90,8 +90,6 @@ const out = (r: Row) => ({
   // §150: a cleaner's supplies request, and whether anything was bought for it — closing it unbought is asked.
   cleanGroup: r.clean_group ?? null, purchases: Number(r.purchases ?? 0), files: Number(r.files ?? 0),
   purchaseTotal: Number(r.purchase_total ?? 0), order: !!r.is_order, urgencyPending: !!r.urgency_pending,
-  // Owner, 2026-10-28: the "Validate pay" sub-task of a handyman's job done (functions/_lib/pay-check.ts).
-  payCheck: !!r.pay_check,
   // Live work (§166): the row's version — a save says which one it edited.
   rev: String(r.rev ?? '')
 });
@@ -103,7 +101,7 @@ async function list(sql: SqlFn, claim?: string, only?: string, tree?: string) {
            t.cost_estimate, t.cost_actual, t.description, t.parent_id::text AS parent_id,
            t.reservation_id, t.reservation_label, t.hostaway_task_id, t.hostaway_error, t.source,
            t.assignee_user_id, t.supervisor_user_id, t.supervisor, to_char(t.start_time, 'HH24:MI') AS start_time,
-           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note, t.charge_owner, t.hostaway_expense_id, t.clean_group, t.urgency_pending, t.rev, t.pay_check,
+           to_char(t.due_time, 'HH24:MI') AS due_time, t.resolution_note, t.charge_owner, t.hostaway_expense_id, t.clean_group, t.urgency_pending, t.rev,
            (SELECT count(*)::int FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id) AS purchases,
            (SELECT sum(p.total) FROM inventory_purchases p WHERE p.account_id = 1 AND p.todo_id = t.id) AS purchase_total,
            -- §162: a purchase order wherever it is listed (a claim's work too) — the same rule as openOrders.
@@ -250,11 +248,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     await pushWork(sql, await getCredentials(sql, env.ENCRYPTION_KEY), id);
   })().catch(() => { /* kept on the row as hostaway_error by pushWork, or retried on the next pull */ }));
   // §95: the repair's expense in Costs (and the owner's charge in Hostaway) follows what just changed.
-  // Owner, 2026-10-28: and its pay check — a handyman's job done waits in a "Validate pay" sub-task; decided, it closes.
-  const settle = async (id: string) => {
-    await settleRepair(sql, id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY));
-    await syncPayCheck(sql, id, who.email).catch(() => {});
-  };
+  const settle = (id: string) => settleRepair(sql, id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY));
   // §99: the news, in Slack's tasks channel — after the response, never failing the action.
   const tell = (id: string, ev: TaskEvent) => waitUntil(notifyTask(sql, env.ENCRYPTION_KEY, id, ev, who.email).catch(() => {}));
   // §100: and its owner hears it directly.
@@ -395,7 +389,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const before = (await sql`SELECT title, status, priority, assignee, supervisor, due_on::text AS due_on, claim_id, vendor,
                                    to_char(start_time, 'HH24:MI') AS start_time, to_char(due_time, 'HH24:MI') AS due_time, resolution_note, charge_owner,
                                    scheduled_on::text AS scheduled_on, cost_estimate, cost_actual, kind, unit_ids, description,
-                                   reservation_id, reservation_label, parent_id, clean_group, urgency_pending, rev::text AS rev, done_by, pay_check
+                                   reservation_id, reservation_label, parent_id, clean_group, urgency_pending, rev::text AS rev, done_by
                               FROM todos WHERE account_id = 1 AND id = ${id} AND deleted_at IS NULL`)[0] as Record<string, any> | undefined;
   if (!before) return Response.json({ ok: false, message: 'That task is gone — someone removed it.' }, { status: 404 });
   const scope = b.claimScope ? String(b.claimScope) : undefined;
@@ -562,11 +556,17 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       message: `Nothing was bought for this ${ordered ? 'order' : 'request'} — record the purchase, or say why it is closed.` }, { status: 409 });
     if (!pu!.n) await note(sql, 'task', id, 'note', `Closed without buying: ${reason}`, who.email);
   }
-  // Owner, 2026-10-28: completing a pay check IS the validation — the charges waiting are approved (the jobs' cost, on
-  // the invoice, in Costs). A flagged job or one with no price holds it, from any door (Kaizen, Slack).
-  if (status === 'completed' && before.status !== 'completed' && before.pay_check) {
-    const v = await validatePay(sql, id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY));
-    if ('refuse' in v) return Response.json({ ok: false, error: 'pay_check', message: v.refuse }, { status: 409 });
+  // Owner, 2026-10-28: closing a repair while a handyman's charges wait (on it or its items) asks first — the screen offers
+  // "Approve all and close" (`approveCharges: true`) or Cancel; Slack gets the words. Flagged jobs' charges stay waiting.
+  if (status === 'completed' && before.status !== 'completed') {
+    const ask = closeAsk(await chargesWaiting(sql, id));
+    if (ask.approve.length && b.approveCharges !== true)
+      return Response.json({ ok: false, error: 'charges_pending', message: `${ask.message} Approve them and close, or cancel.`,
+                             ask: { count: ask.approve.length, sum: ask.sum, held: ask.held.length, text: ask.message } }, { status: 409 });
+    if (ask.approve.length) {
+      await approveWaiting(sql, ask.approve, id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY));
+      await note(sql, 'task', id, 'change', `Approved on closing: ${ask.approve.length} charge${ask.approve.length === 1 ? '' : 's'}, $${ask.sum.toFixed(2)}`, who.email);
+    }
   }
   const wrote = await sql`UPDATE todos SET
       title         = COALESCE(${f.title ?? null}, title),

@@ -1,8 +1,7 @@
 /**
  * A handyman's work, audited (owner, 2026-10-28: "you upload photos — see them from the task and from Handymen").
  * `WorkPhotos`: a job's photos before / after, small, each opening in Drive (read through /api/comment-image, as
- * Kaizen's Drive asks every other viewer to sign in). `WorkProof`: in an open work order or a "Validate pay"
- * sub-task, each job it holds — status, estimate and cost, photos, charges with receipts — and the team's
+ * Kaizen's Drive asks every other viewer to sign in). `WorkProof`: in an open work order, each job it holds — status, estimate and cost, photos, charges with receipts — and the team's
  * decisions on them (approve / deny a charge, ⚑ flag a job), the same ones Operations → Handymen has.
  */
 import { useState } from 'react';
@@ -13,6 +12,24 @@ import { Icon, ic } from './Icon.tsx';
 
 const driveId = (url: string) => /\/d\/([\w-]{10,200})/.exec(url)?.[1] ?? null;
 
+/**
+ * Photos and receipts, the same strip everywhere they are audited (owner, 2026-10-28: Costs, the repair, Approvals). `serve`:
+ * Kaizen can read the file (a handyman's photo, a field receipt, a purchase's) — drawn small; else a chip that opens Drive.
+ */
+export function PhotoStrip({ photos, serve = true }: { photos: { name: string; url: string }[]; serve?: boolean }) {
+  if (!photos.length) return null;
+  return (
+    <span className="work-photos-strip">
+      {photos.map((p, i) => {
+        const id = serve ? driveId(p.url) : null;
+        return <a key={i} className={id ? 'note-photo' : 'desc-link'} href={p.url} target="_blank" rel="noreferrer" title={`${p.name} — open in Drive`}
+                  onClick={e => e.stopPropagation()}>
+          {id ? <img src={`/api/comment-image?id=${id}`} alt={p.name} loading="lazy" /> : <><Icon n="clip" /> {ic(p.name)}</>}</a>;
+      })}
+    </span>
+  );
+}
+
 export function WorkPhotos({ photos }: { photos: { stage: 'before' | 'after'; name: string; url: string }[] }) {
   if (!photos.length) return null;
   return (
@@ -22,13 +39,7 @@ export function WorkPhotos({ photos }: { photos: { stage: 'before' | 'after'; na
         return mine.length > 0 && (
           <div key={stage} className="work-photos-row">
             <span className="sub-n">{stage === 'before' ? 'Before' : 'After'} · {mine.length}</span>
-            <span className="work-photos-strip">
-              {mine.map((p, i) => {
-                const id = driveId(p.url);
-                return <a key={i} className="note-photo" href={p.url} target="_blank" rel="noreferrer" title={`${p.name} — open in Drive`} onClick={e => e.stopPropagation()}>
-                  {id ? <img src={`/api/comment-image?id=${id}`} alt={p.name} loading="lazy" /> : ic(p.name)}</a>;
-              })}
-            </span>
+            <PhotoStrip photos={mine} />
           </div>
         );
       })}
@@ -36,7 +47,7 @@ export function WorkPhotos({ photos }: { photos: { stage: 'before' | 'after'; na
   );
 }
 
-/** A handyman's charge: the same decision as Operations → Cleaners' approvals (crew-admin decideField). */
+/** A handyman's charge: the same decision as Operations → Approvals (crew-admin decideField). */
 // Owner, 2026-10-28: minimal — two small buttons; denying asks for the note the handyman reads, only then.
 export function ChargeDecide({ id, onDone }: { id: string; onDone: () => void }) {
   const [denying, setDenying] = useState(false);
@@ -68,17 +79,16 @@ export function ChargeDecide({ id, onDone }: { id: string; onDone: () => void })
 const STATUS: Record<string, string> = { pending: 'New', confirmed: 'Accepted', in_progress: 'In progress', completed: 'Done', cancelled: 'Cancelled' };
 const CHARGE: Record<string, string> = { pending: 'waiting', approved: 'approved', denied: 'denied' };
 
-export function WorkProof({ jobs, payCheck, reload }: { jobs: ProofJob[]; payCheck: boolean; reload: () => void }) {
+export function WorkProof({ jobs, reload }: { jobs: ProofJob[]; reload: () => void }) {
   if (!jobs.length) return null;
   return (
     <section className="work-proof">
       <div className="todo-files-head">
-        <b><Icon n="wrench" /> {payCheck ? 'To validate' : 'Handyman’s work'}</b> <span className="sub-n">{jobs.length === 1 ? jobs[0]!.vendor : `${jobs.length} jobs`}</span>
-        <Hint label="The handyman's work">The handyman's photos (before / after) and charges, with their receipts. Their charges fill the job's
-          Estimate; approved, they are its Cost — on their invoice and, once the job is done, in Costs. A job done gets a "Validate pay"
-          sub-task: check the photos and the price, then ✓ Done on it approves every charge still waiting. A job ⚑ flagged with charges
-          waiting, or one with no price, holds it — decide those here one by one, or set the job's Cost. Deciding them all here or in
-          Operations → Handymen closes the pay check by itself.</Hint>
+        <b><Icon n="wrench" /> Handyman’s work</b> <span className="sub-n">{jobs.length === 1 ? jobs[0]!.vendor : `${jobs.length} jobs`}</span>
+        <Hint label="The handyman's work">Their photos (before / after) and charges, with receipts. A charge fills the job's
+          Estimate; approved — here, or in Operations → Approvals — it is the job's Cost, on their invoice and, once done, in
+          Costs. Closing the repair with charges waiting asks to approve them all. ⚑ Flag: its charges wait for a decision one by one;
+          the handyman reads the note.</Hint>
       </div>
       {jobs.map(j => <ProofRow key={j.id} j={j} many={jobs.length > 1} reload={reload} />)}
     </section>
@@ -114,8 +124,8 @@ function ProofRow({ j, many, reload }: { j: ProofJob; many: boolean; reload: () 
         <div key={c.id} className={`crew-extra ${c.status}`}>
           <span title={[c.description, c.decisionNote].filter(Boolean).join(' — ')}>{ic(`${money2(c.amount)} · ${CHARGE[c.status] ?? c.status} — ${c.description.replace(/ — repair #\d+.*$/, '')}`)}</span>
           {c.status === 'denied' && c.decisionNote && <span className="sub-n"> · “{ic(c.decisionNote)}”</span>}
-          {c.photos.map((p, i) => <a key={i} className="link tiny" href={p.url} target="_blank" rel="noreferrer" title={`Receipt — ${p.name}`}> <Icon n="receipt" /></a>)}
           {!c.photos.length && <span className="sub-n" title="Sent without a receipt"> · no receipt</span>}
+          <PhotoStrip photos={c.photos} />
           {c.status === 'pending' && <ChargeDecide id={c.id} onDone={reload} />}
         </div>
       ))}

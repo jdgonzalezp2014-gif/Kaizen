@@ -95,7 +95,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   });
   // Cleaners' extras and purchases paid in the field, waiting for a decision.
   // Lost here means Costs is off and the person who paid is unpaid, so Home
-  // keeps the door — the approval screen is Operations → Cleaners (§122, §137).
+  // keeps the door — the approval screen is Operations → Approvals (§122, §137, §171).
   const canApprove = can(permissions, 'operations.edit');
   const approvals = useLoad(canApprove, async () => {
     const r = await getCrewAdmin();
@@ -255,9 +255,9 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
           {a.where && <span className="todo-unit">{a.where}</span>}
           <span className="sub-n">→ {a.who}</span>
           {showMoney && <span className="sub-n">{money2(a.amount)}</span>}
-          <span className="todo-quick"><button type="button" onClick={() => onGo('operations:crew')}>Review →</button></span>
+          <span className="todo-quick"><button type="button" onClick={() => onGo('operations:approvals')}>Review →</button></span>
         </div></li>))}</ul>
-      <p className="note">Approve or deny in Operations → Cleaners.</p>
+      <p className="note">Approve or deny in Operations → Approvals.</p>
     </>
   }] : [];
   // Coming up (§91). Open claims only when the to-do card is not already

@@ -3009,3 +3009,11 @@ tr.is-clickable:hover td { background: var(--tint); }
 .audit-facts dt { color: var(--muted); }
 .audit-facts dd { margin: 0; }
 .audit-text { white-space: pre-wrap; font: inherit; font-size: var(--fs-footnote); margin: 0; padding: 8px; background: var(--bg); border-radius: 6px; }
+/* Operations → Approvals: one line per thing waiting — the shape of a cost line anywhere. */
+.approve-list { display: grid; }
+.approve-line { display: grid; gap: 4px; padding: 10px 0; border-top: 1px solid var(--line); }
+.approve-line:first-child { border-top: 0; }
+.approve-head { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.approve-what { flex: 1 1 200px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.approve-acts { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.approve-acts .charge-decide { margin-left: 0; }

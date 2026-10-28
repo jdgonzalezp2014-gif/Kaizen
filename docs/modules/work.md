@@ -123,20 +123,18 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 - **No preset prices.** A handyman's charge is a pending `field_expenses` row (source `vendor`);
   approving it in Operations → Cleaners sets `cost_actual` = the sum of approved charges and runs
   `settleRepair` → Costs › Repairs (once completed). Denying needs a note the handyman reads.
-- **The pay check (owner, 2026-10-28, §171, migration 104 `todos.pay_check`).** A handyman's job done — completed, a vendor,
-  on the pay, with charges waiting or no price — gets ONE open sub-task **"Validate pay — <vendor>: …"** under its top-level
-  work (a repair's items share the repair's; sub-tasks are one level). `syncPayCheck` (functions/_lib/pay-check.ts) makes it,
-  refreshes its title/lines, and closes it by itself when nothing waits; it runs after every change in every door: `settle`
-  in todos.ts, `settleWork` + a late `charge` in vendor-work.ts, crew-admin `decideField`, vendor-admin's `settle`/flag, the
-  Hostaway pull. Completing it (`/api/todos` done/update, Slack too) = `validatePay`: approves every charge waiting
-  (decideFieldExpense, note "Validated with the pay check #N") and settles each job → cost, invoice, Costs. **Refused (409
-  `pay_check`)** while a job is ⚑ flagged (`pay_flag_note`) with charges waiting, or a job has no price. A partial unique
-  index keeps one open per parent. Pay checks are listed in Tasks too ("Part of ›") — the job is often closed already.
-  Builders `payCheckTitle/Text/Block` in src/lib/vendor-pay.ts (tested). Nothing is approved without the team.
+- **Closing a repair asks to approve (owner, 2026-10-28, §171).** A handyman's charges wait in **Operations → Approvals**
+  (src/screens/Approvals.tsx) and inside the repair (`WorkProof`). Closing a work order — or anything holding work-order
+  items — while charges wait on it or its items: `/api/todos` (done / update to completed, Slack too) answers 409
+  `charges_pending` with `closeAsk`'s words (src/lib/vendor-pay.ts, tested); the screen's Modal offers **Approve all ($X) and
+  close** (resend with `approveCharges: true` → `approveWaiting`, functions/_lib/repair-charges.ts: decideFieldExpense +
+  settleRepair per job, note "Approved when #N was closed") or Cancel. A ⚑ flagged job's charges are never approved in bulk.
+  The handyman's own "done" is not asked (approval is the team's). *The "Validate pay" sub-task (104) lived a few minutes in
+  production: removed by 105 (soft delete + column dropped).*
 - **The estimate follows the handyman's price (2026-10-28):** `addFieldExpense`/`decideFieldExpense` (vendor) set
   `cost_estimate` = their charges not denied, only while it still equals what the charges said before (or is empty) — an
   estimate the team typed, or the handyman's own in a request, stays.
-- **The handyman's work, audited (2026-10-28):** an open work order or pay check shows **Handyman's work / To validate**
+- **The handyman's work, audited (2026-10-28):** an open work order shows **Handyman's work**
   (`WorkProof`, src/components/WorkProof.tsx): per job status, estimate, cost, photos before/after (`WorkPhotos`), charges with
   receipts, Approve/Deny (`ChargeDecide`, shared with Handymen), ⚑ Flag. Data: `/api/todo-files` GET now also returns
   `work` (`workProof`). Operations → Handymen rows show the job's photos (`vendorJobs` reads `work_photos`). Photos load
@@ -167,9 +165,8 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 
 ## Open items
 
-- §171: migration 104 + `.sop-104.mjs` (SOP #4 v4) at deploy, then the backfill (estimates from Tim's charges + a pay
-  check per job with charges waiting) — tested on a Neon branch (deleted).
-  Check the first real "Validate pay" (#108 has two $30 charges for one dishwasher — maybe a duplicate).
+- §171: deploy = push, then `npm run migrate` (105 — AFTER the push: the live code still reads `pay_check`), then
+  `.sop-105.mjs` (SOP #4 v5). #108 has two $30 charges for one dishwasher — flagged? check before approving.
 
 - §167: reconciliation of received money with platform payouts / Hostaway — later, read-only, owner to decide.
   Claims #4 ($150), #7 ($200), #8 ($50) are with the platforms (2026-10-15).

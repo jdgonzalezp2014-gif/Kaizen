@@ -4580,3 +4580,15 @@ to everything we just did." Costs' one-off lines open their origin (`auditExpens
 Deny… — the note only when denying), the flag a small "⚑ Flag" with its meaning on hover; repeated status/notes trimmed.
 Checked on the test branch with screenshots: a repair line → the "Fix Dishwasher" card with Tim's work; a clean line → house,
 checkout, cleaner, price, guest; purchase, store order, extra and typed lines answer through the API.
+
+**Round 3 (owner, same day, after the deploy): no sub-task — Approvals, and closing asks.** "Moving it to approvals like the
+cleaners' was a very good idea — then the task is unnecessary: closing a repair without all approvals validated should offer a
+pop-up to approve them all, or cancel; and approving the charge inside the repair work, where the evidence and photos are."
+Then: "approvals in a section apart — purchases and expenses from outside — and the same structure everywhere (Costs, repair
+work, Approvals): images, details; in Approvals and Costs a pop-up with the repair work." Done: Operations → Approvals (moved
+out of Cleaners), each line = amount, what, who/house, receipts, Approve/Deny…, Open the repair ›; `PhotoStrip` shared by
+Costs' audit, the repair and Approvals; `/api/todos` 409 `charges_pending` → "Approve all ($X) and close" / Cancel. 104 had
+already been applied with its backfill (5 "Validate pay" sub-tasks, #132–#136): 105 soft-deletes them with a timeline line and
+drops the column, run after the push. Tested on a Neon branch (deleted): closing #106 asked for 5 charges ($190); with #108
+flagged, 3 ($130) and #108's 2 stayed pending; approve-and-close approved them and wrote 3 Costs rows; a to-do with no charges
+closed as before; 105 removed the 5 sub-tasks and the list read without them. SOP #4 v5 (`.sop-105.mjs`).
