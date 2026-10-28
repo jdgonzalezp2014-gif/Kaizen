@@ -81,6 +81,14 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   closes; 2–3 photos before/after (Drive, first before = in progress); 4 charges (labor / materials,
   amount, what for, receipt); 5 done (resolution note); a note any time. Every step is a work_update
   and a reply in the task's Slack thread; pushWork when the mirror is on.
+- **A repair's items go like cleans (owner, 2026-10-27).** A work order holding work-order items is their folder: no
+  link of its own (`workLinkFor` refuses — its text lists every item), not a card on the vendor's page, not a job in their
+  pay unless it carries a cost. Its editor shows **Give <vendor> the items?** (`GiveItems` in Todos.tsx → `todos.ts` action
+  `giveItems`): all open items ticked except those with another vendor; the vendor is written on each item, never
+  inherited, so "all but this one" survives a later change. An item with no day or listing of its own uses the repair's
+  (`workRow`). Another vendor without an account → that item's own Send to vendor link.
+- Migration 103 re-adds `vendors.link_token_hash/enc`: 099 was applied before those lines were added, so handymen's
+  own-page links ("Copy their link", `/api/crew-link`) failed in production until 103 runs.
 - **The access (codes, lockbox, Wi-Fi) shows only on the day set and while the order is open.**
 - **No preset prices.** A handyman's charge is a pending `field_expenses` row (source `vendor`);
   approving it in Operations → Cleaners sets `cost_actual` = the sum of approved charges and runs

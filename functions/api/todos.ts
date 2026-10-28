@@ -410,6 +410,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     return Response.json({ ok: true, said: r.said, dueOn: r.dueOn, todos: await list(sql, scope) });
   }
 
+  // Owner, 2026-10-27: a repair's vendor takes its items like a cleaner takes cleans — all of them, or all but some.
+  // Written on each item (never inherited), so "all but this one" stays true when the repair's vendor changes again.
+  if (b.action === 'giveItems') {
+    if (before.kind !== 'work_order' || !before.vendor) return bad('Set and save the repair’s vendor first.');
+    const want = (Array.isArray(b.items) ? b.items : []).map(String).filter(x => ID.test(x));
+    const given = await sql`UPDATE todos SET vendor = ${before.vendor}, updated_at = now()
+                             WHERE account_id = 1 AND parent_id = ${id} AND id = ANY(${want.map(Number)}::bigint[]) AND kind = 'work_order'
+                               AND deleted_at IS NULL AND status NOT IN ('completed', 'cancelled') AND vendor IS DISTINCT FROM ${before.vendor}
+                             RETURNING id::text, title` as { id: string; title: string }[];
+    for (const g of given) { await note(sql, 'task', g.id, 'change', `Vendor: ${before.vendor} — given with the repair`, who.email); mirror(g.id); await settle(g.id); }
+    if (given.length) await note(sql, 'task', id, 'change', `${before.vendor} has ${given.length} item${given.length === 1 ? '' : 's'}: ${given.map(g => g.title).join('; ')}`.slice(0, 4000), who.email);
+    return Response.json({ ok: true, given: given.length, todos: await list(sql, scope) });
+  }
+
   // §159 (owner, 2026-10-14): two to-dos that are the same job become one. Everything that was said and attached
   // moves to the one that stays; the other closes as cancelled, saying where it went (and Hostaway closes it too).
   if (b.action === 'merge') {
@@ -633,5 +647,5 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
 };
 
 function bad(message: string): Response {
-  return Response.json({ ok: false, message }, { status: 400 });
+  return Response.json({ ok: false, error: 'bad_request', message }, { status: 400 });
 }

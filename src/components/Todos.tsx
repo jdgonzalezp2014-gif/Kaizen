@@ -748,6 +748,9 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
   // Inside a panel the sub-task keeps the old footer; the panel itself has these in its ⋯ menu.
   const editForm = (
     <TodoForm units={units} claims={claims} canClaims={!inClaim && claims.length > 0} initial={t} submitLabel="Save changes" startEditing={!!props.inPanel}
+                    repair={parent?.kind === 'work_order' ? { vendor: parent.vendor, scheduledOn: parent.scheduledOn } : undefined}
+                    items={mine.filter(k => k.kind === 'work_order')}
+                    onGiveItems={ids => act({ action: 'giveItems', id: t.id, items: ids })}
                     onSubmit={v => act({ action: 'update', id: t.id, ...v })} onSave={props.save}
                     middle={<><TodoFiles todoId={t.id} />
                       <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} /></>}
@@ -1006,6 +1009,44 @@ function PersonPick({ label, value, name, people, onChange }: {
 }
 
 /**
+ * A repair whose items are work orders (owner, 2026-10-27): its vendor takes the items like a cleaner takes cleans —
+ * all of them, or all but some. Asked once the repair's vendor is saved; an item with another vendor starts unticked.
+ * No link for the repair itself: its text lists every item, other vendors' too.
+ */
+function GiveItems({ vendor, items, give }: { vendor: string | null; items: Todo[]; give?: (ids: string[]) => Promise<boolean> }) {
+  const open = items.filter(k => !isClosed(k.status));
+  const theirs = (k: Todo) => !!vendor && (k.vendor ?? '').trim().toLowerCase() === vendor.trim().toLowerCase();
+  const left = open.filter(k => !theirs(k));
+  const [pick, setPick] = useState<Set<string>>(() => new Set(left.filter(k => !k.vendor).map(k => k.id)));
+  const [busy, setBusy] = useState(false);
+  useEffect(() => { setPick(new Set(left.filter(k => !k.vendor).map(k => k.id))); }, [vendor, left.map(k => k.id + (k.vendor ?? '')).join()]);
+  const hint = <Hint>Each item is a work order of its own, sent like a clean. Ticked items get this repair's vendor: they see them on their
+    page (signed in, or by their own link from Operations → Handymen), each with its steps, photos and charges. An item for another
+    vendor: untick it, open it and set its vendor — a vendor without an account gets it by the item's Send to vendor link.
+    An item with no day of its own is on the repair's day.</Hint>;
+  if (!vendor) return <p className="note">Items: set and save the vendor to give them the items. {hint}</p>;
+  if (!left.length) return <p className="note"><Icon n="wrench" /> {vendor} has every open item. {hint}</p>;
+  const n = left.filter(k => pick.has(k.id)).length;
+  return (
+    <div className="give-items">
+      <p className="note"><b>Give {vendor} the items?</b> {open.length - left.length > 0 && `${open.length - left.length} already theirs. `}{hint}</p>
+      {left.map(k => (
+        <label key={k.id} className="check">
+          <input type="checkbox" checked={pick.has(k.id)} onChange={e => setPick(p => { const x = new Set(p); if (e.target.checked) x.add(k.id); else x.delete(k.id); return x; })} />
+          {k.title}{k.vendor && <span className="sub-n"> — now {k.vendor}</span>}
+        </label>
+      ))}
+      <div className="button-row">
+        <button type="button" className="small" disabled={!n || busy || !give}
+                onClick={async () => { setBusy(true); await give!(left.filter(k => pick.has(k.id)).map(k => k.id)); setBusy(false); }}>
+          <Icon n="wrench" /> Give {n === left.length ? 'all' : n} to {vendor}</button>
+        <button type="button" className="link tiny" onClick={() => setPick(new Set(left.map(k => k.id)))}>Tick all</button>
+      </div>
+    </div>
+  );
+}
+
+/**
  * The vendor's link for a work order (§137): no account — the handyman
  * accepts the day (or can't: a "Reschedule" sub-task), sends photos before /
  * after, charges and materials with receipts (waiting for approval) and marks
@@ -1023,7 +1064,7 @@ function VendorLink({ id }: { id: string }) {
   if (!l) return (
     <div className="button-row">
       <button type="button" className="small secondary" onClick={() => void get()}><Icon n="share" /> Send to vendor</button>
-      <span className="note">A link for the vendor — no account. Save first if you changed the vendor or the day.</span>
+      <span className="note">A link for the vendor — no account. Save first if you changed the vendor or the day; an item with no day of its own uses the repair's.</span>
       {msg && <span className="breach">{msg}</span>}
     </div>
   );
@@ -1067,8 +1108,12 @@ const FIELD_WORD: Partial<Record<keyof FormValue, string>> = {
 type Clashing = { m: Merge<FormValue>; theirs: FormValue; rev?: string; by: string | null; at: string | null;
                   pick: Partial<Record<keyof FormValue, 'mine' | 'theirs'>> };
 
-function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, onSave, startKind = 'task', onCancel, middle, after, startEditing = false }: {
+function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, onSave, startKind = 'task', onCancel, middle, after, startEditing = false, repair, items = [], onGiveItems }: {
   units: Unit[]; claims: Claim[]; canClaims: boolean; initial?: Todo; submitLabel: string;
+  /** Editing an item of a repair (owner, 2026-10-27): with no vendor or day of its own, it is the repair's vendor's, on the repair's day. */
+  repair?: { vendor: string | null; scheduledOn: string | null };
+  /** Editing a repair whose items are work orders: no vendor link of its own — its vendor is given the items instead. */
+  items?: Todo[]; onGiveItems?: (ids: string[]) => Promise<boolean>;
   /** Editing (§104): what goes between the description and the details — the comments. */
   middle?: ReactNode;
   /** Editing: what goes after the details — the sub-tasks. */
@@ -1222,10 +1267,10 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
           )}
           {wo && <>
             <label>Vendor
-              <input value={v.vendor ?? ''} placeholder="Plumber, handyman…" list="kaizen-vendors" onChange={e => set('vendor', e.target.value || null)} /></label>
+              <input value={v.vendor ?? ''} placeholder={repair?.vendor ? `${repair.vendor} — the repair's vendor` : 'Plumber, handyman…'} list="kaizen-vendors" onChange={e => set('vendor', e.target.value || null)} /></label>
             <VendorOptions />
             <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
-            {initial?.id && <VendorLink id={initial.id} />}
+            {initial?.id && (items.length ? <GiveItems vendor={initial.vendor} items={items} give={onGiveItems} /> : <VendorLink id={initial.id} />)}
             <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
           </>}
           {wo && (
@@ -1273,7 +1318,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
             {(v.scheduledOn || v.dueOn) && <span className="sheet-chip"><Icon n="calendar" />{[v.scheduledOn, v.dueOn].map(d => d ? shortDay(d) : '').filter(Boolean).join(' – ')}</span>}
             {initial.assignee && <span className="sheet-chip"><Icon n="user" />{initial.assignee}</span>}
             {/* §162: a work order says who does it and what it costs on the same line. */}
-            {wo && <span className={`sheet-chip ${v.vendor ? '' : 'muted'}`}><Icon n="wrench" />{v.vendor ?? 'No vendor yet'}</span>}
+            {wo && <span className={`sheet-chip ${v.vendor ? '' : 'muted'}`}><Icon n="wrench" />{v.vendor ?? (repair?.vendor ? `${repair.vendor} · the repair's` : 'No vendor yet')}</span>}
             {wo && (v.costActual ?? v.costEstimate) != null && <span className="sheet-chip"><Icon n="dollar" />{`${v.costActual != null ? '' : '~'}${money2((v.costActual ?? v.costEstimate)!)}`}</span>}
             {v.reservationLabel && (v.reservationId
               ? <a className="sheet-chip stay" href={hostawayReservationUrl(v.reservationId)} target="_blank" rel="noreferrer" title="Open the reservation in Hostaway"><Icon n="bed" />{v.reservationLabel} ↗</a>
@@ -1324,7 +1369,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
           {wo && (
             <div className="fl-group" role="group" aria-label="Work order">
               <label>Vendor
-                <input value={v.vendor ?? ''} placeholder="A registered vendor, or any name" list="kaizen-vendors" onChange={e => set('vendor', e.target.value || null)} /></label>
+                <input value={v.vendor ?? ''} placeholder={repair?.vendor ? `${repair.vendor} — the repair's vendor` : 'A registered vendor, or any name'} list="kaizen-vendors" onChange={e => set('vendor', e.target.value || null)} /></label>
               <VendorOptions />
               <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
               <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
@@ -1334,7 +1379,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
               </label>
             </div>
           )}
-          {wo && <VendorLink id={initial.id} />}
+          {wo && (items.length ? <GiveItems vendor={initial.vendor} items={items} give={onGiveItems} /> : <VendorLink id={initial.id} />)}
           {/* §162: a to-do has no kind to switch and no cost of its own (work orders and purchase orders carry the money). */}
           {(canClaims || initial.hostawayTaskId) && (
             <details className="fl-more" open={details} onToggle={e => setDetails((e.target as HTMLDetailsElement).open)}>

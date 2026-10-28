@@ -15,10 +15,16 @@ export async function vendorByToken(sql: SqlFn, token: string): Promise<string |
   return v?.name ?? null;
 }
 
+// Their work orders. A repair whose items are work orders is only the folder (owner, 2026-10-27): its items are the
+// jobs, each given to its vendor, so it is not one more card — its text lists other vendors' items too.
 const mine = async (sql: SqlFn, vendor: string) => (await sql`
-  SELECT id::text FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND kind = 'work_order' AND lower(vendor) = lower(${vendor})
-     AND (status NOT IN ('completed', 'cancelled') OR done_at > now() - interval '7 days')
-   ORDER BY scheduled_on NULLS LAST, id` as { id: string }[]).map(r => r.id);
+  SELECT t.id::text FROM todos t
+    LEFT JOIN todos p ON p.account_id = t.account_id AND p.id = t.parent_id AND p.kind = 'work_order' AND p.deleted_at IS NULL
+   WHERE t.account_id = 1 AND t.deleted_at IS NULL AND t.kind = 'work_order'
+     AND lower(btrim(t.vendor)) = lower(btrim(${vendor}))
+     AND (t.status NOT IN ('completed', 'cancelled') OR t.done_at > now() - interval '7 days')
+     AND NOT EXISTS (SELECT 1 FROM todos c WHERE c.account_id = t.account_id AND c.parent_id = t.id AND c.kind = 'work_order' AND c.deleted_at IS NULL)
+   ORDER BY coalesce(t.scheduled_on, p.scheduled_on) NULLS LAST, t.id` as { id: string }[]).map(r => r.id);
 
 export async function vendorGet(request: Request, sql: SqlFn, v: string): Promise<Response> {
   const works = (await Promise.all((await mine(sql, v)).map(id => workPage(sql, id)))).filter(Boolean);

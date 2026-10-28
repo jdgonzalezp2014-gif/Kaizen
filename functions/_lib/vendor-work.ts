@@ -32,12 +32,19 @@ interface Row {
   start_time: string | null; due_on: string | null; status: string; vendor: string | null; kind: string;
   vendor_accepted_at: string | null; vendor_accepted_by: string | null; resolution_note: string | null; cost_actual: number | null;
 }
+/**
+ * Owner, 2026-10-27: a repair's items are each a work order, given like cleans (Give items, todos.ts) — an item with
+ * no day or listing of its own is on the repair's. The vendor is never inherited: "all but this one" must stay possible.
+ */
 async function workRow(sql: SqlFn, id: string): Promise<Row | null> {
-  const [r] = await sql`SELECT t.id::text, t.title, t.description, t.unit_ids[1] AS unit_id, u.name AS unit, t.scheduled_on::text, t.start_time,
-                               t.due_on::text, t.status, t.vendor, t.kind, t.vendor_accepted_at::text, t.vendor_accepted_by, t.resolution_note,
-                               t.cost_actual::float AS cost_actual
-                          FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
-                         WHERE t.account_id = 1 AND t.id = ${Number(id) || 0} AND t.deleted_at IS NULL` as Row[];
+  const [r] = await sql`SELECT t.id::text, t.title, t.description, coalesce(t.unit_ids[1], p.unit_ids[1]) AS unit_id, u.name AS unit,
+                                coalesce(t.scheduled_on, p.scheduled_on)::text AS scheduled_on,
+                                CASE WHEN t.scheduled_on IS NULL THEN p.start_time ELSE t.start_time END AS start_time,
+                                t.due_on::text, t.status, t.vendor, t.kind,
+                                t.vendor_accepted_at::text, t.vendor_accepted_by, t.resolution_note, t.cost_actual::float AS cost_actual
+                           FROM todos t LEFT JOIN todos p ON p.account_id = t.account_id AND p.id = t.parent_id AND p.kind = 'work_order' AND p.deleted_at IS NULL
+                           LEFT JOIN units u ON u.account_id = t.account_id AND u.id = coalesce(t.unit_ids[1], p.unit_ids[1])
+                          WHERE t.account_id = 1 AND t.id = ${Number(id) || 0} AND t.deleted_at IS NULL` as Row[];
   return r ?? null;
 }
 
@@ -170,6 +177,9 @@ export async function workLinkFor(sql: SqlFn, encryptionKey: string, id: string,
   const r = await workRow(sql, id);
   if (!r) throw new Error('That work order is gone.');
   if (r.status === 'completed' || r.status === 'cancelled') throw new Error('This work order is closed.');
+  // A repair holding work-order items is their folder: its description lists every item, other vendors' too.
+  const [items] = await sql`SELECT count(*)::int AS n FROM todos WHERE account_id = 1 AND parent_id = ${Number(id)} AND kind = 'work_order' AND deleted_at IS NULL` as { n: number }[];
+  if (items!.n) throw new Error('This repair holds its items — give the items to the vendor (they see them on their page), or send each item’s link.');
   if (!r.vendor) throw new Error('Choose the vendor first.');
   if (!r.scheduled_on) throw new Error('Set the day first — the vendor accepts it or says they can’t.');
   const expires = addDays(r.scheduled_on > todayIn(TZ) ? r.scheduled_on : todayIn(TZ), 7);

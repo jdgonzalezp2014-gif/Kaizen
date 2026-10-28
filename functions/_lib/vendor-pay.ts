@@ -27,11 +27,15 @@ export interface VendorInfo {
 export async function vendorNames(sql: SqlFn): Promise<(VendorInfo & { open: number; done: number })[]> {
   return await sql`
     WITH typed AS (
-      SELECT min(btrim(vendor)) AS name, lower(btrim(vendor)) AS k,
-             count(*) FILTER (WHERE status NOT IN ('completed', 'cancelled'))::int AS open,
-             count(*) FILTER (WHERE status = 'completed')::int AS done
-        FROM todos WHERE account_id = 1 AND kind = 'work_order' AND deleted_at IS NULL AND btrim(coalesce(vendor, '')) <> ''
-       GROUP BY lower(btrim(vendor)))
+      SELECT min(btrim(w.vendor)) AS name, lower(btrim(w.vendor)) AS k,
+             count(*) FILTER (WHERE w.status NOT IN ('completed', 'cancelled'))::int AS open,
+             count(*) FILTER (WHERE w.status = 'completed')::int AS done
+        FROM (SELECT t.vendor, t.status
+                FROM todos t
+               WHERE t.account_id = 1 AND t.kind = 'work_order' AND t.deleted_at IS NULL
+                 AND NOT EXISTS (SELECT 1 FROM todos c WHERE c.account_id = t.account_id AND c.parent_id = t.id AND c.kind = 'work_order' AND c.deleted_at IS NULL)) w
+       WHERE btrim(coalesce(w.vendor, '')) <> ''
+       GROUP BY lower(btrim(w.vendor)))
     SELECT coalesce(v.name, t.name) AS name, v.id IS NOT NULL AS "inDirectory", coalesce(v.active, true) AS active,
            v.trade, v.email, v.phone, coalesce(v.invoice_period, 'monthly') AS "invoicePeriod",
            v.stripe_account_id AS "stripeAccount", v.stripe_mode AS "stripeMode",
@@ -57,10 +61,14 @@ export async function vendorJobs(sql: SqlFn, name: string, from: string, to: str
              t.pay_note AS "payNote", t.pay_flag_note AS "flagNote", t.pay_void AS "voidReason", t.charge_owner AS "chargeOwner",
              t.resolution_note AS resolution,
              (CASE WHEN t.status = 'completed' THEN (coalesce(t.done_at, t.updated_at) AT TIME ZONE ${TZ})::date
-                   ELSE coalesce(t.scheduled_on, t.due_on, (t.created_at AT TIME ZONE ${TZ})::date) END)::text AS date
-        FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
+                   ELSE coalesce(t.scheduled_on, p.scheduled_on, t.due_on, (t.created_at AT TIME ZONE ${TZ})::date) END)::text AS date
+        FROM todos t
+        LEFT JOIN todos p ON p.account_id = t.account_id AND p.id = t.parent_id AND p.kind = 'work_order' AND p.deleted_at IS NULL
+        LEFT JOIN units u ON u.account_id = t.account_id AND u.id = coalesce(t.unit_ids[1], p.unit_ids[1])
        WHERE t.account_id = 1 AND t.kind = 'work_order' AND t.deleted_at IS NULL AND t.status <> 'cancelled'
-         AND lower(btrim(t.vendor)) = ${name.trim().toLowerCase()}) j
+         -- A repair holding work-order items is their folder, not a job of its own (owner, 2026-10-27) — unless it carries a cost.
+         AND lower(btrim(t.vendor)) = ${name.trim().toLowerCase()}
+         AND (t.cost_actual IS NOT NULL OR NOT EXISTS (SELECT 1 FROM todos c WHERE c.account_id = t.account_id AND c.parent_id = t.id AND c.kind = 'work_order' AND c.deleted_at IS NULL))) j
      WHERE j.date >= ${from} AND j.date <= ${to}
      ORDER BY j.date, j.id::bigint` as Omit<VendorJob, 'charges'>[];
   const charges = rows.length ? await sql`
