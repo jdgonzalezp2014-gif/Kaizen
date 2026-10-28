@@ -2950,3 +2950,4 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .v-past { padding: 18px; display: flex; flex-direction: column; gap: 6px; }
 .v-past > .fr-btn.secondary { margin-top: 4px; }
 @media (max-width: 480px) { .v-seg button { padding: 6px 6px; font-size: 14px; gap: 3px; } }
+.v-day-row > span:last-child { flex-shrink: 0; white-space: nowrap; }
