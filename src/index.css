@@ -2939,3 +2939,14 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .v-house-go { padding: 8px 16px; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 15px; }
 .v-ask { padding: 20px; }
 .v-ask > .fr-btn.secondary { margin: 0; }
+/* Upcoming (by day) and Past (done, pay, extras) on the handyman's page — the same cards and scale as the houses. */
+.v-agenda { display: flex; flex-direction: column; gap: 12px; }
+.v-day { padding: 16px 18px; display: flex; flex-direction: column; gap: 4px; }
+.v-day h3 { margin: 0 0 4px; font-size: 17px; display: flex; align-items: center; gap: 6px; }
+.v-day-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; width: 100%; min-height: 56px;
+  padding: 10px 0; background: none; border: 0; border-top: 1px solid var(--line); color: inherit; font: inherit; cursor: pointer; }
+.v-day-row:first-of-type { border-top: 0; }
+.v-ok { font-weight: 600; }
+.v-past { padding: 18px; display: flex; flex-direction: column; gap: 6px; }
+.v-past > .fr-btn.secondary { margin-top: 4px; }
+@media (max-width: 480px) { .v-seg button { padding: 6px 6px; font-size: 14px; gap: 3px; } }

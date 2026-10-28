@@ -96,7 +96,7 @@ async function note(sql: SqlFn, encryptionKey: string, id: string, body: string,
 }
 
 /** After a change: the Hostaway mirror and the repair's money, as any work. */
-async function settle(sql: SqlFn, encryptionKey: string, id: string, by: string) {
+export async function settleWork(sql: SqlFn, encryptionKey: string, id: string, by: string) {
   const creds = () => getCredentials(sql, encryptionKey);
   await settleRepair(sql, id, by, creds).catch(() => {});
   if (await mirrorOn(sql)) await pushWork(sql, await creds(), id).catch(() => {});
@@ -115,7 +115,10 @@ export async function workAct(sql: SqlFn, encryptionKey: string, id: string, who
                               waitUntil: (p: Promise<unknown>) => void): Promise<void> {
   const r = await workRow(sql, id);
   if (!r) throw new Error('This work order is gone.');
-  if (r.status === 'completed' || r.status === 'cancelled') throw new Error('This work order is closed.');
+  // Owner, 2026-10-27: on a finished job the handyman can still add an extra (a charge, waiting for approval like any)
+  // or a note — from their own page only; the one-job link closes with the job.
+  const late = r.status === 'completed' && who.source === 'vendor' && (b.action === 'charge' || b.action === 'note');
+  if ((r.status === 'completed' || r.status === 'cancelled') && !late) throw new Error('This work order is closed.');
   const by = `${who.name}${who.source === 'link' ? ' (link)' : ''}`;
   const tell = (text: string, kind: 'note' | 'change' | 'status' = 'change') => waitUntil(note(sql, encryptionKey, id, `🔧 ${who.name}: ${text}`, by, kind));
 
@@ -125,7 +128,7 @@ export async function workAct(sql: SqlFn, encryptionKey: string, id: string, who
                                  status = CASE WHEN status = 'pending' THEN 'confirmed' ELSE status END, updated_at = now()
                  WHERE account_id = 1 AND id = ${Number(id)}`;
       tell(`accepted the day — ${r.scheduled_on ?? 'no day set'}${r.start_time ? ` ${r.start_time}` : ''}.`, 'status');
-      waitUntil(settle(sql, encryptionKey, id, by));
+      waitUntil(settleWork(sql, encryptionKey, id, by));
       return;
     }
     case 'cant': {
@@ -140,7 +143,7 @@ export async function workAct(sql: SqlFn, encryptionKey: string, id: string, who
       // Their link stops working: the team picks a day (and maybe a vendor) again.
       await sql`UPDATE work_links SET expires_on = ${addDays(todayIn(TZ), -1)} WHERE account_id = 1 AND todo_id = ${Number(id)}`;
       tell(`can't on ${r.scheduled_on ?? 'the day set'}${reason ? ` — “${reason}”` : ''}. A "Reschedule" sub-task is on the work order.`, 'status');
-      waitUntil(settle(sql, encryptionKey, id, by));
+      waitUntil(settleWork(sql, encryptionKey, id, by));
       return;
     }
     case 'photo': {
@@ -151,7 +154,7 @@ export async function workAct(sql: SqlFn, encryptionKey: string, id: string, who
       for (const p of up) await sql`INSERT INTO work_photos (account_id, todo_id, stage, name, url, by_name) VALUES (1, ${Number(id)}, ${stage}, ${p.name}, ${p.url}, ${who.name})`;
       if (stage === 'before') await sql`UPDATE todos SET status = 'in_progress', updated_at = now() WHERE account_id = 1 AND id = ${Number(id)} AND status IN ('pending', 'confirmed')`;
       tell(`${up.length} photo${up.length === 1 ? '' : 's'} ${stage.toUpperCase()}:\n${up.map(p => p.url).join('\n')}`, 'note');
-      if (stage === 'before') waitUntil(settle(sql, encryptionKey, id, by));
+      if (stage === 'before') waitUntil(settleWork(sql, encryptionKey, id, by));
       return;
     }
     case 'note': {
@@ -180,7 +183,7 @@ export async function workAct(sql: SqlFn, encryptionKey: string, id: string, who
                  WHERE account_id = 1 AND id = ${Number(id)}`;
       const [p] = await sql`SELECT count(*)::int AS n FROM field_expenses WHERE account_id = 1 AND todo_id = ${Number(id)} AND source = 'vendor' AND status = 'pending'` as { n: number }[];
       tell(`✅ done — ${text}${p?.n ? ` · ${p.n} charge${p.n === 1 ? '' : 's'} still waiting for approval` : ''}`, 'status');
-      waitUntil(settle(sql, encryptionKey, id, by));
+      waitUntil(settleWork(sql, encryptionKey, id, by));
       return;
     }
     default: throw new Error('Unknown step.');
@@ -260,7 +263,7 @@ export async function workRequest(sql: SqlFn, encryptionKey: string, name: strin
   await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
             VALUES (1, 'task', ${t!.id}, 'status', ${`${name} asks to approve this work${est != null ? ` — estimate $${est.toFixed(2)}` : ''}.`}, ${requestedBy(name)})`;
   waitUntil(notifyTask(sql, encryptionKey, t!.id, 'created', requestedBy(name)).catch(() => {}));
-  waitUntil(settle(sql, encryptionKey, t!.id, requestedBy(name)));
+  waitUntil(settleWork(sql, encryptionKey, t!.id, requestedBy(name)));
   return t!.id;
 }
 

@@ -945,7 +945,9 @@ const vendorPath = (token?: string | null) => token ? '/api/crew-link' : '/api/v
 const vendorHeaders = (token?: string | null): Record<string, string> => token ? { 'X-Vendor-Token': token } : {};
 /** Other work a handyman asked the team to approve (owner, 2026-10-27) — waiting, or declined lately. */
 export interface WorkRequest { id: string; title: string; unit: string | null; estimate: number | null; status: string; at: string }
-export interface VendorHomeData { vendor: string; works: WorkPage[]; pay: VendorPage | null; requests?: WorkRequest[]; houses?: { id: string; name: string }[] }
+/** A finished job on their Past tab: its pay as on the invoice, and whether that invoice was paid. */
+export type PastJob = VendorJob & { invoice: string; paid: { at: string; method: string } | null };
+export interface VendorHomeData { vendor: string; works: WorkPage[]; pay: VendorPage | null; requests?: WorkRequest[]; houses?: { id: string; name: string }[]; past?: PastJob[] }
 export const getVendorWork = (period?: string | null, token?: string | null) =>
   call<({ ok: true } & VendorHomeData) | Fail>(`${vendorPath(token)}${period ? `?period=${period}` : ''}`, { headers: vendorHeaders(token) });
 /** The team's "View as handyman" (owner, 2026-10-27): their page from the same server code. */

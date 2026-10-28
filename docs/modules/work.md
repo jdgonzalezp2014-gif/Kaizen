@@ -107,6 +107,14 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   estimate, photos) → `vendorPost` action `request` → `workRequest`: a work order with NO vendor, `created_by` "<name>
   (handyman)", told to the team as new work. The team's editor shows **Approve for <name>** (= vendor set → their Slack
   line, their page) or **Decline** (= cancelled). Their page lists theirs waiting, and declined ones for 14 days.
+- **Upcoming and Past on the handyman's page (owner, 2026-10-27):** island tabs Jobs · Upcoming · Past · Pay. Upcoming = open
+  jobs by day (late ones marked, no day last); a row opens the job in its house's carousel. Past = jobs finished in the last
+  90 days (`vendorPast`, vendor-pay.ts: `vendorJobs` + payouts in one query): what was done, pay as on the invoice, charges,
+  team notes, Paid/Not paid yet. **＋ Add an extra** = a charge on a finished job (workAct allows `charge`/`note` on a
+  completed job from their own page only; the one-job link closes with the job). If that job's invoice is already paid,
+  `extraJob` (vendor-door.ts) puts the charge on a new completed work order "Extra — <job>" dated today, so it is paid with
+  the open invoice — payouts are one per invoice and never re-paid. The jobs page now lists open jobs only (`mine(…, true)`);
+  their actions accept jobs finished in the last 90 days.
 - Migration 103 re-adds `vendors.link_token_hash/enc`: 099 was applied before those lines were added, so handymen's
   own-page links ("Copy their link", `/api/crew-link`) failed in production until 103 runs.
 - **The access (codes, lockbox, Wi-Fi) shows only on the day set and while the order is open.**

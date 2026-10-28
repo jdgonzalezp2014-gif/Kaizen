@@ -14,9 +14,10 @@
  * The access (code, lockbox, Wi-Fi) shows on the day set only.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { getVendorAs, getVendorWork, getWorkLink, vendorAct, vendorRequest, workLinkAct, workPhoto, type VendorHomeData, type VendorPage, type WorkDoor, type WorkPage, type WorkRequest } from '../api.ts';
+import { getVendorAs, getVendorWork, getWorkLink, vendorAct, vendorRequest, workLinkAct, workPhoto, type PastJob, type VendorHomeData, type VendorPage, type WorkDoor, type WorkPage, type WorkRequest } from '../api.ts';
 import { EN, VendorInvoiceView } from './Handymen.tsx';
 import { money2 } from '../lib/format.ts';
+import { addDays } from '../lib/dates.ts';
 import { AccessBox } from '../components/AccessBox.tsx';
 import { PhotoPicker, shrink } from '../components/PhotoPicker.tsx';
 import { ThemeToggle } from '../components/ThemeToggle.tsx';
@@ -43,7 +44,7 @@ const W = {
     note: '💬 A note or a question for the team', noteSend: 'Send the note', sent: '✓ Sent',
     closed: 'This work order is closed.', none: 'No open work orders for you right now.', hello: (n: string) => `Hi, ${n}`,
     needAmount: 'Write the amount.', needWhat: 'Say what it is for.', needDone: 'Say what was done.',
-    tabWork: 'Work orders', tabPay: 'Pay', payPeriod: 'Period', jobs: (n: number, t: string) => `${n} job${n === 1 ? '' : 's'} paid · ${t}`,
+    tabWork: 'Jobs', tabPay: 'Pay', payPeriod: 'Period', jobs: (n: number, t: string) => `${n} job${n === 1 ? '' : 's'} paid · ${t}`,
     flag: 'Note from the team', corrected: 'Pay corrected', notPaid: 'Not paid', paidOn: (d: string, how: string) => `Paid ${d} ${how}`,
     byStripe: 'to your bank (Stripe)', byHand: 'by hand', unpaid: 'Not paid yet',
     houses: 'Houses', back: '‹ Houses', open: 'Open', of: (i: number, n: number) => `${i} of ${n}`,
@@ -51,7 +52,9 @@ const W = {
     ask: '＋ Ask to approve other work', askTip: 'Something else that needs fixing, or that you did: the team approves it — then it is one of your jobs.',
     house: 'House', whatWork: 'What is the work?', estimate: 'Estimate $ (optional)', askSend: 'Send for approval', cancel: 'Cancel',
     needHouse: 'Pick the house.', asked: '✓ Sent — the team will approve it or tell you.', waiting: 'Waiting for approval',
-    pending: 'waiting', declined: 'not approved'
+    pending: 'waiting', declined: 'not approved',
+    tabCal: 'Upcoming', tabPast: 'Past', today: 'Today', tomorrow: 'Tomorrow', late: 'late', acceptedShort: '✓ accepted', toAcceptShort: 'to accept',
+    noPast: 'No finished jobs in the last 90 days.', noPay: 'No pay set yet', addExtra: '＋ Add an extra', extraSent: '✓ Sent — waiting for the team’s approval.'
   },
   es: {
     day: 'Día acordado', at: 'a las', noDay: 'Aún no hay día', what: 'Qué hay que arreglar',
@@ -66,7 +69,7 @@ const W = {
     note: '💬 Una nota o pregunta para el equipo', noteSend: 'Enviar la nota', sent: '✓ Enviado',
     closed: 'Esta orden está cerrada.', none: 'No tienes órdenes abiertas por ahora.', hello: (n: string) => `Hola, ${n}`,
     needAmount: 'Escribe el monto.', needWhat: 'Di para qué es.', needDone: 'Di qué se hizo.',
-    tabWork: 'Órdenes', tabPay: 'Pago', payPeriod: 'Periodo', jobs: (n: number, t: string) => `${n} trabajo${n === 1 ? '' : 's'} pagado${n === 1 ? '' : 's'} · ${t}`,
+    tabWork: 'Trabajos', tabPay: 'Pago', payPeriod: 'Periodo', jobs: (n: number, t: string) => `${n} trabajo${n === 1 ? '' : 's'} pagado${n === 1 ? '' : 's'} · ${t}`,
     flag: 'Nota del equipo', corrected: 'Pago corregido', notPaid: 'No pagado', paidOn: (d: string, how: string) => `Pagado ${d} ${how}`,
     byStripe: 'a tu banco (Stripe)', byHand: 'en mano', unpaid: 'Aún no pagado',
     houses: 'Casas', back: '‹ Casas', open: 'Abrir', of: (i: number, n: number) => `${i} de ${n}`,
@@ -74,7 +77,9 @@ const W = {
     ask: '＋ Pedir aprobar otro trabajo', askTip: 'Algo más que hay que arreglar, o que hiciste: el equipo lo aprueba — y pasa a ser uno de tus trabajos.',
     house: 'Casa', whatWork: '¿Qué trabajo es?', estimate: 'Estimado $ (opcional)', askSend: 'Enviar para aprobar', cancel: 'Cancelar',
     needHouse: 'Elige la casa.', asked: '✓ Enviado — el equipo lo aprobará o te dirá.', waiting: 'Esperando aprobación',
-    pending: 'esperando', declined: 'no aprobado'
+    pending: 'esperando', declined: 'no aprobado',
+    tabCal: 'Próximos', tabPast: 'Pasados', today: 'Hoy', tomorrow: 'Mañana', late: 'atrasado', acceptedShort: '✓ aceptado', toAcceptShort: 'por aceptar',
+    noPast: 'Sin trabajos terminados en los últimos 90 días.', noPay: 'Aún sin pago', addExtra: '＋ Añadir un extra', extraSent: '✓ Enviado — espera la aprobación del equipo.'
   }
 };
 type Wx = typeof W.en;
@@ -148,11 +153,14 @@ export function VendorHome({ practice, token, asVendor }: { practice?: { vendor:
   const [lang, setLang] = useLang();
   const [data, setData] = useState<(Omit<VendorHomeData, 'pay'> & { pay?: VendorPage | null }) | null>(practice ? { vendor: practice.vendor, works: practice.works } : null);
   const [err, setErr] = useState('');
-  const [sec, setSec] = useState<'work' | 'pay'>('work');
+  // Owner, 2026-10-27: their jobs by house, what is coming by day (to organise themselves), what is done (extras, pay).
+  type Sec = 'work' | 'cal' | 'past' | 'pay';
+  const [sec, setSec] = useState<Sec>('work');
+  const [focus, setFocus] = useState<string | null>(null);
   // Owner, 2026-10-27: by house — a carousel of houses, and inside one, a carousel of its jobs. The phone's back
   // gesture steps back from a house to the houses, and through the sections (useUrlState.ts).
   const [house, setHouse] = useState<string | null>(null);
-  useUrlState('sec', sec, setSec, { def: 'work', valid: v => v === 'work' || v === 'pay' });
+  useUrlState('sec', sec, setSec, { def: 'work', valid: v => ['work', 'cal', 'past', 'pay'].includes(v) });
   useUrlState('house', house ?? '', v => setHouse(v || null), { def: '' });
   const [period, setPeriod] = useState<string | null>(null);
   const door: WorkDoor = asVendor ? { asVendor } : { token };
@@ -170,9 +178,10 @@ export function VendorHome({ practice, token, asVendor }: { practice?: { vendor:
     {/* The island: who, work or pay, language and night — always in reach. */}
     <header className="v-island">
       <span className="v-island-name">{ic(data ? w.hello(data.vendor) : 'Kaizen')}</span>
-      {data?.pay && <span className="v-seg" role="tablist">
-        {(['work', 'pay'] as const).map(k => <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => setSec(k)}>
-          <Icon n={k === 'work' ? 'wrench' : 'dollar'} /> {ic(k === 'work' ? w.tabWork : w.tabPay)}</button>)}
+      {data && !practice && <span className="v-seg" role="tablist">
+        {([['work', 'wrench', w.tabWork], ['cal', 'calendar', w.tabCal], ['past', 'done', w.tabPast], ...(data.pay ? [['pay', 'dollar', w.tabPay]] : [])] as [Sec, string, string][])
+          .map(([k, icon, label]) => <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => { setSec(k); if (k !== 'work') setHouse(null); }}>
+            <Icon n={icon} /> {ic(label)}</button>)}
       </span>}
       <span className="mini-tools">
         <span className="todo-kind" role="group" aria-label="Language / Idioma">
@@ -184,12 +193,16 @@ export function VendorHome({ practice, token, asVendor }: { practice?: { vendor:
     <div className="report-page v-page">
       {err ? <p className="banner error">{ic(err)}</p> : !data ? <p className="note loading-dot">…</p>
         : sec === 'pay' && data.pay ? <VendorPay pay={data.pay} lang={lang} onPeriod={setPeriod} />
+        : sec === 'cal' ? <Upcoming w={w} lang={lang} works={data.works} open={p => { setSec('work'); setFocus(p.work.id); setHouse(p.work.unit ?? '—'); }} />
+        : sec === 'past' ? <Past w={w} lang={lang} jobs={data.past ?? []}
+            add={(id, f, files) => asVendor ? Promise.resolve({ ok: false, message: 'Preview — nothing is saved here.' }) : vendorAct(id, f, files, token)}
+            onAdded={() => void load()} />
         : open ? <>
             <div className="v-house-head">
               <button className="chip" onClick={() => setHouse(null)}>{ic(w.back)}</button>
               <span><b>{ic(open.name)}</b>{open.address && <> · <a href={`https://maps.google.com/?q=${encodeURIComponent(open.address)}`} target="_blank" rel="noreferrer"><Icon n="pin" /> {ic(open.address)}</a></>}</span>
             </div>
-            <Carousel label={open.name} of={w.of} wide>{open.works.map(p => <div key={p.work.id}>{card(p)}</div>)}</Carousel>
+            <Carousel label={open.name} of={w.of} wide start={Math.max(0, open.works.findIndex(p => p.work.id === focus))}>{open.works.map(p => <div key={p.work.id}>{card(p)}</div>)}</Carousel>
           </>
         : <>
             <h2 className="v-h">{ic(w.houses)}</h2>
@@ -262,6 +275,68 @@ function AskApproval({ w, lang, houses, requests, send, onSent }: { w: Wx; lang:
   );
 }
 
+/** What is coming, by day — to organise the week. A job opens in its house. No day yet: last, the team still sets it. */
+function Upcoming({ w, lang, works, open }: { w: Wx; lang: Lang; works: WorkPage[]; open: (p: WorkPage) => void }) {
+  const live = works.filter(p => p.work.status !== 'completed' && p.work.status !== 'cancelled');
+  if (!live.length) return <div className="card"><p className="note">{ic(w.none)}</p></div>;
+  const today = works[0]?.today ?? '';
+  const days = new Map<string, WorkPage[]>();
+  for (const p of live) days.set(p.work.scheduledOn ?? '', [...(days.get(p.work.scheduledOn ?? '') ?? []), p]);
+  const order = [...days.keys()].sort((a, b) => (a ? 0 : 1) - (b ? 0 : 1) || a.localeCompare(b));
+  const head = (d: string) => !d ? w.noDay : d === today ? `${w.today} · ${dayLabel(lang, d)}` : d === addDays(today, 1) ? `${w.tomorrow} · ${dayLabel(lang, d)}`
+    : d < today ? `${dayLabel(lang, d)} · ${w.late}` : dayLabel(lang, d);
+  return <div className="v-agenda">{order.map(d => (
+    <section key={d || 'none'} className="card v-day">
+      <h3 className={d && d < today ? 'breach' : ''}><Icon n="calendar" /> {ic(head(d))}</h3>
+      {days.get(d)!.map(p => (
+        <button key={p.work.id} className="v-day-row" onClick={() => open(p)}>
+          <span><b>{ic(p.work.unit ?? '—')}</b>{p.work.startTime ? ic(` · ${clock(p.work.startTime)}`) : ''}<br />{ic(p.work.title)}</span>
+          <span className={p.work.accepted ? 'v-ok' : 'v-house-flag'}>{ic(p.work.accepted ? w.acceptedShort : w.toAcceptShort)}</span>
+        </button>))}
+    </section>))}</div>;
+}
+
+/**
+ * What is done (last 90 days): what was done, the pay as on their invoice, the charges and the team's notes, and
+ * whether that invoice was paid. An extra can still be added — it waits for approval like any charge; on a job whose
+ * invoice is already paid it goes with the next one (the server makes it a job of its own).
+ */
+function Past({ w, lang, jobs, add, onAdded }: { w: Wx; lang: Lang; jobs: PastJob[];
+  add: (id: string, f: Record<string, string>, files: File[]) => Promise<{ ok: boolean; message?: string }>; onAdded: () => void }) {
+  if (!jobs.length) return <div className="card"><p className="note">{ic(w.noPast)}</p></div>;
+  return <div className="v-agenda">{jobs.map(j => <PastCard key={j.id} w={w} lang={lang} j={j} add={add} onAdded={onAdded} />)}</div>;
+}
+function PastCard({ w, lang, j, add, onAdded }: { w: Wx; lang: Lang; j: PastJob;
+  add: (id: string, f: Record<string, string>, files: File[]) => Promise<{ ok: boolean; message?: string }>; onAdded: () => void }) {
+  const [extra, setExtra] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const go: Go = async (f, files = []) => {
+    setBusy(true); setMsg('');
+    try {
+      const r = await add(j.id, f, await Promise.all(files.map(shrink)));
+      if (!r.ok) { setMsg(r.message ?? 'Not sent.'); return false; }
+      setExtra(false); setMsg(w.extraSent); onAdded(); return true;
+    } catch (e) { setMsg(String(e)); return false; } finally { setBusy(false); }
+  };
+  const pay = j.voidReason ? `${w.notPaid}: ${j.voidReason}` : j.pay == null ? w.noPay
+    : `$${j.pay.toFixed(2)}${j.payFixed ? ` · ${w.corrected}` : ''} · ${j.paid ? w.paidOn(j.paid.at, j.paid.method === 'stripe' ? w.byStripe : w.byHand) : w.unpaid}`;
+  return (
+    <div className="card v-past">
+      <p className="sub-n"><Icon n="calendar" /> {ic(dayLabel(lang, j.date))} · <Icon n="home" /> {ic(j.unit ?? '—')}</p>
+      <p><b>{ic(j.title)}</b></p>
+      {j.resolution && <p>{ic(`✓ ${j.resolution}`)}</p>}
+      <p className={j.voidReason ? 'breach' : j.paid ? 'v-ok' : ''}><Icon n="dollar" /> {ic(pay)}</p>
+      {j.flagNote && <p className="note">{ic(`${w.flag}: ${j.flagNote}`)}</p>}
+      {j.charges.map(c => <p key={c.id} className={c.status === 'denied' ? 'breach' : 'sub-n'}>
+        {ic(`$${c.amount.toFixed(2)} — ${c.description.replace(/ — repair #\d+.*$/, '')} · ${w.chargeState[c.status as keyof Wx['chargeState']] ?? c.status}${c.decisionNote ? ` · “${c.decisionNote}”` : ''}`)}</p>)}
+      {extra ? <Charges w={w} tx={CREW_TX[lang]} charges={[]} busy={busy} go={go} start />
+        : <button className="fr-btn secondary" onClick={() => { setExtra(true); setMsg(''); }}>{ic(w.addExtra)}</button>}
+      {msg && <p className="note" role="status">{ic(msg)}</p>}
+    </div>
+  );
+}
+
 /** Their work orders by house: soonest day first; no listing last. */
 function byHouse(works: WorkPage[]) {
   const m = new Map<string, { key: string; name: string; address: string | null; works: WorkPage[] }>();
@@ -278,11 +353,13 @@ function byHouse(works: WorkPage[]) {
 }
 
 /** Swipe sideways, one at a time; arrows and "2 of 5" for a mouse and for knowing where you are. */
-function Carousel({ children, label, of, wide = false }: { children: ReactNode[]; label: string; of: (i: number, n: number) => string; wide?: boolean }) {
+function Carousel({ children, label, of, wide = false, start = 0 }: { children: ReactNode[]; label: string; of: (i: number, n: number) => string; wide?: boolean; start?: number }) {
   const rail = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState(0);
   const n = children.length;
-  const go = (i: number) => { const r = rail.current; const el = r?.children[Math.max(0, Math.min(n - 1, i))] as HTMLElement | undefined; if (r && el) r.scrollTo({ left: el.offsetLeft - r.offsetLeft - (r.clientWidth - el.clientWidth) / 2, behavior: 'smooth' }); };
+  const go = (i: number, behavior: ScrollBehavior = 'smooth') => { const r = rail.current; const el = r?.children[Math.max(0, Math.min(n - 1, i))] as HTMLElement | undefined; if (r && el) r.scrollTo({ left: el.offsetLeft - r.offsetLeft - (r.clientWidth - el.clientWidth) / 2, behavior }); };
+  // Opened on one job (from Upcoming): that one in sight.
+  useEffect(() => { if (start > 0) go(start, 'auto'); }, []);
   const onScroll = () => { const r = rail.current; if (!r) return; const kids = [...r.children] as HTMLElement[];
     const mid = r.scrollLeft + r.clientWidth / 2 + r.offsetLeft;
     setAt(kids.reduce((best, k, i) => Math.abs(k.offsetLeft + k.clientWidth / 2 - mid) < Math.abs(kids[best]!.offsetLeft + kids[best]!.clientWidth / 2 - mid) ? i : best, 0)); };
@@ -330,7 +407,7 @@ function WorkCard({ page, lang, send, onPage, photo }: { page: WorkPage; lang: L
         </Step>
         <Step n={2} title={w.s2} sub={w.photos(page.photos.before)}><Photos w={w} tx={tx} stage="before" go={go} /></Step>
         <Step n={3} title={w.s3} sub={w.photos(page.photos.after)}><Photos w={w} tx={tx} stage="after" go={go} /></Step>
-        <Step n={4} title={w.s4} sub={w.charges(page.charges.length, page.charges.filter(c => c.status === 'pending').length)}><Charges w={w} tx={tx} page={page} busy={busy} go={go} /></Step>
+        <Step n={4} title={w.s4} sub={w.charges(page.charges.length, page.charges.filter(c => c.status === 'pending').length)}><Charges w={w} tx={tx} charges={page.charges} busy={busy} go={go} /></Step>
         <Step n={5} title={w.s5}><Done w={w} busy={busy} go={go} /></Step>
         <Note w={w} busy={busy} go={go} />
       </>}
@@ -395,8 +472,8 @@ function Photos({ w, tx, stage, go }: { w: Wx; tx: Tx; stage: 'before' | 'after'
   );
 }
 
-function Charges({ w, tx, page, busy, go }: { w: Wx; tx: Tx; page: WorkPage; busy: boolean; go: Go }) {
-  const [adding, setAdding] = useState(!page.charges.length);
+function Charges({ w, tx, charges, busy, go, start }: { w: Wx; tx: Tx; charges: WorkPage['charges']; busy: boolean; go: Go; start?: boolean }) {
+  const [adding, setAdding] = useState(start ?? !charges.length);
   const [kind, setKind] = useState<'labor' | 'materials'>('labor');
   const [amount, setAmount] = useState('');
   const [what, setWhat] = useState('');
@@ -405,7 +482,7 @@ function Charges({ w, tx, page, busy, go }: { w: Wx; tx: Tx; page: WorkPage; bus
   return (
     <div className="fr">
       <p className="fr-tip">{ic(w.s4note)}</p>
-      {page.charges.map(c => <p key={c.id} className={c.status === 'denied' ? 'breach' : 'sub-n'}>
+      {charges.map(c => <p key={c.id} className={c.status === 'denied' ? 'breach' : 'sub-n'}>
         ${ic(c.amount.toFixed(2))} — {ic(c.description.replace(/ — repair #\d+.*$/, ''))} · {ic(w.chargeState[c.status])}{ic(c.decisionNote ? ` · “${c.decisionNote}”` : '')}</p>)}
       {!adding ? <button className="fr-btn secondary" onClick={() => setAdding(true)}>{ic(w.addCharge)}</button> : <>
         <div className="report-tabs">

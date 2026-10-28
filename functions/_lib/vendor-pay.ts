@@ -9,7 +9,7 @@
 import type { SqlFn } from './accounts.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
 import { customPeriod, periodOf, recentPeriods, type InvoicePeriod, type Period } from '../../src/lib/crew.ts';
-import { buildVendorInvoice, type VendorCharge, type VendorInvoice, type VendorJob } from '../../src/lib/vendor-pay.ts';
+import { buildVendorInvoice, vendorInvoiceNumber, type VendorCharge, type VendorInvoice, type VendorJob } from '../../src/lib/vendor-pay.ts';
 import { payoutOf } from './payouts.ts';
 import type { Payout } from '../../src/lib/payouts.ts';
 
@@ -86,6 +86,29 @@ export interface VendorPage {
   invoice: VendorInvoice;
   /** How this invoice was paid; none for the team's own span (pay goes by invoice period). */
   payout: Payout | null;
+}
+
+/**
+ * Their finished jobs of the last `days` (owner, 2026-10-27: "past jobs — to add extras and see what was paid"), newest
+ * first, each with the invoice it belongs to and whether that invoice was paid. The same jobs and pay as their Pay tab
+ * (vendorJobs), the payouts read in one query.
+ */
+export async function vendorPast(sql: SqlFn, name: string, days = 90) {
+  const v = await findVendor(sql, name);
+  if (!v) return [];
+  const today = todayIn(TZ);
+  const jobs = (await vendorJobs(sql, v.name, addDays(today, -days), today)).filter(j => j.status === 'completed').reverse();
+  const numberOf = (d: string) => vendorInvoiceNumber(v.name, periodOf(d, v.invoicePeriod));
+  const nums = [...new Set(jobs.map(j => numberOf(j.date)))];
+  const paid = nums.length ? await sql`SELECT invoice_number AS n, method, to_char(created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD') AS at
+                                         FROM payouts WHERE account_id = 1 AND invoice_number = ANY(${nums})` as { n: string; method: string; at: string }[] : [];
+  return jobs.map(j => { const p = paid.find(x => x.n === numberOf(j.date)); return { ...j, invoice: numberOf(j.date), paid: p ? { at: p.at, method: p.method } : null }; });
+}
+
+/** Whether the invoice a job done on `date` belongs to is already paid — then an extra on it would never be paid. */
+export async function periodPaid(sql: SqlFn, name: string, date: string): Promise<boolean> {
+  const v = await findVendor(sql, name);
+  return !!v && !!(await payoutOf(sql, vendorInvoiceNumber(v.name, periodOf(date, v.invoicePeriod))));
 }
 
 /** `asked` = a period's first day (or the span's first day with `askedTo`), as a cleaner's page reads them. */
