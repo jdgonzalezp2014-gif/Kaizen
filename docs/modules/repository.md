@@ -141,7 +141,7 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   Files: `src/lib/missing-data.ts` (+ test), `functions/api/missing-data.ts` (permission `repository`), `src/components/MissingData.tsx`.
   **A new rule = one entry in REPO_RULES / HOSTAWAY_RULES.** First real read (2026-10-27): 2 critical (P2-4217, P2-4222 —
   records nearly empty, no lock type; 38 fields not copied), 24 high (insurance missing on 21 of 22; Bobcat no AT&T #),
-  40 medium, 65 low. SOP draft in `.sop-170.mjs` (run once after deploy, then delete).
+  40 medium, 65 low. SOP #40 "Close the gaps in a unit's data: Missing data" — draft, for the owner to publish.
 
 ## Open items — Units data (owner, 2026-10-13; first two first)
 
