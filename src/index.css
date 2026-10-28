@@ -2899,6 +2899,8 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .v-rail::-webkit-scrollbar { display: none; }
 .v-slide { flex: 0 0 82%; max-width: 420px; scroll-snap-align: center; scroll-snap-stop: always; }
 .v-carousel.wide .v-slide { flex-basis: 92%; max-width: 528px; }
+.v-carousel.wide .v-rail { align-items: flex-start; }
+.v-carousel.wide .v-pager { margin: 0 0 6px; }
 .v-pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 4px 0 12px; }
 .v-pager .chip { min-width: 44px; min-height: 44px; font-size: 1.2rem; justify-content: center; }
 .v-dots { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: center; }

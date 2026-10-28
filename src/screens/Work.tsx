@@ -226,14 +226,17 @@ function Carousel({ children, label, of, wide = false }: { children: ReactNode[]
   const onScroll = () => { const r = rail.current; if (!r) return; const kids = [...r.children] as HTMLElement[];
     const mid = r.scrollLeft + r.clientWidth / 2 + r.offsetLeft;
     setAt(kids.reduce((best, k, i) => Math.abs(k.offsetLeft + k.clientWidth / 2 - mid) < Math.abs(kids[best]!.offsetLeft + kids[best]!.clientWidth / 2 - mid) ? i : best, 0)); };
+  const pager = n > 1 && <div className="v-pager">
+    <button className="chip" disabled={at === 0} onClick={() => go(at - 1)} aria-label="Previous">‹</button>
+    <span className="v-dots" aria-live="polite">{ic(of(at + 1, n))}</span>
+    <button className="chip" disabled={at >= n - 1} onClick={() => go(at + 1)} aria-label="Next">›</button>
+  </div>;
+  // Jobs are long and of different heights: their pager goes on top, where it stays in sight.
   return (
     <section className={`v-carousel ${wide ? 'wide' : ''}`} aria-roledescription="carousel" aria-label={label}>
+      {wide && pager}
       <div className="v-rail" ref={rail} onScroll={onScroll}>{children.map((c, i) => <div key={i} className="v-slide" aria-label={of(i + 1, n)}>{c}</div>)}</div>
-      {n > 1 && <div className="v-pager">
-        <button className="chip" disabled={at === 0} onClick={() => go(at - 1)} aria-label="Previous">‹</button>
-        <span className="v-dots" aria-live="polite">{ic(of(at + 1, n))}</span>
-        <button className="chip" disabled={at >= n - 1} onClick={() => go(at + 1)} aria-label="Next">›</button>
-      </div>}
+      {!wide && pager}
     </section>
   );
 }
