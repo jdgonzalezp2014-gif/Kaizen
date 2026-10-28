@@ -170,19 +170,22 @@ export const cleanTaskText = (c: Check, sectionTitle: string) =>
  * unchanged — only two or more group.
  */
 export function repairList(cs: Check[], ctx: { unit: string; date: string; inspector: string },
-                           titleOf: (c: Check) => string): { title: string; description: string; items: string[] } | null {
+                           titleOf: (c: Check) => string): { title: string; description: string; items: string[]; itemNotes: string[] } | null {
   const reps = cs.filter(c => c.result === 'attention' && c.outcome === 'repair');
   if (!reps.length) return null;
   if (reps.length === 1) {
     const w = workFor(reps[0]!, { ...ctx, sectionTitle: titleOf(reps[0]!) })!;
-    return { title: w.title, description: w.description, items: [] };
+    return { title: w.title, description: w.description, items: [], itemNotes: [] };
   }
   const item = (c: Check) => `${c.label}${c.note?.trim() ? ` — ${c.note.trim()}` : ''} (${titleOf(c)})`;
   const lines = [
     `From the inspection of ${ctx.unit} on ${ctx.date}${ctx.inspector ? ` by ${ctx.inspector}` : ''}.`,
     ...reps.flatMap(c => [`• ${item(c)}`, ...c.photos.map(p => `  Photo: ${p.url}`)])
   ];
-  return { title: `Repairs at ${ctx.unit}: ${reps.length} items`.slice(0, 300), description: lines.join('\n'), items: reps.map(c => repairTitle(c, titleOf(c))) };
+  // Owner, 2026-10-27: each item goes to its vendor alone (the repair holding them is not shown to vendors), so each
+  // item carries its own finding and photos — the same text a single repair gets.
+  return { title: `Repairs at ${ctx.unit}: ${reps.length} items`.slice(0, 300), description: lines.join('\n'), items: reps.map(c => repairTitle(c, titleOf(c))),
+           itemNotes: reps.map(c => workFor(c, { ...ctx, sectionTitle: titleOf(c) })!.description) };
 }
 
 /**

@@ -109,6 +109,8 @@ test('one repair keeps its own work order; two or more become ONE, a sub-task pe
   assert.equal(l.title, 'Repairs at CL1250: 2 items');
   assert.deepEqual(l.items, ['Cracked by the tub (Bathroom)', 'Lock (Kitchen)']);
   assert.match(l.description, /• Grout — cracked by the tub \(Bathroom\)\n  Photo: https:\/\/x\/p\n• Lock \(Kitchen\)/);
+  assert.match(l.itemNotes[0]!, /Note: cracked by the tub\nPhoto: https:\/\/x\/p$/, 'each item carries its own photos — vendors see items, not the repair holding them');
+  assert.doesNotMatch(l.itemNotes[1]!, /Photo/);
   assert.equal(repairList([cs[2]!], ctx, titleOf), null);
 });
 

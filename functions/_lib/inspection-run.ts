@@ -372,9 +372,9 @@ export async function finishRun(sql: SqlFn, who: string, b: Record<string, unkno
     // §159 (owner, 2026-10-14): each repair is a smaller work order inside the visit's work order — the work
     // itself, not a to-do about it. No "Assign and schedule" step: the work order's empty Owner and date already
     // say nobody is on it yet, and the extra to-do was the same job written twice.
-    for (const item of repWork.items) {
-      await sql`INSERT INTO todos (account_id, title, unit_ids, created_by, kind, status, priority, parent_id, inspection_id)
-                VALUES (1, ${item}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'work_order', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
+    for (const [i, item] of repWork.items.entries()) {
+      await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, parent_id, inspection_id)
+                VALUES (1, ${item}, ${repWork.itemNotes[i] ?? null}, ${ins.unit_id ? [ins.unit_id] : []}, ${who}, 'work_order', 'pending', 'none', ${Number(t!.id)}, ${Number(id)})`;
     }
     await sql`UPDATE inspection_checks SET todo_id = ${Number(t!.id)} WHERE account_id = 1 AND id = ANY(${reps.map(c => Number(c.id))}::bigint[])`;
     toPush.push(t!.id);
