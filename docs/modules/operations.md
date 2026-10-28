@@ -28,7 +28,8 @@ Inventory (§134) · Notes log · Rates & rules · Setup. Plus the **crew page**
   oneCleanPerUnitDay, mergeHostNote, proposeInspections, hostawayReservationUrl), `dates.ts`.
 - Inventory and the field (§134): `src/screens/Inventory.tsx` (Operations → Inventory; `InventorySetup` =
   Setup → Inventory), `src/components/FieldReport.tsx` (report or ask, one question per screen),
-  `CleanSteps.tsx` (the 4 steps) and `PhotoPicker.tsx` (camera / gallery, shrink) — used by the cleaner's
+  `CleanSteps.tsx` (the 4 steps; a clean's steps on a cleaner's page count only their own and their team's work —
+  a clean moved to another cleaner starts clean for her, `cleanStates(…, cleaner)`, owner 2026-10-27) and `PhotoPicker.tsx` (camera / gallery, shrink) — used by the cleaner's
   page (`CleanCard`, `PastCard`, `TodayCleans`, `QuickActions` in `src/screens/Crew.tsx`) and by `/report`
   (`src/screens/Report.tsx`, the helpers' page); server `functions/_lib/clean-record.ts` (records,
   photos to Drive, done/reopen), `clean-slack.ts` and `crew-slack.ts` (→ slack module);

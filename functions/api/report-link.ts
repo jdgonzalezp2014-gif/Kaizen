@@ -75,7 +75,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const items = (await invItems(sql)).filter(i => i.active && i.kind !== 'furniture').map(i => ({ id: i.id, name: i.name, measure: i.measure, category: i.category }));
   return Response.json({ ok: true, team: l.cleaner, lang: l.lang, items,
                          clean: { unit: l.unit_name, date: l.clean_date, until: l.expires_on },
-                         state: (await cleanStates(sql, [l.cleaning_key]))[l.cleaning_key],
+                         state: (await cleanStates(sql, [l.cleaning_key], l.cleaner))[l.cleaning_key],
                          // §136: how to get in — only while this clean's link lasts (it closes 2 days after).
                          access: (a => a ? strip(a) : null)((await accessByUnit(sql)).get(l.unit_name)) });
 };
@@ -126,7 +126,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
              AND cleaning_key = ${l.cleaning_key} AND stage = ${stage} AND source = 'link'` as { n: number }[])[0]!.n : 0,
              by: helpers.join(', ') }, `photos:${l.cleaning_key}:${stage}`);
     } else if (b.kind === 'done' || b.kind === 'reopened') {
-      if (await markClean(sql, l.cleaning_key, b.kind, { name: who.name, source: 'link' })) {
+      if (await markClean(sql, l.cleaning_key, b.kind, { name: who.name, source: 'link' }, l.cleaner)) {
         waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: b.kind }));
         tell({ kind: b.kind });
       }
@@ -163,7 +163,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, l.cleaning_key, { kind: 'event', by: who.name, event: {
         kind: 'report', what: b.kind, text, todoId: r.todoId } }));
     } else return bad('Unknown report.');
-    return Response.json({ ok: true, state: (await cleanStates(sql, [l.cleaning_key]))[l.cleaning_key] });
+    return Response.json({ ok: true, state: (await cleanStates(sql, [l.cleaning_key], l.cleaner))[l.cleaning_key] });
   } catch (e) {
     const m = e instanceof Error ? e.message : String(e);
     return bad(es ? esMessage(m) : m);

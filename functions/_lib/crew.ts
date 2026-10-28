@@ -315,10 +315,14 @@ export async function loadCrewPage(sql: SqlFn, encryptionKey: string, name: stri
     ...await (async () => {
       const keys = [...new Set([...shown.filter(x => allPhotos || x.date >= addDays(today, -LINK_PAST_DAYS)).map(x => x.key), ...ahead])];
       const photos = keys.length ? await sql`SELECT id::text, cleaning_key AS key, stage FROM clean_photos
-                                              WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) ORDER BY id` as { id: string; key: string; stage: Stage }[] : [];
+                                              WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[])
+                                                AND (by_name = ${c.name} OR by_name LIKE ${c.name + "'s team: %"}
+                                                     OR NOT EXISTS (SELECT 1 FROM cleaners o WHERE o.account_id = 1
+                                                                      AND (by_name = o.name OR by_name LIKE o.name || '''s team: %')))
+                                              ORDER BY id` as { id: string; key: string; stage: Stage }[] : [];
       const fieldPhotos: Record<string, { id: string; stage: Stage }[]> = {};
       for (const p of photos) (fieldPhotos[p.key] ??= []).push({ id: p.id, stage: p.stage });
-      return { field: await cleanStates(sql, keys), fieldPhotos };
+      return { field: await cleanStates(sql, keys, c.name), fieldPhotos };
     })()
   };
 }
@@ -331,10 +335,14 @@ export interface CrewCaller { name: string; by: string }
 /** GET for whichever door identified the cleaner. */
 export async function crewGet(request: Request, env: Env, sql: SqlFn, me: CrewCaller): Promise<Response> {
   // §134: one photo of one of THEIR cleans, from the team's Drive (they have no access to it) — never another's.
+  // Owner, 2026-10-27: theirs = taken by them or their team's links; a clean moved to them keeps the first cleaner's photos hers.
   const photoId = new URL(request.url).searchParams.get('photo');
   if (photoId) {
     const [ph] = await sql`SELECT p.drive_id FROM clean_photos p JOIN clean_records r ON r.account_id = p.account_id AND r.cleaning_key = p.cleaning_key
-                            WHERE p.account_id = 1 AND p.id = ${Number(photoId) || 0} AND r.cleaner = ${me.name}` as { drive_id: string }[];
+                            WHERE p.account_id = 1 AND p.id = ${Number(photoId) || 0}
+                              AND (p.by_name = ${me.name} OR p.by_name LIKE ${me.name + "'s team: %"}
+                                   OR (r.cleaner = ${me.name} AND NOT EXISTS (SELECT 1 FROM cleaners o WHERE o.account_id = 1
+                                         AND (p.by_name = o.name OR p.by_name LIKE o.name || '''s team: %'))))` as { drive_id: string }[];
     if (!ph) return refuse(404, 'not_found', 'No such photo.');
     const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(ph.drive_id)}?alt=media`,
       { headers: { Authorization: `Bearer ${await driveToken(sql, env.ENCRYPTION_KEY)}` } });
@@ -692,13 +700,13 @@ export async function crewPost(request: Request, env: Env, sql: SqlFn, me: CrewC
         tellMine({ by: me.name, unit: await unitOf(key), kind: 'photos', stage, n: n?.n ?? files.length }, `own:${key}:${stage}`);
       } else {
         const kind = String(body.kind) as 'done' | 'reopened';
-        if (await markClean(sql, key, kind, by)) {
+        if (await markClean(sql, key, kind, by, me.name)) {
           waitUntil(tellCleanThread(sql, env.ENCRYPTION_KEY, key, { kind }));
           tellMine({ by: me.name, unit: await unitOf(key), kind });
         }
       }
     } catch (e) { return refuse(400, 'bad_request', inLang(e)); }
-    return Response.json({ ok: true, state: (await cleanStates(sql, [key]))[key] });
+    return Response.json({ ok: true, state: (await cleanStates(sql, [key], me.name))[key] });
   }
 
   if (body.action === 'cancelExtra') {

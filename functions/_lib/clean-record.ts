@@ -28,18 +28,25 @@ export async function ensureRecord(sql: SqlFn, r: { key: string; cleaner: string
             ON CONFLICT (account_id, cleaning_key) DO UPDATE SET cleaner = EXCLUDED.cleaner`;
 }
 
-/** Where each clean stands, for the keys asked. */
-export async function cleanStates(sql: SqlFn, keys: string[]): Promise<Record<string, CleanState>> {
+/**
+ * Where each clean stands, for the keys asked. With `cleaner`, only what they (or their team's links) did counts —
+ * owner, 2026-10-27: a clean moved to another cleaner showed the first one's photos and "done" on the new one's page.
+ * Work by the office (e.g. "Team (bulk, no photos)") counts for anyone; another cleaner's never does.
+ */
+export async function cleanStates(sql: SqlFn, keys: string[], cleaner: string | null = null): Promise<Record<string, CleanState>> {
   if (!keys.length) return {};
   const [recs, photos, marks] = await Promise.all([
-    sql`SELECT r.cleaning_key AS key, r.drive_folder, r.supplies_at IS NOT NULL AS answered, r.supplies_none,
-               (SELECT count(*)::int FROM inventory_moves m WHERE m.account_id = 1 AND m.cleaning_key = r.cleaning_key AND m.kind = 'taken') AS lines
+    sql`SELECT r.cleaning_key AS key, r.drive_folder,
+               r.supplies_at IS NOT NULL AND NOT EXISTS (SELECT 1 FROM cleaners o WHERE o.account_id = 1 AND o.name <> ${cleaner}::text AND (r.supplies_by = o.name OR r.supplies_by LIKE o.name || '''s team: %')) AS answered, r.supplies_none,
+               (SELECT count(*)::int FROM inventory_moves m WHERE m.account_id = 1 AND m.cleaning_key = r.cleaning_key AND m.kind = 'taken'
+                   AND NOT EXISTS (SELECT 1 FROM cleaners o WHERE o.account_id = 1 AND o.name <> ${cleaner}::text AND (m.by_name = o.name OR m.by_name LIKE o.name || '''s team: %'))) AS lines
           FROM clean_records r WHERE r.account_id = 1 AND r.cleaning_key = ANY(${keys}::text[])`,
-    sql`SELECT cleaning_key AS key, stage, count(*)::int AS n FROM clean_photos
-         WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) GROUP BY 1, 2`,
+    sql`SELECT cleaning_key AS key, stage, count(*)::int AS n FROM clean_photos p
+         WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) AND NOT EXISTS (SELECT 1 FROM cleaners o WHERE o.account_id = 1 AND o.name <> ${cleaner}::text AND (p.by_name = o.name OR p.by_name LIKE o.name || '''s team: %')) GROUP BY 1, 2`,
     sql`SELECT DISTINCT ON (cleaning_key) cleaning_key AS key, kind, by_name,
                to_char(created_at AT TIME ZONE ${TZ}, 'YYYY-MM-DD HH24:MI') AS at
-          FROM clean_marks WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) ORDER BY cleaning_key, id DESC`
+          FROM clean_marks k WHERE account_id = 1 AND cleaning_key = ANY(${keys}::text[]) AND NOT EXISTS (SELECT 1 FROM cleaners o WHERE o.account_id = 1 AND o.name <> ${cleaner}::text AND (k.by_name = o.name OR k.by_name LIKE o.name || '''s team: %'))
+         ORDER BY cleaning_key, id DESC`
   ]) as [{ key: string; drive_folder: string | null; answered: boolean; supplies_none: boolean; lines: number }[], { key: string; stage: Stage; n: number }[], { key: string; kind: string; by_name: string; at: string }[]];
   const out: Record<string, CleanState> = {};
   for (const r of recs) {
@@ -101,9 +108,9 @@ export async function addPhotos(sql: SqlFn, encryptionKey: string, key: string, 
  * Done, or reopened — true when it changed something. Done needs what was taken from the storage answered
  * (lines, or "nothing") and at least one AFTER photo — the steps most easily forgotten.
  */
-export async function markClean(sql: SqlFn, key: string, kind: 'done' | 'reopened', who: FieldWho): Promise<boolean> {
+export async function markClean(sql: SqlFn, key: string, kind: 'done' | 'reopened', who: FieldWho, cleaner: string | null = null): Promise<boolean> {
   if (kind !== 'done' && kind !== 'reopened') throw new Error('Done or reopen?');
-  const st = (await cleanStates(sql, [key]))[key];
+  const st = (await cleanStates(sql, [key], cleaner))[key];
   if (!st) throw new Error('Which clean?');
   if (kind === 'done' && !st.supplies) throw new Error('First say what you took for this clean (step 2).');
   if (kind === 'done' && !st.after) throw new Error('Add at least one AFTER photo first.');
