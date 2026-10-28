@@ -22,6 +22,16 @@ export async function vendorOwnLink(sql: SqlFn, encryptionKey: string, name: str
   return `${origin}/crew#v=${token}`;
 }
 
+/**
+ * Where "Open ›" goes in Slack: their own link while it is on; once the team turns it off (Operations → Handymen), the app
+ * itself — they sign in with their email (Cloudflare Access). Never makes a link: Slack must not turn one back on.
+ */
+async function pageLinkFor(sql: SqlFn, encryptionKey: string, name: string, origin: string): Promise<string> {
+  const [v] = await sql`SELECT link_token_enc FROM vendors WHERE account_id = 1 AND lower(name) = lower(${name})` as { link_token_enc: string | null }[];
+  const token = v?.link_token_enc ? await decrypt(v.link_token_enc, encryptionKey).catch(() => null) : null;
+  return token ? `${origin}/crew#v=${token}` : `${origin}/`;
+}
+
 const chanOf = (s: SlackSetup, vendor: string) => {
   const key = Object.keys(s.config.handymen ?? {}).find(k => k.toLowerCase() === vendor.trim().toLowerCase());
   return key ? { name: key, ...s.config.handymen![key]! } : null;
@@ -47,7 +57,7 @@ export async function tellHandyman(sql: SqlFn, encryptionKey: string, ids: strin
     for (const [vendor, js] of byVendor) {
       const ch = chanOf(s, vendor);
       if (!ch) continue;
-      const m = newWorkMessage(js, await vendorOwnLink(sql, encryptionKey, ch.name, originOf(s, origin)), ch.slackUserId);
+      const m = newWorkMessage(js, await pageLinkFor(sql, encryptionKey, ch.name, originOf(s, origin)), ch.slackUserId);
       if (m) await slackApi(s.token, 'chat.postMessage', { channel: ch.channelId, ...m, unfurl_links: false });
     }
   } catch { /* a courtesy: the work is saved and on their page */ }
@@ -71,7 +81,7 @@ export async function handymenDay(sql: SqlFn, s: SlackSetup, encryptionKey: stri
     const ch = chanOf(s, name)!;
     const key = `handyday:${name.toLowerCase()}:${today}`;
     if (!(await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${key}) ON CONFLICT DO NOTHING RETURNING key`).length) continue;
-    const m = daySummary(await openJobs(sql, name), await vendorOwnLink(sql, encryptionKey, name, originOf(s, origin)), today, ch.slackUserId);
+    const m = daySummary(await openJobs(sql, name), await pageLinkFor(sql, encryptionKey, name, originOf(s, origin)), today, ch.slackUserId);
     if (!m) continue;
     const r = await slackApi(s.token, 'chat.postMessage', { channel: ch.channelId, ...m, unfurl_links: false });
     if (r.ok) sent.push(`handyman ${name}`); else await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;

@@ -54,7 +54,7 @@ const W = {
     needHouse: 'Pick the house.', asked: '✓ Sent — the team will approve it or tell you.', waiting: 'Waiting for approval',
     pending: 'waiting', declined: 'not approved',
     tabCal: 'Upcoming', tabPast: 'Past', today: 'Today', tomorrow: 'Tomorrow', late: 'late', acceptedShort: '✓ accepted', toAcceptShort: 'to accept',
-    noPast: 'No finished jobs in the last 90 days.', noPay: 'No pay set yet', addExtra: '＋ Add an extra', extraSent: '✓ Sent — waiting for the team’s approval.'
+    signIn: 'Sign in with your email', noPast: 'No finished jobs in the last 90 days.', noPay: 'No pay set yet', addExtra: '＋ Add an extra', extraSent: '✓ Sent — waiting for the team’s approval.'
   },
   es: {
     day: 'Día acordado', at: 'a las', noDay: 'Aún no hay día', what: 'Qué hay que arreglar',
@@ -79,7 +79,7 @@ const W = {
     needHouse: 'Elige la casa.', asked: '✓ Enviado — el equipo lo aprobará o te dirá.', waiting: 'Esperando aprobación',
     pending: 'esperando', declined: 'no aprobado',
     tabCal: 'Próximos', tabPast: 'Pasados', today: 'Hoy', tomorrow: 'Mañana', late: 'atrasado', acceptedShort: '✓ aceptado', toAcceptShort: 'por aceptar',
-    noPast: 'Sin trabajos terminados en los últimos 90 días.', noPay: 'Aún sin pago', addExtra: '＋ Añadir un extra', extraSent: '✓ Enviado — espera la aprobación del equipo.'
+    signIn: 'Entra con tu correo', noPast: 'Sin trabajos terminados en los últimos 90 días.', noPay: 'Aún sin pago', addExtra: '＋ Añadir un extra', extraSent: '✓ Enviado — espera la aprobación del equipo.'
   }
 };
 type Wx = typeof W.en;
@@ -191,7 +191,11 @@ export function VendorHome({ practice, token, asVendor }: { practice?: { vendor:
       </span>
     </header>
     <div className="report-page v-page">
-      {err ? <p className="banner error">{ic(err)}</p> : !data ? <p className="note loading-dot">…</p>
+      {err ? <>
+        <p className="banner error">{ic(err)}</p>
+        {/* Owner, 2026-10-27: a handyman whose link the team turned off signs in with the email the team has for them. */}
+        {token && <a className="fr-btn" href="/"><Icon n="user" /> {ic(w.signIn)}</a>}
+      </> : !data ? <p className="note loading-dot">…</p>
         : sec === 'pay' && data.pay ? <VendorPay pay={data.pay} lang={lang} onPeriod={setPeriod} />
         : sec === 'cal' ? <Upcoming w={w} lang={lang} works={data.works} open={p => { setSec('work'); setFocus(p.work.id); setHouse(p.work.unit ?? '—'); }} />
         : sec === 'past' ? <Past w={w} lang={lang} jobs={data.past ?? []}
