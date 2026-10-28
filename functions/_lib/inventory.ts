@@ -254,7 +254,7 @@ async function cleanTodo(sql: SqlFn, who: Who, cleaningKey: unknown, group: 'req
   if (group === 'request') {
     const said = title.replace(/^Supplies requested:\s*/, '');
     const extra = (description ?? '').split('\n').filter(l => /^(Photo|Receipt):/.test(l)).map(l => `  ${l}`);
-    await sql`UPDATE todos SET description = concat_ws(E'\n', NULLIF(description, ''), ${[`• ${who.name}: ${said}`, ...extra].join('\n')}), updated_at = now()
+    await sql`UPDATE todos SET description = concat_ws(E'\n', NULLIF(description, ''), ${[`• ${who.name}: ${said}`, ...extra].join('\n')}::text), updated_at = now()
               WHERE account_id = 1 AND id = ${Number(t.id)}`;
   } else {
     await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, parent_id)
@@ -705,7 +705,7 @@ export async function lowStock(sql: SqlFn, places: (string | null)[]): Promise<s
       made.push(id);
     }
     const said = fresh.map(l => `• Low: ${item(l.itemId).name} — ${l.qty} left, keep ${l.min}${l.toOrder ? `; buy ${l.toOrder}` : l.toRefill ? `; refill ${l.toRefill}` : ''}`).join('\n');
-    await sql`UPDATE todos SET description = concat_ws(E'\n', NULLIF(description, ''), ${said}), updated_at = now() WHERE account_id = 1 AND id = ${Number(t.id)}`;
+    await sql`UPDATE todos SET description = concat_ws(E'\n', NULLIF(description, ''), ${said}::text), updated_at = now() WHERE account_id = 1 AND id = ${Number(t.id)}`;
     const lines = fresh.filter(l => l.toOrder > 0).map(l => ({ itemId: l.itemId, place: key, qty: l.toOrder }));
     if (lines.length) await sql`INSERT INTO inventory_orders (account_id, todo_id, lines, created_by) VALUES (1, ${Number(t.id)}, ${JSON.stringify(lines)}::jsonb, 'Kaizen')
                                 ON CONFLICT (account_id, todo_id) DO UPDATE SET lines = inventory_orders.lines || EXCLUDED.lines`;
