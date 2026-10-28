@@ -21,7 +21,7 @@ import { fieldPhotos } from './inventory.ts';
 import { addFieldExpense } from './field-costs.ts';
 import { settleRepair } from './repair-costs.ts';
 import { mirrorOn, pushWork } from './hostaway-tasks.ts';
-import { commentToThread } from './slack.ts';
+import { commentToThread, notifyTask } from './slack.ts';
 import { driveToken } from './gdrive.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
 
@@ -235,6 +235,44 @@ export async function workPhoto(sql: SqlFn, encryptionKey: string, id: string, d
 /** The Drive files a description's "Photo:" lines name. */
 export const driveIdsIn = (text: string) =>
   [...text.matchAll(/^\s*Photo:\s*\S*?(?:\/d\/|[?&]id=)([A-Za-z0-9_-]{10,200})/gm)].map(m => m[1]!);
+
+/**
+ * Owner, 2026-10-27: a handyman asks the team to approve other work they do or found — a work order with NO vendor yet,
+ * "Requested by <name>", told to the team like any new work. Approving is giving it to them (the vendor set: their
+ * channel hears it, their page lists it); declining is cancelling it. Marked by created_by "<name> (handyman)".
+ */
+export const requestedBy = (name: string) => `${name} (handyman)`;
+export async function workRequest(sql: SqlFn, encryptionKey: string, name: string, b: Record<string, unknown>, files: File[],
+                                  waitUntil: (p: Promise<unknown>) => void) {
+  const what = String(b.what ?? '').trim().slice(0, 1500);
+  if (!what) throw new Error('Say what the work is.');
+  const unitId = String(b.unitId ?? '').trim();
+  const [u] = unitId ? await sql`SELECT id, name FROM units WHERE account_id = 1 AND id = ${unitId} AND active` as { id: string; name: string }[] : [];
+  if (!u) throw new Error('Pick the house.');
+  const est = b.estimate === undefined || b.estimate === '' ? null : Number(b.estimate);
+  if (est !== null && !(est >= 0 && est < 100000)) throw new Error('The estimate is a number of dollars.');
+  const photos = files.length ? await fieldPhotos(sql, encryptionKey, files, `request by ${name}`) : [];
+  const description = [`Requested by ${name} (handyman) — approve by giving it to them, or cancel it.`, what,
+    ...photos.map(p => `Photo: ${p.url}`)].join('\n');
+  const [t] = await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, cost_estimate)
+                        VALUES (1, ${`${what.split('\n')[0]!.slice(0, 120)} (${name}'s request)`}, ${description}, ${[u.id]}, ${requestedBy(name)},
+                                'work_order', 'pending', 'none', ${est}) RETURNING id::text` as { id: string }[];
+  await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+            VALUES (1, 'task', ${t!.id}, 'status', ${`${name} asks to approve this work${est != null ? ` — estimate $${est.toFixed(2)}` : ''}.`}, ${requestedBy(name)})`;
+  waitUntil(notifyTask(sql, encryptionKey, t!.id, 'created', requestedBy(name)).catch(() => {}));
+  waitUntil(settle(sql, encryptionKey, t!.id, requestedBy(name)));
+  return t!.id;
+}
+
+/** Their requests still waiting, and those declined in the last two weeks. */
+export async function myRequests(sql: SqlFn, name: string) {
+  return await sql`SELECT t.id::text, t.title, u.name AS unit, t.cost_estimate::float AS estimate, t.status, t.created_at::text AS "at"
+                     FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
+                    WHERE t.account_id = 1 AND t.deleted_at IS NULL AND t.created_by = ${requestedBy(name)} AND t.kind = 'work_order'
+                      AND btrim(coalesce(t.vendor, '')) = ''
+                      AND (t.status NOT IN ('completed', 'cancelled') OR (t.status = 'cancelled' AND t.done_at > now() - interval '14 days'))
+                    ORDER BY t.id DESC` as { id: string; title: string; unit: string | null; estimate: number | null; status: string; at: string }[];
+}
 
 /** Which work order a link opens — refused once expired, closed, or given to another vendor. */
 export async function workOfToken(sql: SqlFn, request: Request): Promise<{ id: string; vendor: string } | Response> {

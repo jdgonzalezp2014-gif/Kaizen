@@ -751,6 +751,10 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                     repair={parent?.kind === 'work_order' ? { vendor: parent.vendor, scheduledOn: parent.scheduledOn } : undefined}
                     items={mine.filter(k => k.kind === 'work_order')}
                     onGiveItems={ids => act({ action: 'giveItems', id: t.id, items: ids })}
+                    asked={!closed && !t.vendor && t.createdBy?.endsWith(' (handyman)') ? {
+                      by: t.createdBy.slice(0, -' (handyman)'.length),
+                      approve: () => act({ action: 'update', id: t.id, vendor: t.createdBy!.slice(0, -' (handyman)'.length) }),
+                      decline: () => act({ action: 'update', id: t.id, status: 'cancelled' }) } : undefined}
                     onSubmit={v => act({ action: 'update', id: t.id, ...v })} onSave={props.save}
                     middle={<><TodoFiles todoId={t.id} />
                       <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} /></>}
@@ -1008,6 +1012,19 @@ function PersonPick({ label, value, name, people, onChange }: {
   );
 }
 
+/** A handyman's request (owner, 2026-10-27): yes = it is their job (their Slack channel hears it), no = cancelled. */
+function Asked({ by, approve, decline }: { by: string; approve: () => Promise<boolean>; decline: () => Promise<boolean> }) {
+  const [busy, setBusy] = useState(false);
+  const run = async (f: () => Promise<boolean>) => { setBusy(true); await f(); setBusy(false); };
+  return (
+    <div className="button-row vendor-ask">
+      <span className="note"><Icon n="wrench" /> <b>{by}</b> asks to approve this work.</span>
+      <button type="button" className="small" disabled={busy} onClick={() => void run(approve)}><Icon n="done" /> Approve for {by}</button>
+      <button type="button" className="small secondary" disabled={busy} onClick={() => void run(decline)}>Decline</button>
+    </div>
+  );
+}
+
 /**
  * A repair whose items are work orders (owner, 2026-10-27): its vendor takes the items like a cleaner takes cleans —
  * all of them, or all but some. Asked once the repair's vendor is saved; an item with another vendor starts unticked.
@@ -1108,12 +1125,14 @@ const FIELD_WORD: Partial<Record<keyof FormValue, string>> = {
 type Clashing = { m: Merge<FormValue>; theirs: FormValue; rev?: string; by: string | null; at: string | null;
                   pick: Partial<Record<keyof FormValue, 'mine' | 'theirs'>> };
 
-function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, onSave, startKind = 'task', onCancel, middle, after, startEditing = false, repair, items = [], onGiveItems }: {
+function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSubmit, onSave, startKind = 'task', onCancel, middle, after, startEditing = false, repair, items = [], onGiveItems, asked }: {
   units: Unit[]; claims: Claim[]; canClaims: boolean; initial?: Todo; submitLabel: string;
   /** Editing an item of a repair (owner, 2026-10-27): with no vendor or day of its own, it is the repair's vendor's, on the repair's day. */
   repair?: { vendor: string | null; scheduledOn: string | null };
   /** Editing a repair whose items are work orders: no vendor link of its own — its vendor is given the items instead. */
   items?: Todo[]; onGiveItems?: (ids: string[]) => Promise<boolean>;
+  /** Other work a handyman asked to approve (owner, 2026-10-27): approving gives it to them, declining cancels it. */
+  asked?: { by: string; approve: () => Promise<boolean>; decline: () => Promise<boolean> };
   /** Editing (§104): what goes between the description and the details — the comments. */
   middle?: ReactNode;
   /** Editing: what goes after the details — the sub-tasks. */
@@ -1270,7 +1289,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
               <input value={v.vendor ?? ''} placeholder={repair?.vendor ? `${repair.vendor} — the repair's vendor` : 'Plumber, handyman…'} list="kaizen-vendors" onChange={e => set('vendor', e.target.value || null)} /></label>
             <VendorOptions />
             <label>Estimate {moneyIn(v.costEstimate, 'costEstimate')}</label>
-            {initial?.id && (items.length ? <GiveItems vendor={initial.vendor} items={items} give={onGiveItems} /> : <VendorLink id={initial.id} />)}
+            {initial?.id && (asked ? <Asked {...asked} /> : items.length ? <GiveItems vendor={initial.vendor} items={items} give={onGiveItems} /> : <VendorLink id={initial.id} />)}
             <label>Cost {moneyIn(v.costActual, 'costActual')}</label>
           </>}
           {wo && (
@@ -1379,7 +1398,7 @@ function TodoForm({ units, claims, canClaims, initial, fixed, submitLabel, onSub
               </label>
             </div>
           )}
-          {wo && (items.length ? <GiveItems vendor={initial.vendor} items={items} give={onGiveItems} /> : <VendorLink id={initial.id} />)}
+          {wo && (asked ? <Asked {...asked} /> : items.length ? <GiveItems vendor={initial.vendor} items={items} give={onGiveItems} /> : <VendorLink id={initial.id} />)}
           {/* §162: a to-do has no kind to switch and no cost of its own (work orders and purchase orders carry the money). */}
           {(canClaims || initial.hostawayTaskId) && (
             <details className="fl-more" open={details} onToggle={e => setDetails((e.target as HTMLDetailsElement).open)}>

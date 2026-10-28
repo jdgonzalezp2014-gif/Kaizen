@@ -342,25 +342,34 @@ export const EN = {
 };
 
 /**
- * The handyman's own Slack channel (owner, 2026-10-27): the bot says "New work at <house>" there, in English, with the
- * jobs and the link to their page — when a work order gets them as its vendor, or a repair's items are given to them.
+ * The handyman's Slack channel (owner, 2026-10-27): one line there when new work reaches them, and how many they have
+ * each morning — @-mentioning them. A channel that exists (Tim's is #handyman), or a new #handyman-<name>.
  */
 function SlackChannel({ vendor, channel, onMade }: { vendor: string; channel: string | null; onMade: () => void }) {
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
-  useEffect(() => setMsg(''), [vendor]);
-  const make = async () => {
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState('');
+  useEffect(() => { setMsg(''); setEditing(false); setName(''); }, [vendor]);
+  const save = async () => {
     setBusy(true); setMsg('');
-    const r = await vendorSlackChannel(vendor).catch(e => ({ ok: false as const, message: String(e) }));
+    const r = await vendorSlackChannel(vendor, name.trim() || undefined).catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
-    if (!r.ok) { setMsg(r.message ?? 'Not made.'); return; }
-    setMsg(r.inSlack ? `#${r.channel} ready — ${vendor} is in it.` : `#${r.channel} ready — ${r.email ? `${r.email} is not in Slack yet: invite them, then press this again` : `no email for ${vendor}: add it in Vendors, invite them to Slack, then press this again`}.`);
+    if (!r.ok) { setMsg(r.message ?? 'Not set.'); return; }
+    setEditing(false);
+    setMsg(r.inSlack ? `#${r.channel} — ${vendor} is in it.` : `#${r.channel} set — ${r.email ? `${r.email} is not in Slack yet: invite them, then set it again` : `no email for ${vendor}: add it in Vendors`}.`);
     onMade();
   };
+  if (editing) return <>
+    <input className="fr-select" style={{ width: '12em' }} value={name} placeholder={`handyman-${vendor.toLowerCase()} (new)`} onChange={e => setName(e.target.value)}
+           aria-label="Slack channel name — empty makes a new one" />
+    <button className="chip" disabled={busy} onClick={() => void save()}>{name.trim() ? 'Use it' : 'Make it'}</button>
+    <button className="link tiny" onClick={() => setEditing(false)}>Cancel</button>
+    {msg && <span className="note" role="status">{ic(msg)}</span>}
+  </>;
   return <>
-    {channel ? <span className="chip" title={`New work is told in #${channel}`}><Icon n="message" /> #{channel}</span>
-      : <button className="chip" disabled={busy} onClick={() => void make()}><Icon n="message" /> Slack channel</button>}
-    {channel && <button className="link tiny" disabled={busy} onClick={() => void make()} title={`Invite ${vendor} again (after they join Slack)`}>Invite again</button>}
+    <button className="chip" onClick={() => { setName(channel ?? ''); setEditing(true); }} title={channel ? `New work and their day are told in #${channel}` : 'Where the bot tells them of new work'}>
+      <Icon n="message" /> {channel ? `#${channel}` : 'Slack channel'}</button>
     {msg && <span className="note" role="status">{ic(msg)}</span>}
   </>;
 }

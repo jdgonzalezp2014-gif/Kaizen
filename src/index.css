@@ -2913,3 +2913,5 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .v-house-go { margin-top: auto; align-self: flex-end; font-weight: 700; }
 .v-house-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; }
 .v-house-head .chip { min-height: 40px; }
+.v-ask { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+.vendor-ask { border-left: 3px solid var(--ink); padding-left: 10px; }

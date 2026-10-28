@@ -5,7 +5,7 @@
  */
 import type { Env } from './db.ts';
 import type { SqlFn } from './accounts.ts';
-import { workAct, workPage, workPages, workPhoto } from './vendor-work.ts';
+import { myRequests, workAct, workPage, workPages, workPhoto, workRequest } from './vendor-work.ts';
 import { loadVendorPage } from './vendor-pay.ts';
 import { sha256 } from './crew.ts';
 
@@ -34,10 +34,11 @@ export async function vendorGet(request: Request, env: Env, sql: SqlFn, v: strin
     if (!(await mine(sql, v)).includes(id)) return Response.json({ ok: false, error: 'not_found', message: 'No such photo.' }, { status: 404 });
     return workPhoto(sql, env.ENCRYPTION_KEY, id, q.get('photo') ?? '');
   }
-  const works = await workPages(sql, await mine(sql, v));
+  const [works, requests, houses] = await Promise.all([workPages(sql, await mine(sql, v)), myRequests(sql, v),
+    sql`SELECT id, name FROM units WHERE account_id = 1 AND active ORDER BY name` as Promise<{ id: string; name: string }[]>]);
   // Owner, 2026-10-25: their pay, as a cleaner sees theirs — the invoice periods only, never the team's own dates.
   const pay = await loadVendorPage(sql, v, new URL(request.url).searchParams.get('period'));
-  return Response.json({ ok: true, vendor: v, works, pay: pay && { ...pay, openJobs: [] } }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true, vendor: v, works, requests, houses, pay: pay && { ...pay, openJobs: [] } }, { headers: { 'Cache-Control': 'no-store' } });
 }
 
 export async function vendorPost(request: Request, env: Env, sql: SqlFn, v: string, waitUntil: (p: Promise<unknown>) => void): Promise<Response> {
@@ -47,6 +48,12 @@ export async function vendorPost(request: Request, env: Env, sql: SqlFn, v: stri
     const form = await request.formData();
     for (const [k, x] of form.entries()) { if (k === 'file') { if (typeof x !== 'string') files.push(x); } else b[k] = x; }
   } else b = await request.json().catch(() => ({})) as Record<string, unknown>;
+  // Owner, 2026-10-27: other work they ask the team to approve — not one of theirs yet.
+  if (b.action === 'request') {
+    try { await workRequest(sql, env.ENCRYPTION_KEY, v, b, files, waitUntil); }
+    catch (e) { return Response.json({ ok: false, error: 'bad_request', message: e instanceof Error ? e.message : String(e) }, { status: 400 }); }
+    return Response.json({ ok: true, requests: await myRequests(sql, v) });
+  }
   const id = String(b.todoId ?? '');
   if (!(await mine(sql, v)).includes(id)) return Response.json({ ok: false, error: 'bad_request', message: 'That work order is not yours.' }, { status: 400 });
   try { await workAct(sql, env.ENCRYPTION_KEY, id, { name: v, source: 'vendor' }, b, files, waitUntil); }

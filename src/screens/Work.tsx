@@ -14,7 +14,7 @@
  * The access (code, lockbox, Wi-Fi) shows on the day set only.
  */
 import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { getVendorAs, getVendorWork, getWorkLink, vendorAct, workLinkAct, workPhoto, type VendorPage, type WorkDoor, type WorkPage } from '../api.ts';
+import { getVendorAs, getVendorWork, getWorkLink, vendorAct, vendorRequest, workLinkAct, workPhoto, type VendorHomeData, type VendorPage, type WorkDoor, type WorkPage, type WorkRequest } from '../api.ts';
 import { EN, VendorInvoiceView } from './Handymen.tsx';
 import { money2 } from '../lib/format.ts';
 import { AccessBox } from '../components/AccessBox.tsx';
@@ -47,7 +47,11 @@ const W = {
     flag: 'Note from the team', corrected: 'Pay corrected', notPaid: 'Not paid', paidOn: (d: string, how: string) => `Paid ${d} ${how}`,
     byStripe: 'to your bank (Stripe)', byHand: 'by hand', unpaid: 'Not paid yet',
     houses: 'Houses', back: '‹ Houses', open: 'Open', of: (i: number, n: number) => `${i} of ${n}`,
-    jobsN: (n: number) => `${n} job${n === 1 ? '' : 's'}`, toAccept: (n: number) => `${n} to accept`
+    jobsN: (n: number) => `${n} job${n === 1 ? '' : 's'}`, toAccept: (n: number) => `${n} to accept`,
+    ask: '＋ Ask to approve other work', askTip: 'Something else that needs fixing, or that you did: the team approves it — then it is one of your jobs.',
+    house: 'House', whatWork: 'What is the work?', estimate: 'Estimate $ (optional)', askSend: 'Send for approval', cancel: 'Cancel',
+    needHouse: 'Pick the house.', asked: '✓ Sent — the team will approve it or tell you.', waiting: 'Waiting for approval',
+    pending: 'waiting', declined: 'not approved'
   },
   es: {
     day: 'Día acordado', at: 'a las', noDay: 'Aún no hay día', what: 'Qué hay que arreglar',
@@ -66,7 +70,11 @@ const W = {
     flag: 'Nota del equipo', corrected: 'Pago corregido', notPaid: 'No pagado', paidOn: (d: string, how: string) => `Pagado ${d} ${how}`,
     byStripe: 'a tu banco (Stripe)', byHand: 'en mano', unpaid: 'Aún no pagado',
     houses: 'Casas', back: '‹ Casas', open: 'Abrir', of: (i: number, n: number) => `${i} de ${n}`,
-    jobsN: (n: number) => `${n} trabajo${n === 1 ? '' : 's'}`, toAccept: (n: number) => `${n} por aceptar`
+    jobsN: (n: number) => `${n} trabajo${n === 1 ? '' : 's'}`, toAccept: (n: number) => `${n} por aceptar`,
+    ask: '＋ Pedir aprobar otro trabajo', askTip: 'Algo más que hay que arreglar, o que hiciste: el equipo lo aprueba — y pasa a ser uno de tus trabajos.',
+    house: 'Casa', whatWork: '¿Qué trabajo es?', estimate: 'Estimado $ (opcional)', askSend: 'Enviar para aprobar', cancel: 'Cancelar',
+    needHouse: 'Elige la casa.', asked: '✓ Enviado — el equipo lo aprobará o te dirá.', waiting: 'Esperando aprobación',
+    pending: 'esperando', declined: 'no aprobado'
   }
 };
 type Wx = typeof W.en;
@@ -138,7 +146,7 @@ export function VendorHome({ practice, token, asVendor }: { practice?: { vendor:
   /** The team's "View as handyman" (owner, 2026-10-27): their page, buttons that save nothing. */
   asVendor?: string } = {}) {
   const [lang, setLang] = useLang();
-  const [data, setData] = useState<{ vendor: string; works: WorkPage[]; pay?: VendorPage | null } | null>(practice ? { vendor: practice.vendor, works: practice.works } : null);
+  const [data, setData] = useState<(Omit<VendorHomeData, 'pay'> & { pay?: VendorPage | null }) | null>(practice ? { vendor: practice.vendor, works: practice.works } : null);
   const [err, setErr] = useState('');
   const [sec, setSec] = useState<'work' | 'pay'>('work');
   // Owner, 2026-10-27: by house — a carousel of houses, and inside one, a carousel of its jobs. The phone's back
@@ -176,7 +184,6 @@ export function VendorHome({ practice, token, asVendor }: { practice?: { vendor:
     <div className="report-page v-page">
       {err ? <p className="banner error">{ic(err)}</p> : !data ? <p className="note loading-dot">…</p>
         : sec === 'pay' && data.pay ? <VendorPay pay={data.pay} lang={lang} onPeriod={setPeriod} />
-        : !data.works.length ? <div className="card"><p className="note">{ic(w.none)}</p></div>
         : open ? <>
             <div className="v-house-head">
               <button className="chip" onClick={() => setHouse(null)}>{ic(w.back)}</button>
@@ -186,7 +193,8 @@ export function VendorHome({ practice, token, asVendor }: { practice?: { vendor:
           </>
         : <>
             <h2 className="v-h">{ic(w.houses)}</h2>
-            <Carousel label={w.houses} of={w.of}>{houses.map(h => (
+            {!houses.length && <div className="card"><p className="note">{ic(w.none)}</p></div>}
+            {houses.length > 0 && <Carousel label={w.houses} of={w.of}>{houses.map(h => (
               <button key={h.key} className="card v-house" onClick={() => setHouse(h.key)}>
                 <span className="v-house-name"><Icon n="home" /> {ic(h.name)}</span>
                 {h.address && <span className="note">{ic(h.address)}</span>}
@@ -196,10 +204,62 @@ export function VendorHome({ practice, token, asVendor }: { practice?: { vendor:
                 <ul className="v-house-list">{h.works.slice(0, 4).map(p => <li key={p.work.id}>{ic(p.work.title)}</li>)}{h.works.length > 4 && <li>…</li>}</ul>
                 <span className="v-house-go">{ic(w.open)} ›</span>
               </button>))}
-            </Carousel>
+            </Carousel>}
+            {!practice && <AskApproval w={w} lang={lang} houses={data.houses ?? []} requests={data.requests ?? []}
+              send={(f, files) => asVendor ? Promise.resolve({ ok: false, message: 'Preview — nothing is saved here.' }) : vendorRequest(f, files, token)}
+              onSent={rs => setData(d => d && { ...d, requests: rs })} />}
           </>}
     </div>
   </>;
+}
+
+/**
+ * Owner, 2026-10-27: other work they did or found, sent to the team to approve — the house, what, an estimate, photos.
+ * Approved, it becomes one of their jobs (and their Slack channel says so); declined, it shows here for two weeks.
+ */
+function AskApproval({ w, lang, houses, requests, send, onSent }: { w: Wx; lang: Lang; houses: { id: string; name: string }[]; requests: WorkRequest[];
+  send: (f: Record<string, string>, files: File[]) => Promise<{ ok: boolean; message?: string; requests?: WorkRequest[] }>; onSent: (r: WorkRequest[]) => void }) {
+  const tx = CREW_TX[lang];
+  const [adding, setAdding] = useState(false);
+  const [unitId, setUnitId] = useState('');
+  const [what, setWhat] = useState('');
+  const [estimate, setEstimate] = useState('');
+  const [files, setFiles] = useState<File[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState('');
+  const missing = !unitId ? w.needHouse : !what.trim() ? w.needWhat : '';
+  const go = async () => {
+    setBusy(true); setMsg('');
+    try {
+      const r = await send({ unitId, what: what.trim(), estimate }, await Promise.all(files.map(shrink)));
+      if (!r.ok) { setMsg(r.message ?? 'Not sent.'); return; }
+      onSent(r.requests ?? []); setAdding(false); setUnitId(''); setWhat(''); setEstimate(''); setFiles([]); setMsg(w.asked);
+    } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
+  };
+  return (
+    <div className="card v-ask">
+      {requests.length > 0 && <>
+        <p className="fr-q"><Icon n="clock" /> {ic(w.waiting)}</p>
+        {requests.map(r => <p key={r.id} className={r.status === 'cancelled' ? 'breach' : 'sub-n'}>
+          {ic(`${r.unit ?? ''} — ${r.title.replace(/ \([^)]*'s request\)$/, '')}${r.estimate != null ? ` · $${r.estimate.toFixed(2)}` : ''} · ${r.status === 'cancelled' ? w.declined : w.pending}`)}</p>)}
+      </>}
+      {!adding ? <button className="fr-btn secondary" onClick={() => { setAdding(true); setMsg(''); }}>{ic(w.ask)}</button> : <div className="fr">
+        <p className="fr-tip">{ic(w.askTip)}</p>
+        <p className="fr-q">{ic(w.house)}</p>
+        <select className="fr-select" value={unitId} onChange={e => setUnitId(e.target.value)}>
+          <option value="">—</option>{houses.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}</select>
+        <p className="fr-q">{ic(w.whatWork)}</p>
+        <textarea className="fr-text" rows={3} maxLength={1500} value={what} onChange={e => setWhat(e.target.value)} />
+        <p className="fr-q">{ic(w.estimate)}</p>
+        <input className="fr-select" type="number" inputMode="decimal" min="0" step="0.01" value={estimate} onChange={e => setEstimate(e.target.value)} />
+        <PhotoPicker tx={tx} files={files} onChange={setFiles} max={5} disabled={busy} />
+        <button className="fr-btn fr-go" disabled={busy || !!missing} onClick={() => void go()}>{ic(busy ? w.sending : w.askSend)}</button>
+        <button className="link tiny" onClick={() => setAdding(false)}>{ic(w.cancel)}</button>
+        {missing && <p className="fr-missing">{ic(missing)}</p>}
+      </div>}
+      {msg && <p className="note" role="status">{ic(msg)}</p>}
+    </div>
+  );
 }
 
 /** Their work orders by house: soonest day first; no listing last. */

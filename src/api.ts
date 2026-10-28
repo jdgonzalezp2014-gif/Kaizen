@@ -943,11 +943,14 @@ export const workLinkAct = (token: string, fields: Record<string, string>, files
 /** …or by their own link (owner, 2026-10-25): the cleaners' door, with X-Vendor-Token. */
 const vendorPath = (token?: string | null) => token ? '/api/crew-link' : '/api/vendor';
 const vendorHeaders = (token?: string | null): Record<string, string> => token ? { 'X-Vendor-Token': token } : {};
+/** Other work a handyman asked the team to approve (owner, 2026-10-27) — waiting, or declined lately. */
+export interface WorkRequest { id: string; title: string; unit: string | null; estimate: number | null; status: string; at: string }
+export interface VendorHomeData { vendor: string; works: WorkPage[]; pay: VendorPage | null; requests?: WorkRequest[]; houses?: { id: string; name: string }[] }
 export const getVendorWork = (period?: string | null, token?: string | null) =>
-  call<({ ok: true; vendor: string; works: WorkPage[]; pay: VendorPage | null }) | Fail>(`${vendorPath(token)}${period ? `?period=${period}` : ''}`, { headers: vendorHeaders(token) });
+  call<({ ok: true } & VendorHomeData) | Fail>(`${vendorPath(token)}${period ? `?period=${period}` : ''}`, { headers: vendorHeaders(token) });
 /** The team's "View as handyman" (owner, 2026-10-27): their page from the same server code. */
 export const getVendorAs = (vendor: string, period?: string | null) =>
-  call<({ ok: true; vendor: string; works: WorkPage[]; pay: VendorPage | null }) | Fail>(`/api/vendor-admin?${new URLSearchParams({ view: 'vendor', vendor, ...(period ? { period } : {}) })}`);
+  call<({ ok: true } & VendorHomeData) | Fail>(`/api/vendor-admin?${new URLSearchParams({ view: 'vendor', vendor, ...(period ? { period } : {}) })}`);
 /** Which door a handyman's page came through — the photos of a work order's findings go back through the same one. */
 export type WorkDoor = { workToken: string } | { token?: string | null } | { asVendor: string };
 /** One photo named in a work order's description (Drive is the team's), as an object URL for an <img>. */
@@ -962,6 +965,8 @@ export async function workPhoto(door: WorkDoor, todoId: string, driveId: string)
 }
 export const vendorAct = (todoId: string, fields: Record<string, string>, files: File[], token?: string | null) =>
   workSend(vendorPath(token), vendorHeaders(token), { ...fields, todoId }, files);
+export const vendorRequest = (fields: Record<string, string>, files: File[], token?: string | null) =>
+  workSend(vendorPath(token), vendorHeaders(token), { ...fields, action: 'request' }, files) as Promise<{ ok: boolean; message?: string; requests?: WorkRequest[] }>;
 /** The team: the link for a work order's vendor. */
 export const vendorLink = (id: string) =>
   call<({ ok: true; link: string; vendor: string; phone: string | null; title: string; unit: string | null; day: string; expires: string }) | Fail>(
@@ -992,8 +997,8 @@ export const getVendorAdmin = (vendor?: string | null, period?: string | null, t
 export const vendorAdminAction = (body: Record<string, unknown>) =>
   call<{ ok: true; pay?: number | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify(body) });
 /** The handyman's own Slack channel, where the bot tells them of new work (owner, 2026-10-27). */
-export const vendorSlackChannel = (vendor: string) =>
-  call<{ ok: true; channel: string; inSlack: boolean; email: string | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify({ action: 'slackChannel', vendor }) });
+export const vendorSlackChannel = (vendor: string, channel?: string) =>
+  call<{ ok: true; channel: string; inSlack: boolean; email: string | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify({ action: 'slackChannel', vendor, channel }) });
 export const vendorPageLink = (vendor: string, mode?: 'new' | 'off') =>
   call<{ ok: true; link: string | null; phone?: string | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify({ action: 'link', vendor, mode }) });
 

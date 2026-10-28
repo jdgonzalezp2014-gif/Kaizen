@@ -20,6 +20,7 @@ import { digestFacts } from '../_lib/slack-digest.ts';
 import { eventsOf, DEFAULT_DIGEST, DEFAULT_TASK_CHECK, teamTz, digestMessage, dmTarget, dueDigests, dueTaskChecks, esc, helpUrlOf, localNow, taskCheckMessage } from '../../src/lib/slack.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import { remindCleaners } from '../_lib/crew-slack.ts';
+import { handymenDay } from '../_lib/vendor-slack.ts';
 import { postCleanDay } from '../_lib/clean-slack.ts';
 import { dueCrewReminders } from '../../src/lib/crew-slack.ts';
 import { todayIn } from '../../src/lib/dates.ts';
@@ -94,6 +95,15 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
           out.push(`crew ${d.kind} failed: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
+    }
+  }
+
+  // Owner, 2026-10-27: each handyman with a channel gets how many jobs they have, once each morning from 8 (team time).
+  {
+    const now = localNow(teamTz(s.config));
+    if (now.hm >= '08:00' && Object.keys(s.config.handymen ?? {}).length) {
+      try { out.push(...await handymenDay(sql, s, env.ENCRYPTION_KEY, now.day, new URL(request.url).origin)); }
+      catch (e) { out.push(`handymen failed: ${e instanceof Error ? e.message : String(e)}`); }
     }
   }
 

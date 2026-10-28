@@ -14,7 +14,7 @@
  *   POST { action: 'addJob', vendor, date, title, unitId?, pay, chargeOwner? }   a job done that has no work order yet
  *   POST { action: 'invoicePeriod', vendor, period: 'weekly' | 'monthly' }
  *   POST { action: 'link', vendor, mode?: 'new' | 'off' }   the handyman's own link (/crew#v=…), the same one each time
- *   POST { action: 'slackChannel', vendor }   their private Slack channel, where the bot tells them of new work (vendor-slack.ts)
+ *   POST { action: 'slackChannel', vendor, channel? }   where the bot tells them of new work and their day: a channel that exists, or a new #handyman-<name>
  * A handyman's charges are decided where they always were (crew-admin `decideField`).
  *
  * GET needs `operations`, POST `operations.edit` (roles.ts). Every edit is a
@@ -89,7 +89,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const v = await findVendor(sql, String(b.vendor ?? ''));
     if (!v) return refuse(400, 'bad_request', 'Pick a handyman.');
     const name = await ensureVendor(sql, v.name);
-    try { return Response.json({ ok: true, ...(await handymanChannel(sql, env.ENCRYPTION_KEY, name, who.email)) }); }
+    try { return Response.json({ ok: true, ...(await handymanChannel(sql, env.ENCRYPTION_KEY, name, who.email, typeof b.channel === 'string' ? b.channel : null)) }); }
     catch (e) { return refuse(400, 'bad_request', e instanceof Error ? e.message : String(e)); }
   }
 

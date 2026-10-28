@@ -97,11 +97,16 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   a carousel of houses (jobs, soonest day, how many to accept); a house (`?house=<unit>`, back returns) opens a carousel of
   its jobs, one per screen, pager on top. `VendorHome`, `byHouse`, `Carousel` in Work.tsx; CSS `.v-*`. The one-job link
   page (`WorkLinkPage`) is unchanged.
-- **New work is told in the handyman's Slack channel (owner, 2026-10-27):** Operations → Handymen → "Slack channel" makes
-  `#handyman-<name>` (private; the handyman by their vendor email, and whoever makes it), kept in `slack_config.handymen`.
-  `tellHandyman` (functions/_lib/vendor-slack.ts), English: "🔧 New work at <house> — N jobs", the titles, the day, and
-  their own page link (`vendorOwnLink`, the same as Copy their link). Sent after: a work order created with a vendor, a
-  vendor changed on one (todos.ts update), Give items. Nothing without a channel; a handyman not in Slack is not invited.
+- **The handyman's Slack (owner, 2026-10-27: "simpler"):** one line when new work reaches them ("New job at <house>: …",
+  or "N jobs new at …") and a morning summary from 8 team time ("N jobs open in M houses — house n · … · k today"), each
+  @-mentioning them, with their page link. Builders `src/lib/vendor-slack.ts` (tested); senders `functions/_lib/vendor-slack.ts`
+  (`tellHandyman` after a work order made with a vendor / vendor changed / Give items; `handymenDay` in slack-cron,
+  `slack_sent` key `handyday:<name>:<day>`). Channel per handyman in `slack_config.handymen` — Operations → Handymen →
+  Slack channel: an existing one by name (Tim's is #handyman, shared with the team) or a new #handyman-<name>.
+- **A handyman asks to approve other work (owner, 2026-10-27):** their page → "＋ Ask to approve other work" (house, what,
+  estimate, photos) → `vendorPost` action `request` → `workRequest`: a work order with NO vendor, `created_by` "<name>
+  (handyman)", told to the team as new work. The team's editor shows **Approve for <name>** (= vendor set → their Slack
+  line, their page) or **Decline** (= cancelled). Their page lists theirs waiting, and declined ones for 14 days.
 - Migration 103 re-adds `vendors.link_token_hash/enc`: 099 was applied before those lines were added, so handymen's
   own-page links ("Copy their link", `/api/crew-link`) failed in production until 103 runs.
 - **The access (codes, lockbox, Wi-Fi) shows only on the day set and while the order is open.**
