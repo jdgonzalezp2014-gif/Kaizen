@@ -24,6 +24,19 @@ export async function vendorOwnLink(sql: SqlFn, encryptionKey: string, name: str
 
 const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
+/** One "New work" message per house: the jobs, the day(s), the link to their page. */
+export function newWorkMessages(works: { title: string; unit: string | null; day: string | null }[], link: string) {
+  const houses = new Map<string, typeof works>();
+  for (const w of works) houses.set(w.unit ?? 'No listing', [...(houses.get(w.unit ?? 'No listing') ?? []), w]);
+  return [...houses].map(([house, ws]) => {
+    const days = [...new Set(ws.map(w => w.day).filter((d): d is string => !!d))].sort();
+    const body = [`🔧 *New work at ${esc(house)}* — ${ws.length} job${ws.length === 1 ? '' : 's'}`, ...ws.map(w => `• ${esc(w.title)}`),
+      days.length ? `📅 ${days.map(d => dayLabel('en', d)).join(', ')} — accept the day on your page` : '📅 No day set yet — the team will set it',
+      `<${link}|Open your page ›>`].join('\n');
+    return { text: `New work at ${house}: ${ws.length} job${ws.length === 1 ? '' : 's'}`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text: body } }] };
+  });
+}
+
 /** "New work" for these work orders, one message per house, in the channel of the vendor they now have. */
 export async function tellHandyman(sql: SqlFn, encryptionKey: string, ids: string[], origin: string) {
   try {
@@ -45,17 +58,7 @@ export async function tellHandyman(sql: SqlFn, encryptionKey: string, ids: strin
       const ch = key ? s.config.handymen![key] : undefined;
       if (!ch) continue;
       const link = await vendorOwnLink(sql, encryptionKey, key!, s.config.appUrl?.replace(/\/+$/, '') || origin);
-      const houses = new Map<string, typeof works>();
-      for (const w of works) houses.set(w.unit ?? 'No listing', [...(houses.get(w.unit ?? 'No listing') ?? []), w]);
-      for (const [house, ws] of houses) {
-        const days = [...new Set(ws.map(w => w.day).filter((d): d is string => !!d))].sort();
-        const head = `🔧 *New work at ${esc(house)}* — ${ws.length} job${ws.length === 1 ? '' : 's'}`;
-        const body = [head, ...ws.map(w => `• ${esc(w.title)}`),
-          days.length ? `📅 ${days.map(d => dayLabel('en', d)).join(', ')} — accept the day on your page` : '📅 No day set yet — the team will set it',
-          `<${link}|Open your page ›>`].join('\n');
-        await slackApi(s.token, 'chat.postMessage', { channel: ch.channelId, text: `New work at ${house}: ${ws.length} job${ws.length === 1 ? '' : 's'}`,
-          blocks: [{ type: 'section', text: { type: 'mrkdwn', text: body } }], unfurl_links: false });
-      }
+      for (const m of newWorkMessages(works, link)) await slackApi(s.token, 'chat.postMessage', { channel: ch.channelId, ...m, unfurl_links: false });
     }
   } catch { /* a courtesy: the work is saved and on their page */ }
 }
