@@ -18,9 +18,13 @@
  * old one is deleted by id, so a wrong number is visible in the history
  * rather than silently replaced — the same append-only rule the money
  * tables were built on.
+ *
+ * GET ?audit=<id>: one line and where it comes from — the to-do, purchase, field charge or clean behind it.
  */
 import { db, type Env } from '../_lib/db.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
+import type { SqlFn } from '../_lib/accounts.ts';
+import { auditExpense } from '../_lib/expense-audit.ts';
 
 /** First day of the month a date falls in, as yyyy-MM-dd. */
 function monthStart(d: string): string { return `${d.slice(0, 7)}-01`; }
@@ -36,6 +40,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   const sql = db(env);
   const url = new URL(request.url);
+  // Owner, 2026-10-28: one line, audited — where it comes from (expense-audit.ts).
+  const audit = url.searchParams.get('audit');
+  if (audit) {
+    const a = await auditExpense(sql as unknown as SqlFn, audit);
+    return a ? Response.json({ ok: true, ...a }) : Response.json({ ok: false, message: 'That line is gone.' }, { status: 404 });
+  }
   const month = url.searchParams.get('month');   // 'yyyy-MM'
 
   if (month) {

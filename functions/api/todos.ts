@@ -4,6 +4,7 @@
  *   GET                         open work, and what closed in the last 14 days
  *   GET ?claim=ID               every piece of work on one claim, however old
  *   GET ?updates=ID             one task's timeline
+ *   GET ?task=ID                one to-do, however old, with its parent and sub-tasks (opened from Costs)
  *   GET ?history=1&from&to[&removed=1]   the done log (§87): closed — and, if asked, removed — in a range
  *   GET ?people=1               Hostaway's users, for the owner and supervisor pickers (§94)
  *   POST { action: 'create', title, kind?, unitIds?, dueOn?, dueTime?, scheduledOn?, startTime?, priority?,
@@ -95,7 +96,7 @@ const out = (r: Row) => ({
   rev: String(r.rev ?? '')
 });
 
-async function list(sql: SqlFn, claim?: string, only?: string) {
+async function list(sql: SqlFn, claim?: string, only?: string, tree?: string) {
   const rows = await sql`
     SELECT t.id, t.title, t.unit_ids, t.due_on::text AS due_on, t.created_at, t.created_by, t.done_at, t.done_by,
            t.kind, t.status, t.priority, t.assignee, t.claim_id, t.vendor, t.scheduled_on::text AS scheduled_on,
@@ -113,10 +114,13 @@ async function list(sql: SqlFn, claim?: string, only?: string) {
              WHERE w.account_id = 1 AND w.subject = 'task' AND w.subject_id = t.id::text) AS updates
       FROM todos t
      WHERE t.account_id = 1 AND t.deleted_at IS NULL
+       AND (${tree ?? null}::text IS NOT NULL AND (t.id::text = ${tree ?? null} OR t.parent_id::text = ${tree ?? null}
+              OR t.id = (SELECT x.parent_id FROM todos x WHERE x.account_id = 1 AND x.id::text = ${tree ?? null}))
+         OR ${tree ?? null}::text IS NULL
        AND (${only ?? null}::text IS NOT NULL AND t.id::text = ${only ?? null} OR ${only ?? null}::text IS NULL AND (${claim ?? null}::text IS NULL AND (t.done_at IS NULL OR t.done_at > now() - interval '14 days'
               -- A sub-task closed long ago still belongs under its open parent.
               OR t.parent_id IN (SELECT p.id FROM todos p WHERE p.account_id = 1 AND p.deleted_at IS NULL AND p.done_at IS NULL))
-            OR t.claim_id = ${claim ?? null}))
+            OR t.claim_id = ${claim ?? null})))
      ORDER BY t.created_at` as Row[];
   return rows.map(out);
 }
@@ -171,6 +175,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
                                    ...closed.map(x => ({ id: x.id, event: x.status, title: x.title, kind: x.kind, priority: x.priority, createdBy: x.done_by,
                                                          createdAt: iso(x.done_at), order: order(x.clean_group), units: x.units }))] },
                          { headers: { 'Cache-Control': 'no-store' } });
+  }
+  // Owner, 2026-10-28: one to-do opened from elsewhere (a line in Costs), whatever its age — with its parent and sub-tasks.
+  const task = url.searchParams.get('task');
+  if (task) {
+    if (!/^\d+$/.test(task)) return bad('Which to-do?');
+    return Response.json({ ok: true, todos: await list(sql, undefined, undefined, task) }, { headers: { 'Cache-Control': 'no-store' } });
   }
   const updates = url.searchParams.get('updates');
   if (updates) {

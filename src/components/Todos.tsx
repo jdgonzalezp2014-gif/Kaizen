@@ -18,7 +18,7 @@ import { TaskPurchase } from '../screens/Inventory.tsx';
 import { vendorLink, getVendors, getInventory, getTodoFiles, uploadTodoFiles, removeTodoFile, type TodoFile, type ProofJob } from '../api.ts';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveCaseMoney, saveClaim, todoAction,
+  deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTask, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveCaseMoney, saveClaim, todoAction,
   type CaseMoneyChange,
   type Claim, type StayOnDay, type Todo, type WorkUpdate, syncHostawayTasks, getPeople, type Person } from '../api.ts';
 import {
@@ -151,7 +151,7 @@ const bucketOf = (t: Todo, today: DateStr): Bucket => {
     : d === 'soon' || t.priority === 'high' ? 'week' : 'later';
 };
 
-export function TodoList({ today, compact = false, head, lead, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds, unit, focus, doneLog = false }: {
+export function TodoList({ today, compact = false, head, lead, canClaims = false, claim, onChange, onSummary, extraTabs = [], orderIds, unit, focus, doneLog = false, task, onClose }: {
   today: DateStr;
   /** §163: Operations → To-do — the closed section also opens the full done log (audit, CSV). */
   doneLog?: boolean;
@@ -173,6 +173,8 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   onSummary?: (s: WorkSum) => void;
   /** Home (owner, Oct 2026): tabs it adds after Claims, and the to-dos that are purchase orders (their own tab). */
   extraTabs?: WorkTab[]; orderIds?: Set<string>;
+  /** Owner, 2026-10-28: only this to-do, as its pop-up (a line in Costs opens the task it came from); closed → onClose. */
+  task?: string; onClose?: () => void;
 }) {
   const [todos, setTodos] = useState<Todo[] | null>(null);
   const [units, setUnits] = useState<Unit[]>([]);
@@ -201,14 +203,14 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
 
   const take = (list: Todo[]) => { setTodos(list); onChange?.(list); };
   const loadClaims = () => getClaims().then(r => setClaims(r.claims ?? [])).catch(() => {});
-  const loadTodos = () => getTodos(claim?.id).then(r => r.ok ? take(r.todos) : setErr(r.message ?? 'Could not read the list.'))
+  const loadTodos = () => (task ? getTask(task) : getTodos(claim?.id)).then(r => r.ok ? take(r.todos) : setErr(r.message ?? 'Could not read the list.'))
     .catch(e => setErr(String(e)));
   // §166: work moved somewhere else (another screen, Slack, Hostaway, a link) — read the list again. An open item
   // keeps what is being typed in it (TodoForm), and takes the rest.
   useLive(n => { if (n.todos) void loadTodos(); if (n.claims && showClaims) void loadClaims(); });
   // §93: then whatever the team changed in Hostaway — in the background, so the list never waits on it.
   useEffect(() => {
-    if (claim) return;
+    if (claim || task) return;
     void syncHostawayTasks().then(r => {
       if (r.ok && (r.sync.changed || r.sync.imported || r.sync.unlinked)) take(r.todos);
     }).catch(() => { /* the list stands without it */ });
@@ -267,7 +269,8 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   // something of another kind is also listed in its own section. Owner, 2026-10-28: and a "Validate pay" sub-task, in
   // Tasks — its job is often already done (closed), which would hide it inside.
   const crossCat = (t: Todo) => { const p = t.parentId ? byId.get(t.parentId) : undefined; return !!p && catOf(t) !== 'task' && catOf(p) !== catOf(t); };
-  const [pop, setPop] = useState<{ todo?: string; claim?: string } | null>(null);
+  const [pop, setPop] = useState<{ todo?: string; claim?: string } | null>(task ? { todo: task } : null);
+  useEffect(() => { if (task && !pop) onClose?.(); }, [pop]);
   // §162: a link from Slack opens the item where it lives — its tab, its side panel (a claim: opened in its tab).
   // A closed one is not in an open list: it opens in the pop-up instead.
   useEffect(() => {
@@ -502,6 +505,16 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
                 </button>
               ))}
 </>);
+
+  // Owner, 2026-10-28: opened from a line in Costs — the task's own card, the same as in its list, and nothing else.
+  if (task) {
+    const x = byId.get(task);
+    if (!pop) return null;
+    // The open row draws its side panel (a portal); the row itself is not shown — only the card, as in To-do.
+    return x ? (
+      <div hidden><ul className="todo-list"><TodoRow {...ctx} flat={false} t={x} chat={false} open onOpen={() => setPop(null)} /></ul></div>
+    ) : <Modal title="To-do" onClose={() => setPop(null)}><p className={err ? 'breach' : 'note'}>{err || (todos ? 'That to-do is gone.' : 'Loading…')}</p></Modal>;
+  }
 
   return (
     <div className={`todos ${compact ? 'compact' : ''}`}>

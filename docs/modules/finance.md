@@ -96,3 +96,12 @@ UI only; tokens and shared components from `docs/design-system.md`.
   equals "In net" in Revenue → Claims & upselling. That view: received by day, recovery and result over the cases raised,
   By listing, and Finance can correct the team's figures (same rules, `saveCaseMoney`). A repair charged to the owner is
   not in Costs (`settleRepair`). The team enters the money in Operations (work module).
+
+- **Every line of Costs is audited (owner, 2026-10-28, §171):** a click on a one-off line opens where it comes from —
+  `ExpenseAuditPop` (src/components/ExpenseAudit.tsx) ← `GET /api/expenses?audit=<id>` (`auditExpense`,
+  functions/_lib/expense-audit.ts, read by `(source, external_ref)`). A `repair` line opens its to-do's own side panel
+  straight away (`TodoList task=<id>` ← `GET /api/todos?task=<id>`, any age, with parent and sub-tasks): photos, charges,
+  timeline. Purchase / field charge / cleaner extra / clean / store order / typed: facts (who, when, approved by, the clean),
+  the text, the receipts (through `/api/comment-image`, which now serves purchase and field receipts too) and "Open the
+  to-do #N ›" when there is one. Each line shows its source (icon + word) and its note's first line; only a typed line has ✕
+  (automatic lines follow their source). The "?" on Note explains it.

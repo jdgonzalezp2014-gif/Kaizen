@@ -19,6 +19,7 @@ import { money2 as money } from '../lib/format.ts';
 import { Cleanings } from './Cleanings.tsx';
 import { COST_CATEGORIES, guessCategory as guessCat } from '../lib/costs.ts';
 import { Icon } from '../components/Icon.tsx';
+import { ExpenseAuditPop, SOURCE } from '../components/ExpenseAudit.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
 
 
@@ -308,6 +309,8 @@ function Variable({ units }: { units: UnitRow[] }) {
   const [q, setQ] = useState('');
   const [group, setGroup] = useState<GroupBy>('none');
   const [openG, setOpenG] = useState<Set<string>>(new Set());
+  // Owner, 2026-10-28: any line opens where it comes from.
+  const [audit, setAudit] = useState<VariableExpense | null>(null);
 
   const load = () => getVariable(from || undefined, to || undefined).then(r => { setRows(r.expenses ?? []); setCapped(!!r.capped); });
   useEffect(() => { load(); }, [from, to]);
@@ -329,20 +332,24 @@ function Variable({ units }: { units: UnitRow[] }) {
     .map(([k, rs]) => ({ k, rs, sum: rs.reduce((a, r) => a + Number(r.amount), 0) }))
     .sort((a, b) => group === 'month' ? b.k.localeCompare(a.k) : b.sum - a.sum);
   const cats = [...new Set(rows.map(r => r.category))].sort();
-  const row = (r: VariableExpense) => (
-    <tr key={r.id}>
-      <td>{String(r.start_date).slice(0, 10)}</td>
-      <td>{r.unit_name ?? <span className="muted">Shared</span>}</td>
-      <td>{r.category}</td>
-      <td className="n">{money(Number(r.amount))}</td>
-      <td>{r.source === 'repair' ? <><Icon n="wrench" /> {r.label}{r.notes ? <span className="muted"> · {r.notes}</span> : null}</> : r.notes ?? r.label}</td>
-      <td className="muted">{r.created_by?.split('@')[0]}</td>
-      {/* §95: a repair's cost follows the repair — changed or removed there. */}
-      <td>{r.source === 'repair'
-        ? <span className="muted" title="Change the cost, or reopen the repair, in the to-do list">from repair</span>
-        : <button className="link danger" onClick={() => deleteExpense(r.id).then(load)}>remove</button>}</td>
-    </tr>
-  );
+  // Owner, 2026-10-28: a line says where it comes from (icon + word) and its first line; the rest is in its audit.
+  const row = (r: VariableExpense) => {
+    const s = r.source ? SOURCE[r.source] : undefined;
+    const what = (r.source === 'repair' ? r.label : r.notes ?? r.label ?? '').split('\n')[0];
+    return (
+      <tr key={r.id} className="is-clickable" title="Open where it comes from" onClick={() => setAudit(r)}>
+        <td>{String(r.start_date).slice(0, 10)}</td>
+        <td>{r.unit_name ?? <span className="muted">Shared</span>}</td>
+        <td>{r.category}</td>
+        <td className="n">{money(Number(r.amount))}</td>
+        <td className="cost-what">{s && <span className="cost-src" title={s.word}><Icon n={s.icon as never} /> {s.word}</span>} {what}</td>
+        <td className="muted">{r.created_by?.split('@')[0]}</td>
+        {/* §95: an automatic line follows what it comes from — changed or removed there; only a typed one is removed here. */}
+        <td>{!r.source && <button className="link tiny danger" title="Remove this line" aria-label="Remove"
+                                  onClick={e => { e.stopPropagation(); void deleteExpense(r.id).then(load); }}>✕</button>}</td>
+      </tr>
+    );
+  };
 
   return (
     <>
@@ -384,7 +391,10 @@ function Variable({ units }: { units: UnitRow[] }) {
         {from || to ? ` · ${from || '…'} → ${to || '…'}` : ''}{capped ? ' · ▲ only the latest lines are shown — narrow the dates' : ''}</p>
 
       <table className="units">
-        <thead><tr><th>Date</th><th>Unit</th><th>Category</th><th className="n">Amount</th><th>Note</th><th>By</th><th></th></tr></thead>
+        <thead><tr><th>Date</th><th>Unit</th><th>Category</th><th className="n">Amount</th>
+          <th>Note <Hint label="Auditing a line">Click a line to see where it comes from. A repair or a to-do opens its own card — photos,
+            charges, timeline. A purchase, a field charge or a cleaner's extra shows who, when, who approved it and the receipt, with its
+            to-do one click away. Automatic lines follow their source: change it there. Only a line typed here has ✕.</Hint></th><th>By</th><th></th></tr></thead>
         <tbody>
           {group === 'none' ? shown.map(row) : groups.map(g => {
             const on = openG.has(g.k);
@@ -400,6 +410,7 @@ function Variable({ units }: { units: UnitRow[] }) {
           {shown.length === 0 && <tr><td colSpan={7} className="note">Nothing in these dates and filters.</td></tr>}
         </tbody>
       </table>
+      {audit && <ExpenseAuditPop id={audit.id} source={audit.source ?? null} todoRef={audit.external_ref ?? null} onClose={() => setAudit(null)} />}
     </>
   );
 }

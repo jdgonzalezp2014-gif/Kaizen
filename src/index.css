@@ -2991,3 +2991,21 @@ button.link.md-unit { padding: 0; font-size: inherit; }
 .work-photos-row { display: grid; gap: 4px; }
 .work-photos-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
 .work-photos-strip .note-photo img { max-width: 120px; max-height: 90px; }
+/* Owner, 2026-10-28: minimal — small buttons that name the action; what it does is on hover. */
+button.mini:not(.link) { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 2px 8px; font-size: var(--fs-footnote); }
+@media (max-width: 720px) { button.mini:not(.link) { min-height: 32px; } }
+.charge-decide { display: inline-flex; flex-wrap: wrap; gap: 6px; align-items: center; margin-left: 6px; }
+.charge-decide input { margin: 0; flex: 1 1 160px; min-height: 26px; font-size: var(--fs-footnote); }
+.proof-flag { justify-self: start; color: var(--muted); }
+/* Costs: a line opens its audit. */
+tr.is-clickable { cursor: pointer; }
+tr.is-clickable:hover td { background: var(--tint); }
+.cost-what { max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cost-src { color: var(--muted); font-size: var(--fs-footnote); white-space: nowrap; }
+.audit { display: grid; gap: 10px; }
+.audit-money { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; margin: 0; }
+.audit-facts { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+.audit-facts > div { display: contents; }
+.audit-facts dt { color: var(--muted); }
+.audit-facts dd { margin: 0; }
+.audit-text { white-space: pre-wrap; font: inherit; font-size: var(--fs-footnote); margin: 0; padding: 8px; background: var(--bg); border-radius: 6px; }

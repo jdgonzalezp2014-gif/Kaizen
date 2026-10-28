@@ -844,6 +844,8 @@ export const syncHostawayTasks = (force = false) =>
     method: 'POST', body: JSON.stringify({ action: 'hostawaySync', force }) });
 export const getTodos = (claimId?: string) =>
   call<TodosResult>(`/api/todos${claimId ? `?claim=${encodeURIComponent(claimId)}` : ''}`);
+/** Owner, 2026-10-28: one to-do however old, with its parent and sub-tasks — opened from a line in Costs. */
+export const getTask = (id: string) => call<TodosResult>(`/api/todos?task=${encodeURIComponent(id)}`);
 /** The done log (§87): closed (and optionally removed) work in a range of days. */
 export const getDoneLog = (from: string, to: string, removed: boolean) =>
   call<{ ok: true; rows: import('./lib/todos.ts').AuditRow[] } | { ok: false; message?: string }>(
@@ -1024,3 +1026,12 @@ export const getPayouts = (kind?: 'cleaner' | 'vendor', payee?: string) =>
     `/api/payouts${kind && payee ? `?${new URLSearchParams({ kind, payee })}` : ''}`);
 export const payoutAction = (body: Record<string, unknown>) =>
   call<{ ok: true; link?: string; phone?: string | null; mode?: string; payout?: Payout } | Fail>('/api/payouts', { method: 'POST', body: JSON.stringify(body) });
+
+/** Owner, 2026-10-28: one line of Costs and where it comes from (functions/_lib/expense-audit.ts). */
+export interface ExpenseAudit {
+  expense: { id: string; date: string; category: string; amount: number; unit: string | null; label: string | null; notes: string | null;
+             source: string | null; by: string | null; at: string };
+  origin: { kind: 'repair' | 'todo' | 'purchase' | 'field' | 'clean' | 'extra' | 'store' | 'manual' | 'other'; title: string;
+            facts: [string, string][]; photos: { name: string; url: string }[]; todoId: string | null; text: string | null };
+}
+export const getExpenseAudit = (id: string) => call<({ ok: true } & ExpenseAudit) | Fail>(`/api/expenses?audit=${encodeURIComponent(id)}`);

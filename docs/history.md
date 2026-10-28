@@ -4572,3 +4572,11 @@ visible in Operations → Cleaners / Handymen; the to-do showed neither them nor
 #42, #94); a flag on #108 refused; validation approved 5 charges ($190) → 4 Costs rows; nothing left → closed by itself;
 approving #125's charge elsewhere closed its check; #107 done with no price refused, then followed Tim's $75 charge; a
 typed estimate stayed; two racing syncs left one open check; `/api/todos` done refused/approved through the real API.
+
+**Round 2 (owner, same day): audit from Costs, minimal.** "In Costs, click any line to audit it — a repair or a purchase opens
+its details, the same task that came from the to-do; hover '?' when something needs explaining, small buttons, minimalism —
+to everything we just did." Costs' one-off lines open their origin (`auditExpense`); a repair opens the to-do's own side panel
+(`TodoList task`, `/api/todos?task=`), no extra layer. The handyman's charge decisions became two small buttons (Approve /
+Deny… — the note only when denying), the flag a small "⚑ Flag" with its meaning on hover; repeated status/notes trimmed.
+Checked on the test branch with screenshots: a repair line → the "Fix Dishwasher" card with Tim's work; a clean line → house,
+checkout, cleaner, price, guest; purchase, store order, extra and typed lines answer through the API.

@@ -37,21 +37,31 @@ export function WorkPhotos({ photos }: { photos: { stage: 'before' | 'after'; na
 }
 
 /** A handyman's charge: the same decision as Operations → Cleaners' approvals (crew-admin decideField). */
+// Owner, 2026-10-28: minimal — two small buttons; denying asks for the note the handyman reads, only then.
 export function ChargeDecide({ id, onDone }: { id: string; onDone: () => void }) {
+  const [denying, setDenying] = useState(false);
   const [note, setNote] = useState('');
+  const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const go = async (status: 'approved' | 'denied') => {
+    setBusy(true);
     const r = await crewAdminAction({ action: 'decideField', id, status, note }).catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
     if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
     onDone();
   };
   return (
-    <div className="crew-decide">
-      <input value={note} maxLength={500} placeholder="Note for the handyman (needed to deny)" onChange={e => setNote(e.target.value)} />
-      <button className="small" onClick={() => void go('approved')}>✓ Approve</button>
-      <button className="small secondary" disabled={!note.trim()} onClick={() => void go('denied')}>■ Deny</button>
+    <span className="charge-decide">
+      {!denying ? <>
+        <button className="mini" disabled={busy} title="Approve — it becomes the job's pay" onClick={() => void go('approved')}><Icon n="done" /> Approve</button>
+        <button className="mini secondary" disabled={busy} title="Deny — you write why; the handyman reads it" onClick={() => setDenying(true)}>Deny…</button>
+      </> : <>
+        <input value={note} maxLength={500} autoFocus placeholder="Why — the handyman reads it" onChange={e => setNote(e.target.value)} />
+        <button className="mini secondary" disabled={busy || !note.trim()} onClick={() => void go('denied')}>Deny</button>
+        <button className="link tiny" onClick={() => { setDenying(false); setNote(''); }}>Cancel</button>
+      </>}
       {msg && <span className="breach">{ic(msg)}</span>}
-    </div>
+    </span>
   );
 }
 
@@ -90,32 +100,32 @@ function ProofRow({ j, many, reload }: { j: ProofJob; many: boolean; reload: () 
       <div className="proof-head">
         {many && <b>#{j.id} {ic(j.title)}</b>}
         <span className="sub-n">
-          {ic(STATUS[j.status] ?? j.status)}
-          {j.estimate != null && <> · {ic(`Estimate ${money2(j.estimate)}`)}</>}
-          {' · '}{ic(j.cost != null ? `Cost ${money2(j.cost)}` : waiting.length ? `${money2(waiting.reduce((a, c) => a + c.amount, 0))} waiting` : 'no price yet')}
+          {many && <>{ic(STATUS[j.status] ?? j.status)} · </>}
+          {j.estimate != null && <>{ic(`Estimate ${money2(j.estimate)}`)} · </>}
+          {ic(j.cost != null ? `Cost ${money2(j.cost)}` : waiting.length ? `${money2(waiting.reduce((a, c) => a + c.amount, 0))} waiting` : 'no price yet')}
         </span>
       </div>
-      {j.resolution && <div className="sub-n">{ic(`Done: ${j.resolution}`)}</div>}
+      {j.resolution && <div className="sub-n" title="What the handyman said when done">“{ic(j.resolution)}”</div>}
       {j.flag && <div className="breach"><Icon n="alert" /> {ic(`Flagged: ${j.flag}`)}
-        <button className="link tiny" onClick={() => void flag({ action: 'unflag', id: j.id })}>Remove flag</button></div>}
+        {' '}<button className="link tiny" title="Remove the flag" onClick={() => void flag({ action: 'unflag', id: j.id })}>✕</button></div>}
       <WorkPhotos photos={j.photos} />
-      {!j.photos.length && <div className="sub-n">No photos.</div>}
+      {!j.photos.length && <div className="sub-n">No photos yet.</div>}
       {j.charges.map(c => (
         <div key={c.id} className={`crew-extra ${c.status}`}>
-          <span title={c.description}>{ic(`${money2(c.amount)} · ${CHARGE[c.status] ?? c.status} — ${c.description.replace(/ — repair #\d+.*$/, '')}`)}</span>
-          {c.decisionNote && <span className="sub-n"> · “{ic(c.decisionNote)}”</span>}
-          {c.photos.map((p, i) => <a key={i} className="link tiny" href={p.url} target="_blank" rel="noreferrer"> <Icon n="clip" /> {ic(p.name)}</a>)}
-          {!c.photos.length && <span className="sub-n"> · no receipt</span>}
+          <span title={[c.description, c.decisionNote].filter(Boolean).join(' — ')}>{ic(`${money2(c.amount)} · ${CHARGE[c.status] ?? c.status} — ${c.description.replace(/ — repair #\d+.*$/, '')}`)}</span>
+          {c.status === 'denied' && c.decisionNote && <span className="sub-n"> · “{ic(c.decisionNote)}”</span>}
+          {c.photos.map((p, i) => <a key={i} className="link tiny" href={p.url} target="_blank" rel="noreferrer" title={`Receipt — ${p.name}`}> <Icon n="receipt" /></a>)}
+          {!c.photos.length && <span className="sub-n" title="Sent without a receipt"> · no receipt</span>}
           {c.status === 'pending' && <ChargeDecide id={c.id} onDone={reload} />}
         </div>
       ))}
       {!j.flag && (flagging ? (
         <div className="crew-decide">
           <input value={text} maxLength={500} placeholder="What is wrong (the handyman reads it)" onChange={e => setText(e.target.value)} />
-          <button className="small" disabled={!text.trim()} onClick={() => void flag({ action: 'flag', id: j.id, note: text, how: 'none' })}>⚑ Flag</button>
-          <button className="small secondary" onClick={() => setFlagging(false)}>Cancel</button>
+          <button className="mini" disabled={!text.trim()} onClick={() => void flag({ action: 'flag', id: j.id, note: text, how: 'none' })}>Flag</button>
+          <button className="link tiny" onClick={() => setFlagging(false)}>Cancel</button>
         </div>
-      ) : <button className="link tiny" onClick={() => setFlagging(true)}>⚑ Flag…</button>)}
+      ) : <button className="link tiny proof-flag" title="Flag this job — its charges wait for a decision one by one; the handyman reads the note" onClick={() => setFlagging(true)}><Icon n="alert" /> Flag</button>)}
       {msg && <div className="breach">{ic(msg)}</div>}
     </div>
   );
