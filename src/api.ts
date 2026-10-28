@@ -987,10 +987,13 @@ export interface VendorPage {
   invoice: VendorInvoice; payout: Payout | null;
 }
 export const getVendorAdmin = (vendor?: string | null, period?: string | null, to?: string | null) =>
-  call<{ ok: true; vendors: (VendorInfo & { open: number; done: number })[]; page: VendorPage | null } | Fail>(
+  call<{ ok: true; vendors: (VendorInfo & { open: number; done: number })[]; page: VendorPage | null; slack?: Record<string, string> } | Fail>(
     `/api/vendor-admin?${new URLSearchParams({ ...(vendor ? { vendor } : {}), ...(period ? { period } : {}), ...(period && to ? { to } : {}) })}`);
 export const vendorAdminAction = (body: Record<string, unknown>) =>
   call<{ ok: true; pay?: number | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify(body) });
+/** The handyman's own Slack channel, where the bot tells them of new work (owner, 2026-10-27). */
+export const vendorSlackChannel = (vendor: string) =>
+  call<{ ok: true; channel: string; inSlack: boolean; email: string | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify({ action: 'slackChannel', vendor }) });
 export const vendorPageLink = (vendor: string, mode?: 'new' | 'off') =>
   call<{ ok: true; link: string | null; phone?: string | null } | Fail>('/api/vendor-admin', { method: 'POST', body: JSON.stringify({ action: 'link', vendor, mode }) });
 

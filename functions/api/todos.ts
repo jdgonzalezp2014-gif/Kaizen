@@ -40,6 +40,7 @@ import { workLinkFor } from '../_lib/vendor-work.ts';
 import { commentToThread, notifyTask, tellOwner, type TaskEvent } from '../_lib/slack.ts';
 import { applyUrgency } from '../_lib/urgency.ts';
 import { todayIn } from '../../src/lib/dates.ts';
+import { tellHandyman } from '../_lib/vendor-slack.ts';
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const ID = /^\d{1,18}$/;
@@ -346,6 +347,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       else if (b.via !== 'slack-thread') tell(String(row.id), 'created');
       await settle(String(row.id));
     }
+    if (f.vendor && (f.kind ?? 'task') === 'work_order') waitUntil(tellHandyman(sql, env.ENCRYPTION_KEY, ids, new URL(request.url).origin));
     return Response.json({ ok: true, id: ids[0], ids, todos: await list(sql, b.claimScope ? f.claimId ?? undefined : undefined) });
   }
 
@@ -421,6 +423,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
                              RETURNING id::text, title` as { id: string; title: string }[];
     for (const g of given) { await note(sql, 'task', g.id, 'change', `Vendor: ${before.vendor} — given with the repair`, who.email); mirror(g.id); await settle(g.id); }
     if (given.length) await note(sql, 'task', id, 'change', `${before.vendor} has ${given.length} item${given.length === 1 ? '' : 's'}: ${given.map(g => g.title).join('; ')}`.slice(0, 4000), who.email);
+    if (given.length) waitUntil(tellHandyman(sql, env.ENCRYPTION_KEY, given.map(g => g.id), new URL(request.url).origin));
     return Response.json({ ok: true, given: given.length, todos: await list(sql, scope) });
   }
 
@@ -637,6 +640,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     else tell(id, 'status');
   }
   if (f.assigneeUserId !== undefined && (assigneeName ?? null) !== (before.assignee ?? null) && assigneeName) { tell(id, 'assigned'); dm(id); }
+  // Owner, 2026-10-27: a work order given to a handyman (a new vendor) is told in their channel, with their page's link.
+  if (f.vendor && (f.kind ?? before.kind) === 'work_order' && f.vendor.trim().toLowerCase() !== (before.vendor ?? '').trim().toLowerCase())
+    waitUntil(tellHandyman(sql, env.ENCRYPTION_KEY, [id], new URL(request.url).origin));
   // §164: a priority set in Kaizen on a report still waiting for its urgency answers it — the same deadline rule as
   // Slack's buttons, unless a date was set by hand in the same save.
   if (f.priority !== undefined && f.priority !== before.priority && f.priority !== 'none' && before.urgency_pending) {

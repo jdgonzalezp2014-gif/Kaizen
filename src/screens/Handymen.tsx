@@ -7,7 +7,7 @@
  * A job = a work order with their name; its pay = the work order's cost.
  */
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { crewAdminAction, getUnits, getVendorAdmin, vendorAdminAction, vendorPageLink, type VendorInfo, type VendorPage } from '../api.ts';
+import { crewAdminAction, getUnits, getVendorAdmin, vendorAdminAction, vendorPageLink, vendorSlackChannel, type VendorInfo, type VendorPage } from '../api.ts';
 import type { VendorJob } from '../lib/vendor-pay.ts';
 import { VENDOR_VOID } from '../lib/vendor-pay.ts';
 import { addDays } from '../lib/dates.ts';
@@ -34,6 +34,7 @@ export function VendorAdmin({ canEdit, canPay }: { canEdit: boolean; canPay: boo
   const [adding, setAdding] = useState(false);
   const [err, setErr] = useState('');
   const [loading, setLoading] = useState(false);
+  const [slack, setSlack] = useState<Record<string, string>>({});
   const seq = useRef(0);
   // The same bar as Operations → Cleaners: what is on screen stays under it until the answer comes. No Hostaway here
   // (only the database, ~0.5 s), so no fast first answer is needed; a later answer never overwrites a newer one.
@@ -41,7 +42,7 @@ export function VendorAdmin({ canEdit, canPay }: { canEdit: boolean; canPay: boo
     const n = ++seq.current;
     setLoading(true);
     return getVendorAdmin(name || null, period, to)
-      .then(r => { if (n !== seq.current) return; if (r.ok) { setVendors(r.vendors); setPage(r.page); setErr(''); } else setErr(r.message ?? 'Could not load.'); })
+      .then(r => { if (n !== seq.current) return; if (r.ok) { setVendors(r.vendors); setPage(r.page); setSlack(r.slack ?? {}); setErr(''); } else setErr(r.message ?? 'Could not load.'); })
       .catch(e => { if (n === seq.current) setErr(String(e)); })
       .finally(() => { if (n === seq.current) setLoading(false); });
   };
@@ -70,6 +71,7 @@ export function VendorAdmin({ canEdit, canPay }: { canEdit: boolean; canPay: boo
           </select></label>}
         {shown && canEdit && !adding && <button className="chip" onClick={() => setAdding(true)}>+ Add a job</button>}
         {shown && canEdit && <PageLink vendor={shown.vendor.name} />}
+        {shown && canEdit && <SlackChannel vendor={shown.vendor.name} channel={slack[shown.vendor.name] ?? null} onMade={() => void load()} />}
         <Hint label="Handymen">Everyone with work orders: the vendor directory (Setup → Inspections, Vendors & handymen) and names only typed on a work order.
           A job is a work order with their name; it is on the invoice of the period in which it was done, and it pays the work order's cost — the
           charges the handyman sent and the team approved, or what the team typed. Picking an invoice period for a name not in the directory adds it there.</Hint>
@@ -338,6 +340,30 @@ export const EN = {
   pending: (n: number) => `${n} charge${n === 1 ? '' : 's'} waiting for the team's approval.`,
   notPaidIn: 'Not paid in this period:'
 };
+
+/**
+ * The handyman's own Slack channel (owner, 2026-10-27): the bot says "New work at <house>" there, in English, with the
+ * jobs and the link to their page — when a work order gets them as its vendor, or a repair's items are given to them.
+ */
+function SlackChannel({ vendor, channel, onMade }: { vendor: string; channel: string | null; onMade: () => void }) {
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  useEffect(() => setMsg(''), [vendor]);
+  const make = async () => {
+    setBusy(true); setMsg('');
+    const r = await vendorSlackChannel(vendor).catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
+    if (!r.ok) { setMsg(r.message ?? 'Not made.'); return; }
+    setMsg(r.inSlack ? `#${r.channel} ready — ${vendor} is in it.` : `#${r.channel} ready — ${r.email ? `${r.email} is not in Slack yet: invite them, then press this again` : `no email for ${vendor}: add it in Vendors, invite them to Slack, then press this again`}.`);
+    onMade();
+  };
+  return <>
+    {channel ? <span className="chip" title={`New work is told in #${channel}`}><Icon n="message" /> #{channel}</span>
+      : <button className="chip" disabled={busy} onClick={() => void make()}><Icon n="message" /> Slack channel</button>}
+    {channel && <button className="link tiny" disabled={busy} onClick={() => void make()} title={`Invite ${vendor} again (after they join Slack)`}>Invite again</button>}
+    {msg && <span className="note" role="status">{ic(msg)}</span>}
+  </>;
+}
 
 /**
  * The handyman's own page, as a link the team pastes into WhatsApp or SMS

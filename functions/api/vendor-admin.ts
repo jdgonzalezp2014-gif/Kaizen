@@ -14,6 +14,7 @@
  *   POST { action: 'addJob', vendor, date, title, unitId?, pay, chargeOwner? }   a job done that has no work order yet
  *   POST { action: 'invoicePeriod', vendor, period: 'weekly' | 'monthly' }
  *   POST { action: 'link', vendor, mode?: 'new' | 'off' }   the handyman's own link (/crew#v=…), the same one each time
+ *   POST { action: 'slackChannel', vendor }   their private Slack channel, where the bot tells them of new work (vendor-slack.ts)
  * A handyman's charges are decided where they always were (crew-admin `decideField`).
  *
  * GET needs `operations`, POST `operations.edit` (roles.ts). Every edit is a
@@ -23,11 +24,12 @@
 import { db, type Env } from '../_lib/db.ts';
 import { getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { newToken, refuse, sha256 } from '../_lib/crew.ts';
-import { decrypt, encrypt } from '../_lib/crypto.ts';
+import { refuse } from '../_lib/crew.ts';
 import { findVendor, loadVendorPage, vendorNames } from '../_lib/vendor-pay.ts';
 import { ensureVendor } from '../_lib/payouts.ts';
 import { vendorGet } from '../_lib/vendor-door.ts';
+import { handymanChannel, vendorOwnLink } from '../_lib/vendor-slack.ts';
+import { slackSetup } from '../_lib/slack.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
 import { flaggedPay, VENDOR_VOID } from '../../src/lib/vendor-pay.ts';
 import { todayIn } from '../../src/lib/dates.ts';
@@ -46,12 +48,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const v = name ? await findVendor(sql, name) : null;
     return v ? vendorGet(request, env, sql, v.name) : refuse(404, 'not_found', 'No such handyman.');
   }
-  const [vendors, page] = await Promise.all([
+  const [vendors, page, slack] = await Promise.all([
     vendorNames(sql),
-    name ? loadVendorPage(sql, name, url.searchParams.get('period'), url.searchParams.get('to')) : Promise.resolve(null)
+    name ? loadVendorPage(sql, name, url.searchParams.get('period'), url.searchParams.get('to')) : Promise.resolve(null),
+    slackSetup(sql, env.ENCRYPTION_KEY).then(s => Object.fromEntries(Object.entries(s.config.handymen ?? {}).map(([k, v]) => [k, v.channelName])), () => ({}))
   ]);
   if (name && !page) return refuse(404, 'not_found', `${name} has no work orders and is not in the vendor directory.`);
-  return Response.json({ ok: true, vendors, page }, { headers: { 'Cache-Control': 'no-store' } });
+  return Response.json({ ok: true, vendors, page, slack }, { headers: { 'Cache-Control': 'no-store' } });
 };
 
 interface Job { id: string; title: string; status: string; vendor: string | null; pay: number | null; pay_fixed: number | null; pay_void: string | null; pay_flag_note: string | null }
@@ -78,13 +81,16 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await sql`UPDATE vendors SET link_token_hash = NULL, link_token_enc = NULL, updated_at = now() WHERE account_id = 1 AND lower(name) = lower(${name})`;
       return Response.json({ ok: true, link: null });
     }
-    let token = b.mode === 'new' || !v?.link_token_enc ? null : await decrypt(v.link_token_enc, env.ENCRYPTION_KEY).catch(() => null);
-    if (!token) {
-      token = newToken();
-      await sql`UPDATE vendors SET link_token_hash = ${await sha256(token)}, link_token_enc = ${await encrypt(token, env.ENCRYPTION_KEY)}, updated_at = now()
-                 WHERE account_id = 1 AND lower(name) = lower(${name})`;
-    }
-    return Response.json({ ok: true, link: `${new URL(request.url).origin}/crew#v=${token}`, phone: v?.phone ?? null });
+    const link = await vendorOwnLink(sql, env.ENCRYPTION_KEY, name, new URL(request.url).origin, b.mode === 'new');
+    return Response.json({ ok: true, link, phone: v?.phone ?? null });
+  }
+
+  if (b.action === 'slackChannel') {
+    const v = await findVendor(sql, String(b.vendor ?? ''));
+    if (!v) return refuse(400, 'bad_request', 'Pick a handyman.');
+    const name = await ensureVendor(sql, v.name);
+    try { return Response.json({ ok: true, ...(await handymanChannel(sql, env.ENCRYPTION_KEY, name, who.email)) }); }
+    catch (e) { return refuse(400, 'bad_request', e instanceof Error ? e.message : String(e)); }
   }
 
   if (b.action === 'invoicePeriod') {

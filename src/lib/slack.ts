@@ -36,6 +36,8 @@ export interface SlackConfig {
   appUrl?: string;
   /** One channel per cleaner (prepared, §99): no message goes there on a clock. */
   cleaners?: Record<string, { channelId: string; channelName: string; slackUserId?: string | null; email?: string | null }>;
+  /** A handyman's own channel (owner, 2026-10-27): "New work at <house>" with the link to their page (vendor-slack.ts). */
+  handymen?: Record<string, { channelId: string; channelName: string; slackUserId?: string | null; email?: string | null }>;
   team?: string;
   /** The bot's own Slack user id (§153), from auth.test — so a thread reply that @-mentions Kaizen
    *  (already handled as an app_mention) is not also saved a second time as a plain comment. */
