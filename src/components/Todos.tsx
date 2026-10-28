@@ -1874,7 +1874,8 @@ function CaseMoneyBlock({ claim, repairWork, estimated, ownerWork, onSaved }: {
         )}
       </dl>
       {open && claim.received > 0 && (
-        <p className="note">Received {money2(claim.received)}. <button className="link tiny" onClick={() => void closeAsPaid()}>Close as Paid</button></p>
+        <p className="claim-paid-row"><button className="small ok" onClick={() => void closeAsPaid()}><Icon n="done" /> Close as Paid</button>
+          <span className="note">Received {money2(claim.received)}.</span></p>
       )}
       {err && <p className="banner warn">▲ {err}</p>}
     </>
@@ -1899,6 +1900,19 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
   const [msg, setMsg] = useState('');
   const [editing, setEditing] = useState(false);
   const [confirmDel, setConfirmDel] = useState(false);
+  // Closed with nothing received (owner, 2026-10-27): one quiet link beside Remove; a claim that asked for money says why.
+  const [dismissing, setDismissing] = useState(false);
+  const [why, setWhy] = useState('');
+  const canDismiss = !isClosedClaim(claim.status) && !(claim.received > 0);
+  const dismiss = async () => {
+    if (claim.requested > 0 && !why.trim()) { setMsg(`Nothing came in of the ${money2(claim.requested)} requested — say why.`); return; }
+    const r = await saveClaim({ id: claim.id, unitId: claim.unit_id, occurredOn: claim.occurred_on.slice(0, 10), category: claim.category,
+      severity: claim.severity, status: 'Dismissed', source: claim.source, description: claim.description,
+      caseUrl: claim.case_url ?? '' }).catch(e => ({ ok: false, error: String(e) }));
+    if (!r.ok) { setMsg(r.error ?? 'Not saved.'); return; }
+    if (why.trim()) await postClaimNote(String(claim.id), `Dismissed: ${why.trim()}`).catch(() => {});
+    setDismissing(false); setWhy(''); setMsg(''); onSaved?.();
+  };
   const remove = async () => {
     const r = await deleteClaim(String(claim.id)).catch(() => ({ ok: false }));
     if (r.ok) { onRemoved?.(claim); onSaved?.(); } else setMsg('Not removed.');
@@ -1916,7 +1930,20 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
         {claim.case_url ? <CaseLink url={claim.case_url} />
           : !editing && <span className="note">No case link yet — add it in ✎ Edit claim</span>}
         <span className="rb-spacer" />
-        {!confirmDel
+        {canDismiss && !confirmDel && !dismissing && (
+          <button className="link tiny" title="Close it with nothing received — denied, withdrawn, not worth pursuing"
+                  onClick={() => setDismissing(true)}><Icon n="ban" /> Dismiss…</button>
+        )}
+        {dismissing
+          ? <form className="claim-dismiss" onSubmit={e => { e.preventDefault(); void dismiss(); }}>
+              <input autoFocus value={why} aria-label="Why it is dismissed"
+                     placeholder={claim.requested > 0 ? 'Why — denied by Airbnb, the guest disputed it…' : 'Why (optional)'}
+                     onChange={e => setWhy(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') setDismissing(false); }} />
+              <button className="small">Dismiss</button>
+              <button type="button" className="link tiny" onClick={() => { setDismissing(false); setWhy(''); setMsg(''); }}>Keep open</button>
+              {msg && <span className="note warn">{msg}</span>}
+            </form>
+          : !confirmDel
           ? <button className="link tiny danger" onClick={() => setConfirmDel(true)}>Remove this claim…</button>
           : <><span className="note">Remove the claim “{claimLabel(claim)}”? Its work stays.</span>
               <button className="small danger" onClick={() => void remove()}>Remove</button>

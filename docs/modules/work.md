@@ -66,6 +66,8 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   `/api/claims-money`). Received is dated `received_on`. Statuses Open / In progress / Resolved / **Paid** / Dismissed:
   closed with money = Paid, Paid needs money (`checkClaim`). Repair work = view `claim_work`; result = `caseResult`
   (owner's share when the repair was charged to the owner). A closed case keeps its `resolved_on` on edits (`closeDate`).
+  On the case: once money came in, a green **Close as Paid** button; while nothing came in, a quiet **Dismiss…** link beside
+  Remove (asks why when money was requested; the reason goes to the timeline as "Dismissed: …") (2026-10-27).
 - A claim is a case: `occurred_on` never moves; soft delete with undo; open cases first;
   can stand alone (late checkout) (§46, §77, §86).
 - Times in timelines and the done log are New York (§87).

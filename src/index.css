@@ -1470,6 +1470,10 @@ button.rb-danger { background: var(--crit); color: var(--on-status); }
 
 /* §86: a claim edited and removed in place. */
 .claim-case-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 8px; }
+.claim-dismiss { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.claim-dismiss input { min-width: 260px; }
+.claim-paid-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 12px; }
+button.ok:not(.link) { background: var(--green); color: var(--on-status); border-color: transparent; }
 .claim-edit { margin-bottom: 12px; padding-bottom: 12px; border-bottom: 1px dashed var(--line); }
 .claim-edit textarea { width: 100%; }
 
