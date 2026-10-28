@@ -168,7 +168,7 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 ## Open items
 
 - §171: migration 104 + `.sop-104.mjs` (SOP #4 v4) at deploy, then the backfill (estimates from Tim's charges + a pay
-  check per job with charges waiting) — tested on Neon branch `test-pay-check` (br-withered-poetry-b5yw54t9; delete after).
+  check per job with charges waiting) — tested on a Neon branch (deleted).
   Check the first real "Validate pay" (#108 has two $30 charges for one dishwasher — maybe a duplicate).
 
 - §167: reconciliation of received money with platform payouts / Hostaway — later, read-only, owner to decide.
