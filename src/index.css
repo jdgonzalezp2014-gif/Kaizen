@@ -2915,3 +2915,27 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .v-house-head .chip { min-height: 40px; }
 .v-ask { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
 .vendor-ask { border-left: 3px solid var(--ink); padding-left: 10px; }
+
+/* One scale for the handyman's page (owner, 2026-10-27: "elegant and simple, a little grandpa-friendly — the jump
+   between the cards and the forms felt odd"): reading text 16px everywhere, labels 17px semibold, every control 48px
+   high with the cards' radius. Between the team's small text and the cleaners' big field forms. */
+.v-page { font-size: 16px; line-height: 1.45; }
+.v-page .note, .v-page .sub-n { font-size: 14px; }
+.v-page .fr { font-size: 16px; gap: 10px; }
+.v-page .fr-q { font-size: 17px; font-weight: 600; margin-top: 4px !important; }
+.v-page .fr-tip, .v-page .fr-missing { font-size: 15px; }
+.v-page .fr-btn { min-height: 48px; font-size: 16px; padding: 10px 16px; border-radius: var(--r-md); }
+.v-page .fr-btn.secondary { border-width: 1px; }
+.v-page .fr-select, .v-page .fr-text, .v-page .fr-field input { font-size: 16px; min-height: 48px; }
+.v-page .fr-text { min-height: 88px; }
+.v-page .work-card .clean-card-unit { font-size: 19px; }
+.v-page .fr-done-line, .v-page .field-ok { font-size: 16px; }
+.v-house { gap: 8px; padding: 20px; }
+.v-house-name { font-size: 20px; }
+.v-house .note { font-size: 14px; }
+.v-house-n { font-size: 17px; }
+.v-house-list { font-size: 15px; }
+.v-house-flag { font-size: 14px; }
+.v-house-go { padding: 8px 16px; border-radius: 999px; background: var(--ink); color: var(--bg); font-size: 15px; }
+.v-ask { padding: 20px; }
+.v-ask > .fr-btn.secondary { margin: 0; }
