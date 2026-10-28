@@ -93,6 +93,10 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   and `/api/vendor-admin?view=vendor` → `workPhoto` (vendor-work.ts): only a file that work order's description names,
   only on a work order of theirs. **View as handyman ↗** (Operations → Handymen, `#as-vendor/<name>`) = their page from
   `/api/vendor-admin?view=vendor`, buttons save nothing — as §122's View as cleaner.
+- **The handyman's page is by house (owner, 2026-10-27):** a sticky island on top (name, Work orders / Pay, EN/ES, night);
+  a carousel of houses (jobs, soonest day, how many to accept); a house (`?house=<unit>`, back returns) opens a carousel of
+  its jobs, one per screen, pager on top. `VendorHome`, `byHouse`, `Carousel` in Work.tsx; CSS `.v-*`. The one-job link
+  page (`WorkLinkPage`) is unchanged.
 - Migration 103 re-adds `vendors.link_token_hash/enc`: 099 was applied before those lines were added, so handymen's
   own-page links ("Copy their link", `/api/crew-link`) failed in production until 103 runs.
 - **The access (codes, lockbox, Wi-Fi) shows only on the day set and while the order is open.**
