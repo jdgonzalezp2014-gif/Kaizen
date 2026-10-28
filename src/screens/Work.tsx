@@ -14,7 +14,7 @@
  * The access (code, lockbox, Wi-Fi) shows on the day set only.
  */
 import { useEffect, useState } from 'react';
-import { getVendorWork, getWorkLink, vendorAct, workLinkAct, type VendorPage, type WorkPage } from '../api.ts';
+import { getVendorAs, getVendorWork, getWorkLink, vendorAct, workLinkAct, workPhoto, type VendorPage, type WorkDoor, type WorkPage } from '../api.ts';
 import { EN, VendorInvoiceView } from './Handymen.tsx';
 import { money2 } from '../lib/format.ts';
 import { AccessBox } from '../components/AccessBox.tsx';
@@ -67,6 +67,32 @@ const W = {
 };
 type Wx = typeof W.en;
 type Send = (fields: Record<string, string>, files: File[]) => Promise<{ ok: boolean; message?: string; page?: WorkPage }>;
+/** A photo named in a work order's description, loaded through the page's own door (Drive is the team's). */
+type Photo = (todoId: string, driveId: string) => Promise<string>;
+const driveIdOf = (url: string) => /(?:\/d\/|[?&]id=)([A-Za-z0-9_-]{10,200})/.exec(url)?.[1] ?? null;
+
+/**
+ * What to fix, in reading size (owner, 2026-10-27): the finding's lines, and its "Photo:" lines as the photos themselves —
+ * big, one under the other, tap for full size. Without a door to load them (practice), the links as they are.
+ */
+function WhatToFix({ id, text, photo }: { id: string; text: string; photo?: Photo }) {
+  const lines = text.split('\n');
+  const urls = lines.map(l => /^\s*Photo:\s*(\S+)/.exec(l)?.[1]).filter((u): u is string => !!u);
+  const ids = photo ? urls.map(driveIdOf).filter((x): x is string => !!x) : [];
+  return (
+    <div className="work-what">
+      {lines.filter(l => !(ids.length && /^\s*Photo:/.test(l)) && l.trim()).map((l, i) => <p key={i}>{ic(l.trim())}</p>)}
+      {ids.length > 0 && <div className="work-photos">{ids.map(d => <Thumb key={d} load={() => photo!(id, d)} />)}</div>}
+    </div>
+  );
+}
+function Thumb({ load }: { load: () => Promise<string> }) {
+  const [src, setSrc] = useState<string | null>(null);
+  const [bad, setBad] = useState(false);
+  useEffect(() => { let u: string | null = null; load().then(x => { u = x; setSrc(x); }, () => setBad(true)); return () => { if (u) URL.revokeObjectURL(u); }; }, []);
+  if (bad) return <p className="note"><Icon n="camera" /> {ic('Photo not available')}</p>;
+  return <a href={src ?? undefined} target="_blank" rel="noreferrer">{src ? <img src={src} alt="" loading="lazy" /> : <p className="note loading-dot">…</p>}</a>;
+}
 
 /** The language switch and day/night, in one line on top. */
 function Head({ title, lang, setLang }: { title: string; lang: Lang; setLang: (l: Lang) => void }) {
@@ -97,13 +123,16 @@ export function WorkLinkPage({ token, practice }: { token: string; practice?: { 
     <Head title={page?.work.unit ? `${page.work.unit}` : 'Kaizen'} lang={lang} setLang={setLang} />
     <div className="report-page">
       {err ? <p className="banner error">{ic(err)}</p> : !page ? <p className="note loading-dot">…</p>
-        : <WorkCard page={page} lang={lang} send={practice?.send ?? ((f, files) => workLinkAct(token, f, files))} onPage={setPage} />}
+        : <WorkCard page={page} lang={lang} send={practice?.send ?? ((f, files) => workLinkAct(token, f, files))} onPage={setPage}
+                    photo={practice ? undefined : (id, d) => workPhoto({ workToken: token }, id, d)} />}
     </div>
   </>;
 }
 
 /** The account door: a handyman signed in sees their work orders. */
-export function VendorHome({ practice, token }: { practice?: { vendor: string; works: WorkPage[]; send: (id: string, fields: Record<string, string>, files: File[]) => ReturnType<Send> }; token?: string } = {}) {
+export function VendorHome({ practice, token, asVendor }: { practice?: { vendor: string; works: WorkPage[]; send: (id: string, fields: Record<string, string>, files: File[]) => ReturnType<Send> }; token?: string;
+  /** The team's "View as handyman" (owner, 2026-10-27): their page, buttons that save nothing. */
+  asVendor?: string } = {}) {
   const [lang, setLang] = useLang();
   const [data, setData] = useState<{ vendor: string; works: WorkPage[]; pay?: VendorPage | null } | null>(practice ? { vendor: practice.vendor, works: practice.works } : null);
   const [err, setErr] = useState('');
@@ -111,7 +140,8 @@ export function VendorHome({ practice, token }: { practice?: { vendor: string; w
   // The phone's back gesture steps back through the sections instead of leaving the page (useUrlState.ts).
   useUrlState('sec', sec, setSec, { def: 'work', valid: v => v === 'work' || v === 'pay' });
   const [period, setPeriod] = useState<string | null>(null);
-  const load = () => getVendorWork(period, token).then(r => r.ok ? setData(r) : setErr(r.message ?? 'Could not load.')).catch(e => setErr(String(e)));
+  const door: WorkDoor = asVendor ? { asVendor } : { token };
+  const load = () => (asVendor ? getVendorAs(asVendor, period) : getVendorWork(period, token)).then(r => r.ok ? setData(r) : setErr(r.message ?? 'Could not load.')).catch(e => setErr(String(e)));
   useEffect(() => { if (!practice) void load(); }, [period]);
   const w = W[lang];
   return <>
@@ -126,13 +156,15 @@ export function VendorHome({ practice, token }: { practice?: { vendor: string; w
         : sec === 'pay' && data.pay ? <VendorPay pay={data.pay} lang={lang} onPeriod={setPeriod} />
         : !data.works.length ? <div className="card"><p className="note">{ic(w.none)}</p></div>
         : data.works.map(p => <WorkCard key={p.work.id} page={p} lang={lang}
-            send={(f, files) => practice ? practice.send(p.work.id, f, files) : vendorAct(p.work.id, f, files, token)}
+            send={(f, files) => practice ? practice.send(p.work.id, f, files)
+              : asVendor ? Promise.resolve({ ok: false, message: 'Preview — nothing is saved here.' }) : vendorAct(p.work.id, f, files, token)}
+            photo={practice ? undefined : (id, d) => workPhoto(door, id, d)}
             onPage={np => setData(d => d && { ...d, works: d.works.map(x => x.work.id === np.work.id ? np : x) })} />)}
     </div>
   </>;
 }
 
-function WorkCard({ page, lang, send, onPage }: { page: WorkPage; lang: Lang; send: Send; onPage: (p: WorkPage) => void }) {
+function WorkCard({ page, lang, send, onPage, photo }: { page: WorkPage; lang: Lang; send: Send; onPage: (p: WorkPage) => void; photo?: Photo }) {
   const w = W[lang];
   const tx = CREW_TX[lang];
   const p = page.work;
@@ -154,7 +186,7 @@ function WorkCard({ page, lang, send, onPage }: { page: WorkPage; lang: Lang; se
       {p.unit && <p><Icon n="home" /> <b>{ic(p.unit)}</b>{page.address && <> · <a href={`https://maps.google.com/?q=${encodeURIComponent(page.address)}`} target="_blank" rel="noreferrer"><Icon n="pin" /> {ic(page.address)}</a></>}</p>}
       <p className="fr-q"><Icon n="calendar" /> {ic(p.scheduledOn ? `${w.day}: ${dayLabel(lang, p.scheduledOn)}${p.startTime ? ` ${w.at} ${clock(p.startTime)}` : ''}` : w.noDay)}</p>
       {page.access && <AccessBox tx={tx} a={page.access} />}
-      {p.description && <details><summary><b>{ic(w.what)}</b></summary><p className="note" style={{ whiteSpace: 'pre-wrap' }}>{ic(p.description)}</p></details>}
+      {p.description && <details open><summary><b>{ic(w.what)}</b></summary><WhatToFix id={p.id} text={p.description} photo={photo} /></details>}
       {closed ? <p className="fr-done-line">{ic(p.resolution ? w.done(p.resolution) : w.closed)}</p> : <>
         <Step n={1} title={w.s1} sub={p.accepted ? w.accepted : w.notYet} open={!p.accepted}>
           {p.accepted ? <p className="field-ok">{ic(w.accepted)}</p> : <Accept w={w} busy={busy} go={go} />}

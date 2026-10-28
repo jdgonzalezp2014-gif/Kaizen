@@ -27,7 +27,7 @@ async function me(request: Request, env: Env, sql: SqlFn): Promise<string | Resp
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
   const v = await me(request, env, sql);
-  return v instanceof Response ? v : vendorGet(request, sql, v);
+  return v instanceof Response ? v : vendorGet(request, env, sql, v);
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {

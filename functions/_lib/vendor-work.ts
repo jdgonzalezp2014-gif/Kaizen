@@ -22,6 +22,7 @@ import { addFieldExpense } from './field-costs.ts';
 import { settleRepair } from './repair-costs.ts';
 import { mirrorOn, pushWork } from './hostaway-tasks.ts';
 import { commentToThread } from './slack.ts';
+import { driveToken } from './gdrive.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
 
 const TZ = 'America/New_York';
@@ -198,6 +199,26 @@ export async function workLinkFor(sql: SqlFn, encryptionKey: string, id: string,
   const [v] = await sql`SELECT phone FROM vendors WHERE account_id = 1 AND lower(name) = lower(${r.vendor})` as { phone: string | null }[];
   return { link: `${origin}/report#w=${token}`, vendor: r.vendor, phone: v?.phone ?? null, title: r.title, unit: r.unit, day: r.scheduled_on, expires };
 }
+
+/**
+ * One photo named in a work order's description (an inspection's finding), from the team's Drive — the handyman has no
+ * access to it (owner, 2026-10-27: they see the finding's photos, bigger). Only a file the description names; the
+ * caller has already checked the work order is theirs.
+ */
+export async function workPhoto(sql: SqlFn, encryptionKey: string, id: string, driveId: string): Promise<Response> {
+  const none = () => Response.json({ ok: false, error: 'not_found', message: 'No such photo.' }, { status: 404 });
+  if (!/^[A-Za-z0-9_-]{10,200}$/.test(driveId)) return none();
+  const [t] = await sql`SELECT description FROM todos WHERE account_id = 1 AND id = ${Number(id) || 0} AND deleted_at IS NULL` as { description: string | null }[];
+  if (!t?.description || !driveIdsIn(t.description).includes(driveId)) return none();
+  const res = await fetch(`https://www.googleapis.com/drive/v3/files/${encodeURIComponent(driveId)}?alt=media&supportsAllDrives=true`,
+    { headers: { Authorization: `Bearer ${await driveToken(sql, encryptionKey)}` } });
+  if (!res.ok) return Response.json({ ok: false, error: 'drive', message: `Drive said ${res.status}.` }, { status: 502 });
+  return new Response(res.body, { headers: { 'Content-Type': res.headers.get('Content-Type') ?? 'image/jpeg', 'Cache-Control': 'private, max-age=86400' } });
+}
+
+/** The Drive files a description's "Photo:" lines name. */
+export const driveIdsIn = (text: string) =>
+  [...text.matchAll(/^\s*Photo:\s*\S*?(?:\/d\/|[?&]id=)([A-Za-z0-9_-]{10,200})/gm)].map(m => m[1]!);
 
 /** Which work order a link opens — refused once expired, closed, or given to another vendor. */
 export async function workOfToken(sql: SqlFn, request: Request): Promise<{ id: string; vendor: string } | Response> {

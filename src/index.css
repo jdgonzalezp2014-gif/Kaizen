@@ -2177,6 +2177,11 @@ button.fr-thumb { padding: 0; border: 0; background: none; border-radius: var(--
 /* §137 a handyman's work order: the cleaner's step style. */
 .work-card { display: flex; flex-direction: column; gap: 10px; }
 .work-card p { margin: 0; }
+/* Owner, 2026-10-27: what to fix, in reading size, and the inspection's photos big enough to see on a phone. */
+.work-what { font-size: 1rem; line-height: 1.45; display: flex; flex-direction: column; gap: 4px; }
+.work-photos { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 6px; }
+.work-photos a { display: block; border-radius: 10px; overflow: hidden; background: var(--surface-2, rgba(127,127,127,.12)); min-height: 120px; }
+.work-photos img { display: block; width: 100%; max-height: 70vh; object-fit: contain; }
 .work-step { display: flex; flex-direction: column; gap: 8px; }
 .work-step-body { padding: 4px 2px 8px; }
 .work-note summary { cursor: pointer; padding: 6px 0; }

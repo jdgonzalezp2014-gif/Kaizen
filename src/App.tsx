@@ -109,6 +109,9 @@ export function App() {
   // The team's "View as cleaner" (§122): a tab with that cleaner's page and nothing of the team's.
   const preview = /^#as-cleaner\/(.+)$/.exec(location.hash);
   if (preview) return <PreviewShell name={decodeURIComponent(preview[1]!)} />;
+  // …and "View as handyman" (owner, 2026-10-27): every work order they have, as they see it.
+  const asVendor = /^#as-vendor\/(.+)$/.exec(location.hash);
+  if (asVendor) return <VendorPreviewShell name={decodeURIComponent(asVendor[1]!)} />;
   return <TeamApp />;
 }
 
@@ -118,6 +121,15 @@ function PreviewShell({ name }: { name: string }) {
       {/* The cleaner's page has its own one-line top (§134): no big header here either. */}
       <p className="banner warn"><Icon n="eye" /> Preview — {name}'s page exactly as they get it. Their buttons do nothing here. Close this tab to go back.</p>
       <CrewHome asCleaner={name} />
+    </main>
+  );
+}
+
+function VendorPreviewShell({ name }: { name: string }) {
+  return (
+    <main>
+      <p className="banner warn"><Icon n="eye" /> Preview — {name}'s page exactly as they get it. Their buttons save nothing here. Close this tab to go back.</p>
+      <VendorHome asVendor={name} />
     </main>
   );
 }

@@ -359,6 +359,7 @@ function PageLink({ vendor }: { vendor: string }) {
   };
   return <>
     <button className="chip" disabled={busy} onClick={() => void go()} title={`Copy ${vendor}'s page link`}><Icon n="clipboard" /> Copy their link</button>
+    <a className="chip" href={`/#as-vendor/${encodeURIComponent(vendor)}`} target="_blank" rel="noreferrer"><Icon n="eye" /> View as handyman ↗</a>
     {msg && <span className="note" role="status">{ic(msg)}</span>}
     {msg && !more && <button className="link tiny" onClick={() => setMore(true)}>…</button>}
     {more && <>

@@ -34,7 +34,7 @@ import { tellCleaner } from '../_lib/crew-slack.ts';
 import type { HelperEvent } from '../../src/lib/crew-slack.ts';
 import { addPhotos, cleanStates, ensureRecord, markClean, type Stage } from '../_lib/clean-record.ts';
 import { inspectGet, inspectPost } from '../_lib/inspect-link.ts';
-import { workAct, workOfToken, workPage } from '../_lib/vendor-work.ts';
+import { workAct, workOfToken, workPage, workPhoto } from '../_lib/vendor-work.ts';
 import { stripeOnboard } from '../_lib/payouts.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
@@ -68,6 +68,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (request.headers.has('X-Work-Token')) {
     const w = await workOfToken(sql, request);
     if (w instanceof Response) return w;
+    const photo = new URL(request.url).searchParams.get('photo');
+    if (photo) return workPhoto(sql, env.ENCRYPTION_KEY, w.id, photo);
     return Response.json({ ok: true, vendor: w.vendor, page: await workPage(sql, w.id) }, { headers: { 'Cache-Control': 'no-store' } });
   }
   const l = await linkOf(sql, request);

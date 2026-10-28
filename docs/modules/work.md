@@ -87,6 +87,12 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   `giveItems`): all open items ticked except those with another vendor; the vendor is written on each item, never
   inherited, so "all but this one" survives a later change. An item with no day or listing of its own uses the repair's
   (`workRow`). Another vendor without an account → that item's own Send to vendor link.
+- **What to fix shows the finding's photos (owner, 2026-10-27).** A work order's "Photo:" lines (an inspection's) are
+  drawn as big photos, open by default (`WhatToFix` in Work.tsx). Drive is the team's, so every door serves them:
+  `?work=<id>&photo=<Drive id>` on `/api/vendor`, `/api/crew-link` (X-Vendor-Token), `/api/report-link` (X-Work-Token)
+  and `/api/vendor-admin?view=vendor` → `workPhoto` (vendor-work.ts): only a file that work order's description names,
+  only on a work order of theirs. **View as handyman ↗** (Operations → Handymen, `#as-vendor/<name>`) = their page from
+  `/api/vendor-admin?view=vendor`, buttons save nothing — as §122's View as cleaner.
 - Migration 103 re-adds `vendors.link_token_hash/enc`: 099 was applied before those lines were added, so handymen's
   own-page links ("Copy their link", `/api/crew-link`) failed in production until 103 runs.
 - **The access (codes, lockbox, Wi-Fi) shows only on the day set and while the order is open.**

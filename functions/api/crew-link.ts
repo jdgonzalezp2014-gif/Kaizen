@@ -30,7 +30,7 @@ const vendorToken = (request: Request) => request.headers.get('X-Vendor-Token');
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
   const vt = vendorToken(request);
-  if (vt !== null) { const v = await vendorByToken(sql, vt); return v ? vendorGet(request, sql, v) : BAD_VENDOR(); }
+  if (vt !== null) { const v = await vendorByToken(sql, vt); return v ? vendorGet(request, env, sql, v) : BAD_VENDOR(); }
   const me = await caller(request, sql);
   return me instanceof Response ? me : crewGet(request, env, sql, me);
 };

@@ -5,7 +5,7 @@
  */
 import type { Env } from './db.ts';
 import type { SqlFn } from './accounts.ts';
-import { workAct, workPage } from './vendor-work.ts';
+import { workAct, workPage, workPhoto } from './vendor-work.ts';
 import { loadVendorPage } from './vendor-pay.ts';
 import { sha256 } from './crew.ts';
 
@@ -26,7 +26,14 @@ const mine = async (sql: SqlFn, vendor: string) => (await sql`
      AND NOT EXISTS (SELECT 1 FROM todos c WHERE c.account_id = t.account_id AND c.parent_id = t.id AND c.kind = 'work_order' AND c.deleted_at IS NULL)
    ORDER BY coalesce(t.scheduled_on, p.scheduled_on) NULLS LAST, t.id` as { id: string }[]).map(r => r.id);
 
-export async function vendorGet(request: Request, sql: SqlFn, v: string): Promise<Response> {
+export async function vendorGet(request: Request, env: Env, sql: SqlFn, v: string): Promise<Response> {
+  // A photo of a finding in one of THEIR work orders (?work=<id>&photo=<Drive id>), never another's.
+  const q = new URL(request.url).searchParams;
+  if (q.has('photo')) {
+    const id = q.get('work') ?? '';
+    if (!(await mine(sql, v)).includes(id)) return Response.json({ ok: false, error: 'not_found', message: 'No such photo.' }, { status: 404 });
+    return workPhoto(sql, env.ENCRYPTION_KEY, id, q.get('photo') ?? '');
+  }
   const works = (await Promise.all((await mine(sql, v)).map(id => workPage(sql, id)))).filter(Boolean);
   // Owner, 2026-10-25: their pay, as a cleaner sees theirs — the invoice periods only, never the team's own dates.
   const pay = await loadVendorPage(sql, v, new URL(request.url).searchParams.get('period'));

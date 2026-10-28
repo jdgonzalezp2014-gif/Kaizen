@@ -945,6 +945,21 @@ const vendorPath = (token?: string | null) => token ? '/api/crew-link' : '/api/v
 const vendorHeaders = (token?: string | null): Record<string, string> => token ? { 'X-Vendor-Token': token } : {};
 export const getVendorWork = (period?: string | null, token?: string | null) =>
   call<({ ok: true; vendor: string; works: WorkPage[]; pay: VendorPage | null }) | Fail>(`${vendorPath(token)}${period ? `?period=${period}` : ''}`, { headers: vendorHeaders(token) });
+/** The team's "View as handyman" (owner, 2026-10-27): their page from the same server code. */
+export const getVendorAs = (vendor: string, period?: string | null) =>
+  call<({ ok: true; vendor: string; works: WorkPage[]; pay: VendorPage | null }) | Fail>(`/api/vendor-admin?${new URLSearchParams({ view: 'vendor', vendor, ...(period ? { period } : {}) })}`);
+/** Which door a handyman's page came through — the photos of a work order's findings go back through the same one. */
+export type WorkDoor = { workToken: string } | { token?: string | null } | { asVendor: string };
+/** One photo named in a work order's description (Drive is the team's), as an object URL for an <img>. */
+export async function workPhoto(door: WorkDoor, todoId: string, driveId: string): Promise<string> {
+  const q = new URLSearchParams({ work: todoId, photo: driveId });
+  const [url, headers] = 'workToken' in door ? ['/api/report-link?' + q, { 'X-Work-Token': door.workToken }]
+    : 'asVendor' in door ? [`/api/vendor-admin?${new URLSearchParams({ view: 'vendor', vendor: door.asVendor })}&${q}`, {}]
+    : [`${vendorPath(door.token)}?${q}`, vendorHeaders(door.token)];
+  const res = await fetch(url, { headers });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  return URL.createObjectURL(await res.blob());
+}
 export const vendorAct = (todoId: string, fields: Record<string, string>, files: File[], token?: string | null) =>
   workSend(vendorPath(token), vendorHeaders(token), { ...fields, todoId }, files);
 /** The team: the link for a work order's vendor. */

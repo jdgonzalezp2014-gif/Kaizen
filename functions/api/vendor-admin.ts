@@ -5,6 +5,7 @@
  * team's edits, the same ones a clean has.
  *
  *   GET  [?vendor=<name>&period=YYYY-MM-DD[&to=YYYY-MM-DD]]   who has work to pay; with a vendor, their page
+ *   GET  ?view=vendor&vendor=<name>[&work=<id>&photo=<Drive id>]   "View as handyman": their own page (/api/vendor's), and its photos
  *   POST { action: 'flag', id, note, how: 'none' | 'deduct' | 'pay', value? }
  *                                     a note the handyman reads — on a job done, with a deduction or a pay typed instead
  *   POST { action: 'unflag', id }
@@ -26,6 +27,7 @@ import { newToken, refuse, sha256 } from '../_lib/crew.ts';
 import { decrypt, encrypt } from '../_lib/crypto.ts';
 import { findVendor, loadVendorPage, vendorNames } from '../_lib/vendor-pay.ts';
 import { ensureVendor } from '../_lib/payouts.ts';
+import { vendorGet } from '../_lib/vendor-door.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
 import { flaggedPay, VENDOR_VOID } from '../../src/lib/vendor-pay.ts';
 import { todayIn } from '../../src/lib/dates.ts';
@@ -39,6 +41,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
   const url = new URL(request.url);
   const name = url.searchParams.get('vendor');
+  // "View as handyman" (owner, 2026-10-27, as §122's "View as cleaner"): their own page, from the same server code.
+  if (url.searchParams.get('view') === 'vendor') {
+    const v = name ? await findVendor(sql, name) : null;
+    return v ? vendorGet(request, env, sql, v.name) : refuse(404, 'not_found', 'No such handyman.');
+  }
   const [vendors, page] = await Promise.all([
     vendorNames(sql),
     name ? loadVendorPage(sql, name, url.searchParams.get('period'), url.searchParams.get('to')) : Promise.resolve(null)
