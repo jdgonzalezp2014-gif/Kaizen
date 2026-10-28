@@ -75,7 +75,7 @@ export const PERMISSIONS: Permission[] = [
   { key: 'guests.documents', label: 'Guest documents — see and upload IDs and rental agreements', routes: [
     { path: '/api/guest-docs', methods: ['POST'] }, { path: '/api/guest-docs-upload', methods: ['POST'] }] },
   { key: 'repository', label: 'Repository — look up records and documents', tab: 'repository', routes: [
-    { path: '/api/repository', methods: ['GET'] }, { path: '/api/repository-check', methods: ['GET'] }] },
+    { path: '/api/repository', methods: ['GET'] }, { path: '/api/repository-check', methods: ['GET'] }, { path: '/api/missing-data', methods: ['GET'] }] },
   { key: 'repository.reveal', label: 'Repository — reveal passwords (each reveal is logged)', routes: [
     { path: '/api/repository-reveal', methods: ['POST'] }] },
   { key: 'repository.edit', label: 'Repository — add and edit records, upload and remove documents', routes: [

@@ -2661,7 +2661,16 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
   .home-side-col .home-rail { margin: 0 0 var(--s-3); padding: 2px 1px var(--s-3); border-bottom: 1px solid var(--line); }
   .home-side-col .home-card { background: transparent; border: 0; border-radius: 0; box-shadow: none; padding: 0; }
 }
-@media (min-width: 721px) and (max-width: 980px) { .home-rail { flex-wrap: wrap; overflow: visible; } }
+/* §170 (owner, 2026-10-27): the modules stay ONE row — a carousel. Four no longer fit beside To-dos, so ≥ 721 px
+   the side with more fades and gets an arrow (‹ ›); a phone swipes, as before. */
+.home-rail-wrap { position: relative; }
+@media (min-width: 721px) { .home-rail-wrap.more-r .home-rail { -webkit-mask-image: linear-gradient(90deg, #000 85%, transparent); mask-image: linear-gradient(90deg, #000 85%, transparent); } }
+@media (min-width: 721px) { .home-rail-wrap.more-l .home-rail { -webkit-mask-image: linear-gradient(270deg, #000 85%, transparent); mask-image: linear-gradient(270deg, #000 85%, transparent); } }
+@media (min-width: 721px) { .home-rail-wrap.more-l.more-r .home-rail { -webkit-mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); mask-image: linear-gradient(90deg, transparent, #000 12%, #000 88%, transparent); } }
+.home-rail-arrow { position: absolute; top: 2px; z-index: 1; width: var(--control-h); height: var(--control-h); padding: 0; border-radius: var(--r-pill);
+  display: grid; place-items: center; background: var(--card); color: var(--ink); border: 1px solid var(--line-strong); box-shadow: var(--shadow); font-size: var(--fs-body); }
+.home-rail-arrow.l { left: 0; } .home-rail-arrow.r { right: 0; }
+@media (max-width: 720px) { .home-rail-wrap { display: contents; } .home-rail-arrow { display: none; } }
 @media (max-width: 720px) {
   .home-layout { display: flex; flex-direction: column; }
   .home-side-col { display: contents; }

@@ -316,7 +316,11 @@ function TeamApp() {
       {tab === 'revenue'  && <Revenue canClaims={can(permissions, 'claims.money')} />}
       {tab === 'home' && <Home permissions={permissions} onGo={to => {
         const [t, sub] = to.split(':');
-        if (allowed?.includes(t!)) { if (t === 'operations' && sub) goOps(sub); else { setOpsView(sub); go(t as Tab); } }
+        if (!allowed?.includes(t!)) return;
+        if (t === 'operations' && sub) goOps(sub);
+        // §170: Home's Missing data opens a record (repository:repo=<table>/<id>) or the view (repository:check=missing).
+        else if (t === 'repository' && sub?.includes('=')) { const [k, v] = sub.split('='); go('repository', { [k!]: v! }); }
+        else { setOpsView(sub); go(t as Tab); }
       }} />}
       {tab === 'operations' && <Operations permissions={permissions} initialView={opsView} nav={opsNav} onView={setOpsNow} focus={workFocus} />}
       {tab === 'repository' && <Repository canReveal={can(permissions, 'repository.reveal')}

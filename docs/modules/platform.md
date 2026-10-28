@@ -143,3 +143,10 @@ Hostaway client, sync, crypto, migrations.
   right-aligned, plain footnote-size text reusing `.side-word`'s hover fade) and switched to `America/Chicago`
   (CST/CDT) — the same zone as `teamTz`'s default. This settles the menu part of the §159 "Open" item above; the
   board/ops/timelines' 43 places still compute "today" in New York — still a separate, asked-for change.
+- **Home modules (owner, 2026-10-27, §170):** "Units in red" is now **Low performance** (same Units rule); new **Missing data**
+  module (permission `repository`: units with a Critical/High gap, the rest counted in the foot; a unit opens its record via
+  `onGo('repository:repo=<table>/<id>')`, "Open Missing data" via `repository:check=missing` — App's Home `onGo` passes
+  `k=v` subs to `go`). Owner: Missing data and Low performance stay separate modules. The strip is ONE row, a carousel
+  (owner: two rows lose the look): ≥ 721 px the hidden side fades and gets ‹ › (`home-rail-wrap`, measured each render);
+  phone swipes as before. Missing data reads Hostaway's listings once per Home visit (no cache — a just-filled field must
+  disappear); add an `api_cache` like `forward` if Hostaway ever rate-limits.

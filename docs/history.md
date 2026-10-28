@@ -4534,3 +4534,16 @@ reserved), a `note` and counts — no time, no author (checked on real data). So
 - Not more often: each extra wake keeps Neon's compute up (the 2026-10-24 quota outage). Hourly rides the existing wake.
 - Who made a change is unknowable from Hostaway; the screen says so.
 
+## §170 — Missing data: what each active unit still lacks, by severity (2026-10-27)
+Owner: an auditor's view of the Repository — what is empty that matters (insurance, the AT&T account, …) for every
+listing that is active, with how bad it is, on Home beside the check-ins; Hostaway sections stay read-only here.
+- Read-only by design: it points at the record or at ⇄ Check against Hostaway (the only place a Hostaway write happens,
+  confirmed before → after). Nothing new writes.
+- Severity is what breaks without the field, not effort: Critical = a clean or stay fails; High = money, insurance,
+  outages, guest-facing listing basics; Medium = slows someone down; Low = paperwork.
+- Active = Hostaway's (`units.active`), not the Repository's Active column — a record marked Active whose listing is off is
+  not audited; a live listing with no record is Critical.
+- Closet code only for houses (P2 closets are not locked); POC for houses = manager/landlord, apartments = maintenance # or portal.
+- Hostaway is read live each time (one listings call): after filling, ↻ must show it gone; a cache would hide that.
+- Home: "Units in red" → "Low performance"; the module strip stays one row as a carousel with arrows (owner: two rows look worse).
+

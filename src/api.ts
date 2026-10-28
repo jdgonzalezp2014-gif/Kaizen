@@ -784,6 +784,11 @@ export interface RepoCheckUnit {
 }
 export const getRepoCheck = () =>
   call<{ ok: true; sections: typeof import('./lib/repo-checks.ts').SECTIONS; checks: RepoCheckDef[]; units: RepoCheckUnit[] } | { ok: false; message?: string }>('/api/repository-check');
+/** §170: every active unit's missing data, worst first — read-only. */
+export interface MissingRule { key: string; label: string; severity: import('./lib/missing-data.ts').Severity; why: string; where: 'repository' | 'hostaway' }
+export const getMissingData = () =>
+  call<{ ok: true; units: import('./lib/missing-data.ts').UnitGaps[]; counts: Record<import('./lib/missing-data.ts').Severity, number>;
+         hostawayError: string | null; rules: MissingRule[]; at: string } | { ok: false; message?: string }>('/api/missing-data');
 export const fixRepoCheck = (body: { unitId: string; checks?: string[]; to?: 'repository' | 'hostaway'; op?: 'draft-adds' }) =>
   call<{ ok: true; unit: RepoCheckUnit } | { ok: false; message?: string }>('/api/repository-check', {
     method: 'POST', body: JSON.stringify(body)

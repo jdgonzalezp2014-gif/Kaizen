@@ -6,7 +6,8 @@
  *
  *   1. Who is cleaning what today — and is anything unassigned?
  *   2. Who is arriving today, and is their unit ready?
- *   3. Which units does the analysis flag red?
+ *   3. Which units does the analysis flag red? ("Low performance")
+ *   5. What is a unit's record or listing still missing? (§170, "Missing data")
  *   4. What is on the calendar that costs something — inspections
  *      scheduled, expenses coming up, claims still open?
  *
@@ -21,9 +22,9 @@
  * A role only asks for what it may see — the server refuses the rest
  * regardless.
  */
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  can, getClaims, getCrewAdmin, getForward, getInventory, getGuestDocs, getOperations, getTodos, getVariable, uploadGuestDoc,
+  can, getClaims, getMissingData, getCrewAdmin, getForward, getInventory, getGuestDocs, getOperations, getTodos, getVariable, uploadGuestDoc,
   type Claim, type Todo, type OperationsResponse, type StayDocs, type VariableExpense
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
@@ -37,6 +38,8 @@ import { usePhone } from '../components/usePhone.ts';
 import { useLive } from '../components/useLive.ts';
 import { Icon } from '../components/Icon.tsx';
 import { ChannelMark } from '../components/ChannelMark.tsx';
+import { SevTag } from '../components/MissingData.tsx';
+import { rank } from '../lib/missing-data.ts';
 
 const TZ = 'America/New_York';
 const WEEK = 7;
@@ -63,6 +66,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   const canCosts = can(permissions, 'costs');
   const canClaims = can(permissions, 'claims');
   const canTodos = can(permissions, 'todos');
+  const canRepo = can(permissions, 'repository');
 
   const ops = useLoad(canOps, async () => {
     // Today and tomorrow (§89): the team prepares a day ahead.
@@ -74,6 +78,12 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     const r = await getForward(today, 30, true); // up to 10 minutes old (owner, Oct 2026)
     if (!r.ok) throw new Error(r.error === 'not_configured' ? 'Hostaway is not connected.' : (r.error ?? 'Could not load.'));
     return { list: redUnits(r.units, (r.meta.occFloorPct ?? 60) / 100, r.meta.asOf), total: r.units.filter(u => u.active).length, at: r.meta.generatedAt };
+  });
+  // §170: read-only audit of every active unit's record and listing; reads Hostaway once, like the Check screen.
+  const gaps = useLoad(canRepo, async () => {
+    const r = await getMissingData();
+    if (!r.ok) throw new Error(r.message ?? 'Could not load.');
+    return r;
   });
   const spend = useLoad(canCosts, async () => {
     const r = await getVariable();
@@ -275,6 +285,8 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   const phone = usePhone();
   const unassignedAll = unassigned.length + todays.outs2.filter(isOpen).length;
   const checkAlert = unassignedAll + unsigned + notReady;
+  const heavy = (gaps.data?.units ?? []).filter(u => u.gaps.some(g => rank(g.severity) <= 1));
+  const lighter = (gaps.data?.units ?? []).filter(u => u.gaps.length && !u.gaps.some(g => rank(g.severity) <= 1)).length;
   // The modules this person may see, in order; each renders itself so a new one is one more entry (§159).
   const mods: { key: string; label: string; count?: number; alert?: boolean; body: ReactNode }[] = [
     ...(canOps ? [{ key: 'checkio', label: 'Check-ins/outs', count: ops.busy ? undefined : cleans.length + todays.ins.length, alert: checkAlert > 0, body: (
@@ -310,8 +322,8 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
           )}
         </div>
       </Panel>) }] : []),
-    ...(canUnits ? [{ key: 'red', label: 'Units in red', count: red.busy ? undefined : red.data?.list.length, alert: !!red.data?.list.length, body: (
-      <Panel title="Units in red" hint="Units the Units screen's analysis flags red, worst first." load={red} action="Open Units" onAction={() => onGo('units')}
+    ...(canUnits ? [{ key: 'red', label: 'Low performance', count: red.busy ? undefined : red.data?.list.length, alert: !!red.data?.list.length, body: (
+      <Panel title="Low performance" hint="Units the Units screen's analysis flags red, worst first." load={red} action="Open Units" onAction={() => onGo('units')}
              busyText="Reading every calendar…"
              foot={red.data ? `By the Units screen's analysis, of ${red.data.total} live units · read ${red.data.at ? new Date(red.data.at).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' }) : 'now'} (kept 10 min; Units is live)` : undefined}>
         {red.data && !red.data.list.length ? <Empty>No unit is red. ● All live units are filling, full or too early to tell.</Empty> : (
@@ -324,11 +336,44 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
             </li>
           )} />
         )}
+      </Panel>) }] : []),
+    ...(canRepo ? [{ key: 'missing', label: 'Missing data', count: gaps.busy ? undefined : heavy.length, alert: !!gaps.data?.counts.critical, body: (
+      <Panel title="Missing data" load={gaps} action="Open Missing data" onAction={() => onGo('repository:check=missing')}
+             hint="Active units whose Repository record or Hostaway listing lacks something that matters, worst first. Critical — a clean or a stay goes wrong; High — money, insurance or a service outage. Medium and Low are in Repository → Missing data. Read-only: click a unit to open its record."
+             busyText="Reading every unit and its listing…"
+             summary={gaps.data && (gaps.data.counts.critical || gaps.data.counts.high) ? <span className="breach">▲ {[gaps.data.counts.critical && `${gaps.data.counts.critical} critical`, gaps.data.counts.high && `${gaps.data.counts.high} high`].filter(Boolean).join(' · ')}</span> : undefined}
+             foot={gaps.data ? [gaps.data.hostawayError && 'Hostaway not read — Repository only', lighter && `${lighter} more unit${lighter === 1 ? '' : 's'} with only medium or low gaps`].filter(Boolean).join(' · ') || undefined : undefined}>
+        {gaps.data && !heavy.length ? <Empty>Nothing critical or high is missing. ● The rest is in Repository → Missing data.</Empty> : (
+          <ShowMore items={heavy} render={u => {
+            const top = u.gaps.filter(g => rank(g.severity) <= 1);
+            return (
+              <li key={u.unitId}>
+                <span className="home-main">
+                  {u.table && u.recordId ? <button className="link md-unit" onClick={() => onGo(`repository:repo=${u.table}/${u.recordId}`)}>{u.unit}</button> : <b>{u.unit}</b>}
+                  <span className="home-gaps">{top.map(g => <span key={g.key}><SevTag s={g.severity} /> {g.label}{g.where === 'hostaway' ? ' (Hostaway)' : ''}</span>)}</span>
+                </span>
+                {u.gaps.length > top.length && <span className="home-side sub-n">+{u.gaps.length - top.length} more</span>}
+              </li>
+            );
+          }} />
+        )}
       </Panel>) }] : [])
   ];
   // Phone: To-dos is a tab too, and the default. Desktop: To-dos is always the left column; the rail picks among the rest.
   const tabs = phone && canTodos ? [{ key: 'todo', label: 'To-dos', count: todoSum?.open, alert: !!(todoSum?.overdue || todoSum?.urgent), body: null as ReactNode }, ...mods] : mods;
   const active = tabs.some(t => t.key === pick) ? pick : tabs[0]?.key ?? '';
+  // §170: the strip is a one-row carousel — which sides still hide chips, measured after every render (counts change widths).
+  const rail = useRef<HTMLDivElement>(null);
+  const [more, setMore] = useState({ l: false, r: false });
+  const measure = () => {
+    const el = rail.current;
+    if (!el) return;
+    const l = el.scrollLeft > 2, r = el.scrollLeft + el.clientWidth < el.scrollWidth - 2;
+    setMore(p => p.l === l && p.r === r ? p : { l, r });
+  };
+  useEffect(measure);
+  useEffect(() => { addEventListener('resize', measure); return () => removeEventListener('resize', measure); }, []);
+  const slide = (dir: 1 | -1) => rail.current?.scrollBy({ left: dir * rail.current.clientWidth * 0.7, behavior: 'smooth' });
 
   return (
     <section className="home">
@@ -352,14 +397,18 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
         {mods.length > 0 && (
           <aside className="home-side-col" aria-label="Operations">
             {/* One strip of modules: on a phone it also carries To-dos and takes the whole screen. */}
-            <div className="home-rail" role="tablist" aria-label="Home modules">
+            <div className={`home-rail-wrap ${more.l ? 'more-l' : ''} ${more.r ? 'more-r' : ''}`}>
+            {more.l && <button type="button" className="home-rail-arrow l" aria-label="Earlier modules" onClick={() => slide(-1)}>‹</button>}
+            <div className="home-rail" role="tablist" aria-label="Home modules" ref={rail} onScroll={measure}>
               {tabs.map(m => (
                 <button key={m.key} role="tab" id={`home-tab-${m.key}`} aria-selected={active === m.key} aria-controls={`home-panel-${m.key}`}
-                        className={`home-chip ${active === m.key ? 'on' : ''}`} onClick={() => setPick(m.key)}>
+                        className={`home-chip ${active === m.key ? 'on' : ''}`} onClick={e => { setPick(m.key); e.currentTarget.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }); }}>
                   {m.label}
                   {m.count != null && <span className={`home-chip-n ${m.alert ? 'alert' : ''}`}>{m.alert && <span aria-hidden="true">▲ </span>}{m.count}</span>}
                 </button>
               ))}
+            </div>
+            {more.r && <button type="button" className="home-rail-arrow r" aria-label="More modules" onClick={() => slide(1)}>›</button>}
             </div>
             {mods.filter(m => m.key === active).map(m => (
               <div key={m.key} className="home-slide" role="tabpanel" id={`home-panel-${m.key}`} aria-labelledby={`home-tab-${m.key}`}>{m.body}</div>
@@ -368,7 +417,7 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
         )}
       </div>
 
-      {!canOps && !canUnits && !canCosts && !canClaims && (
+      {!canOps && !canUnits && !canCosts && !canClaims && !canRepo && (
         <p className="note">Your role does not include any of the day's work. Ask an admin if you need more.</p>
       )}
     </section>

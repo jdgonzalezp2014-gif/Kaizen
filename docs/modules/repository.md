@@ -130,6 +130,19 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
     already shows groups as headings.
   - SOP 33 "Keep a unit's record and its Hostaway listing in step" — **draft**, for the owner to publish.
 
+- **Missing data (§170, 2026-10-27):** sidebar "▲ Missing data" (also Home's module, `?check=missing`) — every ACTIVE
+  unit (`units.active`, matched by `repoMatch`) audited, read-only: Repository rules (`REPO_RULES`) + important Hostaway
+  fields read live (`HOSTAWAY_RULES`, by CHECKS key) + one Low "N fields not copied from Hostaway". Severity = what breaks:
+  Critical (no record, no lock type / cleaner code / lockbox, no Wi-Fi / address in Hostaway) · High (insurance, AT&T
+  `internet_account`, storage, property type, hours, guests, title, description, rules, cleaning fee) · Medium (POC — houses:
+  manager/landlord, apartments: maintenance # or portal; admin code; house closet code; lost-fob fee; Hostaway insurance fee,
+  check-in until, contact phone) · Low (lease copy if Lease, backup code, parking, house manual). Secrets/documents count as
+  filled by their row in `repo_secrets` / `repo_files` (values never read). By unit or By field; a unit opens its record.
+  Files: `src/lib/missing-data.ts` (+ test), `functions/api/missing-data.ts` (permission `repository`), `src/components/MissingData.tsx`.
+  **A new rule = one entry in REPO_RULES / HOSTAWAY_RULES.** First real read (2026-10-27): 2 critical (P2-4217, P2-4222 —
+  records nearly empty, no lock type; 38 fields not copied), 24 high (insurance missing on 21 of 22; Bobcat no AT&T #),
+  40 medium, 65 low. SOP draft in `.sop-170.mjs` (run once after deploy, then delete).
+
 ## Open items — Units data (owner, 2026-10-13; first two first)
 
 1. **Admin / backup codes:** admin missing on Bobcat, Napa Valley, Timber Crest and the 8 P2; backup
@@ -153,7 +166,7 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
 
 ## History
 
-§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147, §148, §149, §150, §155.
+§63 (read-only era), §66 (superseded), §71, §72, §74, §80, §118, §138, §147, §148, §149, §150, §155, §170.
 
 ## Redesign (§158, 2026-10-14, branch `redesign`)
 

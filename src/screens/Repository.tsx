@@ -34,6 +34,7 @@ import { applyView, BLANK, coerce, viewActive, viewValue, type ColumnType, type 
 import { setParams, useUrlState } from '../components/useUrlState.ts';
 import { usePhone } from '../components/usePhone.ts';
 import { HostawayCheck } from '../components/HostawayCheck.tsx';
+import { MissingData } from '../components/MissingData.tsx';
 import { COMPOSED, UNIT_TABLES, composeParts, composeText, isSynced, partKeys, partOf } from '../lib/repo-checks.ts';
 import { ic, Icon } from '../components/Icon.tsx';
 
@@ -175,7 +176,9 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const [pop, setPop] = useState<Pop | null>(null);
   const [editing, setEditing] = useState<string | null>(null);   // `${id}|${col}`
   const [importing, setImporting] = useState<string | null>(null); // section key, while a Monday board is being imported
-  const [checking, setChecking] = useState(false); // §149: the Hostaway check fills the main pane
+  // §149: the Hostaway check fills the main pane; §170: so does Missing data (Home links here with ?check=missing).
+  const [checking, setChecking] = useState<'' | 'hostaway' | 'missing'>(() => new URLSearchParams(location.search).get('check') === 'missing' ? 'missing' : '');
+  useEffect(() => { setParams({ check: null }, { replace: true }); }, []);
   // Sort and filters per table, per browser: how this person looks at it, not the table's order.
   const [views, setViews] = useState<Record<string, RepoView>>(() => {
     try { return JSON.parse(localStorage.getItem(VIEWS) ?? '{}') as Record<string, RepoView>; } catch { return {}; }
@@ -358,7 +361,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
             </div>
             {s.tables.map(t => (
               <div key={t.key} className={`rb-nav-item ${!checking && !hits && tableKey === t.key ? 'active' : ''}`}>
-                <button className="rb-nav-link" onClick={() => { setHits(null); setImporting(null); setChecking(false); setFilter(''); setTableKey(t.key); }}>
+                <button className="rb-nav-link" onClick={() => { setHits(null); setImporting(null); setChecking(''); setFilter(''); setTableKey(t.key); }}>
                   {t.title}
                   {rowsBy[t.key] && <span className="rb-nav-count">{rowsBy[t.key]!.length}</span>}
                 </button>
@@ -376,7 +379,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
             {showArchive && archived.map(t => (
               <div key={t.key} className={`rb-nav-item ${!checking && !hits && tableKey === t.key ? 'active' : ''}`}>
                 <button className="rb-nav-link" title={`${t.sectionTitle} · archived ${t.archivedAt.slice(0, 10)}`}
-                        onClick={() => { setHits(null); setImporting(null); setChecking(false); setFilter(''); setTableKey(t.key); }}>
+                        onClick={() => { setHits(null); setImporting(null); setChecking(''); setFilter(''); setTableKey(t.key); }}>
                   {t.title}<span className="rb-nav-count">{t.sectionTitle}</span>
                 </button>
               </div>
@@ -385,12 +388,13 @@ export function Repository({ canReveal, canEdit, canStructure }: {
         )}
         {canStructure && <button className="rb-add-link" onClick={e => setPop({ kind: 'newsection', rect: e.currentTarget.getBoundingClientRect() })}>+ New section</button>}
         {canStructure && <button className="rb-add-link" onClick={() => { setHits(null); setImporting(sections[0]?.key ?? ''); }}>⇪ Import from Monday</button>}
-        <button className="rb-add-link" onClick={() => { setHits(null); setImporting(null); setChecking(true); }}>⇄ Check against Hostaway</button>
+        <button className="rb-add-link" onClick={() => { setHits(null); setImporting(null); setChecking('hostaway'); }}>⇄ Check against Hostaway</button>
+        <button className="rb-add-link" onClick={() => { setHits(null); setImporting(null); setChecking('missing'); }}>▲ Missing data</button>
       </aside>
 
       <div className="rb-main">
         <header className="rb-bar">
-          <h2>{checking ? 'Check against Hostaway' : hits ? `Search: “${hits.q}”` : table?.title ?? ''}</h2>
+          <h2>{checking === 'missing' ? 'Missing data' : checking ? 'Check against Hostaway' : hits ? `Search: “${hits.q}”` : table?.title ?? ''}</h2>
           {!checking && !hits && rows && <span className="rb-count">{rows.length} record{rows.length === 1 ? '' : 's'}</span>}
           {loading && <span className="rb-count loading-dot">Loading</span>}
           <span className="rb-spacer" />
@@ -415,8 +419,14 @@ export function Repository({ canReveal, canEdit, canStructure }: {
             {canStructure && <button className="secondary small" onClick={() => void structure({ op: 'tables.restore', table: archivedTable.key }, `${archivedTable.title} restored`)}>↺ Restore</button>}
           </div>
         )}
-        {checking ? (
-          <HostawayCheck canEdit={canEdit} say={say} onClose={() => setChecking(false)} />
+        {checking === 'missing' ? (
+          <MissingData onCheck={() => setChecking('hostaway')} onOpen={(t, id) => {
+            // The record opens in its table's grid; a table not loaded yet opens it once its rows arrive.
+            setChecking(''); setFilter('');
+            if (t === tableKey && rows) setOpenId(id); else { wanted.current = { table: t, id }; setTableKey(t); }
+          }} />
+        ) : checking ? (
+          <HostawayCheck canEdit={canEdit} say={say} onClose={() => setChecking('')} />
         ) : importing !== null ? (
           <MondayImport sections={sections} initial={importing} say={say} onCancel={() => setImporting(null)}
             onDone={async key => { setImporting(null); await loadMeta(); setTableKey(key); }} />
