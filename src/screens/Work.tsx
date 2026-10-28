@@ -13,7 +13,7 @@
  *   and 💬 a note or question to the team, any time.
  * The access (code, lockbox, Wi-Fi) shows on the day set only.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { getVendorAs, getVendorWork, getWorkLink, vendorAct, workLinkAct, workPhoto, type VendorPage, type WorkDoor, type WorkPage } from '../api.ts';
 import { EN, VendorInvoiceView } from './Handymen.tsx';
 import { money2 } from '../lib/format.ts';
@@ -45,7 +45,9 @@ const W = {
     needAmount: 'Write the amount.', needWhat: 'Say what it is for.', needDone: 'Say what was done.',
     tabWork: 'Work orders', tabPay: 'Pay', payPeriod: 'Period', jobs: (n: number, t: string) => `${n} job${n === 1 ? '' : 's'} paid · ${t}`,
     flag: 'Note from the team', corrected: 'Pay corrected', notPaid: 'Not paid', paidOn: (d: string, how: string) => `Paid ${d} ${how}`,
-    byStripe: 'to your bank (Stripe)', byHand: 'by hand', unpaid: 'Not paid yet'
+    byStripe: 'to your bank (Stripe)', byHand: 'by hand', unpaid: 'Not paid yet',
+    houses: 'Houses', back: '‹ Houses', open: 'Open', of: (i: number, n: number) => `${i} of ${n}`,
+    jobsN: (n: number) => `${n} job${n === 1 ? '' : 's'}`, toAccept: (n: number) => `${n} to accept`
   },
   es: {
     day: 'Día acordado', at: 'a las', noDay: 'Aún no hay día', what: 'Qué hay que arreglar',
@@ -62,7 +64,9 @@ const W = {
     needAmount: 'Escribe el monto.', needWhat: 'Di para qué es.', needDone: 'Di qué se hizo.',
     tabWork: 'Órdenes', tabPay: 'Pago', payPeriod: 'Periodo', jobs: (n: number, t: string) => `${n} trabajo${n === 1 ? '' : 's'} pagado${n === 1 ? '' : 's'} · ${t}`,
     flag: 'Nota del equipo', corrected: 'Pago corregido', notPaid: 'No pagado', paidOn: (d: string, how: string) => `Pagado ${d} ${how}`,
-    byStripe: 'a tu banco (Stripe)', byHand: 'en mano', unpaid: 'Aún no pagado'
+    byStripe: 'a tu banco (Stripe)', byHand: 'en mano', unpaid: 'Aún no pagado',
+    houses: 'Casas', back: '‹ Casas', open: 'Abrir', of: (i: number, n: number) => `${i} de ${n}`,
+    jobsN: (n: number) => `${n} trabajo${n === 1 ? '' : 's'}`, toAccept: (n: number) => `${n} por aceptar`
   }
 };
 type Wx = typeof W.en;
@@ -137,31 +141,101 @@ export function VendorHome({ practice, token, asVendor }: { practice?: { vendor:
   const [data, setData] = useState<{ vendor: string; works: WorkPage[]; pay?: VendorPage | null } | null>(practice ? { vendor: practice.vendor, works: practice.works } : null);
   const [err, setErr] = useState('');
   const [sec, setSec] = useState<'work' | 'pay'>('work');
-  // The phone's back gesture steps back through the sections instead of leaving the page (useUrlState.ts).
+  // Owner, 2026-10-27: by house — a carousel of houses, and inside one, a carousel of its jobs. The phone's back
+  // gesture steps back from a house to the houses, and through the sections (useUrlState.ts).
+  const [house, setHouse] = useState<string | null>(null);
   useUrlState('sec', sec, setSec, { def: 'work', valid: v => v === 'work' || v === 'pay' });
+  useUrlState('house', house ?? '', v => setHouse(v || null), { def: '' });
   const [period, setPeriod] = useState<string | null>(null);
   const door: WorkDoor = asVendor ? { asVendor } : { token };
   const load = () => (asVendor ? getVendorAs(asVendor, period) : getVendorWork(period, token)).then(r => r.ok ? setData(r) : setErr(r.message ?? 'Could not load.')).catch(e => setErr(String(e)));
   useEffect(() => { if (!practice) void load(); }, [period]);
   const w = W[lang];
+  const houses = data ? byHouse(data.works) : [];
+  const open = houses.find(h => h.key === house) ?? null;
+  const card = (p: WorkPage) => <WorkCard page={p} lang={lang}
+    send={(f, files) => practice ? practice.send(p.work.id, f, files)
+      : asVendor ? Promise.resolve({ ok: false, message: 'Preview — nothing is saved here.' }) : vendorAct(p.work.id, f, files, token)}
+    photo={practice ? undefined : (id, d) => workPhoto(door, id, d)}
+    onPage={np => setData(d => d && { ...d, works: d.works.map(x => x.work.id === np.work.id ? np : x) })} />;
   return <>
-    <Head title={data ? w.hello(data.vendor) : 'Kaizen'} lang={lang} setLang={setLang} />
-    {/* Owner, 2026-10-25: their pay, as a cleaner sees theirs. */}
-    {data?.pay && <div className="crew-secs no-print" role="tablist">
-      {(['work', 'pay'] as const).map(k => <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => setSec(k)}>
-        {ic(k === 'work' ? w.tabWork : w.tabPay)}</button>)}
-    </div>}
-    <div className="report-page">
+    {/* The island: who, work or pay, language and night — always in reach. */}
+    <header className="v-island">
+      <span className="v-island-name">{ic(data ? w.hello(data.vendor) : 'Kaizen')}</span>
+      {data?.pay && <span className="v-seg" role="tablist">
+        {(['work', 'pay'] as const).map(k => <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => setSec(k)}>
+          <Icon n={k === 'work' ? 'wrench' : 'dollar'} /> {ic(k === 'work' ? w.tabWork : w.tabPay)}</button>)}
+      </span>}
+      <span className="mini-tools">
+        <span className="todo-kind" role="group" aria-label="Language / Idioma">
+          {(['en', 'es'] as const).map(l => <button key={l} className={l === lang ? 'chip active' : 'chip'} onClick={() => setLang(l)}>{ic(l.toUpperCase())}</button>)}
+        </span>
+        <ThemeToggle />
+      </span>
+    </header>
+    <div className="report-page v-page">
       {err ? <p className="banner error">{ic(err)}</p> : !data ? <p className="note loading-dot">…</p>
         : sec === 'pay' && data.pay ? <VendorPay pay={data.pay} lang={lang} onPeriod={setPeriod} />
         : !data.works.length ? <div className="card"><p className="note">{ic(w.none)}</p></div>
-        : data.works.map(p => <WorkCard key={p.work.id} page={p} lang={lang}
-            send={(f, files) => practice ? practice.send(p.work.id, f, files)
-              : asVendor ? Promise.resolve({ ok: false, message: 'Preview — nothing is saved here.' }) : vendorAct(p.work.id, f, files, token)}
-            photo={practice ? undefined : (id, d) => workPhoto(door, id, d)}
-            onPage={np => setData(d => d && { ...d, works: d.works.map(x => x.work.id === np.work.id ? np : x) })} />)}
+        : open ? <>
+            <div className="v-house-head">
+              <button className="chip" onClick={() => setHouse(null)}>{ic(w.back)}</button>
+              <span><b>{ic(open.name)}</b>{open.address && <> · <a href={`https://maps.google.com/?q=${encodeURIComponent(open.address)}`} target="_blank" rel="noreferrer"><Icon n="pin" /> {ic(open.address)}</a></>}</span>
+            </div>
+            <Carousel label={open.name} of={w.of} wide>{open.works.map(p => <div key={p.work.id}>{card(p)}</div>)}</Carousel>
+          </>
+        : <>
+            <h2 className="v-h">{ic(w.houses)}</h2>
+            <Carousel label={w.houses} of={w.of}>{houses.map(h => (
+              <button key={h.key} className="card v-house" onClick={() => setHouse(h.key)}>
+                <span className="v-house-name"><Icon n="home" /> {ic(h.name)}</span>
+                {h.address && <span className="note">{ic(h.address)}</span>}
+                <span className="v-house-n">{ic(w.jobsN(h.works.length))}</span>
+                <span>{ic(h.day ? `${w.day}: ${dayLabel(lang, h.day)}` : w.noDay)}</span>
+                {h.toAccept > 0 && <span className="v-house-flag">{ic(w.toAccept(h.toAccept))}</span>}
+                <ul className="v-house-list">{h.works.slice(0, 4).map(p => <li key={p.work.id}>{ic(p.work.title)}</li>)}{h.works.length > 4 && <li>…</li>}</ul>
+                <span className="v-house-go">{ic(w.open)} ›</span>
+              </button>))}
+            </Carousel>
+          </>}
     </div>
   </>;
+}
+
+/** Their work orders by house: soonest day first; no listing last. */
+function byHouse(works: WorkPage[]) {
+  const m = new Map<string, { key: string; name: string; address: string | null; works: WorkPage[] }>();
+  for (const p of works) {
+    const key = p.work.unit ?? '—';
+    const h = m.get(key) ?? { key, name: p.work.unit ?? 'No listing', address: p.address ?? null, works: [] };
+    h.works.push(p); m.set(key, h);
+  }
+  const open = (p: WorkPage) => p.work.status !== 'completed' && p.work.status !== 'cancelled';
+  return [...m.values()].map(h => {
+    const days = h.works.filter(open).map(p => p.work.scheduledOn).filter((d): d is string => !!d).sort();
+    return { ...h, day: days[0] ?? null, toAccept: h.works.filter(p => open(p) && !p.work.accepted).length };
+  }).sort((a, b) => (a.key === '—' ? 1 : 0) - (b.key === '—' ? 1 : 0) || (a.day ?? '9999').localeCompare(b.day ?? '9999') || a.name.localeCompare(b.name));
+}
+
+/** Swipe sideways, one at a time; arrows and "2 of 5" for a mouse and for knowing where you are. */
+function Carousel({ children, label, of, wide = false }: { children: ReactNode[]; label: string; of: (i: number, n: number) => string; wide?: boolean }) {
+  const rail = useRef<HTMLDivElement>(null);
+  const [at, setAt] = useState(0);
+  const n = children.length;
+  const go = (i: number) => { const r = rail.current; const el = r?.children[Math.max(0, Math.min(n - 1, i))] as HTMLElement | undefined; if (r && el) r.scrollTo({ left: el.offsetLeft - r.offsetLeft - (r.clientWidth - el.clientWidth) / 2, behavior: 'smooth' }); };
+  const onScroll = () => { const r = rail.current; if (!r) return; const kids = [...r.children] as HTMLElement[];
+    const mid = r.scrollLeft + r.clientWidth / 2 + r.offsetLeft;
+    setAt(kids.reduce((best, k, i) => Math.abs(k.offsetLeft + k.clientWidth / 2 - mid) < Math.abs(kids[best]!.offsetLeft + kids[best]!.clientWidth / 2 - mid) ? i : best, 0)); };
+  return (
+    <section className={`v-carousel ${wide ? 'wide' : ''}`} aria-roledescription="carousel" aria-label={label}>
+      <div className="v-rail" ref={rail} onScroll={onScroll}>{children.map((c, i) => <div key={i} className="v-slide" aria-label={of(i + 1, n)}>{c}</div>)}</div>
+      {n > 1 && <div className="v-pager">
+        <button className="chip" disabled={at === 0} onClick={() => go(at - 1)} aria-label="Previous">‹</button>
+        <span className="v-dots" aria-live="polite">{ic(of(at + 1, n))}</span>
+        <button className="chip" disabled={at >= n - 1} onClick={() => go(at + 1)} aria-label="Next">›</button>
+      </div>}
+    </section>
+  );
 }
 
 function WorkCard({ page, lang, send, onPage, photo }: { page: WorkPage; lang: Lang; send: Send; onPage: (p: WorkPage) => void; photo?: Photo }) {

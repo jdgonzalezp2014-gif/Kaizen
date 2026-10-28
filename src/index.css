@@ -2879,3 +2879,35 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 .ops-editor-close { position: absolute; top: -2px; right: 0; z-index: 1; display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
 .ops-editor-close span { font-size: 16px; line-height: 1; }
 .ops-editor-close:hover { color: var(--ink); background: var(--line); }
+
+/* ── Handyman page by house (owner, 2026-10-27): an island on top, a carousel of houses, a carousel of each house's jobs. ── */
+.v-island { position: sticky; top: 8px; z-index: 20; display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  max-width: 560px; margin: 8px auto 12px; padding: 8px 10px 8px 16px; border-radius: 999px;
+  background: color-mix(in srgb, var(--card) 82%, transparent); backdrop-filter: saturate(1.6) blur(14px); -webkit-backdrop-filter: saturate(1.6) blur(14px);
+  border: 1px solid var(--line); box-shadow: 0 6px 24px rgba(0, 0, 0, .12); }
+.v-island-name { font-weight: 700; flex: 1 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.v-seg { display: inline-flex; padding: 3px; border-radius: 999px; background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.v-seg button { border: 0; background: transparent; color: var(--ink); border-radius: 999px; padding: 6px 12px; font-weight: 600; min-height: 36px;
+  display: inline-flex; align-items: center; gap: 4px; }
+.v-seg button.on { background: var(--ink); color: var(--bg); }
+@media (max-width: 480px) { .v-island { border-radius: 22px; } .v-seg { order: 3; flex: 1 1 100%; } .v-seg button { flex: 1; justify-content: center; } }
+.v-page { padding: 0 16px; }
+.v-h { margin: 4px 0 8px; font-size: var(--fs-body); text-transform: uppercase; letter-spacing: .06em; opacity: .7; }
+.v-carousel { margin: 0 -16px; }
+.v-rail { display: flex; gap: 12px; overflow-x: auto; scroll-snap-type: x mandatory; scroll-padding: 0 16px; padding: 4px 16px 8px;
+  scrollbar-width: none; -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; }
+.v-rail::-webkit-scrollbar { display: none; }
+.v-slide { flex: 0 0 82%; max-width: 420px; scroll-snap-align: center; scroll-snap-stop: always; }
+.v-carousel.wide .v-slide { flex-basis: 92%; max-width: 528px; }
+.v-pager { display: flex; align-items: center; justify-content: center; gap: 12px; margin: 4px 0 12px; }
+.v-pager .chip { min-width: 44px; min-height: 44px; font-size: 1.2rem; justify-content: center; }
+.v-dots { font-variant-numeric: tabular-nums; min-width: 4.5em; text-align: center; }
+.v-house { width: 100%; height: 100%; text-align: left; display: flex; flex-direction: column; gap: 6px; padding: 18px; cursor: pointer;
+  font: inherit; color: inherit; border-radius: var(--r-lg, 18px); }
+.v-house-name { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 6px; }
+.v-house-n { font-size: 1.05rem; font-weight: 600; }
+.v-house-flag { align-self: flex-start; padding: 2px 10px; border-radius: 999px; border: 1px solid currentColor; font-weight: 600; }
+.v-house-list { margin: 4px 0 0; padding-left: 18px; display: flex; flex-direction: column; gap: 2px; opacity: .85; }
+.v-house-go { margin-top: auto; align-self: flex-end; font-weight: 700; }
+.v-house-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 10px; }
+.v-house-head .chip { min-height: 40px; }
