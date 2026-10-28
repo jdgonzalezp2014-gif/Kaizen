@@ -42,6 +42,7 @@ import { Icon, ic } from './Icon.tsx';
 import { hostawayReservationUrl } from '../lib/operations.ts';
 import { SlackMark } from './ChannelMark.tsx';
 import { WorkProof } from './WorkProof.tsx';
+import { Approvals, useApprovals } from '../screens/Approvals.tsx';
 import { setParams, useUrlState } from './useUrlState.ts';
 
 /**
@@ -2062,11 +2063,15 @@ function TodoFiles({ todoId }: { todoId: string }) {
 /**
  * Operations → To-do: the open work; the done log is folded into its closed section (§163).
  */
-export function WorkView({ today, canClaims, unit, focus }: { today: DateStr; canClaims: boolean; unit?: string; focus?: { todo?: string; claim?: string } }) {
+export function WorkView({ today, canClaims, canApprove = false, unit, focus }: { today: DateStr; canClaims: boolean; canApprove?: boolean; unit?: string; focus?: { todo?: string; claim?: string } }) {
   // The open purchase orders: their own tab, as on Home (owner, Oct 2026).
   const [orderIds, setOrderIds] = useState<Set<string>>(new Set());
   useEffect(() => { getInventory().then(r => { if (r.ok) setOrderIds(new Set(r.orders.map(o => o.todoId))); }).catch(() => {}); }, []);
-  return <TodoList key={unit ?? ''} today={today} canClaims={canClaims} orderIds={orderIds} unit={unit} focus={focus} doneLog />;
+  // Owner, 2026-10-28: what people outside the team charged, approved here — a tab beside the work it belongs to.
+  const approvals = useApprovals(canApprove);
+  const tabs: WorkTab[] = canApprove ? [{ key: 'approvals', label: '$ Approvals', count: approvals.count, alert: approvals.count > 0,
+                                          body: <Approvals canEdit data={approvals} /> }] : [];
+  return <TodoList key={unit ?? ''} today={today} canClaims={canClaims} orderIds={orderIds} unit={unit} focus={focus} doneLog extraTabs={tabs} />;
 }
 
 const OUTCOME_WORD = { completed: '✓ Completed', cancelled: '✕ Cancelled', removed: '🗑 Removed' } as const;

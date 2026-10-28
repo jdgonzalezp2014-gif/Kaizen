@@ -123,7 +123,7 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 - **No preset prices.** A handyman's charge is a pending `field_expenses` row (source `vendor`);
   approving it in Operations → Cleaners sets `cost_actual` = the sum of approved charges and runs
   `settleRepair` → Costs › Repairs (once completed). Denying needs a note the handyman reads.
-- **Closing a repair asks to approve (owner, 2026-10-28, §171).** A handyman's charges wait in **Operations → Approvals**
+- **Closing a repair asks to approve (owner, 2026-10-28, §171).** A handyman's charges wait in **To-do → $ Approvals**
   (src/screens/Approvals.tsx) and inside the repair (`WorkProof`). Closing a work order — or anything holding work-order
   items — while charges wait on it or its items: `/api/todos` (done / update to completed, Slack too) answers 409
   `charges_pending` with `closeAsk`'s words (src/lib/vendor-pay.ts, tested); the screen's Modal offers **Approve all ($X) and
@@ -165,8 +165,8 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 
 ## Open items
 
-- §171: deploy = push, then `npm run migrate` (105 — AFTER the push: the live code still reads `pay_check`), then
-  `.sop-105.mjs` (SOP #4 v5). #108 has two $30 charges for one dishwasher — flagged? check before approving.
+- §171: live (3c52bdf, 105, SOP #4 v5). Check the first real "Approve all and close".
+  #108 has two $30 charges for one dishwasher — flagged? check before approving.
 
 - §167: reconciliation of received money with platform payouts / Hostaway — later, read-only, owner to decide.
   Claims #4 ($150), #7 ($200), #8 ($50) are with the platforms (2026-10-15).

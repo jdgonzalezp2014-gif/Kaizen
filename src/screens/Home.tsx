@@ -22,9 +22,10 @@
  * A role only asks for what it may see — the server refuses the rest
  * regardless.
  */
+import { Approvals, useApprovals } from './Approvals.tsx';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
-  can, getClaims, getMissingData, getCrewAdmin, getForward, getInventory, getGuestDocs, getOperations, getTodos, getVariable, uploadGuestDoc,
+  can, getClaims, getMissingData, getForward, getInventory, getGuestDocs, getOperations, getTodos, getVariable, uploadGuestDoc,
   type Claim, type Todo, type OperationsResponse, type StayDocs, type VariableExpense
 } from '../api.ts';
 import { redUnits } from '../lib/verdicts.ts';
@@ -93,21 +94,11 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
     const r = await getClaims();
     return r.claims ?? [];
   });
-  // Cleaners' extras and purchases paid in the field, waiting for a decision.
-  // Lost here means Costs is off and the person who paid is unpaid, so Home
-  // keeps the door — the approval screen is Operations → Approvals (§122, §137, §171).
+  // Cleaners' extras, purchases paid in the field and handymen's charges, waiting for a decision. Lost here means Costs
+  // is off and the person who paid is unpaid, so Home keeps the door (§122, §137). Owner, 2026-10-28 (§171): the same
+  // Approvals as To-do's tab, decided right here; the fast answer (the full one read Hostaway and showed 0 meanwhile).
   const canApprove = can(permissions, 'operations.edit');
-  const approvals = useLoad(canApprove, async () => {
-    const r = await getCrewAdmin();
-    if (!r.ok) throw new Error(r.message ?? r.error ?? 'Could not load approvals.');
-    const extras = (r.pending ?? []).reduce((a, e) => a + Number(e.amount || 0), 0);
-    const field = (r.fieldPending ?? []).reduce((a, e) => a + Number(e.amount || 0), 0);
-    // owner, Oct 2026: each one, for the Approvals tab in the To-do card.
-    const items = [
-      ...(r.pending ?? []).map(e => ({ id: `x${e.id}`, amount: Number(e.amount || 0), who: e.cleaner, what: e.description || 'Extra', where: e.unit })),
-      ...(r.fieldPending ?? []).map(e => ({ id: `f${e.id}`, amount: Number(e.amount || 0), who: e.byName, what: e.description || e.category, where: e.unit ?? '' }))];
-    return { count: items.length, total: extras + field, items };
-  });
+  const approvals = useApprovals(canApprove);
   // owner, Oct 2026: the open purchase orders (shopping to-dos) get their own tab in the To-do card.
   const orders = useLoad(canOps, async () => {
     const r = await getInventory();
@@ -245,20 +236,9 @@ export function Home({ permissions, onGo }: { permissions: string[]; onGo: (tab:
   // Not signed first — the three shown are the three to chase.
   const bySigned = (list: BoardRow[]) => [...list].sort((a, b) => Number(signed(a)) - Number(signed(b)));
   const [todoSum, setTodoSum] = useState<WorkSum | null>(null);
-  const showMoney = can(permissions, 'money');
   const approvalTab: WorkTab[] = canApprove ? [{
-    key: 'approvals', label: '$ Approvals', count: approvals.data?.count ?? 0, alert: !!approvals.data?.count,
-    body: !approvals.data?.items.length ? <p className="note">{approvals.busy ? 'Reading…' : 'Nothing waiting for approval. ✓'}</p> : <>
-      <ul className="todo-list">{approvals.data.items.map(a => (
-        <li key={a.id} className="todo"><div className="todo-line">
-          <span className="todo-title-text">{a.what}</span>
-          {a.where && <span className="todo-unit">{a.where}</span>}
-          <span className="sub-n">→ {a.who}</span>
-          {showMoney && <span className="sub-n">{money2(a.amount)}</span>}
-          <span className="todo-quick"><button type="button" onClick={() => onGo('operations:approvals')}>Review →</button></span>
-        </div></li>))}</ul>
-      <p className="note">Approve or deny in Operations → Approvals.</p>
-    </>
+    key: 'approvals', label: '$ Approvals', count: approvals.count, alert: approvals.count > 0,
+    body: <Approvals canEdit data={approvals} />
   }] : [];
   // Coming up (§91). Open claims only when the to-do card is not already
   // showing them in its Claims lane — the same case twice on one screen

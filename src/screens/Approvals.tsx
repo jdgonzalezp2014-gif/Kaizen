@@ -1,5 +1,5 @@
 /**
- * Operations → Approvals (owner, 2026-10-28: "approvals in a section of their own, so they are not confused — every
+ * Approvals — a tab of To-do and of Home's card (owner, 2026-10-28: "approvals in a section of their own, so they are not confused — every
  * purchase and charge from outside, apart"). What people outside the team spent or charged, waiting for a person:
  * cleaners' extras, purchases paid in the field (a cleaner or their helper), a handyman's labor and materials.
  *
@@ -20,29 +20,39 @@ import { Decide } from './Crew.tsx';
 
 const day = (d: string) => d.slice(5, 10).replace('-', '/');
 
-export function Approvals({ canEdit }: { canEdit: boolean }) {
+/**
+ * What waits, read once by the screen that shows the tab (To-do, Home) — its count is the tab's, its list the tab's body.
+ * The fast answer: no cleaner's page and no schedule (those read Hostaway).
+ */
+export function useApprovals(enabled: boolean) {
   const [extras, setExtras] = useState<PendingExtra[] | null>(null);
   const [field, setField] = useState<FieldExpense[]>([]);
   const [err, setErr] = useState('');
-  const [repair, setRepair] = useState<string | null>(null);
-  // The fast answer: no cleaner's page and no schedule (those read Hostaway) — only what waits.
-  const load = () => getCrewAdmin(null, null, null, true)
+  const load = () => enabled ? getCrewAdmin(null, null, null, true)
     .then(r => { if (r.ok) { setExtras(r.pending); setField(r.fieldPending ?? []); setErr(''); } else setErr(r.message ?? 'Could not load.'); })
-    .catch(e => setErr(String(e)));
-  useEffect(() => { void load(); }, []);
+    .catch(e => setErr(String(e))) : Promise.resolve();
+  useEffect(() => { void load(); }, [enabled]);
+  const count = (extras?.length ?? 0) + field.length;
   const total = [...(extras ?? []), ...field].reduce((a, x) => a + Number(x.amount || 0), 0);
-  const n = (extras?.length ?? 0) + field.length;
+  return { extras, field, err, load, count, total };
+}
+export type ApprovalsData = ReturnType<typeof useApprovals>;
+
+/** Owner, 2026-10-28: a tab of To-do (and of Home's card), not a screen of its own. */
+export function Approvals({ canEdit, data }: { canEdit: boolean; data: ApprovalsData }) {
+  const { extras, field, err, load, count: n, total } = data;
+  const [repair, setRepair] = useState<string | null>(null);
 
   return (
     <>
       {err && <p className="banner error">{ic(err)}</p>}
-      <div className="card">
-        <h2>Waiting for approval <span className="chan-tag">{n}</span> {n > 0 && <span className="sub-n">{ic(money2(total))}</span>}
+      <div className="approvals">
+        <p className="note">{n > 0 ? <><b>{n}</b> waiting · <b>{ic(money2(total))}</b></> : null}
           <Hint label="Approvals">What people outside the team spent or charged, waiting for a person. Nothing is paid or reaches Costs before
             it is approved. A cleaner's extra is paid on the invoice of its clean. A cleaner's purchase is approved by recording it in the
             inventory — which items, to which place — and is paid back with their clean (no clean → Costs' "To pay back"); if they also
             sent it as an extra, deny that one or it is paid twice. A handyman's charge becomes the repair's cost: on their invoice, and in
-            Costs once the repair is done — "Open the repair" shows its photos and the rest of its work. Denied, they read why.</Hint></h2>
+            Costs once the repair is done — "Open the repair" shows its photos and the rest of its work. Denied, they read why.</Hint></p>
         {extras === null && !err && <div className="load-note" role="status"><div className="load-bar" />Loading…</div>}
         {extras !== null && !n && <p className="note">Nothing waiting. ✓</p>}
         <div className="approve-list">

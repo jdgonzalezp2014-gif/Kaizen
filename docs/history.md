@@ -4592,3 +4592,7 @@ already been applied with its backfill (5 "Validate pay" sub-tasks, #132–#136)
 drops the column, run after the push. Tested on a Neon branch (deleted): closing #106 asked for 5 charges ($190); with #108
 flagged, 3 ($130) and #108's 2 stayed pending; approve-and-close approved them and wrote 3 Costs rows; a to-do with no charges
 closed as before; 105 removed the 5 sub-tasks and the list read without them. SOP #4 v5 (`.sop-105.mjs`).
+
+**Round 4 (owner, same day):** "I don't see Approvals — leave it in To-do, that's fine" and Home's $ Approvals read 0. The
+view of its own was missing from the side menu; Approvals is now a tab of To-do (and Home's card shows the same component,
+deciding in place). Home's 0: it waited on the full crew-admin answer (Hostaway schedule); both now use the fast one.
