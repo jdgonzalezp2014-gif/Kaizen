@@ -535,7 +535,7 @@ function Board({ data, range, patch, reload }: {
                         {open === key && (
                           <tr className="ops-edit-row"><td colSpan={9}>
                             <div className="ops-editor" onClick={e => e.stopPropagation()}>
-                              <button className="ops-editor-close" title="Close" aria-label="Close" onClick={() => setOpen(null)}>×</button>
+                              <button className="ops-editor-close" onClick={() => setOpen(null)}><span aria-hidden>×</span>Close</button>
                               <FlagControl cleanKey={c.key} flag={c.flag_note ?? null} onChanged={note =>
                                 setPast(p => p && { ...p, rows: p.rows.map(x => x.key === c.key ? { ...x, flag_note: note } : x) })}
                                 date={c.checkout_on.slice(0, 10)} today={data.today} price={c.price == null ? null : Number(c.price)}
@@ -887,7 +887,7 @@ function Editor({ r, data, onSaved, onDocs, onManualClean, flag, onFlag, reload,
 
   return (
     <div className="ops-editor" onClick={e => e.stopPropagation()}>
-      <button className="ops-editor-close" title="Close" aria-label="Close" onClick={onClose}>×</button>
+      <button className="ops-editor-close" onClick={onClose}><span aria-hidden>×</span>Close</button>
       {!r.listed && <div className="note">○ This listing is archived in Hostaway. Changes are kept in Kaizen; Hostaway refuses notes on an archived listing, so none is sent.</div>}
       {/* §159 (owner: the rule's reasoning was a paragraph on every open row): who the rule picks, the why behind a hover. */}
       {out && (
