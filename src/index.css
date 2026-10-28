@@ -2981,3 +2981,13 @@ button.link.md-unit { padding: 0; font-size: inherit; }
 .md-units { display: flex; flex-wrap: wrap; gap: 4px 12px; }
 .home-gaps { display: flex; flex-wrap: wrap; gap: 2px 10px; flex-basis: 100%; font-size: var(--fs-footnote); }
 .v-page a.fr-btn { display: flex; align-items: center; justify-content: center; gap: 6px; text-decoration: none; margin-top: 12px; }
+
+/* Owner, 2026-10-28: a handyman's work audited from the task (WorkProof) and Handymen (WorkPhotos). */
+.work-proof { display: grid; gap: 10px; }
+.proof-job { display: grid; gap: 4px; padding: 8px 0; border-top: 1px solid var(--line); }
+.todo-files-head + .proof-job { border-top: 0; }
+.proof-head { display: flex; flex-wrap: wrap; gap: 6px; align-items: baseline; }
+.work-photos { display: grid; gap: 6px; margin: 4px 0; }
+.work-photos-row { display: grid; gap: 4px; }
+.work-photos-strip { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 2px; }
+.work-photos-strip .note-photo img { max-width: 120px; max-height: 90px; }

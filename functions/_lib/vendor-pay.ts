@@ -71,11 +71,15 @@ export async function vendorJobs(sql: SqlFn, name: string, from: string, to: str
          AND (t.cost_actual IS NOT NULL OR NOT EXISTS (SELECT 1 FROM todos c WHERE c.account_id = t.account_id AND c.parent_id = t.id AND c.kind = 'work_order' AND c.deleted_at IS NULL))) j
      WHERE j.date >= ${from} AND j.date <= ${to}
      ORDER BY j.date, j.id::bigint` as Omit<VendorJob, 'charges'>[];
-  const charges = rows.length ? await sql`
+  const nums = rows.map(r => Number(r.id));
+  const [charges, photos] = rows.length ? await Promise.all([sql`
     SELECT id::text, todo_id::text AS "todoId", amount::float AS amount, description, status, decision_note AS "decisionNote", photos
-      FROM field_expenses WHERE account_id = 1 AND source = 'vendor' AND todo_id = ANY(${rows.map(r => Number(r.id))}::bigint[])
-     ORDER BY id` as (VendorCharge & { todoId: string })[] : [];
-  return rows.map(r => ({ ...r, charges: charges.filter(c => c.todoId === r.id).map(({ todoId: _, ...c }) => c) }));
+      FROM field_expenses WHERE account_id = 1 AND source = 'vendor' AND todo_id = ANY(${nums}::bigint[])
+     ORDER BY id`, sql`
+    SELECT todo_id::text AS "todoId", stage, name, url FROM work_photos WHERE account_id = 1 AND todo_id = ANY(${nums}::bigint[]) ORDER BY id`]) as
+    [(VendorCharge & { todoId: string })[], ({ todoId: string; stage: 'before' | 'after'; name: string; url: string })[]] : [[], []];
+  return rows.map(r => ({ ...r, charges: charges.filter(c => c.todoId === r.id).map(({ todoId: _, ...c }) => c),
+                         photos: photos.filter(p => p.todoId === r.id).map(({ todoId: _, ...p }) => p) }));
 }
 
 export interface VendorPage {

@@ -6,6 +6,7 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
+import { workProof } from '../_lib/pay-check.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { attachTodoFiles, listTodoFiles } from '../_lib/todo-files.ts';
 
@@ -16,7 +17,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!who) return unauthorised();
   const id = new URL(request.url).searchParams.get('todoId') ?? '';
   if (!/^\d+$/.test(id)) return bad('Which to-do?');
-  return Response.json({ ok: true, files: await listTodoFiles(db(env) as unknown as SqlFn, id) }, { headers: { 'Cache-Control': 'no-store' } });
+  const sql = db(env) as unknown as SqlFn;
+  // Owner, 2026-10-28: with the files, the handyman's photos and charges of the work it holds — audited from the task.
+  const [files, work] = await Promise.all([listTodoFiles(sql, id), workProof(sql, id)]);
+  return Response.json({ ok: true, files, work }, { headers: { 'Cache-Control': 'no-store' } });
 };
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {

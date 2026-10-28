@@ -63,12 +63,31 @@ export async function addFieldExpense(sql: SqlFn, e: {
   source: 'cleaner' | 'link' | 'vendor'; by: string; amount: number; description: string; category?: string;
   cleaningKey?: string | null; todoId?: string | null; unitId?: string | null; photos?: { name: string; url: string }[]; moveId?: string | null;
 }): Promise<string> {
+  const before = e.source === 'vendor' && e.todoId ? await chargesSum(sql, e.todoId) : null;
   const [r] = await sql`INSERT INTO field_expenses (account_id, source, by_name, cleaning_key, todo_id, unit_id, category, amount, description, photos, move_id)
                         VALUES (1, ${e.source}, ${e.by}, ${e.cleaningKey ?? null}, ${e.todoId ? Number(e.todoId) : null}, ${e.unitId ?? null},
                                 ${e.category ?? 'Restock'}, ${e.amount}, ${e.description.slice(0, 300)}, ${JSON.stringify(e.photos ?? [])}::jsonb,
                                 ${e.moveId ? Number(e.moveId) : null})
                         RETURNING id::text` as { id: string }[];
+  if (before !== null) await followEstimate(sql, e.todoId!, before);
   return r!.id;
+}
+
+/** What a work order's handyman charged and the team has not denied. */
+async function chargesSum(sql: SqlFn, todoId: string): Promise<number> {
+  const [s] = await sql`SELECT coalesce(sum(amount), 0)::float AS n FROM field_expenses
+                         WHERE account_id = 1 AND source = 'vendor' AND todo_id = ${Number(todoId)} AND status <> 'denied'` as { n: number }[];
+  return s!.n;
+}
+
+/**
+ * Owner, 2026-10-28: the handyman's price is the job's estimate — it was only in the approvals, and the work order said
+ * nothing. It follows the charges (not denied) while it still says what they said before; an estimate the team typed,
+ * or the handyman's own when asking to approve the work, is theirs and stays.
+ */
+async function followEstimate(sql: SqlFn, todoId: string, before: number) {
+  await sql`UPDATE todos SET cost_estimate = nullif(${await chargesSum(sql, todoId)}::numeric, 0), updated_at = now()
+             WHERE account_id = 1 AND id = ${Number(todoId)} AND (cost_estimate IS NULL OR cost_estimate = ${before}::numeric)`;
 }
 
 /**
@@ -84,6 +103,8 @@ export async function decideFieldExpense(sql: SqlFn, id: string, status: 'approv
     { source: string; amount: number; description: string; by_name: string; photos: { name: string; url: string }[]; cleaning_key: string | null }[];
   let payBack: { cleaner: string; key: string } | null = null;
   if (!p) throw new Error('Only a pending one can be decided.');
+  const [mine] = await sql`SELECT todo_id::text AS todo FROM field_expenses WHERE account_id = 1 AND id = ${Number(id) || 0} AND source = 'vendor'` as { todo: string | null }[];
+  const estBefore = mine?.todo ? await chargesSum(sql, mine.todo) : null;
   if (status === 'approved' && p.source !== 'vendor') {
     if (!Array.isArray(lines) || !lines.length) throw new Error('Record what was bought in the inventory first: the items and where each went.');
     // Checked and saved first: a wrong line leaves it pending, never approved without its purchase.
@@ -114,6 +135,7 @@ export async function decideFieldExpense(sql: SqlFn, id: string, status: 'approv
     await sql`UPDATE todos SET cost_actual = coalesce(pay_fixed, (SELECT sum(amount) FROM field_expenses WHERE account_id = 1 AND todo_id = ${Number(f.todo_id)}
                                                 AND source = 'vendor' AND status = 'approved')), updated_at = now()
                WHERE account_id = 1 AND id = ${Number(f.todo_id)}`;
+    if (estBefore !== null) await followEstimate(sql, f.todo_id, estBefore);
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
               VALUES (1, 'task', ${f.todo_id}, 'change', ${`${status === 'approved' ? 'Approved' : 'Denied'}: $${f.amount.toFixed(2)} — ${f.description}${note ? ` · “${note}”` : ''}`.slice(0, 4000)}, ${by})`;
   }

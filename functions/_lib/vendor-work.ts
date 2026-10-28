@@ -20,6 +20,7 @@ import { accessByUnit } from './unit-access.ts';
 import { fieldPhotos } from './inventory.ts';
 import { addFieldExpense } from './field-costs.ts';
 import { settleRepair } from './repair-costs.ts';
+import { syncPayCheck } from './pay-check.ts';
 import { mirrorOn, pushWork } from './hostaway-tasks.ts';
 import { commentToThread, notifyTask } from './slack.ts';
 import { driveToken } from './gdrive.ts';
@@ -95,10 +96,11 @@ async function note(sql: SqlFn, encryptionKey: string, id: string, body: string,
   await commentToThread(sql, encryptionKey, 'task', id, body, by).catch(() => {});
 }
 
-/** After a change: the Hostaway mirror and the repair's money, as any work. */
+/** After a change: the Hostaway mirror, the repair's money and its pay check, as any work. */
 export async function settleWork(sql: SqlFn, encryptionKey: string, id: string, by: string) {
   const creds = () => getCredentials(sql, encryptionKey);
   await settleRepair(sql, id, by, creds).catch(() => {});
+  await syncPayCheck(sql, id, by).catch(() => {});
   if (await mirrorOn(sql)) await pushWork(sql, await creds(), id).catch(() => {});
 }
 
@@ -173,6 +175,8 @@ export async function workAct(sql: SqlFn, encryptionKey: string, id: string, who
       await addFieldExpense(sql, { source: 'vendor', by: who.name, amount, description: `${kind}: ${description} — repair #${id} ${r.title}`.slice(0, 300),
                                    category: 'Repairs', todoId: id, unitId: r.unit_id, photos });
       tell(`${kind.toLowerCase()} $${amount.toFixed(2)} — ${description}${photos.length ? ` (receipt: ${photos.map(p => p.url).join(' ')})` : ' (no receipt)'} · waiting for approval`);
+      // An extra on a job already done waits in its pay check like the rest.
+      if (r.status === 'completed') waitUntil(syncPayCheck(sql, id, by).catch(() => {}));
       return;
     }
     case 'done': {
@@ -182,7 +186,7 @@ export async function workAct(sql: SqlFn, encryptionKey: string, id: string, who
                                  resolution_note = ${text}, updated_at = now()
                  WHERE account_id = 1 AND id = ${Number(id)}`;
       const [p] = await sql`SELECT count(*)::int AS n FROM field_expenses WHERE account_id = 1 AND todo_id = ${Number(id)} AND source = 'vendor' AND status = 'pending'` as { n: number }[];
-      tell(`✅ done — ${text}${p?.n ? ` · ${p.n} charge${p.n === 1 ? '' : 's'} still waiting for approval` : ''}`, 'status');
+      tell(`✅ done — ${text}${p?.n ? ` · ${p.n} charge${p.n === 1 ? '' : 's'} waiting — the team validates the pay` : ''}`, 'status');
       waitUntil(settleWork(sql, encryptionKey, id, by));
       return;
     }

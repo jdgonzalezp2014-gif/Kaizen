@@ -31,6 +31,7 @@ import { vendorGet } from '../_lib/vendor-door.ts';
 import { handymanChannel, vendorOwnLink } from '../_lib/vendor-slack.ts';
 import { slackSetup } from '../_lib/slack.ts';
 import { settleRepair } from '../_lib/repair-costs.ts';
+import { syncPayCheck } from '../_lib/pay-check.ts';
 import { flaggedPay, VENDOR_VOID } from '../../src/lib/vendor-pay.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 
@@ -67,7 +68,10 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const note = String(b.note ?? '').trim().slice(0, 500);
   const log = (id: string, body: string) =>
     sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by) VALUES (1, 'task', ${id}, 'change', ${body.slice(0, 4000)}, ${who.email})`;
-  const settle = (id: string) => settleRepair(sql, id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY)).catch(() => {});
+  const settle = async (id: string) => {
+    await settleRepair(sql, id, who.email, () => getCredentials(sql, env.ENCRYPTION_KEY)).catch(() => {});
+    await syncPayCheck(sql, id, who.email).catch(() => {});
+  };
 
   // Owner, 2026-10-25: the handyman's own link, copied by the team. The same
   // link every time (kept encrypted) so one already sent keeps working; "new"
@@ -137,6 +141,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     if (b.action === 'unflag') {
       await sql`UPDATE todos SET pay_flag_note = NULL, pay_flagged_by = NULL, pay_flagged_at = NULL, updated_at = now() WHERE account_id = 1 AND id = ${Number(id)}`;
       await log(id, 'Pay flag removed.');
+      await syncPayCheck(sql, id, who.email).catch(() => {});
       return Response.json({ ok: true });
     }
     if (!note) return refuse(400, 'bad_request', 'A flag needs a note — it is what the handyman reads.');
@@ -149,8 +154,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
                WHERE account_id = 1 AND id = ${Number(id)}`;
     if (how !== 'none') {
       await sql`UPDATE todos SET pay_fixed = ${pay}, cost_actual = ${pay}, pay_note = ${note} WHERE account_id = 1 AND id = ${Number(id)}`;
-      await settle(id);
     }
+    await settle(id);
     await log(id, `⚑ Pay flag: “${note}”${how === 'none' ? '' : ` — pay ${money(j.pay)} → ${money(pay)}`}.`);
     return Response.json({ ok: true, pay });
   }

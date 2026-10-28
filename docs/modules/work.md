@@ -123,6 +123,24 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 - **No preset prices.** A handyman's charge is a pending `field_expenses` row (source `vendor`);
   approving it in Operations → Cleaners sets `cost_actual` = the sum of approved charges and runs
   `settleRepair` → Costs › Repairs (once completed). Denying needs a note the handyman reads.
+- **The pay check (owner, 2026-10-28, §171, migration 104 `todos.pay_check`).** A handyman's job done — completed, a vendor,
+  on the pay, with charges waiting or no price — gets ONE open sub-task **"Validate pay — <vendor>: …"** under its top-level
+  work (a repair's items share the repair's; sub-tasks are one level). `syncPayCheck` (functions/_lib/pay-check.ts) makes it,
+  refreshes its title/lines, and closes it by itself when nothing waits; it runs after every change in every door: `settle`
+  in todos.ts, `settleWork` + a late `charge` in vendor-work.ts, crew-admin `decideField`, vendor-admin's `settle`/flag, the
+  Hostaway pull. Completing it (`/api/todos` done/update, Slack too) = `validatePay`: approves every charge waiting
+  (decideFieldExpense, note "Validated with the pay check #N") and settles each job → cost, invoice, Costs. **Refused (409
+  `pay_check`)** while a job is ⚑ flagged (`pay_flag_note`) with charges waiting, or a job has no price. A partial unique
+  index keeps one open per parent. Pay checks are listed in Tasks too ("Part of ›") — the job is often closed already.
+  Builders `payCheckTitle/Text/Block` in src/lib/vendor-pay.ts (tested). Nothing is approved without the team.
+- **The estimate follows the handyman's price (2026-10-28):** `addFieldExpense`/`decideFieldExpense` (vendor) set
+  `cost_estimate` = their charges not denied, only while it still equals what the charges said before (or is empty) — an
+  estimate the team typed, or the handyman's own in a request, stays.
+- **The handyman's work, audited (2026-10-28):** an open work order or pay check shows **Handyman's work / To validate**
+  (`WorkProof`, src/components/WorkProof.tsx): per job status, estimate, cost, photos before/after (`WorkPhotos`), charges with
+  receipts, Approve/Deny (`ChargeDecide`, shared with Handymen), ⚑ Flag. Data: `/api/todo-files` GET now also returns
+  `work` (`workProof`). Operations → Handymen rows show the job's photos (`vendorJobs` reads `work_photos`). Photos load
+  through `/api/comment-image`, which now also serves a Drive id named by `work_photos` or a vendor charge's receipt.
 
 - **A handyman's pay (§168):** `todos.pay_fixed` = a pay the team set (Operations → Handymen) — `decideFieldExpense` then keeps it
   (`coalesce(pay_fixed, sum approved)`); `todos.pay_void` = not paid → `settleRepair` treats it as not spent (out of Costs and, if charged
@@ -149,6 +167,10 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 
 ## Open items
 
+- §171: migration 104 + `.sop-104.mjs` (SOP #4 v4) at deploy, then the backfill (estimates from Tim's charges + a pay
+  check per job with charges waiting) — tested on Neon branch `test-pay-check` (br-withered-poetry-b5yw54t9; delete after).
+  Check the first real "Validate pay" (#108 has two $30 charges for one dishwasher — maybe a duplicate).
+
 - §167: reconciliation of received money with platform payouts / Hostaway — later, read-only, owner to decide.
   Claims #4 ($150), #7 ($200), #8 ($50) are with the platforms (2026-10-15).
 
@@ -165,7 +187,7 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
 
 ## History
 
-§46, §76–§78, §82–§88, §93–§95, §103–§105, §120, §132, §137, §162, §167.
+§46, §76–§78, §82–§88, §93–§95, §103–§105, §120, §132, §137, §162, §167, §171.
 
 - **+ 🛒 purchase on a to-do (§150, operations module):** an open top-level to-do can record what was bought for it
   (inventory stock per place + one Restock expense) and close, or save its order as sub-tasks — `TaskPurchase` from

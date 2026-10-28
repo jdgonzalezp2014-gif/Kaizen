@@ -864,7 +864,13 @@ type UpdatesResult = { ok: true; updates: import('./lib/todos.ts').WorkUpdate[] 
 export const getTaskUpdates = (id: string) => call<UpdatesResult>(`/api/todos?updates=${encodeURIComponent(id)}`);
 /** A to-do's files (owner, Oct 2026): in Drive, from Kaizen or from Slack. */
 export interface TodoFile { id: string; name: string; url: string; mime: string | null; source: 'app' | 'slack'; by: string; at: string }
-type FilesResult = { ok: true; files: TodoFile[] } | Fail;
+/** Owner, 2026-10-28: a handyman's job the to-do holds — its photos and charges, audited from the task (functions/_lib/pay-check.ts). */
+export interface ProofJob {
+  id: string; title: string; status: string; vendor: string; cost: number | null; estimate: number | null; flag: string | null;
+  resolution: string | null; photos: { stage: 'before' | 'after'; name: string; url: string }[];
+  charges: { id: string; amount: number; description: string; status: 'pending' | 'approved' | 'denied'; decisionNote: string | null; photos: { name: string; url: string }[] }[];
+}
+type FilesResult = { ok: true; files: TodoFile[]; work?: ProofJob[] } | Fail;
 export const getTodoFiles = (todoId: string) => call<FilesResult>(`/api/todo-files?todoId=${encodeURIComponent(todoId)}`);
 export const uploadTodoFiles = (todoId: string, files: File[]) => {
   const f = new FormData();

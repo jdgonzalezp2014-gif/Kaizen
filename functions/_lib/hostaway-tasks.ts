@@ -21,6 +21,7 @@ import {
 } from '../../src/lib/hostaway-tasks.ts';
 import { stayLabel } from '../../src/lib/todos.ts';
 import { settleRepair } from './repair-costs.ts';
+import { syncPayCheck } from './pay-check.ts';
 import { notifyTask } from './slack.ts';
 
 const BASE = 'https://api.hostaway.com/v1';
@@ -250,6 +251,7 @@ export async function pullAll(sql: SqlFn, creds: HostawayCredentials, force = fa
       await note(sql, r.id, patch.status ? 'status' : 'change', `In Hostaway: ${said.join(' · ')}`, 'Hostaway');
       // §95: completed with a cost there = the repair's expense here.
       await settleRepair(sql, r.id, 'Hostaway', async () => creds);
+      await syncPayCheck(sql, r.id, 'Hostaway').catch(() => {});
       // §99: what the team did in Hostaway, said in Slack (needs the key, so only where the caller gave one).
       if (slackKey) await notifyTask(sql, slackKey, r.id, 'hostaway', 'Hostaway', said.join(' · ')).catch(() => {});
       out.changed++;

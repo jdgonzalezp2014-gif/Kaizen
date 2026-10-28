@@ -7,7 +7,7 @@
  * A job = a work order with their name; its pay = the work order's cost.
  */
 import { Fragment, useEffect, useRef, useState } from 'react';
-import { crewAdminAction, getUnits, getVendorAdmin, vendorAdminAction, vendorPageLink, vendorSlackChannel, type VendorInfo, type VendorPage } from '../api.ts';
+import { getUnits, getVendorAdmin, vendorAdminAction, vendorPageLink, vendorSlackChannel, type VendorInfo, type VendorPage } from '../api.ts';
 import type { VendorJob } from '../lib/vendor-pay.ts';
 import { VENDOR_VOID } from '../lib/vendor-pay.ts';
 import { addDays } from '../lib/dates.ts';
@@ -15,6 +15,7 @@ import { money2 } from '../lib/format.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Icon, ic } from '../components/Icon.tsx';
 import { PayoutCard } from '../components/PayoutCard.tsx';
+import { ChargeDecide, WorkPhotos } from '../components/WorkProof.tsx';
 
 const DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -182,6 +183,13 @@ function JobRow({ j, canEdit, reload }: { j: VendorJob; canEdit: boolean; reload
           : <span><Icon n="done" /> {ic(j.pay == null ? 'not priced' : money2(j.pay))}{j.payFixed && <span className="sub-n"> · set by hand</span>}</span>}
         {j.flagNote && <div className="breach"><Icon n="alert" /> {ic(j.flagNote)}</div>}
         {j.payNote && <div className="sub-n">{ic(`Corrected: ${j.payNote}`)}</div>}
+        {/* Owner, 2026-10-28: the photos, to audit the job where its pay is. */}
+        {j.photos && j.photos.length > 0 && (
+          <details className="crew-extra">
+            <summary><Icon n="image" /> {ic(`${j.photos.length} photo${j.photos.length === 1 ? '' : 's'}`)}</summary>
+            <WorkPhotos photos={j.photos} />
+          </details>
+        )}
         {j.charges.map(c => (
           <details key={c.id} className={`crew-extra ${c.status}`}>
             <summary title={c.description}>Charge {ic(money2(c.amount))} · {ic(c.status === 'pending' ? 'waiting' : c.status)}{c.photos.length > 0 && <> <Icon n="clip" /></>}</summary>
@@ -229,25 +237,6 @@ function JobRow({ j, canEdit, reload }: { j: VendorJob; canEdit: boolean; reload
         </div>
       )}
       {msg && <div className="breach">{ic(msg)}</div>}
-    </div>
-  );
-}
-
-/** A handyman's charge: the same decision as in Operations → Cleaners' approvals (crew-admin decideField). */
-function ChargeDecide({ id, onDone }: { id: string; onDone: () => void }) {
-  const [note, setNote] = useState('');
-  const [msg, setMsg] = useState('');
-  const go = async (status: 'approved' | 'denied') => {
-    const r = await crewAdminAction({ action: 'decideField', id, status, note }).catch(e => ({ ok: false as const, message: String(e) }));
-    if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return; }
-    onDone();
-  };
-  return (
-    <div className="crew-decide">
-      <input value={note} maxLength={500} placeholder="Note for the handyman (needed to deny)" onChange={e => setNote(e.target.value)} />
-      <button className="small" onClick={() => void go('approved')}>✓ Approve</button>
-      <button className="small secondary" disabled={!note.trim()} onClick={() => void go('denied')}>■ Deny</button>
-      {msg && <span className="breach">{ic(msg)}</span>}
     </div>
   );
 }

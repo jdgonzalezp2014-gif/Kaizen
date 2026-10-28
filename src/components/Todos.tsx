@@ -15,7 +15,7 @@
  */
 import { Modal } from './Modal.tsx';
 import { TaskPurchase } from '../screens/Inventory.tsx';
-import { vendorLink, getVendors, getInventory, getTodoFiles, uploadTodoFiles, removeTodoFile, type TodoFile } from '../api.ts';
+import { vendorLink, getVendors, getInventory, getTodoFiles, uploadTodoFiles, removeTodoFile, type TodoFile, type ProofJob } from '../api.ts';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   deleteClaim, getClaims, getClaimUpdates, getDoneLog, getStaysOnDay, getTaskUpdates, getTodos, getUnits, postClaimNote, restoreClaim, saveCaseMoney, saveClaim, todoAction,
@@ -41,6 +41,7 @@ import { changedKeys, merge3, resolve, type Merge } from '../lib/merge.ts';
 import { Icon, ic } from './Icon.tsx';
 import { hostawayReservationUrl } from '../lib/operations.ts';
 import { SlackMark } from './ChannelMark.tsx';
+import { WorkProof } from './WorkProof.tsx';
 import { setParams, useUrlState } from './useUrlState.ts';
 
 /**
@@ -263,7 +264,8 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   // its own section, saying what it is part of; one of the same kind lives only inside its parent.
   const catOf = (t: Todo) => categoryOf(t, !!orderIds?.has(t.id));
   // Owner, same day: sub-tasks are born inside their parent and stay there; only a work order or an order inside
-  // something of another kind is also listed in its own section.
+  // something of another kind is also listed in its own section. Owner, 2026-10-28: and a "Validate pay" sub-task, in
+  // Tasks — its job is often already done (closed), which would hide it inside.
   const crossCat = (t: Todo) => { const p = t.parentId ? byId.get(t.parentId) : undefined; return !!p && catOf(t) !== 'task' && catOf(p) !== catOf(t); };
   const [pop, setPop] = useState<{ todo?: string; claim?: string } | null>(null);
   // §162: a link from Slack opens the item where it lives — its tab, its side panel (a claim: opened in its tab).
@@ -301,7 +303,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
   // every match, flat, each sub-task saying whose it is (§78).
   const top = kindFilter === 'claims' ? []
     : filtering ? all.filter(t => matchesFilter(t, wf, today))
-    : all.filter(t => !t.parentId || !byId.has(t.parentId) || crossCat(t));
+    : all.filter(t => !t.parentId || !byId.has(t.parentId) || crossCat(t) || !!t.payCheck);
   const openList = top.filter(t => !isClosed(t.status));
   const doneList = top.filter(t => isClosed(t.status));
   // Worst first, then the oldest: the case that has waited longest at the top.
@@ -389,7 +391,7 @@ export function TodoList({ today, compact = false, head, lead, canClaims = false
               onCancel={() => setAdding(null)}
               onSubmit={async v => { const ok = await act({ action: 'create', ...v }); if (ok) setAdding(null); return ok; }} />
   );
-  const taskRow = (t: Todo) => <TodoRow key={t.id} t={t} related={crossCat(t)} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
+  const taskRow = (t: Todo) => <TodoRow key={t.id} t={t} related={crossCat(t) || !!t.payCheck} open={open === t.id} onOpen={() => setOpen(open === t.id ? null : t.id)} {...ctx} />;
 
   const lane = (key: 'task' | 'work_order' | 'claims', title: string, rows: ReactNode[], alert: ReactNode, empty: string) => {
     const kind = key === 'claims' ? 'claim' : key;
@@ -756,7 +758,7 @@ function TodoRow(props: RowCtx & { t: Todo; open: boolean; onOpen: () => void; c
                       approve: () => act({ action: 'update', id: t.id, vendor: t.createdBy!.slice(0, -' (handyman)'.length) }),
                       decline: () => act({ action: 'update', id: t.id, status: 'cancelled' }) } : undefined}
                     onSubmit={v => act({ action: 'update', id: t.id, ...v })} onSave={props.save}
-                    middle={<><TodoFiles todoId={t.id} />
+                    middle={<><TodoFiles todoId={t.id} payCheck={!!t.payCheck} />
                       <Timeline title={t.title} defaultOpen load={() => getTaskUpdates(t.id)} post={body => act({ action: 'note', id: t.id, body })} version={t.updates} /></>}
                     after={t.parentId ? null : (
                       <section className={`task-fold ${subsOpen ? 'open' : ''}`}>
@@ -1974,19 +1976,23 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
  * A to-do's files (owner, Oct 2026): photos, PDFs, documents — several at once, kept in Drive. Files sent
  * with the Slack message @Kaizen made the to-do from (or later in its thread) land here too.
  */
-function TodoFiles({ todoId }: { todoId: string }) {
+function TodoFiles({ todoId, payCheck = false }: { todoId: string; payCheck?: boolean }) {
   const [files, setFiles] = useState<TodoFile[] | null>(null);
+  // Owner, 2026-10-28: the handyman's photos and charges of the work it holds, read with the files.
+  const [work, setWork] = useState<ProofJob[]>([]);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
-  const take = (r: { ok: true; files: TodoFile[] } | { ok: false; message?: string; error?: string }) =>
-    r.ok ? (setFiles(r.files), setMsg('')) : setMsg(r.message ?? r.error ?? 'Not saved.');
-  useEffect(() => { void getTodoFiles(todoId).then(take).catch(e => setMsg(String(e))); }, [todoId]);
+  const take = (r: { ok: true; files: TodoFile[]; work?: ProofJob[] } | { ok: false; message?: string; error?: string }) =>
+    r.ok ? (setFiles(r.files), r.work && setWork(r.work), setMsg('')) : setMsg(r.message ?? r.error ?? 'Not saved.');
+  const load = () => void getTodoFiles(todoId).then(take).catch(e => setMsg(String(e)));
+  useEffect(load, [todoId]);
   const add = async (list: File[]) => {
     if (!list.length) return;
     setBusy(true);
     try { take(await uploadTodoFiles(todoId, list.slice(0, 10))); } catch (e) { setMsg(String(e)); } finally { setBusy(false); }
   };
-  return (
+  return (<>
+    <WorkProof jobs={work} payCheck={payCheck} reload={load} />
     <section className="todo-files">
       <div className="todo-files-head">
         <b><Icon n="clip" /> Files</b> <span className="sub-n">{files ? files.length : '…'}</span>
@@ -2011,7 +2017,7 @@ function TodoFiles({ todoId }: { todoId: string }) {
         </ul>
       )}
     </section>
-  );
+  </>);
 }
 
 /* ── the done log (§87) ─────────────────────────────────────────────── */

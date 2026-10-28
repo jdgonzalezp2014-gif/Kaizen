@@ -4547,3 +4547,28 @@ listing that is active, with how bad it is, on Home beside the check-ins; Hostaw
 - Hostaway is read live each time (one listings call): after filling, ↻ must show it gone; a cache would hide that.
 - Home: "Units in red" → "Low performance"; the module strip stays one row as a carousel with arrows (owner: two rows look worse).
 
+
+## §171 — The pay check: a handyman's job done is validated in a sub-task (2026-10-28)
+
+**Asked (owner):** tasks should be tied to the expenses and to the Handymen section for audit. Tim already priced his work:
+that price should fill the to-do's estimate, and the cost once approved; photos should be seen from the task and from
+Handymen. Then, refined: "when a job is completed, a new sub-task inside the same job to validate and confirm the pay, so it
+goes on the invoice — nothing closes by itself; we know it was fixed, we look at the price, we register it, we validate it."
+
+**Found on real data:** Tim had sent 9 charges ($320) on 8 completed jobs — all pending, none approved; every one of those
+work orders had no estimate and no cost, so nothing was in Costs and his invoice read "not priced". The charges were only
+visible in Operations → Cleaners / Handymen; the to-do showed neither them nor his 29 photos (only URLs in the timeline).
+
+**Decided:**
+- One "Validate pay — <vendor>: …" sub-task per top-level work (`todos.pay_check`, migration 104, one open per parent by a
+  partial unique index), made/refreshed/closed by `syncPayCheck` after any change in any door. Completing it approves the
+  charges waiting (`validatePay`) → cost → invoice → Costs. A flagged job with charges waiting, or a job with no price,
+  refuses it — never approved in bulk. Decided one by one elsewhere → it closes itself ("not validated twice").
+- First idea (auto-approve when a task is ✓ Done) dropped by the owner's refinement: approval is the team's explicit step.
+- The estimate follows the charges unless the team typed one (no column: "still equals what the charges said").
+- Audit: `WorkProof` in the to-do panel, photos in Handymen rows; `/api/comment-image` serves the handyman's photos/receipts.
+
+**Tested** on Neon branch `test-pay-check` with production data: backfill made 5 pay checks (#106 4 jobs $190, #125, #126,
+#42, #94); a flag on #108 refused; validation approved 5 charges ($190) → 4 Costs rows; nothing left → closed by itself;
+approving #125's charge elsewhere closed its check; #107 done with no price refused, then followed Tim's $75 charge; a
+typed estimate stayed; two racing syncs left one open check; `/api/todos` done refused/approved through the real API.
