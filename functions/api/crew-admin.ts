@@ -235,6 +235,33 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     return Response.json({ ok: true });
   }
 
+  // Owner, 2026-10-30: add and remove a cleaner from Operations → Cleaners, not only from Setup's rate table.
+  // A new one starts mid / standard with no rates ("not priced", never $0) — rates stay in Setup.
+  if (body.action === 'addCleaner') {
+    const name = String(body.name ?? '').trim().slice(0, 80);
+    if (!name) return refuse(400, 'bad_request', 'Type a name.');
+    const email = String(body.email ?? '').trim().toLowerCase() || null;
+    if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return refuse(400, 'bad_request', `"${email}" is not an email address.`);
+    const [clash] = await sql`SELECT name FROM cleaners WHERE account_id = 1 AND (lower(name) = ${name.toLowerCase()} OR (${email}::text IS NOT NULL AND lower(email) = ${email}))` as { name: string }[];
+    if (clash) return refuse(409, 'taken', `${clash.name} is already on the roster with that name or address.`);
+    // An address belongs to one person (as in Setup): a member's would make the cleaner a member.
+    if (email && (await sql`SELECT 1 FROM members WHERE account_id = 1 AND lower(email) = ${email}`).length)
+      return refuse(409, 'taken', `${email} is a member's address — a cleaner needs their own.`);
+    await sql`INSERT INTO cleaners (account_id, name, tier, position, rates, deep_rates, active, stars, level, zones, email, lang)
+              VALUES (1, ${name}, 'mid', (SELECT coalesce(max(position) + 1, 0) FROM cleaners WHERE account_id = 1),
+                      '{}'::jsonb, '{}'::jsonb, true, 3, 'standard', '{}', ${email}, ${body.lang === 'es' ? 'es' : 'en'})`;
+    return Response.json({ ok: true });
+  }
+
+  // Their cleans keep the name and the price they were paid at (cleanings.price), so the books do not change;
+  // what goes is the roster row — their page, sign-in and secret link, and the rule picking them.
+  if (body.action === 'removeCleaner') {
+    const name = String(body.name ?? '');
+    const done = await sql`DELETE FROM cleaners WHERE account_id = 1 AND name = ${name} RETURNING name`;
+    if (!done.length) return refuse(400, 'bad_request', `${name} is not on the roster.`);
+    return Response.json({ ok: true });
+  }
+
   return refuse(400, 'bad_request', 'Unknown action.');
 };
 

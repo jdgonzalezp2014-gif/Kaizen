@@ -248,7 +248,7 @@ export function Operations({ permissions, initialView, nav, onView, focus }: {
           </nav>
         )}
         {view === 'calendar' && <CleaningsMonth />}
-        {data && view === 'crew' && <CrewAdmin roster={data.roster} canEdit={can(data.permissions, 'operations.edit')} canPay={can(data.permissions, 'payouts')} />}
+        {data && view === 'crew' && <CrewAdmin roster={data.roster} canEdit={can(data.permissions, 'operations.edit')} canPay={can(data.permissions, 'payouts')} onRoster={() => load()} />}
         {/* Owner, 2026-10-25: handymen's work and pay, as the cleaners' pages. */}
         {data && view === 'vendors' && <VendorAdmin canEdit={can(data.permissions, 'operations.edit')} canPay={can(data.permissions, 'payouts')} />}
         {data && view === 'inspections' && <Inspections data={data} reload={() => load()} />}

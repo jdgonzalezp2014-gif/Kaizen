@@ -99,13 +99,14 @@ export function CrewHome({ token, asCleaner, practice }: { token?: string | null
 /* ── the team's side, in Operations ───────────────────────────────── */
 
 /** Operations → Cleaners: any cleaner's page as they see it (their extras and purchases wait in Operations → Approvals). */
-export function CrewAdmin({ roster, canEdit, canPay = false }: { roster: Cleaner[]; canEdit: boolean; canPay?: boolean }) {
+export function CrewAdmin({ roster, canEdit, canPay = false, onRoster }: { roster: Cleaner[]; canEdit: boolean; canPay?: boolean; onRoster?: () => void }) {
   const fromHash = decodeURIComponent(/^#crew\/(.+)$/.exec(location.hash)?.[1] ?? '');
   const [name, setName] = useState(roster.some(c => c.name === fromHash) ? fromHash : '');
   const [period, setPeriod] = useState<string | null>(null);
   // Owner, 2026-10-24: any dates, not only the invoice periods — `to` set = the team's own span.
   const [to, setTo] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
+  const [newCleaner, setNewCleaner] = useState<{ name: string; email: string; lang: 'en' | 'es' } | null>(null);
   const [page, setPage] = useState<CrewPage | null>(null);
   const [schedule, setSchedule] = useState<CrewSchedule | null>(null);
   const [toConfirm, setToConfirm] = useState<ToConfirm[]>([]);
@@ -162,7 +163,35 @@ export function CrewAdmin({ roster, canEdit, canPay = false }: { roster: Cleaner
         )}
         {page && page.cleaner.name === name && canEdit && !adding &&
           <button className="chip" onClick={() => setAdding(true)}>+ Add a clean</button>}
+        {canEdit && !newCleaner && <button className="chip" onClick={() => setNewCleaner({ name: '', email: '', lang: 'en' })}>+ Add cleaner</button>}
+        {name && canEdit && <button className="link tiny danger" onClick={() => {
+          if (!confirm(`Remove ${name} from the roster? Their page, sign-in and link stop working and the rule stops picking them. ` +
+                       'Their past cleans and pay stay as they are. To pause them instead, untick Active in Setup → Cleaners & pay.')) return;
+          void crewAdminAction({ action: 'removeCleaner', name })
+            .then(r => { if (r.ok) { setName(''); pick(null); onRoster?.(); } else setErr(r.message ?? 'Could not remove.'); })
+            .catch(x => setErr(String(x)));
+        }}>Remove {name}</button>}
       </div>
+      {newCleaner && (
+        <div className="card">
+          <h2>New cleaner <Hint>They start at mid tier, standard level, with no rates — their cleans read "not priced" until you set rates in
+            Setup → Cleaners & pay. The address is the Google account they sign in with (also add it to the Cloudflare Access policy); it can wait.</Hint></h2>
+          <div className="row-controls">
+            <label>Name<input value={newCleaner.name} autoFocus onChange={e => setNewCleaner(c => c && { ...c, name: e.target.value })} /></label>
+            <label>Sign-in address (optional)<input type="email" value={newCleaner.email} onChange={e => setNewCleaner(c => c && { ...c, email: e.target.value })} /></label>
+            <label>Page language
+              <select value={newCleaner.lang} onChange={e => setNewCleaner(c => c && { ...c, lang: e.target.value as 'en' | 'es' })}>
+                <option value="en">English</option><option value="es">Spanish</option>
+              </select></label>
+          </div>
+          <div className="button-row">
+            <button className="secondary" onClick={() => setNewCleaner(null)}>Cancel</button>
+            <button disabled={!newCleaner.name.trim()} onClick={() => void crewAdminAction({ action: 'addCleaner', ...newCleaner })
+              .then(r => { if (r.ok) { const n = newCleaner.name.trim(); setNewCleaner(null); onRoster?.(); setName(n); pick(null); } else setErr(r.message ?? 'Could not add.'); })
+              .catch(x => setErr(String(x)))}>Add</button>
+          </div>
+        </div>
+      )}
       {adding && page && (
         <ManualCleanForm today={page.today} roster={roster} initial={{ cleaner: name, kind: 'extra' }}
                          onCancel={() => setAdding(false)} onDone={() => { setAdding(false); void load(); }} />

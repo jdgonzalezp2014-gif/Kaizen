@@ -239,6 +239,11 @@ key had no SOPs.
   `void_reason = 'not paid by the team — <why>'`, leaves the invoice and Costs; `restorePaid` undoes only that prefix),
   and **+ Add a clean** (ManualCleanForm with the cleaner preset). Extras on a void clean leave Costs too (field-costs.ts).
   SOP 10 v4 done.
+- **Add / remove a cleaner from Operations → Cleaners (owner, 2026-10-30):** the owner could not find how — the only way was
+  Setup's rate table ("remove" at the far right of a wide table, then Save roster). crew-admin `addCleaner` (name, email, lang;
+  mid / standard / no rates, same address checks as Setup) and `removeCleaner` (DELETE the row; cleans keep name and
+  `cleanings.price`, so the books do not move; their page, sign-in and link go). CrewAdmin `onRoster` reloads Operations.
+  SOP 11 v3 via `.sop-11.mjs` after deploy.
 - **Handymen and payouts (owner, 2026-10-25, §168, migration 099):** Operations → Handymen (`src/screens/Handymen.tsx`, API
   `vendor-admin.ts`, server `functions/_lib/vendor-pay.ts`, pure `src/lib/vendor-pay.ts`) = a cleaner's page for a handyman: their
   work orders in invoice periods (`vendors.invoice_period`, monthly by default) or any dates, each job's pay (= `cost_actual`) and
