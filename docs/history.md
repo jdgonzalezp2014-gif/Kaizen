@@ -4596,23 +4596,3 @@ closed as before; 105 removed the 5 sub-tasks and the list read without them. SO
 **Round 4 (owner, same day):** "I don't see Approvals — leave it in To-do, that's fine" and Home's $ Approvals read 0. The
 view of its own was missing from the side menu; Approvals is now a tab of To-do (and Home's card shows the same component,
 deciding in place). Home's 0: it waited on the full crew-admin answer (Hostaway schedule); both now use the fast one.
-
-## §172 — Payouts by Wise instead of Stripe (2026-10-28)
-
-The owner dropped Stripe Connect (§168): it asked each payee for too much paperwork, and the boss wants the simplest thing. Wise
-Business was tried in its sandbox first (owner's token in `.env.local` as `WISE_SANDBOX_TOKEN`). Found:
-- USD → a US bank by ACH costs **$1.13 per $1,000** (also on $1,230) and says "in seconds" for a US profile. Wire quoted the same.
-- A recipient known **only by email cannot be paid through the API** for USD ("Account type is not valid"), though Wise makes it.
-  So the payee types routing + account once on Kaizen's link, and Kaizen keeps only the recipient id and the last 4.
-- Paying from the balance is behind Wise's SCA: a 403 with `x-2fa-approval` (a one-time token) → sign it SHA256withRSA with
-  Kaizen's private key → repeat with `X-Signature`. The public key is uploaded in Wise → API tokens → Manage public keys.
-- The first sandbox business came out based in **Spain**: there the signed call is still REJECTED (EU rules on personal tokens).
-  A US business profile (KGP, 31216523) works. The boss's real account is US.
-
-Migration 106 drops the Stripe columns (nothing was ever paid; one test key went with them) and adds `accounts.wise_*`,
-`cleaners/vendors.wise_recipient_id, wise_env, bank_last4`, `payouts.wise_env, wise_transfer_id, wise_status, fee`
-(method 'wise' | 'manual'). Settings makes the key pair on the first token (WebCrypto RSASSA-PKCS1-v1_5); live tokens are
-refused until the owner switches them on in code. Test on `test-wise-pay`: Irene's invoice KZ-IRENE-20261017 ($1,230.58)
-paid, balance −$1,231.71, a second pay refused, status refreshed to processing when the card opened. SOP #39 → v2 (`.sop-106.mjs`).
-Next: live, and a weekly "Pay all due" with the boss's approval.
-

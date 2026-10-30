@@ -1,14 +1,14 @@
 /**
- * /api/payouts — paying an invoice, a cleaner's or a handyman's (owner, 2026-10-25; Wise since 2026-10-28).
- * Wise with Kaizen's token (Settings → Payments), or marked paid by hand.
+ * /api/payouts — paying an invoice, a cleaner's or a handyman's (owner, 2026-10-25).
+ * Stripe Connect with Kaizen's key (Settings → Payments), or marked paid by hand.
  *
- *   GET                              Wise: set up or not, its environment, profile and USD balance
- *   GET ?kind=cleaner|vendor&payee=  that, plus the payee's bank on file (last 4) and their payouts
- *   POST { action: 'link', kind, payee }   their bank link (good 30 days) — the team sends it
- *   POST { action: 'pay', kind, payee, period, method: 'wise' | 'manual', note? }
+ *   GET                              Stripe: set up or not, its mode, the balance it can pay from
+ *   GET ?kind=cleaner|vendor&payee=  that, plus the payee's Stripe account state and their payouts
+ *   POST { action: 'link', kind, payee }   their setup link (made once, good 30 days) — the team sends it
+ *   POST { action: 'pay', kind, payee, period, method: 'stripe' | 'manual', note? }
  *                                     pays the invoice of the period starting `period` — rebuilt here,
  *                                     never an amount from the browser
- *   POST { action: 'undo', id }       a payout marked by hand (a Wise transfer is cancelled in Wise)
+ *   POST { action: 'undo', id }       a payout marked by hand (a Stripe transfer is reversed in Stripe)
  *
  * GET and POST need `payouts` (roles.ts).
  */
@@ -17,7 +17,7 @@ import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadCrewPage, refuse } from '../_lib/crew.ts';
 import { loadVendorPage } from '../_lib/vendor-pay.ts';
-import { businessProfiles, ensureVendor, payeeOf, payInvoice, refreshStatuses, signPayee, undoPayout, usdBalance, wiseOf,
+import { accountState, connectAccount, ensureVendor, payeeOf, payInvoice, platformBalance, signPayee, stripeKey, undoPayout,
          type PayeeKind, type ToPay } from '../_lib/payouts.ts';
 import { payBlockers } from '../../src/lib/payouts.ts';
 import { todayIn } from '../../src/lib/dates.ts';
@@ -30,30 +30,27 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!who) return unauthorised();
   const sql = db(env) as unknown as SqlFn;
   const url = new URL(request.url);
-  const w = await wiseOf(sql, env.ENCRYPTION_KEY).catch(() => null);
-  const wise: { configured: boolean; env: string | null; profiles: { id: number; name: string; country: string | null }[];
-                profile: { id: number; name: string } | null; balance: number | null; problem: string | null } =
-    { configured: !!w?.profile, env: w?.env ?? null, profiles: [], profile: null, balance: null, problem: null };
-  if (w) {
-    try {
-      wise.profiles = await businessProfiles(w);
-      const p = wise.profiles.find(x => x.id === w.profile);
-      wise.profile = p ? { id: p.id, name: p.name } : null;
-      if (p) wise.balance = await usdBalance(w);
-    } catch (e) { wise.problem = msg(e); }
-  }
+  const s = await stripeKey(sql, env.ENCRYPTION_KEY).catch(() => null);
+  const stripe: { configured: boolean; mode: string | null; balance: { available: number; pending: number } | null; problem: string | null } =
+    { configured: !!s, mode: s?.mode ?? null, balance: null, problem: null };
+  if (s) { try { stripe.balance = await platformBalance(s.key); } catch (e) { stripe.problem = msg(e); } }
   const kind = kindOf(url.searchParams.get('kind'));
   const name = url.searchParams.get('payee');
-  if (!kind || !name) return Response.json({ ok: true, wise });
+  if (!kind || !name) return Response.json({ ok: true, stripe });
   const p = await payeeOf(sql, kind, name);
-  if (w?.profile && p) await refreshStatuses(sql, w, kind, p.name).catch(() => null);
-  const bank = p?.recipient ? { last4: p.last4, env: p.env, current: !!w && p.env === w.env } : null;
-  const payouts = await sql`SELECT id::text, invoice_number AS "invoiceNumber", amount::float AS amount, method, wise_env AS env,
-                                   wise_transfer_id::text AS "transferId", wise_status AS status, fee::float AS fee, note, created_by AS by,
+  let account: (Awaited<ReturnType<typeof accountState>> & { mode: string }) | { id: string; mode: string | null; problem: string } | null = null;
+  if (p?.account) {
+    if (s && p.mode === s.mode) {
+      try { account = { ...(await accountState(s.key, p.account)), mode: s.mode }; }
+      catch (e) { account = { id: p.account, mode: p.mode, problem: msg(e) }; }
+    } else account = { id: p.account, mode: p.mode, problem: s ? `This account is ${p.mode} mode; the key is ${s.mode} — a new link makes one in ${s.mode} mode.` : 'Stripe is not set up.' };
+  }
+  const payouts = await sql`SELECT id::text, invoice_number AS "invoiceNumber", amount::float AS amount, method, stripe_mode AS "stripeMode",
+                                   stripe_transfer_id AS "transferId", note, created_by AS by,
                                    to_char(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD HH24:MI') AS at
                               FROM payouts WHERE account_id = 1 AND payee_kind = ${kind} AND lower(payee) = lower(${name})
                              ORDER BY period_from DESC LIMIT 12`;
-  return Response.json({ ok: true, wise, payee: p ? { name: p.name, email: p.email, bank } : null, payouts },
+  return Response.json({ ok: true, stripe, payee: p ? { name: p.name, email: p.email, account } : null, payouts },
                        { headers: { 'Cache-Control': 'no-store' } });
 };
 
@@ -73,19 +70,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (!kind || !name) return refuse(400, 'bad_request', 'Whom to pay: a cleaner or a handyman.');
 
   if (b.action === 'link') {
-    const w = await wiseOf(sql, env.ENCRYPTION_KEY);
-    if (!w?.profile) return refuse(400, 'bad_request', 'Wise is not set up — Settings → Payments.');
+    const s = await stripeKey(sql, env.ENCRYPTION_KEY);
+    if (!s) return refuse(400, 'bad_request', 'Stripe is not set up — add the secret key in Settings → Payments.');
     if (kind === 'vendor') name = await ensureVendor(sql, name);
     const p = await payeeOf(sql, kind, name);
     if (!p) return refuse(404, 'not_found', `${name} is not on the roster.`);
-    const link = `${new URL(request.url).origin}/api/report-link?bank=${encodeURIComponent(await signPayee(env.ENCRYPTION_KEY, kind, p.name))}`;
+    try { await connectAccount(sql, s, p); } catch (e) { return refuse(502, 'stripe', msg(e)); }
+    const link = `${new URL(request.url).origin}/api/report-link?stripe=${encodeURIComponent(await signPayee(env.ENCRYPTION_KEY, kind, p.name))}`;
     const [ph] = kind === 'vendor' ? await sql`SELECT phone FROM vendors WHERE account_id = 1 AND lower(name) = lower(${p.name})` as { phone: string | null }[] : [];
-    return Response.json({ ok: true, link, phone: ph?.phone ?? null, env: w.env });
+    return Response.json({ ok: true, link, phone: ph?.phone ?? null, mode: s.mode });
   }
 
   if (b.action === 'pay') {
-    const method = b.method === 'manual' ? 'manual' : b.method === 'wise' ? 'wise' : null;
-    if (!method) return refuse(400, 'bad_request', 'Pay through Wise, or mark it paid by hand.');
+    const method = b.method === 'manual' ? 'manual' : b.method === 'stripe' ? 'stripe' : null;
+    if (!method) return refuse(400, 'bad_request', 'Pay through Stripe, or mark it paid by hand.');
     const note = String(b.note ?? '').trim().slice(0, 300) || null;
     if (method === 'manual' && !note) return refuse(400, 'bad_request', 'Say how it was paid (cash, Zelle, check #…).');
     const period = String(b.period ?? '');

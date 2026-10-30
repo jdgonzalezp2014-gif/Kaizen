@@ -86,7 +86,7 @@ export const PERMISSIONS: Permission[] = [
   { key: 'costs', label: 'Costs — record expenses, see cleaning costs', tab: 'costs', routes: [
     { path: '/api/expenses', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/cleaning-log', methods: ['GET'] }] },
   // Owner, 2026-10-25: money leaves Kaizen — its own permission, not part of Operations' edits.
-  { key: 'payouts', label: 'Payouts — pay cleaners\' and handymen\'s invoices (Wise) or mark them paid', routes: [
+  { key: 'payouts', label: 'Payouts — pay cleaners\' and handymen\'s invoices (Stripe) or mark them paid', routes: [
     { path: '/api/payouts', methods: ['GET', 'POST'] }] },
   // §162: the cases are followed in Operations → To-do (Claims & upselling tab); their money is Finance's, below.
   { key: 'claims', label: 'Claims & upselling — record and follow guest claims and upsells (no figures)', routes: [

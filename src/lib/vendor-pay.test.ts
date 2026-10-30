@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { buildVendorInvoice, flaggedPay, VENDOR_VOID, vendorInvoiceNumber, type VendorJob } from './vendor-pay.ts';
-import { payBlockers, payState, routingValid, accountNumberValid, transferUuid, wiseStatusLabel, toCents } from './payouts.ts';
+import { payBlockers, payState, stripeMode, toCents } from './payouts.ts';
 import { customPeriod, periodOf } from './crew.ts';
 
 const job = (id: string, date: string, over: Partial<VendorJob> = {}): VendorJob => ({
@@ -49,7 +49,7 @@ test('a flag leaves the pay, deducts from it, or sets it — never below zero', 
 });
 
 test('pay state: open, nothing, due, paid, changed after paid', () => {
-  const paid = (amount: number) => ({ id: '1', invoiceNumber: 'X', amount, method: 'manual' as const, env: null, transferId: null, status: null, fee: null, note: null, by: 'a', at: 'b' });
+  const paid = (amount: number) => ({ id: '1', invoiceNumber: 'X', amount, method: 'manual' as const, stripeMode: null, transferId: null, note: null, by: 'a', at: 'b' });
   assert.equal(payState({ open: true, total: 50 }, null), 'open');
   assert.equal(payState({ open: false, total: 0 }, null), 'nothing');
   assert.equal(payState({ open: false, total: 50 }, null), 'due');
@@ -64,19 +64,11 @@ test('what stops a payout is said, one reason each', () => {
   assert.match(all[2]!, /2 jobs have no pay/);
 });
 
-test('Wise: routing numbers checked by their checksum, account numbers by length; one transfer id per invoice', () => {
-  assert.equal(routingValid('111000025'), true);
-  assert.equal(routingValid('026009593'), true);
-  assert.equal(routingValid('111000026'), false);
-  assert.equal(routingValid('11100002'), false);
-  assert.equal(accountNumberValid('87654321'), true);
-  assert.equal(accountNumberValid('123'), false);
-  const id = transferUuid('a'.repeat(64));
-  assert.match(id, /^[0-9a-f]{8}-[0-9a-f]{4}-5[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
-  assert.equal(transferUuid('a'.repeat(64)), id);
-  assert.equal(wiseStatusLabel('outgoing_payment_sent'), null);
-  assert.equal(wiseStatusLabel('processing')!.bad, false);
-  assert.equal(wiseStatusLabel('bounced_back')!.bad, true);
+test('Stripe keys: test or live, anything else refused; cents without drift', () => {
+  assert.equal(stripeMode('sk_test_51AbCdEfGhIjKlMn'), 'test');
+  assert.equal(stripeMode(' rk_live_51AbCdEfGhIjKlMn '), 'live');
+  assert.equal(stripeMode('pk_test_51AbCdEfGhIjKlMn'), null);
+  assert.equal(stripeMode('sk_test_short'), null);
   assert.equal(toCents(19.99), 1999);
   assert.equal(toCents(0.1 + 0.2), 30);
 });

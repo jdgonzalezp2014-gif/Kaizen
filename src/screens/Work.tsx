@@ -46,7 +46,7 @@ const W = {
     needAmount: 'Write the amount.', needWhat: 'Say what it is for.', needDone: 'Say what was done.',
     tabWork: 'Jobs', tabPay: 'Pay', payPeriod: 'Period', jobs: (n: number, t: string) => `${n} job${n === 1 ? '' : 's'} paid · ${t}`,
     flag: 'Note from the team', corrected: 'Pay corrected', notPaid: 'Not paid', paidOn: (d: string, how: string) => `Paid ${d} ${how}`,
-    byBank: 'to your bank', byHand: 'by hand', unpaid: 'Not paid yet',
+    byStripe: 'to your bank (Stripe)', byHand: 'by hand', unpaid: 'Not paid yet',
     houses: 'Houses', back: '‹ Houses', open: 'Open', of: (i: number, n: number) => `${i} of ${n}`,
     jobsN: (n: number) => `${n} job${n === 1 ? '' : 's'}`, toAccept: (n: number) => `${n} to accept`,
     ask: '＋ Ask to approve other work', askTip: 'Something else that needs fixing, or that you did: the team approves it — then it is one of your jobs.',
@@ -71,7 +71,7 @@ const W = {
     needAmount: 'Escribe el monto.', needWhat: 'Di para qué es.', needDone: 'Di qué se hizo.',
     tabWork: 'Trabajos', tabPay: 'Pago', payPeriod: 'Periodo', jobs: (n: number, t: string) => `${n} trabajo${n === 1 ? '' : 's'} pagado${n === 1 ? '' : 's'} · ${t}`,
     flag: 'Nota del equipo', corrected: 'Pago corregido', notPaid: 'No pagado', paidOn: (d: string, how: string) => `Pagado ${d} ${how}`,
-    byBank: 'a tu banco', byHand: 'en mano', unpaid: 'Aún no pagado',
+    byStripe: 'a tu banco (Stripe)', byHand: 'en mano', unpaid: 'Aún no pagado',
     houses: 'Casas', back: '‹ Casas', open: 'Abrir', of: (i: number, n: number) => `${i} de ${n}`,
     jobsN: (n: number) => `${n} trabajo${n === 1 ? '' : 's'}`, toAccept: (n: number) => `${n} por aceptar`,
     ask: '＋ Pedir aprobar otro trabajo', askTip: 'Algo más que hay que arreglar, o que hiciste: el equipo lo aprueba — y pasa a ser uno de tus trabajos.',
@@ -324,7 +324,7 @@ function PastCard({ w, lang, j, add, onAdded }: { w: Wx; lang: Lang; j: PastJob;
     } catch (e) { setMsg(String(e)); return false; } finally { setBusy(false); }
   };
   const pay = j.voidReason ? `${w.notPaid}: ${j.voidReason}` : j.pay == null ? w.noPay
-    : `$${j.pay.toFixed(2)}${j.payFixed ? ` · ${w.corrected}` : ''} · ${j.paid ? w.paidOn(j.paid.at, j.paid.method === 'wise' ? w.byBank : w.byHand) : w.unpaid}`;
+    : `$${j.pay.toFixed(2)}${j.payFixed ? ` · ${w.corrected}` : ''} · ${j.paid ? w.paidOn(j.paid.at, j.paid.method === 'stripe' ? w.byStripe : w.byHand) : w.unpaid}`;
   return (
     <div className="card v-past">
       <p className="sub-n"><Icon n="calendar" /> {ic(dayLabel(lang, j.date))} · <Icon n="home" /> {ic(j.unit ?? '—')}</p>
@@ -548,7 +548,7 @@ function VendorPay({ pay, lang, onPeriod }: { pay: VendorPage; lang: Lang; onPer
           {pay.periods.map(p => <option key={p.from} value={p.from}>{lang === 'es' ? `${p.from} – ${p.to}` : p.label}</option>)}
         </select></label>
       <p><b>{ic(w.jobs(inv.lines.length, money2(inv.total)))}</b></p>
-      <p className="note">{ic(pay.payout ? w.paidOn(pay.payout.at.slice(0, 10), pay.payout.method === 'wise' ? w.byBank : w.byHand) : w.unpaid)}</p>
+      <p className="note">{ic(pay.payout ? w.paidOn(pay.payout.at.slice(0, 10), pay.payout.method === 'stripe' ? w.byStripe : w.byHand) : w.unpaid)}</p>
       {notes.map(j => (
         <div key={j.id} className="sub-n">
           {ic(j.title)}: {j.flagNote && <span className="breach">{ic(`${w.flag}: ${j.flagNote}`)}</span>}
