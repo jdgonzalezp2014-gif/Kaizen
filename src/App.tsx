@@ -10,6 +10,8 @@ import { CrewHome } from './screens/Crew.tsx';
 import { ReportPage } from './screens/Report.tsx';
 import { VendorHome, WorkLinkPage } from './screens/Work.tsx';
 import { PracticePage, isPractice, PUBLIC_PRACTICE, type PracticeWhich } from './screens/Practice.tsx';
+import { GuestDemoPage, GuestLinkPage } from './screens/GuestPortal.tsx';
+import { guestLink } from './lib/guest-portal.ts';
 import { InspectPage } from './screens/Inspect.tsx';
 import { Sops } from './screens/Sops.tsx';
 import { SopButton, SopPanel } from './components/Sops.tsx';
@@ -95,6 +97,12 @@ export function App() {
   // The helpers' page has its own one-line header: the language sits beside day/night (§134).
   if (location.pathname === '/report') return <main>{WORK_TOKEN ? <WorkLinkPage token={WORK_TOKEN} />
     : INSPECT_TOKEN ? <InspectPage token={INSPECT_TOKEN} /> : <ReportPage token={REPORT_TOKEN} />}</main>;
+  // The guest portal (guests module, 2026-11-05): /guest/<reservation id>.<sig>, /guest/demo, and the demo under
+  // /crew, which Access already bypasses — /guest needs its own bypass before guests can open it.
+  const guestPath = location.pathname.replace(/\/+$/, '').toLowerCase();
+  const gl = guestLink(location.pathname);
+  if (guestPath === '/crew/guest-demo' || gl?.id === 'demo') return <main><GuestDemoPage /></main>;
+  if (gl || guestPath.startsWith('/guest')) return <main><GuestLinkPage /></main>;
   // §139 practice: a field page with example data, nothing sent — opened from the SOP panel.
   // Two doors to the same page: the in-app hash (team, signed in) and a real
   // path a cleaner or helper opens without a sign-in. The public paths live

@@ -357,7 +357,7 @@ function byHouse(works: WorkPage[]) {
 }
 
 /** Swipe sideways, one at a time; arrows and "2 of 5" for a mouse and for knowing where you are. */
-function Carousel({ children, label, of, wide = false, start = 0 }: { children: ReactNode[]; label: string; of: (i: number, n: number) => string; wide?: boolean; start?: number }) {
+export function Carousel({ children, label, of, wide = false, start = 0 }: { children: ReactNode[]; label: string; of: (i: number, n: number) => string; wide?: boolean; start?: number }) {
   const rail = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState(0);
   const n = children.length;

@@ -65,3 +65,73 @@ person icon's hover (amber when unassigned). Check-in today: a brush icon says p
 Open work on the unit as icon-only chips (wrench work orders, cart purchase orders, list to-dos — no counts, titles
 on hover, click → Operations → To-do filtered to the unit). Agreement is `▲ 📄`/`✓ 📄` (file icon), "signed / not
 signed" on hover. Right column wider (3fr / 2fr, min 360px).
+
+## Upselling y Experiencia del Huésped (Guest Portal, 2026-11-05)
+
+**Status: first view, demo data only — nothing is charged, nothing is written to Hostaway.**
+The owner's boss wants the Enso Connect "boarding pass": one link per stay where the guest sees the
+stay, pays what is due, opens the arrival guide and asks for extras (see `docs/proposal-guest-platform.md`).
+Reference the boss shared: kgp-guest-portal-demo.thestrforge.workers.dev (damage waiver $12/night,
+$75 minimum; the arrival guide locked until paid *and* a release time; no fee on Airbnb/Vrbo).
+
+### Files
+
+- `src/lib/guest-portal.ts` (+ test) — pure: stay → pay state, guide lock, upsell catalog,
+  availability, quote, the "new upselling request" record, the Hostaway pay-link shape.
+- `src/screens/GuestPortal.tsx` — the guest's page; same look as the handyman's page by house
+  (`.v-island`, `Carousel`, `.v-house` cards from `src/screens/Work.tsx`), plus `.g-*` in `index.css`.
+- Routes: `/guest/<Hostaway reservation id>.<sig>` (owner's idea: a bypass keyed on the reservation id),
+  `/guest/demo`, and `/crew/guest-demo` (rides the existing `/crew` bypass, §140 — shows the demo today
+  without a sign-in). `?stay=unpaid|partial|paid|airbnb` picks the demo stay. `guestLink()` parses the path.
+- **Why the `<sig>`:** reservation ids run in sequence — the id alone lets anyone walk other guests' stays
+  (name, dates, address, later the door code). `<sig>` = HMAC(server key, id), checked in the function:
+  no token table, and the team can rebuild any guest's link from the id. A bare `/guest/<id>` is not a link.
+- Cloudflare Access needs a **Bypass** application for `/guest/*` before guests can open it (not done).
+
+### What the guest sees (no paragraphs; how-it-works behind the "?")
+
+1. **Island**: "Hi, <first name>" · Stay | Extras · day/night.
+2. **Stay**: a hero card (house, dates, nights, check-in / check-out times), the pay state
+   (`▲ $75.00 due` amber + Pay button · `▲ $39.00 left of $75.00` · `✓ Paid` green · nothing when the
+   channel collects, e.g. Airbnb), and **Check-in instructions** — a button that stays locked with its
+   reason ("Opens after payment" / "Opens Nov 14, 12:00 PM"); the content itself comes later.
+3. **Extras**: a carousel of standard upsells — Extra nights, Early check-in, Late check-out,
+   Mid-stay clean, Pet, Crib / pack 'n play, Welcome basket. Pick a choice (time / nights / qty),
+   see the total, **Request**. Each one becomes a *new upselling request*; "Your requests" lists them
+   as Pending until the team confirms.
+
+### Rules
+
+- Pay state = `total − paid` (≤ 0 → paid); channel `airbnb`/`vrbo` → collected by the channel, no gate.
+- Check-in instructions open only when nothing is due **and** `guideReleaseAt` has passed.
+- Extra nights only as many as the calendar gap before/after the stay allows (0 → card says "Not available").
+- Early check-in / late check-out on a same-day turnover stay requestable but flagged
+  "Depends on the clean" — the team confirms; never promised by the page.
+- Prices in `UPSELLS` are placeholders until the owner sets them (per house later).
+- An upsell is **requested, not charged**: the team confirms, the charge is added to the reservation,
+  and the guest pays it with the same pay button.
+
+### Payments and Hostaway (checked on real stays, 2026-11-05)
+
+- Every Hostaway reservation (Airbnb, Vrbo, Expedia, partner, direct) has **`guestPortalUrl`**
+  (`guest-portal.hostaway.com/<reservationId>/…`) — Hostaway's own guest portal for that stay, where the guest
+  sees the stay, signs and **pays through Hostaway Payments (Stripe; `stripeGuestId` is set on direct/Vrbo/Expedia)**.
+  Also `paymentStatus` ("Paid", "Unknown" on Expedia…), `totalPrice`, `financeField[]`, `reservationFees[]`;
+  `remainingBalance` and `isPaid` came back null on every stay checked.
+- So **Pay = open the guest's own `guestPortalUrl`** (`payFromHostaway()`): automatic per stay, no card handling
+  in Kaizen, nothing new to contract. Our page is the layer that sells (extras, status, instructions); Hostaway's
+  portal is where the money moves. The URL is a login token: served only on that guest's signed page, never logged
+  or sent to Slack (as `hostaway.ts` already says).
+- Upsell money: when the team confirms a request, Kaizen adds it to the reservation (a fee / `financeField` line)
+  so it shows in that same portal to pay. That is a **write to Hostaway** — the exact endpoint is not tried yet and
+  needs the owner's OK (standing rule). Until then the team adds the charge by hand in Hostaway.
+- `paymentStatus` "Unknown" is not "unpaid": no warning on what Hostaway does not know.
+
+### Open items
+
+- Table `upsell_requests` (account_id, reservation_id, kind, choice jsonb, quote, status
+  new/confirmed/declined/paid, created_at) + `functions/api/guest-*.ts` with a per-stay token like
+  `/report#w=` (§137) — not written; the page's `send` is the seam.
+- Real stay data from Hostaway (photo, times, balance), the release-time rule, the Access bypass for `/guest`.
+- Team side: requests into To-do / Approvals and a Slack line; the SOP is written with it (the page is
+  guest-facing, not a team screen — no `FEATURES` entry).
