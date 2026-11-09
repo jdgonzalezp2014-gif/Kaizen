@@ -193,7 +193,8 @@ function Guide({ g }: { g: GuestGuide | null }) {
         <div className="g-stepb"><b>{st.title}</b>{st.text && <p className="g-text">{st.text}</p>}
           {st.pin && <span className="g-maps">
             <a className="chip" href={googleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Google Maps</a>
-            <a className="chip" href={appleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Apple Maps</a></span>}</div>
+            <a className="chip" href={appleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Apple Maps</a></span>}
+          {st.link && <span className="g-maps"><a className="chip" href={st.link} target="_blank" rel="noopener noreferrer"><Icon n="eye" /> Watch</a></span>}</div>
       </li>)}
     </ol>}
     {g.address && <div className="g-gi"><span className="g-k">Address</span><b>{g.address}</b>
@@ -203,7 +204,7 @@ function Guide({ g }: { g: GuestGuide | null }) {
       {g.checkOut && <span><span className="g-k">Check-out by</span><b>{g.checkOut}</b></span>}</div>}
     {g.wifi && <div className="g-gi"><span className="g-k"><Icon n="wifi" /> Wi-Fi</span><b>{g.wifi.network}</b>
       {g.wifi.password && <button className="chip g-copy" onClick={() => copy(g.wifi!.password!)} aria-label="Copy the Wi-Fi password"><span className="g-mono">{g.wifi.password}</span> Copy</button>}</div>}
-    {g.access && <div className="g-gi"><span className="g-k">Getting in</span><p className="g-text">{g.access}</p></div>}
+    {g.access && <div className="g-gi"><span className="g-k">Guest access</span><p className="g-text">{g.access}</p></div>}
     {g.parking && <div className="g-gi"><span className="g-k">Parking</span>
       {g.parking.notes && <p className="g-text">{g.parking.notes}</p>}
       {g.parking.freeStreet && <span className="note">Free street parking</span>}

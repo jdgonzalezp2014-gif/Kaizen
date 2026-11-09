@@ -6,13 +6,13 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { getCheckinGuide, getCheckinUnits, saveCheckinGuide } from '../api.ts';
-import { MAX_STEPS, MAX_TEXT, MAX_TITLE, googleDir, parsePin, pinText, type CheckinStep, type Pin } from '../lib/checkin.ts';
+import { MAX_STEPS, MAX_TEXT, MAX_TITLE, TOKENS, googleDir, parsePin, pinText, type CheckinStep, type Pin } from '../lib/checkin.ts';
 import type { GuestGuide } from '../lib/guest-portal.ts';
 import { Hint } from './Hint.tsx';
 
-type Draft = { title: string; text: string; where: string };
-const toDraft = (s: CheckinStep): Draft => ({ title: s.title, text: s.text, where: s.pin ? pinText(s.pin) : '' });
-const blank = (): Draft => ({ title: '', text: '', where: '' });
+type Draft = { title: string; text: string; where: string; link: string };
+const toDraft = (s: CheckinStep): Draft => ({ title: s.title, text: s.text, where: s.pin ? pinText(s.pin) : '', link: s.link ?? '' });
+const blank = (): Draft => ({ title: '', text: '', where: '', link: '' });
 type Loaded = { unitName: string; steps: CheckinStep[]; record: GuestGuide | null; recordRef: { table: string; id: string } | null; updatedAt: string | null; updatedBy: string | null };
 
 export function CheckinBuilder({ canEdit, say, onOpenRecord }: { canEdit: boolean; say: (m: string, bad?: boolean) => void; onOpenRecord: (table: string, id: string) => void }) {
@@ -52,7 +52,7 @@ export function CheckinBuilder({ canEdit, say, onOpenRecord }: { canEdit: boolea
   const save = async () => {
     if (badPin >= 0) { say(`Step ${badPin + 1}: the location is not coordinates or a long Maps link.`, true); return; }
     setBusy(true);
-    const steps = drafts.map((d, i) => ({ title: d.title, text: d.text, pin: pins[i] as Pin | null }));
+    const steps = drafts.map((d, i) => ({ title: d.title, text: d.text, pin: pins[i] as Pin | null, link: d.link.trim() || null }));
     const r = await saveCheckinGuide({ unit, steps, copiedFrom: copied || undefined }).catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (!r.ok) { say(r.message ?? 'Not saved.', true); return; }
@@ -86,6 +86,9 @@ export function CheckinBuilder({ canEdit, say, onOpenRecord }: { canEdit: boolea
           <div className="cb-fields">
             <input value={d.title} maxLength={MAX_TITLE} placeholder="Title — e.g. Pick up your key fob" onChange={e => set(i, 'title', e.target.value)} disabled={!canEdit} aria-label={`Step ${i + 1} title`} />
             <textarea value={d.text} maxLength={MAX_TEXT} rows={2} placeholder="What to do there — e.g. Lockbox next to the leasing office door" onChange={e => set(i, 'text', e.target.value)} disabled={!canEdit} aria-label={`Step ${i + 1} text`} />
+            {canEdit && <span className="cb-tokens">{Object.entries(TOKENS).map(([k, label]) =>
+              <button key={k} className="chip" onClick={() => set(i, 'text', `${d.text}${d.text && !d.text.endsWith(' ') ? ' ' : ''}{${k}}`)} title={`Inserts {${k}}: the guest sees the record's ${label.toLowerCase()}, so a new code is changed once, in the record.`}>+ {label}</button>)}</span>}
+            <input value={d.link} placeholder="Video or photo link (optional): https://drive.google.com/…" onChange={e => set(i, 'link', e.target.value)} disabled={!canEdit} aria-label={`Step ${i + 1} link`} />
             <div className="cb-where">
               <input value={d.where} placeholder="Location (optional): 33.1507, -96.8236 or a Maps link" onChange={e => set(i, 'where', e.target.value)} disabled={!canEdit} aria-label={`Step ${i + 1} location`} />
               {pins[i] ? <a className="note" href={googleDir(pins[i]!)} target="_blank" rel="noopener noreferrer">✓ {pinText(pins[i]!)} · check on map</a>
@@ -117,7 +120,7 @@ function RecordPart({ g, open }: { g: GuestGuide | null; open: (() => void) | nu
     ['Address', g?.address ?? null],
     ['Check-in from / out by', g && (g.checkIn || g.checkOut) ? `${g.checkIn ?? '—'} / ${g.checkOut ?? '—'}` : null],
     ['Wi-Fi', g?.wifi ? `${g.wifi.network}${g.wifi.password ? ' · password set' : ' · no password'}` : null],
-    ['Getting in (Guest access)', g?.access ?? null],
+    ['Guest access', g?.access ?? null],
     ['Parking', g?.parking ? [g.parking.notes, g.parking.freeStreet ? 'free street' : null, g.parking.coveredPerNight != null ? `covered $${g.parking.coveredPerNight}/night` : null].filter(Boolean).join(' · ') : null],
     ['House manual', g?.manual ?? null],
     ['House rules', g?.rules ? `${g.rules.split('\n').filter(Boolean).length} lines` : null],

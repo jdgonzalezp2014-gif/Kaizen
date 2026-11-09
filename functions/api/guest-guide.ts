@@ -12,7 +12,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
 import { UNIT_TABLES } from '../../src/lib/repo-checks.ts';
 import { emptyGuide, guideFrom, pricesFrom } from '../../src/lib/guest-portal.ts';
-import type { CheckinStep } from '../../src/lib/checkin.ts';
+import { fillTokens, type CheckinStep } from '../../src/lib/checkin.ts';
 
 export async function guestHouse(sql: SqlFn, unitId: string) {
   const [units, recs] = await Promise.all([
@@ -27,7 +27,8 @@ export async function guestHouse(sql: SqlFn, unitId: string) {
   const steps = await (sql`SELECT steps FROM checkin_guides WHERE account_id = 1 AND unit_id = ${unitId}` as Promise<{ steps: CheckinStep[] }[]>)
     .then(r => r[0]?.steps ?? [], () => [] as CheckinStep[]);
   const guide = guideFrom(rec?.vals);
-  return { unitName: u.name, guide: guide || steps.length ? { ...(guide ?? emptyGuide()), steps } : null, prices: pricesFrom(rec?.vals) };
+  const filled = steps.map(st => ({ ...st, text: fillTokens(st.text, rec?.vals) }));
+  return { unitName: u.name, guide: guide || steps.length ? { ...(guide ?? emptyGuide()), steps: filled } : null, prices: pricesFrom(rec?.vals) };
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

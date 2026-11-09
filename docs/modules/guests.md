@@ -123,6 +123,12 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   unit loads its steps unsaved. API `/api/checkin-guide` (GET `repository`, POST `repository.edit`, audited `checkin.save`).
   Scope agreed: arrival to the building block only (The Links: fob pickup → building door; Cortland: one entrance), not the apartment.
   Pin = coordinates (Google Maps: hold on the spot, copy the numbers) or a long Maps link; short `maps.app.goo.gl` links refused.
+  A step may carry a **link** (video/photo, https) → "Watch"; text may quote **`{lockbox}`** (the record's Lockbox, filled
+  server-side in guest-guide — a new code is changed once, in the record). **Example seeded in 107**: P2-1304 (Hostaway 586502)
+  from the owner's slides `CheckIn_Guide_Unit_1304_EN` — 8 steps garage → lockbox → exit → building → stairs/elevator → door → trash;
+  preview `/guest/demo?stay=paid&unit=586502`. Record vs slides (2026-11-09, not changed): floor "First" (1304 is up the stairs),
+  lock_type "Access Fob" (the door has a keypad; the fob is the building's), rules typos ("arties", "th registered"),
+  and the guest's door code is not in the Repository (slides: "your access code").
 - Pay stays = the reservation's Hostaway `guestPortalUrl` (Hostaway Payments / Stripe on their side); our own Stripe later.
 
 ### Rules

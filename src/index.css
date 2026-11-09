@@ -3135,3 +3135,4 @@ html:root.guest-brand {
 .cb-rec dd { margin: 0; white-space: pre-line; }
 .cb-empty { color: var(--muted); }
 @media (max-width: 640px) { .cb-rec > div { grid-template-columns: 1fr; gap: 2px; } .cb-step { flex-wrap: wrap; } }
+.cb-tokens { display: flex; gap: 6px; flex-wrap: wrap; }

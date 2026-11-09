@@ -4,7 +4,8 @@
  * e.g. The Links: "1. Pick up your key fob" (lockbox) → "2. Building entrance". Pure: parse, validate, links.
  */
 export interface Pin { lat: number; lng: number }
-export interface CheckinStep { title: string; text: string; pin: Pin | null }
+/** `link`: a video or photo of the step (Drive, YouTube…), https only. */
+export interface CheckinStep { title: string; text: string; pin: Pin | null; link?: string | null }
 export const MAX_STEPS = 8;
 export const MAX_TITLE = 80;
 export const MAX_TEXT = 600;
@@ -28,6 +29,8 @@ export function parsePin(raw: string): Pin | null {
   if (m) return ok(+m[1]!, +m[2]!);
   m = u.match(/[?&](?:q|query|destination|daddr|ll|sll|center)=(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/i);
   if (m) return ok(+m[1]!, +m[2]!);
+  m = u.match(/\/maps\/(?:search|place|dir)\/(?:[^/]*\/)?(-?\d+\.\d+)\s*,\s*\+?(-?\d+\.\d+)/);
+  if (m) return ok(+m[1]!, +m[2]!);
   m = u.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
   if (m) return ok(+m[1]!, +m[2]!);
   return null;
@@ -48,12 +51,27 @@ export function cleanSteps(raw: unknown): { ok: true; steps: CheckinStep[] } | {
     const p = o.pin as Record<string, unknown> | null | undefined;
     const pin = p && typeof p === 'object' ? ok(Number(p.lat), Number(p.lng)) : null;
     if (p && !pin) return { ok: false, error: `Step ${i + 1}: the location is not a valid point.` };
-    if (!title && !text && !pin) continue;
+    const link = typeof o.link === 'string' ? o.link.trim() : '';
+    if (link && !/^https:\/\/\S+$/i.test(link)) return { ok: false, error: `Step ${i + 1}: the link must start with https://` };
+    if (!title && !text && !pin && !link) continue;
     if (!title) return { ok: false, error: `Step ${i + 1} needs a title.` };
     if (title.length > MAX_TITLE) return { ok: false, error: `Step ${i + 1}: title over ${MAX_TITLE} characters.` };
     if (text.length > MAX_TEXT) return { ok: false, error: `Step ${i + 1}: text over ${MAX_TEXT} characters.` };
-    steps.push({ title, text, pin });
+    steps.push({ title, text, pin, link: link || null });
   }
   if (steps.length > MAX_STEPS) return { ok: false, error: `At most ${MAX_STEPS} steps.` };
   return { ok: true, steps };
+}
+
+/**
+ * Record values a step may quote instead of copying them (so a changed code is changed once, in the record):
+ * {lockbox} = the Units record's Lockbox. Unknown or empty tokens stay visible, so a gap shows in the preview.
+ */
+export const TOKENS = { lockbox: 'Lockbox code' } as const;
+export function fillTokens(text: string, vals: Record<string, unknown> | null | undefined): string {
+  return text.replace(/\{(\w+)\}/g, (all, k: string) => {
+    if (!(k in TOKENS)) return all;
+    const v = vals?.[k]; const t = typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '';
+    return t || all;
+  });
 }
