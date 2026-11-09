@@ -80,6 +80,9 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   availability, quote, the "new upselling request" record, the Hostaway pay-link shape.
 - `src/screens/GuestPortal.tsx` — the guest's page; same look as the handyman's page by house
   (`.v-island`, `Carousel`, `.v-house` cards from `src/screens/Work.tsx`), plus `.g-*` in `index.css`.
+  Palette = the public site's (website module): dark-only warm black + gold, via `useBrand()` adding
+  `.guest-brand` to `<html>` while mounted (no day/night toggle on this page; staff theme restored on leave).
+  Gold is the action colour, so attention/due is coral `#f0915a`, not amber.
 - Routes: `/guest/<Hostaway reservation id>.<sig>` (owner's idea: a bypass keyed on the reservation id),
   `/guest/demo`, and `/crew/guest-demo` (rides the existing `/crew` bypass, §140 — shows the demo today
   without a sign-in). `?stay=unpaid|partial|paid|airbnb` picks the demo stay. `guestLink()` parses the path.

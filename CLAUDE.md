@@ -18,6 +18,7 @@ items belong to it, and which `§N` of `docs/history.md` explain it.
 | slack | the bot, @Kaizen, daily messages, the clock | `docs/modules/slack.md` |
 | repository | native data repository, Drive files, Monday import | `docs/modules/repository.md` |
 | platform | auth, roles, Settings, Home, SOPs, design, Hostaway client, shared libs | `docs/modules/platform.md` |
+| website | public site (separate Lovable repo `kaizen-website`), hidden `/reservations` | `docs/modules/website.md` |
 
 `docs/history.md` is the full decision log (177 KB). **Never read it whole** — open only the
 section a `§N` points to (`grep -n "^## 64\." docs/history.md`; from 108 on `## §108`).

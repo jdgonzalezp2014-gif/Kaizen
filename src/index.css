@@ -3075,3 +3075,20 @@ tr.is-clickable:hover td { background: var(--tint); }
 /* The global phone rule stacks every <header> in a column; the island is laid out as a row (name · tools, tabs under). */
 @media (max-width: 640px) { header.v-island { flex-direction: row; align-items: center; gap: 8px; } }
 .g-pay-head .note { display: block; }
+/* Guest portal in the public site's palette (kaizenguestproperties src/index.css, 2026-11-08):
+   background 25 33% 5%, card 25 25% 8%, gold 33 67% 68%, muted 30 10% 60%, border 25 20% 20%.
+   Only while the guest page is mounted (useBrand adds .guest-brand); gold is the action colour,
+   so "attention" moves to a coral that does not read as gold. */
+html:root.guest-brand {
+  color-scheme: dark;
+  --bg: #110c09; --card: #1a140f; --line: #2e251f; --line-strong: #3d3129;
+  --ink: #fbf7f2; --muted: #a3998f;
+  --accent: #e4b377; --on-accent: #110c09;
+  --green: #6cc79a; --amber: #f0915a; --red: #ef6b6b; --on-status: #110c09;
+  --tint: #251e18;
+  --shadow: 0 1px 2px rgb(0 0 0 / .4); --shadow-2: 0 4px 14px rgb(0 0 0 / .45); --shadow-3: 0 18px 48px rgb(0 0 0 / .6);
+}
+.guest-brand .v-seg button.on, .guest-brand .chip.active, .guest-brand .v-house-go { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+.guest-brand .g-action-icon, .guest-brand .g-up-icon { background: color-mix(in srgb, var(--accent) 14%, var(--card)); color: var(--accent); }
+.guest-brand .g-go, .guest-brand .g-k { color: var(--accent); }
+.guest-brand .g-photo-name, .guest-brand .v-island-name { letter-spacing: .01em; }

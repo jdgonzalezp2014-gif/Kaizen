@@ -4,11 +4,10 @@
  * into its detail. Owner: premium because it sells, simple enough for anyone — no explaining text on screen.
  * Demo data only: nothing is charged, nothing goes to Hostaway; `send` is the seam for the API.
  */
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Carousel } from './Work.tsx';
 import { Icon, ic } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
-import { ThemeToggle } from '../components/ThemeToggle.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, availability, choiceLine, guide, nights, payState, quote, ready, upsellRequest,
@@ -30,6 +29,7 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar }: { stay: G
   useUrlState('extra', pick ?? '', v => setPick((v || null) as Upsell['kind'] | null), { def: '' });
   const open = UPSELLS.find(u => u.kind === pick) ?? null;
   const go = (s: Sec) => { setSec(s); setPick(null); };
+  useBrand();
 
   return <>
     <header className="v-island">
@@ -38,7 +38,6 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar }: { stay: G
         {([['stay', 'home', 'Stay'], ['extras', 'sparkles', 'Extras']] as [Sec, string, string][]).map(([k, icon, label]) =>
           <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => go(k)}><Icon n={icon} /> {label}</button>)}
       </span>
-      <span className="mini-tools"><ThemeToggle /></span>
     </header>
     <div className="report-page v-page g-page">
       {sec === 'stay' ? <StayView stay={stay} now={now} toExtras={() => go('extras')} />
@@ -48,6 +47,18 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar }: { stay: G
       {demoBar}
     </div>
   </>;
+}
+
+/** The public site's palette (kaizenguestproperties, dark-only): warm black + gold. Applied to the whole
+ *  document while the guest page is open, without touching the staff's saved day/night choice. */
+function useBrand() {
+  useEffect(() => {
+    const root = document.documentElement;
+    const was = root.getAttribute('data-theme');
+    root.classList.add('guest-brand');
+    root.setAttribute('data-theme', 'dark');
+    return () => { root.classList.remove('guest-brand'); if (was) root.setAttribute('data-theme', was); };
+  }, []);
 }
 
 function StayView({ stay, now, toExtras }: { stay: GuestStay; now: Date; toExtras: () => void }) {
