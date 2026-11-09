@@ -146,6 +146,7 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   own text blocks. Right: live phone preview (the real GuestPortal, `embedded`, `.g-scope` palette), "as <unit>" for a
   building guide. Old guides with no record blocks keep the old Stay order. Text fields show {tokens} as pills behind
   the text (`TokenText`, auto-height so they line up).
+- **SOP #41** "Guest guide: a unit's check-in steps and stay info" (section Guest lifecycle, feature `repository`, draft v1).
 - **Photos open full screen** for guests (owner: "they can't open the photos, they're tiny"): tap → lightbox, ‹ › / swipe, ✕ / Esc.
 - **Preston Vineyard**: no guide in Drive (its doc is the listing text); a 2-step test guide from its record (address pin from
   `units.lat/lng`, smart lock) + all Stay blocks; its Parking is empty in the record.

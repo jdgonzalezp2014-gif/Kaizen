@@ -143,8 +143,11 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   records nearly empty, no lock type; 38 fields not copied), 24 high (insurance missing on 21 of 22; Bobcat no AT&T #),
   40 medium, 65 low. SOP #40 "Close the gaps in a unit's data: Missing data" — draft, for the owner to publish.
 
-- **Check-in builder** (2026-11-09, 107): sidebar ⌂ Check-in builder (`src/components/CheckinBuilder.tsx`, `?check=checkin`) —
-  a unit's arrival steps for the guest portal + a read-only view of the record fields the guest also gets. See guests.md.
+- **Guest portal guides** (2026-11-09, 107–109, §173): a small **◆ Guide** next to "All details" on active Units rows, and
+  **◆ Guest guide ›** in a Units record, open the unit's guide (`src/components/CheckinBuilder.tsx`, `?check=checkin&unit=`)
+  full width with "‹ Repository". It only READS the record (pills, Stay blocks); values are edited here. SOP #41 (draft).
+  The Links (2026-11-09): floors = 2nd digit of the unit, every unit Access Fob, lockbox codes as the guides say,
+  house_manual = each unit's check-in slides (also CL-1339). See guests.md.
 
 ## Open items — Units data (owner, 2026-10-13; first two first)
 

@@ -14,7 +14,7 @@ items belong to it, and which `§N` of `docs/history.md` explain it.
 | finance | Units, Revenue, Costs, pricing, Gemini, ratings feed, alerts | `docs/modules/finance.md` |
 | operations | the board, cleanings, inspections, inventory, manual cleans, Host Notes, rates & rules | `docs/modules/operations.md` |
 | work | tasks, repairs, claims, Hostaway tasks mirror, repair costs, done log | `docs/modules/work.md` |
-| guests | agreement / ID status, Drive copies, Home check-ins, guest portal & upselling | `docs/modules/guests.md` |
+| guests | agreement / ID status, Drive copies, Home check-ins, guest portal & upselling, check-in guides (◆ Guide in Repository) | `docs/modules/guests.md` |
 | slack | the bot, @Kaizen, daily messages, the clock | `docs/modules/slack.md` |
 | repository | native data repository, Drive files, Monday import | `docs/modules/repository.md` |
 | platform | auth, roles, Settings, Home, SOPs, design, Hostaway client, shared libs | `docs/modules/platform.md` |

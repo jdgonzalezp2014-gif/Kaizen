@@ -4596,3 +4596,24 @@ closed as before; 105 removed the 5 sub-tasks and the list read without them. SO
 **Round 4 (owner, same day):** "I don't see Approvals — leave it in To-do, that's fine" and Home's $ Approvals read 0. The
 view of its own was missing from the side menu; Approvals is now a tab of To-do (and Home's card shows the same component,
 deciding in place). Home's 0: it waited on the full crew-admin answer (Hostaway schedule); both now use the fast one.
+
+## §173 — Guest portal guides: check-in steps and stay info from the Repository (2026-11-09)
+
+Owner: the guest portal must give the way in and the house info from the Repository, which is "the base of everything".
+What was decided, in order:
+- **Data**: `checkin_guides` per unit (107: steps; 108: `house`; 109: `title`, `uses`). Steps = title, text, ≤ 3 photos
+  (Drive, the record's "Check-in photos" folder, served by `/api/checkin-photo` only if a step names them), a video link
+  (new tab) and a map pin (Google Maps / Apple Maps from the same point). Stay = ordered blocks: record parts (`field`)
+  or the house's own text (Trash…). Codes never in git — a step says `{lockbox}` and the record fills it.
+- **Shared guides** (owner: "a general repository — the 1xxx units are the oldest and had less info"): one per building
+  (`shared:<slug>`), a unit `uses` it and adds extra steps; `{unit}` `{floor}` `{lockbox}` `{address}` `{checkin}` per unit.
+  The Links loaded from the slides in Drive (Building 1: 7 steps, Building 4: 6 steps).
+- **Guest page**: tabs Stay · Check-in · Extras (owner: "check-in is super important, apart"); Stay shows Wi-Fi, trash,
+  rules, contact inline; photos open full screen (owner: guests could not open them). Palette = the public site's.
+- **Builder UX** (owner: "think like a pro UX designer", then "simpler is better — a small cell next to the name"):
+  no separate tool; ◆ Guide on the unit's row opens it. Pills from the record (drag or tap), steps as cards, Stay
+  blocks in order, live phone preview "as" any unit. SOP #41 (draft).
+- **Record fixes from the slides** (owner): The Links floor = 2nd digit, all units Access Fob, the guides' lockbox codes
+  win; house_manual links filled from Drive. Slides to correct were listed to the owner (captions "4308", floors, the
+  handwritten map with team notes).
+
