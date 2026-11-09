@@ -4,6 +4,8 @@
  * an extra is a *request* the team confirms; the money goes through the stay's pay link (Hostaway Payments).
  */
 
+import type { CheckinStep } from './checkin.ts';
+
 export type Channel = 'direct' | 'airbnb' | 'vrbo' | 'booking' | 'partner' | 'other';
 
 /**
@@ -34,7 +36,61 @@ export interface GuestStay {
   turnOut: boolean;           // someone checks in the day this guest leaves
   guideReleaseAt: string | null; // ISO; check-in instructions open from here (and only when nothing is due)
   pay: PayLink;
+  /** The house's check-in guide, from its Repository record (null = none yet). Served only once the guide opens. */
+  guide?: GuestGuide | null;
+  /** House prices from the Repository's Fees, overriding the UPSELLS placeholders. */
+  prices?: Partial<Record<UpsellKind, number>>;
 }
+
+/**
+ * The check-in guide = the Units record's existing fields (2026-11-09), nothing new to fill:
+ * hw_address · wifi_network / password_2 ("Wifi password") · checkin_from / checkout_time · parking,
+ * parking_free_street, parking_extra_price · guest_access · house_manual · house_rules · hw_contact_phone.
+ * Door codes are NOT here: cleaner_code / lockbox / admin / backup are the team's (unit-access.ts).
+ */
+export interface GuestGuide {
+  address: string | null;
+  wifi: { network: string; password: string | null } | null;
+  checkIn: string | null;     // "4 PM"
+  checkOut: string | null;    // "11 AM"
+  parking: { notes: string | null; freeStreet: boolean; coveredPerNight: number | null } | null;
+  access: string | null;      // House description → Guest access
+  manual: string | null;      // a link
+  rules: string | null;
+  phone: string | null;
+  /** Arrival steps from Repository → Check-in builder (checkin.ts), shown before the fields above. */
+  steps?: CheckinStep[];
+}
+export const emptyGuide = (): GuestGuide => ({ address: null, wifi: null, checkIn: null, checkOut: null, parking: null, access: null, manual: null, rules: null, phone: null });
+
+const txt = (v: unknown) => { const t = typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : ''; return t || null; };
+const num = (v: unknown) => { const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN; return Number.isFinite(n) && n > 0 ? n : null; };
+const isUrl = (v: string | null) => v && /^https?:\/\//i.test(v) ? v : null;
+
+export function guideFrom(vals: Record<string, unknown> | null | undefined): GuestGuide | null {
+  if (!vals) return null;
+  const net = txt(vals.wifi_network);
+  const pNotes = txt(vals.parking), free = vals.parking_free_street === true, covered = num(vals.parking_extra_price);
+  return {
+    address: txt(vals.hw_address),
+    wifi: net ? { network: net, password: txt(vals.password_2) } : null,
+    checkIn: txt(vals.checkin_from), checkOut: txt(vals.checkout_time),
+    parking: pNotes || free || covered ? { notes: pNotes, freeStreet: free, coveredPerNight: covered } : null,
+    access: txt(vals.guest_access), manual: isUrl(txt(vals.house_manual)), rules: txt(vals.house_rules),
+    phone: txt(vals.hw_contact_phone),
+  };
+}
+
+/** The extras the Repository already prices (Fees): a pet = pet_fee. The rest stay placeholders for now. */
+export function pricesFrom(vals: Record<string, unknown> | null | undefined): Partial<Record<UpsellKind, number>> {
+  const out: Partial<Record<UpsellKind, number>> = {};
+  const pet = num(vals?.pet_fee); if (pet != null) out.pet = pet;
+  return out;
+}
+
+/** The price a card shows and quotes: the house's, else the catalog placeholder. */
+export const priceOf = (s: Pick<GuestStay, 'prices'>, u: Upsell) => s.prices?.[u.kind] ?? u.price;
+export const mapsUrl = (address: string) => `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
 
 const DAY = 86_400_000;
 const ymd = (s: string) => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
@@ -107,8 +163,9 @@ export function quote(s: GuestStay, u: Upsell, c: Choice): number | null {
     const n = clampNights(s, c).before + clampNights(s, c).after;
     return s.nightly == null ? null : cents(n * s.nightly);
   }
-  if (u.price == null) return null;
-  return cents(u.price * (u.per === 'item' ? Math.max(1, Math.min(c.qty ?? 1, u.pick.type === 'qty' ? u.pick.max : 1)) : 1));
+  const price = priceOf(s, u);
+  if (price == null) return null;
+  return cents(price * (u.per === 'item' ? Math.max(1, Math.min(c.qty ?? 1, u.pick.type === 'qty' ? u.pick.max : 1)) : 1));
 }
 
 export function clampNights(s: GuestStay, c: Choice) {

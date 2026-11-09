@@ -143,6 +143,9 @@ reused, archived not deleted), `repo_secrets` (AES-GCM, never in vals/lists/sear
   records nearly empty, no lock type; 38 fields not copied), 24 high (insurance missing on 21 of 22; Bobcat no AT&T #),
   40 medium, 65 low. SOP #40 "Close the gaps in a unit's data: Missing data" — draft, for the owner to publish.
 
+- **Check-in builder** (2026-11-09, 107): sidebar ⌂ Check-in builder (`src/components/CheckinBuilder.tsx`, `?check=checkin`) —
+  a unit's arrival steps for the guest portal + a read-only view of the record fields the guest also gets. See guests.md.
+
 ## Open items — Units data (owner, 2026-10-13; first two first)
 
 1. **Admin / backup codes:** admin missing on Bobcat, Napa Valley, Timber Crest and the 8 P2; backup

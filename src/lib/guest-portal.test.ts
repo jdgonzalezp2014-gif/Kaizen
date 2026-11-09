@@ -68,3 +68,21 @@ test('Pay opens the guest\'s own Hostaway portal; "Unknown" is not "unpaid"', as
   assert.equal(payFromHostaway({ paymentStatus: 'Unpaid' }).hostawayPaid, false);
   assert.deepEqual(payFromHostaway({ guestPortalUrl: 'https://evil.example/x' }).pay, { provider: 'none', url: null });
 });
+
+test('check-in guide from the Repository: maps the Units fields, never the team codes (2026-11-09)', async () => {
+  const { guideFrom, pricesFrom, priceOf } = await import('./guest-portal.ts');
+  const g = guideFrom({ hw_address: ' 1 Main St, Frisco TX ', wifi_network: 'Kaizen', password_2: 'abc123', checkin_from: '4 PM',
+    checkout_time: '11 AM', parking: '', parking_free_street: true, parking_extra_price: '', house_manual: 'not a link',
+    cleaner_code: '9999', lockbox: '1234', pet_fee: 100 })!;
+  assert.equal(g.address, '1 Main St, Frisco TX');
+  assert.deepEqual(g.wifi, { network: 'Kaizen', password: 'abc123' });
+  assert.deepEqual(g.parking, { notes: null, freeStreet: true, coveredPerNight: null });
+  assert.equal(g.manual, null);
+  assert.doesNotMatch(JSON.stringify(g), /9999|1234/);
+  assert.equal(guideFrom(null), null);
+  const pet = UPSELLS.find(u => u.kind === 'pet')!;
+  const prices = pricesFrom({ pet_fee: 100 });
+  assert.equal(priceOf({ prices }, pet), 100);
+  assert.equal(priceOf({}, pet), pet.price);
+  assert.equal(quote(stay({ prices }), pet, { qty: 2 }), 200);
+});

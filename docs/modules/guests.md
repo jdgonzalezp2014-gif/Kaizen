@@ -103,6 +103,28 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
    see the total, **Request**. Each one becomes a *new upselling request*; "Your requests" lists them
    as Pending until the team confirms.
 
+### Check-in guide and prices from the Repository (2026-11-09)
+
+- `guideFrom(vals)` (pure, tested) reads the Units record's existing fields — `hw_address` (+ Maps link),
+  `wifi_network` / `password_2` (copy button), `checkin_from` / `checkout_time`, `parking` / `parking_free_street` /
+  `parking_extra_price`, `guest_access`, `house_manual` (links only), `house_rules`, `hw_contact_phone`. Only what is
+  filled shows. **No door codes**: cleaner_code / lockbox / admin / backup are the team's; a guest door code needs
+  its own decision (Hostaway per-reservation code vs a guest column).
+- Fill (23 active records): address 21, Wi-Fi 23, check-in 21, guest access 21, rules 21, parking 16, manual 7, pet fee 13.
+- `pricesFrom(vals)`: only **pet = `pet_fee`** exists in Fees today; early/late/mid-clean/crib/basket stay placeholders.
+  Owner's next idea (not built): a prices section per extra (icon, price, per hour — e.g. early/late $20/h);
+  extra nights need the calendar's availability.
+- `GET /api/guest-guide` (permission `repository`): no params → active units; `?unit=<id>` → guide + prices.
+  Staff only — feeds the **house picker on `/guest/demo`** (behind sign-in; on `/crew/guest-demo` it never shows).
+  The guest's signed link will reuse `guestHouse()`; Wi-Fi never goes out on an open route.
+- **Check-in builder (2026-11-09, migration 107 `checkin_guides`)**: Repository → ⌂ Check-in builder. Per unit, arrival
+  steps (title · text · optional pin, ≤ 8; `src/lib/checkin.ts` parsePin / cleanSteps / googleDir / appleDir) shown to the guest
+  first, numbered, with Google Maps + Apple Maps buttons; then the record's fields (read, never copied). "Copy steps from" another
+  unit loads its steps unsaved. API `/api/checkin-guide` (GET `repository`, POST `repository.edit`, audited `checkin.save`).
+  Scope agreed: arrival to the building block only (The Links: fob pickup → building door; Cortland: one entrance), not the apartment.
+  Pin = coordinates (Google Maps: hold on the spot, copy the numbers) or a long Maps link; short `maps.app.goo.gl` links refused.
+- Pay stays = the reservation's Hostaway `guestPortalUrl` (Hostaway Payments / Stripe on their side); our own Stripe later.
+
 ### Rules
 
 - Pay state = `total − paid` (≤ 0 → paid); channel `airbnb`/`vrbo` → collected by the channel, no gate.

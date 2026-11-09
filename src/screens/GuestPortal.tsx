@@ -6,12 +6,13 @@
  */
 import { useEffect, useState } from 'react';
 import { Carousel } from './Work.tsx';
+import { appleDir, googleDir } from '../lib/checkin.ts';
 import { Icon, ic } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, availability, choiceLine, guide, nights, payState, quote, ready, upsellRequest,
-  type Choice, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
+import { UPSELLS, availability, choiceLine, guide, mapsUrl, nights, payState, priceOf, quote, ready, upsellRequest,
+  type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
 
 type Send = (r: UpsellRequest) => Promise<{ ok: boolean; message?: string }>;
 type Sec = 'stay' | 'extras';
@@ -88,8 +89,7 @@ function StayView({ stay, now, toExtras }: { stay: GuestStay; now: Date; toExtra
         {!g.open && <span className="g-lock"><Icon n="lock" /> {g.why === 'unpaid' ? 'Opens after payment' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival'}</span>}</span>
       {g.open && <span className="g-go">{showGuide ? '⌃' : '›'}</span>}
     </button>
-    {/* The content (door code, Wi-Fi, parking) comes with the guidebook — said, not faked. */}
-    {g.open && showGuide && <div className="card g-guide"><p className="note"><Icon n="clock" /> Coming soon: door code, Wi-Fi and parking will show here.</p></div>}
+    {g.open && showGuide && <Guide g={stay.guide ?? null} />}
 
     <button className="card g-action" onClick={toExtras}>
       <span className="g-action-icon"><Icon n="sparkles" /></span>
@@ -121,7 +121,8 @@ function PayCard({ stay }: { stay: GuestStay }) {
 
 function priceLabel(stay: GuestStay, u: Upsell) {
   if (u.kind === 'extra-nights') return stay.nightly != null ? `${money2(stay.nightly)} / night` : '—';
-  return u.price == null ? '—' : `${money2(u.price)}${u.per === 'item' ? ' each' : ''}`;
+  const p = priceOf(stay, u);
+  return p == null ? '—' : `${money2(p)}${u.per === 'item' ? ' each' : ''}`;
 }
 
 function Extras({ stay, sent, choose }: { stay: GuestStay; sent: UpsellRequest[]; choose: (k: Upsell['kind']) => void }) {
@@ -180,6 +181,40 @@ function Pick({ stay, u, back, send }: { stay: GuestStay; u: Upsell; back: () =>
   </>;
 }
 
+/** The house's check-in guide, from its Repository record. Only what is filled shows. */
+function Guide({ g }: { g: GuestGuide | null }) {
+  const [rules, setRules] = useState(false);
+  if (!g) return <div className="card g-guide"><p className="note"><Icon n="clock" /> Your check-in guide will show here before arrival.</p></div>;
+  const copy = (t: string) => { void navigator.clipboard?.writeText(t).catch(() => undefined); };
+  return <div className="card g-guide">
+    {g.steps && g.steps.length > 0 && <ol className="g-steps">
+      {g.steps.map((st, i) => <li key={i} className="g-stepi">
+        <span className="g-stepn" aria-hidden>{i + 1}</span>
+        <div className="g-stepb"><b>{st.title}</b>{st.text && <p className="g-text">{st.text}</p>}
+          {st.pin && <span className="g-maps">
+            <a className="chip" href={googleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Google Maps</a>
+            <a className="chip" href={appleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Apple Maps</a></span>}</div>
+      </li>)}
+    </ol>}
+    {g.address && <div className="g-gi"><span className="g-k">Address</span><b>{g.address}</b>
+      <a className="chip" href={mapsUrl(g.address)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Open in Maps</a></div>}
+    {(g.checkIn || g.checkOut) && <div className="g-gi g-gi-row">
+      {g.checkIn && <span><span className="g-k">Check-in from</span><b>{g.checkIn}</b></span>}
+      {g.checkOut && <span><span className="g-k">Check-out by</span><b>{g.checkOut}</b></span>}</div>}
+    {g.wifi && <div className="g-gi"><span className="g-k"><Icon n="wifi" /> Wi-Fi</span><b>{g.wifi.network}</b>
+      {g.wifi.password && <button className="chip g-copy" onClick={() => copy(g.wifi!.password!)} aria-label="Copy the Wi-Fi password"><span className="g-mono">{g.wifi.password}</span> Copy</button>}</div>}
+    {g.access && <div className="g-gi"><span className="g-k">Getting in</span><p className="g-text">{g.access}</p></div>}
+    {g.parking && <div className="g-gi"><span className="g-k">Parking</span>
+      {g.parking.notes && <p className="g-text">{g.parking.notes}</p>}
+      {g.parking.freeStreet && <span className="note">Free street parking</span>}
+      {g.parking.coveredPerNight != null && <span className="note">Covered parking {money2(g.parking.coveredPerNight)} / night</span>}</div>}
+    {g.manual && <a className="chip" href={g.manual} target="_blank" rel="noopener noreferrer"><Icon n="book" /> House manual</a>}
+    {g.rules && <div className="g-gi"><button className="chip" onClick={() => setRules(v => !v)} aria-expanded={rules}>House rules {rules ? '⌃' : '›'}</button>
+      {rules && <p className="g-text">{g.rules}</p>}</div>}
+    {g.phone && <a className="chip" href={`tel:${g.phone.replace(/[^\d+]/g, '')}`}><Icon n="phone" /> {g.phone}</a>}
+  </div>;
+}
+
 function Stepper({ label, value, set, min = 0, max }: { label: string; value: number; set: (v: number) => void; min?: number; max: number }) {
   return <div className="g-step">
     <span>{label}</span>
@@ -218,11 +253,38 @@ export function GuestDemoPage() {
   const q = new URLSearchParams(location.search).get('stay');
   const [k, setK] = useState<DemoKey>(DEMO_KEYS.includes(q as DemoKey) ? q as DemoKey : 'unpaid');
   const pickDemo = (x: DemoKey) => { setK(x); const u = new URL(location.href); u.searchParams.set('stay', x); history.replaceState(history.state, '', u); };
-  return <GuestPortal key={k} stay={demoStay(k)} send={async () => ({ ok: true })}
+  const house = useHouse();
+  const stay: GuestStay = house.data ? { ...demoStay(k), unitName: house.data.unitName, address: house.data.guide?.address ?? null,
+    guide: house.data.guide, prices: house.data.prices } : demoStay(k);
+  return <GuestPortal key={`${k}-${house.unit}`} stay={stay} send={async () => ({ ok: true })}
     demoBar={<div className="g-demo" role="group" aria-label="Demo stay">
       <span className="note"><Icon n="eye" /> Demo</span>
       {DEMO_KEYS.map(x => <button key={x} className={x === k ? 'chip active' : 'chip'} onClick={() => pickDemo(x)}>{DEMO_LABEL[x]}</button>)}
+      {house.units.length > 0 && <select className="g-house" value={house.unit} onChange={e => house.pick(e.target.value)} aria-label="House (from the Repository)">
+        <option value="">Sample house</option>
+        {house.units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
+      </select>}
     </div>} />;
+}
+
+/**
+ * The demo with a real house (2026-11-09): its guide and prices from the Repository via /api/guest-guide,
+ * which answers only behind the staff sign-in — on /crew/guest-demo (no sign-in) the picker simply never shows.
+ */
+type HouseData = { unitName: string; guide: GuestGuide | null; prices: GuestStay['prices'] };
+function useHouse() {
+  const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
+  const [unit, setUnit] = useState(() => new URLSearchParams(location.search).get('unit') ?? '');
+  const [data, setData] = useState<HouseData | null>(null);
+  useEffect(() => { fetch('/api/guest-guide').then(r => r.ok ? r.json() as Promise<{ units?: { id: string; name: string }[] }> : null).then(j => j?.units && setUnits(j.units)).catch(() => undefined); }, []);
+  useEffect(() => {
+    if (!unit) { setData(null); return; }
+    let live = true;
+    fetch(`/api/guest-guide?unit=${encodeURIComponent(unit)}`).then(r => r.ok ? r.json() as Promise<HouseData> : null).then(j => { if (live) setData(j?.unitName ? j : null); }).catch(() => undefined);
+    return () => { live = false; };
+  }, [unit]);
+  const pick = (id: string) => { setUnit(id); const u = new URL(location.href); if (id) u.searchParams.set('unit', id); else u.searchParams.delete('unit'); history.replaceState(history.state, '', u); };
+  return { units, unit, data, pick };
 }
 
 /** A real stay link (/guest/<id>.<sig>) — the API that checks the signature and reads Hostaway is not built yet. */

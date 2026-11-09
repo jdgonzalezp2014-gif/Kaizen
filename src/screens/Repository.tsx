@@ -35,6 +35,7 @@ import { setParams, useUrlState } from '../components/useUrlState.ts';
 import { usePhone } from '../components/usePhone.ts';
 import { HostawayCheck } from '../components/HostawayCheck.tsx';
 import { MissingData } from '../components/MissingData.tsx';
+import { CheckinBuilder } from '../components/CheckinBuilder.tsx';
 import { COMPOSED, UNIT_TABLES, composeParts, composeText, isSynced, partKeys, partOf } from '../lib/repo-checks.ts';
 import { ic, Icon } from '../components/Icon.tsx';
 
@@ -177,7 +178,9 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const [editing, setEditing] = useState<string | null>(null);   // `${id}|${col}`
   const [importing, setImporting] = useState<string | null>(null); // section key, while a Monday board is being imported
   // §149: the Hostaway check fills the main pane; §170: so does Missing data (Home links here with ?check=missing).
-  const [checking, setChecking] = useState<'' | 'hostaway' | 'missing'>(() => new URLSearchParams(location.search).get('check') === 'missing' ? 'missing' : '');
+  // 2026-11-09: so does the Check-in builder (?check=checkin).
+  const [checking, setChecking] = useState<'' | 'hostaway' | 'missing' | 'checkin'>(() => {
+    const c = new URLSearchParams(location.search).get('check'); return c === 'missing' || c === 'checkin' ? c : ''; });
   useEffect(() => { setParams({ check: null }, { replace: true }); }, []);
   // Sort and filters per table, per browser: how this person looks at it, not the table's order.
   const [views, setViews] = useState<Record<string, RepoView>>(() => {
@@ -390,11 +393,12 @@ export function Repository({ canReveal, canEdit, canStructure }: {
         {canStructure && <button className="rb-add-link" onClick={() => { setHits(null); setImporting(sections[0]?.key ?? ''); }}>⇪ Import from Monday</button>}
         <button className="rb-add-link" onClick={() => { setHits(null); setImporting(null); setChecking('hostaway'); }}>⇄ Check against Hostaway</button>
         <button className="rb-add-link" onClick={() => { setHits(null); setImporting(null); setChecking('missing'); }}>▲ Missing data</button>
+        <button className="rb-add-link" onClick={() => { setHits(null); setImporting(null); setChecking('checkin'); }}>⌂ Check-in builder</button>
       </aside>
 
       <div className="rb-main">
         <header className="rb-bar">
-          <h2>{checking === 'missing' ? 'Missing data' : checking ? 'Check against Hostaway' : hits ? `Search: “${hits.q}”` : table?.title ?? ''}</h2>
+          <h2>{checking === 'missing' ? 'Missing data' : checking === 'checkin' ? 'Check-in builder' : checking ? 'Check against Hostaway' : hits ? `Search: “${hits.q}”` : table?.title ?? ''}</h2>
           {!checking && !hits && rows && <span className="rb-count">{rows.length} record{rows.length === 1 ? '' : 's'}</span>}
           {loading && <span className="rb-count loading-dot">Loading</span>}
           <span className="rb-spacer" />
@@ -419,7 +423,12 @@ export function Repository({ canReveal, canEdit, canStructure }: {
             {canStructure && <button className="secondary small" onClick={() => void structure({ op: 'tables.restore', table: archivedTable.key }, `${archivedTable.title} restored`)}>↺ Restore</button>}
           </div>
         )}
-        {checking === 'missing' ? (
+        {checking === 'checkin' ? (
+          <CheckinBuilder canEdit={canEdit} say={say} onOpenRecord={(t, id) => {
+            setChecking(''); setFilter('');
+            if (t === tableKey && rows) setOpenId(id); else { wanted.current = { table: t, id }; setTableKey(t); }
+          }} />
+        ) : checking === 'missing' ? (
           <MissingData onCheck={() => setChecking('hostaway')} onOpen={(t, id) => {
             // The record opens in its table's grid; a table not loaded yet opens it once its rows arrive.
             setChecking(''); setFilter('');
