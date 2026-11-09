@@ -56,7 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     { id: string; title: string | null; steps: CheckinStep[]; house: HouseItem[] }[] : [];
   return Response.json({ ok: true, unitName: u.name, steps: g?.steps ?? [], house: g?.house ?? [], uses: g?.uses ?? null,
     sharedPart: sp ? { id: sp.id, title: sp.title ?? sp.id, steps: sp.steps, house: sp.house } : null,
-    record: guideFrom(rec?.vals), recordVals: rec ? { lockbox: rec.vals.lockbox ?? null, floor: rec.vals.floor ?? null } : null,
+    record: guideFrom(rec?.vals), recordVals: rec ? { name: rec.vals.name ?? null, lockbox: rec.vals.lockbox ?? null, floor: rec.vals.floor ?? null, hw_address: rec.vals.hw_address ?? null, checkin_from: rec.vals.checkin_from ?? null } : null,
     recordRef: rec ? { table: rec.table, id: String(rec.id) } : null, updatedAt: g?.updated_at ?? null, updatedBy: g?.updated_by ?? null });
 };
 

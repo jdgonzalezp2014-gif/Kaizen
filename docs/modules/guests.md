@@ -137,6 +137,18 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   in Drive folder 1LSTwcKhmI9XcFTTBAH9cJbSWK8KZAmct (videos UNLISTED = open by link). Owner: all The Links units enter with
   the fob (lock_type Access Fob); 2nd digit of the unit = floor; where slides and record disagreed on a lockbox, the slides won.
   Codes never go in docs, tests or migrations — only in the record.
+- **Guest portal builder, phase 1 (2026-11-09)**: owner — "simpler is better, the Repository is the base": no separate tool;
+  a small **◆ Guide** next to "All details" on active Units rows (and in a record's header) opens it, full width with
+  "‹ Repository". Left: pills from the record — values (Unit #, Floor, Lockbox 🔒, Address, Check-in time = tokens
+  {unit} {floor} {lockbox} {address} {checkin}; drag into a text or tap to insert at the caret; empty = dashed) and
+  ▤ blocks (Wi-Fi, times, parking, what you can use, rules, full guide & phone). Middle: Check-in / Stay tabs; steps as
+  cards (⠿ drag to reorder, drop photos on them, pin + video side by side); Stay = ordered blocks (`house[].field`) +
+  own text blocks. Right: live phone preview (the real GuestPortal, `embedded`, `.g-scope` palette), "as <unit>" for a
+  building guide. Old guides with no record blocks keep the old Stay order. Text fields show {tokens} as pills behind
+  the text (`TokenText`, auto-height so they line up).
+- **Photos open full screen** for guests (owner: "they can't open the photos, they're tiny"): tap → lightbox, ‹ › / swipe, ✕ / Esc.
+- **Preston Vineyard**: no guide in Drive (its doc is the listing text); a 2-step test guide from its record (address pin from
+  `units.lat/lng`, smart lock) + all Stay blocks; its Parking is empty in the record.
 - **Tabs Stay · Check-in · Extras (owner, 2026-11-09 — "check-in is super important, apart")**: Check-in = its own tab
   (steps + photos, or the lock + pay card); Stay = hero, pay, a Check-in shortcut, then the house manual inline under "Your stay".
 - **Two sections on the stay page (2026-11-09, migration 108 `checkin_guides.house`)**: **Check-in instructions** = the steps

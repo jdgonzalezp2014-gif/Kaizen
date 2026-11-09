@@ -3079,7 +3079,7 @@ tr.is-clickable:hover td { background: var(--tint); }
    background 25 33% 5%, card 25 25% 8%, gold 33 67% 68%, muted 30 10% 60%, border 25 20% 20%.
    Only while the guest page is mounted (useBrand adds .guest-brand); gold is the action colour,
    so "attention" moves to a coral that does not read as gold. */
-html:root.guest-brand {
+html:root.guest-brand, .g-scope {
   color-scheme: dark;
   --bg: #110c09; --card: #1a140f; --line: #2e251f; --line-strong: #3d3129;
   --ink: #fbf7f2; --muted: #a3998f;
@@ -3088,10 +3088,10 @@ html:root.guest-brand {
   --tint: #251e18;
   --shadow: 0 1px 2px rgb(0 0 0 / .4); --shadow-2: 0 4px 14px rgb(0 0 0 / .45); --shadow-3: 0 18px 48px rgb(0 0 0 / .6);
 }
-.guest-brand .v-seg button.on, .guest-brand .chip.active, .guest-brand .v-house-go { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
-.guest-brand .g-action-icon, .guest-brand .g-up-icon { background: color-mix(in srgb, var(--accent) 14%, var(--card)); color: var(--accent); }
-.guest-brand .g-go, .guest-brand .g-k { color: var(--accent); }
-.guest-brand .g-photo-name, .guest-brand .v-island-name { letter-spacing: .01em; }
+:is(.guest-brand, .g-scope) .v-seg button.on, :is(.guest-brand, .g-scope) .chip.active, :is(.guest-brand, .g-scope) .v-house-go { background: var(--accent); color: var(--on-accent); border-color: var(--accent); }
+:is(.guest-brand, .g-scope) .g-action-icon, :is(.guest-brand, .g-scope) .g-up-icon { background: color-mix(in srgb, var(--accent) 14%, var(--card)); color: var(--accent); }
+:is(.guest-brand, .g-scope) .g-go, :is(.guest-brand, .g-scope) .g-k { color: var(--accent); }
+:is(.guest-brand, .g-scope) .g-photo-name, :is(.guest-brand, .g-scope) .v-island-name { letter-spacing: .01em; }
 /* The check-in guide (2026-11-09): one block per filled Repository field. */
 .g-guide { display: flex; flex-direction: column; gap: 14px; }
 .g-gi { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; padding-top: 12px; border-top: 1px solid var(--line); }
@@ -3156,3 +3156,98 @@ p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }
 .cb-shared { padding: 10px 14px; border-radius: var(--r-md); background: var(--tint); display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
 .cb-shared ol { margin: 0; padding-left: 20px; }
 .cb-card select { max-width: 420px; }
+
+/* Step photos open full screen (owner, 2026-11-09: guests could not open them). */
+.g-pic { padding: 0; border: 0; background: none; cursor: zoom-in; border-radius: 10px; display: block; min-height: 0; }
+.g-pic img { display: block; }
+.g-lightbox { position: fixed; inset: 0; z-index: 100; background: rgb(0 0 0 / .92); display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px; padding: 16px; }
+.g-lightbox img { max-width: 100%; max-height: calc(100dvh - 96px); object-fit: contain; border-radius: 8px; cursor: default; }
+.g-lb-bar { display: flex; align-items: center; gap: 10px; color: #fff; font-weight: 600; max-width: 100%; }
+.g-lb-bar > span { flex: 1; min-width: 0; text-align: center; }
+.g-lb-bar .chip { color: #fff; border-color: rgb(255 255 255 / .35); min-width: 44px; min-height: 44px; justify-content: center; font-size: 18px; }
+/* The live preview inside the builder: the portal in its own palette, in a phone-sized box. */
+.g-scope { background: var(--bg); color: var(--ink); color-scheme: dark; }
+.gp-phone { width: 360px; max-width: 100%; height: min(760px, calc(100dvh - 140px)); overflow: auto; border-radius: 28px;
+  border: 8px solid #1d1d1f; box-shadow: var(--shadow-3); padding: 4px 10px 16px; position: relative; }
+.gp-phone .v-island { position: sticky; top: 4px; margin: 4px 0 10px; }
+.gp-phone .g-page { padding-bottom: 8px; }
+.gp-phone .g-lightbox { position: absolute; }
+/* ── Repository → Guest portal (builder, 2026-11-09) ── */
+.rb-feature { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; text-align: left; padding: 10px 12px;
+  border-radius: var(--r-md); border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--line)); background: color-mix(in srgb, var(--accent) 7%, var(--card));
+  color: var(--ink); cursor: pointer; }
+.rb-feature span { font-size: var(--fs-footnote); color: var(--muted); font-weight: 400; }
+.rb-feature:hover, .rb-feature.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 13%, var(--card)); }
+.gp { display: grid; grid-template-columns: 180px minmax(0, 1fr) 360px; gap: 16px; align-items: start; min-width: 0; }
+@media (max-width: 1180px) { .gp { grid-template-columns: 190px minmax(0, 1fr); } .gp-preview { grid-column: 1 / -1; justify-self: center; position: static; } }
+@media (max-width: 820px) { .gp { grid-template-columns: minmax(0, 1fr); } .gp-side { position: static; max-height: none; } }
+.gp-side { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 14px; max-height: calc(100dvh - 24px); overflow: auto; }
+.gp-list { display: flex; flex-direction: column; gap: 2px; }
+.gp-list-h { display: flex; justify-content: space-between; align-items: center; gap: 6px; font-size: var(--fs-caption); font-weight: 650; color: var(--muted);
+  text-transform: uppercase; letter-spacing: .05em; margin: 8px 0 4px; }
+.gp-item { display: flex; justify-content: space-between; gap: 8px; width: 100%; background: none; border: 0; color: var(--ink); text-align: left;
+  padding: 6px 8px; border-radius: var(--r-sm); cursor: pointer; font: inherit; min-height: 0; }
+.gp-item:hover { background: var(--hover); }
+.gp-item.on { background: var(--card); box-shadow: var(--shadow), inset 0 0 0 1px var(--line); }
+.gp-item .note { white-space: nowrap; }
+.gp-pills { padding: 10px; border-radius: var(--r-md); background: var(--tint); }
+.gp-pillset { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
+.pill { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 3px 10px; border-radius: 999px; cursor: grab; font: inherit;
+  font-size: var(--fs-footnote); font-weight: 600; background: color-mix(in srgb, var(--accent) 16%, var(--card)); color: var(--ink);
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); }
+.pill em { font-style: normal; font-weight: 400; color: var(--muted); max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pill.block { background: var(--card); border-color: var(--line-strong); }
+.pill.empty { border-style: dashed; color: var(--muted); background: transparent; }
+.pill:active { cursor: grabbing; }
+.gp-edit { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+.gp-empty { padding: 32px; text-align: center; }
+.gp-head { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; }
+.gp-head h3 { margin: 0; font-size: var(--fs-title2); flex: 1; }
+.gp-title { flex: 1; min-width: 240px; font-size: var(--fs-title3); font-weight: 650; }
+.gp-uses { margin: 0; }
+.gp-tabs { align-self: flex-start; }
+.gp-step, .gp-block { display: flex; gap: 10px; align-items: flex-start; padding: 14px; border-radius: var(--r-md); background: var(--card);
+  border: 1px solid var(--line); position: relative; }
+.gp-step.over, .gp-block.over { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 25%, transparent); }
+.gp-step.ghost { padding: 8px 12px; background: transparent; border-style: dashed; color: var(--muted); align-items: center; }
+.gp-inherited { display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.gp-inherited .gp-step { width: 100%; }
+.gp-grip { cursor: grab; color: var(--muted); font-size: 18px; line-height: 1; padding: 4px 2px; user-select: none; }
+.gp-x { position: absolute; top: 10px; right: 10px; min-height: 0; padding: 2px 8px; }
+.gp-step .cb-fields, .gp-block .cb-fields { padding-right: 36px; }
+.gp-row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+@media (max-width: 640px) { .gp-row2 { grid-template-columns: 1fr; } }
+.gp-drop { display: inline-flex; align-items: center; justify-content: center; min-height: 72px; padding: 0 14px; border: 1px dashed var(--line-strong);
+  border-radius: 8px; color: var(--muted); font-size: var(--fs-footnote); }
+.gp-add { align-self: flex-start; }
+.gp-stay { display: flex; flex-direction: column; gap: 10px; }
+.gp-block.rec { background: color-mix(in srgb, var(--accent) 5%, var(--card)); }
+.gp-block-b { display: flex; flex-direction: column; gap: 2px; flex: 1; padding-right: 36px; }
+.gp-preview { position: sticky; top: 12px; display: flex; flex-direction: column; gap: 8px; align-items: center; }
+.gp-preview-h { display: flex; gap: 10px; align-items: center; width: 360px; max-width: 100%; }
+.gp-preview-h select { margin-left: auto; min-height: 30px; padding: 2px 8px; }
+.gp-phone-empty { display: grid; place-items: center; }
+/* Pills behind a text: the field is transparent over a copy of its text with {tokens} marked. */
+.tt { position: relative; background: var(--card); border-radius: var(--r-sm); }
+.tt-back { position: absolute; inset: 0; padding: 7px 10px; border: 1px solid transparent; font: inherit; font-size: var(--fs-body);
+  white-space: pre-wrap; overflow-wrap: break-word; color: transparent; overflow: hidden; pointer-events: none; line-height: inherit; }
+.tt-1 .tt-back { white-space: pre; }
+.tt-back mark { color: transparent; background: color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 4px; box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 28%, transparent); }
+.tt textarea, .tt input { position: relative; background: transparent; width: 100%; display: block; }
+.tt textarea { overflow: hidden; resize: none; }
+@media (max-width: 720px) { .tt-back { font-size: max(16px, var(--fs-body)); } }
+/* The guest portal takes the Repository's whole width; its own list replaces the sections. */
+.rb.rb-wide { grid-template-columns: minmax(0, 1fr); width: auto; left: 0; transform: none; }
+.rb.rb-wide > .rb-nav { display: none; }
+.rb.rb-wide .rb-bar { display: none; }
+.gp-back { align-self: flex-start; font-weight: 600; }
+.tt-back, .tt textarea, .tt input { font-family: var(--font); font-size: var(--fs-body); line-height: 1.5; letter-spacing: normal; tab-size: 4; }
+@media (max-width: 720px) { .tt-back, .tt textarea, .tt input { font-size: max(16px, var(--fs-body)); } }
+.rb-guide { margin-left: 8px; color: var(--accent); font-weight: 600; }
+.rb-grid.rb-has-guide .rb-idcol { width: 158px; min-width: 158px; max-width: 158px; }
+.rb-grid.rb-has-guide .rb-primary { left: 158px; }
+.gp-side { overflow-x: hidden; }
+.gp-pills .pill { max-width: 100%; }
+.gp-pills .pill em { max-width: 90px; }
+.tt textarea, .tt input { margin: 0; }

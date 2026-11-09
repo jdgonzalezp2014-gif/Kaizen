@@ -4,9 +4,9 @@
  * into its detail. Owner: premium because it sells, simple enough for anyone — no explaining text on screen.
  * Demo data only: nothing is charged, nothing goes to Hostaway; `send` is the seam for the API.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Carousel } from './Work.tsx';
-import { appleDir, googleDir } from '../lib/checkin.ts';
+import { DEFAULT_FIELDS, DEFAULT_FIELDS_AFTER, appleDir, googleDir, type HouseItem } from '../lib/checkin.ts';
 import { checkinPhotoUrl } from '../api.ts';
 import { Icon, ic } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
@@ -16,22 +16,24 @@ import { UPSELLS, availability, choiceLine, guide, mapsUrl, nights, payState, pr
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
 
 type Send = (r: UpsellRequest) => Promise<{ ok: boolean; message?: string }>;
-type Sec = 'stay' | 'checkin' | 'extras';
+export type Sec = 'stay' | 'checkin' | 'extras';
 const of = (i: number, n: number) => `${i} of ${n}`;
 
 const dateLabel = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 // The houses are in Texas: the release time reads in Central.
 const whenLabel = (iso: string) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
 
-export function GuestPortal({ stay, send, now = new Date(), demoBar }: { stay: GuestStay; send: Send; now?: Date; demoBar?: React.ReactNode }) {
-  const [sec, setSec] = useState<Sec>('stay');
+/** `embedded`: the builder's live preview — no URL state, no page-wide theme (the preview box carries `.g-scope`). */
+export function GuestPortal({ stay, send, now = new Date(), demoBar, embedded = false, startSec = 'stay' }: {
+  stay: GuestStay; send: Send; now?: Date; demoBar?: React.ReactNode; embedded?: boolean; startSec?: Sec }) {
+  const [sec, setSec] = useState<Sec>(startSec);
   const [pick, setPick] = useState<Upsell['kind'] | null>(null);
   const [sent, setSent] = useState<UpsellRequest[]>([]);
-  useUrlState('sec', sec, setSec, { def: 'stay', valid: v => v === 'stay' || v === 'checkin' || v === 'extras' });
-  useUrlState('extra', pick ?? '', v => setPick((v || null) as Upsell['kind'] | null), { def: '' });
+  useUrlState('sec', sec, setSec, { def: 'stay', valid: v => v === 'stay' || v === 'checkin' || v === 'extras', on: !embedded });
+  useUrlState('extra', pick ?? '', v => setPick((v || null) as Upsell['kind'] | null), { def: '', on: !embedded });
   const open = UPSELLS.find(u => u.kind === pick) ?? null;
   const go = (s: Sec) => { setSec(s); setPick(null); };
-  useBrand();
+  useBrand(!embedded);
 
   return <>
     <header className="v-island">
@@ -54,14 +56,15 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar }: { stay: G
 
 /** The public site's palette (kaizenguestproperties, dark-only): warm black + gold. Applied to the whole
  *  document while the guest page is open, without touching the staff's saved day/night choice. */
-function useBrand() {
+function useBrand(on = true) {
   useEffect(() => {
+    if (!on) return;
     const root = document.documentElement;
     const was = root.getAttribute('data-theme');
     root.classList.add('guest-brand');
     root.setAttribute('data-theme', 'dark');
     return () => { root.classList.remove('guest-brand'); if (was) root.setAttribute('data-theme', was); };
-  }, []);
+  }, [on]);
 }
 
 const lockLine = (g: ReturnType<typeof guide>) => g.open ? '' : g.why === 'unpaid' ? 'Opens after payment' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival';
@@ -204,6 +207,7 @@ function Pick({ stay, u, back, send }: { stay: GuestStay; u: Upsell; back: () =>
 
 /** Check-in instructions: the builder's arrival steps (photos inline, video in a new tab), then the address. */
 function Arrival({ g }: { g: GuestGuide | null }) {
+  const [view, setView] = useState<{ step: number; i: number } | null>(null);
   if (!g || (!g.steps?.length && !g.address)) return <div className="card g-guide"><p className="note"><Icon n="clock" /> Your check-in instructions will show here before arrival.</p></div>;
   return <div className="card g-guide">
     {g.steps && g.steps.length > 0 && <ol className="g-steps">
@@ -211,7 +215,8 @@ function Arrival({ g }: { g: GuestGuide | null }) {
         <span className="g-stepn" aria-hidden>{i + 1}</span>
         <div className="g-stepb"><b>{st.title}</b>{st.text && <p className="g-text">{st.text}</p>}
           {st.photos && st.photos.length > 0 && <span className={`g-pics n${st.photos.length}`}>
-            {st.photos.map(id => <img key={id} src={checkinPhotoUrl(id)} alt={`${st.title} — photo`} loading="lazy" />)}</span>}
+            {st.photos.map((id, j) => <button key={id} className="g-pic" onClick={() => setView({ step: i, i: j })} aria-label={`Open photo ${j + 1} of ${st.title}`}>
+              <img src={checkinPhotoUrl(id)} alt={`${st.title} — photo`} loading="lazy" /></button>)}</span>}
           {(st.pin || st.link) && <span className="g-maps">
             {st.pin && <><a className="chip" href={googleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Google Maps</a>
               <a className="chip" href={appleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Apple Maps</a></>}
@@ -220,33 +225,67 @@ function Arrival({ g }: { g: GuestGuide | null }) {
     </ol>}
     {g.address && <div className="g-gi"><span className="g-k">Address</span><b>{g.address}</b>
       <a className="chip" href={mapsUrl(g.address)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Open in Maps</a></div>}
+    {view && g.steps?.[view.step]?.photos && <Lightbox title={g.steps[view.step]!.title} photos={g.steps[view.step]!.photos!} at={view.i}
+      move={i => setView(v => v && { ...v, i })} close={() => setView(null)} />}
   </div>;
 }
 
-/** House manual: the record's Wi-Fi, times, parking, access, rules, phone + the builder's own items (e.g. Trash). */
+/** A step's photos full screen (owner, 2026-11-09: "the guests cannot open the photos, they are tiny"): tap to open,
+ *  ‹ › or swipe between them, tap outside / ✕ / Esc to close. */
+function Lightbox({ title, photos, at, move, close }: { title: string; photos: string[]; at: number; move: (i: number) => void; close: () => void }) {
+  const n = photos.length;
+  const go = (d: number) => move((at + d + n) % n);
+  const touch = useRef<number | null>(null);
+  useEffect(() => {
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); if (e.key === 'ArrowRight') go(1); if (e.key === 'ArrowLeft') go(-1); };
+    addEventListener('keydown', k); return () => removeEventListener('keydown', k);
+  });
+  return <div className="g-lightbox" role="dialog" aria-modal="true" aria-label={`${title} — photo ${at + 1} of ${n}`} onClick={close}
+    onTouchStart={e => { touch.current = e.touches[0]?.clientX ?? null; }}
+    onTouchEnd={e => { const x = e.changedTouches[0]?.clientX; if (touch.current != null && x != null && Math.abs(x - touch.current) > 50) go(x < touch.current ? 1 : -1); touch.current = null; }}>
+    <img src={checkinPhotoUrl(photos[at]!)} alt={`${title} — photo ${at + 1}`} onClick={e => e.stopPropagation()} />
+    <span className="g-lb-bar" onClick={e => e.stopPropagation()}>
+      {n > 1 && <button className="chip" onClick={() => go(-1)} aria-label="Previous photo">‹</button>}
+      <span>{title}{n > 1 ? ` · ${at + 1} / ${n}` : ''}</span>
+      {n > 1 && <button className="chip" onClick={() => go(1)} aria-label="Next photo">›</button>}
+      <button className="chip" onClick={close} aria-label="Close">✕</button>
+    </span>
+  </div>;
+}
+
+/**
+ * House manual (Stay): blocks in the guide's order — a record part (`field`) or the house's own text. A guide with no
+ * record blocks keeps the first layout: Wi-Fi, times, parking, its items, then access, rules, contact.
+ */
 function HouseManual({ g }: { g: GuestGuide | null }) {
   const [rules, setRules] = useState(false);
   const [copied, setCopied] = useState(false);
   if (!g) return <div className="card g-guide"><p className="note"><Icon n="clock" /> The house manual will show here before arrival.</p></div>;
   const copy = (t: string) => { void navigator.clipboard?.writeText(t).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined); };
-  return <div className="card g-guide">
-    {g.wifi && <div className="g-gi"><span className="g-k"><Icon n="wifi" /> Wi-Fi</span><b>{g.wifi.network}</b>
-      {g.wifi.password && <button className="chip g-copy" onClick={() => copy(g.wifi!.password!)} aria-label="Copy the Wi-Fi password"><span className="g-mono">{g.wifi.password}</span> {copied ? 'Copied' : 'Copy'}</button>}</div>}
-    {(g.checkIn || g.checkOut) && <div className="g-gi g-gi-row">
-      {g.checkIn && <span><span className="g-k">Check-in from</span><b>{g.checkIn}</b></span>}
-      {g.checkOut && <span><span className="g-k">Check-out by</span><b>{g.checkOut}</b></span>}</div>}
-    {g.parking && <div className="g-gi"><span className="g-k">Parking</span>
-      {g.parking.notes && <p className="g-text">{g.parking.notes}</p>}
-      {g.parking.freeStreet && <span className="note">Free street parking</span>}
-      {g.parking.coveredPerNight != null && <span className="note">Covered parking {money2(g.parking.coveredPerNight)} / night</span>}</div>}
-    {g.house?.map((h, i) => <div key={i} className="g-gi"><span className="g-k">{h.title}</span>{h.text && <p className="g-text">{h.text}</p>}</div>)}
-    {g.access && <div className="g-gi"><span className="g-k">What you can use</span><p className="g-text">{g.access}</p></div>}
-    {g.rules && <div className="g-gi"><button className="chip" onClick={() => setRules(v => !v)} aria-expanded={rules}>House rules {rules ? '⌃' : '›'}</button>
-      {rules && <p className="g-text">{g.rules}</p>}</div>}
-    {(g.manual || g.phone) && <div className="g-gi g-links">
-      {g.manual && <a className="chip" href={g.manual} target="_blank" rel="noopener noreferrer"><Icon n="book" /> Full guide</a>}
-      {g.phone && <a className="chip" href={`tel:${g.phone.replace(/[^\d+]/g, '')}`}><Icon n="phone" /> {g.phone}</a>}</div>}
-  </div>;
+  const items = g.house ?? [];
+  const order: HouseItem[] = items.some(h => h.field) ? items
+    : [...DEFAULT_FIELDS.map(field => ({ title: '', text: '', field })), ...items, ...DEFAULT_FIELDS_AFTER.map(field => ({ title: '', text: '', field }))];
+  const block = (h: HouseItem, i: number): React.ReactNode => {
+    switch (h.field) {
+      case 'wifi': return g.wifi && <div key={i} className="g-gi"><span className="g-k"><Icon n="wifi" /> Wi-Fi</span><b>{g.wifi.network}</b>
+        {g.wifi.password && <button className="chip g-copy" onClick={() => copy(g.wifi!.password!)} aria-label="Copy the Wi-Fi password"><span className="g-mono">{g.wifi.password}</span> {copied ? 'Copied' : 'Copy'}</button>}</div>;
+      case 'times': return (g.checkIn || g.checkOut) && <div key={i} className="g-gi g-gi-row">
+        {g.checkIn && <span><span className="g-k">Check-in from</span><b>{g.checkIn}</b></span>}
+        {g.checkOut && <span><span className="g-k">Check-out by</span><b>{g.checkOut}</b></span>}</div>;
+      case 'parking': return g.parking && <div key={i} className="g-gi"><span className="g-k">Parking</span>
+        {g.parking.notes && <p className="g-text">{g.parking.notes}</p>}
+        {g.parking.freeStreet && <span className="note">Free street parking</span>}
+        {g.parking.coveredPerNight != null && <span className="note">Covered parking {money2(g.parking.coveredPerNight)} / night</span>}</div>;
+      case 'access': return g.access && <div key={i} className="g-gi"><span className="g-k">What you can use</span><p className="g-text">{g.access}</p></div>;
+      case 'rules': return g.rules && <div key={i} className="g-gi"><button className="chip" onClick={() => setRules(v => !v)} aria-expanded={rules}>House rules {rules ? '⌃' : '›'}</button>
+        {rules && <p className="g-text">{g.rules}</p>}</div>;
+      case 'contact': return (g.manual || g.phone) && <div key={i} className="g-gi g-links">
+        {g.manual && <a className="chip" href={g.manual} target="_blank" rel="noopener noreferrer"><Icon n="book" /> Full guide</a>}
+        {g.phone && <a className="chip" href={`tel:${g.phone.replace(/[^\d+]/g, '')}`}><Icon n="phone" /> {g.phone}</a>}</div>;
+      default: return <div key={i} className="g-gi"><span className="g-k">{h.title}</span>{h.text && <p className="g-text">{h.text}</p>}</div>;
+    }
+  };
+  return <div className="card g-guide">{order.map(block)}</div>;
 }
 
 function Stepper({ label, value, set, min = 0, max }: { label: string; value: number; set: (v: number) => void; min?: number; max: number }) {

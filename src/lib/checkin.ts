@@ -6,8 +6,16 @@
 export interface Pin { lat: number; lng: number }
 /** `link`: a video of the step (Drive, YouTube…), https only, opened in a new tab. `photos`: Drive file ids, shown inline. */
 export interface CheckinStep { title: string; text: string; pin: Pin | null; link?: string | null; photos?: string[] }
-/** House manual (2026-11-09): the house's own items after the record's (Wi-Fi, times, parking…) — e.g. Trash. */
-export interface HouseItem { title: string; text: string }
+/**
+ * House manual / Stay blocks (2026-11-09): either the house's own text (e.g. Trash) or a block that shows a part of the
+ * record (`field`), so the guide decides what the guest sees and in which order. A guide with no field blocks keeps the
+ * old layout (record parts first, then the items).
+ */
+export const FIELDS = { wifi: 'Wi-Fi', times: 'Check-in / out times', parking: 'Parking', access: 'What you can use', rules: 'House rules', contact: 'Full guide & phone' } as const;
+export type FieldKey = keyof typeof FIELDS;
+export const DEFAULT_FIELDS: FieldKey[] = ['wifi', 'times', 'parking'];
+export const DEFAULT_FIELDS_AFTER: FieldKey[] = ['access', 'rules', 'contact'];
+export interface HouseItem { title: string; text: string; field?: FieldKey }
 export const MAX_PHOTOS = 3;
 export const MAX_HOUSE = 10;
 export const MAX_HOUSE_TEXT = 1200;
@@ -77,11 +85,11 @@ export function cleanSteps(raw: unknown): { ok: true; steps: CheckinStep[] } | {
  * {lockbox} = the Units record's Lockbox, {unit} = the unit's number (P2-1304 → 1304), {floor} = its Floor ("third").
  * Shared guides (2026-11-09) lean on these: one text, every unit of the building. Unknown or empty tokens stay visible.
  */
-export const TOKENS = { lockbox: 'Lockbox code', unit: 'Unit number', floor: 'Floor' } as const;
+export const TOKENS = { unit: 'Unit number', floor: 'Floor', lockbox: 'Lockbox code', address: 'Address', checkin: 'Check-in time' } as const;
 export const unitNumber = (name: string) => (name.match(/(\d{3,})\D*$/)?.[1] ?? name).trim();
 export function tokenVals(vals: Record<string, unknown> | null | undefined, unitName: string): Record<string, unknown> {
   const floor = typeof vals?.floor === 'string' ? vals.floor.trim().toLowerCase() : '';
-  return { ...(vals ?? {}), unit: unitNumber(unitName), floor };
+  return { ...(vals ?? {}), unit: unitNumber(unitName), floor, address: vals?.hw_address ?? null, checkin: vals?.checkin_from ?? null };
 }
 export function fillTokens(text: string, vals: Record<string, unknown> | null | undefined): string {
   return text.replace(/\{(\w+)\}/g, (all, k: string) => {
@@ -100,7 +108,7 @@ export const sharedId = (title: string) => SHARED + title.toLowerCase().normaliz
 export function composeGuide(shared: { steps: CheckinStep[]; house: HouseItem[] } | null, own: { steps: CheckinStep[]; house: HouseItem[] } | null,
                              vals: Record<string, unknown>): { steps: CheckinStep[]; house: HouseItem[] } {
   const steps = [...(shared?.steps ?? []), ...(own?.steps ?? [])].map(st => ({ ...st, title: fillTokens(st.title, vals), text: fillTokens(st.text, vals) }));
-  const house = [...(shared?.house ?? []), ...(own?.house ?? [])].map(h => ({ title: fillTokens(h.title, vals), text: fillTokens(h.text, vals) }));
+  const house = [...(shared?.house ?? []), ...(own?.house ?? [])].map(h => h.field ? h : { title: fillTokens(h.title, vals), text: fillTokens(h.text, vals) });
   return { steps, house };
 }
 
@@ -110,6 +118,11 @@ export function cleanHouse(raw: unknown): { ok: true; house: HouseItem[] } | { o
   const house: HouseItem[] = [];
   for (const [i, r] of raw.entries()) {
     const o = (r ?? {}) as Record<string, unknown>;
+    if (o.field !== undefined && o.field !== null) {
+      if (typeof o.field !== 'string' || !(o.field in FIELDS)) return { ok: false, error: `House manual item ${i + 1}: unknown record block.` };
+      if (house.some(h => h.field === o.field)) continue;
+      house.push({ title: '', text: '', field: o.field as FieldKey }); continue;
+    }
     const title = typeof o.title === 'string' ? o.title.trim() : '';
     const text = typeof o.text === 'string' ? o.text.trim() : '';
     if (!title && !text) continue;
@@ -118,6 +131,6 @@ export function cleanHouse(raw: unknown): { ok: true; house: HouseItem[] } | { o
     if (text.length > MAX_HOUSE_TEXT) return { ok: false, error: `House manual item ${i + 1}: text over ${MAX_HOUSE_TEXT} characters.` };
     house.push({ title, text });
   }
-  if (house.length > MAX_HOUSE) return { ok: false, error: `At most ${MAX_HOUSE} house manual items.` };
+  if (house.length > MAX_HOUSE + Object.keys(FIELDS).length) return { ok: false, error: `At most ${MAX_HOUSE} house manual items.` };
   return { ok: true, house };
 }

@@ -792,7 +792,7 @@ export type CheckinList = { units: { id: string; name: string; steps: number; us
 export const getCheckinUnits = () => call<({ ok: true } & CheckinList) | { ok: false; message?: string }>('/api/checkin-guide');
 export type CheckinGuide = { unitName: string; steps: CS[]; house: HI[]; uses: string | null; shared?: boolean; users?: { id: string; name: string }[];
   sharedPart: { id: string; title: string; steps: CS[]; house: HI[] } | null; record: import('./lib/guest-portal.ts').GuestGuide | null;
-  recordVals?: { lockbox: unknown; floor: unknown } | null; recordRef: { table: string; id: string } | null; updatedAt: string | null; updatedBy: string | null };
+  recordVals?: Record<string, unknown> | null; recordRef: { table: string; id: string } | null; updatedAt: string | null; updatedBy: string | null };
 export const getCheckinGuide = (unit: string) => call<({ ok: true } & CheckinGuide) | { ok: false; message?: string }>(`/api/checkin-guide?unit=${encodeURIComponent(unit)}`);
 export const saveCheckinGuide = (body: { unit: string; steps: CS[]; house: HI[]; uses?: string | null; title?: string; copiedFrom?: string }) =>
   call<{ ok: true; unit: string; steps: CS[]; house: HI[]; uses: string | null } | { ok: false; message?: string }>('/api/checkin-guide', { method: 'POST', body: JSON.stringify(body) });

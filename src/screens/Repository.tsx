@@ -179,6 +179,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const [importing, setImporting] = useState<string | null>(null); // section key, while a Monday board is being imported
   // §149: the Hostaway check fills the main pane; §170: so does Missing data (Home links here with ?check=missing).
   // 2026-11-09: so does the Check-in builder (?check=checkin).
+  const [guideFor, setGuideFor] = useState<string | null>(null);   // a record's "Guest portal guide ›"
   const [checking, setChecking] = useState<'' | 'hostaway' | 'missing' | 'checkin'>(() => {
     const c = new URLSearchParams(location.search).get('check'); return c === 'missing' || c === 'checkin' ? c : ''; });
   useEffect(() => { setParams({ check: null }, { replace: true }); }, []);
@@ -353,7 +354,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
   const openRow = openId && rows ? rows.find(r => String(r.id) === openId) ?? null : null;
 
   return (
-    <section className="rb">
+    <section className={`rb ${checking === 'checkin' ? 'rb-wide' : ''}`}>
       <aside className="rb-nav">
         {sections.map(s => (
           <div key={s.key} className="rb-nav-section">
@@ -393,12 +394,11 @@ export function Repository({ canReveal, canEdit, canStructure }: {
         {canStructure && <button className="rb-add-link" onClick={() => { setHits(null); setImporting(sections[0]?.key ?? ''); }}>⇪ Import from Monday</button>}
         <button className="rb-add-link" onClick={() => { setHits(null); setImporting(null); setChecking('hostaway'); }}>⇄ Check against Hostaway</button>
         <button className="rb-add-link" onClick={() => { setHits(null); setImporting(null); setChecking('missing'); }}>▲ Missing data</button>
-        <button className="rb-add-link" onClick={() => { setHits(null); setImporting(null); setChecking('checkin'); }}>⌂ Check-in builder</button>
       </aside>
 
       <div className="rb-main">
         <header className="rb-bar">
-          <h2>{checking === 'missing' ? 'Missing data' : checking === 'checkin' ? 'Check-in builder' : checking ? 'Check against Hostaway' : hits ? `Search: “${hits.q}”` : table?.title ?? ''}</h2>
+          <h2>{checking === 'missing' ? 'Missing data' : checking === 'checkin' ? 'Guest portal' : checking ? 'Check against Hostaway' : hits ? `Search: “${hits.q}”` : table?.title ?? ''}</h2>
           {!checking && !hits && rows && <span className="rb-count">{rows.length} record{rows.length === 1 ? '' : 's'}</span>}
           {loading && <span className="rb-count loading-dot">Loading</span>}
           <span className="rb-spacer" />
@@ -424,7 +424,7 @@ export function Repository({ canReveal, canEdit, canStructure }: {
           </div>
         )}
         {checking === 'checkin' ? (
-          <CheckinBuilder canEdit={canEdit} say={say} onOpenRecord={(t, id) => {
+          <CheckinBuilder canEdit={canEdit} say={say} findName={guideFor} onBack={() => setChecking('')} onOpenRecord={(t, id) => {
             setChecking(''); setFilter('');
             if (t === tableKey && rows) setOpenId(id); else { wanted.current = { table: t, id }; setTableKey(t); }
           }} />
@@ -447,10 +447,12 @@ export function Repository({ canReveal, canEdit, canStructure }: {
                   setEditing={setEditing} setPop={setPop} onOpen={setOpenId} onSave={saveCell} onCreate={createRow}
                   onReorder={(key, to) => void structure({ op: 'columns.reorder', table: table.key, columnKey: key, toIndex: to }, 'Column moved')}
                   view={views[table.key]} onView={v => setView(table.key, v)} onMoveRow={(id, to) => void moveRow(id, to)}
+                  onGuide={UNIT_TABLES.includes(table.key) ? n => { setGuideFor(n); setChecking('checkin'); } : undefined}
                   say={say} />
             {openRow && (
               <RecordPanel key={openId!} table={table} row={openRow} can={can} docs={docs} setPop={setPop}
                            onClose={() => setOpenId(null)} onSave={saveCell} say={say}
+                           onGuide={UNIT_TABLES.includes(table.key) ? n => { setOpenId(null); setGuideFor(n); setChecking('checkin'); } : undefined}
                            onDocs={refreshDocs}
                            onDeleted={() => { replaceRow(table.key, String(openRow.id), null); setOpenId(null); say('Deleted — archived, not erased'); }} />
             )}
@@ -526,7 +528,8 @@ export function Repository({ canReveal, canEdit, canStructure }: {
 
 /* ── the grid ─────────────────────────────────────────────────────── */
 
-function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, setPop, onOpen, onSave, onCreate, onReorder, view, onView, onMoveRow, say }: {
+function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, setPop, onOpen, onSave, onCreate, onReorder, view, onView, onMoveRow, say, onGuide }: {
+  onGuide?: (name: string) => void;
   table: RepoTable; rows: RepoRow[] | undefined; filter: string; can: Can; docs: Record<string, DocEntry>;
   editing: string | null; openId: string | null; setEditing: (k: string | null) => void; setPop: (p: Pop) => void;
   onOpen: (id: string) => void; onSave: (row: RepoRow, col: RepoColumn, v: unknown) => Promise<void>;
@@ -609,7 +612,7 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
           <button className="secondary small" onClick={() => onView({ filters: {} })}>Clear all</button>
         </div>
       )}
-      <table className="rb-grid">
+      <table className={`rb-grid ${onGuide ? 'rb-has-guide' : ''}`}>
         <thead>
           {runs.some(r => r.section) && (
             <tr className="rb-grouprow">
@@ -666,6 +669,7 @@ function Grid({ table, rows, filter, can, docs, editing, openId, setEditing, set
                     onDragStart={e => { e.dataTransfer.setData('text/plain', id); setDragRow(id); }}
                     onDragEnd={() => { setDragRow(null); setDropRow(null); }}>⠿</span>}
                   <button className="rb-details" onClick={() => onOpen(id)} title="Open every field of this record">All details</button>
+                  {onGuide && text(row.active) === 'Active' && <button className="rb-details rb-guide" onClick={() => onGuide(text(row[primary]))} title="The guest's check-in guide and house manual for this unit">◆ Guide</button>}
                 </td>
                 {slots.map(c => 'stub' in c
                   ? <Stub key={c.stub} group={c.stub} cols={c.cols} row={row} order={order} toggle={toggle} setPop={setPop} />
@@ -1430,8 +1434,8 @@ function SecretInline({ table, row, col, can, say }: { table: RepoTable; row: Re
 
 /* ── the record, beside the grid ──────────────────────────────────── */
 
-function RecordPanel({ table, row, can, docs, setPop, onClose, onSave, onDocs, onDeleted, say }: {
-  table: RepoTable; row: RepoRow; can: Can; docs: Record<string, DocEntry>; setPop: (p: Pop) => void;
+function RecordPanel({ table, row, can, docs, setPop, onClose, onSave, onDocs, onDeleted, say, onGuide }: {
+  table: RepoTable; row: RepoRow; can: Can; docs: Record<string, DocEntry>; setPop: (p: Pop) => void; onGuide?: (name: string) => void;
   onClose: () => void; onSave: (row: RepoRow, col: RepoColumn, v: unknown) => Promise<void>;
   onDocs: (row: RepoRow, col: RepoColumn) => Promise<void>; onDeleted: () => void; say: (m: string, bad?: boolean) => void;
 }) {
@@ -1461,6 +1465,7 @@ function RecordPanel({ table, row, can, docs, setPop, onClose, onSave, onDocs, o
           <h3>{text(row[primary]) || '(no name)'}</h3>
         </div>
         <span className="rb-spacer" />
+        {onGuide && <button className="secondary small" onClick={() => onGuide(text(row[primary]))}>◆ Guest guide ›</button>}
         {stamp('folder') && <a className="secondary small rb-btnlink" href={stamp('folder')} target="_blank" rel="noreferrer">Folder ↗</a>}
         <button className="rb-icon" title="Close (Esc)" onClick={onClose}>✕</button>
       </header>

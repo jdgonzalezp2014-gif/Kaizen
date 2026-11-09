@@ -55,3 +55,11 @@ test('shared guides: unit, floor and lockbox per unit; shared steps first, then 
   assert.equal(g.house.length, 1);
   assert.deepEqual(composeGuide(null, null, vals), { steps: [], house: [] });
 });
+
+test('house blocks: record blocks kept once, unknown refused; tokens for address and check-in time', () => {
+  assert.deepEqual(cleanHouse([{ field: 'wifi' }, { title: 'Trash', text: 'x' }, { field: 'wifi' }]),
+    { ok: true, house: [{ title: '', text: '', field: 'wifi' }, { title: 'Trash', text: 'x' }] });
+  assert.equal(cleanHouse([{ field: 'door_code' }]).ok, false);
+  const v = tokenVals({ hw_address: '1 Main St', checkin_from: '4 PM' }, 'Preston Vineyard');
+  assert.equal(fillTokens('{address} from {checkin}', v), '1 Main St from 4 PM');
+});
