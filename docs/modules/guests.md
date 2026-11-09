@@ -129,6 +129,14 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   preview `/guest/demo?stay=paid&unit=586502`. Record vs slides (2026-11-09, not changed): floor "First" (1304 is up the stairs),
   lock_type "Access Fob" (the door has a keypad; the fob is the building's), rules typos ("arties", "th registered"),
   and the guest's door code is not in the Repository (slides: "your access code").
+- **Shared guides (109, owner 2026-11-09 — "a general repository")**: rows `shared:<slug>` with a `title`; a unit `uses` one.
+  Guest = shared steps/items first, then the unit's own (`composeGuide`); tokens {unit} (P2-1304 → 1304), {floor} (record Floor,
+  lowercased), {lockbox}. Builder: "Guide" picker lists ◆ shared guides + units; "+ New shared guide"; a unit picks
+  "Uses shared guide" and adds extra steps. The Links: `shared:the-links-building-1` (1201/1304/1406, 7 steps) and
+  `…-building-4` (42xx/43xx, 6 steps: garage → lockbox → drive to Building 4 → entrance → elevator → door), from the slides
+  in Drive folder 1LSTwcKhmI9XcFTTBAH9cJbSWK8KZAmct (videos UNLISTED = open by link). Owner: all The Links units enter with
+  the fob (lock_type Access Fob); 2nd digit of the unit = floor; where slides and record disagreed on a lockbox, the slides won.
+  Codes never go in docs, tests or migrations — only in the record.
 - **Tabs Stay · Check-in · Extras (owner, 2026-11-09 — "check-in is super important, apart")**: Check-in = its own tab
   (steps + photos, or the lock + pay card); Stay = hero, pay, a Check-in shortcut, then the house manual inline under "Your stay".
 - **Two sections on the stay page (2026-11-09, migration 108 `checkin_guides.house`)**: **Check-in instructions** = the steps

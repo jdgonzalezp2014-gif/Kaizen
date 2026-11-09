@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePin, cleanSteps, cleanHouse, googleDir, appleDir, fillTokens } from './checkin.ts';
+import { parsePin, cleanSteps, cleanHouse, googleDir, appleDir, fillTokens, tokenVals, composeGuide, sharedId, unitNumber } from './checkin.ts';
 
 test('parsePin: pasted numbers and long map links; short links and junk refused', () => {
   assert.deepEqual(parsePin('33.1507, -96.8236'), { lat: 33.1507, lng: -96.8236 });
@@ -33,7 +33,7 @@ test('cleanSteps: trims, drops empty steps, needs a title, checks the pin', () =
 });
 
 test('fillTokens: quotes the record, leaves unknown or empty tokens visible', () => {
-  assert.equal(fillTokens('Code {lockbox}.', { lockbox: '1250' }), 'Code 1250.');
+  assert.equal(fillTokens('Code {lockbox}.', { lockbox: '0000' }), 'Code 0000.');
   assert.equal(fillTokens('Code {lockbox}.', { lockbox: '' }), 'Code {lockbox}.');
   assert.equal(fillTokens('{cleaner_code}', { cleaner_code: '9' }), '{cleaner_code}');
 });
@@ -42,4 +42,16 @@ test('cleanHouse: title needed, empties dropped, missing = none', () => {
   assert.deepEqual(cleanHouse([{ title: ' Trash ', text: ' Sun–Thu valet ' }, { title: '', text: '' }]), { ok: true, house: [{ title: 'Trash', text: 'Sun–Thu valet' }] });
   assert.deepEqual(cleanHouse(undefined), { ok: true, house: [] });
   assert.equal(cleanHouse([{ text: 'x' }]).ok, false);
+});
+
+test('shared guides: unit, floor and lockbox per unit; shared steps first, then the unit\'s own', () => {
+  assert.equal(unitNumber('P2-1304'), '1304');
+  assert.equal(unitNumber('LP-4217'), '4217');
+  assert.equal(sharedId('The Links · Building 4'), 'shared:the-links-building-4');
+  const vals = tokenVals({ lockbox: '0000', floor: 'Second' }, 'P2-4217');
+  const g = composeGuide({ steps: [{ title: 'Lockbox {unit}', text: 'Code {lockbox}, {floor} floor', pin: null }], house: [{ title: 'Trash', text: 'x' }] },
+    { steps: [{ title: 'Note', text: 'only here', pin: null }], house: [] }, vals);
+  assert.deepEqual(g.steps.map(s => [s.title, s.text]), [['Lockbox 4217', 'Code 0000, second floor'], ['Note', 'only here']]);
+  assert.equal(g.house.length, 1);
+  assert.deepEqual(composeGuide(null, null, vals), { steps: [], house: [] });
 });

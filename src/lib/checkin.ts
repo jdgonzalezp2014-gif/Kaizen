@@ -74,15 +74,34 @@ export function cleanSteps(raw: unknown): { ok: true; steps: CheckinStep[] } | {
 
 /**
  * Record values a step may quote instead of copying them (so a changed code is changed once, in the record):
- * {lockbox} = the Units record's Lockbox. Unknown or empty tokens stay visible, so a gap shows in the preview.
+ * {lockbox} = the Units record's Lockbox, {unit} = the unit's number (P2-1304 → 1304), {floor} = its Floor ("third").
+ * Shared guides (2026-11-09) lean on these: one text, every unit of the building. Unknown or empty tokens stay visible.
  */
-export const TOKENS = { lockbox: 'Lockbox code' } as const;
+export const TOKENS = { lockbox: 'Lockbox code', unit: 'Unit number', floor: 'Floor' } as const;
+export const unitNumber = (name: string) => (name.match(/(\d{3,})\D*$/)?.[1] ?? name).trim();
+export function tokenVals(vals: Record<string, unknown> | null | undefined, unitName: string): Record<string, unknown> {
+  const floor = typeof vals?.floor === 'string' ? vals.floor.trim().toLowerCase() : '';
+  return { ...(vals ?? {}), unit: unitNumber(unitName), floor };
+}
 export function fillTokens(text: string, vals: Record<string, unknown> | null | undefined): string {
   return text.replace(/\{(\w+)\}/g, (all, k: string) => {
     if (!(k in TOKENS)) return all;
     const v = vals?.[k]; const t = typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '';
     return t || all;
   });
+}
+
+/** Shared guides: `shared:<slug>` rows. */
+export const SHARED = 'shared:';
+export const isShared = (id: string) => id.startsWith(SHARED);
+export const sharedId = (title: string) => SHARED + title.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
+
+/** What the guest gets: the shared guide's steps and items first, then the unit's own; tokens filled per unit. */
+export function composeGuide(shared: { steps: CheckinStep[]; house: HouseItem[] } | null, own: { steps: CheckinStep[]; house: HouseItem[] } | null,
+                             vals: Record<string, unknown>): { steps: CheckinStep[]; house: HouseItem[] } {
+  const steps = [...(shared?.steps ?? []), ...(own?.steps ?? [])].map(st => ({ ...st, title: fillTokens(st.title, vals), text: fillTokens(st.text, vals) }));
+  const house = [...(shared?.house ?? []), ...(own?.house ?? [])].map(h => ({ title: fillTokens(h.title, vals), text: fillTokens(h.text, vals) }));
+  return { steps, house };
 }
 
 export function cleanHouse(raw: unknown): { ok: true; house: HouseItem[] } | { ok: false; error: string } {

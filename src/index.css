@@ -3153,3 +3153,6 @@ html:root.guest-brand {
 .g-action-main-cta { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
 .g-checkin-when { padding: 0 2px; margin-top: -6px; }
 p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }
+.cb-shared { padding: 10px 14px; border-radius: var(--r-md); background: var(--tint); display: flex; flex-direction: column; gap: 6px; align-items: flex-start; }
+.cb-shared ol { margin: 0; padding-left: 20px; }
+.cb-card select { max-width: 420px; }

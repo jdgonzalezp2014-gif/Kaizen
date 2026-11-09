@@ -12,7 +12,7 @@ import { identify, unauthorised } from '../_lib/auth.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
 import { UNIT_TABLES } from '../../src/lib/repo-checks.ts';
 import { emptyGuide, guideFrom, pricesFrom } from '../../src/lib/guest-portal.ts';
-import { fillTokens, type CheckinStep, type HouseItem } from '../../src/lib/checkin.ts';
+import { composeGuide, tokenVals, type CheckinStep, type HouseItem } from '../../src/lib/checkin.ts';
 
 export async function guestHouse(sql: SqlFn, unitId: string) {
   const [units, recs] = await Promise.all([
@@ -23,13 +23,14 @@ export async function guestHouse(sql: SqlFn, unitId: string) {
   const u = units[0];
   if (!u) return null;
   const rec = repoMatch(u.name, recs);
-  // The builder's steps (107); a missing table must not take the guide down with it.
-  const g = await (sql`SELECT steps, house FROM checkin_guides WHERE account_id = 1 AND unit_id = ${unitId}` as Promise<{ steps: CheckinStep[]; house: HouseItem[] }[]>)
-    .then(r => r[0] ?? null, () => null);
-  const steps = g?.steps ?? [], house = (g?.house ?? []).map(it => ({ ...it, text: fillTokens(it.text, rec?.vals) }));
+  // The builder (107–109): the unit's own steps/items, after its building's shared guide; tokens filled per unit.
+  // A missing table or column must not take the guide down with it.
+  type G = { steps: CheckinStep[]; house: HouseItem[]; uses?: string | null };
+  const own = await (sql`SELECT steps, house, uses FROM checkin_guides WHERE account_id = 1 AND unit_id = ${unitId}` as Promise<G[]>).then(r => r[0] ?? null, () => null);
+  const shared = own?.uses ? await (sql`SELECT steps, house FROM checkin_guides WHERE account_id = 1 AND unit_id = ${own.uses}` as Promise<G[]>).then(r => r[0] ?? null, () => null) : null;
+  const { steps, house } = composeGuide(shared, own, tokenVals(rec?.vals, rec ? String(rec.vals.name ?? u.name) : u.name));
   const guide = guideFrom(rec?.vals);
-  const filled = steps.map(st => ({ ...st, text: fillTokens(st.text, rec?.vals) }));
-  return { unitName: u.name, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps: filled, house } : null, prices: pricesFrom(rec?.vals) };
+  return { unitName: u.name, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals) };
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

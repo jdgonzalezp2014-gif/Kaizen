@@ -787,12 +787,15 @@ export const getRepoCheck = () =>
 /** §170: every active unit's missing data, worst first — read-only. */
 export interface MissingRule { key: string; label: string; severity: import('./lib/missing-data.ts').Severity; why: string; where: 'repository' | 'hostaway' }
 /** Repository → Check-in builder (2026-11-09). */
-export const getCheckinUnits = () => call<{ ok: true; units: { id: string; name: string; steps: number }[] } | { ok: false; message?: string }>('/api/checkin-guide');
-export const getCheckinGuide = (unit: string) => call<{ ok: true; unitName: string; steps: import('./lib/checkin.ts').CheckinStep[]; house: import('./lib/checkin.ts').HouseItem[];
-  record: import('./lib/guest-portal.ts').GuestGuide | null; recordRef: { table: string; id: string } | null; updatedAt: string | null; updatedBy: string | null }
-  | { ok: false; message?: string }>(`/api/checkin-guide?unit=${encodeURIComponent(unit)}`);
-export const saveCheckinGuide = (body: { unit: string; steps: import('./lib/checkin.ts').CheckinStep[]; house: import('./lib/checkin.ts').HouseItem[]; copiedFrom?: string }) =>
-  call<{ ok: true; steps: import('./lib/checkin.ts').CheckinStep[]; house: import('./lib/checkin.ts').HouseItem[] } | { ok: false; message?: string }>('/api/checkin-guide', { method: 'POST', body: JSON.stringify(body) });
+type CS = import('./lib/checkin.ts').CheckinStep; type HI = import('./lib/checkin.ts').HouseItem;
+export type CheckinList = { units: { id: string; name: string; steps: number; uses: string | null }[]; shared: { id: string; title: string; steps: number; users: number }[] };
+export const getCheckinUnits = () => call<({ ok: true } & CheckinList) | { ok: false; message?: string }>('/api/checkin-guide');
+export type CheckinGuide = { unitName: string; steps: CS[]; house: HI[]; uses: string | null; shared?: boolean; users?: { id: string; name: string }[];
+  sharedPart: { id: string; title: string; steps: CS[]; house: HI[] } | null; record: import('./lib/guest-portal.ts').GuestGuide | null;
+  recordVals?: { lockbox: unknown; floor: unknown } | null; recordRef: { table: string; id: string } | null; updatedAt: string | null; updatedBy: string | null };
+export const getCheckinGuide = (unit: string) => call<({ ok: true } & CheckinGuide) | { ok: false; message?: string }>(`/api/checkin-guide?unit=${encodeURIComponent(unit)}`);
+export const saveCheckinGuide = (body: { unit: string; steps: CS[]; house: HI[]; uses?: string | null; title?: string; copiedFrom?: string }) =>
+  call<{ ok: true; unit: string; steps: CS[]; house: HI[]; uses: string | null } | { ok: false; message?: string }>('/api/checkin-guide', { method: 'POST', body: JSON.stringify(body) });
 /** A step photo into the record's "Check-in photos" Drive folder; the step keeps the id on Save. */
 export async function uploadCheckinPhoto(unit: string, file: File): Promise<{ ok: true; id: string } | { ok: false; message?: string }> {
   const f = new FormData(); f.append('unit', unit); f.append('file', file);
