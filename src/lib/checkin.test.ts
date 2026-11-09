@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { parsePin, cleanSteps, googleDir, appleDir, fillTokens } from './checkin.ts';
+import { parsePin, cleanSteps, cleanHouse, googleDir, appleDir, fillTokens } from './checkin.ts';
 
 test('parsePin: pasted numbers and long map links; short links and junk refused', () => {
   assert.deepEqual(parsePin('33.1507, -96.8236'), { lat: 33.1507, lng: -96.8236 });
@@ -20,9 +20,12 @@ test('parsePin: pasted numbers and long map links; short links and junk refused'
 
 test('cleanSteps: trims, drops empty steps, needs a title, checks the pin', () => {
   const r = cleanSteps([{ title: ' Key fob ', text: ' Lockbox by the office ', pin: { lat: 33.1, lng: -96.8 } }, { title: '', text: '' }, { title: 'Door', text: '' }]);
-  assert.deepEqual(r, { ok: true, steps: [{ title: 'Key fob', text: 'Lockbox by the office', pin: { lat: 33.1, lng: -96.8 }, link: null }, { title: 'Door', text: '', pin: null, link: null }] });
+  assert.deepEqual(r, { ok: true, steps: [{ title: 'Key fob', text: 'Lockbox by the office', pin: { lat: 33.1, lng: -96.8 }, link: null, photos: [] }, { title: 'Door', text: '', pin: null, link: null, photos: [] }] });
   assert.equal(cleanSteps([{ title: 'a', link: 'http://x' }]).ok, false);
-  assert.deepEqual(cleanSteps([{ title: 'a', link: ' https://drive.google.com/file/d/x/view ' }]), { ok: true, steps: [{ title: 'a', text: '', pin: null, link: 'https://drive.google.com/file/d/x/view' }] });
+  assert.deepEqual(cleanSteps([{ title: 'a', link: ' https://drive.google.com/file/d/x/view ' }]), { ok: true, steps: [{ title: 'a', text: '', pin: null, link: 'https://drive.google.com/file/d/x/view', photos: [] }] });
+  assert.deepEqual(cleanSteps([{ title: 'a', photos: ['1AbCdEfGhIjK', '1AbCdEfGhIjK'] }]).ok && 1, 1);
+  assert.equal(cleanSteps([{ title: 'a', photos: ['../x'] }]).ok, false);
+  assert.equal(cleanSteps([{ title: 'a', photos: ['1AbCdEfGhIj1', '1AbCdEfGhIj2', '1AbCdEfGhIj3', '1AbCdEfGhIj4'] }]).ok, false);
   assert.equal(cleanSteps([{ title: '', text: 'x' }]).ok, false);
   assert.equal(cleanSteps([{ title: 'a', pin: { lat: 200, lng: 0 } }]).ok, false);
   assert.equal(cleanSteps(Array.from({ length: 9 }, () => ({ title: 'a' }))).ok, false);
@@ -33,4 +36,10 @@ test('fillTokens: quotes the record, leaves unknown or empty tokens visible', ()
   assert.equal(fillTokens('Code {lockbox}.', { lockbox: '1250' }), 'Code 1250.');
   assert.equal(fillTokens('Code {lockbox}.', { lockbox: '' }), 'Code {lockbox}.');
   assert.equal(fillTokens('{cleaner_code}', { cleaner_code: '9' }), '{cleaner_code}');
+});
+
+test('cleanHouse: title needed, empties dropped, missing = none', () => {
+  assert.deepEqual(cleanHouse([{ title: ' Trash ', text: ' Sun–Thu valet ' }, { title: '', text: '' }]), { ok: true, house: [{ title: 'Trash', text: 'Sun–Thu valet' }] });
+  assert.deepEqual(cleanHouse(undefined), { ok: true, house: [] });
+  assert.equal(cleanHouse([{ text: 'x' }]).ok, false);
 });

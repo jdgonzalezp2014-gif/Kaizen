@@ -4,7 +4,7 @@
  * an extra is a *request* the team confirms; the money goes through the stay's pay link (Hostaway Payments).
  */
 
-import type { CheckinStep } from './checkin.ts';
+import type { CheckinStep, HouseItem } from './checkin.ts';
 
 export type Channel = 'direct' | 'airbnb' | 'vrbo' | 'booking' | 'partner' | 'other';
 
@@ -60,6 +60,8 @@ export interface GuestGuide {
   phone: string | null;
   /** Arrival steps from Repository → Check-in builder (checkin.ts), shown before the fields above. */
   steps?: CheckinStep[];
+  /** House manual items from the builder (e.g. Trash), after the record's Wi-Fi / times / parking. */
+  house?: HouseItem[];
 }
 export const emptyGuide = (): GuestGuide => ({ address: null, wifi: null, checkIn: null, checkOut: null, parking: null, access: null, manual: null, rules: null, phone: null });
 

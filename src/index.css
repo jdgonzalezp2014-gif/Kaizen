@@ -3136,3 +3136,17 @@ html:root.guest-brand {
 .cb-empty { color: var(--muted); }
 @media (max-width: 640px) { .cb-rec > div { grid-template-columns: 1fr; gap: 2px; } .cb-step { flex-wrap: wrap; } }
 .cb-tokens { display: flex; gap: 6px; flex-wrap: wrap; }
+/* Step photos and the house manual (2026-11-09). */
+.g-pics { display: grid; gap: 6px; margin-top: 6px; }
+.g-pics.n2 { grid-template-columns: 1fr 1fr; }
+.g-pics.n3 { grid-template-columns: 1fr 1fr 1fr; }
+.g-pics img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 10px; background: var(--tint); display: block; }
+.g-pics.n1 img { aspect-ratio: 16 / 10; }
+.g-links { flex-direction: row; flex-wrap: wrap; gap: 8px; }
+.cb-photos { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.cb-photo { position: relative; }
+.cb-photo img { width: 96px; height: 72px; object-fit: cover; border-radius: 8px; display: block; background: var(--tint); }
+.cb-photo .chip { position: absolute; top: 2px; right: 2px; min-height: 0; padding: 0 6px; background: var(--card); }
+.cb-add-photo { cursor: pointer; margin: 0; }
+.cb-save { position: sticky; bottom: 8px; padding: 10px 14px; border-radius: var(--r-md); background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow-2); }
+.cb-recwrap { display: flex; flex-direction: column; gap: 10px; padding-bottom: 6px; }

@@ -4,8 +4,14 @@
  * e.g. The Links: "1. Pick up your key fob" (lockbox) → "2. Building entrance". Pure: parse, validate, links.
  */
 export interface Pin { lat: number; lng: number }
-/** `link`: a video or photo of the step (Drive, YouTube…), https only. */
-export interface CheckinStep { title: string; text: string; pin: Pin | null; link?: string | null }
+/** `link`: a video of the step (Drive, YouTube…), https only, opened in a new tab. `photos`: Drive file ids, shown inline. */
+export interface CheckinStep { title: string; text: string; pin: Pin | null; link?: string | null; photos?: string[] }
+/** House manual (2026-11-09): the house's own items after the record's (Wi-Fi, times, parking…) — e.g. Trash. */
+export interface HouseItem { title: string; text: string }
+export const MAX_PHOTOS = 3;
+export const MAX_HOUSE = 10;
+export const MAX_HOUSE_TEXT = 1200;
+export const isPhotoId = (v: unknown): v is string => typeof v === 'string' && /^[\w-]{10,200}$/.test(v);
 export const MAX_STEPS = 8;
 export const MAX_TITLE = 80;
 export const MAX_TEXT = 600;
@@ -53,11 +59,14 @@ export function cleanSteps(raw: unknown): { ok: true; steps: CheckinStep[] } | {
     if (p && !pin) return { ok: false, error: `Step ${i + 1}: the location is not a valid point.` };
     const link = typeof o.link === 'string' ? o.link.trim() : '';
     if (link && !/^https:\/\/\S+$/i.test(link)) return { ok: false, error: `Step ${i + 1}: the link must start with https://` };
-    if (!title && !text && !pin && !link) continue;
+    const photos = Array.isArray(o.photos) ? o.photos : [];
+    if (!photos.every(isPhotoId)) return { ok: false, error: `Step ${i + 1}: a photo is not valid.` };
+    if (photos.length > MAX_PHOTOS) return { ok: false, error: `Step ${i + 1}: at most ${MAX_PHOTOS} photos.` };
+    if (!title && !text && !pin && !link && !photos.length) continue;
     if (!title) return { ok: false, error: `Step ${i + 1} needs a title.` };
     if (title.length > MAX_TITLE) return { ok: false, error: `Step ${i + 1}: title over ${MAX_TITLE} characters.` };
     if (text.length > MAX_TEXT) return { ok: false, error: `Step ${i + 1}: text over ${MAX_TEXT} characters.` };
-    steps.push({ title, text, pin, link: link || null });
+    steps.push({ title, text, pin, link: link || null, photos: [...new Set(photos as string[])] });
   }
   if (steps.length > MAX_STEPS) return { ok: false, error: `At most ${MAX_STEPS} steps.` };
   return { ok: true, steps };
@@ -74,4 +83,22 @@ export function fillTokens(text: string, vals: Record<string, unknown> | null | 
     const v = vals?.[k]; const t = typeof v === 'string' || typeof v === 'number' ? String(v).trim() : '';
     return t || all;
   });
+}
+
+export function cleanHouse(raw: unknown): { ok: true; house: HouseItem[] } | { ok: false; error: string } {
+  if (raw === undefined) return { ok: true, house: [] };
+  if (!Array.isArray(raw)) return { ok: false, error: 'house manual must be a list' };
+  const house: HouseItem[] = [];
+  for (const [i, r] of raw.entries()) {
+    const o = (r ?? {}) as Record<string, unknown>;
+    const title = typeof o.title === 'string' ? o.title.trim() : '';
+    const text = typeof o.text === 'string' ? o.text.trim() : '';
+    if (!title && !text) continue;
+    if (!title) return { ok: false, error: `House manual item ${i + 1} needs a title.` };
+    if (title.length > MAX_TITLE) return { ok: false, error: `House manual item ${i + 1}: title over ${MAX_TITLE} characters.` };
+    if (text.length > MAX_HOUSE_TEXT) return { ok: false, error: `House manual item ${i + 1}: text over ${MAX_HOUSE_TEXT} characters.` };
+    house.push({ title, text });
+  }
+  if (house.length > MAX_HOUSE) return { ok: false, error: `At most ${MAX_HOUSE} house manual items.` };
+  return { ok: true, house };
 }

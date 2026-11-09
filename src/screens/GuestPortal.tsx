@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { Carousel } from './Work.tsx';
 import { appleDir, googleDir } from '../lib/checkin.ts';
+import { checkinPhotoUrl } from '../api.ts';
 import { Icon, ic } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
@@ -65,7 +66,7 @@ function useBrand() {
 function StayView({ stay, now, toExtras }: { stay: GuestStay; now: Date; toExtras: () => void }) {
   const n = nights(stay);
   const g = guide(stay, now);
-  const [showGuide, setShowGuide] = useState(false);
+  const [open, setOpen] = useState<'guide' | 'house' | null>(null);
   return <>
     <section className="card g-hero">
       <div className="g-photo" style={stay.photo ? { backgroundImage: `url(${stay.photo})` } : undefined}>
@@ -83,13 +84,21 @@ function StayView({ stay, now, toExtras }: { stay: GuestStay; now: Date; toExtra
 
     <PayCard stay={stay} />
 
-    <button className="card g-action" onClick={() => g.open && setShowGuide(v => !v)} aria-disabled={!g.open} aria-expanded={g.open ? showGuide : undefined}>
+    <button className="card g-action" onClick={() => g.open && setOpen(o => o === 'guide' ? null : 'guide')} aria-disabled={!g.open} aria-expanded={g.open ? open === 'guide' : undefined}>
       <span className="g-action-icon"><Icon n="key" /></span>
       <span className="g-action-main"><b>Check-in instructions</b>
         {!g.open && <span className="g-lock"><Icon n="lock" /> {g.why === 'unpaid' ? 'Opens after payment' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival'}</span>}</span>
-      {g.open && <span className="g-go">{showGuide ? '⌃' : '›'}</span>}
+      {g.open && <span className="g-go">{open === 'guide' ? '⌃' : '›'}</span>}
     </button>
-    {g.open && showGuide && <Guide g={stay.guide ?? null} />}
+    {g.open && open === 'guide' && <Arrival g={stay.guide ?? null} />}
+
+    <button className="card g-action" onClick={() => g.open && setOpen(o => o === 'house' ? null : 'house')} aria-disabled={!g.open} aria-expanded={g.open ? open === 'house' : undefined}>
+      <span className="g-action-icon"><Icon n="book" /></span>
+      <span className="g-action-main"><b>House manual</b>
+        {g.open ? <span className="note">Wi-Fi · Parking · Trash · House rules</span> : <span className="g-lock"><Icon n="lock" /> {g.why === 'unpaid' ? 'Opens after payment' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival'}</span>}</span>
+      {g.open && <span className="g-go">{open === 'house' ? '⌃' : '›'}</span>}
+    </button>
+    {g.open && open === 'house' && <HouseManual g={stay.guide ?? null} />}
 
     <button className="card g-action" onClick={toExtras}>
       <span className="g-action-icon"><Icon n="sparkles" /></span>
@@ -181,38 +190,50 @@ function Pick({ stay, u, back, send }: { stay: GuestStay; u: Upsell; back: () =>
   </>;
 }
 
-/** The house's check-in guide, from its Repository record. Only what is filled shows. */
-function Guide({ g }: { g: GuestGuide | null }) {
-  const [rules, setRules] = useState(false);
-  if (!g) return <div className="card g-guide"><p className="note"><Icon n="clock" /> Your check-in guide will show here before arrival.</p></div>;
-  const copy = (t: string) => { void navigator.clipboard?.writeText(t).catch(() => undefined); };
+/** Check-in instructions: the builder's arrival steps (photos inline, video in a new tab), then the address. */
+function Arrival({ g }: { g: GuestGuide | null }) {
+  if (!g || (!g.steps?.length && !g.address)) return <div className="card g-guide"><p className="note"><Icon n="clock" /> Your check-in instructions will show here before arrival.</p></div>;
   return <div className="card g-guide">
     {g.steps && g.steps.length > 0 && <ol className="g-steps">
       {g.steps.map((st, i) => <li key={i} className="g-stepi">
         <span className="g-stepn" aria-hidden>{i + 1}</span>
         <div className="g-stepb"><b>{st.title}</b>{st.text && <p className="g-text">{st.text}</p>}
-          {st.pin && <span className="g-maps">
-            <a className="chip" href={googleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Google Maps</a>
-            <a className="chip" href={appleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Apple Maps</a></span>}
-          {st.link && <span className="g-maps"><a className="chip" href={st.link} target="_blank" rel="noopener noreferrer"><Icon n="eye" /> Watch</a></span>}</div>
+          {st.photos && st.photos.length > 0 && <span className={`g-pics n${st.photos.length}`}>
+            {st.photos.map(id => <img key={id} src={checkinPhotoUrl(id)} alt={`${st.title} — photo`} loading="lazy" />)}</span>}
+          {(st.pin || st.link) && <span className="g-maps">
+            {st.pin && <><a className="chip" href={googleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Google Maps</a>
+              <a className="chip" href={appleDir(st.pin)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Apple Maps</a></>}
+            {st.link && <a className="chip" href={st.link} target="_blank" rel="noopener noreferrer"><Icon n="eye" /> Watch video</a>}</span>}</div>
       </li>)}
     </ol>}
     {g.address && <div className="g-gi"><span className="g-k">Address</span><b>{g.address}</b>
       <a className="chip" href={mapsUrl(g.address)} target="_blank" rel="noopener noreferrer"><Icon n="pin" /> Open in Maps</a></div>}
+  </div>;
+}
+
+/** House manual: the record's Wi-Fi, times, parking, access, rules, phone + the builder's own items (e.g. Trash). */
+function HouseManual({ g }: { g: GuestGuide | null }) {
+  const [rules, setRules] = useState(false);
+  const [copied, setCopied] = useState(false);
+  if (!g) return <div className="card g-guide"><p className="note"><Icon n="clock" /> The house manual will show here before arrival.</p></div>;
+  const copy = (t: string) => { void navigator.clipboard?.writeText(t).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined); };
+  return <div className="card g-guide">
+    {g.wifi && <div className="g-gi"><span className="g-k"><Icon n="wifi" /> Wi-Fi</span><b>{g.wifi.network}</b>
+      {g.wifi.password && <button className="chip g-copy" onClick={() => copy(g.wifi!.password!)} aria-label="Copy the Wi-Fi password"><span className="g-mono">{g.wifi.password}</span> {copied ? 'Copied' : 'Copy'}</button>}</div>}
     {(g.checkIn || g.checkOut) && <div className="g-gi g-gi-row">
       {g.checkIn && <span><span className="g-k">Check-in from</span><b>{g.checkIn}</b></span>}
       {g.checkOut && <span><span className="g-k">Check-out by</span><b>{g.checkOut}</b></span>}</div>}
-    {g.wifi && <div className="g-gi"><span className="g-k"><Icon n="wifi" /> Wi-Fi</span><b>{g.wifi.network}</b>
-      {g.wifi.password && <button className="chip g-copy" onClick={() => copy(g.wifi!.password!)} aria-label="Copy the Wi-Fi password"><span className="g-mono">{g.wifi.password}</span> Copy</button>}</div>}
-    {g.access && <div className="g-gi"><span className="g-k">Guest access</span><p className="g-text">{g.access}</p></div>}
     {g.parking && <div className="g-gi"><span className="g-k">Parking</span>
       {g.parking.notes && <p className="g-text">{g.parking.notes}</p>}
       {g.parking.freeStreet && <span className="note">Free street parking</span>}
       {g.parking.coveredPerNight != null && <span className="note">Covered parking {money2(g.parking.coveredPerNight)} / night</span>}</div>}
-    {g.manual && <a className="chip" href={g.manual} target="_blank" rel="noopener noreferrer"><Icon n="book" /> House manual</a>}
+    {g.house?.map((h, i) => <div key={i} className="g-gi"><span className="g-k">{h.title}</span>{h.text && <p className="g-text">{h.text}</p>}</div>)}
+    {g.access && <div className="g-gi"><span className="g-k">What you can use</span><p className="g-text">{g.access}</p></div>}
     {g.rules && <div className="g-gi"><button className="chip" onClick={() => setRules(v => !v)} aria-expanded={rules}>House rules {rules ? '⌃' : '›'}</button>
       {rules && <p className="g-text">{g.rules}</p>}</div>}
-    {g.phone && <a className="chip" href={`tel:${g.phone.replace(/[^\d+]/g, '')}`}><Icon n="phone" /> {g.phone}</a>}
+    {(g.manual || g.phone) && <div className="g-gi g-links">
+      {g.manual && <a className="chip" href={g.manual} target="_blank" rel="noopener noreferrer"><Icon n="book" /> Full guide</a>}
+      {g.phone && <a className="chip" href={`tel:${g.phone.replace(/[^\d+]/g, '')}`}><Icon n="phone" /> {g.phone}</a>}</div>}
   </div>;
 }
 

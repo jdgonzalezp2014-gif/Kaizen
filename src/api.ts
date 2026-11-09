@@ -788,11 +788,18 @@ export const getRepoCheck = () =>
 export interface MissingRule { key: string; label: string; severity: import('./lib/missing-data.ts').Severity; why: string; where: 'repository' | 'hostaway' }
 /** Repository → Check-in builder (2026-11-09). */
 export const getCheckinUnits = () => call<{ ok: true; units: { id: string; name: string; steps: number }[] } | { ok: false; message?: string }>('/api/checkin-guide');
-export const getCheckinGuide = (unit: string) => call<{ ok: true; unitName: string; steps: import('./lib/checkin.ts').CheckinStep[];
+export const getCheckinGuide = (unit: string) => call<{ ok: true; unitName: string; steps: import('./lib/checkin.ts').CheckinStep[]; house: import('./lib/checkin.ts').HouseItem[];
   record: import('./lib/guest-portal.ts').GuestGuide | null; recordRef: { table: string; id: string } | null; updatedAt: string | null; updatedBy: string | null }
   | { ok: false; message?: string }>(`/api/checkin-guide?unit=${encodeURIComponent(unit)}`);
-export const saveCheckinGuide = (body: { unit: string; steps: import('./lib/checkin.ts').CheckinStep[]; copiedFrom?: string }) =>
-  call<{ ok: true; steps: import('./lib/checkin.ts').CheckinStep[] } | { ok: false; message?: string }>('/api/checkin-guide', { method: 'POST', body: JSON.stringify(body) });
+export const saveCheckinGuide = (body: { unit: string; steps: import('./lib/checkin.ts').CheckinStep[]; house: import('./lib/checkin.ts').HouseItem[]; copiedFrom?: string }) =>
+  call<{ ok: true; steps: import('./lib/checkin.ts').CheckinStep[]; house: import('./lib/checkin.ts').HouseItem[] } | { ok: false; message?: string }>('/api/checkin-guide', { method: 'POST', body: JSON.stringify(body) });
+/** A step photo into the record's "Check-in photos" Drive folder; the step keeps the id on Save. */
+export async function uploadCheckinPhoto(unit: string, file: File): Promise<{ ok: true; id: string } | { ok: false; message?: string }> {
+  const f = new FormData(); f.append('unit', unit); f.append('file', file);
+  const r = await fetch('/api/checkin-photo', { method: 'POST', body: f });
+  return await r.json().catch(() => ({ ok: false, message: `HTTP ${r.status}` })) as { ok: true; id: string } | { ok: false; message?: string };
+}
+export const checkinPhotoUrl = (id: string) => `/api/checkin-photo?id=${encodeURIComponent(id)}`;
 export const getMissingData = () =>
   call<{ ok: true; units: import('./lib/missing-data.ts').UnitGaps[]; counts: Record<import('./lib/missing-data.ts').Severity, number>;
          hostawayError: string | null; rules: MissingRule[]; at: string } | { ok: false; message?: string }>('/api/missing-data');

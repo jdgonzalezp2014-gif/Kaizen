@@ -194,6 +194,11 @@ export async function docFolder(sql: SqlFn, token: string, table: string, id: st
   const existing = folderIdFromUrl(rec.doc);
   if (existing) return existing;
 
+  return subFolder(sql, token, table, id, rec, column, rec.col_title);
+}
+
+type RecFolders = { folder_url: string | null; doc: string | null; vals: Record<string, unknown>; name_fields: string[] };
+async function subFolder(sql: SqlFn, token: string, table: string, id: string, rec: RecFolders, key: string, title: string): Promise<string> {
   let recordFolder = folderIdFromUrl(rec.folder_url);
   if (!recordFolder) {
     const name = [id, ...rec.name_fields.map(k => rec.vals?.[k]).filter(v => v !== undefined && v !== '')].join(' — ');
@@ -201,10 +206,20 @@ export async function docFolder(sql: SqlFn, token: string, table: string, id: st
     await sql`UPDATE repo_records SET folder_url = ${folderUrl(recordFolder)}
                WHERE account_id = 1 AND table_key = ${table} AND id = ${id}`;
   }
-  const sub = (await createFolder(token, recordFolder, rec.col_title)).id;
-  await sql`UPDATE repo_records SET doc_folders = doc_folders || jsonb_build_object(${column}::text, ${folderUrl(sub)}::text)
+  const sub = (await createFolder(token, recordFolder, title)).id;
+  await sql`UPDATE repo_records SET doc_folders = doc_folders || jsonb_build_object(${key}::text, ${folderUrl(sub)}::text)
              WHERE account_id = 1 AND table_key = ${table} AND id = ${id}`;
   return sub;
+}
+
+/** The record's "Check-in photos" folder (Check-in builder, 2026-11-09) — not a column, same place as its documents. */
+export async function checkinPhotoFolder(sql: SqlFn, token: string, table: string, id: string): Promise<string> {
+  const rec = (await sql`
+    SELECT r.folder_url, r.doc_folders ->> 'checkin_photos' AS doc, r.vals, t.name_fields
+      FROM repo_records r JOIN repo_tables t ON t.account_id = r.account_id AND t.key = r.table_key
+     WHERE r.account_id = 1 AND r.table_key = ${table} AND r.id = ${id} AND r.archived_at IS NULL`)[0] as RecFolders | undefined;
+  if (!rec) throw new DriveError('No such record.');
+  return folderIdFromUrl(rec.doc) ?? subFolder(sql, token, table, id, rec, 'checkin_photos', 'Check-in photos');
 }
 
 async function tableFolder(sql: SqlFn, token: string, table: string): Promise<string> {

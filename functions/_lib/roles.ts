@@ -77,12 +77,12 @@ export const PERMISSIONS: Permission[] = [
   { key: 'repository', label: 'Repository — look up records and documents', tab: 'repository', routes: [
     { path: '/api/repository', methods: ['GET'] }, { path: '/api/repository-check', methods: ['GET'] }, { path: '/api/missing-data', methods: ['GET'] },
     // The guest portal demo's house picker (guests module, 2026-11-09).
-    { path: '/api/guest-guide', methods: ['GET'] }, { path: '/api/checkin-guide', methods: ['GET'] }] },
+    { path: '/api/guest-guide', methods: ['GET'] }, { path: '/api/checkin-guide', methods: ['GET'] }, { path: '/api/checkin-photo', methods: ['GET'] }] },
   { key: 'repository.reveal', label: 'Repository — reveal passwords (each reveal is logged)', routes: [
     { path: '/api/repository-reveal', methods: ['POST'] }] },
   { key: 'repository.edit', label: 'Repository — add and edit records, upload and remove documents', routes: [
     { path: '/api/repository-edit', methods: ['POST'] }, { path: '/api/repository-upload', methods: ['POST'] },
-    { path: '/api/repository-check', methods: ['POST'] }, { path: '/api/checkin-guide', methods: ['POST'] }] },
+    { path: '/api/repository-check', methods: ['POST'] }, { path: '/api/checkin-guide', methods: ['POST'] }, { path: '/api/checkin-photo', methods: ['POST'] }] },
   { key: 'repository.structure', label: 'Repository — sections, tables and columns', routes: [
     { path: '/api/repository-structure', methods: ['POST'] }, { path: '/api/repository-import', methods: ['POST'] }] },
   { key: 'costs', label: 'Costs — record expenses, see cleaning costs', tab: 'costs', routes: [
