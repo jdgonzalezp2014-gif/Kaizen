@@ -3150,3 +3150,6 @@ html:root.guest-brand {
 .cb-add-photo { cursor: pointer; margin: 0; }
 .cb-save { position: sticky; bottom: 8px; padding: 10px 14px; border-radius: var(--r-md); background: var(--card); border: 1px solid var(--line); box-shadow: var(--shadow-2); }
 .cb-recwrap { display: flex; flex-direction: column; gap: 10px; padding-bottom: 6px; }
+.g-action-main-cta { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.g-checkin-when { padding: 0 2px; margin-top: -6px; }
+p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }

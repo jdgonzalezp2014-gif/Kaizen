@@ -16,7 +16,7 @@ import { UPSELLS, availability, choiceLine, guide, mapsUrl, nights, payState, pr
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
 
 type Send = (r: UpsellRequest) => Promise<{ ok: boolean; message?: string }>;
-type Sec = 'stay' | 'extras';
+type Sec = 'stay' | 'checkin' | 'extras';
 const of = (i: number, n: number) => `${i} of ${n}`;
 
 const dateLabel = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -27,7 +27,7 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar }: { stay: G
   const [sec, setSec] = useState<Sec>('stay');
   const [pick, setPick] = useState<Upsell['kind'] | null>(null);
   const [sent, setSent] = useState<UpsellRequest[]>([]);
-  useUrlState('sec', sec, setSec, { def: 'stay', valid: v => v === 'stay' || v === 'extras' });
+  useUrlState('sec', sec, setSec, { def: 'stay', valid: v => v === 'stay' || v === 'checkin' || v === 'extras' });
   useUrlState('extra', pick ?? '', v => setPick((v || null) as Upsell['kind'] | null), { def: '' });
   const open = UPSELLS.find(u => u.kind === pick) ?? null;
   const go = (s: Sec) => { setSec(s); setPick(null); };
@@ -37,12 +37,13 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar }: { stay: G
     <header className="v-island">
       <span className="v-island-name">{ic(`Hi, ${stay.guestFirst}`)}</span>
       <span className="v-seg" role="tablist">
-        {([['stay', 'home', 'Stay'], ['extras', 'sparkles', 'Extras']] as [Sec, string, string][]).map(([k, icon, label]) =>
+        {([['stay', 'home', 'Stay'], ['checkin', 'key', 'Check-in'], ['extras', 'sparkles', 'Extras']] as [Sec, string, string][]).map(([k, icon, label]) =>
           <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => go(k)}><Icon n={icon} /> {label}</button>)}
       </span>
     </header>
     <div className="report-page v-page g-page">
-      {sec === 'stay' ? <StayView stay={stay} now={now} toExtras={() => go('extras')} />
+      {sec === 'stay' ? <StayView stay={stay} now={now} go={go} />
+        : sec === 'checkin' ? <CheckinView stay={stay} now={now} />
         : open ? <Pick stay={stay} u={open} back={() => setPick(null)}
             send={async c => { const r = upsellRequest(stay, open, c, now); const res = await send(r); if (res.ok) { setSent(s => [...s, r]); setPick(null); } return res; }} />
         : <Extras stay={stay} sent={sent} choose={setPick} />}
@@ -63,10 +64,15 @@ function useBrand() {
   }, []);
 }
 
-function StayView({ stay, now, toExtras }: { stay: GuestStay; now: Date; toExtras: () => void }) {
+const lockLine = (g: ReturnType<typeof guide>) => g.open ? '' : g.why === 'unpaid' ? 'Opens after payment' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival';
+
+/**
+ * Stay (owner, 2026-11-09): the trip, what is due, the way to Check-in (its own tab — the most important part),
+ * then the house info right on the page: Wi-Fi, trash, parking, rules, contact. Locked like the check-in.
+ */
+function StayView({ stay, now, go }: { stay: GuestStay; now: Date; go: (s: Sec) => void }) {
   const n = nights(stay);
   const g = guide(stay, now);
-  const [open, setOpen] = useState<'guide' | 'house' | null>(null);
   return <>
     <section className="card g-hero">
       <div className="g-photo" style={stay.photo ? { backgroundImage: `url(${stay.photo})` } : undefined}>
@@ -84,27 +90,33 @@ function StayView({ stay, now, toExtras }: { stay: GuestStay; now: Date; toExtra
 
     <PayCard stay={stay} />
 
-    <button className="card g-action" onClick={() => g.open && setOpen(o => o === 'guide' ? null : 'guide')} aria-disabled={!g.open} aria-expanded={g.open ? open === 'guide' : undefined}>
+    <button className="card g-action g-action-main-cta" onClick={() => go('checkin')}>
       <span className="g-action-icon"><Icon n="key" /></span>
       <span className="g-action-main"><b>Check-in instructions</b>
-        {!g.open && <span className="g-lock"><Icon n="lock" /> {g.why === 'unpaid' ? 'Opens after payment' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival'}</span>}</span>
-      {g.open && <span className="g-go">{open === 'guide' ? '⌃' : '›'}</span>}
+        {g.open ? <span className="note">Step by step, from parking to your door</span> : <span className="g-lock"><Icon n="lock" /> {lockLine(g)}</span>}</span>
+      <span className="g-go">›</span>
     </button>
-    {g.open && open === 'guide' && <Arrival g={stay.guide ?? null} />}
 
-    <button className="card g-action" onClick={() => g.open && setOpen(o => o === 'house' ? null : 'house')} aria-disabled={!g.open} aria-expanded={g.open ? open === 'house' : undefined}>
-      <span className="g-action-icon"><Icon n="book" /></span>
-      <span className="g-action-main"><b>House manual</b>
-        {g.open ? <span className="note">Wi-Fi · Parking · Trash · House rules</span> : <span className="g-lock"><Icon n="lock" /> {g.why === 'unpaid' ? 'Opens after payment' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival'}</span>}</span>
-      {g.open && <span className="g-go">{open === 'house' ? '⌃' : '›'}</span>}
-    </button>
-    {g.open && open === 'house' && <HouseManual g={stay.guide ?? null} />}
+    <h2 className="v-h g-h">Your stay</h2>
+    {g.open ? <HouseManual g={stay.guide ?? null} />
+      : <p className="card g-guide g-lock"><Icon n="lock" /> Wi-Fi, house info and contact {lockLine(g).replace(/^Opens/, 'open')}.</p>}
 
-    <button className="card g-action" onClick={toExtras}>
+    <button className="card g-action" onClick={() => go('extras')}>
       <span className="g-action-icon"><Icon n="sparkles" /></span>
       <span className="g-action-main"><b>Make it better</b><span className="note">Early check-in · Late check-out · Extra nights</span></span>
       <span className="g-go">›</span>
     </button>
+  </>;
+}
+
+/** Check-in (its own tab): the arrival steps with photos, or why they are not open yet. */
+function CheckinView({ stay, now }: { stay: GuestStay; now: Date }) {
+  const g = guide(stay, now);
+  return <>
+    <h2 className="v-h g-h">Check-in · {ic(stay.unitName)}</h2>
+    <p className="g-meta g-checkin-when"><Icon n="clock" /> From {stay.checkInTime}, {dateLabel(stay.arrival)}</p>
+    {g.open ? <Arrival g={stay.guide ?? null} />
+      : <><p className="card g-guide g-lock"><Icon n="lock" /> {lockLine(g)}.</p><PayCard stay={stay} /></>}
   </>;
 }
 

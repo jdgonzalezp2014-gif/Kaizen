@@ -129,12 +129,14 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   preview `/guest/demo?stay=paid&unit=586502`. Record vs slides (2026-11-09, not changed): floor "First" (1304 is up the stairs),
   lock_type "Access Fob" (the door has a keypad; the fob is the building's), rules typos ("arties", "th registered"),
   and the guest's door code is not in the Repository (slides: "your access code").
+- **Tabs Stay · Check-in · Extras (owner, 2026-11-09 — "check-in is super important, apart")**: Check-in = its own tab
+  (steps + photos, or the lock + pay card); Stay = hero, pay, a Check-in shortcut, then the house manual inline under "Your stay".
 - **Two sections on the stay page (2026-11-09, migration 108 `checkin_guides.house`)**: **Check-in instructions** = the steps
   (≤ 3 photos each, inline; video link opens in a new tab — owner: "photos inline, videos in a new tab") + address;
   **House manual** = record's Wi-Fi (copy), times, parking, then the builder's items (`house`: title + text, ≤ 10, e.g. Trash),
   guest access, rules, full-guide link, phone. Both locked by the same rule (paid + release time).
   Photos: `/api/checkin-photo` — POST into the record's Drive folder "Check-in photos" (`checkinPhotoFolder`, repo-store);
-  GET serves only ids some step names (like comment-image). P2-1304: 15 photos from the pptx, folder 1Qe82Uzp2PO4-0a51nbBLREDxuGsujwxi;
+  GET serves only ids some step names (like comment-image). P2-1304: 14 photos from the pptx (cover left out), folder 1Qe82Uzp2PO4-0a51nbBLREDxuGsujwxi;
   108 moves its Trash step into the house manual.
 - Pay stays = the reservation's Hostaway `guestPortalUrl` (Hostaway Payments / Stripe on their side); our own Stripe later.
 
