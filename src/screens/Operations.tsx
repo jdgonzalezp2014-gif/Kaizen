@@ -386,15 +386,18 @@ function Board({ data, range, patch, reload }: {
   const pastTo = range.to < data.today ? range.to : addDays(data.today, -1);
   const [past, setPast] = useState<{ rows: Cleaning[]; excluded: ExcludedCleaning[] } | null>(null);
   const [pastErr, setPastErr] = useState('');
+  // Bumped after a past manual clean is changed, to read the record again.
+  const [pastTick, setPastTick] = useState(0);
   useEffect(() => {
-    setPast(null); setPastErr('');
+    setPastErr('');
+    if (!pastTick) setPast(null);
     if (!hasPast) return;
     let current = true;
     getCleanings(range.from, 'all', [], pastTo, ['tbd', 'not_needed'])
       .then(r => { if (!current) return; if (r.ok) setPast({ rows: r.cleanings, excluded: r.excluded }); else setPastErr('The cleanings record could not be read.'); })
       .catch(e => { if (current) setPastErr(String(e)); });
     return () => { current = false; };
-  }, [hasPast, range.from, pastTo]);
+  }, [hasPast, range.from, pastTo, pastTick]);
   const pastBy = useMemo(() => {
     const m = new Map<string, { rows: Cleaning[]; excluded: ExcludedCleaning[] }>();
     const at = (d: string) => { const k = d.slice(0, 10); if (!m.has(k)) m.set(k, { rows: [], excluded: [] }); return m.get(k)!; };
@@ -540,7 +543,12 @@ function Board({ data, range, patch, reload }: {
                                 setPast(p => p && { ...p, rows: p.rows.map(x => x.key === c.key ? { ...x, flag_note: note } : x) })}
                                 date={c.checkout_on.slice(0, 10)} today={data.today} price={c.price == null ? null : Number(c.price)}
                                 onPrice={v => setPast(p => p && { ...p, rows: p.rows.map(x => x.key === c.key ? { ...x, price: String(v) } : x) })} />
-                              <div className="note">To switch deep / regular on a clean already done: Operations → Cleaners → the cleaner → ✎ Correct.</div>
+                              {/^MAN-\d+$/.test(c.key)
+                                // A past manual clean was only flaggable, so one left unassigned could never be paid (owner, 2026-11-09).
+                                ? <ManualEditForm cleanKey={c.key} kind={c.kind ?? ''} roster={data.roster}
+                                    initial={{ cleaner: c.cleaner ?? '', date: c.checkout_on.slice(0, 10), deep: !!c.deep, note: c.reservation_note ?? '' }}
+                                    onSaved={() => { setOpen(null); setPastTick(t => t + 1); }} onCancel={() => setOpen(null)} />
+                                : <div className="note">To switch deep / regular on a clean already done: Operations → Cleaners → the cleaner → ✎ Correct.</div>}
                             </div>
                           </td></tr>
                         )}
@@ -1044,15 +1052,7 @@ function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks, today, ro
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState('');
   // §159 (owner: "these cleans can't be fixed"): change who, the day, deep and the note in place.
-  const [edit, setEdit] = useState<null | { cleaner: string; date: string; deep: boolean; note: string }>(null);
-  const save = async () => {
-    if (!edit) return;
-    setBusy(true); setErr('');
-    const r = await manualClean({ action: 'update', key: c.key, cleaner: edit.cleaner || null, date: edit.date, deep: edit.deep, note: edit.note })
-      .catch(e => ({ ok: false as const, message: String(e) }));
-    setBusy(false);
-    if (r.ok) { setEdit(null); onChanged(); } else setErr(r.message ?? 'Not saved.');
-  };
+  const [edit, setEdit] = useState(false);
   const cancel = async () => {
     setBusy(true); setErr('');
     const r = await manualClean({ action: 'cancel', key: c.key }).catch(e => ({ ok: false as const, message: String(e) }));
@@ -1076,7 +1076,7 @@ function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks, today, ro
                                          date={c.date} today={today} price={c.price} onPrice={() => onChanged()} />
           : flag && <div className="breach">⚑ Flagged: {flag}</div>}
         {canEdit && !edit && !confirm && <div className="ops-manual-btns">
-          <button className="link tiny" onClick={() => setEdit({ cleaner: c.cleaner ?? '', date: c.date, deep: !!c.deep, note: c.note ?? '' })}>Change…</button>
+          <button className="link tiny" onClick={() => setEdit(true)}>Change…</button>
           <button className="link tiny danger" onClick={() => setConfirm(true)}>Cancel…</button></div>}
         {canEdit && confirm && <div><span className="note">Cancel this clean{c.kind === 'early_departure' ? ' (the checkout clean comes back)' : ''}? </span>
               <button className="small danger" disabled={busy} onClick={() => void cancel()}>Cancel it</button>{' '}
@@ -1086,29 +1086,53 @@ function ManualLine({ c, canEdit, onChanged, flag, onFlag, cleanTasks, today, ro
     </tr>
     {edit && (
       <tr className="ops-edit-row"><td colSpan={9}>
-        <div className="ops-editor ops-manual-edit">
-          <div className="row">
-            <label>Cleaner
-              <select value={edit.cleaner} onChange={e => setEdit({ ...edit, cleaner: e.target.value })}>
-                <option value="">Unassigned</option>
-                {roster.filter(x => x.active || x.name === c.cleaner).map(x => <option key={x.name} value={x.name}>{x.name}</option>)}
-              </select></label>
-            <label>Day
-              <input type="date" value={edit.date} disabled={c.kind === 'early_departure'}
-                     title={c.kind === 'early_departure' ? 'Tied to its stay — cancel it and add it again for another day' : ''}
-                     onChange={e => setEdit({ ...edit, date: e.target.value })} /></label>
-            <label className="check"><input type="checkbox" checked={edit.deep} onChange={e => setEdit({ ...edit, deep: e.target.checked })} /> Deep clean</label>
-          </div>
-          <label>Note — the cleaner reads it
-            <input value={edit.note} maxLength={500} onChange={e => setEdit({ ...edit, note: e.target.value })} /></label>
-          <div className="button-row">
-            <button className="small" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save changes'}</button>
-            <button className="link tiny" onClick={() => setEdit(null)}>Discard</button>
-          </div>
-        </div>
+        <ManualEditForm cleanKey={c.key} kind={c.kind} roster={roster}
+                        initial={{ cleaner: c.cleaner ?? '', date: c.date, deep: !!c.deep, note: c.note ?? '' }}
+                        onSaved={() => { setEdit(false); onChanged(); }} onCancel={() => setEdit(false)} />
       </td></tr>
     )}
   </>);
+}
+
+/** Change a manual clean (§159): who, the day (not an early departure's), deep, the note — on its day or after. */
+function ManualEditForm({ cleanKey, kind, roster, initial, onSaved, onCancel }: {
+  cleanKey: string; kind: string; roster: Cleaner[];
+  initial: { cleaner: string; date: string; deep: boolean; note: string };
+  onSaved: () => void; onCancel: () => void;
+}) {
+  const [edit, setEdit] = useState(initial);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const save = async () => {
+    setBusy(true); setErr('');
+    const r = await manualClean({ action: 'update', key: cleanKey, cleaner: edit.cleaner || null, date: edit.date, deep: edit.deep, note: edit.note })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    setBusy(false);
+    if (r.ok) onSaved(); else setErr(r.message ?? 'Not saved.');
+  };
+  return (
+    <div className="ops-editor ops-manual-edit">
+      <div className="row">
+        <label>Cleaner
+          <select value={edit.cleaner} onChange={e => setEdit({ ...edit, cleaner: e.target.value })}>
+            <option value="">Unassigned</option>
+            {roster.filter(x => x.active || x.name === initial.cleaner).map(x => <option key={x.name} value={x.name}>{x.name}</option>)}
+          </select></label>
+        <label>Day
+          <input type="date" value={edit.date} disabled={kind === 'early_departure'}
+                 title={kind === 'early_departure' ? 'Tied to its stay — cancel it and add it again for another day' : ''}
+                 onChange={e => setEdit({ ...edit, date: e.target.value })} /></label>
+        <label className="check"><input type="checkbox" checked={edit.deep} onChange={e => setEdit({ ...edit, deep: e.target.checked })} /> Deep clean</label>
+      </div>
+      <label>Note — the cleaner reads it
+        <input value={edit.note} maxLength={500} onChange={e => setEdit({ ...edit, note: e.target.value })} /></label>
+      {err && <div className="breach">▲ {err}</div>}
+      <div className="button-row">
+        <button className="small" disabled={busy} onClick={() => void save()}>{busy ? 'Saving…' : 'Save changes'}</button>
+        <button className="link tiny" onClick={onCancel}>Discard</button>
+      </div>
+    </div>
+  );
 }
 
 /* ── Inspections ──────────────────────────────────────────────────── */

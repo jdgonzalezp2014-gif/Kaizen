@@ -272,6 +272,8 @@ key had no SOPs.
   (Hostaway + rules, `days` up to 30, never fewer than 10 so the other views keep their window);
   days before today read `/api/cleaning-log` (the record: departures + manual cleans, no arrivals),
   with not-paid rows listed. The strip counts the live rows in the window, plus "before today".
+  A past **manual clean** (`MAN-`) row opens the same change form as its live row (`ManualEditForm`: cleaner,
+  day, deep, note) — before 2026-11-09 it only offered ⚑ Flag, so an unassigned one could never be paid.
 - Schedule shown only with `crew_calendar` on (Setup → Crew pages): live board, `crew_calendar_days`
   ahead. **Exception (§123): what a person assigned (override, or a MAN- clean) shows at once**, calendar
   off or not, and can be declined. The team **confirms** it (Operations → Cleaners) = a snapshot; cleaners see "last confirmed"
