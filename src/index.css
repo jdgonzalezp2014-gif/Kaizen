@@ -3356,3 +3356,6 @@ p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }
 .ci-done { color: var(--ink) !important; }
 .ci-done svg { color: var(--accent); }
 @media (max-width: 380px) { .ci-h { font-size: 28px; } .ci-digits span { width: 46px; height: 58px; } }
+.ci-mode { margin: 2px 0 0; font-size: 13px; color: var(--amber); display: inline-flex; align-items: center; gap: 5px; }
+.ci-mode.ok { color: var(--accent); }
+.g-pill.ok { border-style: solid; color: var(--accent); border-color: color-mix(in srgb, var(--accent) 45%, transparent); display: inline-flex; align-items: center; gap: 4px; }

@@ -201,6 +201,23 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   real reservation → `GuestStay` from Hostaway, the Access bypass for `/guest/*`. Hostaway's $12/night waiver must go
   before the portal charges one (see finance.md, guest fees).
 
+### Cover photo, door code, early / late (2026-11-15)
+
+- **Cover**: Hostaway gives every listing its photos in order (`listingImages[].url`, `sortOrder`; 55–66 per listing,
+  S3 public URLs) → `coverOf()` / `fetchListingCover()` (hostaway.ts); `/api/guest-guide?unit=` returns `photo` = the record's
+  **Portal photo (link)** if set, else Hostaway's first. The open demo uses listing 366041's cover.
+- **Door code**: Hostaway reservations carry `doorCode` / `doorCodeVendor` ("Hostaway") / `doorCodeInstruction`. Checked
+  2026-11-15 on the next 60 stays: filled on 14 — never on 586502/586503 (The Links), 375128 (Preston), 589741/589742,
+  608827 (lockbox / fob houses). Portal: show `doorCode` when set; none → the arrival steps (`{lockbox}`) are the way in.
+- **Early check-in / late check-out = $20 per hour, every house** (owner); hours over the stay's own times (`hoursOf`).
+  `requestMode()`: asked before **8 PM Central the day before** and no turnover that day → `auto` (request `confirmed`,
+  charged with check-in); later / same day / turnover → `approval` (charged only if confirmed). Late check-out takes the
+  same $20/h (assumed — owner named early check-in).
+- Pending: the request → To-do task / $ Approvals + Slack line (needs `upsell_requests` + API), the calendar write when one
+  is approved (Hostaway check-in/out time → its smart-lock code window), Stripe.
+- **Migration 110** (Repository section "Guest portal": Portal photo, Unit type, Damage waiver price / covers up to,
+  Security deposit hold → `portalFrom()`): written, **not applied yet** — the code reads blanks as the unit type's defaults.
+
 ### Rules
 
 - Pay state = `total − paid` (≤ 0 → paid); channel `airbnb`/`vrbo` → collected by the channel, no gate.

@@ -134,15 +134,16 @@ export interface Upsell {
   icon: string;               // Icon.tsx name
   /** Placeholder prices until the owner sets them (per house later). null = priced from the stay (nightly). */
   price: number | null;
-  per: 'stay' | 'night' | 'item';
+  per: 'stay' | 'night' | 'item' | 'hour';
   /** What the guest picks: a time, a number of nights, a quantity, or nothing. */
   pick: { type: 'time'; options: string[] } | { type: 'nights' } | { type: 'qty'; max: number } | { type: 'none' };
 }
 
 export const UPSELLS: Upsell[] = [
   { kind: 'extra-nights', title: 'Extra nights', icon: 'bed', price: null, per: 'night', pick: { type: 'nights' } },
-  { kind: 'early-checkin', title: 'Early check-in', icon: 'clock', price: 45, per: 'stay', pick: { type: 'time', options: ['12:00 PM', '1:00 PM', '2:00 PM'] } },
-  { kind: 'late-checkout', title: 'Late check-out', icon: 'clock', price: 45, per: 'stay', pick: { type: 'time', options: ['12:00 PM', '1:00 PM', '2:00 PM'] } },
+  // $20 per hour, every house (owner, 2026-11-15); the hours count from the stay's own times.
+  { kind: 'early-checkin', title: 'Early check-in', icon: 'clock', price: 20, per: 'hour', pick: { type: 'time', options: ['12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM'] } },
+  { kind: 'late-checkout', title: 'Late check-out', icon: 'clock', price: 20, per: 'hour', pick: { type: 'time', options: ['12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM'] } },
   { kind: 'mid-clean', title: 'Mid-stay clean', icon: 'brush', price: 95, per: 'stay', pick: { type: 'none' } },
   { kind: 'pet', title: 'Bring a pet', icon: 'home', price: 75, per: 'item', pick: { type: 'qty', max: 2 } },
   { kind: 'crib', title: 'Crib / pack ’n play', icon: 'bed', price: 25, per: 'item', pick: { type: 'qty', max: 2 } },
@@ -166,6 +167,49 @@ export function availability(s: GuestStay, u: Upsell): Availability {
   return { ok: true };
 }
 
+/** "4:00 PM" / "4 PM" / "16:00" → minutes after midnight. */
+export function minutesOf(t: string | null | undefined): number | null {
+  const m = /^(\d{1,2})(?::(\d{2}))?\s*([AaPp][Mm])?$/.exec((t ?? '').trim());
+  if (!m) return null;
+  let h = Number(m[1]); const min = Number(m[2] ?? 0);
+  if (m[3]) { if (h < 1 || h > 12) return null; h = (h % 12) + (/p/i.test(m[3]) ? 12 : 0); } else if (h > 23) return null;
+  return h * 60 + min;
+}
+
+/** Hours an early check-in / late check-out adds over the stay's own times, rounded up; null when the time adds none. */
+export function hoursOf(s: Pick<GuestStay, 'checkInTime' | 'checkOutTime'>, u: Pick<Upsell, 'kind'>, time: string | undefined): number | null {
+  const t = minutesOf(time);
+  const std = minutesOf(u.kind === 'early-checkin' ? s.checkInTime : s.checkOutTime);
+  if (t == null || std == null) return null;
+  const diff = u.kind === 'early-checkin' ? std - t : t - std;
+  return diff > 0 ? Math.ceil(diff / 60) : null;
+}
+
+/** A wall-clock time in Texas (Central) as an instant — the houses' time, whatever the guest's phone says. */
+export function centralInstant(ymd: string, hour: number): Date {
+  const [y, mo, d] = ymd.split('-').map(Number) as [number, number, number];
+  const guess = Date.UTC(y, mo - 1, d, hour);
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
+    .formatToParts(new Date(guess)).map(x => [x.type, x.value]));
+  const seen = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour), Number(p.minute));
+  return new Date(guess - (seen - guess));
+}
+
+/**
+ * Early check-in / late check-out (owner, 2026-11-15): asked by 8 PM (Central) the day before → confirmed on its own;
+ * later, or the same day → the team approves. A turnover that day (another guest leaving / arriving) always needs
+ * approval — the clean decides, however early the guest asked.
+ */
+export type RequestMode = { mode: 'auto' } | { mode: 'approval'; why: 'late' | 'turnover' };
+export function requestMode(s: GuestStay, u: Pick<Upsell, 'kind'>, now: Date): RequestMode {
+  if (u.kind !== 'early-checkin' && u.kind !== 'late-checkout') return { mode: 'approval', why: 'late' };
+  if ((u.kind === 'early-checkin' && s.turnIn) || (u.kind === 'late-checkout' && s.turnOut)) return { mode: 'approval', why: 'turnover' };
+  const day = u.kind === 'early-checkin' ? s.arrival : s.departure;
+  const before = new Date(`${day}T12:00:00Z`); before.setUTCDate(before.getUTCDate() - 1);
+  const cutoff = centralInstant(before.toISOString().slice(0, 10), 20);
+  return now.getTime() < cutoff.getTime() ? { mode: 'auto' } : { mode: 'approval', why: 'late' };
+}
+
 /** What the guest picked: a time, nights before/after, or a quantity. */
 export interface Choice { time?: string; before?: number; after?: number; qty?: number }
 
@@ -177,6 +221,7 @@ export function quote(s: GuestStay, u: Upsell, c: Choice): number | null {
   }
   const price = priceOf(s, u);
   if (price == null) return null;
+  if (u.per === 'hour') { const h = hoursOf(s, u, c.time); return h == null ? null : cents(price * h); }
   return cents(price * (u.per === 'item' ? Math.max(1, Math.min(c.qty ?? 1, u.pick.type === 'qty' ? u.pick.max : 1)) : 1));
 }
 
@@ -200,6 +245,8 @@ export interface UpsellRequest {
   choice: Choice;
   quote: number | null;
   turnover: boolean;
+  /** Early / late asked in time with no turnover → confirmed on its own (a task + Slack line, no approval). */
+  mode: 'auto' | 'approval';
   status: 'new' | 'confirmed' | 'declined' | 'paid';
   at: string;                 // ISO
 }
@@ -209,7 +256,9 @@ export function upsellRequest(s: GuestStay, u: Upsell, c: Choice, now: Date): Up
     : u.pick.type === 'nights' ? clampNights(s, c)
     : u.pick.type === 'qty' ? { qty: Math.max(1, Math.min(c.qty ?? 1, u.pick.max)) } : {};
   const a = availability(s, u);
-  return { stayId: s.id, kind: u.kind, title: u.title, choice, quote: quote(s, u, choice), turnover: a.ok && a.flag === 'turnover', status: 'new', at: now.toISOString() };
+  const mode = requestMode(s, u, now).mode;
+  return { stayId: s.id, kind: u.kind, title: u.title, choice, quote: quote(s, u, choice), turnover: a.ok && a.flag === 'turnover',
+    mode, status: mode === 'auto' ? 'confirmed' : 'new', at: now.toISOString() };
 }
 
 /** One line for the request list and, later, the team's Slack line. */

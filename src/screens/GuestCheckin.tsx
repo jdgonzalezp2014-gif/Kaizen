@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
+import { UPSELLS, quote, requestMode, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
 import { bill, channelCovers, flowExtras, nextStep, onRequest, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
@@ -182,16 +182,23 @@ function Extras({ stay, flow, save }: S) {
       return <section key={u.kind} className={`card ci-extra${on ? ' on' : ''}`}>
         <span className="g-up-icon" aria-hidden><Icon n={u.icon} /></span>
         <span className="ci-extra-main"><b>{u.title}</b>
-          <span className="note">{usd(price)}{onRequest(u.kind) ? ' · on request' : ''}{turnover ? ' · depends on the clean' : ''}</span>
+          <span className="note">{usd(price)}{u.per === 'hour' ? ' / hour' : ''}{on && u.per === 'hour' && quote(stay, u, ex[u.kind]!) != null ? ` · ${usd(quote(stay, u, ex[u.kind]!)!)}` : ''}</span>
+          {u.per === 'hour' && <span className={`ci-mode${onRequest(stay, u.kind, new Date()) ? '' : ' ok'}`}>{modeLine(stay, u.kind, turnover)}</span>}
           {on && u.pick.type === 'time' && <span className="ci-times">{u.pick.options.map(t =>
             <button key={t} className={ex[u.kind]?.time === t ? 'chip active' : 'chip'} onClick={() => setEx(e => ({ ...e, [u.kind]: { time: t } }))}>{t}</button>)}</span>}
         </span>
         <button className={on ? 'chip active ci-add' : 'chip ci-add'} aria-pressed={on} onClick={() => toggle(u.kind)}>{on ? <><Icon n="check" /> Added</> : 'Add'}</button>
       </section>;
     })}</div>
-    <p className="ci-fine">On-request extras are charged only once we confirm them.</p>
+    <p className="ci-fine">Anything that needs our OK is charged only once we confirm it.</p>
     <button className="g-cta" onClick={() => save({ ...flow, extras: ex, extrasSeen: true })}>{any ? 'Continue' : 'No thanks, continue'}</button>
   </>;
+}
+
+/** Early / late: confirmed right away when asked by 8 PM (Texas) the day before and nobody else is leaving/arriving. */
+function modeLine(stay: GuestStay, k: UpsellKind, turnover: boolean) {
+  const m = requestMode(stay, { kind: k }, new Date());
+  return m.mode === 'auto' ? '✓ Confirmed right away' : turnover || m.why === 'turnover' ? 'Needs our OK — another guest that day' : 'Needs our OK — asked after 8 PM the day before';
 }
 
 /**

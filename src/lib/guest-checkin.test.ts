@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bill, entry, newFlow, doneFlow, nextStep, progress, protectionFor, rulesList, steps, flowExtras, type Flow } from './guest-checkin.ts';
+import { bill, entry, portalFrom, newFlow, doneFlow, nextStep, progress, protectionFor, rulesList, steps, flowExtras, type Flow } from './guest-checkin.ts';
 import type { GuestStay } from './guest-portal.ts';
 
 const stay = (o: Partial<GuestStay> = {}): GuestStay => ({
@@ -67,4 +67,10 @@ test('rules: lines, bullets and "Title: detail" become short items', () => {
   ]);
   assert.deepEqual(rulesList(''), []);
   assert.deepEqual(rulesList('No pets. No smoking.').map(r => r.title), ['No pets', 'No smoking']);
+});
+
+test('portal fields from the record: unit type and protection, blanks and junk ignored', () => {
+  assert.deepEqual(portalFrom({ unit_type: 'Apartment', waiver_price: '$59', waiver_cap: 2000, deposit_hold: '' }),
+    { unitType: 'apartment', protection: { waiverPrice: 59, waiverCap: 2000, depositHold: null } });
+  assert.deepEqual(portalFrom(null), { unitType: null, protection: { waiverPrice: null, waiverCap: null, depositHold: null } });
 });

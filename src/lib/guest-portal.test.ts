@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { payState, guide, availability, quote, ready, upsellRequest, choiceLine, guestLink, UPSELLS, type GuestStay } from './guest-portal.ts';
+import { payState, guide, availability, quote, ready, upsellRequest, choiceLine, guestLink, minutesOf, hoursOf, centralInstant, requestMode, UPSELLS, type GuestStay } from './guest-portal.ts';
 
 const stay = (o: Partial<GuestStay> = {}): GuestStay => ({
   id: '101', guestFirst: 'Ana', unitName: 'Frisco 3BR', address: null, photo: null,
@@ -85,4 +85,33 @@ test('check-in guide from the Repository: maps the Units fields, never the team 
   assert.equal(priceOf({ prices }, pet), 100);
   assert.equal(priceOf({}, pet), pet.price);
   assert.equal(quote(stay({ prices }), pet, { qty: 2 }), 200);
+});
+
+test('early / late: $20 per hour over the stay’s own times', () => {
+  assert.equal(minutesOf('4:00 PM'), 960);
+  assert.equal(minutesOf('12 PM'), 720);
+  assert.equal(minutesOf('11:30'), 690);
+  assert.equal(minutesOf('13 PM'), null);
+  assert.equal(hoursOf(stay(), U('early-checkin'), '1:00 PM'), 3);
+  assert.equal(hoursOf(stay(), U('late-checkout'), '12:00 PM'), 1);
+  assert.equal(hoursOf(stay(), U('early-checkin'), '5:00 PM'), null);
+  assert.equal(quote(stay(), U('early-checkin'), { time: '12:00 PM' }), 80);
+  assert.equal(quote(stay(), U('late-checkout'), { time: '2:00 PM' }), 60);
+});
+
+test('Central time: 8 PM in Texas, in summer and in winter', () => {
+  assert.equal(centralInstant('2026-11-14', 20).toISOString(), '2026-11-15T02:00:00.000Z');
+  assert.equal(centralInstant('2026-07-14', 20).toISOString(), '2026-07-15T01:00:00.000Z');
+});
+
+test('request mode: by 8 PM the day before → automatic; later or a turnover → approval', () => {
+  const s = stay({ arrival: '2026-11-20', departure: '2026-11-23', turnIn: false, turnOut: false });
+  assert.deepEqual(requestMode(s, U('early-checkin'), new Date('2026-11-20T01:59:00Z')), { mode: 'auto' });       // Nov 19, 7:59 PM CST
+  assert.deepEqual(requestMode(s, U('early-checkin'), new Date('2026-11-20T02:00:00Z')), { mode: 'approval', why: 'late' });
+  assert.deepEqual(requestMode(s, U('late-checkout'), new Date('2026-11-21T12:00:00Z')), { mode: 'auto' });
+  assert.deepEqual(requestMode({ ...s, turnOut: true }, U('late-checkout'), new Date('2026-11-21T12:00:00Z')), { mode: 'approval', why: 'turnover' });
+  const r = upsellRequest(s, U('early-checkin'), { time: '2:00 PM' }, new Date('2026-11-18T12:00:00Z'));
+  assert.equal(r.mode, 'auto');
+  assert.equal(r.status, 'confirmed');
+  assert.equal(r.quote, 40);
 });

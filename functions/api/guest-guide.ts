@@ -4,17 +4,19 @@
  * `repository`): guide = the builder's steps (checkin_guides) + the record's fields; it powers the house picker on /guest/demo. The guest's own signed link will reuse
  * `guestHouse()` once that door exists — Wi-Fi never goes out on an open route.
  *   no params      → { units: [{ id, name }] } (active units)
- *   ?unit=<id>     → { unitName, guide, prices }
+ *   ?unit=<id>     → { unitName, photo, guide, prices } — photo = the record's "Portal photo" link, else Hostaway's cover
  */
 import { db, type Env } from '../_lib/db.ts';
-import type { SqlFn } from '../_lib/accounts.ts';
+import { getCredentials, type SqlFn } from '../_lib/accounts.ts';
+import { fetchListingCover } from '../_lib/hostaway.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
 import { UNIT_TABLES } from '../../src/lib/repo-checks.ts';
 import { emptyGuide, guideFrom, pricesFrom } from '../../src/lib/guest-portal.ts';
+import { portalFrom } from '../../src/lib/guest-checkin.ts';
 import { composeGuide, tokenVals, type CheckinStep, type HouseItem } from '../../src/lib/checkin.ts';
 
-export async function guestHouse(sql: SqlFn, unitId: string) {
+export async function guestHouse(sql: SqlFn, unitId: string, encryptionKey?: string) {
   const [units, recs] = await Promise.all([
     sql`SELECT id::text AS id, name FROM units WHERE account_id = 1 AND id::text = ${unitId}` as Promise<{ id: string; name: string }[]>,
     sql`SELECT table_key AS "table", id, vals FROM repo_records
@@ -30,7 +32,11 @@ export async function guestHouse(sql: SqlFn, unitId: string) {
   const shared = own?.uses ? await (sql`SELECT steps, house FROM checkin_guides WHERE account_id = 1 AND unit_id = ${own.uses}` as Promise<G[]>).then(r => r[0] ?? null, () => null) : null;
   const { steps, house } = composeGuide(shared, own, tokenVals(rec?.vals, rec ? String(rec.vals.name ?? u.name) : u.name));
   const guide = guideFrom(rec?.vals);
-  return { unitName: u.name, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals) };
+  // Cover (owner, 2026-11-15): Hostaway's first listing photo (units.id is the listing id); a record may set its own.
+  const ownPhoto = typeof rec?.vals?.portal_photo === 'string' && rec.vals.portal_photo.startsWith('https://') ? rec.vals.portal_photo : null;
+  const photo = ownPhoto ?? (encryptionKey ? await getCredentials(sql, encryptionKey).then(c => fetchListingCover(c, unitId)).catch(() => null) : null);
+  const portal = portalFrom(rec?.vals);
+  return { unitName: u.name, photo, unitType: portal.unitType, protection: portal.protection, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals) };
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -41,6 +47,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const units = await sql`SELECT id, name FROM units WHERE account_id = 1 AND active ORDER BY name` as { id: string; name: string }[];
     return Response.json({ units: units.map(u => ({ id: String(u.id), name: u.name })) });
   }
-  const house = await guestHouse(sql, unit);
+  const house = await guestHouse(sql, unit, env.ENCRYPTION_KEY);
   return house ? Response.json(house) : Response.json({ error: 'unknown_unit' }, { status: 404 });
 };

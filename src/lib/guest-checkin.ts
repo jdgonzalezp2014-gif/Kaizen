@@ -5,7 +5,7 @@
  * identity verification is a placeholder until Truvi vs Stripe Identity is decided; one payment at the end
  * (protection + paid extras) through Stripe — demo only for now. Pure: no fetch, no React.
  */
-import { UPSELLS, priceOf, quote, availability, type Choice, type GuestStay, type UpsellKind } from './guest-portal.ts';
+import { UPSELLS, priceOf, quote, availability, requestMode, type Choice, type GuestStay, type UpsellKind } from './guest-portal.ts';
 
 /** Protection values depend on what is rented: a room is not a house (owner, 2026-11-15). Per listing later. */
 export type UnitType = 'room' | 'apartment' | 'house';
@@ -25,6 +25,16 @@ export function protectionFor(type: UnitType, o: ProtectionOverride = {}): Prote
   const d = PROTECTION_DEFAULTS[type];
   const n = (v: number | null | undefined, def: number) => (v != null && Number.isFinite(v) && v >= 0 ? v : def);
   return { waiver: { price: n(o.waiverPrice, d.waiver.price), cap: n(o.waiverCap, d.waiver.cap) }, deposit: { hold: n(o.depositHold, d.deposit.hold) } };
+}
+
+/** The record's "Guest portal" section (migration 110): unit type + protection values; blanks keep the defaults. */
+export function portalFrom(vals: Record<string, unknown> | null | undefined): { unitType: UnitType | null; protection: ProtectionOverride } {
+  const num = (v: unknown) => { const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v.replace(/[$,\s]/g, '')) : NaN; return Number.isFinite(n) && n >= 0 ? n : null; };
+  const t = typeof vals?.unit_type === 'string' ? vals.unit_type.toLowerCase() : '';
+  return {
+    unitType: t === 'room' || t === 'apartment' || t === 'house' ? t : null,
+    protection: { waiverPrice: num(vals?.waiver_price), waiverCap: num(vals?.waiver_cap), depositHold: num(vals?.deposit_hold) },
+  };
 }
 
 /** Airbnb covers damage itself (AirCover) and takes no waiver — the step is done for those guests. */
@@ -47,15 +57,15 @@ export const newFlow = (): Flow => ({ details: false, arrival: null, pet: null, 
 /** A finished check-in (the demo's "checked in" stay). */
 export const doneFlow = (): Flow => ({ details: true, arrival: 'mid', pet: false, identity: true, protection: 'waiver', rules: true, extras: {}, extrasSeen: true, paid: true });
 
-/** Extras offered inside check-in. Early / late are requests (the clean decides), the rest are charged with the rest. */
+/** Extras offered inside check-in. Early / late follow requestMode: in time and no turnover → charged now; else on request. */
 export const FLOW_EXTRAS: UpsellKind[] = ['early-checkin', 'late-checkout', 'mid-clean', 'welcome'];
-export const onRequest = (k: UpsellKind) => k === 'early-checkin' || k === 'late-checkout';
+export const onRequest = (s: GuestStay, k: UpsellKind, now: Date) => (k === 'early-checkin' || k === 'late-checkout') && requestMode(s, { kind: k }, now).mode === 'approval';
 
 export type StepKey = 'details' | 'identity' | 'protection' | 'rules' | 'extras' | 'pay';
 export interface Step { key: StepKey; title: string; sub: string; done: boolean; required: boolean }
 
 /** The steps in order. Extras are optional; Pay shows only when something is charged or held. */
-export function steps(f: Flow, s: GuestStay, p: Protection): Step[] {
+export function steps(f: Flow, s: GuestStay, p: Protection, now: Date = new Date()): Step[] {
   const covered = channelCovers(s);
   const out: Step[] = [
     { key: 'details', title: 'Your details', sub: 'Confirm who is staying', done: f.details, required: true },
@@ -64,7 +74,7 @@ export function steps(f: Flow, s: GuestStay, p: Protection): Step[] {
     { key: 'rules', title: 'House rules', sub: 'Read and agree', done: f.rules, required: true },
     { key: 'extras', title: 'Extras', sub: 'Optional', done: f.extrasSeen, required: false },
   ];
-  if (bill(f, s, p).lines.some(l => l.kind !== 'request')) out.push({ key: 'pay', title: 'Review and pay', sub: 'One payment, then you are in', done: f.paid, required: true });
+  if (bill(f, s, p, now).lines.some(l => l.kind !== 'request')) out.push({ key: 'pay', title: 'Review and pay', sub: 'One payment, then you are in', done: f.paid, required: true });
   return out;
 }
 
@@ -79,7 +89,7 @@ export interface BillLine { label: string; amount: number; kind: 'charge' | 'hol
 const cents = (n: number) => Math.round(n * 100) / 100;
 
 /** What the one payment covers: charges today, a hold that is released, and requests charged only once confirmed. */
-export function bill(f: Flow, s: GuestStay, p: Protection): { lines: BillLine[]; today: number; hold: number } {
+export function bill(f: Flow, s: GuestStay, p: Protection, now: Date = new Date()): { lines: BillLine[]; today: number; hold: number } {
   const lines: BillLine[] = [];
   if (!channelCovers(s)) {
     if (f.protection === 'waiver') lines.push({ label: 'Damage waiver', amount: p.waiver.price, kind: 'charge', note: `Covers up to $${p.waiver.cap.toLocaleString('en-US')}` });
@@ -91,7 +101,7 @@ export function bill(f: Flow, s: GuestStay, p: Protection): { lines: BillLine[];
     if (!c || !u) continue;
     const q = quote(s, u, c);
     if (q == null) continue;
-    lines.push({ label: u.title, amount: q, kind: onRequest(k) ? 'request' : 'charge', note: c.time ? (k === 'early-checkin' ? `From ${c.time}` : `Until ${c.time}`) : undefined });
+    lines.push({ label: u.title, amount: q, kind: onRequest(s, k, now) ? 'request' : 'charge', note: c.time ? (k === 'early-checkin' ? `From ${c.time}` : `Until ${c.time}`) : undefined });
   }
   const sum = (k: BillLine['kind']) => cents(lines.filter(l => l.kind === k).reduce((a, l) => a + l.amount, 0));
   return { lines, today: sum('charge'), hold: sum('hold') };
@@ -105,7 +115,7 @@ export function flowExtras(s: GuestStay) {
 
 /** The entry details (door code, Wi-Fi, guide): every required step done, then the release time. */
 export function entry(f: Flow, s: GuestStay, p: Protection, now: Date): { open: true } | { open: false; why: 'steps' | 'release'; at?: string } {
-  if (nextStep(steps(f, s, p).filter(x => x.required)) != null) return { open: false, why: 'steps' };
+  if (nextStep(steps(f, s, p, now).filter(x => x.required)) != null) return { open: false, why: 'steps' };
   if (!s.guideReleaseAt || Date.parse(s.guideReleaseAt) > now.getTime()) return { open: false, why: 'release', at: s.guideReleaseAt ?? undefined };
   return { open: true };
 }

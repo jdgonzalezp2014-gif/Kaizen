@@ -776,6 +776,21 @@ export async function fetchReservationDetail(creds: HostawayCredentials, reserva
   return ((await res.json()) as { result?: Record<string, unknown> }).result ?? null;
 }
 
+/** A listing's cover photo: Hostaway keeps the photos in order (`sortOrder`), the first is the one channels show. */
+export function coverOf(l: { listingImages?: { url?: unknown; sortOrder?: unknown }[] | null; thumbnailUrl?: unknown } | null | undefined): string | null {
+  const imgs = (l?.listingImages ?? []).filter(i => typeof i.url === 'string' && i.url.startsWith('https://'));
+  imgs.sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0));
+  const url = imgs[0]?.url ?? l?.thumbnailUrl;
+  return typeof url === 'string' && url.startsWith('https://') ? url : null;
+}
+
+export async function fetchListingCover(creds: HostawayCredentials, listingId: string): Promise<string | null> {
+  const token = await getAccessToken(creds);
+  const res = await fetch(`${BASE}/listings/${encodeURIComponent(listingId)}`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return null;
+  return coverOf(((await res.json()) as { result?: Parameters<typeof coverOf>[0] }).result);
+}
+
 /** The signed agreement's bytes. Hostaway's own links want the token; others are public. */
 export async function downloadAgreement(creds: HostawayCredentials, url: string): Promise<{ bytes: ArrayBuffer; mimeType: string }> {
   const headers: Record<string, string> = /hostaway\.com/i.test(new URL(url).hostname)

@@ -12,7 +12,7 @@ import { Icon, ic } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, availability, choiceLine, mapsUrl, nights, priceOf, quote, ready, upsellRequest,
+import { UPSELLS, availability, choiceLine, mapsUrl, nights, priceOf, quote, ready, requestMode, upsellRequest,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
 import { doneFlow, entry, newFlow, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
 import { CheckinProgress, StepList, StepScreen } from './GuestCheckin.tsx';
@@ -152,7 +152,9 @@ function CheckinView({ stay, now, flow, prot, goStep }: { stay: GuestStay; now: 
 function DoorCode({ stay }: { stay: GuestStay }) {
   const [copied, setCopied] = useState(false);
   const code = stay.doorCode;
-  if (!code) return <p className="card g-guide g-lock"><Icon n="key" /> Your door code arrives by message before check-in.</p>;
+  // Hostaway sets a code per reservation only where its smart-lock link runs; lockbox / fob houses have none —
+  // their way in is in the arrival steps ({lockbox} from the record).
+  if (!code) return stay.guide?.steps?.length ? null : <p className="card g-guide g-lock"><Icon n="key" /> Your door code arrives by message before check-in.</p>;
   const copy = () => { void navigator.clipboard?.writeText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined); };
   return <section className="card ci-code">
     <span className="ci-eyebrow"><Icon n="key" /> Your door code</span>
@@ -164,7 +166,7 @@ function DoorCode({ stay }: { stay: GuestStay }) {
 function priceLabel(stay: GuestStay, u: Upsell) {
   if (u.kind === 'extra-nights') return stay.nightly != null ? `${money2(stay.nightly)} / night` : '—';
   const p = priceOf(stay, u);
-  return p == null ? '—' : `${money2(p)}${u.per === 'item' ? ' each' : ''}`;
+  return p == null ? '—' : `${money2(p)}${u.per === 'item' ? ' each' : u.per === 'hour' ? ' / hour' : ''}`;
 }
 
 function Extras({ stay, sent, choose }: { stay: GuestStay; sent: UpsellRequest[]; choose: (k: Upsell['kind']) => void }) {
@@ -189,7 +191,7 @@ function Extras({ stay, sent, choose }: { stay: GuestStay; sent: UpsellRequest[]
       <h3>Your requests</h3>
       {sent.map((r, i) => <div key={i} className="g-req">
         <span><b>{r.title}</b>{choiceLine(r) && <span className="note"> · {choiceLine(r)}</span>}</span>
-        <span className="g-req-r">{r.quote != null && <b>{money2(r.quote)}</b>}<span className="g-pill">○ Pending</span></span>
+        <span className="g-req-r">{r.quote != null && <b>{money2(r.quote)}</b>}{r.mode === 'auto' ? <span className="g-pill ok"><Icon n="check" /> Confirmed</span> : <span className="g-pill">○ Waiting for our OK</span>}</span>
       </div>)}
     </section>}
   </>;
@@ -216,8 +218,11 @@ function Pick({ stay, u, back, send }: { stay: GuestStay; u: Upsell; back: () =>
       </>}
       {u.pick.type === 'qty' && <Stepper label="How many" value={c.qty ?? 1} min={1} max={u.pick.max} set={v => setC({ qty: v })} />}
       {a.ok && a.flag === 'turnover' && <p className="g-turn">▲ Another guest {u.kind === 'early-checkin' ? 'leaves' : 'arrives'} that day — we confirm after the clean is planned.</p>}
+      {u.per === 'hour' && !(a.ok && a.flag === 'turnover') && (requestMode(stay, u, new Date()).mode === 'auto'
+        ? <p className="ci-mode ok"><Icon n="check" /> Confirmed right away <Hint>Asked by 8 PM (Texas time) the day before: it is yours as soon as you send it.</Hint></p>
+        : <p className="ci-mode">Needs our OK — asked after 8 PM the day before <Hint>We check the cleaning plan and answer quickly. Nothing is charged unless we confirm.</Hint></p>)}
       <div className="g-total"><span>Total</span><b>{total != null ? money2(total) : '—'}</b></div>
-      <button className="g-cta" disabled={!ok || busy} onClick={() => void submit()}>{busy ? 'Sending…' : 'Request'}</button>
+      <button className="g-cta" disabled={!ok || busy} onClick={() => void submit()}>{busy ? 'Sending…' : u.per === 'hour' && requestMode(stay, u, new Date()).mode === 'auto' ? 'Book it' : 'Request'}</button>
       {msg && <p className="breach" role="alert">{msg}</p>}
     </section>
   </>;
@@ -327,21 +332,23 @@ const DEMO_LABEL: Record<DemoKey, string> = { unpaid: 'New stay', paid: 'Checked
 
 export function demoStay(k: DemoKey): GuestStay {
   const base: GuestStay = {
-    id: `demo-${k}`, guestFirst: 'Sarah', unitName: 'Frisco Lakeside · 4BR', address: null, photo: null,
-    arrival: iso(plus(0)), departure: iso(plus(5)), checkInTime: '4:00 PM', checkOutTime: '11:00 AM', guests: 5,
+    id: `demo-${k}`, guestFirst: 'Sarah', unitName: 'Frisco Legacy · 1BR', address: null,
+    // A real listing's cover from Hostaway (366041) — the demo shows what the photo does; real houses read their own.
+    photo: 'https://hostaway-platform.s3.us-west-2.amazonaws.com/listing/144914-366041-Pqfp---C0--1kIUrqqkFbgMAJKWF5fzsoONnBYRDEDlUk-67c24f54305ee',
+    arrival: iso(plus(0)), departure: iso(plus(5)), checkInTime: '4:00 PM', checkOutTime: '11:00 AM', guests: 3,
     channel: 'direct', total: 0, paid: 0, nightly: 189, freeBefore: 0, freeAfter: 2, turnIn: true, turnOut: false,
     // Released already: finishing check-in in the demo opens the door code right away.
     guideReleaseAt: `${iso(plus(-1))}T17:00:00Z`, pay: { provider: 'none', url: null },
-    guest: { name: 'Sarah Mitchell', email: 'sarah.m@example.com', phone: '+1 (214) 555-0148', adults: 4, children: 1, infants: 0, pets: 0 },
-    maxGuests: 8, unitType: 'house', doorCode: '4821',
+    guest: { name: 'Sarah Mitchell', email: 'sarah.m@example.com', phone: '+1 (214) 555-0148', adults: 2, children: 1, infants: 0, pets: 0 },
+    maxGuests: 4, unitType: 'apartment', doorCode: '4821',
     // A sample guide so the demo shows what check-in unlocks (a real house comes from the Repository).
-    guide: { address: '4120 Lakeside Dr, Frisco, TX 75034', wifi: { network: 'Kaizen-Lakeside', password: 'stay-well-48' },
-      checkIn: '4 PM', checkOut: '11 AM', parking: { notes: 'Driveway fits two cars. Please keep the street side clear for the neighbours.', freeStreet: true, coveredPerNight: null },
-      access: 'The whole house, the backyard and the grill.', manual: null, rules: null, phone: '+1 (469) 555-0110',
+    guide: { address: '7200 Dallas Pkwy, Frisco, TX 75034', wifi: { network: 'Kaizen-Legacy', password: 'stay-well-48' },
+      checkIn: '4 PM', checkOut: '11 AM', parking: { notes: 'Free garage parking for one car — any spot without a number.', freeStreet: false, coveredPerNight: null },
+      access: 'The whole apartment, the pool and the fitness room.', manual: null, rules: null, phone: '+1 (469) 555-0110',
       steps: [
-        { title: 'Park in the driveway', text: 'Two cars fit side by side. Street parking is free after 6 PM.' , pin: null },
-        { title: 'Front door keypad', text: 'Touch the screen to wake it, enter your door code and press the lock key.' , pin: null },
-        { title: 'Make yourself at home', text: 'Wi-Fi and the house manual are on the Stay tab. Message us anytime.' , pin: null },
+        { title: 'Park in the garage', text: 'Enter from Dallas Pkwy. Any spot without a number is free for guests.', pin: null },
+        { title: 'Your door keypad', text: 'Take the elevator to the 3rd floor. Touch the keypad, enter your door code and press the lock key.', pin: null },
+        { title: 'Make yourself at home', text: 'Wi-Fi and the house manual are on the Stay tab. Message us anytime.', pin: null },
       ] },
   };
   if (k === 'paid') return { ...base, checkedIn: true };
@@ -355,7 +362,7 @@ export function GuestDemoPage() {
   const [k, setK] = useState<DemoKey>(DEMO_KEYS.includes(q as DemoKey) ? q as DemoKey : 'unpaid');
   const pickDemo = (x: DemoKey) => { setK(x); const u = new URL(location.href); u.searchParams.set('stay', x); history.replaceState(history.state, '', u); };
   const house = useHouse();
-  const stay: GuestStay = house.data ? { ...demoStay(k), unitName: house.data.unitName, address: house.data.guide?.address ?? null,
+  const stay: GuestStay = house.data ? { ...demoStay(k), unitName: house.data.unitName, photo: house.data.photo ?? null, unitType: house.data.unitType ?? 'house', protection: house.data.protection ?? null, address: house.data.guide?.address ?? null,
     guide: house.data.guide, prices: house.data.prices } : demoStay(k);
   return <GuestPortal key={`${k}-${house.unit}`} stay={stay} send={async () => ({ ok: true })}
     demoBar={<div className="g-demo" role="group" aria-label="Demo stay">
@@ -372,7 +379,7 @@ export function GuestDemoPage() {
  * The demo with a real house (2026-11-09): its guide and prices from the Repository via /api/guest-guide,
  * which answers only behind the staff sign-in — on /crew/guest-demo (no sign-in) the picker simply never shows.
  */
-type HouseData = { unitName: string; guide: GuestGuide | null; prices: GuestStay['prices'] };
+type HouseData = { unitName: string; photo?: string | null; unitType?: GuestStay['unitType'] | null; protection?: GuestStay['protection']; guide: GuestGuide | null; prices: GuestStay['prices'] };
 function useHouse() {
   const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
   const [unit, setUnit] = useState(() => new URLSearchParams(location.search).get('unit') ?? '');
