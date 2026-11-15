@@ -20,6 +20,12 @@ items belong to it, and which `§N` of `docs/history.md` explain it.
 | platform | auth, roles, Settings, Home, SOPs, design, Hostaway client, shared libs | `docs/modules/platform.md` |
 | website | public site (separate Lovable repo `kaizen-website`), hidden `/reservations` | `docs/modules/website.md` |
 
+**Target structure (restructure, 2026-11-13/15)** — Core (listings + Repository, reservations, users/roles, Hostaway,
+company tools) and area modules: Leadership · Guest Services (upsells, claims, **messages inbox + our AI, humans take
+escalations**) · Operations · Guest Experience (listing health, check-in guides, verification) · Finance/Data/Tech ·
+Shared tools · Vendor portal (cleaners + handymen) · Guest portal (online check-in, Stripe). Future: Sales & Growth, Schedules.
+UI everywhere follows the handyman page (cards, carousel, "?" hints instead of text). New work lands under these names.
+
 `docs/history.md` is the full decision log (177 KB). **Never read it whole** — open only the
 section a `§N` points to (`grep -n "^## 64\." docs/history.md`; from 108 on `## §108`).
 When a session changes a module, update that module's doc (and its open items) before

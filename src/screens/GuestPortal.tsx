@@ -12,8 +12,10 @@ import { Icon, ic } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, availability, choiceLine, guide, mapsUrl, nights, payState, priceOf, quote, ready, upsellRequest,
+import { UPSELLS, availability, choiceLine, mapsUrl, nights, priceOf, quote, ready, upsellRequest,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
+import { doneFlow, entry, newFlow, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
+import { CheckinProgress, StepList, StepScreen } from './GuestCheckin.tsx';
 
 type Send = (r: UpsellRequest) => Promise<{ ok: boolean; message?: string }>;
 export type Sec = 'stay' | 'checkin' | 'extras';
@@ -29,11 +31,18 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar, embedded = 
   const [sec, setSec] = useState<Sec>(startSec);
   const [pick, setPick] = useState<Upsell['kind'] | null>(null);
   const [sent, setSent] = useState<UpsellRequest[]>([]);
+  const [flow, setFlow] = useState<Flow>(() => stay.checkedIn ? doneFlow() : newFlow());
+  const [step, setStep] = useState<StepKey | null>(null);
+  const prot = protectionFor(stay.unitType ?? 'house', stay.protection ?? {});
+  useUrlState('step', step ?? '', v => setStep((v || null) as StepKey | null), { def: '', on: !embedded });
   useUrlState('sec', sec, setSec, { def: 'stay', valid: v => v === 'stay' || v === 'checkin' || v === 'extras', on: !embedded });
   useUrlState('extra', pick ?? '', v => setPick((v || null) as Upsell['kind'] | null), { def: '', on: !embedded });
   const open = UPSELLS.find(u => u.kind === pick) ?? null;
-  const go = (s: Sec) => { setSec(s); setPick(null); };
+  const go = (s: Sec) => { setSec(s); setPick(null); setStep(null); };
+  const goStep = (k: StepKey | null) => { setSec('checkin'); setPick(null); setStep(k); window.scrollTo?.({ top: 0 }); };
   useBrand(!embedded);
+  useBrandFonts();
+  const ck = { flow, prot, goStep };
 
   return <>
     <header className="v-island">
@@ -44,8 +53,9 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar, embedded = 
       </span>
     </header>
     <div className="report-page v-page g-page">
-      {sec === 'stay' ? <StayView stay={stay} now={now} go={go} />
-        : sec === 'checkin' ? <CheckinView stay={stay} now={now} />
+      {sec === 'stay' ? <StayView stay={stay} now={now} go={go} {...ck} />
+        : sec === 'checkin' ? step && steps(flow, stay, prot).some(x => x.key === step) ? <StepScreen k={step} stay={stay} flow={flow} set={setFlow} p={prot} back={() => goStep(null)} go={goStep} />
+          : <CheckinView stay={stay} now={now} {...ck} />
         : open ? <Pick stay={stay} u={open} back={() => setPick(null)}
             send={async c => { const r = upsellRequest(stay, open, c, now); const res = await send(r); if (res.ok) { setSent(s => [...s, r]); setPick(null); } return res; }} />
         : <Extras stay={stay} sent={sent} choose={setPick} />}
@@ -67,15 +77,28 @@ function useBrand(on = true) {
   }, [on]);
 }
 
-const lockLine = (g: ReturnType<typeof guide>) => g.open ? '' : g.why === 'unpaid' ? 'Opens after payment' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival';
+/** Kaizen's type (the public site): Quattrocento for titles, Open Sans for text — loaded only with the guest page. */
+function useBrandFonts() {
+  useEffect(() => {
+    if (document.getElementById('kz-guest-fonts')) return;
+    const l = document.createElement('link');
+    l.id = 'kz-guest-fonts'; l.rel = 'stylesheet';
+    l.href = 'https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&family=Quattrocento:wght@400;700&display=swap';
+    document.head.appendChild(l);
+  }, []);
+}
+
+type Ck = { flow: Flow; prot: Protection; goStep: (k: StepKey | null) => void };
+type Entry = ReturnType<typeof entry>;
+const lockLine = (g: Entry) => g.open ? '' : g.why === 'steps' ? 'Opens when you finish check-in' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival';
 
 /**
  * Stay (owner, 2026-11-09): the trip, what is due, the way to Check-in (its own tab — the most important part),
  * then the house info right on the page: Wi-Fi, trash, parking, rules, contact. Locked like the check-in.
  */
-function StayView({ stay, now, go }: { stay: GuestStay; now: Date; go: (s: Sec) => void }) {
+function StayView({ stay, now, go, flow, prot, goStep }: { stay: GuestStay; now: Date; go: (s: Sec) => void } & Ck) {
   const n = nights(stay);
-  const g = guide(stay, now);
+  const g = entry(flow, stay, prot, now);
   return <>
     <section className="card g-hero">
       <div className="g-photo" style={stay.photo ? { backgroundImage: `url(${stay.photo})` } : undefined}>
@@ -91,7 +114,7 @@ function StayView({ stay, now, go }: { stay: GuestStay; now: Date; go: (s: Sec) 
         {stay.address && <> · <a href={`https://maps.google.com/?q=${encodeURIComponent(stay.address)}`} target="_blank" rel="noreferrer"><Icon n="pin" /> Map</a></>}</p>
     </section>
 
-    <PayCard stay={stay} />
+    <CheckinProgress st={steps(flow, stay, prot)} go={goStep} />
 
     <button className="card g-action g-action-main-cta" onClick={() => go('checkin')}>
       <span className="g-action-icon"><Icon n="key" /></span>
@@ -113,34 +136,29 @@ function StayView({ stay, now, go }: { stay: GuestStay; now: Date; go: (s: Sec) 
 }
 
 /** Check-in (its own tab): the arrival steps with photos, or why they are not open yet. */
-function CheckinView({ stay, now }: { stay: GuestStay; now: Date }) {
-  const g = guide(stay, now);
+function CheckinView({ stay, now, flow, prot, goStep }: { stay: GuestStay; now: Date } & Ck) {
+  const g = entry(flow, stay, prot, now);
+  const st = steps(flow, stay, prot);
   return <>
     <h2 className="v-h g-h">Check-in · {ic(stay.unitName)}</h2>
     <p className="g-meta g-checkin-when"><Icon n="clock" /> From {stay.checkInTime}, {dateLabel(stay.arrival)}</p>
-    {g.open ? <Arrival g={stay.guide ?? null} />
-      : <><p className="card g-guide g-lock"><Icon n="lock" /> {lockLine(g)}.</p><PayCard stay={stay} /></>}
+    {g.open ? <><DoorCode stay={stay} /><Arrival g={stay.guide ?? null} /></>
+      : g.why === 'steps' ? <><CheckinProgress st={st} go={goStep} /><StepList st={st} go={goStep} /></>
+      : <><p className="card g-guide g-lock ci-done"><Icon n="done" /> You are checked in. Door code and directions {lockLine(g).replace(/^Opens/, 'open')}.</p></>}
   </>;
 }
 
-/** What is due and the one way to pay it. No link yet → the button says so instead of doing nothing. */
-function PayCard({ stay }: { stay: GuestStay }) {
-  const p = payState(stay);
-  if (p.state === 'channel') return <p className="g-paid"><Icon n="done" /> {stay.channel === 'airbnb' ? 'Paid through Airbnb' : stay.channel === 'vrbo' ? 'Paid through Vrbo' : 'Nothing due'}</p>;
-  if (p.state === 'paid') return <p className="g-paid"><span className="g-dot ok" aria-hidden>●</span> Paid · {money2(stay.total)}</p>;
-  const url = stay.pay.url;
-  return (
-    <section className="card g-pay">
-      <div className="g-pay-head">
-        <span className="g-warn" aria-hidden>▲</span>
-        <span><b className="g-due">{money2(p.due)} due</b>{p.state === 'partial' && <span className="note">{money2(stay.paid)} of {money2(stay.total)} paid</span>}</span>
-        <Hint>Damage waiver for your stay. The check-in instructions open once it is paid. Payment is handled by our booking system — Kaizen never sees your card.</Hint>
-      </div>
-      {url ? <button className="g-cta" onClick={() => window.open(url, '_blank', 'noopener')}><Icon n="dollar" /> Pay {money2(p.due)}</button>
-        : <><button className="g-cta" disabled><Icon n="dollar" /> Pay {money2(p.due)}</button>
-          <p className="note g-limit">Payment link not connected yet.</p></>}
-    </section>
-  );
+/** The door code, big and copyable — the thing check-in unlocks. None set → say who sends it. */
+function DoorCode({ stay }: { stay: GuestStay }) {
+  const [copied, setCopied] = useState(false);
+  const code = stay.doorCode;
+  if (!code) return <p className="card g-guide g-lock"><Icon n="key" /> Your door code arrives by message before check-in.</p>;
+  const copy = () => { void navigator.clipboard?.writeText(code).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500); }, () => undefined); };
+  return <section className="card ci-code">
+    <span className="ci-eyebrow"><Icon n="key" /> Your door code</span>
+    <button className="ci-digits" onClick={copy} aria-label={`Door code ${code.split('').join(' ')} — copy`}>{code.split('').map((d, i) => <span key={i}>{d}</span>)}</button>
+    <span className="note">Works from {stay.checkInTime}, {dateLabel(stay.arrival)} · {copied ? 'Copied' : 'Tap to copy'}</span>
+  </section>;
 }
 
 function priceLabel(stay: GuestStay, u: Upsell) {
@@ -152,7 +170,7 @@ function priceLabel(stay: GuestStay, u: Upsell) {
 function Extras({ stay, sent, choose }: { stay: GuestStay; sent: UpsellRequest[]; choose: (k: Upsell['kind']) => void }) {
   const NO = { calendar: 'Not available for your dates', price: 'Ask us for a price', short: 'For stays of 4+ nights' } as const;
   return <>
-    <h2 className="v-h g-h">Extras <Hint>Pick an extra and send the request. We confirm it, then you pay it with the same Pay button. Nothing is charged when you ask.</Hint></h2>
+    <h2 className="v-h g-h">Extras <Hint>Pick an extra and send the request. We confirm it first, then charge the card you used at check-in. Nothing is charged when you ask.</Hint></h2>
     <Carousel label="Extras" of={of}>{UPSELLS.map(u => {
       const a = availability(stay, u);
       const asked = sent.some(r => r.kind === u.kind);
@@ -303,21 +321,31 @@ function Stepper({ label, value, set, min = 0, max }: { label: string; value: nu
 
 const iso = (d: Date) => d.toISOString().slice(0, 10);
 const plus = (n: number) => { const d = new Date(); d.setUTCDate(d.getUTCDate() + n); return d; };
-export type DemoKey = 'unpaid' | 'partial' | 'paid' | 'airbnb';
-export const DEMO_KEYS: DemoKey[] = ['unpaid', 'partial', 'paid', 'airbnb'];
-const DEMO_LABEL: Record<DemoKey, string> = { unpaid: 'Unpaid', partial: 'Partly paid', paid: 'Paid', airbnb: 'Airbnb' };
+export type DemoKey = 'unpaid' | 'paid' | 'airbnb';
+export const DEMO_KEYS: DemoKey[] = ['unpaid', 'paid', 'airbnb'];
+const DEMO_LABEL: Record<DemoKey, string> = { unpaid: 'New stay', paid: 'Checked in', airbnb: 'Airbnb' };
 
 export function demoStay(k: DemoKey): GuestStay {
   const base: GuestStay = {
     id: `demo-${k}`, guestFirst: 'Sarah', unitName: 'Frisco Lakeside · 4BR', address: null, photo: null,
-    arrival: iso(plus(3)), departure: iso(plus(6)), checkInTime: '4:00 PM', checkOutTime: '11:00 AM', guests: 6,
-    channel: 'direct', total: 75, paid: 0, nightly: 189, freeBefore: 1, freeAfter: 2, turnIn: false, turnOut: true,
-    guideReleaseAt: `${iso(plus(2))}T17:00:00Z`, pay: { provider: 'hostaway', url: null },
+    arrival: iso(plus(0)), departure: iso(plus(5)), checkInTime: '4:00 PM', checkOutTime: '11:00 AM', guests: 5,
+    channel: 'direct', total: 0, paid: 0, nightly: 189, freeBefore: 0, freeAfter: 2, turnIn: true, turnOut: false,
+    // Released already: finishing check-in in the demo opens the door code right away.
+    guideReleaseAt: `${iso(plus(-1))}T17:00:00Z`, pay: { provider: 'none', url: null },
+    guest: { name: 'Sarah Mitchell', email: 'sarah.m@example.com', phone: '+1 (214) 555-0148', adults: 4, children: 1, infants: 0, pets: 0 },
+    maxGuests: 8, unitType: 'house', doorCode: '4821',
+    // A sample guide so the demo shows what check-in unlocks (a real house comes from the Repository).
+    guide: { address: '4120 Lakeside Dr, Frisco, TX 75034', wifi: { network: 'Kaizen-Lakeside', password: 'stay-well-48' },
+      checkIn: '4 PM', checkOut: '11 AM', parking: { notes: 'Driveway fits two cars. Please keep the street side clear for the neighbours.', freeStreet: true, coveredPerNight: null },
+      access: 'The whole house, the backyard and the grill.', manual: null, rules: null, phone: '+1 (469) 555-0110',
+      steps: [
+        { title: 'Park in the driveway', text: 'Two cars fit side by side. Street parking is free after 6 PM.' , pin: null },
+        { title: 'Front door keypad', text: 'Touch the screen to wake it, enter your door code and press the lock key.' , pin: null },
+        { title: 'Make yourself at home', text: 'Wi-Fi and the house manual are on the Stay tab. Message us anytime.' , pin: null },
+      ] },
   };
-  if (k === 'partial') return { ...base, paid: 36 };
-  // Paid and released: arriving today, the guide is open.
-  if (k === 'paid') return { ...base, paid: 75, arrival: iso(plus(0)), departure: iso(plus(5)), guideReleaseAt: `${iso(plus(-1))}T17:00:00Z`, turnIn: true, freeBefore: 0 };
-  if (k === 'airbnb') return { ...base, channel: 'airbnb', total: 0, freeAfter: 0, freeBefore: 0, nightly: null };
+  if (k === 'paid') return { ...base, checkedIn: true };
+  if (k === 'airbnb') return { ...base, channel: 'airbnb', guest: { ...base.guest!, email: null } };
   return base;
 }
 

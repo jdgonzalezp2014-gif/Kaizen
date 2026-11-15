@@ -161,6 +161,46 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   108 moves its Trash step into the house manual.
 - Pay stays = the reservation's Hostaway `guestPortalUrl` (Hostaway Payments / Stripe on their side); our own Stripe later.
 
+
+### Reference: Hostop demo (app.hostop.ai/portal/demo, walked 2026-11-15) — the boss's target for portal v2
+
+- **Home**: greeting + photo, house, address, check-in/out; "Entry instructions locked" card + Start check-in;
+  progress "0 of 4"; tiles Wi-Fi · Home guide · Directions · Local guide · Contact host; "Extend your stay"
+  (host confirms in 30 min); "Enhance your stay" carousel with prices.
+- **1 Guest details**: name*, email*, phone*, home address; arrival window (before 4 / 4–6 / after 6); trip reason;
+  pet y/n; parking y/n; adults/children/infants with the house max; optional guest names; opt-in reminders.
+- **2 ID**: pick ID type (licence front+back / passport / national ID) → photos (camera or gallery) → selfie.
+- **3 Damage protection**: choose **waiver $49 one-time, covers accidental damage up to $1,500** (recommended) **or
+  deposit $250 hold**, released after check-out (5–7 business days); exclusions listed (intentional, theft, smoking,
+  unauthorised pets, above cap).
+- **4 House rules**: 6 rules as title + one line (check-out time, quiet hours, no smoking + fee, no parties, pets
+  by arrangement, care) + "I agree" checkbox → "Agree and finish".
+- **Upsells** after the steps (skippable): early check-in $40, late check-out $40 (on request), mid-stay clean $75,
+  welcome basket $35.
+- **Review and pay**: one payment = waiver + extras (Apple/Google Pay, card; Stripe). Until paid: "3 of 4", a
+  "Payment pending" card and step 5. **Confirmation**: entry details (door code, Wi-Fi, step-by-step guide) unlocked.
+- Kaizen mapping: values per listing in the Repository (waiver price + cap, deposit, rules, restrictions,
+  max guests), defaults by unit type (room / apartment / house). ID step = placeholder until Truvi vs Stripe Identity.
+
+### Online check-in v2 (2026-11-15, owner: "the boss must see the portal")
+
+- `src/lib/guest-checkin.ts` (+ test, pure) and `src/screens/GuestCheckin.tsx`. Steps: **Your details** (from the Hostaway
+  reservation — name, email, phone, party; the guest only picks arrival window + pet) → **Identity** (placeholder,
+  "Complete verification" marks it done; Truvi vs Stripe Identity undecided) → **Damage protection** (waiver once vs
+  deposit hold; `protectionFor(unitType, override)`, defaults room 29/1,000/150 · apartment 49/1,500/250 · house 79/3,000/500 —
+  placeholders; Airbnb = covered by AirCover, step done) → **House rules** (`rulesList()` splits the record's free text;
+  checkbox) → **Extras** (optional; early/late are *on request*, charged only once confirmed) → **Review and pay** (only
+  when something is charged/held; Apple Pay / Google Pay / card mock, "Demo — nothing is charged").
+- `entry()` replaces the old pay gate on the page: door code + guide + house manual open when every required step is done
+  **and** `guideReleaseAt` passed. `DoorCode` shows `stay.doorCode` (Hostaway per-reservation `doorCode` — not verified yet).
+- Flow state lives in the page (demo resets on reload). Demo stays: New stay / Checked in / Airbnb (`?stay=unpaid|paid|airbnb`),
+  sample house with a sample guide and door 4821. URL: `?sec=checkin&step=<key>`.
+- Type: Quattrocento titles + Open Sans text (the public site's), loaded only with the guest page (`useBrandFonts`). CSS `.ci-*`.
+- Next: Stripe sandbox (PaymentIntent for waiver+extras, manual-capture PaymentIntent or SetupIntent for the deposit — holds
+  last ~7 days), `guest_checkins` table per reservation, Repository fields (unit type, waiver price/cap, deposit, rules),
+  real reservation → `GuestStay` from Hostaway, the Access bypass for `/guest/*`. Hostaway's $12/night waiver must go
+  before the portal charges one (see finance.md, guest fees).
+
 ### Rules
 
 - Pay state = `total − paid` (≤ 0 → paid); channel `airbnb`/`vrbo` → collected by the channel, no gate.

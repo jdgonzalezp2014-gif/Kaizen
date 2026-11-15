@@ -36,6 +36,16 @@ export interface GuestStay {
   turnOut: boolean;           // someone checks in the day this guest leaves
   guideReleaseAt: string | null; // ISO; check-in instructions open from here (and only when nothing is due)
   pay: PayLink;
+  /** From the Hostaway reservation (online check-in confirms them; the guest never retypes them). */
+  guest?: { name: string; email: string | null; phone: string | null; adults: number; children: number; infants: number; pets: number } | null;
+  maxGuests?: number | null;
+  /** The Repository's unit type and protection values (defaults by type until a listing sets its own). */
+  unitType?: 'room' | 'apartment' | 'house';
+  /** Online check-in already finished (kept by Kaizen per reservation — demo flag for now). */
+  checkedIn?: boolean;
+  /** The guest's door code (Hostaway's per-reservation code when set) — shown only once check-in opens the entry. */
+  doorCode?: string | null;
+  protection?: { waiverPrice?: number | null; waiverCap?: number | null; depositHold?: number | null } | null;
   /** The house's check-in guide, from its Repository record (null = none yet). Served only once the guide opens. */
   guide?: GuestGuide | null;
   /** House prices from the Repository's Fees, overriding the UPSELLS placeholders. */
