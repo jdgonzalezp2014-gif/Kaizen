@@ -218,6 +218,17 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - **Migration 110** (Repository section "Guest portal": Portal photo, Unit type, Damage waiver price / covers up to,
   Security deposit hold → `portalFrom()`): written, **not applied yet** — the code reads blanks as the unit type's defaults.
 
+### Stripe Checkout for the check-in payment (2026-11-15)
+
+- "Review and pay" opens **Stripe Checkout** (hosted; Apple Pay / Google Pay / Link / card appear there). `functions/_lib/guest-pay.ts`,
+  routed through the public door `/api/report-link?checkout=` (POST = create session, GET `?checkout=cs_…` = is it complete) — no new Access bypass.
+- Charges + a hold in one session: any hold → `capture_method=manual` on the whole payment; after check-out the team captures what is
+  owed (partial capture) and the rest is released. "If confirmed" extras are not sent (charged later).
+- The answers are kept in `sessionStorage` (`FLOW_KEY`) before the redirect; back on `?paid=cs_…` the page restores them and marks
+  paid only when the server reads `status = complete`.
+- **Sandbox only**: lines come from the page (demo stay), so a live key is refused (409). Before live: the signed `/guest/<id>` link,
+  bill computed on the server, `guest_checkins` row + webhook. Hostaway's $12/night waiver still to remove first.
+
 ### Rules
 
 - Pay state = `total − paid` (≤ 0 → paid); channel `airbnb`/`vrbo` → collected by the channel, no gate.

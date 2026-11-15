@@ -14,7 +14,7 @@ import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, availability, choiceLine, mapsUrl, nights, priceOf, quote, ready, requestMode, upsellRequest,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
-import { doneFlow, entry, newFlow, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
+import { FLOW_KEY, doneFlow, entry, newFlow, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
 import { CheckinProgress, StepList, StepScreen } from './GuestCheckin.tsx';
 
 type Send = (r: UpsellRequest) => Promise<{ ok: boolean; message?: string }>;
@@ -22,6 +22,14 @@ export type Sec = 'stay' | 'checkin' | 'extras';
 const of = (i: number, n: number) => `${i} of ${n}`;
 
 const dateLabel = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
+function returnedFlow(): Flow | null {
+  try {
+    if (!new URLSearchParams(location.search).get('paid')) return null;
+    const f = JSON.parse(sessionStorage.getItem(FLOW_KEY) ?? 'null') as Flow | null;
+    return f && typeof f === 'object' ? f : null;
+  } catch { return null; }
+}
+
 // The houses are in Texas: the release time reads in Central.
 const whenLabel = (iso: string) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
 
@@ -31,7 +39,17 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar, embedded = 
   const [sec, setSec] = useState<Sec>(startSec);
   const [pick, setPick] = useState<Upsell['kind'] | null>(null);
   const [sent, setSent] = useState<UpsellRequest[]>([]);
-  const [flow, setFlow] = useState<Flow>(() => stay.checkedIn ? doneFlow() : newFlow());
+  const [flow, setFlow] = useState<Flow>(() => (!embedded && returnedFlow()) || (stay.checkedIn ? doneFlow() : newFlow()));
+  // Back from Stripe Checkout (`?paid=cs_…`): the step is done only if Stripe says the session is complete.
+  const [payNote, setPayNote] = useState<string | null>(null);
+  useEffect(() => {
+    const id = embedded ? null : new URLSearchParams(location.search).get('paid');
+    if (!id) return;
+    fetch(`/api/report-link?checkout=${encodeURIComponent(id)}`).then(r => r.json() as Promise<{ paid?: boolean; message?: string }>).then(j => {
+      if (j.paid) setFlow(f => ({ ...f, paid: true }));
+      else setPayNote(j.message ?? 'The payment was not completed.');
+    }).catch(() => setPayNote('Could not check the payment.'));
+  }, [embedded]);
   const [step, setStep] = useState<StepKey | null>(null);
   const prot = protectionFor(stay.unitType ?? 'house', stay.protection ?? {});
   useUrlState('step', step ?? '', v => setStep((v || null) as StepKey | null), { def: '', on: !embedded });
@@ -60,6 +78,7 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar, embedded = 
             send={async c => { const r = upsellRequest(stay, open, c, now); const res = await send(r); if (res.ok) { setSent(s => [...s, r]); setPick(null); } return res; }} />
         : <Extras stay={stay} sent={sent} choose={setPick} />}
       {demoBar}
+      {payNote && <p className="banner warn">▲ {payNote}</p>}
     </div>
   </>;
 }

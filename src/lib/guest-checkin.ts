@@ -53,6 +53,8 @@ export interface Flow {
   extrasSeen: boolean;
   paid: boolean;
 }
+/** The check-in answers kept in the tab while the guest is on Stripe Checkout (the page reloads when they come back). */
+export const FLOW_KEY = 'kaizen-guest-flow';
 export const newFlow = (): Flow => ({ details: false, arrival: null, pet: null, identity: false, protection: null, rules: false, extras: {}, extrasSeen: false, paid: false });
 /** A finished check-in (the demo's "checked in" stay). */
 export const doneFlow = (): Flow => ({ details: true, arrival: 'mid', pet: false, identity: true, protection: 'waiver', rules: true, extras: {}, extrasSeen: true, paid: true });

@@ -9,7 +9,7 @@ import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, quote, requestMode, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
-import { bill, channelCovers, flowExtras, nextStep, onRequest, progress, rulesList, steps, SAMPLE_RULES,
+import { FLOW_KEY, bill, channelCovers, flowExtras, nextStep, onRequest, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
 const STEP_ICON: Record<StepKey, string> = { details: 'user', identity: 'idcard', protection: 'shield', rules: 'book', extras: 'sparkles', pay: 'card' };
@@ -202,13 +202,29 @@ function modeLine(stay: GuestStay, k: UpsellKind, turnover: boolean) {
 }
 
 /**
- * Review and pay. Demo: the wallet buttons and the card look like Stripe's Express Checkout and Payment Element
- * (where they go when the sandbox key is in), and "pay" only marks the step done — nothing is charged.
+ * Review and pay: the bill, then Stripe Checkout (Stripe's own page — Apple Pay, Google Pay, Link and cards show there
+ * on their own). The answers so far are kept in the tab so the page picks up where it was when Stripe sends the guest
+ * back; the step is done only once the server confirms the session (GuestPortal, `?paid=`). Sandbox only for now.
  */
-function Pay({ stay, flow, p, save }: S) {
+function Pay({ stay, flow, p }: S) {
   const b = bill(flow, stay, p);
   const [busy, setBusy] = useState(false);
-  const pay = () => { setBusy(true); setTimeout(() => save({ ...flow, paid: true }), 900); };
+  const [err, setErr] = useState<string | null>(null);
+  const pay = async () => {
+    setBusy(true); setErr(null);
+    try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); } catch { /* private mode: the page just starts over */ }
+    const u = new URL(location.href);
+    for (const k of ['step', 'paid', 'extra']) u.searchParams.delete(k);
+    u.searchParams.set('sec', 'checkin');
+    try {
+      const r = await fetch('/api/report-link?checkout=1', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: b.lines, email: stay.guest?.email ?? null, back: u.pathname + u.search }) });
+      const j = await r.json() as { url?: string; message?: string };
+      if (j.url) { location.href = j.url; return; }
+      setErr(j.message ?? 'Payment could not start.');
+    } catch { setErr('Payment could not start — check the connection.'); }
+    setBusy(false);
+  };
   const label = b.today > 0 ? `Pay ${money2(b.today)}` : `Authorize ${money2(b.hold)} hold`;
   return <>
     <section className="card ci-card ci-bill">
@@ -219,20 +235,11 @@ function Pay({ stay, flow, p, save }: S) {
       <div className="ci-line ci-sum"><span>Today</span><b>{money2(b.today)}</b></div>
       {b.hold > 0 && <div className="ci-line ci-sum ci-sub"><span>Held, released after check-out</span><span>{money2(b.hold)}</span></div>}
     </section>
-    <div className="ci-wallets">
-      <button className="ci-apple" onClick={pay} disabled={busy} aria-label="Pay with Apple Pay"><AppleMark /> Pay</button>
-      <button className="ci-gpay" onClick={pay} disabled={busy} aria-label="Pay with Google Pay"><GMark /> Pay</button>
-    </div>
-    <div className="ci-or"><span>or pay with card</span><Hint>Apple Pay shows on an iPhone or a Mac in Safari, Google Pay in Chrome or on Android —
-      each only with a card saved in the wallet. A card works on any phone and any browser.</Hint></div>
-    <section className="card ci-cardform" aria-label="Card">
-      <span className="ci-field ci-field-wide"><Icon n="card" /> 1234 1234 1234 1234</span>
-      <span className="ci-field">MM / YY</span><span className="ci-field">CVC</span>
-    </section>
-    <button className="g-cta" onClick={pay} disabled={busy}>{busy ? 'Processing…' : label}</button>
-    <p className="ci-stripe"><span><Icon n="lock" /> Secure payment by Stripe</span><span>Demo — nothing is charged</span></p>
+    {err && <p className="banner warn">▲ {err}</p>}
+    <button className="g-cta" onClick={pay} disabled={busy}>{busy ? 'Opening secure payment…' : label}</button>
+    <p className="ci-stripe"><span><Icon n="lock" /> Secure payment by Stripe</span>
+      <span>Test mode <Hint>Stripe opens its own payment page: Apple Pay (iPhone / Safari), Google Pay (Chrome / Android) or a card.
+        Test card 4242 4242 4242 4242, any future date, any CVC. A deposit is only held — captured after check-out if something is owed.</Hint></span></p>
   </>;
 }
 
-const AppleMark = () => <svg viewBox="0 0 17 20" width="15" height="18" aria-hidden fill="currentColor"><path d="M14.1 10.6c0-2.6 2.1-3.8 2.2-3.9-1.2-1.8-3.1-2-3.7-2-1.6-.2-3.1.9-3.9.9s-2-.9-3.4-.9C3.6 4.8 2 5.8 1 7.3c-1.9 3.3-.5 8.2 1.4 10.9.9 1.3 2 2.8 3.4 2.7 1.4-.1 1.9-.9 3.5-.9s2.1.9 3.5.9c1.5 0 2.4-1.3 3.3-2.7 1-1.5 1.5-3 1.5-3.1-.1 0-2.9-1.1-3-4.5zM11.5 3c.7-.9 1.3-2.2 1.1-3.4-1.1 0-2.4.7-3.2 1.6-.7.8-1.3 2.1-1.1 3.3 1.2.1 2.4-.6 3.2-1.5z" /></svg>;
-const GMark = () => <svg viewBox="0 0 18 18" width="16" height="16" aria-hidden><path fill="#4285F4" d="M17.6 9.2c0-.6-.1-1.2-.2-1.8H9v3.4h4.8a4.1 4.1 0 0 1-1.8 2.7v2.2h2.9c1.7-1.6 2.7-3.9 2.7-6.5z" /><path fill="#34A853" d="M9 18c2.4 0 4.5-.8 6-2.2l-2.9-2.2c-.8.5-1.8.9-3.1.9-2.4 0-4.4-1.6-5.1-3.7H.9v2.3A9 9 0 0 0 9 18z" /><path fill="#FBBC05" d="M3.9 10.8a5.4 5.4 0 0 1 0-3.5V5H.9a9 9 0 0 0 0 8.1z" /><path fill="#EA4335" d="M9 3.6c1.3 0 2.5.5 3.5 1.4l2.6-2.6A9 9 0 0 0 .9 5l3 2.3C4.6 5.2 6.6 3.6 9 3.6z" /></svg>;

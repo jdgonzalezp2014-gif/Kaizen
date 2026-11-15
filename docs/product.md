@@ -32,7 +32,7 @@ Vendor portal · Guest portal. Future: Sales & Growth, Schedules.
 needs no publishable key and no Apple Pay domain registration per tenant, it shows Apple Pay / Google Pay / Link / cards
 automatically, and each tenant brands it in their own Stripe dashboard. The deposit is a Checkout payment with
 `capture_method=manual` (a hold, ~7 days) or a saved card (SetupIntent) for longer stays. An embedded Payment Element can
-come later for a fully in-page look.
+come later for a fully in-page look. Built 2026-11-15 (`functions/_lib/guest-pay.ts`, the tenant's own key; test mode only).
 
 ## Hard-wired to Kaizen today (debt to clear before selling)
 - `account_id = 1` in queries throughout `functions/` → needs the signed-in user's account.
