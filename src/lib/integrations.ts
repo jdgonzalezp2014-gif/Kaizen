@@ -18,8 +18,7 @@ export function integrations(a: IntegrationFlags): Integration[] {
     { key: 'stripe', name: 'Stripe', does: 'Guest payments (damage waiver, deposits, extras) and vendor payouts', state: on(a.hasStripeKey), required: false },
     { key: 'slack', name: 'Slack', does: 'Team alerts, daily messages, approvals', state: on(a.slack), required: false },
     { key: 'drive', name: 'Google Drive', does: 'Repository files and check-in photos', state: on(a.drive), required: false },
-    { key: 'claude', name: 'Claude', does: 'AI drafts and @Kaizen; guest replies next', state: on(a.hasClaudeKey), required: false },
-    { key: 'gemini', name: 'Gemini', does: 'Price suggestions and market reading', state: on(a.hasGeminiKey), required: false },
+    { key: 'ai', name: 'AI — Gemini & Claude', does: 'Price suggestions, market reading, drafts; guest replies next', state: on(a.hasGeminiKey || a.hasClaudeKey), required: false },
     { key: 'quo', name: 'Quo', does: 'SMS alerts', state: on(a.hasQuoKey), required: false },
     { key: 'identity', name: 'Identity verification', does: 'Guest ID + selfie at check-in (Truvi or Stripe Identity — not chosen yet)', state: 'later', required: false },
   ];

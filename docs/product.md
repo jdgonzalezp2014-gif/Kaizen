@@ -48,4 +48,4 @@ come later for a fully in-page look.
 ## Log
 - 2026-11-15 — Guest portal online check-in (636c53a): details from Hostaway, identity placeholder, waiver/deposit,
   rules, extras, pay (mock), door code. Cover photo from Hostaway, early/late $20/h + 8 PM rule (d438c3d).
-  Settings → Integrations panel. This file started.
+  Settings → Integrations panel. This file started. Integrations became a menu: each service unfolds its own settings.

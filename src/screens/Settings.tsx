@@ -96,10 +96,11 @@ export function Settings() {
 
   if (!account) return <div className="card"><p className="note">Loading…</p></div>;
 
-  return (
-    <>
-      <IntegrationsPanel account={account} />
-      <div className="card" id="int-hostaway">
+  // Integrations (owner, 2026-11-15: "a menu where each one unfolds"): every outside service in one list,
+  // its settings open under its row — the rest of Settings stays about how this company works.
+  const integrationsMenu = <IntegrationsPanel account={account} panels={{
+    hostaway: <>
+      <div className="card">
         <h2>Hostaway connection <Hint>Your own Hostaway credentials. They are encrypted before storage and never sent back to
           this page — the field below shows whether a key is saved, not what it is.</Hint></h2>
 
@@ -127,6 +128,17 @@ export function Settings() {
           </button>
         </div>
       </div>
+    </>,
+    stripe: <StripePanel account={account} onSaved={() => void load()} />,
+    slack: <SlackPanel />,
+    drive: <DrivePanel />,
+    ai: <GeminiPanel account={account} onSaved={() => void load()} />,
+    quo: <AlertsPanel account={account} onSaved={() => void load()} />,
+  }} />;
+
+  return (
+    <>
+      {integrationsMenu}
 
       <div className="card">
         <h2>Targets <Hint>The portfolio target is <b>computed</b>, never stored: active units × the per-unit
@@ -163,18 +175,13 @@ export function Settings() {
 
       <DailyFilePanel account={account} onSaved={() => void load()} />
 
-      <div id="int-drive"><DrivePanel /></div>
-      <div id="int-slack"><SlackPanel /></div>
       <RepositoryPanel account={account} onSaved={() => void load()} />
 
-      <div id="int-gemini"><GeminiPanel account={account} onSaved={() => void load()} /></div>
-      <div id="int-stripe"><StripePanel account={account} onSaved={() => void load()} /></div>
 
       <MembersPanel members={members} audit={audit} user={user} roles={roles} onSaved={() => void load()} />
 
       <RolesPanel roles={roles} catalog={catalog} onSaved={() => void load()} />
 
-      <div id="int-quo"><AlertsPanel account={account} onSaved={() => void load()} /></div>
 
       <FeedPanel account={account} onSaved={() => void load()} />
 
@@ -689,27 +696,30 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
  * Integrations (2026-11-15): the outside services this account connects, at a glance — Kaizen OS is built to be
  * sold to other hosts, so each company brings its own accounts and sets them here. A row jumps to its panel.
  */
-function IntegrationsPanel({ account }: { account: Account }) {
+function IntegrationsPanel({ account, panels }: { account: Account; panels: Record<string, React.ReactNode> }) {
   const [live, setLive] = useState<Pick<IntegrationFlags, 'slack' | 'drive'>>({});
+  const [open, setOpen] = useState<string | null>(() => new URLSearchParams(location.search).get('int'));
   useEffect(() => {
     void getSlack().then(r => setLive(l => ({ ...l, slack: !!r.hasToken }))).catch(() => undefined);
     void getDrive().then(r => setLive(l => ({ ...l, drive: r.ok ? r.connected : false }))).catch(() => undefined);
   }, []);
+  const toggle = (k: string) => { const v = open === k ? null : k; setOpen(v); setParams({ int: v ?? '' }, { replace: true }); };
   const list = integrations({ ...account, ...live });
-  const jump = (k: string) => document.getElementById(`int-${k === 'claude' ? 'gemini' : k}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
   const on = list.filter(i => i.state === 'on').length;
   return (
     <div className="card int-card">
       <h2>Integrations <span className="note">{on} of {list.length} connected</span>
         <Hint>Each company connects its own accounts here — Hostaway, Stripe, Slack, Google, AI. Keys are checked when saved, stored encrypted
-          and never shown again. Tap a row to open its settings below.</Hint></h2>
+          and never shown again. Open a row to set it up.</Hint></h2>
       <ul className="int-list">
-        {list.map(i => <li key={i.key}>
-          <button className="int-row" onClick={() => jump(i.key)} disabled={i.state === 'later'}>
+        {list.map(i => <li key={i.key} className={open === i.key ? 'open' : ''}>
+          <button className="int-row" onClick={() => toggle(i.key)} disabled={i.state === 'later'} aria-expanded={open === i.key}>
             <span className={`int-dot ${i.state}`} aria-hidden />
             <span className="int-main"><b>{i.name}{i.required && <span className="note"> · required</span>}</b><span className="note">{i.does}</span></span>
             <span className={`int-state ${i.state}`}>{i.state === 'on' ? <><Icon n="check" /> Connected</> : i.state === 'later' ? 'Coming soon' : 'Not set'}</span>
+            {i.state !== 'later' && <span className="int-chev" aria-hidden>{open === i.key ? '⌃' : '⌄'}</span>}
           </button>
+          {open === i.key && panels[i.key] && <div className="int-body">{panels[i.key]}</div>}
         </li>)}
       </ul>
     </div>

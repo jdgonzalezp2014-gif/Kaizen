@@ -3372,3 +3372,10 @@ p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }
 .int-main { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 .int-state { font-size: 13px; color: var(--muted); white-space: nowrap; display: inline-flex; align-items: center; gap: 4px; }
 .int-state.on { color: var(--green); }
+.int-chev { color: var(--muted); width: 14px; text-align: center; }
+.int-list li.open > .int-row b { color: var(--accent); }
+.int-body { padding: 4px 0 16px 21px; }
+/* A panel opened inside the menu: no card of its own, its title stays as the section's heading. */
+.int-body .card { border: 0; box-shadow: none; padding: 0; margin: 0; background: transparent; }
+.int-body .card + .card { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--line); }
+.int-body .card > h2 { font-size: 15px; color: var(--muted); }
