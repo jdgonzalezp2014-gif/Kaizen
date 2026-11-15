@@ -223,7 +223,8 @@ function Pay({ stay, flow, p, save }: S) {
       <button className="ci-apple" onClick={pay} disabled={busy} aria-label="Pay with Apple Pay"><AppleMark /> Pay</button>
       <button className="ci-gpay" onClick={pay} disabled={busy} aria-label="Pay with Google Pay"><GMark /> Pay</button>
     </div>
-    <div className="ci-or"><span>or pay with card</span></div>
+    <div className="ci-or"><span>or pay with card</span><Hint>Apple Pay shows on an iPhone or a Mac in Safari, Google Pay in Chrome or on Android —
+      each only with a card saved in the wallet. A card works on any phone and any browser.</Hint></div>
     <section className="card ci-cardform" aria-label="Card">
       <span className="ci-field ci-field-wide"><Icon n="card" /> 1234 1234 1234 1234</span>
       <span className="ci-field">MM / YY</span><span className="ci-field">CVC</span>

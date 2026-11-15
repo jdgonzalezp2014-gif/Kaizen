@@ -1,0 +1,51 @@
+# Kaizen OS as a product (running notes)
+
+Kaizen OS started as Kaizen Guest Properties' internal tool. The goal now (owner, 2026-11-13/15) is software other
+short-term-rental hosts can buy. **This file is the parallel track.** Every session that adds something adds a line here:
+what is already reusable and what is still hard-wired to Kaizen. Keep it short and factual.
+
+## Principles
+- **Each company brings its own accounts.** Hostaway, Stripe, Slack, Google, AI keys, Quo are entered in **Settings →
+  Integrations** and stored encrypted per account. They are never in code or env files.
+- **Multi-tenant by shape.** Tables carry `account_id`, but almost every query still reads `account_id = 1` (see the debt below).
+- **The guest never logs in.** One signed link per reservation (`/guest/<id>.<sig>`).
+- **The vendor experience stays simple:** one portal for cleaners and handymen.
+- **No paragraphs on screen.** How-to text goes behind a "?". This holds for every tenant.
+
+## Modules (target structure)
+Core (listings + Repository, reservations, users/roles, integrations) · Leadership · Guest Services (upsells, claims,
+messages inbox + AI with human escalations) · Operations · Guest Experience · Finance/Data/Tech · Shared tools ·
+Vendor portal · Guest portal. Future: Sales & Growth, Schedules.
+
+## Integrations (Settings → Integrations, 2026-11-15)
+| Service | Used for | Where the key lives |
+|---|---|---|
+| Hostaway | listings, reservations, calendar, door codes (`doorCode`), photos (`listingImages`), messages | `accounts.hostaway_*_enc` |
+| Stripe | guest payments (waiver, deposit hold, extras) + vendor payouts (Connect) | `accounts.stripe_secret_key_enc` (099); test keys only for now |
+| Slack | team alerts, approvals | `accounts.slack_*_enc` |
+| Google Drive | Repository files, check-in photos | OAuth per account |
+| Claude / Gemini | AI drafts, guest replies (next), pricing | `accounts.*_api_key_enc` |
+| Quo | SMS | `accounts.quo_*` |
+| Identity | ID + selfie at check-in | not chosen (Truvi vs Stripe Identity) |
+
+**Payments, decided for replicability:** the guest pays on **Stripe Checkout** (Stripe's hosted page). Reasons: it
+needs no publishable key and no Apple Pay domain registration per tenant, it shows Apple Pay / Google Pay / Link / cards
+automatically, and each tenant brands it in their own Stripe dashboard. The deposit is a Checkout payment with
+`capture_method=manual` (a hold, ~7 days) or a saved card (SetupIntent) for longer stays. An embedded Payment Element can
+come later for a fully in-page look.
+
+## Hard-wired to Kaizen today (debt to clear before selling)
+- `account_id = 1` in queries throughout `functions/` → needs the signed-in user's account.
+- Cloudflare Access + one Pages project → each tenant needs sign-in by account (or one Access app with many accounts).
+- Guest portal brand: Kaizen's black + gold and Quattrocento / Open Sans (`.guest-brand`). Should become per-account
+  (logo, 2 colours, 2 fonts).
+- Times: Texas (`America/Chicago`) for the 8 PM early/late cut-off; New York for the board. Should be a per-account time zone.
+- Prices: early / late $20/hour, damage-protection defaults by unit type (`PROTECTION_DEFAULTS`), upsell placeholders.
+  Should be per-account settings, with per-listing overrides in the Repository (migration 110 adds the listing part).
+- Repository tables `houses`, `the_links`, `cortland_legacy` are Kaizen's portfolios. A new tenant starts from one generic Units table.
+- Slack texts and SOPs mention Kaizen's people and channels.
+
+## Log
+- 2026-11-15 — Guest portal online check-in (636c53a): details from Hostaway, identity placeholder, waiver/deposit,
+  rules, extras, pay (mock), door code. Cover photo from Hostaway, early/late $20/h + 8 PM rule (d438c3d).
+  Settings → Integrations panel. This file started.

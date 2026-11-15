@@ -8,7 +8,8 @@ import {
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
 import { SlackPanel } from '../components/SlackPanel.tsx';
-import { getPayouts, newIngestToken, pullFeed, runCron, type FeedResult, type CronResult, type StripeStatus } from '../api.ts';
+import { getPayouts, getSlack, newIngestToken, pullFeed, runCron, type FeedResult, type CronResult, type StripeStatus } from '../api.ts';
+import { integrations, type IntegrationFlags } from '../lib/integrations.ts';
 import { sanitize, segments } from '../lib/sms.ts';
 import { Icon } from '../components/Icon.tsx';
 
@@ -97,7 +98,8 @@ export function Settings() {
 
   return (
     <>
-      <div className="card">
+      <IntegrationsPanel account={account} />
+      <div className="card" id="int-hostaway">
         <h2>Hostaway connection <Hint>Your own Hostaway credentials. They are encrypted before storage and never sent back to
           this page — the field below shows whether a key is saved, not what it is.</Hint></h2>
 
@@ -161,18 +163,18 @@ export function Settings() {
 
       <DailyFilePanel account={account} onSaved={() => void load()} />
 
-      <DrivePanel />
-      <SlackPanel />
+      <div id="int-drive"><DrivePanel /></div>
+      <div id="int-slack"><SlackPanel /></div>
       <RepositoryPanel account={account} onSaved={() => void load()} />
 
-      <GeminiPanel account={account} onSaved={() => void load()} />
-      <StripePanel account={account} onSaved={() => void load()} />
+      <div id="int-gemini"><GeminiPanel account={account} onSaved={() => void load()} /></div>
+      <div id="int-stripe"><StripePanel account={account} onSaved={() => void load()} /></div>
 
       <MembersPanel members={members} audit={audit} user={user} roles={roles} onSaved={() => void load()} />
 
       <RolesPanel roles={roles} catalog={catalog} onSaved={() => void load()} />
 
-      <AlertsPanel account={account} onSaved={() => void load()} />
+      <div id="int-quo"><AlertsPanel account={account} onSaved={() => void load()} /></div>
 
       <FeedPanel account={account} onSaved={() => void load()} />
 
@@ -684,6 +686,37 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
 }
 
 /**
+ * Integrations (2026-11-15): the outside services this account connects, at a glance — Kaizen OS is built to be
+ * sold to other hosts, so each company brings its own accounts and sets them here. A row jumps to its panel.
+ */
+function IntegrationsPanel({ account }: { account: Account }) {
+  const [live, setLive] = useState<Pick<IntegrationFlags, 'slack' | 'drive'>>({});
+  useEffect(() => {
+    void getSlack().then(r => setLive(l => ({ ...l, slack: !!r.hasToken }))).catch(() => undefined);
+    void getDrive().then(r => setLive(l => ({ ...l, drive: r.ok ? r.connected : false }))).catch(() => undefined);
+  }, []);
+  const list = integrations({ ...account, ...live });
+  const jump = (k: string) => document.getElementById(`int-${k === 'claude' ? 'gemini' : k}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  const on = list.filter(i => i.state === 'on').length;
+  return (
+    <div className="card int-card">
+      <h2>Integrations <span className="note">{on} of {list.length} connected</span>
+        <Hint>Each company connects its own accounts here — Hostaway, Stripe, Slack, Google, AI. Keys are checked when saved, stored encrypted
+          and never shown again. Tap a row to open its settings below.</Hint></h2>
+      <ul className="int-list">
+        {list.map(i => <li key={i.key}>
+          <button className="int-row" onClick={() => jump(i.key)} disabled={i.state === 'later'}>
+            <span className={`int-dot ${i.state}`} aria-hidden />
+            <span className="int-main"><b>{i.name}{i.required && <span className="note"> · required</span>}</b><span className="note">{i.does}</span></span>
+            <span className={`int-state ${i.state}`}>{i.state === 'on' ? <><Icon n="check" /> Connected</> : i.state === 'later' ? 'Coming soon' : 'Not set'}</span>
+          </button>
+        </li>)}
+      </ul>
+    </div>
+  );
+}
+
+/**
  * Payments (owner, 2026-10-25): Stripe pays cleaners' and handymen's invoices
  * (Operations → Cleaners / Handymen → Payment). Test keys only until live
  * payouts are switched on; the key is checked with Stripe before it is kept,
@@ -705,10 +738,10 @@ function StripePanel({ account, onSaved }: { account: Account; onSaved: () => vo
   };
   return (
     <div className="card">
-      <h2>Payments — Stripe <Hint>Kaizen pays cleaners' and handymen's invoices from its Stripe balance, through Stripe Connect: each payee sets up
-        their own account from a link the team sends (Operations → Cleaners / Handymen → Payment), and Stripe pays their bank. Paste the secret key
-        from Stripe's dashboard → Developers → API keys. Only test keys (sk_test_…) for now — no real money moves; turn on Connect in the dashboard
-        first. The key is checked with Stripe before it is kept, stored encrypted, and never shown again.</Hint></h2>
+      <h2>Payments — Stripe <Hint>This company's own Stripe account. It takes the guests' payments in the guest portal (damage waiver, deposit hold,
+        extras) and pays cleaners' and handymen's invoices through Stripe Connect. Paste a secret or restricted key from Stripe's dashboard → Developers →
+        API keys (restricted: write on PaymentIntents, SetupIntents, Checkout Sessions, Customers, Refunds). Only test keys (sk_test_… / rk_test_…) for
+        now — no real money moves. The key is checked with Stripe before it is kept, stored encrypted, and never shown again.</Hint></h2>
       <label>
         Secret key {account.hasStripeKey && <span className="ok-tag">one is stored</span>}
         <input type="password" value={key} onChange={e => setKey(e.target.value)} autoComplete="off"

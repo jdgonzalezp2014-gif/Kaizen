@@ -25,6 +25,8 @@ company tools) and area modules: Leadership · Guest Services (upsells, claims, 
 escalations**) · Operations · Guest Experience (listing health, check-in guides, verification) · Finance/Data/Tech ·
 Shared tools · Vendor portal (cleaners + handymen) · Guest portal (online check-in, Stripe). Future: Sales & Growth, Schedules.
 UI everywhere follows the handyman page (cards, carousel, "?" hints instead of text). New work lands under these names.
+**It will be sold to other hosts:** `docs/product.md` tracks what is reusable vs hard-wired to Kaizen — add a line there
+whenever a session adds or hard-codes something tenant-specific. Outside services are set in Settings → Integrations, never in env.
 
 `docs/history.md` is the full decision log (177 KB). **Never read it whole** — open only the
 section a `§N` points to (`grep -n "^## 64\." docs/history.md`; from 108 on `## §108`).
