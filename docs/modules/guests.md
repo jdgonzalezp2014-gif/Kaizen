@@ -32,6 +32,8 @@ Drive OAuth tokens on `accounts` (encrypted).
 - Which units keep a copy is a setting per building, not a rule (Airbnb limits asking) (§73).
 - Permission `guests.documents` (the most sensitive data Kaizen holds).
 - New listings reach `units` on their own when the board sees them (§90).
+- Guest portal backdrop is painted on `html` (sized to the first screen), never a `position: fixed` layer under
+  the content: on iOS Safari that left stale paint (a button's old label under its new one) (2026-11-16).
 
 ## Open items
 

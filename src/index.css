@@ -3395,14 +3395,13 @@ p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }
 .int-body .card + .card { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--line); }
 .int-body .card > h2 { font-size: 15px; color: var(--muted); }
 
-/* Guest portal backdrop (owner, 2026-11-15): not flat — a barely-there warm light from the top. A fixed layer
-   (iOS ignores background-attachment: fixed), under everything, never catching taps. */
-html:root.guest-brand body { background: var(--bg); }
-html:root.guest-brand body::before {
-  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
-  background: radial-gradient(120% 60% at 50% -12%, rgb(228 179 119 / .09), transparent 60%), var(--bg);
-}
-html:root.guest-brand[data-theme='light'] body::before { background: radial-gradient(120% 50% at 50% -12%, rgb(209 163 95 / .10), transparent 60%), var(--bg); }
+/* Guest portal backdrop (owner, 2026-11-15): not flat — a barely-there warm light from the top, painted on the
+   page canvas and sized to the first screen. NOT a position: fixed layer under the content: on iOS Safari that
+   left stale paint behind (2026-11-16: a button's old label showed through its new one, "Pay $49.00" under
+   "Opening secure payment…", on many screens). */
+html:root.guest-brand { background: radial-gradient(120% 60% at 50% -12%, rgb(228 179 119 / .09), transparent 60%) top / 100% 100vh no-repeat, var(--bg); }
+html:root.guest-brand[data-theme='light'] { background: radial-gradient(120% 50% at 50% -12%, rgb(209 163 95 / .10), transparent 60%) top / 100% 100vh no-repeat, var(--bg); }
+html:root.guest-brand body { background: transparent; }
 
 /* ── Guest portal, 2026-11-15 redesign: one ☰ menu, a floating glass bar, Airbnb's trip page in Apple's type ── */
 :is(.guest-brand, .g-scope) :is(.g-page, .gx-bar, .gx-sheet) { font-family: var(--g-text); -webkit-font-smoothing: antialiased; }
