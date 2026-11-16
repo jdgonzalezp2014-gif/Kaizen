@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bill, doorCodeFor, entry, portalFrom, newFlow, doneFlow, nextStep, progress, protectionFor, rulesList, steps, flowExtras, type Flow } from './guest-checkin.ts';
+import { bill, doorCodeFor, entry, portalFrom, newFlow, doneFlow, nextStep, progress, protectionFor, rulesList, steps, flowExtras, arrivalTimes, LATE_ARRIVAL, type Flow } from './guest-checkin.ts';
 import type { GuestStay } from './guest-portal.ts';
 
 const stay = (o: Partial<GuestStay> = {}): GuestStay => ({
@@ -88,4 +88,10 @@ test('portalFrom: blank Unit type falls back to Property type', () => {
   assert.equal(portalFrom({ property_type: 'Apartment' }).unitType, 'apartment');
   assert.equal(portalFrom({ property_type: 'House', unit_type: 'Room' }).unitType, 'room');
   assert.equal(portalFrom({}).unitType, null);
+});
+
+test('arrivalTimes: from check-in every 30 minutes, then after midnight', () => {
+  const t = arrivalTimes('4:00 PM');
+  assert.equal(t[0], '4:00 PM'); assert.equal(t[1], '4:30 PM'); assert.equal(t.at(-2), '11:30 PM'); assert.equal(t.at(-1), LATE_ARRIVAL);
+  assert.equal(arrivalTimes('3:15 PM')[0], '3:30 PM');
 });

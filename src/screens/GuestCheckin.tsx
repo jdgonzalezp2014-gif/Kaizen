@@ -10,7 +10,7 @@ import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, quote, requestMode, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
-import { FLOW_KEY, VS_KEY, bill, channelCovers, flowExtras, nextStep, onRequest, progress, rulesList, steps, SAMPLE_RULES,
+import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, flowExtras, nextStep, onRequest, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
 const STEP_ICON: Record<StepKey, string> = { details: 'user', identity: 'idcard', protection: 'shield', rules: 'book', extras: 'sparkles', pay: 'card' };
@@ -81,41 +81,54 @@ type S = Props & { save: (f: Flow) => void };
 
 function Details({ stay, flow, save }: S) {
   const g = stay.guest;
-  const [arr, setArr] = useState<Arrival | null>(flow.arrival);
-  const [pet, setPet] = useState<boolean | null>(flow.pet);
+  const times = arrivalTimes(stay.checkInTime);
+  const [arr, setArr] = useState<string>(flow.arrival && times.includes(flow.arrival) ? flow.arrival : times[0]!);
+  const [fix, setFix] = useState(false);
+  const [ask, setAsk] = useState(flow.changeAsk ?? '');
+  const [asked, setAsked] = useState(!!flow.changeAsk);
   const party = g ? [[g.adults, 'adult'], [g.children, 'child'], [g.infants, 'infant']].filter(([n]) => (n as number) > 0)
     .map(([n, w]) => `${n} ${w}${n === 1 ? '' : w === 'child' ? 'ren' : 's'}`).join(' · ') : `${stay.guests} guests`;
   return <>
     <section className="card ci-card">
       <div className="ci-from"><span className="ci-eyebrow">From your booking</span>
-        <Hint>These come from your reservation. If something is wrong, message us and we fix it — no need to type anything.</Hint></div>
+        <Hint>These come from your reservation. Something wrong? Tap "Request a change" — someone from our team contacts you and fixes it.</Hint></div>
       <p className="ci-name">{g?.name ?? stay.guestFirst}</p>
       <dl className="ci-dl">
         {g?.email && <><dt><Icon n="mail" /></dt><dd>{g.email}</dd></>}
         {g?.phone && <><dt><Icon n="phone" /></dt><dd>{g.phone}</dd></>}
         <dt><Icon n="users" /></dt><dd>{party}{stay.maxGuests ? <span className="note"> · up to {stay.maxGuests}</span> : null}</dd>
       </dl>
+      {asked ? <p className="ci-ok"><Icon n="check" /> Sent — our team will contact you.</p>
+        : fix ? <div className="ci-fix">
+            <textarea value={ask} onChange={e => setAsk(e.target.value)} rows={2} placeholder="What should we fix?" aria-label="What should we fix?" />
+            <button className="chip active" disabled={!ask.trim()} onClick={() => setAsked(true)}>Send</button>
+          </div>
+        : <button className="chip ci-fix-go" onClick={() => setFix(true)}>Request a change</button>}
     </section>
     <section className="card ci-card">
-      <span className="ci-q">When do you arrive?</span>
-      <div className="ci-seg" role="radiogroup" aria-label="Arrival">
-        {([['early', `At ${stay.checkInTime}`], ['mid', 'Evening'], ['late', 'After 9 PM']] as [Arrival, string][]).map(([v, l]) =>
-          <button key={v} role="radio" aria-checked={arr === v} className={arr === v ? 'on' : ''} onClick={() => setArr(v)}>{l}</button>)}
-      </div>
-      <span className="ci-q">Bringing a pet?</span>
-      <div className="ci-seg" role="radiogroup" aria-label="Pet">
-        {([[false, 'No'], [true, 'Yes']] as [boolean, string][]).map(([v, l]) =>
-          <button key={l} role="radio" aria-checked={pet === v} className={pet === v ? 'on' : ''} onClick={() => setPet(v)}>{l}</button>)}
-      </div>
-      {pet && <p className="note ci-inline"><Icon n="alert" /> A pet fee is added to your stay — we confirm it with you.</p>}
+      <span className="ci-q">Arrival time</span>
+      <TimeStrip times={times} value={arr} set={setArr} />
     </section>
-    <button className="g-cta" disabled={arr == null || pet == null} onClick={() => save({ ...flow, details: true, arrival: arr, pet })}>Confirm</button>
+    {/* The real link turns `changeAsk` into a task for the team (open item); the demo only shows it was sent. */}
+    <button className="g-cta" onClick={() => save({ ...flow, details: true, arrival: arr, changeAsk: asked ? ask.trim() : null })}>Confirm</button>
   </>;
+}
+
+/** Slide to pick (owner, 2026-11-16: "choose the time by sliding"): a strip of times, the picked one centred. */
+function TimeStrip({ times, value, set }: { times: string[]; value: string; set: (t: string) => void }) {
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = box.current?.querySelector<HTMLElement>('[aria-checked="true"]');
+    el?.scrollIntoView?.({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+  }, [value]);
+  return <div ref={box} className="ci-wheel" role="radiogroup" aria-label="Arrival time">
+    {times.map(t => <button key={t} role="radio" aria-checked={value === t} className={value === t ? 'on' : ''} onClick={() => set(t)}>{t}</button>)}
+  </div>;
 }
 
 /** Placeholder until the provider is chosen (Truvi or Stripe Identity): shows what the guest will do. */
 /** Identity: Stripe Identity's own page (ID photo + selfie, camera on the phone). Sandbox; Truvi vs Stripe still open. */
-function Identity({ flow, save }: S) {
+function Identity({ flow, save, set }: S) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const start = async () => {
@@ -132,7 +145,7 @@ function Identity({ flow, save }: S) {
         const res = await st.verifyIdentity(j.clientSecret);
         if (res.error && res.error.code !== 'session_cancelled') { setErr(res.error.message ?? 'Verification did not finish.'); setBusy(false); return; }
         const v = await fetch(`/api/report-link?identity=${encodeURIComponent(j.id)}`).then(x => x.json() as Promise<{ done?: boolean; message?: string }>);
-        if (v.done) { save({ ...flow, identity: true }); return; }
+        if (v.done) { set({ ...flow, identity: true }); setBusy(false); return; }
         setErr(res.error ? 'Verification was closed before the end.' : v.message ?? 'Verification was not finished.'); setBusy(false); return;
       }
       if (j.url && j.id) {
@@ -143,6 +156,14 @@ function Identity({ flow, save }: S) {
     } catch { setErr('Verification could not start — check the connection.'); }
     setBusy(false);
   };
+  if (flow.identity && !busy) return <>
+    <section className="card ci-card ci-confirmed">
+      <span className="ci-seal" aria-hidden><Icon n="check" /></span>
+      <b className="ci-name">ID verified</b>
+      <span className="note">Checked by Stripe · photo and selfie match</span>
+    </section>
+    <button className="g-cta" onClick={() => save(flow)}>Continue</button>
+  </>;
   return <>
     <section className="card ci-card">
       <span className="ci-q">Your ID <Hint>Stripe’s ID check opens over this page: pick driver’s license, passport or ID card, take a photo of it and a selfie
@@ -154,7 +175,7 @@ function Identity({ flow, save }: S) {
       <p className="note ci-inline"><Icon n="lock" /> Encrypted by Stripe. Only used to match you to your booking.</p>
     </section>
     {err && <p className="banner warn">▲ {err}</p>}
-    <button className="g-cta" onClick={start} disabled={busy}>{busy ? 'Verifying…' : flow.identity ? 'Verify again' : 'Verify my ID'}</button>
+    <button className="g-cta" onClick={start} disabled={busy}>{busy ? 'Verifying…' : 'Verify my ID'}</button>
     <p className="ci-stripe"><span><Icon n="lock" /> Identity by Stripe</span><span>Test mode</span></p>
   </>;
 }
@@ -231,7 +252,7 @@ function modeLine(stay: GuestStay, k: UpsellKind, turnover: boolean) {
  * on their own). The answers so far are kept in the tab so the page picks up where it was when Stripe sends the guest
  * back; the step is done only once the server confirms the session (GuestPortal, `?paid=`). Sandbox only for now.
  */
-function Pay({ stay, flow, p, save }: S) {
+function Pay({ stay, flow, p, save, set }: S) {
   const b = bill(flow, stay, p);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
@@ -241,8 +262,8 @@ function Pay({ stay, flow, p, save }: S) {
   useEffect(() => {
     if (!embed) return;
     let ec: EmbeddedCheckout | null = null; let live = true;
-    const done = () => void fetch(`/api/report-link?checkout=${encodeURIComponent(embed.id)}`).then(r => r.json() as Promise<{ paid?: boolean; message?: string }>)
-      .then(j => { if (j.paid) save({ ...flow, paid: true }); else setErr(j.message ?? 'The payment was not completed.'); }, () => setErr('Could not check the payment.'));
+    const done = () => void fetch(`/api/report-link?checkout=${encodeURIComponent(embed.id)}`).then(r => r.json() as Promise<{ paid?: boolean; total?: number; message?: string }>)
+      .then((j: { paid?: boolean; total?: number; message?: string }) => { if (j.paid) { set({ ...flow, paid: true, paidTotal: j.total ?? null }); setEmbed(null); } else setErr(j.message ?? 'The payment was not completed.'); }, () => setErr('Could not check the payment.'));
     loadStripe(embed.pk).then(st => st.initEmbeddedCheckout({ fetchClientSecret: async () => embed.clientSecret, onComplete: done }))
       .then(c => { if (!live) { c.destroy(); return; } ec = c; if (box.current) c.mount(box.current); setBusy(false); },
         e => { setErr(e instanceof Error ? e.message : String(e)); setEmbed(null); setBusy(false); });
@@ -265,6 +286,10 @@ function Pay({ stay, flow, p, save }: S) {
     setBusy(false);
   };
   const label = b.today > 0 ? `Pay ${money2(b.today)}` : `Authorize ${money2(b.hold)} hold`;
+  if (flow.paid && !embed) return <>
+    <PaidCard flow={flow} today={b.today} hold={b.hold} />
+    <button className="g-cta" onClick={() => save(flow)}>Continue</button>
+  </>;
   return <>
     <section className="card ci-card ci-bill">
       {b.lines.map((l, i) => <div key={i} className="ci-line">
@@ -285,3 +310,15 @@ function Pay({ stay, flow, p, save }: S) {
   </>;
 }
 
+
+/** The payment, confirmed (owner, 2026-11-16: "confirm it was paid — it does not show"): Stripe's total, and the hold. */
+export function PaidCard({ flow, today, hold }: { flow: Flow; today: number; hold: number }) {
+  // Stripe's total covers the hold too (one manual-capture payment); the bill splits it back.
+  const now = hold > 0 ? today : flow.paidTotal ?? today;
+  return <section className="card ci-card ci-confirmed">
+    <span className="ci-seal" aria-hidden><Icon n="check" /></span>
+    <b className="ci-name">Payment confirmed</b>
+    <span className="ci-paid">{money2(now)} <span className="note">today</span>{hold > 0 && <> · {money2(hold)} <span className="note">held</span></>}</span>
+    {hold > 0 && <span className="note">The hold is released after check-out</span>}
+  </section>;
+}

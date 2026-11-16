@@ -6,7 +6,7 @@
  * (protection + paid extras) through Stripe — demo only for now. Pure: no fetch, no React.
  */
 import { kindOf } from './unit-access.ts';
-import { UPSELLS, priceOf, quote, availability, requestMode, type Choice, type GuestStay, type UpsellKind } from './guest-portal.ts';
+import { UPSELLS, priceOf, quote, availability, requestMode, minutesOf, type Choice, type GuestStay, type UpsellKind } from './guest-portal.ts';
 
 /** Protection values depend on what is rented: a room is not a house (owner, 2026-11-15). Per listing later. */
 export type UnitType = 'room' | 'apartment' | 'house';
@@ -44,11 +44,14 @@ export function portalFrom(vals: Record<string, unknown> | null | undefined): { 
 /** Airbnb covers damage itself (AirCover) and takes no waiver — the step is done for those guests. */
 export const channelCovers = (s: Pick<GuestStay, 'channel'>) => s.channel === 'airbnb';
 
-export type Arrival = 'early' | 'mid' | 'late';
+/** The guest's arrival time as shown ("6:30 PM", or LATE_ARRIVAL) — picked on a sliding strip (owner, 2026-11-16). */
+export type Arrival = string;
+export const LATE_ARRIVAL = 'After midnight';
 export interface Flow {
   details: boolean;
   arrival: Arrival | null;
-  pet: boolean | null;
+  /** "Something is wrong" on the booking details: what the guest wrote. The real link opens a task for the team. */
+  changeAsk?: string | null;
   identity: boolean;
   protection: 'waiver' | 'deposit' | null;
   rules: boolean;
@@ -56,14 +59,16 @@ export interface Flow {
   extras: Partial<Record<UpsellKind, Choice>>;
   extrasSeen: boolean;
   paid: boolean;
+  /** What Stripe says was paid today (shown as the confirmation). */
+  paidTotal?: number | null;
 }
 /** The check-in answers kept in the tab while the guest is on Stripe Checkout (the page reloads when they come back). */
 export const FLOW_KEY = 'kaizen-guest-flow';
 /** The Stripe Identity session id, kept in the tab while the guest is on Stripe's page. */
 export const VS_KEY = 'kaizen-guest-vs';
-export const newFlow = (): Flow => ({ details: false, arrival: null, pet: null, identity: false, protection: null, rules: false, extras: {}, extrasSeen: false, paid: false });
+export const newFlow = (): Flow => ({ details: false, arrival: null, identity: false, protection: null, rules: false, extras: {}, extrasSeen: false, paid: false });
 /** A finished check-in (the demo's "checked in" stay). */
-export const doneFlow = (): Flow => ({ details: true, arrival: 'mid', pet: false, identity: true, protection: 'waiver', rules: true, extras: {}, extrasSeen: true, paid: true });
+export const doneFlow = (): Flow => ({ details: true, arrival: '6:00 PM', identity: true, protection: 'waiver', rules: true, extras: {}, extrasSeen: true, paid: true });
 
 /** Extras offered inside check-in. Early / late follow requestMode: in time and no turnover → charged now; else on request. */
 export const FLOW_EXTRAS: UpsellKind[] = ['early-checkin', 'late-checkout', 'mid-clean', 'welcome'];
@@ -162,4 +167,15 @@ export function doorCodeFor(lockType: string | null | undefined, guestCode: stri
   const k = kindOf(t(lockType));
   if (k === 'fob' || k === 'keys') return null;
   return t(reservationCode) ?? t(guestCode);
+}
+
+/** Arrival times to slide through: from check-in to 11:30 PM every 30 minutes, then "After midnight". */
+export function arrivalTimes(checkInTime: string): string[] {
+  const start = minutesOf(checkInTime) ?? 16 * 60;
+  const out: string[] = [];
+  for (let m = Math.ceil(start / 30) * 30; m < 24 * 60; m += 30) {
+    const h = Math.floor(m / 60), mm = m % 60;
+    out.push(`${h % 12 || 12}:${String(mm).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`);
+  }
+  return [...out, LATE_ARRIVAL];
 }

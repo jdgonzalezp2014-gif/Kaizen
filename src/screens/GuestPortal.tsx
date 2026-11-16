@@ -62,8 +62,8 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar, embedded = 
     if (embedded) return;
     const q = new URLSearchParams(location.search);
     const id = q.get('paid');
-    if (id) fetch(`/api/report-link?checkout=${encodeURIComponent(id)}`).then(r => r.json() as Promise<{ paid?: boolean; message?: string }>).then(j => {
-      if (j.paid) setFlow(f => ({ ...f, paid: true }));
+    if (id) fetch(`/api/report-link?checkout=${encodeURIComponent(id)}`).then(r => r.json() as Promise<{ paid?: boolean; total?: number; message?: string }>).then(j => {
+      if (j.paid) setFlow(f => ({ ...f, paid: true, paidTotal: j.total ?? null }));
       else setPayNote(j.message ?? 'The payment was not completed.');
     }).catch(() => setPayNote('Could not check the payment.'));
     // Back from Stripe Identity (`?verified=1`): the session id was kept in the tab.

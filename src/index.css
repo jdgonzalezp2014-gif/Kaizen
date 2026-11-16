@@ -3499,3 +3499,20 @@ button.gx-cell { cursor: pointer; } button.gx-cell:hover { background: var(--tin
 .gx-extend span { margin-left: auto; }
 .gx-extend svg { width: 16px; height: 16px; }
 .gx-extend:hover { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }
+/* Check-in step v3 (2026-11-16): a header that stays left on a wide screen (the global header is a row), the sliding time
+   strip, "Request a change", and the confirmed states (ID verified, payment confirmed) with a gold seal. */
+header.ci-head { flex-direction: column; align-items: flex-start; justify-content: flex-start; border-bottom: 0; text-align: left; }
+.ci-wheel { display: flex; gap: 8px; overflow-x: auto; scroll-snap-type: x mandatory; scrollbar-width: none; padding: 4px 30%; margin: 0 -18px;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent); mask-image: linear-gradient(90deg, transparent, #000 18%, #000 82%, transparent); }
+.ci-wheel::-webkit-scrollbar { display: none; }
+.ci-wheel button { flex: 0 0 auto; scroll-snap-align: center; min-height: 48px; padding: 0 18px; border-radius: 999px; border: 1px solid var(--line);
+  background: transparent; color: var(--muted); font: 600 16px/1 var(--g-text); font-variant-numeric: tabular-nums; cursor: pointer; white-space: nowrap; }
+.ci-wheel button.on { background: var(--cta); border-color: var(--cta); color: var(--on-cta); }
+.ci-fix-go { align-self: flex-start; }
+.ci-fix { display: flex; gap: 8px; align-items: flex-end; }
+.ci-fix textarea { flex: 1; min-height: 64px; border-radius: 12px; padding: 10px 12px; font: inherit; background: transparent; color: var(--ink); border: 1px solid var(--line-strong); resize: vertical; }
+.ci-ok { margin: 0; display: inline-flex; align-items: center; gap: 6px; color: var(--accent); font-weight: 600; font-size: 14.5px; }
+.ci-confirmed { align-items: center; text-align: center; padding: 26px 18px !important; }
+.ci-seal { width: 56px; height: 56px; border-radius: 50%; display: grid; place-items: center; font-size: 26px; background: var(--cta); color: var(--on-cta); }
+.ci-seal svg { width: 28px; height: 28px; }
+.ci-paid { font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
