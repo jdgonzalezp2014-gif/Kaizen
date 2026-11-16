@@ -255,6 +255,20 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   P2-1406 test link minted 2026-11-15 for 10 years (the team's permanent test). The check-in persists in that browser (localStorage per
   token, "Start over" clears it). Cover: first Hostaway photo that answers — needs `?includeResources=1` on GET /listings/<id> (without it listingImages is empty).
 
+### Look v3: light/dark, one menu, blocked previews, live calendar (2026-11-15, the boss: "Airbnb, but Apple")
+- **Palette:** white & black with gold as the focus, light **and** dark — follows the phone until the guest picks (☰ → Appearance, kept in
+  localStorage `kaizen-guest-theme`). Tokens in `src/index.css` (`html:root.guest-brand[data-theme=…]`); text-gold is deeper on white
+  (#9a6a26, 4.7:1), gold buttons use `--cta` with near-black text. Builder preview (`.g-scope`) stays dark.
+- **Type:** Apple's system font (SF on iPhone/Mac), Inter elsewhere (`--g-text`/`--g-display`); Quattrocento/Open Sans dropped.
+  Airbnb's Cereal is proprietary — not copied.
+- **Navigation:** one floating glass bar (☰ · KAIZEN · sun/moon); the ☰ sheet lists Your stay · Check-in & door code (n of m) ·
+  Wi-Fi & house guide (Locked) · Make it better · Call us · Appearance · link to kaizenguestproperties.com. Sections: `stay|checkin|guide|extras`.
+- **Home:** photo, name, dates card, check-in ring, four tiles (Door code, Wi-Fi, Directions, House guide) **shown but blocked** (blurred
+  value + lock) until `entry()` opens, then the extras carousel inline. Check-in and Guide show a `Locked` preview with "Finish check-in".
+- **Extra nights from Hostaway's live calendar:** `guestHouse(…, {arrival, departure})` → `calendar` = `calendarFit()` (src/lib/guest-portal.ts,
+  tested): free nights each side (max 7), turnIn/turnOut; a night Hostaway does not list counts as taken. P2-1406 on 11-15: 0 before
+  (turnover), 4 after.
+
 ### Open: guest messages sent by Kaizen instead of Hostaway (planned 2026-11-15, NOT started)
 
 - Plan: reservation webhook → welcome + signed portal link; reminders at T-3 / T-1 only if check-in not done; team alert T-1 6 PM;

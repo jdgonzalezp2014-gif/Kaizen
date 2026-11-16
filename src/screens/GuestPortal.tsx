@@ -14,11 +14,11 @@ import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, availability, offered, choiceLine, mapsUrl, nights, priceOf, quote, ready, requestMode, upsellRequest,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
-import { FLOW_KEY, VS_KEY, doorCodeFor, doneFlow, entry, newFlow, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
+import { FLOW_KEY, VS_KEY, doorCodeFor, doneFlow, entry, newFlow, progress, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
 import { CheckinProgress, StepList, StepScreen } from './GuestCheckin.tsx';
 
 type Send = (r: UpsellRequest) => Promise<{ ok: boolean; message?: string }>;
-export type Sec = 'stay' | 'checkin' | 'extras';
+export type Sec = 'stay' | 'checkin' | 'guide' | 'extras';
 const of = (i: number, n: number) => `${i} of ${n}`;
 
 const dateLabel = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
@@ -52,6 +52,7 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar, embedded = 
   const [sec, setSec] = useState<Sec>(startSec);
   const [pick, setPick] = useState<Upsell['kind'] | null>(null);
   const [sent, setSent] = useState<UpsellRequest[]>([]);
+  const [menu, setMenu] = useState(false);
   const [flow, setFlow] = useState<Flow>(() => (!embedded && (returnedFlow() ?? savedDemoFlow())) || (stay.checkedIn ? doneFlow() : newFlow()));
   // The open demo link (?house=) keeps its check-in in this browser, so a reload or Stripe's return does not start over.
   useEffect(() => { if (!embedded) saveDemoFlow(flow); }, [flow, embedded]);
@@ -76,117 +77,212 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar, embedded = 
   const [step, setStep] = useState<StepKey | null>(null);
   const prot = protectionFor(stay.unitType ?? 'house', stay.protection ?? {});
   useUrlState('step', step ?? '', v => setStep((v || null) as StepKey | null), { def: '', on: !embedded });
-  useUrlState('sec', sec, setSec, { def: 'stay', valid: v => v === 'stay' || v === 'checkin' || v === 'extras', on: !embedded });
+  useUrlState('sec', sec, setSec, { def: 'stay', valid: v => (SECS as string[]).includes(v), on: !embedded });
   useUrlState('extra', pick ?? '', v => setPick((v || null) as Upsell['kind'] | null), { def: '', on: !embedded });
   const open = UPSELLS.find(u => u.kind === pick) ?? null;
-  const go = (s: Sec) => { setSec(s); setPick(null); setStep(null); };
-  const goStep = (k: StepKey | null) => { setSec('checkin'); setPick(null); setStep(k); window.scrollTo?.({ top: 0 }); };
-  useBrand(!embedded);
+  const top = () => window.scrollTo?.({ top: 0 });
+  const go = (s: Sec) => { setSec(s); setPick(null); setStep(null); setMenu(false); top(); };
+  const goStep = (k: StepKey | null) => { setSec('checkin'); setPick(null); setStep(k); setMenu(false); top(); };
+  const choose = (k: Upsell['kind']) => { setSec('extras'); setPick(k); top(); };
+  const [theme, setTheme] = useGuestTheme(!embedded);
   useBrandFonts();
   const ck = { flow, prot, goStep };
+  const g = entry(flow, stay, prot, now);
 
   return <>
-    <header className="v-island">
-      <span className="v-island-name">{ic(`Hi, ${stay.guestFirst}`)}</span>
-      <span className="v-seg" role="tablist">
-        {([['stay', 'home', 'Stay'], ['checkin', 'key', 'Check-in'], ['extras', 'sparkles', 'Extras']] as [Sec, string, string][]).map(([k, icon, label]) =>
-          <button key={k} role="tab" aria-selected={sec === k} className={sec === k ? 'on' : ''} onClick={() => go(k)}><Icon n={icon} /> {label}</button>)}
-      </span>
+    <header className="gx-bar">
+      <button className="gx-icon-btn" onClick={() => setMenu(true)} aria-label="Menu" aria-expanded={menu} aria-haspopup="dialog"><Icon n="menu" /></button>
+      <button className="gx-brand" onClick={() => go('stay')} aria-label="Your stay — home">KAIZEN</button>
+      {embedded ? <span className="gx-icon-btn" aria-hidden /> : <button className="gx-icon-btn" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        aria-label={theme === 'dark' ? 'Light mode' : 'Dark mode'}><Icon n={theme === 'dark' ? 'sun' : 'moon'} /></button>}
     </header>
+    {menu && <Menu stay={stay} sec={sec} g={g} st={steps(flow, stay, prot)} go={go} close={() => setMenu(false)} theme={embedded ? null : theme} setTheme={setTheme} />}
     <div className="report-page v-page g-page">
-      {sec === 'stay' ? <StayView stay={stay} now={now} go={go} {...ck} />
+      {sec === 'stay' ? <StayView stay={stay} now={now} go={go} sent={sent} choose={choose} {...ck} />
         : sec === 'checkin' ? step && steps(flow, stay, prot).some(x => x.key === step) ? <StepScreen k={step} stay={stay} flow={flow} set={setFlow} p={prot} back={() => goStep(null)} go={goStep} />
           : <CheckinView stay={stay} now={now} {...ck} />
+        : sec === 'guide' ? <GuideView stay={stay} g={g} goStep={goStep} />
         : open ? <Pick stay={stay} u={open} back={() => setPick(null)}
             send={async c => { const r = upsellRequest(stay, open, c, now); const res = await send(r); if (res.ok) { setSent(s => [...s, r]); setPick(null); } return res; }} />
-        : <Extras stay={stay} sent={sent} choose={setPick} />}
+        : <><h2 className="v-h g-h">Make it better <ExtrasHint /></h2><Extras stay={stay} sent={sent} choose={setPick} /></>}
       {demoBar}
       {payNote && <p className="banner warn">▲ {payNote}</p>}
     </div>
   </>;
 }
 
-/** The public site's palette (kaizenguestproperties, dark-only): warm black + gold. Applied to the whole
- *  document while the guest page is open, without touching the staff's saved day/night choice. */
-function useBrand(on = true) {
+const SECS: Sec[] = ['stay', 'checkin', 'guide', 'extras'];
+const THEME_KEY = 'kaizen-guest-theme';
+type Theme = 'light' | 'dark';
+
+/**
+ * Light or dark (owner's boss, 2026-11-15: "white and black, gold as the focus — like Airbnb, but Apple"). Follows the
+ * phone until the guest picks one; the pick stays in this browser. Applied to the whole document while the guest page
+ * is open, without touching the staff's saved day/night choice. The builder's preview (`embedded`) stays dark.
+ */
+function useGuestTheme(on = true): [Theme, (t: Theme) => void] {
+  const sys = (): Theme => { try { return matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'; } catch { return 'dark'; } };
+  const [picked, setPicked] = useState<Theme | null>(() => { try { const v = localStorage.getItem(THEME_KEY); return v === 'light' || v === 'dark' ? v : null; } catch { return null; } });
+  const [auto, setAuto] = useState<Theme>(sys);
+  useEffect(() => {
+    if (!on || picked) return;
+    try { const m = matchMedia('(prefers-color-scheme: light)'); const f = () => setAuto(sys()); m.addEventListener('change', f); return () => m.removeEventListener('change', f); } catch { return; }
+  }, [on, picked]);
+  const theme = picked ?? auto;
   useEffect(() => {
     if (!on) return;
     const root = document.documentElement;
     const was = root.getAttribute('data-theme');
     root.classList.add('guest-brand');
-    root.setAttribute('data-theme', 'dark');
+    root.setAttribute('data-theme', theme);
     return () => { root.classList.remove('guest-brand'); if (was) root.setAttribute('data-theme', was); };
-  }, [on]);
+  }, [on, theme]);
+  return [theme, (t: Theme) => { setPicked(t); try { localStorage.setItem(THEME_KEY, t); } catch { /* no storage */ } }];
 }
 
-/** Kaizen's type (the public site): Quattrocento for titles, Open Sans for text — loaded only with the guest page. */
+/** Apple's own type on Apple devices (SF, the system font); Inter — its closest open cousin — everywhere else. */
 function useBrandFonts() {
   useEffect(() => {
     if (document.getElementById('kz-guest-fonts')) return;
     const l = document.createElement('link');
     l.id = 'kz-guest-fonts'; l.rel = 'stylesheet';
-    l.href = 'https://fonts.googleapis.com/css2?family=Open+Sans:wght@400;600;700&family=Quattrocento:wght@400;700&display=swap';
+    l.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap';
     document.head.appendChild(l);
   }, []);
 }
+
+/**
+ * The one menu (☰, top left — owner, 2026-11-15): every part of the stay in one list, the locked ones say so.
+ * A sheet from the left; tap outside, ✕ or Esc closes it.
+ */
+function Menu({ stay, sec, g, st, go, close, theme, setTheme }: { stay: GuestStay; sec: Sec; g: Entry; st: ReturnType<typeof steps>;
+  go: (s: Sec) => void; close: () => void; theme: Theme | null; setTheme: (t: Theme) => void }) {
+  const first = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    first.current?.focus();
+    const k = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    addEventListener('keydown', k); return () => removeEventListener('keydown', k);
+  }, [close]);
+  const p = progress(st); // required steps — the same count as the home's ring
+  const phone = stay.guide?.phone;
+  const item = (s: Sec, icon: string, label: string, side?: React.ReactNode) =>
+    <li><button className={`gx-mi${sec === s ? ' on' : ''}`} onClick={() => go(s)} aria-current={sec === s ? 'page' : undefined}>
+      <span className="gx-mi-icon"><Icon n={icon} /></span><span className="gx-mi-label">{label}</span>{side}</button></li>;
+  const locked = !g.open && <span className="gx-mi-side"><Icon n="lock" /> Locked</span>;
+  return <div className="gx-scrim" onClick={close}>
+    <nav className="gx-sheet" role="dialog" aria-modal="true" aria-label="Menu" onClick={e => e.stopPropagation()}>
+      <div className="gx-sheet-top">
+        <button ref={first} className="gx-icon-btn" onClick={close} aria-label="Close menu">✕</button>
+      </div>
+      <div className="gx-who">
+        <b>Hi, {stay.guestFirst}</b>
+        <span className="note">{ic(stay.unitName)} · {shortDay(stay.arrival)} – {shortDay(stay.departure)}</span>
+      </div>
+      <ul className="gx-menu">
+        {item('stay', 'home', 'Your stay')}
+        {item('checkin', 'key', 'Check-in & door code', <span className={`gx-mi-side${p.done >= p.of ? ' ok' : ''}`}>{p.done >= p.of ? <><Icon n="check" /> Done</> : `${p.done} of ${p.of}`}</span>)}
+        {item('guide', 'wifi', 'Wi-Fi & house guide', locked)}
+        {item('extras', 'sparkles', 'Make it better')}
+        {phone && <li><a className="gx-mi" href={`tel:${phone.replace(/[^\d+]/g, '')}`}><span className="gx-mi-icon"><Icon n="phone" /></span><span className="gx-mi-label">Call us</span><span className="gx-mi-side">{phone}</span></a></li>}
+      </ul>
+      {theme && <div className="gx-appear">
+        <span className="note">Appearance</span>
+        <span className="ci-seg" role="radiogroup" aria-label="Appearance">
+          {(['light', 'dark'] as Theme[]).map(t => <button key={t} role="radio" aria-checked={theme === t} className={theme === t ? 'on' : ''} onClick={() => setTheme(t)}>
+            <Icon n={t === 'light' ? 'sun' : 'moon'} /> {t === 'light' ? 'Light' : 'Dark'}</button>)}
+        </span>
+      </div>}
+      <a className="gx-site" href="https://kaizenguestproperties.com" target="_blank" rel="noopener noreferrer">Kaizen Guest Properties ↗</a>
+    </nav>
+  </div>;
+}
+
+const shortDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
 type Ck = { flow: Flow; prot: Protection; goStep: (k: StepKey | null) => void };
 type Entry = ReturnType<typeof entry>;
 const lockLine = (g: Entry) => g.open ? '' : g.why === 'steps' ? 'Opens when you finish check-in' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival';
 
 /**
- * Stay (owner, 2026-11-09): the trip, what is due, the way to Check-in (its own tab — the most important part),
- * then the house info right on the page: Wi-Fi, trash, parking, rules, contact. Locked like the check-in.
+ * Stay — the home (2026-11-15 redesign, Airbnb's trip page in Apple's manners): the house and dates, the check-in
+ * progress, four tiles for what the stay unlocks (shown, but blocked until check-in is done), then the extras carousel.
  */
-function StayView({ stay, now, go, flow, prot, goStep }: { stay: GuestStay; now: Date; go: (s: Sec) => void } & Ck) {
+function StayView({ stay, now, go, sent, choose, flow, prot, goStep }: { stay: GuestStay; now: Date; go: (s: Sec) => void;
+  sent: UpsellRequest[]; choose: (k: Upsell['kind']) => void } & Ck) {
   const n = nights(stay);
   const g = entry(flow, stay, prot, now);
+  const st = steps(flow, stay, prot);
+  const guide = stay.guide ?? null;
+  const unlock = () => !g.open && g.why === 'steps' ? goStep(null) : go('checkin');
+  const tile = (icon: string, title: string, value: React.ReactNode, onOpen: () => void) =>
+    <button className={`card gx-tile${g.open ? '' : ' locked'}`} onClick={g.open ? onOpen : unlock} aria-label={g.open ? title : `${title} — ${lockLine(g)}`}>
+      <span className="gx-tile-icon" aria-hidden><Icon n={icon} /></span>
+      <b>{title}</b>
+      {g.open ? <span className="gx-tile-v">{value}</span>
+        : <span className="gx-tile-v gx-veil" aria-hidden><i /><Icon n="lock" /></span>}
+    </button>;
   return <>
-    <section className="card g-hero">
+    <section className="gx-hero">
       <div className="g-photo" style={stay.photo ? { backgroundImage: `url(${stay.photo})` } : undefined}>
         {!stay.photo && <span className="g-photo-mark" aria-hidden><Icon n="home" /></span>}
-        <span className="g-photo-name">{ic(stay.unitName)}</span>
       </div>
-      <div className="g-dates">
-        <div><span className="g-k">Check-in</span><b>{dateLabel(stay.arrival)}</b><span>{stay.checkInTime}</span></div>
-        <span className="g-arrow" aria-hidden>→</span>
-        <div><span className="g-k">Check-out</span><b>{dateLabel(stay.departure)}</b><span>{stay.checkOutTime}</span></div>
+      <h1 className="gx-title">{ic(stay.unitName)}</h1>
+      <p className="gx-sub"><Icon n="bed" /> {n} {n === 1 ? 'night' : 'nights'} · <Icon n="users" /> {stay.guests} {stay.guests === 1 ? 'guest' : 'guests'}
+        {stay.address && <> · <a href={mapsUrl(stay.address)} target="_blank" rel="noreferrer">Map</a></>}</p>
+      <div className="card gx-dates">
+        <div><span className="gx-k">Check-in</span><b>{dateLabel(stay.arrival)}</b><span className="note">{stay.checkInTime}</span></div>
+        <div><span className="gx-k">Checkout</span><b>{dateLabel(stay.departure)}</b><span className="note">{stay.checkOutTime}</span></div>
       </div>
-      <p className="g-meta"><Icon n="bed" /> {n} {n === 1 ? 'night' : 'nights'} · <Icon n="users" /> {stay.guests} {stay.guests === 1 ? 'guest' : 'guests'}
-        {stay.address && <> · <a href={`https://maps.google.com/?q=${encodeURIComponent(stay.address)}`} target="_blank" rel="noreferrer"><Icon n="pin" /> Map</a></>}</p>
     </section>
 
-    <CheckinProgress st={steps(flow, stay, prot)} go={goStep} />
+    {st.some(x => !x.done) && <CheckinProgress st={st} go={goStep} />}
 
-    <button className="card g-action g-action-main-cta" onClick={() => go('checkin')}>
-      <span className="g-action-icon"><Icon n="key" /></span>
-      <span className="g-action-main"><b>Check-in instructions</b>
-        {g.open ? <span className="note">Step by step, from parking to your door</span> : <span className="g-lock"><Icon n="lock" /> {lockLine(g)}</span>}</span>
-      <span className="g-go">›</span>
-    </button>
+    <h2 className="v-h g-h">Your stay {!g.open && <span className="gx-h-lock"><Icon n="lock" /> {lockLine(g)}</span>}</h2>
+    <div className="gx-tiles">
+      {tile('key', 'Door code', stay.doorCode ? <span className="g-mono">{stay.doorCode}</span> : 'Arrival steps', () => go('checkin'))}
+      {tile('wifi', 'Wi-Fi', guide?.wifi?.network ?? 'House guide', () => go('guide'))}
+      {tile('pin', 'Directions', guide?.steps?.length ? `${guide.steps.length} steps with photos` : 'Address & map', () => go('checkin'))}
+      {tile('book', 'House guide', 'Rules, parking, contact', () => go('guide'))}
+    </div>
 
-    <h2 className="v-h g-h">Your stay</h2>
-    {g.open ? <HouseManual g={stay.guide ?? null} />
-      : <p className="card g-guide g-lock"><Icon n="lock" /> Wi-Fi, house info and contact {lockLine(g).replace(/^Opens/, 'open')}.</p>}
-
-    <button className="card g-action" onClick={() => go('extras')}>
-      <span className="g-action-icon"><Icon n="sparkles" /></span>
-      <span className="g-action-main"><b>Make it better</b><span className="note">Early check-in · Late check-out · Extra nights</span></span>
-      <span className="g-go">›</span>
-    </button>
+    <h2 className="v-h g-h">Make it better <ExtrasHint /></h2>
+    <Extras stay={stay} sent={sent} choose={choose} />
   </>;
 }
 
-/** Check-in (its own tab): the arrival steps with photos, or why they are not open yet. */
+const ExtrasHint = () => <Hint>Pick an extra and send the request. We confirm it first, then charge the card you used at check-in. Nothing is charged when you ask. Extra nights follow the house's live calendar.</Hint>;
+
+/** What check-in unlocks, shown but blocked (owner, 2026-11-15: "reading it and showing a block"): blurred lines + why. */
+function Locked({ g, goStep, title, icon, lines = 4 }: { g: Entry; goStep: (k: StepKey | null) => void; title: string; icon: string; lines?: number }) {
+  return <section className="card gx-locked" aria-label={`${title} — ${lockLine(g)}`}>
+    <span className="gx-locked-head"><span className="gx-tile-icon" aria-hidden><Icon n={icon} /></span><b>{title}</b></span>
+    <span className="gx-blur" aria-hidden>{Array.from({ length: lines }, (_, i) => <i key={i} style={{ width: `${92 - (i % 3) * 17}%` }} />)}</span>
+    <span className="gx-lock-over">
+      <span className="gx-lock-badge"><Icon n="lock" /> {lockLine(g)}</span>
+      {!g.open && g.why === 'steps' && <button className="g-cta gx-cta-sm" onClick={() => goStep(null)}>Finish check-in</button>}
+    </span>
+  </section>;
+}
+
+/** Check-in: the online check-in steps, then — once done and released — the door code and the arrival steps. */
 function CheckinView({ stay, now, flow, prot, goStep }: { stay: GuestStay; now: Date } & Ck) {
   const g = entry(flow, stay, prot, now);
   const st = steps(flow, stay, prot);
   return <>
-    <h2 className="v-h g-h">Check-in · {ic(stay.unitName)}</h2>
+    <h2 className="v-h g-h">Check-in</h2>
     <p className="g-meta g-checkin-when"><Icon n="clock" /> From {stay.checkInTime}, {dateLabel(stay.arrival)}</p>
     {g.open ? <><DoorCode stay={stay} /><Arrival g={stay.guide ?? null} /></>
-      : g.why === 'steps' ? <><CheckinProgress st={st} go={goStep} /><StepList st={st} go={goStep} /></>
-      : <><p className="card g-guide g-lock ci-done"><Icon n="done" /> You are checked in. Door code and directions {lockLine(g).replace(/^Opens/, 'open')}.</p></>}
+      : <>{g.why === 'steps' && <><CheckinProgress st={st} go={goStep} /><StepList st={st} go={goStep} /></>}
+        {g.why !== 'steps' && <p className="card g-guide g-lock ci-done"><Icon n="done" /> You are checked in.</p>}
+        <Locked g={g} goStep={goStep} title="Door code & arrival steps" icon="key" lines={5} /></>}
+  </>;
+}
+
+/** House guide & Wi-Fi: the manual, or its blocked preview until check-in opens it. */
+function GuideView({ stay, g, goStep }: { stay: GuestStay; g: Entry; goStep: (k: StepKey | null) => void }) {
+  return <>
+    <h2 className="v-h g-h">House guide</h2>
+    {g.open ? <HouseManual g={stay.guide ?? null} /> : <Locked g={g} goStep={goStep} title="Wi-Fi, parking, rules & contact" icon="wifi" lines={6} />}
   </>;
 }
 
@@ -214,7 +310,6 @@ function priceLabel(stay: GuestStay, u: Upsell) {
 function Extras({ stay, sent, choose }: { stay: GuestStay; sent: UpsellRequest[]; choose: (k: Upsell['kind']) => void }) {
   const NO = { calendar: 'Not available for your dates', price: 'Ask us for a price', short: 'For stays of 4+ nights' } as const;
   return <>
-    <h2 className="v-h g-h">Extras <Hint>Pick an extra and send the request. We confirm it first, then charge the card you used at check-in. Nothing is charged when you ask.</Hint></h2>
     <Carousel label="Extras" of={of}>{offered(stay).map(u => {
       const a = availability(stay, u);
       const asked = sent.some(r => r.kind === u.kind);
@@ -248,7 +343,7 @@ function Pick({ stay, u, back, send }: { stay: GuestStay; u: Upsell; back: () =>
   const ok = ready(stay, u, c);
   const submit = async () => { setBusy(true); setMsg(''); try { const r = await send(c); if (!r.ok) setMsg(r.message ?? 'Not sent.'); } catch (e) { setMsg(String(e)); } finally { setBusy(false); } };
   return <>
-    <div className="v-house-head"><button className="chip" onClick={back}>‹ Extras</button></div>
+    <div className="v-house-head"><button className="chip" onClick={back}>‹ Make it better</button></div>
     <section className="card g-pick">
       <p className="g-pick-title"><span className="g-up-icon" aria-hidden><Icon n={u.icon} /></span> {u.title}</p>
       {u.pick.type === 'time' && <div className="g-times" role="radiogroup" aria-label={u.kind === 'early-checkin' ? 'Arrive from' : 'Leave by'}>
@@ -403,10 +498,10 @@ export function GuestDemoPage() {
   const q = new URLSearchParams(location.search).get('stay');
   const [k, setK] = useState<DemoKey>(DEMO_KEYS.includes(q as DemoKey) ? q as DemoKey : 'unpaid');
   const pickDemo = (x: DemoKey) => { setK(x); const u = new URL(location.href); u.searchParams.set('stay', x); history.replaceState(history.state, '', u); };
-  const house = useHouse();
+  const house = useHouse(demoStay(k));
   // Demo: a picked house's code follows its Lock type; the sample 4821 stands in for Hostaway's per-stay code unless the record has its own.
   const stay: GuestStay = house.data ? { ...demoStay(k), doorCode: doorCodeFor(house.data.lockType, house.data.guestCode, house.data.guestCode ? null : '4821'), unitName: house.data.unitName, photo: house.data.photo ?? null, unitType: house.data.unitType ?? 'house', protection: house.data.protection ?? null, address: house.data.guide?.address ?? null,
-    guide: house.data.guide, prices: house.data.prices, notOffered: house.data.notOffered ?? [] } : demoStay(k);
+    guide: house.data.guide, prices: house.data.prices, notOffered: house.data.notOffered ?? [], ...(house.data.calendar ?? {}) } : demoStay(k);
   return <GuestPortal key={`${k}-${house.unit}`} stay={stay} send={async () => ({ ok: true })}
     demoBar={<div className="g-demo" role="group" aria-label="Demo stay">
       <span className="note"><Icon n="eye" /> Demo</span>
@@ -423,8 +518,9 @@ export function GuestDemoPage() {
  * The demo with a real house (2026-11-09): its guide and prices from the Repository via /api/guest-guide,
  * which answers only behind the staff sign-in — on /crew/guest-demo (no sign-in) the picker simply never shows.
  */
-type HouseData = { unitName: string; notOffered?: GuestStay['notOffered']; photo?: string | null; lockType?: string | null; guestCode?: string | null; unitType?: GuestStay['unitType'] | null; protection?: GuestStay['protection']; guide: GuestGuide | null; prices: GuestStay['prices'] };
-function useHouse() {
+type HouseData = { unitName: string; notOffered?: GuestStay['notOffered']; photo?: string | null; lockType?: string | null; guestCode?: string | null; unitType?: GuestStay['unitType'] | null; protection?: GuestStay['protection']; guide: GuestGuide | null; prices: GuestStay['prices'];
+  calendar?: Pick<GuestStay, 'freeBefore' | 'freeAfter' | 'turnIn' | 'turnOut'> | null };
+function useHouse(dates: { arrival: string; departure: string }) {
   const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
   const [unit, setUnit] = useState(() => new URLSearchParams(location.search).get('unit') ?? '');
   const [data, setData] = useState<HouseData | null>(null);
@@ -434,9 +530,11 @@ function useHouse() {
     const signed = new URLSearchParams(location.search).get('house');
     if (!unit && !signed) { setData(null); return; }
     let live = true;
-    fetch(signed ? `/api/report-link?house=${encodeURIComponent(signed)}` : `/api/guest-guide?unit=${encodeURIComponent(unit)}`).then(r => r.ok ? r.json() as Promise<HouseData> : null).then(j => { if (live) setData(j?.unitName ? j : null); }).catch(() => undefined);
+    // The stay's dates ask Hostaway's live calendar what extra nights are free around them.
+    const d = `&arrival=${dates.arrival}&departure=${dates.departure}`;
+    fetch(signed ? `/api/report-link?house=${encodeURIComponent(signed)}${d}` : `/api/guest-guide?unit=${encodeURIComponent(unit)}${d}`).then(r => r.ok ? r.json() as Promise<HouseData> : null).then(j => { if (live) setData(j?.unitName ? j : null); }).catch(() => undefined);
     return () => { live = false; };
-  }, [unit]);
+  }, [unit, dates.arrival, dates.departure]);
   const pick = (id: string) => { setUnit(id); const u = new URL(location.href); if (id) u.searchParams.set('unit', id); else u.searchParams.delete('unit'); history.replaceState(history.state, '', u); };
   return { units, unit, data, pick, signed: new URLSearchParams(location.search).has('house') };
 }

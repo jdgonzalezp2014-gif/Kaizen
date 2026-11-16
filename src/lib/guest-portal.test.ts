@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { payState, guide, availability, quote, ready, upsellRequest, choiceLine, guestLink, minutesOf, hoursOf, centralInstant, requestMode, UPSELLS, type GuestStay } from './guest-portal.ts';
+import { payState, guide, availability, quote, ready, upsellRequest, choiceLine, guestLink, minutesOf, hoursOf, centralInstant, requestMode, calendarFit, UPSELLS, type GuestStay } from './guest-portal.ts';
 
 const stay = (o: Partial<GuestStay> = {}): GuestStay => ({
   id: '101', guestFirst: 'Ana', unitName: 'Frisco 3BR', address: null, photo: null,
@@ -123,4 +123,13 @@ test('Guest services: "No" hides an extra, blank offers it; prices from the reco
   assert.ok(!offered({ notOffered: off }).some(u => u.kind === 'welcome'));
   assert.equal(offered({}).length, 7);
   assert.deepEqual(pricesFrom({ mid_clean_price: '91', welcome_price: 40 }), { 'mid-clean': 91, welcome: 40 });
+});
+
+test('calendarFit: free nights each side, turnovers, unknown nights are taken', () => {
+  const n = (date: string, available: boolean) => ({ date, available });
+  const days = [n('2026-11-08', false), n('2026-11-09', true), n('2026-11-10', true), /* stay 11–14 */
+    n('2026-11-14', true), n('2026-11-15', false)];
+  assert.deepEqual(calendarFit(days, '2026-11-11', '2026-11-14'), { freeBefore: 2, freeAfter: 1, turnIn: false, turnOut: false });
+  assert.deepEqual(calendarFit([n('2026-11-10', false), n('2026-11-14', false)], '2026-11-11', '2026-11-14'), { freeBefore: 0, freeAfter: 0, turnIn: true, turnOut: true });
+  assert.deepEqual(calendarFit([], '2026-11-11', '2026-11-14'), { freeBefore: 0, freeAfter: 0, turnIn: false, turnOut: false });
 });

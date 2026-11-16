@@ -316,3 +316,18 @@ export function payFromHostaway(d: { guestPortalUrl?: unknown; paymentStatus?: u
     balance: typeof d.remainingBalance === 'number' ? d.remainingBalance : null,
   };
 }
+
+/**
+ * Extra nights and turnovers from the listing's live Hostaway calendar (owner, 2026-11-15: "connect the extension to
+ * the calendar"). `days` = the nights around the stay (date = the night that starts that day). A night the calendar
+ * does not list counts as taken — never offer what we cannot see. At most `max` nights each side.
+ */
+export type CalNight = { date: string; available: boolean };
+export function calendarFit(days: CalNight[], arrival: string, departure: string, max = 7) {
+  const free = new Map(days.map(d => [d.date, d.available]));
+  const shift = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+  let freeBefore = 0; while (freeBefore < max && free.get(shift(arrival, -(freeBefore + 1))) === true) freeBefore++;
+  let freeAfter = 0; while (freeAfter < max && free.get(shift(departure, freeAfter)) === true) freeAfter++;
+  // Someone sleeps the night before arrival → they leave that morning; someone takes the departure night → they arrive that day.
+  return { freeBefore, freeAfter, turnIn: free.get(shift(arrival, -1)) === false, turnOut: free.get(departure) === false };
+}

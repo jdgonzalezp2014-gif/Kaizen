@@ -5,18 +5,23 @@
  * `guestHouse()` once that door exists — Wi-Fi never goes out on an open route.
  *   no params      → { units: [{ id, name }] } (active units)
  *   ?unit=<id>     → { unitName, photo, guide, prices } — photo = the record's "Portal photo" link, else Hostaway's cover
+ *   &arrival=&departure=  → also { calendar }: free nights each side and turnovers, from Hostaway's live calendar
  */
 import { db, type Env } from '../_lib/db.ts';
 import { getCredentials, type SqlFn } from '../_lib/accounts.ts';
-import { fetchListingCover } from '../_lib/hostaway.ts';
+import { fetchCalendar, fetchListingCover } from '../_lib/hostaway.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
 import { UNIT_TABLES } from '../../src/lib/repo-checks.ts';
-import { emptyGuide, guideFrom, notOfferedFrom, pricesFrom } from '../../src/lib/guest-portal.ts';
+import { calendarFit, emptyGuide, guideFrom, notOfferedFrom, pricesFrom } from '../../src/lib/guest-portal.ts';
 import { portalFrom } from '../../src/lib/guest-checkin.ts';
 import { composeGuide, tokenVals, type CheckinStep, type HouseItem } from '../../src/lib/checkin.ts';
 
-export async function guestHouse(sql: SqlFn, unitId: string, encryptionKey?: string) {
+const isDay = (d: unknown): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
+const shift = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+
+/** `stay` (arrival/departure) adds `calendar` — what Extras may offer around those dates. Null when Hostaway does not answer. */
+export async function guestHouse(sql: SqlFn, unitId: string, encryptionKey?: string, stay?: { arrival?: string | null; departure?: string | null }) {
   const [units, recs] = await Promise.all([
     sql`SELECT id::text AS id, name FROM units WHERE account_id = 1 AND id::text = ${unitId}` as Promise<{ id: string; name: string }[]>,
     sql`SELECT table_key AS "table", id, vals FROM repo_records
@@ -34,21 +39,28 @@ export async function guestHouse(sql: SqlFn, unitId: string, encryptionKey?: str
   const guide = guideFrom(rec?.vals);
   // Cover (owner, 2026-11-15): Hostaway's first listing photo (units.id is the listing id); a record may set its own.
   const ownPhoto = typeof rec?.vals?.portal_photo === 'string' && rec.vals.portal_photo.startsWith('https://') ? rec.vals.portal_photo : null;
-  const photo = ownPhoto ?? (encryptionKey ? await getCredentials(sql, encryptionKey).then(c => fetchListingCover(c, unitId)).catch(() => null) : null);
+  const creds = encryptionKey ? await getCredentials(sql, encryptionKey).catch(() => null) : null;
+  const dated = isDay(stay?.arrival) && isDay(stay?.departure) && stay.arrival < stay.departure;
+  const [photo, calendar] = await Promise.all([
+    ownPhoto ?? (creds ? fetchListingCover(creds, unitId).catch(() => null) : null),
+    creds && dated ? fetchCalendar(creds, unitId, shift(stay.arrival!, -8), shift(stay.departure!, 8))
+      .then(days => days.length ? calendarFit(days, stay.arrival!, stay.departure!) : null, () => null) : null,
+  ]);
   const portal = portalFrom(rec?.vals);
   // Door code by Lock type (doorCodeFor): staff-only route; the guest's signed link must send it only once entry() opens.
   const str = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim() : null;
-  return { unitName: u.name, photo, lockType: str(rec?.vals?.lock_type), guestCode: str(rec?.vals?.guest_code), unitType: portal.unitType, protection: portal.protection, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals), notOffered: notOfferedFrom(rec?.vals) };
+  return { unitName: u.name, photo, lockType: str(rec?.vals?.lock_type), guestCode: str(rec?.vals?.guest_code), unitType: portal.unitType, protection: portal.protection, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals), notOffered: notOfferedFrom(rec?.vals), calendar };
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!identify(request, env)) return unauthorised();
   const sql = db(env) as unknown as SqlFn;
-  const unit = new URL(request.url).searchParams.get('unit');
+  const q = new URL(request.url).searchParams;
+  const unit = q.get('unit');
   if (!unit) {
     const units = await sql`SELECT id, name FROM units WHERE account_id = 1 AND active ORDER BY name` as { id: string; name: string }[];
     return Response.json({ units: units.map(u => ({ id: String(u.id), name: u.name })) });
   }
-  const house = await guestHouse(sql, unit, env.ENCRYPTION_KEY);
+  const house = await guestHouse(sql, unit, env.ENCRYPTION_KEY, { arrival: q.get('arrival'), departure: q.get('departure') });
   return house ? Response.json(house) : Response.json({ error: 'unknown_unit' }, { status: 404 });
 };

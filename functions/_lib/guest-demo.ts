@@ -47,6 +47,6 @@ export async function demoHouse(sql: SqlFn, encryptionKey: string, url: URL): Pr
     if (!res.ok || !type.startsWith('image/')) return new Response('Photo unavailable.', { status: 502 });
     return new Response(res.body, { headers: { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' } });
   }
-  const house = await guestHouse(sql, unit, encryptionKey);
+  const house = await guestHouse(sql, unit, encryptionKey, { arrival: url.searchParams.get('arrival'), departure: url.searchParams.get('departure') });
   return house ? Response.json(house, { headers: { 'Cache-Control': 'no-store' } }) : Response.json({ ok: false, message: 'No such unit.' }, { status: 404 });
 }
