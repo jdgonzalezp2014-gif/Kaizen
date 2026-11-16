@@ -8,7 +8,7 @@ import {
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
 import { SlackPanel } from '../components/SlackPanel.tsx';
-import { getPayouts, getSlack, newIngestToken, pullFeed, runCron, type FeedResult, type CronResult, type StripeStatus } from '../api.ts';
+import { addStripeDomain, getPayouts, getSlack, getStripeDomains, type StripeDomain, newIngestToken, pullFeed, runCron, type FeedResult, type CronResult, type StripeStatus } from '../api.ts';
 import { integrations, type IntegrationFlags } from '../lib/integrations.ts';
 import { sanitize, segments } from '../lib/sms.ts';
 import { Icon } from '../components/Icon.tsx';
@@ -766,8 +766,49 @@ function StripePanel({ account, onSaved }: { account: Account; onSaved: () => vo
         {account.hasStripeKey && <button className="secondary" disabled={busy} onClick={() => void save({ clearStripeKey: true })}>Remove key</button>}
       </div>
       {msg && <p className="note">{msg}</p>}
+      {account.hasStripeKey && <StripeInPage account={account} onSaved={onSaved} />}
     </div>
   );
+}
+
+/**
+ * Stripe inside the guest portal (2026-11-16): the publishable key (not a secret — shown as typed) and the web domains
+ * Apple Pay may appear on. Apple wants each domain registered with Stripe; Google Pay works without, Stripe lists both.
+ */
+function StripeInPage({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [pk, setPk] = useState(account.stripePublishableKey ?? '');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [list, setList] = useState<{ here?: string; domains?: StripeDomain[]; message?: string } | null>(null);
+  const [other, setOther] = useState('');
+  const load = () => void getStripeDomains().then(setList);
+  useEffect(load, []);
+  const savePk = async () => { setBusy(true); setMsg(''); const r = await saveSettings({ stripePublishableKey: pk }); setBusy(false); setMsg(r.ok ? 'Saved.' : (r.error ?? 'Failed.')); if (r.ok) onSaved(); };
+  const add = async (d: string) => { setBusy(true); setMsg(''); const r = await addStripeDomain(d); setBusy(false); setMsg(r.ok ? `${d} registered.` : (r.message ?? 'Failed.')); if (r.ok) { setOther(''); load(); } };
+  const here = list?.here;
+  const has = (d?: string) => !!d && !!list?.domains?.some(x => x.domain === d);
+  const word = (s: string | null) => s === 'active' ? '✓ active' : s ?? '—';
+  return <>
+    <h3 className="int-sub">Inside the guest portal <Hint>With the publishable key the guest pays and verifies their ID without leaving the portal (Stripe's
+      Embedded Checkout and ID check, inside our page). Without it, Stripe's own pages open instead. Apple Pay shows only on domains registered here —
+      register each domain the portal runs on (this one, and the website's subdomain once it exists). Google Pay needs nothing.</Hint></h3>
+    <label>Publishable key {account.stripePublishableKey && <span className="ok-tag">saved</span>}
+      <input value={pk} onChange={e => setPk(e.target.value)} autoComplete="off" spellCheck={false} placeholder="pk_test_…" />
+    </label>
+    <div className="button-row"><button onClick={() => void savePk()} disabled={busy || pk.trim() === (account.stripePublishableKey ?? '')}>Save publishable key</button></div>
+    <p className="note">Wallet domains</p>
+    {list?.message ? <p className="breach">{list.message}</p> : !list ? <p className="note">Loading…</p>
+      : <ul className="int-domains">
+        {(list.domains ?? []).map(d => <li key={d.domain}><b>{d.domain}</b><span className="note">Apple Pay {word(d.applePay)} · Google Pay {word(d.googlePay)}</span></li>)}
+        {!list.domains?.length && <li className="note">None yet.</li>}
+      </ul>}
+    <div className="button-row">
+      {here && !has(here) && <button disabled={busy} onClick={() => void add(here)}>Register {here}</button>}
+      <input value={other} onChange={e => setOther(e.target.value)} placeholder="stay.example.com" aria-label="Another domain" />
+      <button className="secondary" disabled={busy || !other.trim()} onClick={() => void add(other.trim())}>Register</button>
+    </div>
+    {msg && <p className="note">{msg}</p>}
+  </>;
 }
 
 /**

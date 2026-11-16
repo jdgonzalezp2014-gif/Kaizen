@@ -4,7 +4,8 @@
  * the provider is chosen), damage protection (waiver or deposit, values by unit type), house rules, extras,
  * one payment. Demo: nothing is charged and nothing is saved; `onPay` is where Stripe goes.
  */
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { loadStripe, type EmbeddedCheckout } from '../components/stripe-js.ts';
 import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
@@ -114,7 +115,7 @@ function Details({ stay, flow, save }: S) {
 
 /** Placeholder until the provider is chosen (Truvi or Stripe Identity): shows what the guest will do. */
 /** Identity: Stripe Identity's own page (ID photo + selfie, camera on the phone). Sandbox; Truvi vs Stripe still open. */
-function Identity({ flow }: S) {
+function Identity({ flow, save }: S) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const start = async () => {
@@ -123,8 +124,17 @@ function Identity({ flow }: S) {
     for (const k of ['step', 'paid', 'verified', 'extra']) u.searchParams.delete(k);
     u.searchParams.set('sec', 'checkin');
     try {
-      const r = await fetch('/api/report-link?identity=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ back: u.pathname + u.search }) });
-      const j = await r.json() as { url?: string; id?: string; message?: string };
+      const r = await fetch('/api/report-link?identity=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ back: u.pathname + u.search, embedded: true }) });
+      const j = await r.json() as { url?: string; id?: string; clientSecret?: string; publishableKey?: string; message?: string };
+      // Inside the portal: Stripe's ID check opens over the page; then the server says whether it went through.
+      if (j.clientSecret && j.publishableKey && j.id) {
+        const st = await loadStripe(j.publishableKey);
+        const res = await st.verifyIdentity(j.clientSecret);
+        if (res.error && res.error.code !== 'session_cancelled') { setErr(res.error.message ?? 'Verification did not finish.'); setBusy(false); return; }
+        const v = await fetch(`/api/report-link?identity=${encodeURIComponent(j.id)}`).then(x => x.json() as Promise<{ done?: boolean; message?: string }>);
+        if (v.done) { save({ ...flow, identity: true }); return; }
+        setErr(res.error ? 'Verification was closed before the end.' : v.message ?? 'Verification was not finished.'); setBusy(false); return;
+      }
       if (j.url && j.id) {
         try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); sessionStorage.setItem(VS_KEY, j.id); } catch { /* private mode */ }
         location.href = j.url; return;
@@ -135,7 +145,7 @@ function Identity({ flow }: S) {
   };
   return <>
     <section className="card ci-card">
-      <span className="ci-q">Your ID <Hint>Stripe opens its own page: pick driver’s license, passport or ID card, take a photo of it and a selfie
+      <span className="ci-q">Your ID <Hint>Stripe’s ID check opens over this page: pick driver’s license, passport or ID card, take a photo of it and a selfie
         (on a computer it offers to continue on the phone). Test mode: Stripe also offers ready-made test results.</Hint></span>
       <div className="ci-shots">
         <span className="ci-shot"><Icon n="idcard" /><span>Photo of your ID</span></span>
@@ -144,7 +154,7 @@ function Identity({ flow }: S) {
       <p className="note ci-inline"><Icon n="lock" /> Encrypted by Stripe. Only used to match you to your booking.</p>
     </section>
     {err && <p className="banner warn">▲ {err}</p>}
-    <button className="g-cta" onClick={start} disabled={busy}>{busy ? 'Opening verification…' : flow.identity ? 'Verify again' : 'Verify with Stripe'}</button>
+    <button className="g-cta" onClick={start} disabled={busy}>{busy ? 'Verifying…' : flow.identity ? 'Verify again' : 'Verify my ID'}</button>
     <p className="ci-stripe"><span><Icon n="lock" /> Identity by Stripe</span><span>Test mode</span></p>
   </>;
 }
@@ -221,10 +231,23 @@ function modeLine(stay: GuestStay, k: UpsellKind, turnover: boolean) {
  * on their own). The answers so far are kept in the tab so the page picks up where it was when Stripe sends the guest
  * back; the step is done only once the server confirms the session (GuestPortal, `?paid=`). Sandbox only for now.
  */
-function Pay({ stay, flow, p }: S) {
+function Pay({ stay, flow, p, save }: S) {
   const b = bill(flow, stay, p);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  // Inside the portal (boss, 2026-11-16): Stripe's Embedded Checkout mounts here — card, Apple Pay, Google Pay — no redirect.
+  const [embed, setEmbed] = useState<{ id: string; clientSecret: string; pk: string } | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!embed) return;
+    let ec: EmbeddedCheckout | null = null; let live = true;
+    const done = () => void fetch(`/api/report-link?checkout=${encodeURIComponent(embed.id)}`).then(r => r.json() as Promise<{ paid?: boolean; message?: string }>)
+      .then(j => { if (j.paid) save({ ...flow, paid: true }); else setErr(j.message ?? 'The payment was not completed.'); }, () => setErr('Could not check the payment.'));
+    loadStripe(embed.pk).then(st => st.initEmbeddedCheckout({ fetchClientSecret: async () => embed.clientSecret, onComplete: done }))
+      .then(c => { if (!live) { c.destroy(); return; } ec = c; if (box.current) c.mount(box.current); setBusy(false); },
+        e => { setErr(e instanceof Error ? e.message : String(e)); setEmbed(null); setBusy(false); });
+    return () => { live = false; ec?.destroy(); };
+  }, [embed]);
   const pay = async () => {
     setBusy(true); setErr(null);
     try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); } catch { /* private mode: the page just starts over */ }
@@ -233,8 +256,9 @@ function Pay({ stay, flow, p }: S) {
     u.searchParams.set('sec', 'checkin');
     try {
       const r = await fetch('/api/report-link?checkout=1', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lines: b.lines, email: stay.guest?.email ?? null, back: u.pathname + u.search }) });
-      const j = await r.json() as { url?: string; message?: string };
+        body: JSON.stringify({ lines: b.lines, email: stay.guest?.email ?? null, back: u.pathname + u.search, embedded: true }) });
+      const j = await r.json() as { url?: string; id?: string; clientSecret?: string; publishableKey?: string; message?: string };
+      if (j.clientSecret && j.publishableKey && j.id) { setEmbed({ id: j.id, clientSecret: j.clientSecret, pk: j.publishableKey }); return; }
       if (j.url) { location.href = j.url; return; }
       setErr(j.message ?? 'Payment could not start.');
     } catch { setErr('Payment could not start — check the connection.'); }
@@ -251,9 +275,12 @@ function Pay({ stay, flow, p }: S) {
       {b.hold > 0 && <div className="ci-line ci-sum ci-sub"><span>Held, released after check-out</span><span>{money2(b.hold)}</span></div>}
     </section>
     {err && <p className="banner warn">▲ {err}</p>}
-    <button className="g-cta" onClick={pay} disabled={busy}>{busy ? 'Opening secure payment…' : label}</button>
+    {embed ? <>
+      <div ref={box} className="ci-embed" aria-label="Secure payment by Stripe" />
+      <button className="chip ci-embed-back" onClick={() => { setEmbed(null); setErr(null); }}>‹ Back to the summary</button>
+    </> : <button className="g-cta" onClick={pay} disabled={busy}>{busy ? 'Opening secure payment…' : label}</button>}
     <p className="ci-stripe"><span><Icon n="lock" /> Secure payment by Stripe</span>
-      <span>Test mode <Hint>Stripe opens its own payment page: Apple Pay (iPhone / Safari), Google Pay (Chrome / Android) or a card.
+      <span>Test mode <Hint>Pay right here: Apple Pay (iPhone / Safari), Google Pay (Chrome / Android) or a card.
         Test card 4242 4242 4242 4242, any future date, any CVC. A deposit is only held — captured after check-out if something is owed.</Hint></span></p>
   </>;
 }

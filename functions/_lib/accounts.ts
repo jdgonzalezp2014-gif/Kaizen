@@ -20,6 +20,8 @@ export interface Account {
   hasGeminiKey: boolean;
   hasClaudeKey: boolean;
   hasStripeKey: boolean;
+  /** Not a secret — the guest portal hands it to Stripe.js. Null until migration 115 and a key. */
+  stripePublishableKey: string | null;
   hasJinaKey: boolean;
   hasIngestToken: boolean;
   hasQuoKey: boolean;
@@ -109,6 +111,7 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
     hasGeminiKey: Boolean(r.gemini_api_key_enc),
     hasClaudeKey: Boolean(r.claude_api_key_enc),
     hasStripeKey: Boolean(r.stripe_secret_key_enc),
+    stripePublishableKey: await stripePublishableKey(sql, accountId),
     hasJinaKey: Boolean(r.jina_api_key_enc),
     hasIngestToken: Boolean(r.ingest_token_enc),
     hasQuoKey: Boolean(r.quo_api_key_enc),
@@ -249,4 +252,12 @@ export async function saveCredentials(
            hostaway_token_enc = NULL, hostaway_token_expires_at = NULL
      WHERE id = ${accountId}
   `;
+}
+
+/** The publishable key, read apart so a database without migration 115 still loads the account. */
+export async function stripePublishableKey(sql: SqlFn, accountId = 1): Promise<string | null> {
+  try {
+    const [r] = await sql`SELECT stripe_publishable_key FROM accounts WHERE id = ${accountId}` as { stripe_publishable_key: string | null }[];
+    return r?.stripe_publishable_key ?? null;
+  } catch { return null; }
 }

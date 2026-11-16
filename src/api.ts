@@ -7,6 +7,7 @@ export interface Account {
   hasGeminiKey: boolean;
   hasClaudeKey: boolean;
   hasStripeKey: boolean;
+  stripePublishableKey?: string | null;
   hasJinaKey: boolean;
   hasIngestToken: boolean;
   hasQuoKey: boolean; quoFrom: string | null;
@@ -1056,3 +1057,13 @@ export interface ExpenseAudit {
             facts: [string, string][]; photos: { name: string; url: string }[]; todoId: string | null; text: string | null };
 }
 export const getExpenseAudit = (id: string) => call<({ ok: true } & ExpenseAudit) | Fail>(`/api/expenses?audit=${encodeURIComponent(id)}`);
+
+/** Settings → Stripe: the domains Apple Pay / Google Pay may show on inside our pages (functions/api/stripe-domains.ts). */
+export type StripeDomain = { domain: string; enabled: boolean; applePay: string | null; googlePay: string | null };
+export async function getStripeDomains(): Promise<{ ok: boolean; here?: string; domains?: StripeDomain[]; message?: string }> {
+  return fetch('/api/stripe-domains').then(r => r.json() as Promise<{ ok: boolean; here?: string; domains?: StripeDomain[]; message?: string }>).catch(() => ({ ok: false, message: 'No connection.' }));
+}
+export async function addStripeDomain(domain: string): Promise<{ ok: boolean; message?: string }> {
+  return fetch('/api/stripe-domains', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domain }) })
+    .then(r => r.json() as Promise<{ ok: boolean; message?: string }>).catch(() => ({ ok: false, message: 'No connection.' }));
+}

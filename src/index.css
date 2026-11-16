@@ -3474,3 +3474,23 @@ html:root.guest-brand[data-theme='light'] body::before { background: radial-grad
 .gx-lock-over { display: flex; flex-direction: column; align-items: center; gap: 10px; text-align: center; }
 .gx-lock-badge { display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; border-radius: 999px; background: var(--tint); color: var(--ink); font-size: 14px; }
 .gx-cta-sm { width: auto; min-height: 44px; padding: 0 24px; font-size: 15px; }
+
+/* Airbnb's booking box (2026-11-16): one outlined box, check-in | checkout, guests under; each date offers its change. */
+.gx-resv { margin-top: 12px; border: 1px solid var(--line-strong); border-radius: 14px; background: var(--card); box-shadow: 0 6px 16px rgb(0 0 0 / .08); overflow: hidden; }
+html:root.guest-brand[data-theme='light'] .gx-resv { border-color: #b0b0b0; }
+.gx-resv-row { display: grid; grid-template-columns: 1fr 1fr; }
+.gx-resv-row + .gx-resv-row { border-top: 1px solid var(--line-strong); }
+.gx-resv-one { grid-template-columns: 1fr; }
+.gx-cell { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px 14px; min-height: 64px; background: transparent; border: 0; border-radius: 0;
+  color: var(--ink); font: inherit; text-align: left; }
+button.gx-cell { cursor: pointer; } button.gx-cell:hover { background: var(--tint); }
+.gx-resv-row:first-child .gx-cell + .gx-cell { border-left: 1px solid var(--line-strong); }
+.gx-cell .gx-k { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: var(--ink); }
+.gx-cell b { font-size: 16px; font-weight: 600; }
+.gx-ask { margin-top: 4px; font-size: 13.5px; font-weight: 600; color: var(--accent); }
+/* Stripe inside the page: its form is white by its own design — a white sheet with our corners, in light and dark. */
+.ci-embed { min-height: 420px; border-radius: 16px; overflow: hidden; background: #fff; }
+.ci-embed-back { align-self: flex-start; }
+.int-sub { font-size: 15px; margin: 18px 0 6px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 6px; }
+.int-domains { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.int-domains li { display: flex; flex-direction: column; }

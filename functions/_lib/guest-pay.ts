@@ -7,12 +7,16 @@
  *  POST /api/report-link?identity=1  { back }                → { url }   (Stripe Identity: ID photo + selfie)
  *  GET  /api/report-link?identity=<vs_…>                     → { done, status }
  *
+ * Inside the page (boss, 2026-11-16: "that it does not leave the portal"): with `embedded: true` and a publishable key
+ * saved, checkout answers { clientSecret, id, publishableKey } for Stripe's Embedded Checkout and identity answers
+ * { clientSecret, id, publishableKey } for Stripe.js's verifyIdentity modal. No key → the hosted pages, as before.
+ *
  * Same public door as the payee Stripe link, so no new Access bypass. **Sandbox only for now:** the lines come from the
  * page (the demo stay has no reservation behind it), so a live key is refused until the signed /guest/<id> link
  * computes the bill on the server. A hold (security deposit) makes the whole payment manual-capture: the team
  * captures only what is owed after check-out (Stripe allows a partial capture) and the rest is released.
  */
-import type { SqlFn } from './accounts.ts';
+import { stripePublishableKey, type SqlFn } from './accounts.ts';
 import { stripeCall, stripeKey } from './payouts.ts';
 import { toCents } from '../../src/lib/payouts.ts';
 
@@ -20,6 +24,12 @@ type Line = { label: string; amount: number; kind: 'charge' | 'hold' | 'request'
 const bad = (message: string, status = 400) => Response.json({ ok: false, message }, { status });
 // Where Stripe may send the guest back: only the portal's own pages, on this host.
 const portalPath = (p: unknown): p is string => typeof p === 'string' && /^\/(crew\/guest-demo|guest\/)[^\s]*$/.test(p) && p.length < 600;
+
+/** The publishable key, only when it is the same mode as the secret key (a test page never meets a live key). */
+async function embedKey(sql: SqlFn, mode: 'test' | 'live') {
+  const pk = await stripePublishableKey(sql);
+  return pk && pk.startsWith(`pk_${mode}_`) ? pk : null;
+}
 
 async function sandbox(sql: SqlFn, encryptionKey: string) {
   const k = await stripeKey(sql, encryptionKey).catch(() => null);
@@ -31,7 +41,7 @@ async function sandbox(sql: SqlFn, encryptionKey: string) {
 export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: Request): Promise<Response> {
   const k = await sandbox(sql, encryptionKey);
   if (k instanceof Response) return k;
-  const b = await request.json().catch(() => ({})) as { lines?: Line[]; email?: string; back?: string };
+  const b = await request.json().catch(() => ({})) as { lines?: Line[]; email?: string; back?: string; embedded?: boolean };
   const lines = (Array.isArray(b.lines) ? b.lines : []).filter(l => l && (l.kind === 'charge' || l.kind === 'hold'));
   if (!lines.length || lines.length > 8) return bad('Nothing to pay.');
   if (lines.some(l => typeof l.label !== 'string' || !(Number(l.amount) > 0) || Number(l.amount) > 5000)) return bad('A line is not valid.');
@@ -50,6 +60,12 @@ export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: 
     'payment_intent_data[description]': hold ? 'Guest check-in (deposit held, captured after check-out)' : 'Guest check-in',
   };
   if (hold) p['payment_intent_data[capture_method]'] = 'manual';
+  const pk = b.embedded ? await embedKey(sql, k.mode) : null;
+  if (pk) {
+    // Inside the portal: no redirect at all — the page hears onComplete and asks guestCheckoutState.
+    delete p.success_url; delete p.cancel_url;
+    p.ui_mode = 'embedded'; p.redirect_on_completion = 'never';
+  }
   if (typeof b.email === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(b.email)) p.customer_email = b.email;
   lines.forEach((l, i) => {
     p[`line_items[${i}][quantity]`] = 1;
@@ -60,8 +76,8 @@ export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: 
     if (d) p[`line_items[${i}][price_data][product_data][description]`] = d.slice(0, 200);
   });
   try {
-    const s = await stripeCall<{ id: string; url: string }>(k.key, 'POST', '/checkout/sessions', p);
-    return Response.json({ ok: true, url: s.url });
+    const s = await stripeCall<{ id: string; url: string | null; client_secret: string | null }>(k.key, 'POST', '/checkout/sessions', p);
+    return Response.json(pk ? { ok: true, id: s.id, clientSecret: s.client_secret, publishableKey: pk } : { ok: true, url: s.url });
   } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
 }
 
@@ -81,11 +97,12 @@ export async function guestCheckoutState(sql: SqlFn, encryptionKey: string, id: 
 export async function guestIdentity(sql: SqlFn, encryptionKey: string, request: Request): Promise<Response> {
   const k = await sandbox(sql, encryptionKey);
   if (k instanceof Response) return k;
-  const b = await request.json().catch(() => ({})) as { back?: string };
+  const b = await request.json().catch(() => ({})) as { back?: string; embedded?: boolean };
   if (!portalPath(b.back)) return bad('Bad return page.');
   const back = new URL(request.url).origin + b.back;
   try {
-    const v = await stripeCall<{ id: string; url: string }>(k.key, 'POST', '/identity/verification_sessions', {
+    const pk = b.embedded ? await embedKey(sql, k.mode) : null;
+    const v = await stripeCall<{ id: string; url: string; client_secret: string }>(k.key, 'POST', '/identity/verification_sessions', {
       type: 'document',
       'options[document][require_matching_selfie]': true,
       'options[document][allowed_types][0]': 'driving_license',
@@ -95,7 +112,7 @@ export async function guestIdentity(sql: SqlFn, encryptionKey: string, request: 
       // Stripe adds nothing to return_url: the page keeps the session id in the tab (sessionStorage) and checks it on return.
       return_url: `${back}${back.includes('?') ? '&' : '?'}verified=1`,
     });
-    return Response.json({ ok: true, url: v.url, id: v.id });
+    return Response.json(pk ? { ok: true, id: v.id, clientSecret: v.client_secret, publishableKey: pk } : { ok: true, url: v.url, id: v.id });
   } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
 }
 

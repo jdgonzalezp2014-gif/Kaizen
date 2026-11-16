@@ -229,10 +229,7 @@ function StayView({ stay, now, go, sent, choose, flow, prot, goStep }: { stay: G
       <h1 className="gx-title">{ic(stay.unitName)}</h1>
       <p className="gx-sub"><Icon n="bed" /> {n} {n === 1 ? 'night' : 'nights'} · <Icon n="users" /> {stay.guests} {stay.guests === 1 ? 'guest' : 'guests'}
         {stay.address && <> · <a href={mapsUrl(stay.address)} target="_blank" rel="noreferrer">Map</a></>}</p>
-      <div className="card gx-dates">
-        <div><span className="gx-k">Check-in</span><b>{dateLabel(stay.arrival)}</b><span className="note">{stay.checkInTime}</span></div>
-        <div><span className="gx-k">Checkout</span><b>{dateLabel(stay.departure)}</b><span className="note">{stay.checkOutTime}</span></div>
-      </div>
+      <Reservation stay={stay} choose={choose} />
     </section>
 
     {st.some(x => !x.done) && <CheckinProgress st={st} go={goStep} />}
@@ -248,6 +245,32 @@ function StayView({ stay, now, go, sent, choose, flow, prot, goStep }: { stay: G
     <h2 className="v-h g-h">Make it better <ExtrasHint /></h2>
     <Extras stay={stay} sent={sent} choose={choose} />
   </>;
+}
+
+/**
+ * The reservation box, drawn like Airbnb's booking card (boss, 2026-11-16: "the borders, like when you book on Airbnb"):
+ * one outlined box, check-in | checkout, guests under. Each date offers its change ("suggest the change") when the house
+ * offers it and the calendar allows: earlier arrival, later checkout, more nights — each opens that extra.
+ */
+function Reservation({ stay, choose }: { stay: GuestStay; choose: (k: Upsell['kind']) => void }) {
+  const may = (k: Upsell['kind']) => { const u = offered(stay).find(x => x.kind === k); return !!u && availability(stay, u).ok; };
+  const cell = (label: string, day: string, time: string, k: Upsell['kind'], ask: string) => {
+    const inner = <><span className="gx-k">{label}</span><b>{dateLabel(day)}</b><span className="note">{time}</span>
+      {may(k) && <span className="gx-ask">{ask} ›</span>}</>;
+    return may(k) ? <button className="gx-cell" onClick={() => choose(k)}>{inner}</button> : <div className="gx-cell">{inner}</div>;
+  };
+  const n = stay.guests;
+  return <div className="gx-resv">
+    <div className="gx-resv-row">
+      {cell('Check-in', stay.arrival, stay.checkInTime, 'early-checkin', 'Arrive earlier')}
+      {cell('Checkout', stay.departure, stay.checkOutTime, 'late-checkout', 'Leave later')}
+    </div>
+    <div className="gx-resv-row gx-resv-one">
+      {may('extra-nights') ? <button className="gx-cell" onClick={() => choose('extra-nights')}><span className="gx-k">Guests</span>
+        <b>{n} {n === 1 ? 'guest' : 'guests'}</b><span className="gx-ask">Stay longer ›</span></button>
+        : <div className="gx-cell"><span className="gx-k">Guests</span><b>{n} {n === 1 ? 'guest' : 'guests'}</b></div>}
+    </div>
+  </div>;
 }
 
 const ExtrasHint = () => <Hint>Pick an extra and send the request. We confirm it first, then charge the card you used at check-in. Nothing is charged when you ask. Extra nights follow the house's live calendar.</Hint>;

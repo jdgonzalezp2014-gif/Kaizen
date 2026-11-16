@@ -269,6 +269,16 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   tested): free nights each side (max 7), turnIn/turnOut; a night Hostaway does not list counts as taken. P2-1406 on 11-15: 0 before
   (turnover), 4 after.
 
+### Stripe inside the portal + Airbnb booking box (2026-11-16, the boss: "that it does not leave the portal")
+- **Embedded:** with a publishable key saved (Settings → Integrations → Stripe → "Inside the guest portal"), Pay mounts Stripe's
+  **Embedded Checkout** in the page (`ui_mode=embedded`, `redirect_on_completion=never`, onComplete → `?checkout=<cs>` state) and Identity
+  opens Stripe.js `verifyIdentity` over the page. No key (or migration 115 missing) → the hosted pages, as before. Loader: `src/components/stripe-js.ts`.
+- **Wallet domains:** `/api/stripe-domains` lists/registers Stripe payment-method domains with the account's own key (Apple Pay needs it per domain).
+  **kaizen-01v.pages.dev registered 2026-11-16 (sandbox): Apple Pay + Google Pay active.** Register the website subdomain when it exists.
+- **Migration 115** (`accounts.stripe_publishable_key`) — **NOT applied yet** (auto mode refused `npm run migrate`; the owner runs it).
+- **Booking box (`Reservation`):** Airbnb's outlined box — Check-in | Checkout, Guests under; each offers its change when offered and the
+  calendar allows: "Arrive earlier" → early check-in, "Leave later" → late checkout, "Stay longer" → extra nights.
+
 ### Open: guest messages sent by Kaizen instead of Hostaway (planned 2026-11-15, NOT started)
 
 - Plan: reservation webhook → welcome + signed portal link; reminders at T-3 / T-1 only if check-in not done; team alert T-1 6 PM;

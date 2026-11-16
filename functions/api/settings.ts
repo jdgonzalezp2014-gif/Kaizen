@@ -251,6 +251,13 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       await sql`UPDATE accounts SET stripe_secret_key_enc = ${await encrypt(key, env.ENCRYPTION_KEY)} WHERE id = 1`;
     }
     if (body.clearStripeKey === true) await sql`UPDATE accounts SET stripe_secret_key_enc = NULL WHERE id = 1`;
+    // The publishable key (2026-11-16): the guest portal shows Stripe's payment and ID check inside its own page. Not a secret.
+    if (typeof body.stripePublishableKey === 'string') {
+      const pk = body.stripePublishableKey.trim();
+      if (pk && !/^pk_test_[A-Za-z0-9]{10,200}$/.test(pk)) return Response.json({ ok: false, error: pk.startsWith('pk_live_') ? 'Test keys only for now (pk_test_…).' : 'That is not a Stripe publishable key (pk_test_…).' }, { status: 400 });
+      try { await sql`UPDATE accounts SET stripe_publishable_key = ${pk || null} WHERE id = 1`; }
+      catch { return Response.json({ ok: false, error: 'The database needs migration 115 first (npm run migrate).' }, { status: 409 }); }
+    }
     if (typeof body.geminiModel === 'string' && body.geminiModel.trim()) {
       await sql`UPDATE accounts SET gemini_model = ${body.geminiModel.trim()} WHERE id = 1`;
     }
