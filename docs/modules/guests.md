@@ -276,8 +276,9 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - **Wallet domains:** `/api/stripe-domains` lists/registers Stripe payment-method domains with the account's own key (Apple Pay needs it per domain).
   **kaizen-01v.pages.dev registered 2026-11-16 (sandbox): Apple Pay + Google Pay active.** Register the website subdomain when it exists.
 - **Migration 115** (`accounts.stripe_publishable_key`) — **NOT applied yet** (auto mode refused `npm run migrate`; the owner runs it).
-- **Booking box (`Reservation`):** Airbnb's outlined box — Check-in | Checkout, Guests under; each offers its change when offered and the
-  calendar allows: "Arrive earlier" → early check-in, "Leave later" → late checkout, "Stay longer" → extra nights.
+- **Booking box (`Reservation`):** Airbnb's outlined box — Check-in | Checkout, a thin gold "Extend stay" strip at its foot; each offers its
+  change only when offered and the calendar allows ("Arrive earlier" / "Leave later" / Extend stay → extra nights). Guests and pets are
+  small details in the line under the name (owner: little text, self-explanatory; locks say just "After check-in").
 
 ### Open: guest messages sent by Kaizen instead of Hostaway (planned 2026-11-15, NOT started)
 

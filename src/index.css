@@ -3494,3 +3494,8 @@ button.gx-cell { cursor: pointer; } button.gx-cell:hover { background: var(--tin
 .int-sub { font-size: 15px; margin: 18px 0 6px; padding-top: 14px; border-top: 1px solid var(--line); display: flex; align-items: center; gap: 6px; }
 .int-domains { list-style: none; margin: 0 0 8px; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .int-domains li { display: flex; flex-direction: column; }
+.gx-extend { width: 100%; display: flex; align-items: center; gap: 8px; padding: 10px 14px; border: 0; border-top: 1px solid var(--line-strong); border-radius: 0;
+  background: color-mix(in srgb, var(--accent) 7%, var(--card)); color: var(--accent); font: 600 14px/1.2 var(--g-text); text-align: left; cursor: pointer; }
+.gx-extend span { margin-left: auto; }
+.gx-extend svg { width: 16px; height: 16px; }
+.gx-extend:hover { background: color-mix(in srgb, var(--accent) 12%, var(--card)); }

@@ -26,7 +26,7 @@ export function CheckinProgress({ st, go }: { st: Step[]; go: (k: StepKey) => vo
     <span className="ci-prog-main">
       <span className="ci-eyebrow">Online check-in</span>
       <b className="ci-title">{next ? p.done === 0 ? 'Get ready for your stay' : 'Almost there' : 'You are checked in'}</b>
-      <span className="note">{next ? <><Icon n="lock" /> Door code and Wi-Fi open when you finish</> : <><Icon n="done" /> Everything is done</>}</span>
+      <span className="note">{next ? <><Icon n="lock" /> Unlocks door code & Wi-Fi</> : <><Icon n="done" /> Everything is done</>}</span>
     </span>
     {next && <button className="g-cta ci-prog-go" onClick={() => go(next)}>{p.done === 0 ? 'Start' : 'Continue'}</button>}
   </section>;

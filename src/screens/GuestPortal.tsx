@@ -201,7 +201,7 @@ const shortDay = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('e
 
 type Ck = { flow: Flow; prot: Protection; goStep: (k: StepKey | null) => void };
 type Entry = ReturnType<typeof entry>;
-const lockLine = (g: Entry) => g.open ? '' : g.why === 'steps' ? 'Opens when you finish check-in' : g.at ? `Opens ${whenLabel(g.at)}` : 'Opens before arrival';
+const lockLine = (g: Entry) => g.open ? '' : g.why === 'steps' ? 'After check-in' : g.at ? `Opens ${whenLabel(g.at)}` : 'Before arrival';
 
 /**
  * Stay — the home (2026-11-15 redesign, Airbnb's trip page in Apple's manners): the house and dates, the check-in
@@ -228,6 +228,7 @@ function StayView({ stay, now, go, sent, choose, flow, prot, goStep }: { stay: G
       </div>
       <h1 className="gx-title">{ic(stay.unitName)}</h1>
       <p className="gx-sub"><Icon n="bed" /> {n} {n === 1 ? 'night' : 'nights'} · <Icon n="users" /> {stay.guests} {stay.guests === 1 ? 'guest' : 'guests'}
+        {(stay.guest?.pets ?? 0) > 0 && <> · <Icon n="paw" /> {stay.guest!.pets} {stay.guest!.pets === 1 ? 'pet' : 'pets'}</>}
         {stay.address && <> · <a href={mapsUrl(stay.address)} target="_blank" rel="noreferrer">Map</a></>}</p>
       <Reservation stay={stay} choose={choose} />
     </section>
@@ -249,7 +250,7 @@ function StayView({ stay, now, go, sent, choose, flow, prot, goStep }: { stay: G
 
 /**
  * The reservation box, drawn like Airbnb's booking card (boss, 2026-11-16: "the borders, like when you book on Airbnb"):
- * one outlined box, check-in | checkout, guests under. Each date offers its change ("suggest the change") when the house
+ * one outlined box, check-in | checkout, a thin "Extend stay" strip under. Each date offers its change ("suggest the change") when the house
  * offers it and the calendar allows: earlier arrival, later checkout, more nights — each opens that extra.
  */
 function Reservation({ stay, choose }: { stay: GuestStay; choose: (k: Upsell['kind']) => void }) {
@@ -259,17 +260,12 @@ function Reservation({ stay, choose }: { stay: GuestStay; choose: (k: Upsell['ki
       {may(k) && <span className="gx-ask">{ask} ›</span>}</>;
     return may(k) ? <button className="gx-cell" onClick={() => choose(k)}>{inner}</button> : <div className="gx-cell">{inner}</div>;
   };
-  const n = stay.guests;
   return <div className="gx-resv">
     <div className="gx-resv-row">
       {cell('Check-in', stay.arrival, stay.checkInTime, 'early-checkin', 'Arrive earlier')}
       {cell('Checkout', stay.departure, stay.checkOutTime, 'late-checkout', 'Leave later')}
     </div>
-    <div className="gx-resv-row gx-resv-one">
-      {may('extra-nights') ? <button className="gx-cell" onClick={() => choose('extra-nights')}><span className="gx-k">Guests</span>
-        <b>{n} {n === 1 ? 'guest' : 'guests'}</b><span className="gx-ask">Stay longer ›</span></button>
-        : <div className="gx-cell"><span className="gx-k">Guests</span><b>{n} {n === 1 ? 'guest' : 'guests'}</b></div>}
-    </div>
+    {may('extra-nights') && <button className="gx-extend" onClick={() => choose('extra-nights')}><Icon n="calendar" /> Extend stay <span aria-hidden>›</span></button>}
   </div>;
 }
 
@@ -282,7 +278,7 @@ function Locked({ g, goStep, title, icon, lines = 4 }: { g: Entry; goStep: (k: S
     <span className="gx-blur" aria-hidden>{Array.from({ length: lines }, (_, i) => <i key={i} style={{ width: `${92 - (i % 3) * 17}%` }} />)}</span>
     <span className="gx-lock-over">
       <span className="gx-lock-badge"><Icon n="lock" /> {lockLine(g)}</span>
-      {!g.open && g.why === 'steps' && <button className="g-cta gx-cta-sm" onClick={() => goStep(null)}>Finish check-in</button>}
+      {!g.open && g.why === 'steps' && <button className="g-cta gx-cta-sm" onClick={() => goStep(null)}>Check in</button>}
     </span>
   </section>;
 }
