@@ -83,3 +83,9 @@ test('doorCodeFor: smart lock → reservation code, else the Repository code; fo
   assert.equal(doorCodeFor('None', null, null), null);
   assert.equal(doorCodeFor(null, ' ', '4821'), '4821');
 });
+
+test('portalFrom: blank Unit type falls back to Property type', () => {
+  assert.equal(portalFrom({ property_type: 'Apartment' }).unitType, 'apartment');
+  assert.equal(portalFrom({ property_type: 'House', unit_type: 'Room' }).unitType, 'room');
+  assert.equal(portalFrom({}).unitType, null);
+});

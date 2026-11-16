@@ -237,6 +237,16 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - **Sandbox only**: lines come from the page (demo stay), so a live key is refused (409). Before live: the signed `/guest/<id>` link,
   bill computed on the server, `guest_checkins` row + webhook. Hostaway's $12/night waiver still to remove first.
 
+### Repository = the portal's single source (owner, 2026-11-15)
+
+- Nothing is set per house inside the portal: lock type → door code (`doorCodeFor`), Unit type (blank → Property type),
+  protection values, **Guest services** (migration **112, not applied yet**): `svc_*` Offer Yes/No per extra (blank = offered,
+  "No" hides it — `notOfferedFrom` / `offered`), Mid-stay clean / Crib / Welcome basket price (blank = catalog). Early/late $20/h
+  everywhere, pet = Pet fee, extra nights = calendar price.
+- Coverage 2026-11-15 (active units): Wi-Fi + rules + access everywhere except LP-4217 / LP-4222 (no times, parking, rules,
+  access); houses have no `parking` text. Arrival guides: The Links (2 shared building guides) + Preston only — Cortland
+  (CL-*, Schlage, same complex) needs one shared guide like The Links (arrival photos + where the lockbox / fob is: owner).
+
 ### Rules
 
 - Pay state = `total − paid` (≤ 0 → paid); channel `airbnb`/`vrbo` → collected by the channel, no gate.

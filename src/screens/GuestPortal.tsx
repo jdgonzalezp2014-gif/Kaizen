@@ -12,7 +12,7 @@ import { Icon, ic } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, availability, choiceLine, mapsUrl, nights, priceOf, quote, ready, requestMode, upsellRequest,
+import { UPSELLS, availability, offered, choiceLine, mapsUrl, nights, priceOf, quote, ready, requestMode, upsellRequest,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
 import { FLOW_KEY, VS_KEY, doorCodeFor, doneFlow, entry, newFlow, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
 import { CheckinProgress, StepList, StepScreen } from './GuestCheckin.tsx';
@@ -201,7 +201,7 @@ function Extras({ stay, sent, choose }: { stay: GuestStay; sent: UpsellRequest[]
   const NO = { calendar: 'Not available for your dates', price: 'Ask us for a price', short: 'For stays of 4+ nights' } as const;
   return <>
     <h2 className="v-h g-h">Extras <Hint>Pick an extra and send the request. We confirm it first, then charge the card you used at check-in. Nothing is charged when you ask.</Hint></h2>
-    <Carousel label="Extras" of={of}>{UPSELLS.map(u => {
+    <Carousel label="Extras" of={of}>{offered(stay).map(u => {
       const a = availability(stay, u);
       const asked = sent.some(r => r.kind === u.kind);
       return (
@@ -392,7 +392,7 @@ export function GuestDemoPage() {
   const house = useHouse();
   // Demo: a picked house's code follows its Lock type; the sample 4821 stands in for Hostaway's per-stay code unless the record has its own.
   const stay: GuestStay = house.data ? { ...demoStay(k), doorCode: doorCodeFor(house.data.lockType, house.data.guestCode, house.data.guestCode ? null : '4821'), unitName: house.data.unitName, photo: house.data.photo ?? null, unitType: house.data.unitType ?? 'house', protection: house.data.protection ?? null, address: house.data.guide?.address ?? null,
-    guide: house.data.guide, prices: house.data.prices } : demoStay(k);
+    guide: house.data.guide, prices: house.data.prices, notOffered: house.data.notOffered ?? [] } : demoStay(k);
   return <GuestPortal key={`${k}-${house.unit}`} stay={stay} send={async () => ({ ok: true })}
     demoBar={<div className="g-demo" role="group" aria-label="Demo stay">
       <span className="note"><Icon n="eye" /> Demo</span>
@@ -408,7 +408,7 @@ export function GuestDemoPage() {
  * The demo with a real house (2026-11-09): its guide and prices from the Repository via /api/guest-guide,
  * which answers only behind the staff sign-in — on /crew/guest-demo (no sign-in) the picker simply never shows.
  */
-type HouseData = { unitName: string; photo?: string | null; lockType?: string | null; guestCode?: string | null; unitType?: GuestStay['unitType'] | null; protection?: GuestStay['protection']; guide: GuestGuide | null; prices: GuestStay['prices'] };
+type HouseData = { unitName: string; notOffered?: GuestStay['notOffered']; photo?: string | null; lockType?: string | null; guestCode?: string | null; unitType?: GuestStay['unitType'] | null; protection?: GuestStay['protection']; guide: GuestGuide | null; prices: GuestStay['prices'] };
 function useHouse() {
   const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
   const [unit, setUnit] = useState(() => new URLSearchParams(location.search).get('unit') ?? '');

@@ -115,3 +115,12 @@ test('request mode: by 8 PM the day before â†’ automatic; later or a turnover â†
   assert.equal(r.status, 'confirmed');
   assert.equal(r.quote, 40);
 });
+
+test('Guest services: "No" hides an extra, blank offers it; prices from the record', async () => {
+  const { notOfferedFrom, offered, pricesFrom } = await import('./guest-portal.ts');
+  const off = notOfferedFrom({ svc_welcome: 'No', svc_crib: 'Yes', svc_pet: '' });
+  assert.deepEqual(off, ['welcome']);
+  assert.ok(!offered({ notOffered: off }).some(u => u.kind === 'welcome'));
+  assert.equal(offered({}).length, 7);
+  assert.deepEqual(pricesFrom({ mid_clean_price: '91', welcome_price: 40 }), { 'mid-clean': 91, welcome: 40 });
+});

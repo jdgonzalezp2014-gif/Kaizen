@@ -32,8 +32,11 @@ export function protectionFor(type: UnitType, o: ProtectionOverride = {}): Prote
 export function portalFrom(vals: Record<string, unknown> | null | undefined): { unitType: UnitType | null; protection: ProtectionOverride } {
   const num = (v: unknown) => { const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v.replace(/[$,\s]/g, '')) : NaN; return Number.isFinite(n) && n >= 0 ? n : null; };
   const t = typeof vals?.unit_type === 'string' ? vals.unit_type.toLowerCase() : '';
+  // Blank Unit type → the record's existing Property type (Apartment, House, Condo, Private room…), so nothing is typed twice.
+  const pt = typeof vals?.property_type === 'string' ? vals.property_type.toLowerCase() : '';
+  const fromPt: UnitType | null = /room/.test(pt) ? 'room' : /apartment|condo|loft|studio|flat/.test(pt) ? 'apartment' : /house|home|villa|townhouse|cottage|cabin/.test(pt) ? 'house' : null;
   return {
-    unitType: t === 'room' || t === 'apartment' || t === 'house' ? t : null,
+    unitType: t === 'room' || t === 'apartment' || t === 'house' ? t : fromPt,
     protection: { waiverPrice: num(vals?.waiver_price), waiverCap: num(vals?.waiver_cap), depositHold: num(vals?.deposit_hold) },
   };
 }
@@ -114,7 +117,7 @@ export function bill(f: Flow, s: GuestStay, p: Protection, now: Date = new Date(
 
 /** Which extras the stay can take during check-in (the calendar and the stay length still decide). */
 export function flowExtras(s: GuestStay) {
-  return FLOW_EXTRAS.map(k => UPSELLS.find(u => u.kind === k)!).filter(u => availability(s, u).ok && priceOf(s, u) != null)
+  return FLOW_EXTRAS.filter(k => !s.notOffered?.includes(k)).map(k => UPSELLS.find(u => u.kind === k)!).filter(u => availability(s, u).ok && priceOf(s, u) != null)
     .map(u => ({ u, turnover: (availability(s, u) as { flag?: string }).flag === 'turnover' }));
 }
 

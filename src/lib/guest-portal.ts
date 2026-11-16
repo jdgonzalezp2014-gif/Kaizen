@@ -50,6 +50,8 @@ export interface GuestStay {
   guide?: GuestGuide | null;
   /** House prices from the Repository's Fees, overriding the UPSELLS placeholders. */
   prices?: Partial<Record<UpsellKind, number>>;
+  /** Extras the unit does not offer (Repository "Guest services" = No) — never shown. */
+  notOffered?: UpsellKind[];
 }
 
 /**
@@ -97,8 +99,20 @@ export function guideFrom(vals: Record<string, unknown> | null | undefined): Gue
 export function pricesFrom(vals: Record<string, unknown> | null | undefined): Partial<Record<UpsellKind, number>> {
   const out: Partial<Record<UpsellKind, number>> = {};
   const pet = num(vals?.pet_fee); if (pet != null) out.pet = pet;
+  const mid = num(vals?.mid_clean_price); if (mid != null) out['mid-clean'] = mid;
+  const crib = num(vals?.crib_price); if (crib != null) out.crib = crib;
+  const welcome = num(vals?.welcome_price); if (welcome != null) out.welcome = welcome;
   return out;
 }
+
+/** Repository "Guest services" (112): the extras a unit does NOT offer — "No" only; blank = offered. */
+const SVC_KEY: Record<UpsellKind, string> = { 'extra-nights': 'svc_extra_nights', 'early-checkin': 'svc_early_checkin', 'late-checkout': 'svc_late_checkout',
+  'mid-clean': 'svc_mid_clean', pet: 'svc_pet', crib: 'svc_crib', welcome: 'svc_welcome' };
+export function notOfferedFrom(vals: Record<string, unknown> | null | undefined): UpsellKind[] {
+  return (Object.keys(SVC_KEY) as UpsellKind[]).filter(k => /^no$/i.test(String(vals?.[SVC_KEY[k]] ?? '').trim()));
+}
+/** The extras this stay's unit offers (the catalog minus the Repository's "No"). */
+export const offered = (s: Pick<GuestStay, 'notOffered'>) => UPSELLS.filter(u => !s.notOffered?.includes(u.kind));
 
 /** The price a card shows and quotes: the house's, else the catalog placeholder. */
 export const priceOf = (s: Pick<GuestStay, 'prices'>, u: Upsell) => s.prices?.[u.kind] ?? u.price;

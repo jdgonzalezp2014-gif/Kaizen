@@ -12,7 +12,7 @@ import { fetchListingCover } from '../_lib/hostaway.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
 import { UNIT_TABLES } from '../../src/lib/repo-checks.ts';
-import { emptyGuide, guideFrom, pricesFrom } from '../../src/lib/guest-portal.ts';
+import { emptyGuide, guideFrom, notOfferedFrom, pricesFrom } from '../../src/lib/guest-portal.ts';
 import { portalFrom } from '../../src/lib/guest-checkin.ts';
 import { composeGuide, tokenVals, type CheckinStep, type HouseItem } from '../../src/lib/checkin.ts';
 
@@ -38,7 +38,7 @@ export async function guestHouse(sql: SqlFn, unitId: string, encryptionKey?: str
   const portal = portalFrom(rec?.vals);
   // Door code by Lock type (doorCodeFor): staff-only route; the guest's signed link must send it only once entry() opens.
   const str = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim() : null;
-  return { unitName: u.name, photo, lockType: str(rec?.vals?.lock_type), guestCode: str(rec?.vals?.guest_code), unitType: portal.unitType, protection: portal.protection, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals) };
+  return { unitName: u.name, photo, lockType: str(rec?.vals?.lock_type), guestCode: str(rec?.vals?.guest_code), unitType: portal.unitType, protection: portal.protection, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals), notOffered: notOfferedFrom(rec?.vals) };
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
