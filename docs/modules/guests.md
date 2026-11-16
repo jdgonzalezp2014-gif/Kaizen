@@ -218,7 +218,7 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - **Migration 110** (Repository section "Guest portal": Portal photo, Unit type, Damage waiver price / covers up to,
   Security deposit hold → `portalFrom()`): applied 2026-11-15 — blanks read as the unit type's defaults.
 - **Door code by Lock type (owner, 2026-11-15)** — `doorCodeFor(lockType, guestCode, reservationCode)`: smart lock → the reservation's
-  Hostaway `doorCode`, else the record's **Guest check-in code** (`guest_code`, migration **111 — not applied yet**; Preston's Yale has no
+  Hostaway `doorCode`, else the record's **Guest check-in code** (`guest_code`, migration 111, applied; Preston's Yale has no
   Hostaway code); Access Fob / Keys → no code, the guide's steps (lockbox) are the way in, locked until check-in + pay are done.
   Never configured per house in the portal. The signed guest link must send the code only once `entry()` opens.
 
@@ -240,7 +240,7 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 ### Repository = the portal's single source (owner, 2026-11-15)
 
 - Nothing is set per house inside the portal: lock type → door code (`doorCodeFor`), Unit type (blank → Property type),
-  protection values, **Guest services** (migration **112, not applied yet**): `svc_*` Offer Yes/No per extra (blank = offered,
+  protection values, **Guest services** (migration 112, applied): `svc_*` Offer Yes/No per extra (blank = offered,
   "No" hides it — `notOfferedFrom` / `offered`), Mid-stay clean / Crib / Welcome basket price (blank = catalog). Early/late $20/h
   everywhere, pet = Pet fee, extra nights = calendar price.
 - Coverage 2026-11-15 (active units): Wi-Fi + rules + access everywhere except LP-4217 / LP-4222 (no times, parking, rules,
