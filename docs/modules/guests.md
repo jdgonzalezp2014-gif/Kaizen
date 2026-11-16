@@ -254,6 +254,15 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   Carries the lockbox code and Wi-Fi: hand it only to who should see them. Mint with a one-off script (`.env.local` ENCRYPTION_KEY).
   P2-1406 link minted 2026-11-15, expires 2026-11-29.
 
+### Open: guest messages sent by Kaizen instead of Hostaway (planned 2026-11-15, NOT started)
+
+- Plan: reservation webhook → welcome + signed portal link; reminders at T-3 / T-1 only if check-in not done; team alert T-1 6 PM;
+  "done" confirmation; code/guide open on arrival; check-out reminder; review ask. Sent through Hostaway's conversation API
+  (same channel thread). Airbnb: no waiver/deposit (AirCover); check-in required vs invited = owner.
+- **Owner: messages must never fail** — the cron / Slack path has missed before, so Hostaway's automated messages stay ON until
+  Kaizen's sender is proven: outbox table + retries + a log per message, draft mode side by side first, then replace one message
+  at a time (arrival instructions first). Grows with the restructure, not as a separate project.
+
 ### Rules
 
 - Pay state = `total − paid` (≤ 0 → paid); channel `airbnb`/`vrbo` → collected by the channel, no gate.
