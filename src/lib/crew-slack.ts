@@ -9,10 +9,11 @@
  * Off until switched on in Settings → Slack → Cleaners' channels.
  */
 import { esc } from './slack.ts';
-import { bedsWord, dayLabel, type Lang } from './crew-i18n.ts';
+import { bedsWord, dayLabel, movementFor, type Lang } from './crew-i18n.ts';
+import type { Movement } from './crew.ts';
 
-export interface CrewChannels { reminders?: boolean; morning?: string; evening?: string; helperNotices?: boolean }
-export const DEFAULT_CREW_CHANNELS: Required<CrewChannels> = { reminders: false, morning: '09:00', evening: '18:00', helperNotices: false };
+export interface CrewChannels { reminders?: boolean; morning?: string; evening?: string; helperNotices?: boolean; changes?: boolean }
+export const DEFAULT_CREW_CHANNELS: Required<CrewChannels> = { reminders: false, morning: '09:00', evening: '18:00', helperNotices: false, changes: false };
 export const crewChannelsOf = (c?: CrewChannels | null): Required<CrewChannels> => ({ ...DEFAULT_CREW_CHANNELS, ...(c ?? {}) });
 
 const nextDay = (d: string) => new Date(Date.parse(`${d}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
@@ -30,6 +31,14 @@ export function dueCrewReminders(now: { day: string; hm: string }, cfg?: CrewCha
   if (c.morning && now.hm >= c.morning && now.hm < '13:00') out.push({ kind: 'today', day: now.day });
   if (c.evening && now.hm >= c.evening && now.hm < '23:30') out.push({ kind: 'tomorrow', day: nextDay(now.day) });
   return out;
+}
+
+/**
+ * §175 (owner, 2026-11-15): changes to a cleaner's schedule are told in their channel as they happen —
+ * checked every quarter hour in the day (7 AM – 9:30 PM team time); a change at night waits for the morning.
+ */
+export function dueCrewChanges(now: { hm: string }, cfg?: CrewChannels | null): boolean {
+  return crewChannelsOf(cfg).changes && now.hm >= '07:00' && now.hm < '21:30';
 }
 
 type Block = Record<string, unknown>;
@@ -66,7 +75,7 @@ const W = {
     checkout: 'checkout', midStay: '🧹 mid-stay clean',
     ready: (t: string, ci: boolean) => `⏰ ready by ${t}${ci ? ' (next guest checks in)' : ''}`, deep: '🧽 deep',
     steps: 'At each clean: 1 📷 photos BEFORE · 2 🧴 what you took from storage · 3 📷 photos AFTER · 4 ✅ mark it done — in Options… on your page. If something changes, your page has the latest.',
-    open: 'Open my page',
+    open: 'Open my page', changes: '📣 Changes to your schedule',
     stage: { before: 'BEFORE', after: 'AFTER' }, photos: (n: number) => `${n} photo${n === 1 ? '' : 's'}`,
     drive: 'Open in Drive', extra: 'added an extra:', declined: "can't do it", reply: '💬 The team answers in this thread.',
     took: 'took from storage:', nothing: 'took nothing from storage', done: 'marked it ✅ done', reopened: 'reopened it ↩️',
@@ -78,7 +87,7 @@ const W = {
     checkout: 'salida', midStay: '🧹 limpieza durante la estadía',
     ready: (t: string, ci: boolean) => `⏰ lista a las ${t}${ci ? ' (entra el siguiente huésped)' : ''}`, deep: '🧽 profunda',
     steps: 'En cada limpieza: 1 📷 fotos ANTES · 2 🧴 lo que tomaste del storage · 3 📷 fotos DESPUÉS · 4 ✅ marcar completada — en Opciones… de tu página. Si algo cambia, tu página tiene lo último.',
-    open: 'Abrir mi página',
+    open: 'Abrir mi página', changes: '📣 Cambios en tu horario',
     stage: { before: 'ANTES', after: 'DESPUÉS' }, photos: (n: number) => `${n} ${n === 1 ? 'foto' : 'fotos'}`,
     drive: 'Abrir en Drive', extra: 'agregó un extra:', declined: 'no puede hacerla', reply: '💬 El equipo responde en este hilo.',
     took: 'tomó del storage:', nothing: 'no tomó nada del storage', done: 'la marcó ✅ completada', reopened: 'la reabrió ↩️',
@@ -125,4 +134,15 @@ export function crewHelperMessage(lang: Lang, e: HelperEvent, todo?: boolean) {
     : `${w.what[e.what] ?? e.what}${e.priority && w.urg[e.priority] ? ` (${w.urg[e.priority]})` : ''} — ${who}: ${esc(e.text)}`;
   // A to-do behind it: a reply in the thread is a comment on it (§153), so it can be followed up there.
   return { text: line.replace(/\*/g, ''), blocks: [section(line), ...(todo ? [context(w.reply)] : [])] };
+}
+
+/** What moved on a cleaner's schedule since they were last told (§175), in their language. */
+export function crewChangesMessage(lang: Lang, moves: Movement[], appUrl?: string) {
+  const w = W[lang];
+  const icon: Record<Movement['kind'], string> = { added: '➕', moved: '⇢', time: '◷', removed: '✕' };
+  const lines = moves.map(m => `${icon[m.kind]} ${esc(movementFor(lang, m))}`);
+  return { text: `${w.changes}: ${moves.map(m => movementFor(lang, m)).join(' · ')}`, blocks: [
+    section(`*${w.changes}*\n${lines.join('\n')}`),
+    ...(appUrl ? [context(`<${appUrl}/|${w.open}>`)] : [])
+  ] };
 }

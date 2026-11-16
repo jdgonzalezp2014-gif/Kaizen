@@ -4629,3 +4629,11 @@ than three houses the same day, one goes to Wilson; every apartment to Wilson.
   production changed 3 cleans past the held window (CL1339 and P2-1304 → Wilson, Quest → Veronica).
 - Kept as they are: hand overrides, held picks within `crew_auto_days` (already on a cleaner's page), carried cleans.
 
+## §175 — Cleaners are told in their channel when their schedule changes (2026-11-15)
+
+Owner, after the switch to zones (§174): a cleaner must hear about a change without opening their page (Veronica had a
+house tomorrow). That evening tomorrow's reminder was sent again by hand to both channels. Built: `crewChannels.changes`,
+checked every 15 minutes in the day against `crew_notified` (114) — the page's "Changes since" comparison, but measured
+from what this cleaner was last told, not from the daily snapshot. Nights wait for 7 AM. Reassigned reads "cancelled" to the
+one who lost it (§134 rule).
+

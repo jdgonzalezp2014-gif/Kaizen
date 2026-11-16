@@ -13,7 +13,7 @@ import { once } from './clean-slack.ts';
 import { cleanerSchedule } from './slack-digest.ts';
 import { crewChannelsOf, crewDayMessage, crewHelperMessage, type HelperEvent } from '../../src/lib/crew-slack.ts';
 
-const langOf = async (sql: SqlFn, name: string) =>
+export const langOf = async (sql: SqlFn, name: string) =>
   ((await sql`SELECT lang FROM cleaners WHERE account_id = 1 AND name = ${name}` as { lang: 'en' | 'es' }[])[0]?.lang) ?? 'en';
 
 /**

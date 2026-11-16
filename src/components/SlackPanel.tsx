@@ -238,6 +238,10 @@ function Cleaners({ cfg, busy, run, onSaved }: {
           {' '}Tell each cleaner, in their channel, what they and their helpers report</label>
           <Hint>Photos, what they took from storage, done, problems, needs, extras. To follow up there: the team’s reply in a request’s thread
             is a comment on its to-do; it is still managed in Kaizen.</Hint></div>
+        <div className="crew-opt"><label className="check"><input type="checkbox" checked={cc.changes} onChange={e => setCc(p => ({ ...p, changes: e.target.checked }))} />
+          {' '}Tell each cleaner when their schedule changes</label>
+          <Hint>A clean given to them, taken off them, moved to another day or a new checkout time — among what they see on their page.
+            Checked every 15 minutes from 7 AM to 9:30 PM; a change at night is told in the morning. Their own decline is not repeated.</Hint></div>
       </div>
       <div className="button-row">
         <button className="small" disabled={busy} onClick={() => void run({ action: 'save', config: { ...cfg, crewChannels: cc } }, () => 'Cleaners’ channels saved.').then(onSaved)}>

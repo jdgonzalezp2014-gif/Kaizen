@@ -87,7 +87,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         } : s.config.taskCheck,
         // §134: the cleaners' channels — reminders at two local times, and their helpers' reports.
         crewChannels: c.crewChannels && typeof c.crewChannels === 'object' ? {
-          reminders: !!c.crewChannels.reminders, helperNotices: !!c.crewChannels.helperNotices,
+          reminders: !!c.crewChannels.reminders, helperNotices: !!c.crewChannels.helperNotices, changes: !!c.crewChannels.changes,
           // A cleared time = that reminder off (owner, Oct 2026: only tomorrow's, at 6 PM).
           morning: c.crewChannels.morning === '' ? '' : /^([01]\d|2[0-3]):[0-5]\d$/.test(String(c.crewChannels.morning)) ? String(c.crewChannels.morning) : '09:00',
           evening: c.crewChannels.evening === '' ? '' : /^([01]\d|2[0-3]):[0-5]\d$/.test(String(c.crewChannels.evening)) ? String(c.crewChannels.evening) : '18:00'

@@ -20,9 +20,10 @@ import { digestFacts } from '../_lib/slack-digest.ts';
 import { eventsOf, DEFAULT_DIGEST, DEFAULT_TASK_CHECK, teamTz, digestMessage, dmTarget, dueDigests, dueTaskChecks, esc, helpUrlOf, localNow, taskCheckMessage } from '../../src/lib/slack.ts';
 import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
 import { remindCleaners } from '../_lib/crew-slack.ts';
+import { tellScheduleChanges } from '../_lib/crew-changes.ts';
 import { handymenDay } from '../_lib/vendor-slack.ts';
 import { postCleanDay } from '../_lib/clean-slack.ts';
-import { dueCrewReminders } from '../../src/lib/crew-slack.ts';
+import { dueCrewChanges, dueCrewReminders } from '../../src/lib/crew-slack.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { loadOps, pushHostNotes, reconcileRecent, recordCleanings } from '../_lib/ops.ts';
 import { pullAll } from '../_lib/hostaway-tasks.ts';
@@ -183,6 +184,18 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     } catch (e) {
       await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${notesKey}`;
       notes = { error: e instanceof Error ? e.message : String(e) };
+    }
+  }
+
+  // §175: changes to each cleaner's schedule, in their channel — every quarter hour of the day, on a tick
+  // with no Host Notes pass (both read the board). It is that tick's heavy job: the rest waits for the next one.
+  const quarter = new Date(Math.floor(Date.now() / 9e5) * 9e5).toISOString().slice(0, 16);
+  if (notes === null && dueCrewChanges(localNow(teamTz(s.config)), s.config.crewChannels)
+      && (await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`crewchanges:${quarter}`}) ON CONFLICT DO NOTHING RETURNING key`).length) {
+    try { return Response.json({ ok: true, sent: out, nudged, hour, changes: await tellScheduleChanges(sql, s, env.ENCRYPTION_KEY) }); }
+    catch (e) {
+      await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${`crewchanges:${quarter}`}`;
+      return Response.json({ ok: true, sent: out, nudged, hour, changes: { error: e instanceof Error ? e.message : String(e) } });
     }
   }
 

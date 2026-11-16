@@ -115,6 +115,12 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   never fails the report. Field to-dos (problems, needs with priority, "Check stock") are announced
   like app-created work.
 - DMs to owners via People mapping.
+- **Schedule changes in the cleaners' channels (§175, owner 2026-11-15)** — `crewChannels.changes` (Settings → Slack → 6,
+  on in production): every quarter hour 07:00–21:30 team time, on a tick with no Host Notes pass (it is that tick's heavy job,
+  `crewchanges:<UTC quarter>` in `slack_sent`), `tellScheduleChanges` (functions/_lib/crew-changes.ts) diffs each cleaner's
+  visible schedule against `crew_notified` (114: what they were last told) with `scheduleMovements` → "📣 Changes to your
+  schedule / Cambios en tu horario": ➕ new, ⇢ moved, ◷ time, ✕ cancelled. Their own decline is not repeated; a failed post keeps
+  the old baseline (told next time); the first check per cleaner only records.
 - **Cleaners' channels (§134)**, `crewChannels` (**off by default**; Settings → Slack → 6): in each
   cleaner's own channel, in their language (`src/lib/crew-slack.ts`): **today's cleans at 09:00 and
   tomorrow's at 18:00** (team time, Central; windows until 13:00 / 23:30), only on days they have

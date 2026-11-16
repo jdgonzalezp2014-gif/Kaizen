@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { crewDayMessage, crewHelperMessage, dueCrewReminders, readyBy } from './crew-slack.ts';
+import { crewChangesMessage, crewDayMessage, crewHelperMessage, dueCrewChanges, dueCrewReminders, readyBy } from './crew-slack.ts';
 
 test('cleaners’ reminders (§134): off unless on; today from 9 until 1 PM, tomorrow from 6 PM until 11:30 PM', () => {
   assert.deepEqual(dueCrewReminders({ day: '2026-10-12', hm: '09:05' }, {}), []);
@@ -49,4 +49,19 @@ test('ready by: the next check-in that day, else 4 PM, nothing after a late chec
   assert.match(crewHelperMessage('en', { by: 'Irene', unit: 'A', kind: 'extra', amount: 20, description: 'Oven' }).text, /💵 Irene · A added an extra: \$20 — Oven/);
   assert.match(crewHelperMessage('en', { by: 'Luz', unit: 'T', kind: 'report', what: 'problem', text: 'Leak <sink>', priority: 'urgent' }).text,
     /⚠️ Something is wrong \(🔴 urgent\) — Luz · T: Leak &lt;sink&gt;/);
+});
+
+test('§175: schedule changes are checked in the day only, and only when switched on', () => {
+  assert.equal(dueCrewChanges({ hm: '08:00' }, { changes: true }), true);
+  assert.equal(dueCrewChanges({ hm: '06:55' }, { changes: true }), false);
+  assert.equal(dueCrewChanges({ hm: '21:30' }, { changes: true }), false);
+  assert.equal(dueCrewChanges({ hm: '08:00' }, {}), false);
+});
+
+test('§175: the changes message, in the cleaner\'s language', () => {
+  const m = crewChangesMessage('es', [{ kind: 'added', key: '1', unit: 'Quest', date: '2026-11-24' },
+                                      { kind: 'removed', key: '2', unit: 'CL1339', date: '2026-11-23', why: 'reassigned' }]);
+  assert.match(m.text, /Cambios en tu horario/);
+  assert.match(m.text, /Nueva: Quest/);
+  assert.match(m.text, /CL1339 .*cancelada/);
 });
