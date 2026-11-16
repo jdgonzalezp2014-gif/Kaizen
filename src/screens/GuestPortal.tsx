@@ -415,9 +415,11 @@ function useHouse() {
   const [data, setData] = useState<HouseData | null>(null);
   useEffect(() => { fetch('/api/guest-guide').then(r => r.ok ? r.json() as Promise<{ units?: { id: string; name: string }[] }> : null).then(j => j?.units && setUnits(j.units)).catch(() => undefined); }, []);
   useEffect(() => {
-    if (!unit) { setData(null); return; }
+    // An open signed link (?house=<token>, guest-demo.ts) loads its one unit without sign-in.
+    const signed = new URLSearchParams(location.search).get('house');
+    if (!unit && !signed) { setData(null); return; }
     let live = true;
-    fetch(`/api/guest-guide?unit=${encodeURIComponent(unit)}`).then(r => r.ok ? r.json() as Promise<HouseData> : null).then(j => { if (live) setData(j?.unitName ? j : null); }).catch(() => undefined);
+    fetch(signed ? `/api/report-link?house=${encodeURIComponent(signed)}` : `/api/guest-guide?unit=${encodeURIComponent(unit)}`).then(r => r.ok ? r.json() as Promise<HouseData> : null).then(j => { if (live) setData(j?.unitName ? j : null); }).catch(() => undefined);
     return () => { live = false; };
   }, [unit]);
   const pick = (id: string) => { setUnit(id); const u = new URL(location.href); if (id) u.searchParams.set('unit', id); else u.searchParams.delete('unit'); history.replaceState(history.state, '', u); };

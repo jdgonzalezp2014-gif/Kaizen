@@ -802,7 +802,11 @@ export async function uploadCheckinPhoto(unit: string, file: File): Promise<{ ok
   const r = await fetch('/api/checkin-photo', { method: 'POST', body: f });
   return await r.json().catch(() => ({ ok: false, message: `HTTP ${r.status}` })) as { ok: true; id: string } | { ok: false; message?: string };
 }
-export const checkinPhotoUrl = (id: string) => `/api/checkin-photo?id=${encodeURIComponent(id)}`;
+/** On an open demo link (?house=<signed>) photos come through the public door with the same token. */
+export const checkinPhotoUrl = (id: string) => {
+  const h = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('house') : null;
+  return h ? `/api/report-link?house=${encodeURIComponent(h)}&photo=${encodeURIComponent(id)}` : `/api/checkin-photo?id=${encodeURIComponent(id)}`;
+};
 export const getMissingData = () =>
   call<{ ok: true; units: import('./lib/missing-data.ts').UnitGaps[]; counts: Record<import('./lib/missing-data.ts').Severity, number>;
          hostawayError: string | null; rules: MissingRule[]; at: string } | { ok: false; message?: string }>('/api/missing-data');
