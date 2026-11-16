@@ -3379,3 +3379,15 @@ p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }
 .int-body .card { border: 0; box-shadow: none; padding: 0; margin: 0; background: transparent; }
 .int-body .card + .card { margin-top: 16px; padding-top: 16px; border-top: 1px dashed var(--line); }
 .int-body .card > h2 { font-size: 15px; color: var(--muted); }
+
+/* Guest portal backdrop (owner, 2026-11-15, for the boss's demo): not a flat black — a warm, barely-there lift
+   behind the top and a fainter one low on the other side, like a lit room. A fixed layer (iOS ignores
+   background-attachment: fixed), under everything, never catching taps. */
+html:root.guest-brand body { background: var(--bg); }
+html:root.guest-brand body::before {
+  content: ''; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background:
+    radial-gradient(120% 70% at 50% -10%, rgb(228 179 119 / .075), transparent 60%),
+    radial-gradient(90% 60% at 100% 110%, rgb(228 179 119 / .04), transparent 65%),
+    linear-gradient(180deg, #17110d 0%, #110c09 55%, #0d0907 100%);
+}
