@@ -139,7 +139,15 @@ function useGuestTheme(on = true): [Theme, (t: Theme) => void] {
     const was = root.getAttribute('data-theme');
     root.classList.add('guest-brand');
     root.setAttribute('data-theme', theme);
-    return () => { root.classList.remove('guest-brand'); if (was) root.setAttribute('data-theme', was); };
+    // Phones' forced dark ignores CSS alone in some browsers; the meta says the page already handles both.
+    const meta = (name: string, content: string) => {
+      let m = document.querySelector<HTMLMetaElement>(`meta[name="${name}"]`);
+      if (!m) { m = document.createElement('meta'); m.name = name; document.head.appendChild(m); }
+      m.content = content; return m;
+    };
+    const cs = meta('color-scheme', theme === 'light' ? 'only light' : 'dark');
+    const tc = meta('theme-color', theme === 'light' ? '#ffffff' : '#000000');
+    return () => { root.classList.remove('guest-brand'); cs.remove(); tc.remove(); if (was) root.setAttribute('data-theme', was); };
   }, [on, theme]);
   return [theme, (t: Theme) => { setPicked(t); try { localStorage.setItem(THEME_KEY, t); } catch { /* no storage */ } }];
 }

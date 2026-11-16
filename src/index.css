@@ -3094,7 +3094,8 @@ html:root.guest-brand[data-theme='dark'], .g-scope {
   --shadow: none; --shadow-2: 0 4px 14px rgb(0 0 0 / .5); --shadow-3: 0 18px 48px rgb(0 0 0 / .7);
 }
 html:root.guest-brand[data-theme='light'] {
-  color-scheme: light;
+  /* `only`: phones' forced dark (Chrome Auto dark, Samsung Internet) otherwise paint the light portal black. */
+  color-scheme: only light;
   --bg: #fff; --card: #fff; --line: #ebebeb; --line-strong: #d9d9d9;
   --ink: #1d1d1f; --muted: #6a6a6a;
   --accent: #9a6a26; --on-accent: #fff; --cta: #d1a35f;
