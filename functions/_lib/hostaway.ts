@@ -786,7 +786,8 @@ export function coverOf(l: { listingImages?: { url?: unknown; sortOrder?: unknow
 
 export async function fetchListingCover(creds: HostawayCredentials, listingId: string): Promise<string | null> {
   const token = await getAccessToken(creds);
-  const res = await fetch(`${BASE}/listings/${encodeURIComponent(listingId)}`, { headers: { Authorization: `Bearer ${token}` } });
+  // Photos come only with includeResources=1 (without it listingImages is empty — checked 2026-11-15).
+  const res = await fetch(`${BASE}/listings/${encodeURIComponent(listingId)}?includeResources=1`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) return null;
   const l = ((await res.json()) as { result?: Parameters<typeof coverOf>[0] }).result;
   // Some listings' first photos are Airbnb (muscache) links that now 404 (P2-1406, 2026-11-15): take the first of the
