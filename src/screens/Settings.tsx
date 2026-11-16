@@ -8,7 +8,8 @@ import {
 } from '../api.ts';
 import { ImportPanel } from './ImportPanel.tsx';
 import { SlackPanel } from '../components/SlackPanel.tsx';
-import { addStripeDomain, getPayouts, getSlack, getStripeDomains, type StripeDomain, newIngestToken, pullFeed, runCron, type FeedResult, type CronResult, type StripeStatus } from '../api.ts';
+import { GuestAiPanel } from '../components/GuestAiPanel.tsx';
+import { addStripeDomain, getInboxSettings, getPayouts, getSlack, getStripeDomains, type StripeDomain, newIngestToken, pullFeed, runCron, type FeedResult, type CronResult, type StripeStatus } from '../api.ts';
 import { integrations, type IntegrationFlags } from '../lib/integrations.ts';
 import { sanitize, segments } from '../lib/sms.ts';
 import { Icon } from '../components/Icon.tsx';
@@ -134,6 +135,7 @@ export function Settings() {
     drive: <DrivePanel />,
     ai: <GeminiPanel account={account} onSaved={() => void load()} />,
     quo: <AlertsPanel account={account} onSaved={() => void load()} />,
+    guestai: <GuestAiPanel />,
   }} />;
 
   return (
@@ -697,11 +699,12 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
  * sold to other hosts, so each company brings its own accounts and sets them here. A row jumps to its panel.
  */
 function IntegrationsPanel({ account, panels }: { account: Account; panels: Record<string, React.ReactNode> }) {
-  const [live, setLive] = useState<Pick<IntegrationFlags, 'slack' | 'drive'>>({});
+  const [live, setLive] = useState<Pick<IntegrationFlags, 'slack' | 'drive' | 'guestAi'>>({});
   const [open, setOpen] = useState<string | null>(() => new URLSearchParams(location.search).get('int'));
   useEffect(() => {
     void getSlack().then(r => setLive(l => ({ ...l, slack: !!r.hasToken }))).catch(() => undefined);
     void getDrive().then(r => setLive(l => ({ ...l, drive: r.ok ? r.connected : false }))).catch(() => undefined);
+    void getInboxSettings().then(r => setLive(l => ({ ...l, guestAi: r.ok ? r.live || r.ai.mode !== 'off' : false }))).catch(() => undefined);
   }, []);
   const toggle = (k: string) => { const v = open === k ? null : k; setOpen(v); setParams({ int: v ?? '' }, { replace: true }); };
   const list = integrations({ ...account, ...live });

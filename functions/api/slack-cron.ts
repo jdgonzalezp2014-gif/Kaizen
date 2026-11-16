@@ -28,6 +28,7 @@ import { todayIn } from '../../src/lib/dates.ts';
 import { loadOps, pushHostNotes, reconcileRecent, recordCleanings } from '../_lib/ops.ts';
 import { pullAll } from '../_lib/hostaway-tasks.ts';
 import { watchCalendars } from '../_lib/calendar-watch.ts';
+import { runDue } from '../_lib/guest-outbox.ts';
 
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -46,6 +47,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // beside the rest of a tick under the 50-subrequest cap). Same door as the clock: already bypassed in Access.
   if (new URL(request.url).searchParams.get('job') === 'calendar') {
     try { return Response.json({ ok: true, calendar: await watchCalendars(sql, await getCredentials(sql, env.ENCRYPTION_KEY)) }); }
+    catch (e) { return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
+  }
+  // Guest Services → Inbox (2026-11-16): the guests' scheduled and automatic messages — a call of its own from the clock
+  // (clock/index.ts), so a busy Slack tick can never delay a guest's message, nor the other way round.
+  if (new URL(request.url).searchParams.get('job') === 'messages') {
+    try { return Response.json({ ok: true, messages: await runDue(sql, env) }); }
     catch (e) { return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
   }
   // 2026-10-15: a tick may make 50 subrequests (Cloudflare's free plan; every query and call counts). The 8 AM and 3 PM

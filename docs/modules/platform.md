@@ -82,6 +82,22 @@ Hostaway client, sync, crypto, migrations.
   action); no modals over the thing being compared; Home folds, three items per card;
   phones: nothing scrolls sideways (§20, §27, §28, §80, §81, §91).
 
+## Navigation by modules (owner, 2026-11-16)
+
+- The menu is the company's areas (`src/lib/modules.ts`, pure + test): Leadership (Overview = Home) · Guest Services (Inbox, a door to
+  Claims & upselling) · Operations (its views, minus the vendors) · Guest Experience *(Phase 2, empty)* · Finance, Data & Tech (Units,
+  Revenue, Costs) · Sales & Growth *(Future, empty)* · Schedules *(Future, empty)* · Shared tools (SOPs) · Vendor portal (Cleaners,
+  Handymen — still Operations' views) · Guest portal (preview ↗) · Core (Repository, Settings).
+- **Screens, tabs, permissions and addresses are unchanged** (`?tab=operations&view=crew` still is what it was): a module is a group of
+  doors. `navFor(tabs, permissions)` cuts the map to the person; `isActive` lights the module that owns the screen (an `alias` door, like
+  Guest Services → Claims, never lights up). Desktop rail: one icon per module, its screens on hover (`SideNav`); the list scrolls
+  when it is taller than the screen. Phone: `barLinks` = the first screen of the first four modules + More = the whole map by module.
+- Planned modules (`phase`) draw `ModuleSoon` (name, phase, what will live there) at `?tab=experience|sales|schedules` — for whoever
+  can open Settings; no permission, no route, no data. What gets built lands under that name.
+- A new screen: a permission with a `tab` in roles.ts, a `Tab` in App.tsx, a link in `MODULES`, an icon in `TabIcon.tsx`.
+- `src/api.ts` `call` (fixed 2026-11-16): a refusal that carries only `message` (claims-money, checkin-guide, inbox) used to surface
+  as a bare "HTTP 400" and lose its reason; it now returns the body like the `error` ones.
+
 ## Open items
 
 - SOP library cleaned up for an AI assistant (§151, 2026-10-13): deleted the TEST SOP, two

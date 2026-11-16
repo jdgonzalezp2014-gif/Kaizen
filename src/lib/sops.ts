@@ -93,6 +93,8 @@ export const FEATURES: { key: string; label: string; tab: string; view?: string;
   { key: 'repository', label: 'Repository', tab: 'repository', section: 'systems' },
   { key: 'costs', label: 'Costs', tab: 'costs', section: 'finance' },
   { key: 'claims', label: 'Revenue · Claims & upselling', tab: 'revenue', section: 'claims' },
+  // Guest Services → Inbox, the CRM (2026-11-16).
+  { key: 'inbox', label: 'Guest Services · Inbox', tab: 'inbox', section: 'guest' },
   { key: 'settings', label: 'Settings', tab: 'settings', section: 'systems' }
 ];
 export const FEATURE_KEYS = new Set(FEATURES.map(f => f.key));

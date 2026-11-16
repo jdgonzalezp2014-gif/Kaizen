@@ -141,3 +141,6 @@ export async function askJson(sql: SqlFn, env: Env, system: string, user: string
   if (opts.log !== false) await sql`UPDATE accounts SET ai_last = ${JSON.stringify({ at: new Date().toISOString(), by: null, errors, tier })}::jsonb WHERE id = 1`.catch(() => {});
   return { ok: false, error: errors.join(' · ') };
 }
+
+/** One named Gemini model, asked directly (the guest AI picks its own model — guest-ai.ts). */
+export { gemini as askGemini };

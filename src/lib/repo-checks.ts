@@ -76,7 +76,7 @@ export const CHECKS: CheckDef[] = [
   one('fees', 'pet_fee', 'Pet fee (Airbnb)', 'airbnbPetFeeAmount', 'money', 'Hostaway keeps it as an Airbnb setting.'),
   one('fees', 'damage_deposit', 'Refundable damage deposit', 'refundableDamageDeposit', 'money'),
   one('fees', 'checkin_fee', 'Check-in fee', 'checkinFee', 'money'),
-  one('fees', 'insurance_fee', 'Insurance (per night)', 'fee:insuranceFee', 'money', 'A custom fee in Hostaway — copied here, changed only in Hostaway for now.', false),
+  one('fees', 'insurance_fee', 'Damage waiver (per night)', 'fee:insuranceFee', 'money', 'Hostaway custom fee "Damage Waiver" (type Insurance fee) — our own cover, $12/night. Copied here, changed only in Hostaway for now.', false),
   one('fees', 'tax_rent_pct', 'Rent tax (%)', 'propertyRentTax', 'money'),
   one('fees', 'tax_stay', 'Tax per stay', 'guestStayTax', 'money'),
   one('fees', 'tax_nightly', 'Tax per night', 'guestNightlyTax', 'money'),

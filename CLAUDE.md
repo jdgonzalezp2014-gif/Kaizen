@@ -19,12 +19,16 @@ items belong to it, and which `§N` of `docs/history.md` explain it.
 | repository | native data repository, Drive files, Monday import | `docs/modules/repository.md` |
 | platform | auth, roles, Settings, Home, SOPs, design, Hostaway client, shared libs | `docs/modules/platform.md` |
 | website | public site (separate Lovable repo `kaizen-website`), hidden `/reservations` | `docs/modules/website.md` |
+| inbox | Guest Services → Inbox (the CRM): guest conversations, SMS, the outbox, templates, the guest AI | `docs/modules/inbox.md` |
 
 **Target structure (restructure, 2026-11-13/15)** — Core (listings + Repository, reservations, users/roles, Hostaway,
 company tools) and area modules: Leadership · Guest Services (upsells, claims, **messages inbox + our AI, humans take
 escalations**) · Operations · Guest Experience (listing health, check-in guides, verification) · Finance/Data/Tech ·
 Shared tools · Vendor portal (cleaners + handymen) · Guest portal (online check-in, Stripe). Future: Sales & Growth, Schedules.
 UI everywhere follows the handyman page (cards, carousel, "?" hints instead of text). New work lands under these names.
+**The menu is this map since 2026-11-16** (`src/lib/modules.ts`: the rail and the phone's More are the modules; the old screens are
+unchanged doors inside them; Guest Experience, Sales & Growth and Schedules are empty pages for whoever can open Settings).
+The guest portal moves to its own domain: links to it are built only from `accounts.guest_portal_url` (`portalLink`).
 **It will be sold to other hosts:** `docs/product.md` tracks what is reusable vs hard-wired to Kaizen — add a line there
 whenever a session adds or hard-codes something tenant-specific. Outside services are set in Settings → Integrations, never in env.
 
@@ -56,7 +60,7 @@ npm run migrate          # db/migrations/NNN_*.sql, recorded in _migrations — 
                          # (reads DATABASE_URL_UNPOOLED first: to migrate a Neon branch, override BOTH)
 git push origin master   # deploys
 ```
-- Migrations applied: 001–105, 107–115 (106 waits, §172; two 087s: 087_drop_claim_repair_cost, 087_reports). New ones are the next number.
+- Migrations applied: 001–105, 107–115 (116 written 2026-11-16, NOT applied — the Inbox's tables; 106 waits, §172; two 087s: 087_drop_claim_repair_cost, 087_reports). New ones are the next number.
 - Testing on a Neon branch: `node --env-file=<branch file> scripts/migrate.mjs` (never `source` a URL with `&`);
   first set the branch's `accounts.hostaway_tasks = 'off'`, `slack_bot_token_enc = NULL` and `google_refresh_token_enc = NULL,
   google_access_token_enc = NULL` — a branch copies the credentials (§150; Drive: a branch made duplicate "Kaizen — …" folders, 2026-10-14).

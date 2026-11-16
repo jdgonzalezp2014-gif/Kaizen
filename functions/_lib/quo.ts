@@ -11,6 +11,7 @@
  * staged rows say.
  */
 import { sanitize, segments, toE164 } from '../../src/lib/sms.ts';
+import type { ThreadMsg } from '../../src/lib/inbox.ts';
 
 export interface QuoConfig {
   apiKey: string | null;
@@ -74,4 +75,36 @@ export async function sendSms(cfg: QuoConfig, rawBody: string): Promise<SendResu
     return { outcome: 'failed', body, segments: seg.count, recipients: good,
       detail: e instanceof Error ? e.message : String(e) };
   }
+}
+
+/**
+ * A guest's SMS thread (Guest Services → Inbox → SMS, 2026-11-16). Quo lists messages per line and per other party:
+ * GET /v1/messages?phoneNumberId=PN…&participants=+1…&maxResults=… — so the account's sending number is first turned
+ * into its id (GET /v1/phone-numbers). Written from Quo's reference; not exercised yet — the account has no Quo key.
+ */
+const HOST = 'https://api.openphone.com/v1';
+
+async function numberId(apiKey: string, from: string): Promise<string | null> {
+  if (/^PN\w+$/.test(from)) return from;
+  const res = await fetch(`${HOST}/phone-numbers`, { headers: { Authorization: apiKey }, signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`QUO returned ${res.status}`);
+  const j = await res.json() as { data?: { id?: string; number?: string }[] };
+  const want = toE164(from);
+  return j.data?.find(n => n.number === want)?.id ?? null;
+}
+
+export async function quoThread(cfg: Pick<QuoConfig, 'apiKey' | 'from'>, guestPhone: string): Promise<ThreadMsg[]> {
+  const to = toE164(guestPhone);
+  if (!cfg.apiKey || !cfg.from) throw new Error('Quo is not connected.');
+  if (!to) throw new Error('The guest has no usable phone number.');
+  const pn = await numberId(cfg.apiKey, cfg.from);
+  if (!pn) throw new Error('The sending number in Settings is not one of this Quo account\'s numbers.');
+  const q = new URLSearchParams({ phoneNumberId: pn, participants: to, maxResults: '50' });
+  const res = await fetch(`${HOST}/messages?${q}`, { headers: { Authorization: cfg.apiKey }, signal: AbortSignal.timeout(8000) });
+  if (!res.ok) throw new Error(`QUO returned ${res.status}`);
+  const j = await res.json() as { data?: { id?: string; text?: string; direction?: string; status?: string; createdAt?: string }[] };
+  return (j.data ?? []).filter(m => m.text && m.createdAt).map((m): ThreadMsg => ({
+    id: `q${m.id ?? m.createdAt}`, at: new Date(m.createdAt!).toISOString(), incoming: m.direction === 'incoming', body: m.text!, channel: 'sms',
+    status: m.direction === 'incoming' ? 'received' : m.status === 'undelivered' ? 'failed' : 'sent', via: 'sms',
+  })).sort((a, b) => a.at < b.at ? -1 : 1);
 }

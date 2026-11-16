@@ -62,6 +62,12 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
 ## Open items
 
 
+- Guest fees standard (2026-11-11, SOP #42 draft): every listing has the custom fee "Damage Waiver" (type
+  `insuranceFee`, $12/night, mandatory; a general row with `appearsIn` + a Vrbo row `channelId 2002`) and active units
+  have guestsIncluded 2 @ $10/extra guest/night — chosen by simulating 35 rules on 459 real stays. Written by API
+  (`PUT /listingFeeSettings/{listing}/{fee}`, `POST /listingFeeSettings/{listing}` honours `channelId`). Airbnb takes no
+  damage waiver; Booking.com/Expedia billed no extra guests in 2026 — owner sets Expedia by hand. Check: Airbnb shows
+  the $10 extra guest; review each November.
 - Market / comp data: an intentional empty slot ("not connected").
 - QUO SMS still staged.
 - Cloudflare Functions placement → Smart (no code).

@@ -96,6 +96,14 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/comment-image', methods: ['GET'] }] },
   { key: 'claims.money', label: 'Claims & upselling — money: requested, received, upsell revenue (Revenue tab)', routes: [
     { path: '/api/claims-money', methods: ['GET', 'POST'] }] },
+  // Guest Services → Inbox, the CRM (owner, 2026-11-16): reading a guest's conversation, answering it, and setting how it behaves
+  // are three different trusts — a new permission, so nobody gets it by accident.
+  { key: 'messages', label: 'Inbox — read guests\' conversations, SMS and what is scheduled', tab: 'inbox', routes: [
+    { path: '/api/inbox', methods: ['GET'] }] },
+  { key: 'messages.send', label: 'Inbox — answer guests, schedule messages, ask the AI for a draft', routes: [
+    { path: '/api/inbox', methods: ['POST'] }] },
+  { key: 'messages.setup', label: 'Inbox — templates, automatic messages, the guest AI and the live switch', routes: [
+    { path: '/api/inbox-settings', methods: ['GET', 'POST'] }] },
   // SOPs (§92): the library tab, and each screen's "SOPs" button. Drafts are for editors only.
   { key: 'sops', label: 'SOPs — read the procedures and articles', tab: 'sops', routes: [
     { path: '/api/sops', methods: ['GET'] }] },

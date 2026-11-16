@@ -14,6 +14,9 @@ import { GuestDemoPage, GuestLinkPage } from './screens/GuestPortal.tsx';
 import { guestLink } from './lib/guest-portal.ts';
 import { InspectPage } from './screens/Inspect.tsx';
 import { Sops } from './screens/Sops.tsx';
+import { Inbox } from './screens/Inbox.tsx';
+import { ModuleSoon } from './screens/ModuleSoon.tsx';
+import { MODULES, PLANNED_TABS, barLinks, isActive, navFor, whereLabel, type NavLink, type NavModule } from './lib/modules.ts';
 import { SopButton, SopPanel } from './components/Sops.tsx';
 import { featureOf } from './lib/sops.ts';
 import { getUnits, getSettings, can, type UnitRow } from './api.ts';
@@ -27,7 +30,9 @@ import { usePhone } from './components/usePhone.ts';
 import { ReportsDialog } from './components/Reports.tsx';
 import { param, setParams } from './components/useUrlState.ts';
 
-type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor';
+type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor'
+  // The module map (2026-11-16, src/lib/modules.ts): the Inbox, and the planned modules' empty pages.
+  | 'inbox' | 'experience' | 'sales' | 'schedules';
 
 /**
  * A cleaner's secret link (§122): /crew#t=<token>. Read once, then taken
@@ -150,10 +155,8 @@ function CrewShell({ token }: { token: string | null }) {
   );
 }
 
-const TABS: [Tab, string][] = [
-  ['home', 'Home'], ['units', 'Units'], ['revenue', 'Revenue'], ['operations', 'Operations'],
-  ['repository', 'Repository'], ['costs', 'Costs'], ['sops', 'SOPs'], ['settings', 'Settings']
-];
+/** What the server draws when it does not say (it always does): the tabs a role can earn. The menu itself is MODULES. */
+const TABS: Tab[] = ['home', 'units', 'revenue', 'operations', 'repository', 'costs', 'inbox', 'sops', 'settings'];
 
 function TeamApp() {
   // Null, not 'units'. Rendering a default tab before the role is known
@@ -199,7 +202,9 @@ function TeamApp() {
   useEffect(() => {
     getSettings()
       .then(r => {
-        const tabs = r.tabs ?? TABS.map(t => t[0]);
+        // The planned modules' pages (Guest Experience, Sales & Growth, Schedules) come from no permission: they are
+        // for whoever can open Settings, until those areas have screens and people (src/lib/modules.ts).
+        const tabs = [...(r.tabs ?? TABS), ...(can(r.permissions ?? [], 'settings') ? PLANNED_TABS : [])];
         setAllowed(tabs);
         setPermissions(r.permissions ?? []);
         // A cleaner signed in (§122): their own page, and nothing else is asked for.
@@ -283,8 +288,19 @@ function TeamApp() {
   // §166: new work from anyone, while the app is open — for whoever can see the to-dos. One bell: the header on a
   // phone, the side rail's foot on a bigger screen (the header is hidden there).
   const phone = usePhone();
+  const openTodo = (id: string) => { setWorkFocus({ todo: id }); goOps('todos', { todo: id }); };
   const bell = allowed && can(permissions, 'todos') && allowed.includes('operations')
-    ? <LiveBell onOpen={id => { setWorkFocus({ todo: id }); goOps('todos', { todo: id }); }} /> : null;
+    ? <LiveBell onOpen={openTodo} /> : null;
+  // The menu: the company's modules, cut to what this person may open (src/lib/modules.ts).
+  const nav = allowed ? navFor(allowed, permissions) : [];
+  const onLink = (l: NavLink) => {
+    if (l.href) { window.open(l.href, '_blank', 'noopener'); return; }
+    if (l.tab !== 'operations') { go(l.tab as Tab); return; }
+    goOps(l.view ?? 'board', l.params ?? {});
+    // A door into a section of a view that may already be open (To-do → Claims): the screen re-reads its address.
+    if (l.params) dispatchEvent(new PopStateEvent('popstate'));
+  };
+  const planned = MODULES.find(m => m.phase && m.links[0]!.tab === tab);
   return (
     <main>
       {!crewOnly && <header className="app-header">
@@ -296,10 +312,9 @@ function TeamApp() {
         {phone && bell}
         <span className="phone-theme"><ThemeToggle /></span>
       </header>}
-      {!crewOnly && allowed && <SideNav tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={go}
-                                         opsNow={opsNow} onOps={goOps} permissions={permissions} onReport={() => setReporting('new')} bell={phone ? null : bell} />}
-      {!crewOnly && allowed && <TabBar tabs={allowed.filter(t => TABS.some(x => x[0] === t)) as Tab[]} tab={tab} onTab={go} onReport={() => setReporting('new')} />}
-      {reporting && <ReportsDialog initial={reporting} where={whereNow(tab, opsNow)} onClose={() => setReporting(null)} />}
+      {!crewOnly && allowed && <SideNav nav={nav} tab={tab} view={opsNow} onLink={onLink} onReport={() => setReporting('new')} bell={phone ? null : bell} />}
+      {!crewOnly && allowed && <TabBar nav={nav} tab={tab} view={opsNow} onLink={onLink} onReport={() => setReporting('new')} />}
+      {reporting && <ReportsDialog initial={reporting} where={whereLabel(nav, tab, opsNow)} onClose={() => setReporting(null)} />}
 
       {/* Only shown to someone who can act on it. Telling an ops account
           to go to Settings → Sync listings names a screen they cannot
@@ -337,6 +352,10 @@ function TeamApp() {
       {tab === 'costs'    && <Costs units={units} />}
       {tab === 'sops'     && <Sops focus={sopFocus} onFocused={() => setSopFocus(undefined)} />}
       {tab === 'settings' && <Settings />}
+      {tab === 'inbox'    && <Inbox canSend={can(permissions, 'messages.send')} canSetup={can(permissions, 'messages.setup')}
+                                    canTodos={can(permissions, 'todos') && !!allowed?.includes('operations')} onTodo={openTodo}
+                                    onSettings={allowed?.includes('settings') ? () => go('settings', { int: 'guestai' }) : undefined} />}
+      {planned && <ModuleSoon mod={planned} />}
 
       {/* The procedures for the screen someone is on (§92), floating bottom right (§96);
           opened beside the work, not over it, and kept open across screens (§98). */}
@@ -360,36 +379,44 @@ const SIGN_OUT = '/cdn-cgi/access/logout';
  * half the app. Five fit; past five, four and "More", which lists the rest.
  * Hidden by CSS above 720px, where the header's tabs are shown instead.
  */
-function TabBar({ tabs, tab, onTab, onReport }: { tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void; onReport: () => void }) {
+function TabBar({ nav, tab, view, onLink, onReport }: {
+  nav: NavModule[]; tab: Tab | null; view?: string; onLink: (l: NavLink) => void; onReport: () => void;
+}) {
   const [more, setMore] = useState(false);
-  if (tabs.length < 2) return null;
-  // "More" is always there now: it also holds "Report / request" (owner, 2026-10-15) — so four tabs, then More.
-  const shown = tabs.slice(0, 4);
-  const rest = tabs.slice(4);
-  const label = (t: Tab) => TABS.find(x => x[0] === t)?.[1] ?? t;
-  const restOpen = tab !== null && rest.includes(tab);
+  if (!nav.length) return null;
+  // Four doors, then More: the first screen of each module, in the menu's order; More is the whole map, by module,
+  // and also holds "Report / request" (owner, 2026-10-15) and Sign out.
+  const shown = barLinks(nav);
+  const here = shown.some(l => isActive(l, tab, view));
   return (
     <>
       <nav className="tabbar" aria-label="Sections">
-        {shown.map(t => (
-          <button key={t} className={tab === t ? 'tab active' : 'tab'} aria-current={tab === t ? 'page' : undefined}
-                  onClick={() => onTab(t)}><TabIcon name={t} />{label(t)}</button>
-        ))}
-        <button className={restOpen ? 'tab active' : 'tab'} aria-haspopup="dialog" onClick={() => setMore(true)}>
-          <TabIcon name="more" />{restOpen ? label(tab!) : 'More'}
+        {shown.map(l => {
+          const on = isActive(l, tab, view);
+          return <button key={l.key} className={on ? 'tab active' : 'tab'} aria-current={on ? 'page' : undefined}
+                         onClick={() => onLink(l)}><TabIcon name={nav.find(m => m.links.includes(l))?.icon ?? l.tab} />{l.label === 'Overview' ? 'Home' : l.label === 'Movements' ? 'Operations' : l.label}</button>;
+        })}
+        <button className={!here && tab ? 'tab active' : 'tab'} aria-haspopup="dialog" onClick={() => setMore(true)}>
+          <TabIcon name="more" />More
         </button>
       </nav>
       {more && (
-        <Modal title="More" onClose={() => setMore(false)}>
-          <ul className="more-list">
-            {rest.map(t => (
-              <li key={t}>
-                <button className={tab === t ? 'more-item active' : 'more-item'} aria-current={tab === t ? 'page' : undefined}
-                        onClick={() => { onTab(t); setMore(false); }}>
-                  <TabIcon name={t} /><span>{label(t)}</span>
-                </button>
-              </li>
-            ))}
+        <Modal title="Menu" onClose={() => setMore(false)}>
+          {nav.map(m => (
+            <section key={m.key} className="more-group">
+              <h3><TabIcon name={m.icon} />{m.label}{m.phase && <span className="side-tag">{m.phase}</span>}</h3>
+              <ul className="more-list">
+                {m.links.map(l => {
+                  const on = isActive(l, tab, view);
+                  return <li key={l.key}>
+                    <button className={on ? 'more-item active' : 'more-item'} aria-current={on ? 'page' : undefined}
+                            onClick={() => { onLink(l); setMore(false); }}><span>{l.label}{l.href ? ' ↗' : ''}</span></button>
+                  </li>;
+                })}
+              </ul>
+            </section>
+          ))}
+          <ul className="more-list more-foot">
             <li>
               <button className="more-item" onClick={() => { setMore(false); onReport(); }}>
                 <TabIcon name="report" /><span>Report a bug / request</span>
@@ -421,37 +448,40 @@ function Today({ compact = false }: { compact?: boolean }) {
 /**
  * Tablet and desktop navigation (owner, 2026-10-14: "clean screens — the menu as a vertical slider, the
  * sub-menus open when the cursor is on them"): a rail of icons on the left that slides open on hover or
- * keyboard focus, with Operations' views under it; day / night at the foot. The screen above is the work
- * alone. Hidden at 720 px and below, where the bottom bar does this.
+ * keyboard focus; day / night at the foot. The screen above is the work alone. Hidden at 720 px and below,
+ * where the bottom bar does this.
+ *
+ * Since 2026-11-16 the rail is the company's modules (src/lib/modules.ts): one icon per area, its screens under it —
+ * Operations' views, Finance's three screens, the vendors' pages. A planned module carries its phase as a tag.
  */
-function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions, onReport, bell }: {
-  tabs: Tab[]; tab: Tab | null; onTab: (t: Tab) => void; opsNow?: string; onOps: (v: string) => void; permissions: string[]; onReport: () => void;
-  bell?: ReactNode;
+function SideNav({ nav, tab, view, onLink, onReport, bell }: {
+  nav: NavModule[]; tab: Tab | null; view?: string; onLink: (l: NavLink) => void; onReport: () => void; bell?: ReactNode;
 }) {
-  const label = (t: Tab) => TABS.find(x => x[0] === t)?.[1] ?? t;
-  // The same views, words and permissions as Operations' own strip (which the rail replaces on a big screen).
-  const opsViews: [string, string][] = [['board', 'Movements'], ...(can(permissions, 'todos') ? [['todos', 'To-do'] as [string, string]] : []),
-    ['crew', 'Cleaners'], ['vendors', 'Handymen'], ['inspections', 'Inspections'], ['inventory', 'Inventory'], ['notes', 'Notes log'], ['blocks', 'Calendar log'], ['rates', 'Rates & rules'],
-    ...(can(permissions, 'operations.setup') ? [['setup', 'Setup'] as [string, string]] : [])];
   return (
     <aside className="side-nav" aria-label="Sections">
       <div className="side-brand"><span className="brand-mark" aria-hidden="true" /><span className="side-word">Kaizen OS</span></div>
       <nav className="side-list">
-        {tabs.map(t => (
-          <div key={t} className={`side-item ${tab === t ? 'active' : ''} ${t === 'operations' ? 'has-sub' : ''}`}>
-            <button className="side-link" aria-current={tab === t ? 'page' : undefined} onClick={() => onTab(t)} title={label(t)}>
-              <TabIcon name={t} /><span className="side-word">{label(t)}</span>
-            </button>
-            {t === 'operations' && (
-              <div className="side-sub" role="group" aria-label="Operations">
-                {opsViews.map(([k, l]) => (
-                  <button key={k} className={tab === 'operations' && (opsNow === k || (k === 'crew' && opsNow === 'calendar')) ? 'side-sublink active' : 'side-sublink'}
-                          onClick={() => onOps(k)}>{l}</button>
-                ))}
-              </div>
-            )}
-          </div>
-        ))}
+        {nav.map(m => {
+          const active = m.links.some(l => isActive(l, tab, view));
+          const sub = m.links.length > 1;
+          const first = m.links.find(l => !l.alias) ?? m.links[0]!;
+          return (
+            <div key={m.key} className={`side-item ${active ? 'active' : ''} ${sub ? 'has-sub' : ''}`}>
+              <button className="side-link" aria-current={active ? 'page' : undefined} onClick={() => onLink(first)} title={m.label}>
+                <TabIcon name={m.icon} /><span className="side-word">{m.label}{first.href && !sub ? ' ↗' : ''}</span>
+                {m.phase && <span className="side-word side-tag">{m.phase}</span>}
+              </button>
+              {sub && (
+                <div className="side-sub" role="group" aria-label={m.label}>
+                  {m.links.map(l => (
+                    <button key={l.key} className={isActive(l, tab, view) ? 'side-sublink active' : 'side-sublink'}
+                            onClick={() => onLink(l)}>{l.label}{l.href ? ' ↗' : ''}</button>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </nav>
       <div className="side-foot">
         {bell}
@@ -465,10 +495,4 @@ function SideNav({ tabs, tab, onTab, opsNow, onOps, permissions, onReport, bell 
       </div>
     </aside>
   );
-}
-
-/** Where a report was sent from, in words (owner, 2026-10-15): the tab, and Operations' view when there. */
-function whereNow(tab: Tab | null, opsNow?: string): string {
-  const t = TABS.find(x => x[0] === tab)?.[1] ?? tab ?? 'Kaizen';
-  return tab === 'operations' && opsNow ? `${t} › ${opsNow}` : t;
 }

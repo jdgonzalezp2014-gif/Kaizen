@@ -175,6 +175,8 @@ export interface HostawayReservation {
   /** The reservation's own hours (`checkInTime` / `checkOutTime`, 0–23) — what the guest was given (§156). */
   checkInHour?: number | null;
   checkOutHour?: number | null;
+  /** When it was booked, to the second (ISO, UTC) — the Inbox's "after booking" messages count from it. */
+  bookedAt?: string | null;
 }
 
 export interface CalendarDay {
@@ -518,6 +520,7 @@ async function pagedReservationsWith(token: string, query: string,
         status: String(r.status ?? ''),
         channel: String(r.channelName ?? r.source ?? r.channel ?? ''),
         bookedOn: asDate(r.reservationDate ?? r.insertedOn ?? r.confirmedOn ?? r.createdOn),
+        bookedAt: typeof r.reservationDate === 'string' && /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/.test(r.reservationDate) ? `${r.reservationDate.replace(' ', 'T')}Z` : null,
         arrival,
         departure,
         nights: arrival && departure ? Math.max(1, daysBetween(arrival, departure)) : 0,

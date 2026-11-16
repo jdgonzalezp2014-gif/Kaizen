@@ -64,7 +64,9 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   const body = await res.json().catch(() => ({ error: `HTTP ${res.status}` }));
   // A failed call returns its reason rather than throwing a generic
   // Error, because every one of these has a message worth showing.
-  if (!res.ok && !(body as { error?: unknown }).error) {
+  // …whether the route names it `error` or only gives a `message` (claims-money, checkin-guide and the inbox do):
+  // before 2026-11-16 a refusal with a message alone surfaced as a bare "HTTP 400" and its reason was lost.
+  if (!res.ok && !(body as { error?: unknown }).error && !(body as { message?: unknown }).message) {
     throw new Error(`HTTP ${res.status}`);
   }
   return body as T;
@@ -1067,3 +1069,22 @@ export async function addStripeDomain(domain: string): Promise<{ ok: boolean; me
   return fetch('/api/stripe-domains', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ domain }) })
     .then(r => r.json() as Promise<{ ok: boolean; message?: string }>).catch(() => ({ ok: false, message: 'No connection.' }));
 }
+
+// ── Guest Services → Inbox, the CRM (2026-11-16) ──
+import type { GuestAi, InboxRow, Planned, Suggestion as ReplySuggestion, Template, ThreadMsg, MsgStatus } from './lib/inbox.ts';
+export interface InboxList { ok: true; rows: InboxRow[]; today: string; more: boolean; live: boolean; aiMode: 'off' | 'suggest'; quo: boolean; templates: Template[] }
+export interface StayTask { id: string; title: string; status: string; priority: string; kind: string; dueOn: string | null; assignee: string | null; done: boolean }
+export interface InboxThread { ok: true; messages: ThreadMsg[]; tasks: StayTask[]; portalLink: string | null; phone: string | null; plan: Planned[] }
+export interface InboxSms { ok: true; connected: boolean; phone: string | null; note: string; messages: ThreadMsg[] }
+export const getInbox = (offset = 0) => call<InboxList | Fail>(`/api/inbox${offset ? `?offset=${offset}` : ''}`);
+export const getInboxThread = (conversationId: string, reservationId: string) =>
+  call<InboxThread | Fail>(`/api/inbox?conversation=${encodeURIComponent(conversationId)}&reservation=${encodeURIComponent(reservationId)}`);
+export const getInboxSms = (reservationId: string) => call<InboxSms | Fail>(`/api/inbox?sms=${encodeURIComponent(reservationId)}`);
+export const inboxAction = (body: Record<string, unknown>) =>
+  call<{ ok: true; status: MsgStatus; error?: string | null; id?: string } | Fail>('/api/inbox', { method: 'POST', body: JSON.stringify(body) });
+export const inboxSuggest = (conversationId: string) =>
+  call<{ ok: true; suggestion: ReplySuggestion; by: string; sops: string[] } | Fail>('/api/inbox', { method: 'POST', body: JSON.stringify({ action: 'suggest', conversationId }) });
+export interface InboxSettings { ok: true; templates: Template[]; ai: GuestAi; live: boolean; portalUrl: string | null; migrated: boolean; hasClaudeKey: boolean; hasGeminiKey: boolean }
+export const getInboxSettings = () => call<InboxSettings | Fail>('/api/inbox-settings');
+export const saveInboxSettings = (body: Record<string, unknown>) =>
+  call<InboxSettings | Fail>('/api/inbox-settings', { method: 'POST', body: JSON.stringify(body) });

@@ -54,3 +54,9 @@ come later for a fully in-page look. Built 2026-11-15 (`functions/_lib/guest-pay
 - 2026-11-15 — Who cleans by zone (§174): main zones per cleaner + overflow past their max. Reusable as is.
 
 - Stripe inside the guest portal (2026-11-16): publishable key per account (accounts.stripe_publishable_key, 115) and wallet domains registered per account from Settings (/api/stripe-domains) — reusable; each tenant registers its own domains.
+- 2026-11-16 — **Menu by modules** (`src/lib/modules.ts`): the product's map is data, so a tenant's menu can later be cut by plan as it is
+  by role. **Guest Services → Inbox (CRM)**: reusable as is — conversations from the tenant's Hostaway, SMS from its Quo, the reply AI
+  with the tenant's own key and a model it names, sending staged until the tenant turns it on (Settings → Integrations → Guest
+  messages & AI). New debt: `GUEST_TZ` America/Chicago for message moments; `account_id = 1` in the new routes like the rest.
+  **Guest portal on its own domain:** `accounts.guest_portal_url` is the only source of portal links (`portalLink` + `signGuest`);
+  the nav's "Guest portal → Preview" still opens `/crew/guest-demo` on the team app — repoint it when the portal moves.

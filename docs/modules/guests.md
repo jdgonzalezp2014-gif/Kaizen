@@ -305,7 +305,12 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - **Covered parking** = an extra (`parking`, per night × nights) where the record has "parking_extra_price"; also in the check-in Extras step.
 - No "We confirm" / "Depends on the clean" anywhere: a turnover only changes the request to need our OK.
 
-### Open: guest messages sent by Kaizen instead of Hostaway (planned 2026-11-15, NOT started)
+### Open: guest messages sent by Kaizen instead of Hostaway (planned 2026-11-15; the sender exists since 2026-11-16)
+
+- **Built 2026-11-16 as Guest Services → Inbox — see `docs/modules/inbox.md`:** the outbox + retries + a row per message, templates with
+  triggers (after booking, before/after check-in and check-out), staged mode side by side with Hostaway (sending OFF by default).
+  Still to do from the plan below: the reservation webhook, "only if check-in not done", the team alert, and switching Hostaway's
+  automations off one at a time.
 
 - Plan: reservation webhook → welcome + signed portal link; reminders at T-3 / T-1 only if check-in not done; team alert T-1 6 PM;
   "done" confirmation; code/guide open on arrival; check-out reminder; review ask. Sent through Hostaway's conversation API

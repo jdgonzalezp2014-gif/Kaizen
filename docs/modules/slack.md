@@ -145,6 +145,9 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
   buttons; its thread is the report's (`slack_threads` subject `report`): a reply there is a comment, a comment/status in Kaizen
   is a reply there. Done / won't do → DM to the reporter (`reportDm`, DM mode respected). Server: `functions/_lib/report-slack.ts`.
 
+- **The clock makes two calls since 2026-11-16** (`clock/index.ts`): `/api/slack-cron` as before, and `/api/slack-cron?job=messages`
+  (the guests' scheduled messages — inbox module). Independent: one failing does not stop the other. Needs a redeploy of the clock.
+
 ## Slack API rules that bite
 
 - Web API **form-encoded** (read methods refuse JSON). ≤5 overflow options. **No duplicate
