@@ -11,13 +11,13 @@ import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, quote, requestMode, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
 import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, flowExtras, nextStep, onRequest, progress, rulesList, steps, SAMPLE_RULES,
-  type Arrival, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
+  type Arrival, type BillLine, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
 const STEP_ICON: Record<StepKey, string> = { details: 'user', identity: 'idcard', protection: 'shield', rules: 'book', extras: 'sparkles', pay: 'card' };
 const usd = (n: number) => `$${n.toLocaleString('en-US', { maximumFractionDigits: n % 1 ? 2 : 0, minimumFractionDigits: n % 1 ? 2 : 0 })}`;
 
 /** The progress card: a ring with "n of m", and the one button that takes the guest to what is next. */
-export function CheckinProgress({ st, go }: { st: Step[]; go: (k: StepKey) => void }) {
+export function CheckinProgress({ st, go, list = false }: { st: Step[]; go: (k: StepKey) => void; list?: boolean }) {
   const p = progress(st);
   const next = nextStep(st);
   const pct = p.of ? p.done / p.of : 0;
@@ -28,19 +28,21 @@ export function CheckinProgress({ st, go }: { st: Step[]; go: (k: StepKey) => vo
       <b className="ci-title">{next ? p.done === 0 ? 'Get ready for your stay' : 'Almost there' : 'You are checked in'}</b>
       <span className="note">{next ? <><Icon n="lock" /> Unlocks door code & Wi-Fi</> : <><Icon n="done" /> Everything is done</>}</span>
     </span>
+    {/* The Check-in section (owner, 2026-11-16): ring and steps in one card at the top — done ones open again, the button continues. */}
+    {list && <StepRows st={st} go={go} />}
     {next && <button className="g-cta ci-prog-go" onClick={() => go(next)}>{p.done === 0 ? 'Start' : 'Continue'}</button>}
   </section>;
 }
 
-/** The step list (Check-in tab): numbered, done ones ticked, each opens its screen. */
-export function StepList({ st, go }: { st: Step[]; go: (k: StepKey) => void }) {
+/** The step list: numbered, done ones ticked (tap to open again), each opens its screen. Inside the check-in card. */
+function StepRows({ st, go }: { st: Step[]; go: (k: StepKey) => void }) {
   const next = nextStep(st);
-  return <ol className="card ci-list">
+  return <ol className="ci-list ci-list-in">
     {st.map((x, i) => <li key={x.key}>
       <button className={`ci-row${x.done ? ' done' : ''}${x.key === next ? ' next' : ''}`} onClick={() => go(x.key)}>
         <span className="ci-n" aria-hidden>{x.done ? <Icon n="check" /> : i + 1}</span>
         <span className="ci-row-main"><b>{x.title}</b><span className="note">{x.sub}</span></span>
-        <span className={`ci-tag${x.done ? ' ok' : ''}`}>{x.done ? 'Done' : x.required ? 'Required' : 'Optional'}</span>
+        <span className={`ci-tag${x.done ? ' ok' : ''}`}>{x.done ? 'Done' : x.key === next ? 'Next' : x.required ? 'Required' : 'Optional'}</span>
       </button>
     </li>)}
   </ol>;
@@ -53,14 +55,15 @@ export function StepScreen({ k, ...pr }: Props & { k: StepKey }) {
   const st = steps(pr.flow, pr.stay, pr.p);
   const i = st.findIndex(x => x.key === k);
   const save = (f: Flow) => { pr.set(f); const n = nextStep(steps(f, pr.stay, pr.p)); pr.go(n); };
+  if (pr.flow.paid) return <>
+    <SecTop><PaidIsland /></SecTop>
+    <header className="ci-head"><span className="ci-eyebrow">Check-in</span><h2 className="ci-h">You’re all set</h2></header>
+    <Pay {...pr} save={save} />
+  </>;
   return <>
-    <div className="ci-top">
-      <button className="chip" onClick={pr.back}>‹ Check-in</button>
-      <span className="ci-dots" aria-label={`Step ${i + 1} of ${st.length}`}>{st.map((x, j) => <i key={x.key} className={j === i ? 'on' : x.done ? 'ok' : ''} />)}</span>
-    </div>
+    <SecTop back={pr.back}><StepIsland st={st} at={k} go={pr.go} /></SecTop>
     <header className="ci-head">
-      <span className="ci-head-icon" aria-hidden><Icon n={STEP_ICON[k]} /></span>
-      <span className="ci-eyebrow">Step {i + 1} · {st[i]?.required ? 'Required' : 'Optional'}</span>
+      <span className="ci-eyebrow">Step {i + 1} of {st.length} · {st[i]?.required ? 'Required' : 'Optional'}</span>
       <h2 className="ci-h">{HEAD[k]}</h2>
     </header>
     {k === 'details' ? <Details {...pr} save={save} />
@@ -71,6 +74,44 @@ export function StepScreen({ k, ...pr }: Props & { k: StepKey }) {
       : <Pay {...pr} save={save} />}
   </>;
 }
+
+/**
+ * The island (owner, 2026-11-16) — the one structure every guest section shares: a round "‹" back, then the section's
+ * parts as icons in one glass pill. The current part opens into a pill with its name; done ones keep a tick (tap to go
+ * back to them); locked ones stay dim. Moving on closes one and opens the next (CSS transition on the label).
+ */
+export type IslandItem = { key: string; icon: string; label: string; done?: boolean; locked?: boolean };
+export function Island({ items, at, pick, label }: { items: IslandItem[]; at: string | null; pick: (k: string) => void; label: string }) {
+  const box = useRef<HTMLElement>(null);
+  useEffect(() => { box.current?.querySelector<HTMLElement>('.ci-isl.on')?.scrollIntoView?.({ inline: 'nearest', block: 'nearest' }); }, [at]);
+  return <nav ref={box} className={`ci-island${items.length === 1 ? ' one' : ''}`} aria-label={label}>
+    {items.map(x => {
+      const on = x.key === at;
+      return <button key={x.key} className={`ci-isl${on ? ' on' : ''}${x.done ? ' done' : ''}`} disabled={x.locked} onClick={() => pick(x.key)}
+        aria-current={on ? 'step' : undefined} aria-label={`${x.label}${x.done ? ' — done' : x.locked ? ' — locked' : ''}`}>
+        <span className="ci-isl-icon" aria-hidden><Icon n={x.icon} />{x.done && !on && <i className="ci-isl-tick"><Icon n="check" /></i>}</span>
+        <span className="ci-isl-label">{x.label}</span>
+      </button>;
+    })}
+  </nav>;
+}
+export function SecTop({ back, children }: { back?: () => void; children: React.ReactNode }) {
+  return <div className="ci-top">
+    {back && <button className="gx-icon-btn ci-back" onClick={back} aria-label="Back"><span aria-hidden>‹</span></button>}
+    {children}
+  </div>;
+}
+
+const SHORT: Record<StepKey, string> = { details: 'Details', identity: 'Your ID', protection: 'Protection', rules: 'House rules', extras: 'Extras', pay: 'Pay' };
+/** The check-in steps as an island: the next one open, done ones ticked, the rest locked until reached. */
+export function StepIsland({ st, at, go }: { st: Step[]; at: StepKey | null; go: (k: StepKey) => void }) {
+  const next = nextStep(st);
+  return <Island label="Check-in steps" at={at ?? next} pick={k => go(k as StepKey)}
+    items={st.map(x => ({ key: x.key, icon: STEP_ICON[x.key], label: SHORT[x.key], done: x.done, locked: !(x.key === at || x.done || x.key === next) }))} />;
+}
+/** Paid: one pill across the top and no way back — what was paid stays paid (owner, 2026-11-16). */
+export const PaidIsland = ({ label = 'Payment' }: { label?: string }) =>
+  <Island label="Check-in" at="paid" pick={() => undefined} items={[{ key: 'paid', icon: 'check', label }]} />;
 
 const HEAD: Record<StepKey, string> = {
   details: 'Is this right?', identity: 'Verify it’s you', protection: 'Protect your stay',
@@ -119,7 +160,7 @@ function TimeStrip({ times, value, set }: { times: string[]; value: string; set:
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => {
     const el = box.current?.querySelector<HTMLElement>('[aria-checked="true"]');
-    el?.scrollIntoView?.({ inline: 'center', block: 'nearest', behavior: 'smooth' });
+    el?.scrollIntoView?.({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
   }, [value]);
   return <div ref={box} className="ci-wheel" role="radiogroup" aria-label="Arrival time">
     {times.map(t => <button key={t} role="radio" aria-checked={value === t} className={value === t ? 'on' : ''} onClick={() => set(t)}>{t}</button>)}
@@ -168,11 +209,12 @@ function Identity({ flow, save, set }: S) {
     <section className="card ci-card">
       <span className="ci-q">Your ID <Hint>Stripe’s ID check opens over this page: pick driver’s license, passport or ID card, take a photo of it and a selfie
         (on a computer it offers to continue on the phone). Test mode: Stripe also offers ready-made test results.</Hint></span>
-      <div className="ci-shots">
-        <span className="ci-shot"><Icon n="idcard" /><span>Photo of your ID</span></span>
-        <span className="ci-shot"><Icon n="camera" /><span>A quick selfie</span></span>
-      </div>
-      <p className="note ci-inline"><Icon n="lock" /> Encrypted by Stripe. Only used to match you to your booking.</p>
+      <button className="ci-idgo" onClick={start} disabled={busy}>
+        <span className="ci-idgo-icons" aria-hidden><Icon n="idcard" /><span>+</span><Icon n="camera" /></span>
+        <span className="ci-idgo-main"><b>Your ID and a selfie</b><span className="note">Takes about a minute</span></span>
+        <span className="g-go" aria-hidden>›</span>
+      </button>
+      <p className="note ci-inline"><Icon n="lock" /> Encrypted by Stripe · only for your booking</p>
     </section>
     {err && <p className="banner warn">▲ {err}</p>}
     <button className="g-cta" onClick={start} disabled={busy}>{busy ? 'Verifying…' : 'Verify my ID'}</button>
@@ -228,8 +270,8 @@ function Extras({ stay, flow, save }: S) {
       return <section key={u.kind} className={`card ci-extra${on ? ' on' : ''}`}>
         <span className="g-up-icon" aria-hidden><Icon n={u.icon} /></span>
         <span className="ci-extra-main"><b>{u.title}</b>
-          <span className="note">{usd(price)}{u.per === 'hour' ? ' / hour' : ''}{on && u.per === 'hour' && quote(stay, u, ex[u.kind]!) != null ? ` · ${usd(quote(stay, u, ex[u.kind]!)!)}` : ''}</span>
-          {u.per === 'hour' && <span className={`ci-mode${onRequest(stay, u.kind, new Date()) ? '' : ' ok'}`}>{modeLine(stay, u.kind, turnover)}</span>}
+          <span className="note">{usd(price)}{u.per === 'hour' ? ' / hour' : u.per === 'night' ? ' / night' : ''}{on && (u.per === 'hour' || u.per === 'night') && quote(stay, u, ex[u.kind]!) != null ? ` · ${usd(quote(stay, u, ex[u.kind]!)!)}` : ''}</span>
+          {u.per === 'hour' && modeLine(stay, u.kind, turnover) && <span className={`ci-mode${onRequest(stay, u.kind, new Date()) ? '' : ' ok'}`}>{modeLine(stay, u.kind, turnover)}</span>}
           {on && u.pick.type === 'time' && <span className="ci-times">{u.pick.options.map(t =>
             <button key={t} className={ex[u.kind]?.time === t ? 'chip active' : 'chip'} onClick={() => setEx(e => ({ ...e, [u.kind]: { time: t } }))}>{t}</button>)}</span>}
         </span>
@@ -244,7 +286,7 @@ function Extras({ stay, flow, save }: S) {
 /** Early / late: confirmed right away when asked by 8 PM (Texas) the day before and nobody else is leaving/arriving. */
 function modeLine(stay: GuestStay, k: UpsellKind, turnover: boolean) {
   const m = requestMode(stay, { kind: k }, new Date());
-  return m.mode === 'auto' ? '✓ Confirmed right away' : turnover || m.why === 'turnover' ? 'Needs our OK — another guest that day' : 'Needs our OK — asked after 8 PM the day before';
+  return m.mode === 'auto' ? '✓ Confirmed right away' : turnover || m.why === 'turnover' ? '' : 'Needs our OK';
 }
 
 /**
@@ -254,39 +296,8 @@ function modeLine(stay: GuestStay, k: UpsellKind, turnover: boolean) {
  */
 function Pay({ stay, flow, p, save, set }: S) {
   const b = bill(flow, stay, p);
-  const [busy, setBusy] = useState(false);
-  const [err, setErr] = useState<string | null>(null);
-  // Inside the portal (boss, 2026-11-16): Stripe's Embedded Checkout mounts here — card, Apple Pay, Google Pay — no redirect.
-  const [embed, setEmbed] = useState<{ id: string; clientSecret: string; pk: string } | null>(null);
-  const box = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!embed) return;
-    let ec: EmbeddedCheckout | null = null; let live = true;
-    const done = () => void fetch(`/api/report-link?checkout=${encodeURIComponent(embed.id)}`).then(r => r.json() as Promise<{ paid?: boolean; total?: number; message?: string }>)
-      .then((j: { paid?: boolean; total?: number; message?: string }) => { if (j.paid) { set({ ...flow, paid: true, paidTotal: j.total ?? null }); setEmbed(null); } else setErr(j.message ?? 'The payment was not completed.'); }, () => setErr('Could not check the payment.'));
-    loadStripe(embed.pk).then(st => st.initEmbeddedCheckout({ fetchClientSecret: async () => embed.clientSecret, onComplete: done }))
-      .then(c => { if (!live) { c.destroy(); return; } ec = c; if (box.current) c.mount(box.current); setBusy(false); },
-        e => { setErr(e instanceof Error ? e.message : String(e)); setEmbed(null); setBusy(false); });
-    return () => { live = false; ec?.destroy(); };
-  }, [embed]);
-  const pay = async () => {
-    setBusy(true); setErr(null);
-    try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); } catch { /* private mode: the page just starts over */ }
-    const u = new URL(location.href);
-    for (const k of ['step', 'paid', 'verified', 'extra']) u.searchParams.delete(k);
-    u.searchParams.set('sec', 'checkin');
-    try {
-      const r = await fetch('/api/report-link?checkout=1', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lines: b.lines, email: stay.guest?.email ?? null, back: u.pathname + u.search, embedded: true }) });
-      const j = await r.json() as { url?: string; id?: string; clientSecret?: string; publishableKey?: string; message?: string };
-      if (j.clientSecret && j.publishableKey && j.id) { setEmbed({ id: j.id, clientSecret: j.clientSecret, pk: j.publishableKey }); return; }
-      if (j.url) { location.href = j.url; return; }
-      setErr(j.message ?? 'Payment could not start.');
-    } catch { setErr('Payment could not start — check the connection.'); }
-    setBusy(false);
-  };
   const label = b.today > 0 ? `Pay ${money2(b.today)}` : `Authorize ${money2(b.hold)} hold`;
-  if (flow.paid && !embed) return <>
+  if (flow.paid) return <>
     <PaidCard flow={flow} today={b.today} hold={b.hold} />
     <button className="g-cta" onClick={() => save(flow)}>Continue</button>
   </>;
@@ -299,6 +310,50 @@ function Pay({ stay, flow, p, save, set }: S) {
       <div className="ci-line ci-sum"><span>Today</span><b>{money2(b.today)}</b></div>
       {b.hold > 0 && <div className="ci-line ci-sum ci-sub"><span>Held, released after check-out</span><span>{money2(b.hold)}</span></div>}
     </section>
+    <StripePay lines={b.lines} email={stay.guest?.email ?? null} label={label}
+      beforeRedirect={() => { try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); } catch { /* private mode: the page just starts over */ } }}
+      onPaid={total => set({ ...flow, paid: true, paidTotal: total })} />
+  </>;
+}
+
+/**
+ * Stripe inside the page (boss, 2026-11-16): Embedded Checkout mounts here — card, Apple Pay, Google Pay — no redirect;
+ * `onPaid` once the server confirms the session. Without a publishable key the server answers Stripe's hosted page
+ * and the guest is sent there (`beforeRedirect` keeps what must survive the trip). Used by check-in and by extensions.
+ */
+export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 'checkin' }: { lines: BillLine[]; email: string | null; label: string;
+  onPaid: (total: number | null) => void; beforeRedirect?: () => void; back?: string }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [embed, setEmbed] = useState<{ id: string; clientSecret: string; pk: string } | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!embed) return;
+    let ec: EmbeddedCheckout | null = null; let live = true;
+    const done = () => void fetch(`/api/report-link?checkout=${encodeURIComponent(embed.id)}`).then(r => r.json() as Promise<{ paid?: boolean; total?: number; message?: string }>)
+      .then(j => { if (j.paid) { setEmbed(null); onPaid(j.total ?? null); } else setErr(j.message ?? 'The payment was not completed.'); }, () => setErr('Could not check the payment.'));
+    loadStripe(embed.pk).then(st => st.initEmbeddedCheckout({ fetchClientSecret: async () => embed.clientSecret, onComplete: done }))
+      .then(c => { if (!live) { c.destroy(); return; } ec = c; if (box.current) c.mount(box.current); setBusy(false); },
+        e => { setErr(e instanceof Error ? e.message : String(e)); setEmbed(null); setBusy(false); });
+    return () => { live = false; ec?.destroy(); };
+  }, [embed]);
+  const pay = async () => {
+    setBusy(true); setErr(null);
+    beforeRedirect?.();
+    const u = new URL(location.href);
+    for (const k of ['step', 'paid', 'verified', 'extra']) u.searchParams.delete(k);
+    u.searchParams.set('sec', back);
+    try {
+      const r = await fetch('/api/report-link?checkout=1', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines, email, back: u.pathname + u.search, embedded: true }) });
+      const j = await r.json() as { url?: string; id?: string; clientSecret?: string; publishableKey?: string; message?: string };
+      if (j.clientSecret && j.publishableKey && j.id) { setEmbed({ id: j.id, clientSecret: j.clientSecret, pk: j.publishableKey }); return; }
+      if (j.url && beforeRedirect) { location.href = j.url; return; }
+      setErr(j.message ?? 'Payment could not start.');
+    } catch { setErr('Payment could not start — check the connection.'); }
+    setBusy(false);
+  };
+  return <>
     {err && <p className="banner warn">▲ {err}</p>}
     {embed ? <>
       <div ref={box} className="ci-embed" aria-label="Secure payment by Stripe" />
@@ -309,7 +364,6 @@ function Pay({ stay, flow, p, save, set }: S) {
         Test card 4242 4242 4242 4242, any future date, any CVC. A deposit is only held — captured after check-out if something is owed.</Hint></span></p>
   </>;
 }
-
 
 /** The payment, confirmed (owner, 2026-11-16: "confirm it was paid — it does not show"): Stripe's total, and the hold. */
 export function PaidCard({ flow, today, hold }: { flow: Flow; today: number; hold: number }) {

@@ -290,6 +290,19 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - **Wallets in test mode:** Google Pay shows only in Chrome with a card saved in the Google account; Apple Pay only in Safari with a card in
   Wallet. Stripe never charges them in test mode. Otherwise card 4242 4242 4242 4242.
 
+### One structure everywhere + extensions paid in the portal (2026-11-16)
+- **Island (`Island`, `SecTop` in GuestCheckin.tsx):** every section opens with a round "‹" and an island of its parts — check-in steps
+  (`StepIsland`), extras (`ExtrasTop`: all extras, then each), house guide (its blocks, `data-gk`; scroll moves the open one). Paid →
+  one pill "✓ Payment" across, no back, "You’re all set" (what was paid stays paid).
+- **Home:** the check-in card carries the steps (ring + list + Start/Continue; done steps reopen); tiles = Door code & access · Wi-Fi ·
+  Contact (call, never locked) · House guide. Check-in section = that same card at the top, then the door code (top) and arrival steps.
+- **Extra nights from Hostaway:** `calendarFit` also returns `nightPrices` (Hostaway's price per free night); the extension picks dates on a
+  strip with those prices and is **booked and paid on the spot** (`StripePay`, the embedded checkout shared with check-in). On success
+  `flow.extended` → `extendStay()` moves the dates and uses up the free nights. **Open (real link):** re-check the calendar right before
+  charging, then extend the Hostaway reservation (blocks the calendar) — a Hostaway write, needs the owner's OK; the demo writes nothing.
+- **Covered parking** = an extra (`parking`, per night × nights) where the record has "parking_extra_price"; also in the check-in Extras step.
+- No "We confirm" / "Depends on the clean" anywhere: a turnover only changes the request to need our OK.
+
 ### Open: guest messages sent by Kaizen instead of Hostaway (planned 2026-11-15, NOT started)
 
 - Plan: reservation webhook → welcome + signed portal link; reminders at T-3 / T-1 only if check-in not done; team alert T-1 6 PM;

@@ -59,6 +59,8 @@ export interface Flow {
   extras: Partial<Record<UpsellKind, Choice>>;
   extrasSeen: boolean;
   paid: boolean;
+  /** Nights added by a paid extension (extendStay) — the stay's dates follow it. */
+  extended?: { before: number; after: number } | null;
   /** What Stripe says was paid today (shown as the confirmation). */
   paidTotal?: number | null;
 }
@@ -71,7 +73,7 @@ export const newFlow = (): Flow => ({ details: false, arrival: null, identity: f
 export const doneFlow = (): Flow => ({ details: true, arrival: '6:00 PM', identity: true, protection: 'waiver', rules: true, extras: {}, extrasSeen: true, paid: true });
 
 /** Extras offered inside check-in. Early / late follow requestMode: in time and no turnover → charged now; else on request. */
-export const FLOW_EXTRAS: UpsellKind[] = ['early-checkin', 'late-checkout', 'mid-clean', 'welcome'];
+export const FLOW_EXTRAS: UpsellKind[] = ['early-checkin', 'late-checkout', 'mid-clean', 'parking', 'welcome'];
 export const onRequest = (s: GuestStay, k: UpsellKind, now: Date) => (k === 'early-checkin' || k === 'late-checkout') && requestMode(s, { kind: k }, now).mode === 'approval';
 
 export type StepKey = 'details' | 'identity' | 'protection' | 'rules' | 'extras' | 'pay';

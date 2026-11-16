@@ -30,6 +30,8 @@ export interface GuestStay {
   total: number;              // what Kaizen collects for the stay (0 when the channel collects)
   paid: number;
   nightly: number | null;     // rate for extra nights, when known
+  /** Hostaway's own price for each free night around the stay (index 0 = the night next to it) — the extra nights' prices. */
+  nightPrices?: { before: number[]; after: number[] } | null;
   freeBefore: number;         // free nights on the calendar right before arrival
   freeAfter: number;          // …and right after departure
   turnIn: boolean;            // someone checks out the day this guest arrives
@@ -102,17 +104,19 @@ export function pricesFrom(vals: Record<string, unknown> | null | undefined): Pa
   const mid = num(vals?.mid_clean_price); if (mid != null) out['mid-clean'] = mid;
   const crib = num(vals?.crib_price); if (crib != null) out.crib = crib;
   const welcome = num(vals?.welcome_price); if (welcome != null) out.welcome = welcome;
+  // Covered parking (owner, 2026-11-16: "the upsell can also be the covered parking"): the record's parking price, per night.
+  const park = num(vals?.parking_extra_price); if (park != null) out.parking = park;
   return out;
 }
 
 /** Repository "Guest services" (112): the extras a unit does NOT offer — "No" only; blank = offered. */
 const SVC_KEY: Record<UpsellKind, string> = { 'extra-nights': 'svc_extra_nights', 'early-checkin': 'svc_early_checkin', 'late-checkout': 'svc_late_checkout',
-  'mid-clean': 'svc_mid_clean', pet: 'svc_pet', crib: 'svc_crib', welcome: 'svc_welcome' };
+  'mid-clean': 'svc_mid_clean', pet: 'svc_pet', crib: 'svc_crib', welcome: 'svc_welcome', parking: 'svc_parking' };
 export function notOfferedFrom(vals: Record<string, unknown> | null | undefined): UpsellKind[] {
   return (Object.keys(SVC_KEY) as UpsellKind[]).filter(k => /^no$/i.test(String(vals?.[SVC_KEY[k]] ?? '').trim()));
 }
-/** The extras this stay's unit offers (the catalog minus the Repository's "No"). */
-export const offered = (s: Pick<GuestStay, 'notOffered'>) => UPSELLS.filter(u => !s.notOffered?.includes(u.kind));
+/** The extras this stay's unit offers (the catalog minus the Repository's "No"); covered parking only where the record prices it. */
+export const offered = (s: Pick<GuestStay, 'notOffered' | 'prices'>) => UPSELLS.filter(u => !s.notOffered?.includes(u.kind) && (u.kind !== 'parking' || s.prices?.parking != null));
 
 /** The price a card shows and quotes: the house's, else the catalog placeholder. */
 export const priceOf = (s: Pick<GuestStay, 'prices'>, u: Upsell) => s.prices?.[u.kind] ?? u.price;
@@ -122,6 +126,7 @@ const DAY = 86_400_000;
 const ymd = (s: string) => Date.UTC(+s.slice(0, 4), +s.slice(5, 7) - 1, +s.slice(8, 10));
 export const nights = (s: Pick<GuestStay, 'arrival' | 'departure'>) => Math.max(0, Math.round((ymd(s.departure) - ymd(s.arrival)) / DAY));
 const cents = (n: number) => Math.round(n * 100) / 100;
+const sum = (a: number[]) => a.reduce((t, x) => t + x, 0);
 
 export type PayState = 'channel' | 'unpaid' | 'partial' | 'paid';
 
@@ -140,7 +145,7 @@ export function guide(s: GuestStay, now: Date): { open: true } | { open: false; 
   return { open: true };
 }
 
-export type UpsellKind = 'extra-nights' | 'early-checkin' | 'late-checkout' | 'mid-clean' | 'pet' | 'crib' | 'welcome';
+export type UpsellKind = 'extra-nights' | 'early-checkin' | 'late-checkout' | 'mid-clean' | 'pet' | 'crib' | 'welcome' | 'parking';
 
 export interface Upsell {
   kind: UpsellKind;
@@ -156,12 +161,13 @@ export interface Upsell {
 export const UPSELLS: Upsell[] = [
   { kind: 'extra-nights', title: 'Extra nights', icon: 'bed', price: null, per: 'night', pick: { type: 'nights' } },
   // $20 per hour, every house (owner, 2026-11-15); the hours count from the stay's own times.
-  { kind: 'early-checkin', title: 'Early check-in', icon: 'clock', price: 20, per: 'hour', pick: { type: 'time', options: ['12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM'] } },
+  { kind: 'early-checkin', title: 'Early check-in', icon: 'landing', price: 20, per: 'hour', pick: { type: 'time', options: ['12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM'] } },
   { kind: 'late-checkout', title: 'Late check-out', icon: 'clock', price: 20, per: 'hour', pick: { type: 'time', options: ['12:00 PM', '1:00 PM', '2:00 PM', '3:00 PM'] } },
   { kind: 'mid-clean', title: 'Mid-stay clean', icon: 'brush', price: 95, per: 'stay', pick: { type: 'none' } },
   { kind: 'pet', title: 'Bring a pet', icon: 'home', price: 75, per: 'item', pick: { type: 'qty', max: 2 } },
   { kind: 'crib', title: 'Crib / pack ’n play', icon: 'bed', price: 25, per: 'item', pick: { type: 'qty', max: 2 } },
   { kind: 'welcome', title: 'Welcome basket', icon: 'sparkles', price: 35, per: 'item', pick: { type: 'none' } },
+  { kind: 'parking', title: 'Covered parking', icon: 'car', price: null, per: 'night', pick: { type: 'none' } },
 ];
 
 export type Availability = { ok: true; flag?: 'turnover' } | { ok: false; why: 'calendar' | 'price' | 'short' };
@@ -173,10 +179,11 @@ export type Availability = { ok: true; flag?: 'turnover' } | { ok: false; why: '
 export function availability(s: GuestStay, u: Upsell): Availability {
   if (u.kind === 'extra-nights') {
     if (s.freeBefore + s.freeAfter <= 0) return { ok: false, why: 'calendar' };
-    if (s.nightly == null) return { ok: false, why: 'price' };
+    if (s.nightly == null && !s.nightPrices) return { ok: false, why: 'price' };
     return { ok: true };
   }
   if (u.kind === 'mid-clean' && nights(s) < 4) return { ok: false, why: 'short' };
+  if (u.kind === 'parking' && priceOf(s, u) == null) return { ok: false, why: 'price' };
   if ((u.kind === 'early-checkin' && s.turnIn) || (u.kind === 'late-checkout' && s.turnOut)) return { ok: true, flag: 'turnover' };
   return { ok: true };
 }
@@ -230,12 +237,15 @@ export interface Choice { time?: string; before?: number; after?: number; qty?: 
 /** The total the card shows; null when it can't be priced (the team quotes). */
 export function quote(s: GuestStay, u: Upsell, c: Choice): number | null {
   if (u.kind === 'extra-nights') {
-    const n = clampNights(s, c).before + clampNights(s, c).after;
-    return s.nightly == null ? null : cents(n * s.nightly);
+    const n = clampNights(s, c);
+    // Hostaway's price night by night when the calendar gave it; else the flat nightly rate.
+    if (s.nightPrices) return cents(sum(s.nightPrices.before.slice(0, n.before)) + sum(s.nightPrices.after.slice(0, n.after)));
+    return s.nightly == null ? null : cents((n.before + n.after) * s.nightly);
   }
   const price = priceOf(s, u);
   if (price == null) return null;
   if (u.per === 'hour') { const h = hoursOf(s, u, c.time); return h == null ? null : cents(price * h); }
+  if (u.per === 'night') return cents(price * nights(s));
   return cents(price * (u.per === 'item' ? Math.max(1, Math.min(c.qty ?? 1, u.pick.type === 'qty' ? u.pick.max : 1)) : 1));
 }
 
@@ -322,12 +332,31 @@ export function payFromHostaway(d: { guestPortalUrl?: unknown; paymentStatus?: u
  * the calendar"). `days` = the nights around the stay (date = the night that starts that day). A night the calendar
  * does not list counts as taken — never offer what we cannot see. At most `max` nights each side.
  */
-export type CalNight = { date: string; available: boolean };
+export type CalNight = { date: string; available: boolean; price?: number | null };
 export function calendarFit(days: CalNight[], arrival: string, departure: string, max = 7) {
   const free = new Map(days.map(d => [d.date, d.available]));
   const shift = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
   let freeBefore = 0; while (freeBefore < max && free.get(shift(arrival, -(freeBefore + 1))) === true) freeBefore++;
   let freeAfter = 0; while (freeAfter < max && free.get(shift(departure, freeAfter)) === true) freeAfter++;
   // Someone sleeps the night before arrival → they leave that morning; someone takes the departure night → they arrive that day.
-  return { freeBefore, freeAfter, turnIn: free.get(shift(arrival, -1)) === false, turnOut: free.get(departure) === false };
+  const price = new Map(days.map(d => [d.date, d.price ?? null]));
+  const prices = (from: string, n: number, dir: 1 | -1) => Array.from({ length: n }, (_, i) => price.get(shift(from, dir === 1 ? i : -(i + 1))));
+  const before = prices(arrival, freeBefore, -1), after = prices(departure, freeAfter, 1);
+  // Prices only when Hostaway gave one for every free night — never a half-priced quote.
+  const nightPrices = [...before, ...after].every(p => typeof p === 'number' && p > 0) ? { before: before as number[], after: after as number[] } : null;
+  return { freeBefore, freeAfter, turnIn: free.get(shift(arrival, -1)) === false, turnOut: free.get(departure) === false, nightPrices };
+}
+
+/**
+ * The stay after a paid extension (owner, 2026-11-16: "if the dates are open, extend it; if the payment succeeds, the
+ * calendar takes it"): new arrival / departure, the free nights left, Hostaway's prices for those left. A side used up
+ * to the last free night meets a taken one (calendarFit looks 7 nights out at most) → that day becomes a turnover.
+ */
+export function extendStay(s: GuestStay, x?: { before?: number; after?: number } | null, max = 7): GuestStay {
+  const b = Math.max(0, Math.min(x?.before ?? 0, s.freeBefore)), a = Math.max(0, Math.min(x?.after ?? 0, s.freeAfter));
+  if (!b && !a) return s;
+  const shift = (d: string, n: number) => { const t = new Date(`${d}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
+  return { ...s, arrival: shift(s.arrival, -b), departure: shift(s.departure, a), freeBefore: s.freeBefore - b, freeAfter: s.freeAfter - a,
+    turnIn: b ? s.freeBefore - b === 0 && s.freeBefore < max : s.turnIn, turnOut: a ? s.freeAfter - a === 0 && s.freeAfter < max : s.turnOut,
+    nightPrices: s.nightPrices ? { before: s.nightPrices.before.slice(b), after: s.nightPrices.after.slice(a) } : s.nightPrices };
 }
