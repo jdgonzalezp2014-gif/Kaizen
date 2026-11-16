@@ -793,11 +793,13 @@ export async function fetchListingCover(creds: HostawayCredentials, listingId: s
   // first few, in order, that still answers as an image.
   const imgs = (l?.listingImages ?? []).filter(i => typeof i.url === 'string' && (i.url as string).startsWith('https://'))
     .sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0)).map(i => i.url as string).slice(0, 6);
+  if (typeof l?.thumbnailUrl === 'string' && l.thumbnailUrl.startsWith('https://')) imgs.push(l.thumbnailUrl);
   for (const u of imgs) {
     const r = await fetch(u, { method: 'HEAD' }).catch(() => null);
     if (r?.ok && (r.headers.get('Content-Type') ?? '').startsWith('image/')) return u;
   }
-  return coverOf(l);
+  // None answers (P2-1406 has no photos in Hostaway, only a dead thumbnail): no cover — the record's Portal photo fills it.
+  return null;
 }
 
 /** The signed agreement's bytes. Hostaway's own links want the token; others are public. */
