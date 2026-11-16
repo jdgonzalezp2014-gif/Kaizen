@@ -253,7 +253,7 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   guide + photos through `/api/report-link?house=` (photos `&photo=<id>`, only ids its own / shared guide names) — no sign-in.
   Carries the lockbox code and Wi-Fi: hand it only to who should see them. Mint with a one-off script (`.env.local` ENCRYPTION_KEY).
   P2-1406 test link minted 2026-11-15 for 10 years (the team's permanent test). The check-in persists in that browser (localStorage per
-  token, "Start over" clears it). Cover: first Hostaway photo that answers; P2-1406 has none in Hostaway → set its Portal photo.
+  token, "Start over" clears it). Cover: first Hostaway photo that answers — needs `?includeResources=1` on GET /listings/<id> (without it listingImages is empty).
 
 ### Open: guest messages sent by Kaizen instead of Hostaway (planned 2026-11-15, NOT started)
 
