@@ -247,6 +247,13 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   access); houses have no `parking` text. Arrival guides: The Links (2 shared building guides) + Preston only — Cortland
   (CL-*, Schlage, same complex) needs one shared guide like The Links (arrival photos + where the lockbox / fob is: owner).
 
+### Open demo link for one real unit (2026-11-15)
+
+- `/crew/guest-demo?house=<unit>.<exp>.<HMAC>` (`functions/_lib/guest-demo.ts`, `signHouse(key, unitId, days=14)`): loads that unit's
+  guide + photos through `/api/report-link?house=` (photos `&photo=<id>`, only ids its own / shared guide names) — no sign-in.
+  Carries the lockbox code and Wi-Fi: hand it only to who should see them. Mint with a one-off script (`.env.local` ENCRYPTION_KEY).
+  P2-1406 link minted 2026-11-15, expires 2026-11-29.
+
 ### Rules
 
 - Pay state = `total − paid` (≤ 0 → paid); channel `airbnb`/`vrbo` → collected by the channel, no gate.
