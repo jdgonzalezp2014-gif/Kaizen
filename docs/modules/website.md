@@ -35,4 +35,8 @@ Branch `main`, 57 commits as of 2026-11-08 (last `fa78139` "Update site info for
 - Decide how `/reservations` reaches Neon: a Kaizen OS endpoint (`/api/...` on Pages,
   CORS for the site's domain) vs a Supabase edge function with its own Neon role. Leaning
   OS endpoint: one place for rules and secrets.
-- Find the site's live domain and whether Lovable deploys on push or needs "Publish".
+- Checked 2026-11-15: live domain **kaizenguestproperties.com** (www → apex, Cloudflare in front, Lovable hosting). The live
+  build is still `fa78139` (Mar 2026); `main` = origin, we can push. **kaizen-properties.com is another company** (real-estate
+  investors) — never use it. `package-lock.json` is out of sync (Lovable uses bun): build locally with
+  `npm install --no-package-lock && npm run build` (builds clean). Whether a push to main publishes or needs Lovable's "Publish": still unknown.
+- Guest portal on the site (owner, 2026-11-15): link `/reservations/<hostaway id>-<short code>`; portal code stays in Kaizen OS.
