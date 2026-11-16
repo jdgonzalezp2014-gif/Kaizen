@@ -14,7 +14,7 @@ import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, availability, choiceLine, mapsUrl, nights, priceOf, quote, ready, requestMode, upsellRequest,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
-import { FLOW_KEY, doneFlow, entry, newFlow, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
+import { FLOW_KEY, VS_KEY, doneFlow, entry, newFlow, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
 import { CheckinProgress, StepList, StepScreen } from './GuestCheckin.tsx';
 
 type Send = (r: UpsellRequest) => Promise<{ ok: boolean; message?: string }>;
@@ -24,7 +24,8 @@ const of = (i: number, n: number) => `${i} of ${n}`;
 const dateLabel = (d: string) => new Date(`${d}T12:00:00Z`).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', timeZone: 'UTC' });
 function returnedFlow(): Flow | null {
   try {
-    if (!new URLSearchParams(location.search).get('paid')) return null;
+    const q = new URLSearchParams(location.search);
+    if (!q.get('paid') && !q.get('verified')) return null;
     const f = JSON.parse(sessionStorage.getItem(FLOW_KEY) ?? 'null') as Flow | null;
     return f && typeof f === 'object' ? f : null;
   } catch { return null; }
@@ -43,12 +44,20 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar, embedded = 
   // Back from Stripe Checkout (`?paid=cs_…`): the step is done only if Stripe says the session is complete.
   const [payNote, setPayNote] = useState<string | null>(null);
   useEffect(() => {
-    const id = embedded ? null : new URLSearchParams(location.search).get('paid');
-    if (!id) return;
-    fetch(`/api/report-link?checkout=${encodeURIComponent(id)}`).then(r => r.json() as Promise<{ paid?: boolean; message?: string }>).then(j => {
+    if (embedded) return;
+    const q = new URLSearchParams(location.search);
+    const id = q.get('paid');
+    if (id) fetch(`/api/report-link?checkout=${encodeURIComponent(id)}`).then(r => r.json() as Promise<{ paid?: boolean; message?: string }>).then(j => {
       if (j.paid) setFlow(f => ({ ...f, paid: true }));
       else setPayNote(j.message ?? 'The payment was not completed.');
     }).catch(() => setPayNote('Could not check the payment.'));
+    // Back from Stripe Identity (`?verified=1`): the session id was kept in the tab.
+    let vs: string | null = null;
+    try { vs = q.get('verified') ? sessionStorage.getItem(VS_KEY) : null; } catch { /* no storage */ }
+    if (vs) fetch(`/api/report-link?identity=${encodeURIComponent(vs)}`).then(r => r.json() as Promise<{ done?: boolean; message?: string }>).then(j => {
+      if (j.done) { setFlow(f => ({ ...f, identity: true })); setStep(null); }
+      else setPayNote(j.message ?? 'Verification was not finished.');
+    }).catch(() => setPayNote('Could not check the verification.'));
   }, [embedded]);
   const [step, setStep] = useState<StepKey | null>(null);
   const prot = protectionFor(stay.unitType ?? 'house', stay.protection ?? {});

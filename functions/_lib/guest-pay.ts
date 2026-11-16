@@ -4,6 +4,8 @@
  *
  *  POST /api/report-link?checkout=1  { lines, email?, back } → { url }   (a Checkout Session)
  *  GET  /api/report-link?checkout=<cs_…>                     → { paid }  (did the guest finish it?)
+ *  POST /api/report-link?identity=1  { back }                → { url }   (Stripe Identity: ID photo + selfie)
+ *  GET  /api/report-link?identity=<vs_…>                     → { done, status }
  *
  * Same public door as the payee Stripe link, so no new Access bypass. **Sandbox only for now:** the lines come from the
  * page (the demo stay has no reservation behind it), so a live key is refused until the signed /guest/<id> link
@@ -39,6 +41,9 @@ export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: 
   const hold = lines.some(l => l.kind === 'hold');
   const p: Record<string, string | number> = {
     mode: 'payment',
+    // Card only: Apple Pay / Google Pay ride on it. Stripe's dynamic list added Klarna, Affirm, Cash App, Amazon Pay —
+    // pay-later makes no sense for a waiver and cannot hold a deposit.
+    'payment_method_types[0]': 'card',
     success_url: `${back}${back.includes('?') ? '&' : '?'}paid={CHECKOUT_SESSION_ID}`,
     cancel_url: back,
     'metadata[source]': 'guest-portal-demo',
@@ -68,5 +73,40 @@ export async function guestCheckoutState(sql: SqlFn, encryptionKey: string, id: 
     const s = await stripeCall<{ status: string; payment_status: string; amount_total: number }>(k.key, 'GET', `/checkout/sessions/${id}`);
     // A manual-capture (hold) session is complete but "unpaid" until the team captures — complete is what counts here.
     return Response.json({ ok: true, paid: s.status === 'complete', total: s.amount_total / 100 }, { headers: { 'Cache-Control': 'no-store' } });
+  } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
+}
+
+/* ── Identity (Stripe Identity, sandbox — Truvi vs Stripe still open) ───────────────── */
+
+export async function guestIdentity(sql: SqlFn, encryptionKey: string, request: Request): Promise<Response> {
+  const k = await sandbox(sql, encryptionKey);
+  if (k instanceof Response) return k;
+  const b = await request.json().catch(() => ({})) as { back?: string };
+  if (!portalPath(b.back)) return bad('Bad return page.');
+  const back = new URL(request.url).origin + b.back;
+  try {
+    const v = await stripeCall<{ id: string; url: string }>(k.key, 'POST', '/identity/verification_sessions', {
+      type: 'document',
+      'options[document][require_matching_selfie]': true,
+      'options[document][allowed_types][0]': 'driving_license',
+      'options[document][allowed_types][1]': 'passport',
+      'options[document][allowed_types][2]': 'id_card',
+      'metadata[source]': 'guest-portal-demo',
+      // Stripe adds nothing to return_url: the page keeps the session id in the tab (sessionStorage) and checks it on return.
+      return_url: `${back}${back.includes('?') ? '&' : '?'}verified=1`,
+    });
+    return Response.json({ ok: true, url: v.url, id: v.id });
+  } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
+}
+
+export async function guestIdentityState(sql: SqlFn, encryptionKey: string, id: string): Promise<Response> {
+  if (!/^vs_[A-Za-z0-9]{10,200}$/.test(id)) return bad('Bad session.');
+  const k = await sandbox(sql, encryptionKey);
+  if (k instanceof Response) return k;
+  try {
+    const v = await stripeCall<{ status: string; last_error?: { reason?: string } | null }>(k.key, 'GET', `/identity/verification_sessions/${id}`);
+    // processing = submitted, Stripe is checking (seconds); verified = match. requires_input = failed or left.
+    return Response.json({ ok: true, done: v.status === 'verified' || v.status === 'processing', status: v.status,
+      message: v.status === 'requires_input' ? (v.last_error?.reason ?? 'Verification was not finished.') : undefined }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
 }

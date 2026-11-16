@@ -9,7 +9,7 @@ import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, quote, requestMode, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
-import { FLOW_KEY, bill, channelCovers, flowExtras, nextStep, onRequest, progress, rulesList, steps, SAMPLE_RULES,
+import { FLOW_KEY, VS_KEY, bill, channelCovers, flowExtras, nextStep, onRequest, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
 const STEP_ICON: Record<StepKey, string> = { details: 'user', identity: 'idcard', protection: 'shield', rules: 'book', extras: 'sparkles', pay: 'card' };
@@ -113,24 +113,39 @@ function Details({ stay, flow, save }: S) {
 }
 
 /** Placeholder until the provider is chosen (Truvi or Stripe Identity): shows what the guest will do. */
-function Identity({ flow, save }: S) {
-  const [doc, setDoc] = useState('license');
+/** Identity: Stripe Identity's own page (ID photo + selfie, camera on the phone). Sandbox; Truvi vs Stripe still open. */
+function Identity({ flow }: S) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const start = async () => {
+    setBusy(true); setErr(null);
+    const u = new URL(location.href);
+    for (const k of ['step', 'paid', 'verified', 'extra']) u.searchParams.delete(k);
+    u.searchParams.set('sec', 'checkin');
+    try {
+      const r = await fetch('/api/report-link?identity=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ back: u.pathname + u.search }) });
+      const j = await r.json() as { url?: string; id?: string; message?: string };
+      if (j.url && j.id) {
+        try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); sessionStorage.setItem(VS_KEY, j.id); } catch { /* private mode */ }
+        location.href = j.url; return;
+      }
+      setErr(j.message ?? 'Verification could not start.');
+    } catch { setErr('Verification could not start — check the connection.'); }
+    setBusy(false);
+  };
   return <>
     <section className="card ci-card">
-      <span className="ci-q">Your ID</span>
-      <div className="ci-docs" role="radiogroup" aria-label="ID type">
-        {([['license', 'Driver’s license', 'Front and back'], ['passport', 'Passport', 'Photo page'], ['id', 'National ID', 'Front and back']] as const).map(([v, t, s]) =>
-          <button key={v} role="radio" aria-checked={doc === v} className={`ci-opt${doc === v ? ' on' : ''}`} onClick={() => setDoc(v)}>
-            <span className="ci-radio" aria-hidden /><span><b>{t}</b><span className="note">{s}</span></span></button>)}
-      </div>
+      <span className="ci-q">Your ID <Hint>Stripe opens its own page: pick driver’s license, passport or ID card, take a photo of it and a selfie
+        (on a computer it offers to continue on the phone). Test mode: Stripe also offers ready-made test results.</Hint></span>
       <div className="ci-shots">
         <span className="ci-shot"><Icon n="idcard" /><span>Photo of your ID</span></span>
         <span className="ci-shot"><Icon n="camera" /><span>A quick selfie</span></span>
       </div>
-      <p className="note ci-inline"><Icon n="lock" /> Encrypted. Only used to match you to your booking.</p>
+      <p className="note ci-inline"><Icon n="lock" /> Encrypted by Stripe. Only used to match you to your booking.</p>
     </section>
-    <p className="ci-soon"><Icon n="clock" /> Preview — verification goes live soon</p>
-    <button className="g-cta" onClick={() => save({ ...flow, identity: true })}>Complete verification</button>
+    {err && <p className="banner warn">▲ {err}</p>}
+    <button className="g-cta" onClick={start} disabled={busy}>{busy ? 'Opening verification…' : flow.identity ? 'Verify again' : 'Verify with Stripe'}</button>
+    <p className="ci-stripe"><span><Icon n="lock" /> Identity by Stripe</span><span>Test mode</span></p>
   </>;
 }
 
@@ -214,7 +229,7 @@ function Pay({ stay, flow, p }: S) {
     setBusy(true); setErr(null);
     try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); } catch { /* private mode: the page just starts over */ }
     const u = new URL(location.href);
-    for (const k of ['step', 'paid', 'extra']) u.searchParams.delete(k);
+    for (const k of ['step', 'paid', 'verified', 'extra']) u.searchParams.delete(k);
     u.searchParams.set('sec', 'checkin');
     try {
       const r = await fetch('/api/report-link?checkout=1', { method: 'POST', headers: { 'Content-Type': 'application/json' },

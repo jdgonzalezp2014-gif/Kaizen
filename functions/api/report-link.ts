@@ -36,7 +36,7 @@ import { addPhotos, cleanStates, ensureRecord, markClean, type Stage } from '../
 import { inspectGet, inspectPost } from '../_lib/inspect-link.ts';
 import { workAct, workOfToken, workPage, workPhoto } from '../_lib/vendor-work.ts';
 import { stripeOnboard } from '../_lib/payouts.ts';
-import { guestCheckout, guestCheckoutState } from '../_lib/guest-pay.ts';
+import { guestCheckout, guestCheckoutState, guestIdentity, guestIdentityState } from '../_lib/guest-pay.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
 
@@ -68,6 +68,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   // Guest portal: did the guest finish Stripe Checkout? (guest-pay.ts)
   const co = new URL(request.url).searchParams.get('checkout');
   if (co) return guestCheckoutState(sql, env.ENCRYPTION_KEY, co);
+  const vs = new URL(request.url).searchParams.get('identity');
+  if (vs) return guestIdentityState(sql, env.ENCRYPTION_KEY, vs);
   // §137: a handyman's link for one work order — the same door, its own header.
   if (request.headers.has('X-Work-Token')) {
     const w = await workOfToken(sql, request);
@@ -90,6 +92,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const sql = db(env) as unknown as SqlFn;
   if (request.headers.has('X-Inspect-Token')) return inspectPost(sql, env.ENCRYPTION_KEY, request);
   if (new URL(request.url).searchParams.has('checkout')) return guestCheckout(sql, env.ENCRYPTION_KEY, request);
+  if (new URL(request.url).searchParams.has('identity')) return guestIdentity(sql, env.ENCRYPTION_KEY, request);
   if (request.headers.has('X-Work-Token')) {
     const w = await workOfToken(sql, request);
     if (w instanceof Response) return w;

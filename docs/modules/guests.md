@@ -226,6 +226,10 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   owed (partial capture) and the rest is released. "If confirmed" extras are not sent (charged later).
 - The answers are kept in `sessionStorage` (`FLOW_KEY`) before the redirect; back on `?paid=cs_…` the page restores them and marks
   paid only when the server reads `status = complete`.
+- Card only (`payment_method_types=card`; Apple / Google Pay ride on it) — the dynamic list offered Klarna, Affirm, Cash App, Amazon Pay.
+- **Identity step = Stripe Identity (sandbox)**: `?identity=1` POST → VerificationSession (document + matching selfie; licence /
+  passport / ID card) → Stripe's page → back on `?verified=1`; the vs id waits in `sessionStorage` (`VS_KEY`); done when
+  `processing` or `verified`. Photos are seen in Stripe → Identity. Truvi vs Stripe still open (Stripe ≈ $1.50 each live).
 - **Sandbox only**: lines come from the page (demo stay), so a live key is refused (409). Before live: the signed `/guest/<id>` link,
   bill computed on the server, `guest_checkins` row + webhook. Hostaway's $12/night waiver still to remove first.
 
