@@ -14,7 +14,7 @@ import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, availability, choiceLine, mapsUrl, nights, priceOf, quote, ready, requestMode, upsellRequest,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellRequest } from '../lib/guest-portal.ts';
-import { FLOW_KEY, VS_KEY, doneFlow, entry, newFlow, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
+import { FLOW_KEY, VS_KEY, doorCodeFor, doneFlow, entry, newFlow, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
 import { CheckinProgress, StepList, StepScreen } from './GuestCheckin.tsx';
 
 type Send = (r: UpsellRequest) => Promise<{ ok: boolean; message?: string }>;
@@ -390,7 +390,8 @@ export function GuestDemoPage() {
   const [k, setK] = useState<DemoKey>(DEMO_KEYS.includes(q as DemoKey) ? q as DemoKey : 'unpaid');
   const pickDemo = (x: DemoKey) => { setK(x); const u = new URL(location.href); u.searchParams.set('stay', x); history.replaceState(history.state, '', u); };
   const house = useHouse();
-  const stay: GuestStay = house.data ? { ...demoStay(k), unitName: house.data.unitName, photo: house.data.photo ?? null, unitType: house.data.unitType ?? 'house', protection: house.data.protection ?? null, address: house.data.guide?.address ?? null,
+  // Demo: a picked house's code follows its Lock type; the sample 4821 stands in for Hostaway's per-stay code unless the record has its own.
+  const stay: GuestStay = house.data ? { ...demoStay(k), doorCode: doorCodeFor(house.data.lockType, house.data.guestCode, house.data.guestCode ? null : '4821'), unitName: house.data.unitName, photo: house.data.photo ?? null, unitType: house.data.unitType ?? 'house', protection: house.data.protection ?? null, address: house.data.guide?.address ?? null,
     guide: house.data.guide, prices: house.data.prices } : demoStay(k);
   return <GuestPortal key={`${k}-${house.unit}`} stay={stay} send={async () => ({ ok: true })}
     demoBar={<div className="g-demo" role="group" aria-label="Demo stay">
@@ -407,7 +408,7 @@ export function GuestDemoPage() {
  * The demo with a real house (2026-11-09): its guide and prices from the Repository via /api/guest-guide,
  * which answers only behind the staff sign-in — on /crew/guest-demo (no sign-in) the picker simply never shows.
  */
-type HouseData = { unitName: string; photo?: string | null; unitType?: GuestStay['unitType'] | null; protection?: GuestStay['protection']; guide: GuestGuide | null; prices: GuestStay['prices'] };
+type HouseData = { unitName: string; photo?: string | null; lockType?: string | null; guestCode?: string | null; unitType?: GuestStay['unitType'] | null; protection?: GuestStay['protection']; guide: GuestGuide | null; prices: GuestStay['prices'] };
 function useHouse() {
   const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
   const [unit, setUnit] = useState(() => new URLSearchParams(location.search).get('unit') ?? '');

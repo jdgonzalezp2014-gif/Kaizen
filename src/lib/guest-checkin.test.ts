@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bill, entry, portalFrom, newFlow, doneFlow, nextStep, progress, protectionFor, rulesList, steps, flowExtras, type Flow } from './guest-checkin.ts';
+import { bill, doorCodeFor, entry, portalFrom, newFlow, doneFlow, nextStep, progress, protectionFor, rulesList, steps, flowExtras, type Flow } from './guest-checkin.ts';
 import type { GuestStay } from './guest-portal.ts';
 
 const stay = (o: Partial<GuestStay> = {}): GuestStay => ({
@@ -73,4 +73,13 @@ test('portal fields from the record: unit type and protection, blanks and junk i
   assert.deepEqual(portalFrom({ unit_type: 'Apartment', waiver_price: '$59', waiver_cap: 2000, deposit_hold: '' }),
     { unitType: 'apartment', protection: { waiverPrice: 59, waiverCap: 2000, depositHold: null } });
   assert.deepEqual(portalFrom(null), { unitType: null, protection: { waiverPrice: null, waiverCap: null, depositHold: null } });
+});
+
+test('doorCodeFor: smart lock → reservation code, else the Repository code; fob / keys → none', () => {
+  assert.equal(doorCodeFor('Yale Smart Lock', '2580', null), '2580');
+  assert.equal(doorCodeFor('Schlage Smart Lock', '2580', '7731'), '7731');
+  assert.equal(doorCodeFor('Access Fob', '2580', '7731'), null);
+  assert.equal(doorCodeFor('Keys', null, '7731'), null);
+  assert.equal(doorCodeFor('None', null, null), null);
+  assert.equal(doorCodeFor(null, ' ', '4821'), '4821');
 });

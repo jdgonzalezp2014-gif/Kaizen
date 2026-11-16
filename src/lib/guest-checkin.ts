@@ -5,6 +5,7 @@
  * identity verification is a placeholder until Truvi vs Stripe Identity is decided; one payment at the end
  * (protection + paid extras) through Stripe — demo only for now. Pure: no fetch, no React.
  */
+import { kindOf } from './unit-access.ts';
 import { UPSELLS, priceOf, quote, availability, requestMode, type Choice, type GuestStay, type UpsellKind } from './guest-portal.ts';
 
 /** Protection values depend on what is rented: a room is not a house (owner, 2026-11-15). Per listing later. */
@@ -147,3 +148,15 @@ export const SAMPLE_RULES = [
   'Pets with approval only: a pet fee is added to the stay',
 ].join('\n');
 
+
+/**
+ * The door code the guest sees, read from the Repository's Lock type (owner, 2026-11-15 — never set per house in the portal):
+ * a smart lock → the reservation's own Hostaway code, else the record's "Guest check-in code" (Preston: Hostaway has none);
+ * fob / keys → no code, the guide's steps are the way in. No lock type → whatever code exists.
+ */
+export function doorCodeFor(lockType: string | null | undefined, guestCode: string | null | undefined, reservationCode: string | null | undefined): string | null {
+  const t = (v: string | null | undefined) => { const x = String(v ?? '').trim(); return x && !/^none$/i.test(x) ? x : null; };
+  const k = kindOf(t(lockType));
+  if (k === 'fob' || k === 'keys') return null;
+  return t(reservationCode) ?? t(guestCode);
+}

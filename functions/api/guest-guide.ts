@@ -36,7 +36,9 @@ export async function guestHouse(sql: SqlFn, unitId: string, encryptionKey?: str
   const ownPhoto = typeof rec?.vals?.portal_photo === 'string' && rec.vals.portal_photo.startsWith('https://') ? rec.vals.portal_photo : null;
   const photo = ownPhoto ?? (encryptionKey ? await getCredentials(sql, encryptionKey).then(c => fetchListingCover(c, unitId)).catch(() => null) : null);
   const portal = portalFrom(rec?.vals);
-  return { unitName: u.name, photo, unitType: portal.unitType, protection: portal.protection, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals) };
+  // Door code by Lock type (doorCodeFor): staff-only route; the guest's signed link must send it only once entry() opens.
+  const str = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim() : null;
+  return { unitName: u.name, photo, lockType: str(rec?.vals?.lock_type), guestCode: str(rec?.vals?.guest_code), unitType: portal.unitType, protection: portal.protection, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals) };
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

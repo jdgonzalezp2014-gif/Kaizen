@@ -216,7 +216,11 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - Pending: the request → To-do task / $ Approvals + Slack line (needs `upsell_requests` + API), the calendar write when one
   is approved (Hostaway check-in/out time → its smart-lock code window), Stripe.
 - **Migration 110** (Repository section "Guest portal": Portal photo, Unit type, Damage waiver price / covers up to,
-  Security deposit hold → `portalFrom()`): written, **not applied yet** — the code reads blanks as the unit type's defaults.
+  Security deposit hold → `portalFrom()`): applied 2026-11-15 — blanks read as the unit type's defaults.
+- **Door code by Lock type (owner, 2026-11-15)** — `doorCodeFor(lockType, guestCode, reservationCode)`: smart lock → the reservation's
+  Hostaway `doorCode`, else the record's **Guest check-in code** (`guest_code`, migration **111 — not applied yet**; Preston's Yale has no
+  Hostaway code); Access Fob / Keys → no code, the guide's steps (lockbox) are the way in, locked until check-in + pay are done.
+  Never configured per house in the portal. The signed guest link must send the code only once `entry()` opens.
 
 ### Stripe Checkout for the check-in payment (2026-11-15)
 
