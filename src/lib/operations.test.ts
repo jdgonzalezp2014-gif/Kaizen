@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  assign, blockForReservation, cancelledClean, pickByStars, rebookedAs, requiredLevel, utcToLocal, requiredStars, typicalNightly, zoneOf, buildBoard, eligibleInspectors, inspectionPanel, inspectionTier,
+  assign, blockForReservation, cancelledClean, pickByStars, pickByZone, rebookedAs, requiredLevel, utcToLocal, requiredStars, typicalNightly, zoneOf, buildBoard, eligibleInspectors, inspectionPanel, inspectionTier,
   mergeHostNote, proposeInspections, rateFor, sameGuest, summarize, withDefaults,
   type Cleaner, type OpsCleaning, type OpsListing, type OpsReservation, type OpsRules, type Override
 } from './operations.ts';
@@ -583,4 +583,22 @@ test('within the days a cleaner sees, the rule\'s recorded pick stays theirs and
   // A person's choice is never overridden.
   const ov = new Map<string, Override>([['R1', { assignment: 'assigned', cleaner: ruled, deep: null, checkoutTime: null, checkinTime: null }]]);
   assert.equal(out(buildBoard({ ...base, overrides: ov, held, holdDays: 10 }), 'R1').cleaner, ruled);
+});
+
+test('zones (§174): houses to their main cleaner up to her max, the overflow to whoever is free', () => {
+  const crew: Cleaner[] = [
+    { name: 'Veronica', tier: 'low', position: 1, active: true, rates: { 2: 90, 4: 140 }, deepRates: {}, stars: 2, zones: ['Houses'], maxPerDay: 3 },
+    { name: 'Wilson', tier: 'mid', position: 1, active: true, rates: { 2: 70, 4: 180 }, deepRates: {}, stars: 3, zones: ['P2', 'CL'], maxPerDay: null },
+    { name: 'Michelle', tier: 'low', position: 4, active: true, rates: { 2: 55 }, deepRates: {}, stars: 1, zones: [], maxPerDay: 2, level: 'manual' }
+  ];
+  const load = new Map<string, number>();
+  const take = (zone: string) => { const p = pickByZone(zone, 4, false, crew, load); if (p.cleaner) load.set(p.cleaner, (load.get(p.cleaner) ?? 0) + 1); return p.cleaner; };
+  assert.deepEqual([take('Houses'), take('Houses'), take('Houses'), take('Houses')], ['Veronica', 'Veronica', 'Veronica', 'Wilson']);
+  // Apartments are Wilson's even when Veronica is free.
+  load.clear();
+  assert.equal(take('P2'), 'Wilson');
+  assert.equal(take('CL'), 'Wilson');
+  // Declined by the main cleaner → the other one; manual-only is never picked.
+  assert.equal(pickByZone('Houses', 4, false, crew, new Map(), new Set(['Veronica'])).cleaner, 'Wilson');
+  assert.equal(pickByZone('Houses', 4, false, crew.slice(0, 1).concat(crew[2]!), new Map([['Veronica', 3]])).cleaner, null);
 });

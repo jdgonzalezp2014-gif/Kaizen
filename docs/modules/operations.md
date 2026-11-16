@@ -170,7 +170,12 @@ key had no SOPs.
   "Today" is New York's (§63, §64).
 - Live rules: next-booking horizon 10 days, long vacancy 7 days. The team assigns
   P2 → Veronica, CL → Michelle by hand (overrides), not by the tier rule (§65) — zones replace that.
-- **Levels (§125)**, replacing stars once switched: `cleaners.level` high (K&M, Irene) / standard
+- **Zones decide since 2026-11-15 (§174)** — `assign_rule = 'zones'`, owner: Veronica the houses, Wilson the
+  apartments. `pickByZone`: a cleaner's ticked zones are their MAIN ones (Veronica: Houses, max 3/day; Wilson: P2 + CL,
+  no limit); past the main cleaners' max, or no main cleaner, → anyone else free (fewest that day, then cheapest); manual /
+  declined never. A 4th house the same day goes to Wilson. No TBD-waiting as in levels: every clean is assigned. Held picks
+  (`crew_auto_days`) and hand overrides stay. Setup → "Who cleans: by zone | by levels" (same table, Preview, Save and switch).
+- **Levels (§125)**, built, not deciding: `cleaners.level` high (K&M, Irene) / standard
   (Veronica) / manual (Michelle — never picked by a rule). Needs high: a stay ≥ `levelLongStayNights`
   (10) with no mid-stay clean (`kind = 'mid_stay'`, MAN- rows) in its last `levelMidStayDays` (5) days;
   else the next guest decides if they check in < `levelNextWithinDays` (4) days after: ≥

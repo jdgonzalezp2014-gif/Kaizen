@@ -457,9 +457,9 @@ export interface AssignPreview {
   unassigned: { now: number; then: number };
   cost: { now: number; then: number }; unpriced: { now: number; then: number };
 }
-export const previewAssign = (roster: Cleaner[], rules: Record<string, unknown>) =>
+export const previewAssign = (roster: Cleaner[], rules: Record<string, unknown>, rule: 'levels' | 'zones' = 'levels') =>
   call<{ ok: true; preview: AssignPreview } | Fail>('/api/ops-settings', {
-    method: 'POST', body: JSON.stringify({ action: 'previewAssign', roster, rules })
+    method: 'POST', body: JSON.stringify({ action: 'previewAssign', roster, rules, rule })
   });
 export const cutoverImport = (commit: boolean) =>
   call<{ ok: true; dryRun: boolean; preview: CutoverPreview } | Fail>('/api/ops-settings', {

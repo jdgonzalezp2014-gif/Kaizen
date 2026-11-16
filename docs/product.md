@@ -44,8 +44,11 @@ come later for a fully in-page look. Built 2026-11-15 (`functions/_lib/guest-pay
   Should be per-account settings, with per-listing overrides in the Repository (migration 110 adds the listing part).
 - Repository tables `houses`, `the_links`, `cortland_legacy` are Kaizen's portfolios. A new tenant starts from one generic Units table.
 - Slack texts and SOPs mention Kaizen's people and channels.
+- Cleaning zones come from unit names (`zoneOf`: "CL 1125" → CL, "P2-1406" → P2, anything else → Houses). The zones rule
+  (§174) is generic; the zone of a unit should become a Repository field (or `units.unit_type`) per account.
 
 ## Log
 - 2026-11-15 — Guest portal online check-in (636c53a): details from Hostaway, identity placeholder, waiver/deposit,
   rules, extras, pay (mock), door code. Cover photo from Hostaway, early/late $20/h + 8 PM rule (d438c3d).
   Settings → Integrations panel. This file started. Integrations became a menu: each service unfolds its own settings.
+- 2026-11-15 — Who cleans by zone (§174): main zones per cleaner + overflow past their max. Reusable as is.

@@ -4,10 +4,10 @@
  *   GET                                        everything below, as it is
  *   POST { roster: [...] }                     replace the roster
  *   POST { rules: {...} }                      thresholds (merged over defaults)
- *   POST { assignRule: 'tiers' | 'stars' }     which rule decides who cleans (§121)
+ *   POST { assignRule: 'tiers' | 'stars' | 'levels' | 'zones' }  which rule decides who cleans (§121, §174)
  *   POST { crewCalendar: bool, crewCalendarDays }  cleaners see what is coming (§122)
  *   POST { action: 'crewLink', name, revoke? }  a cleaner's secret link: made (shown once) or revoked
- *   POST { action: 'previewAssign', roster, rules, rule? }   (rule: 'levels' by default, or 'stars')
+ *   POST { action: 'previewAssign', roster, rules, rule? }   (rule: 'levels' by default, 'stars' or 'zones')
  *                                              the board under these, by stars, against
  *                                              the board as it is — nothing saved
  *   POST { extraInspectors: [...] }
@@ -117,7 +117,7 @@ async function previewAssign(sql: SqlFn, env: Env, body: Record<string, any>): P
   const account = await getAccount(sql);
   const s = await loadOps(sql, await getCredentials(sql, env.ENCRYPTION_KEY), { cleaningsCsvUrl: account?.cleaningsCsvUrl });
   const proposed = { roster: roster ?? s.roster, rules: rules ?? s.rules };
-  const rule = body.rule === 'stars' ? 'stars' : 'levels';
+  const rule = body.rule === 'stars' || body.rule === 'zones' ? body.rule : 'levels';
   const after = buildBoard({ ...s.boardInput, ...proposed, assignRule: rule });
   const before = new Map(s.rows.filter(r => r.kind === 'out').map(r => [r.resId, r]));
   const label = (r: { assignment: string; cleaner: string | null }) =>
@@ -218,7 +218,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       return Response.json({ ok: true, link: token ? `${new URL(request.url).origin}/crew#t=${token}` : null });
     }
 
-    if (body.assignRule === 'tiers' || body.assignRule === 'stars' || body.assignRule === 'levels') {
+    if (['tiers', 'stars', 'levels', 'zones'].includes(body.assignRule)) {
       if (body.assignRule !== 'tiers' && !(await opsConfig(sql)).roster.some(c => c.active)) {
         return bad('The roster is empty — nobody could be assigned.');
       }

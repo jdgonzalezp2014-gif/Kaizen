@@ -587,7 +587,7 @@ function Board({ data, range, patch, reload }: {
                   return (
                     <Fragment key={key}>
                       <BoardLine r={r} showMoney={data.showMoney} shadow={data.mode === 'shadow'} through={short(data.lookaheadTo)}
-                                 byLevels={data.assignRule === 'levels'} today={data.today}
+                                 byLevels={data.assignRule === 'levels'} levelTip={data.assignRule === 'tiers' || data.assignRule === 'stars'} today={data.today}
                                  seen={cleanerSees(r, data)}
                                  docs={canDocs && r.kind === 'in' && docUnits.has(r.unitId) ? docs[r.resId] ?? null : undefined}
                                  todos={todosBy.get(r.unitId)} flag={r.kind === 'out' ? flags[r.resId] : undefined}
@@ -624,7 +624,7 @@ function Board({ data, range, patch, reload }: {
   );
 }
 
-function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, today, flag, seen, cleanTasks, sync, onDocs }: {
+function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos, byLevels, levelTip, today, flag, seen, cleanTasks, sync, onDocs }: {
   /** Given when this role may file guest documents: the chips take a dropped file. */
   onDocs?: (d: StayDocs) => void;
   /** Whether this time is the one on the Hostaway reservation. */
@@ -635,7 +635,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
   /** Flagged by hand (§124): the note the cleaner reads. */
   flag?: string;
   /** Whether the levels rule decides (§125), or rides along beside the rule in charge. */
-  byLevels: boolean; today: string;
+  byLevels: boolean; levelTip?: boolean; today: string;
   /** The cleaner can already see this clean on their page (§127). */
   seen?: boolean;
   /** An arrival's filed documents: undefined = not shown to this role, null = still reading. */
@@ -682,7 +682,7 @@ function BoardLine({ r, showMoney, shadow, open, onToggle, through, docs, todos,
             {r.confirmed && <span className="ops-hover" title={`${r.cleaner} confirmed it — ${stamp(r.confirmed)}`}> <Icon n="done" /></span>}
             {/* Set by hand, and what levels would pick, read on hover — not on screen (owner, 2026-10-15). */}
             {(() => {
-              const lv = !byLevels && r.levels && r.assignment !== 'not_needed' && r.levels.cleaner !== r.cleaner
+              const lv = levelTip && r.levels && r.assignment !== 'not_needed' && r.levels.cleaner !== r.cleaner
                 ? `By levels: ${r.levels.cleaner ?? (r.levels.waiting ? 'TBD (waiting)' : 'TBD')} — ${r.levels.why}` : '';
               const tip = [r.manual.cleaner ? 'Set by hand' : '', lv].filter(Boolean).join('\n');
               return tip ? <span className="sub-n ops-hover" title={tip}> <Icon n={r.manual.cleaner ? 'hand' : 'layers'} /></span> : null;
@@ -903,7 +903,7 @@ function Editor({ r, data, onSaved, onDocs, onManualClean, flag, onFlag, reload,
           <Peek label={<><Icon n="note" />The rule says <b>{r.auto.cleaner ?? 'nobody'}</b>{r.sheet ? <> · the daily file has <b>{sheetText(r.sheet)}</b></> : null}</>}>
           {r.auto.reason}.
           {r.sheet && <> The daily file has <b>{sheetText(r.sheet)}</b>{r.sheet.price != null ? ` at ${money2(r.sheet.price)}` : ''}.</>}
-          {data.assignRule !== 'levels' && r.levels && (
+          {(data.assignRule === 'tiers' || data.assignRule === 'stars') && r.levels && (
             <div>By levels (not deciding yet): <b>{r.levels.cleaner ?? 'TBD'}</b> — {r.levels.required ? LEVEL_LABEL[r.levels.required] : 'no level yet'}
               ({r.levels.why}) — {r.levels.reason}.</div>
           )}
@@ -1570,8 +1570,9 @@ function Rates({ data }: { data: OperationsResponse }) {
     <>
       {data.roster.length ? <RateTable roster={data.roster} /> : <p className="note">No roster yet.</p>}
       <div className="group">
-        <h3>How a cleaner is chosen {data.assignRule === 'levels' ? '— by levels' : `— by ${data.assignRule} (levels shown beside, not deciding yet)`}</h3>
-        <LevelRules rules={st} />
+        <h3>How a cleaner is chosen {data.assignRule === 'levels' ? '— by levels' : data.assignRule === 'zones' ? '— by zone'
+          : `— by ${data.assignRule} (levels shown beside, not deciding yet)`}</h3>
+        {data.assignRule === 'zones' ? <ZoneRules /> : <LevelRules rules={st} />}
       </div>
       <div className="group">
         <h3>The tier rule {data.assignRule === 'tiers' ? '(deciding now)' : '(not deciding)'}</h3>
@@ -1585,6 +1586,19 @@ function Rates({ data }: { data: OperationsResponse }) {
         </ul>
       </div>
     </>
+  );
+}
+
+/** The zones rule in words (§174). */
+function ZoneRules() {
+  return (
+    <ul className="note">
+      <li>Each unit goes to the cleaner whose <b>zone</b> it is (an apartment's building — CL, P2 — or Houses); two with the same
+        zone → whoever has fewer cleans that day, then the cheaper.</li>
+      <li>When they are at their <b>max cleans a day</b>, the next one goes to another cleaner who is free.</li>
+      <li>Manual-only cleaners and a cleaner who declined it are never picked. Nobody free → TBD.
+        A choice made by hand always wins and uses one of that cleaner's slots.</li>
+    </ul>
   );
 }
 
@@ -2155,11 +2169,14 @@ function LevelSetup({ cfg, roster, setRoster, rules, setRules, save }: {
   const zones = [...new Set([...Object.keys(cfg.zones ?? {}), ...roster.flatMap(c => c.zones)])]
     .sort((a, b) => Number(a === HOUSES_ZONE) - Number(b === HOUSES_ZONE) || a.localeCompare(b));
   const set = (i: number, patch: Partial<Cleaner>) => setRoster(rs => rs.map((c, j) => j === i ? { ...c, ...patch } : c));
-  const deciding = cfg.assignRule === 'levels';
+  // §174: the same roster table sets levels or main zones; the preview runs the rule chosen here.
+  const [mode, setMode] = useState<'levels' | 'zones'>(cfg.assignRule === 'zones' ? 'zones' : 'levels');
+  const byZone = mode === 'zones';
+  const deciding = cfg.assignRule === mode;
 
   const run = async () => {
     setBusy(true); setErr('');
-    const r = await previewAssign(roster, rules).catch(e => ({ ok: false as const, message: String(e) }));
+    const r = await previewAssign(roster, rules, mode).catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (!r.ok) { setErr(r.message ?? 'Could not preview.'); return; }
     setPreview(r.preview); setPreviewed(proposal);
@@ -2169,14 +2186,17 @@ function LevelSetup({ cfg, roster, setRoster, rules, setRules, save }: {
 
   return (
     <div className="card">
-      <h2>Who cleans: by levels <span className={deciding ? 'ok-tag' : 'chan-tag'}>{deciding ? 'deciding' : `${cfg.assignRule} decides now`}</span> <Hint>{deciding ? 'Levels decide who cleans each turnover.'
-          : `The ${cfg.assignRule} rule still decides. The board shows what levels would pick beside each clean ("by levels: …").`}
+      <h2>Who cleans: <select value={mode} onChange={e => { setMode(e.target.value as 'levels' | 'zones'); setPreview(null); }}>
+          <option value="zones">by zone</option><option value="levels">by levels</option></select>
+        {' '}<span className={deciding ? 'ok-tag' : 'chan-tag'}>{deciding ? 'deciding' : `${cfg.assignRule} decides now`}</span> <Hint>{deciding ? `This rule decides who cleans each turnover.`
+          : `The ${cfg.assignRule} rule still decides. Preview shows what this one would change.`}
+        {' '}By zone: the ticked zones are each cleaner's main ones; past their max a day, the overflow goes to whoever is free.
         {' '}Host Notes change only where the cleaner changes.</Hint></h2>
-      <LevelRules rules={withDefaults(rules)} />
+      {byZone ? <ZoneRules /> : <LevelRules rules={withDefaults(rules)} />}
 
       <div className="grid-scroll">
         <table className="units compact roster-edit">
-          <thead><tr><th>Cleaner</th><th>Level</th><th>Zones covered</th><th>Max cleans a day</th></tr></thead>
+          <thead><tr><th>Cleaner</th><th>Level</th><th>{byZone ? 'Main zones' : 'Zones covered'}</th><th>Max cleans a day</th></tr></thead>
           <tbody>
             {roster.map((c, i) => (
               <tr key={i} className={c.active ? undefined : 'muted-row'}>
@@ -2190,7 +2210,7 @@ function LevelSetup({ cfg, roster, setRoster, rules, setRules, save }: {
                              onChange={e => set(i, { zones: e.target.checked ? [...c.zones, z] : c.zones.filter(x => x !== z) })} /> {z}
                     </label>
                   ))}
-                  {!c.zones.length && <span className="sub-n"> · all zones</span>}
+                  {!c.zones.length && <span className="sub-n"> · {byZone ? 'backup only' : 'all zones'}</span>}
                 </td>
                 <td><input className="amt" value={c.maxPerDay ?? ''} placeholder="no limit"
                            onChange={e => set(i, { maxPerDay: e.target.value === '' ? null : Number(e.target.value) })} /></td>
@@ -2200,40 +2220,40 @@ function LevelSetup({ cfg, roster, setRoster, rules, setRules, save }: {
         </table>
       </div>
 
-      <div className="row">
+      {!byZone && <div className="row">
         {LEVEL_RULES.map(([k, label]) => (
           <label key={k}>{label}
             <input value={rules[k] ?? ''} placeholder={String(cfg.defaults[k])}
                    onChange={e => setRules(r => ({ ...r, [k]: e.target.value }))} /></label>
         ))}
-      </div>
+      </div>}
 
       {err && <p className="banner error">{err}</p>}
       <div className="button-row">
         <button className="secondary" disabled={busy} onClick={() => void run()}>{busy ? 'Building the board…' : 'Preview'}</button>
         <button disabled={!fresh || busy} onClick={() => void save({ roster, rules }, 'Levels, zones and limits saved.')}>Save</button>
-        {!deciding && <button disabled={!fresh || busy} onClick={() => void save({ roster, rules, assignRule: 'levels' }, 'Levels now decide who cleans.')}>Save and switch to levels</button>}
+        {!deciding && <button disabled={!fresh || busy} onClick={() => void save({ roster, rules, assignRule: mode }, byZone ? 'Zones now decide who cleans.' : 'Levels now decide who cleans.')}>Save and switch to {byZone ? 'zones' : 'levels'}</button>}
         {!fresh && <span className="note">{preview ? 'Changed since the preview — preview again to save.' : 'Preview first: saving needs the board seen under the change.'}</span>}
       </div>
 
       {preview && (
         <div className={fresh ? undefined : 'is-stale'}>
-          <p className="note">{short(preview.from)} → {short(preview.to)}, {preview.cleans} cleans, levels against what decides now ({preview.rule}):</p>
+          <p className="note">{short(preview.from)} → {short(preview.to)}, {preview.cleans} cleans, {byZone ? 'zones' : 'levels'} against what decides now ({preview.rule}):</p>
           <dl className="strip">
             <div><dt>Change cleaner</dt><dd>{preview.changed}</dd></div>
-            <div><dt>Waiting for a booking</dt><dd>{preview.waiting ?? 0}</dd></div>
+            {!byZone && <div><dt>Waiting for a booking</dt><dd>{preview.waiting ?? 0}</dd></div>}
             <div><dt>Unassigned</dt><dd>{delta(preview.unassigned.now, preview.unassigned.then)}</dd></div>
             <div><dt>Cleaner pay</dt><dd>{delta(preview.cost.now, preview.cost.then, money)}
               {(preview.unpriced.now || preview.unpriced.then) ? <small>not priced: {preview.unpriced.now} → {preview.unpriced.then}</small> : null}</dd></div>
           </dl>
           {preview.changes.length > 0 && (
             <table className="units compact">
-              <thead><tr><th>Day</th><th>Unit</th><th>Needs</th><th>Now</th><th>By levels</th><th className="n">Pays</th></tr></thead>
+              <thead><tr><th>Day</th><th>Unit</th>{!byZone && <th>Needs</th>}<th>Now</th><th>{byZone ? 'By zone' : 'By levels'}</th><th className="n">Pays</th></tr></thead>
               <tbody>
                 {preview.changes.map(c => (
                   <tr key={c.resId}>
                     <td>{short(c.date)}</td><td>{c.unit}</td>
-                    <td>{c.required === 'waiting' ? '○ waiting' : c.required ? LEVEL_LABEL[String(c.required)] ?? c.required : '—'}</td>
+                    {!byZone && <td>{c.required === 'waiting' ? '○ waiting' : c.required ? LEVEL_LABEL[String(c.required)] ?? c.required : '—'}</td>}
                     <td>{c.now ?? '—'}</td>
                     <td>{c.then ?? '—'}</td>
                     <td className="n">{c.priceNow == null ? '—' : money2(c.priceNow)} → {c.priceThen == null ? '—' : money2(c.priceThen)}</td>

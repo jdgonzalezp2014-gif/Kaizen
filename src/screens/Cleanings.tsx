@@ -337,5 +337,5 @@ function decidedLabel(d: string | null | undefined): string {
   if (d.startsWith('override:')) return `by hand · ${d.slice(9).replace(/@.*/, '')}`;
   if (d.startsWith('rule: one clean')) return 'rule · one clean per day';
   if (d.startsWith('rule:carried')) return 'rule · kept (a booking came in between)';
-  return ({ rule: 'rule', 'rule:stars': 'rule · stars', sheet: 'daily file', history: 'history', 'daily file (cutover)': 'daily file' } as Record<string, string>)[d] ?? d;
+  return ({ rule: 'rule', 'rule:stars': 'rule · stars', 'rule:levels': 'rule · levels', 'rule:zones': 'rule · zone', sheet: 'daily file', history: 'history', 'daily file (cutover)': 'daily file' } as Record<string, string>)[d] ?? d;
 }

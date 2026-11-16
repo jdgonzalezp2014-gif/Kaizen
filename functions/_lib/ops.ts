@@ -67,7 +67,7 @@ export async function opsConfig(sql: SqlFn): Promise<{
     rules: withDefaults(acc[0]?.ops_rules),
     extraInspectors: acc[0]?.extra_inspectors ?? [],
     guestDocUnits: acc[0]?.guest_docs_units ?? [],
-    assignRule: acc[0]?.assign_rule === 'levels' ? 'levels' : acc[0]?.assign_rule === 'stars' ? 'stars' : 'tiers',
+    assignRule: (['levels', 'stars', 'zones'] as const).find(x => x === acc[0]?.assign_rule) ?? 'tiers',
     crewCalendar: !!acc[0]?.crew_calendar, crewCalendarDays: Number(acc[0]?.crew_calendar_days) || 14,
     crewAutoDays: Number(acc[0]?.crew_auto_days ?? 4),
     roster: roster.map(c => ({ name: c.name, tier: c.tier, position: c.position,
@@ -282,7 +282,7 @@ export async function recordCleanings(sql: SqlFn, s: OpsState): Promise<number> 
     : r.cancelled ? 'cancelled after arrival — to confirm'
     : r.carried ? `rule:carried from ${r.carried.from} — a booking came in between`
     : r.held ? 'rule:kept — already in the cleaner\'s view'
-    : r.sameDayOf ? `rule: one clean per unit per day (${r.sameDayOf})` : s.assignRule === 'levels' ? 'rule:levels' : s.assignRule === 'stars' ? 'rule:stars' : 'rule';
+    : r.sameDayOf ? `rule: one clean per unit per day (${r.sameDayOf})` : s.assignRule === 'tiers' ? 'rule' : `rule:${s.assignRule}`;
   // §123: a stay cancelled after arrival is unpaid until a person settles it; a person's choice on the board settles it.
   const toConfirm = (r: BoardRow) => r.cancelled && !r.manual.cleaner
     ? `Cancelled ${r.cancelled} (New York), on or after the arrival — was the unit used, and who cleaned it?` : null;

@@ -4617,3 +4617,15 @@ What was decided, in order:
   win; house_manual links filled from Drive. Slides to correct were listed to the owner (captions "4308", floors, the
   handwritten map with team notes).
 
+## §174 — Who cleans by zone: Veronica the houses, Wilson the apartments (2026-11-15)
+
+Owner: only two cleaners now (Veronica, Wilson). Veronica mainly the houses, Wilson the apartments; if Veronica has more
+than three houses the same day, one goes to Wilson; every apartment to Wilson.
+- A fourth rule, `assign_rule = 'zones'` (113 widens the check). It reuses `cleaners.zones` and `zoneOf` (Houses / CL / P2)
+  instead of a new column: under this rule the ticked zones are the cleaner's **main** ones, not the only ones — the
+  overflow (main cleaners at their max, or a zone nobody holds) goes to whoever else is free, fewest cleans that day first.
+  The limit is the existing max cleans a day (Veronica 3).
+- Before the switch (stars) the board already matched it through hand overrides and held picks; the simulation on
+  production changed 3 cleans past the held window (CL1339 and P2-1304 → Wilson, Quest → Veronica).
+- Kept as they are: hand overrides, held picks within `crew_auto_days` (already on a cleaner's page), carried cleans.
+

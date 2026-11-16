@@ -96,8 +96,8 @@ export interface Cleaner {
   lang?: 'en' | 'es';
 }
 
-/** Which rule decides who cleans (§121, §125). */
-export type AssignRule = 'tiers' | 'stars' | 'levels';
+/** Which rule decides who cleans (§121, §125, §174 zones). */
+export type AssignRule = 'tiers' | 'stars' | 'levels' | 'zones';
 
 /** A cleaner's level (§125). `manual` is only ever assigned by a person — emergencies, mid-stays. */
 export type Level = 'high' | 'standard' | 'manual';
@@ -767,6 +767,7 @@ export function buildBoard(input: {
   applyHold(rows, input.held ?? new Map(), roster, addDays(today, input.holdDays ?? 0));
   assignByStars(rows, roster, rules, typical, byStars);
   assignByLevels(rows, roster, rules, input.midStays ?? new Map(), input.assignRule === 'levels', today);
+  if (input.assignRule === 'zones') assignByZones(rows, roster);
   for (const r of rows) if (r.sheet) r.differs = sheetDiffers(r);
 
   // Inspections, the sheet's way: in date order, so the monthly flag
@@ -955,6 +956,63 @@ export function assignByLevels(rows: BoardRow[], roster: Cleaner[], rules: OpsRu
       if (r.manual.cleaner || r.cancelled || r.carried || r.held) continue;
       if (pick.cleaner) load.set(pick.cleaner, (load.get(pick.cleaner) ?? 0) + 1);
       if (!apply) continue;
+      r.assignment = pick.cleaner ? 'assigned' : 'tbd';
+      r.cleaner = pick.cleaner;
+      r.price = pick.cleaner ? rateFor(roster, pick.cleaner, r.beds, r.deep) : null;
+    }
+  }
+}
+
+/* ── the zones rule (§174) ─────────────────────────────────────────── */
+
+/**
+ * Who cleans, by zone: the cleaners who list the unit's zone are its main
+ * cleaners; the one with fewer cleans that day (then the cheaper) takes it.
+ * When every main cleaner is at their max that day, or none lists the
+ * zone, it goes to anyone else free — so Veronica keeps the houses up to
+ * her max and the next one goes to Wilson (owner, 2026-11-15). Manual-level
+ * and declined cleaners are never picked. Nobody free → TBD.
+ */
+export function pickByZone(
+  zone: string, beds: number | null, deep: boolean,
+  roster: Cleaner[], load: Map<string, number>, declined: Set<string> = new Set()
+): { cleaner: string | null; reason: string } {
+  const cost = (c: Cleaner) => rateFor(roster, c.name, beds, deep) ?? Infinity;
+  const count = (c: Cleaner) => load.get(c.name) ?? 0;
+  const order = (a: Cleaner, b: Cleaner) => count(a) - count(b) || cost(a) - cost(b) || a.position - b.position || a.name.localeCompare(b.name);
+  const fit = roster.filter(c => c.active && !declined.has(c.name) && levelOf(c) !== 'manual');
+  const free = (c: Cleaner) => c.maxPerDay == null || count(c) < c.maxPerDay;
+  const main = fit.filter(c => c.zones?.includes(zone));
+  const m = main.filter(free).sort(order)[0];
+  if (m) return { cleaner: m.name, reason: `${zone} is ${m.name}'s zone` };
+  const other = fit.filter(c => !c.zones?.includes(zone) && free(c)).sort(order)[0];
+  if (other) return { cleaner: other.name, reason: main.length
+    ? `${main.map(c => c.name).join(' and ')} ${main.length > 1 ? 'are' : 'is'} at the max that day — ${other.name} takes this one`
+    : `nobody has ${zone} as their zone — ${other.name} is free` };
+  return { cleaner: null, reason: 'everyone is at their max that day, or declined — assign by hand' };
+}
+
+/**
+ * The zones rule over the board's departures, one day at a time, in the
+ * board's order. A person's choice, a carried or held pick, a cancelled
+ * stay and a second departure the same day are left as they are; the
+ * first three still take their slot in the day's count.
+ */
+export function assignByZones(rows: BoardRow[], roster: Cleaner[]): void {
+  const days = new Map<string, BoardRow[]>();
+  for (const r of rows) {
+    if (r.kind !== 'out' || (r.sameDayOf && !r.manual.cleaner)) continue;
+    days.set(r.date, [...(days.get(r.date) ?? []), r]);
+  }
+  for (const day of days.values()) {
+    const load = new Map<string, number>();
+    const fixed = (r: BoardRow) => r.manual.cleaner || r.cancelled || r.carried || r.held;
+    for (const r of day) if (fixed(r) && r.assignment === 'assigned' && r.cleaner) load.set(r.cleaner, (load.get(r.cleaner) ?? 0) + 1);
+    for (const r of day) {
+      if (fixed(r)) continue;
+      const pick = pickByZone(zoneOf(r.unit), r.beds, r.deep, roster, load, new Set(r.declined.map(d => d.cleaner)));
+      if (pick.cleaner) load.set(pick.cleaner, (load.get(pick.cleaner) ?? 0) + 1);
+      r.auto = { cleaner: pick.cleaner, tier: 'none', reason: `by zone — ${pick.reason}` };
       r.assignment = pick.cleaner ? 'assigned' : 'tbd';
       r.cleaner = pick.cleaner;
       r.price = pick.cleaner ? rateFor(roster, pick.cleaner, r.beds, r.deep) : null;
