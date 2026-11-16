@@ -788,7 +788,16 @@ export async function fetchListingCover(creds: HostawayCredentials, listingId: s
   const token = await getAccessToken(creds);
   const res = await fetch(`${BASE}/listings/${encodeURIComponent(listingId)}`, { headers: { Authorization: `Bearer ${token}` } });
   if (!res.ok) return null;
-  return coverOf(((await res.json()) as { result?: Parameters<typeof coverOf>[0] }).result);
+  const l = ((await res.json()) as { result?: Parameters<typeof coverOf>[0] }).result;
+  // Some listings' first photos are Airbnb (muscache) links that now 404 (P2-1406, 2026-11-15): take the first of the
+  // first few, in order, that still answers as an image.
+  const imgs = (l?.listingImages ?? []).filter(i => typeof i.url === 'string' && (i.url as string).startsWith('https://'))
+    .sort((a, b) => Number(a.sortOrder ?? 0) - Number(b.sortOrder ?? 0)).map(i => i.url as string).slice(0, 6);
+  for (const u of imgs) {
+    const r = await fetch(u, { method: 'HEAD' }).catch(() => null);
+    if (r?.ok && (r.headers.get('Content-Type') ?? '').startsWith('image/')) return u;
+  }
+  return coverOf(l);
 }
 
 /** The signed agreement's bytes. Hostaway's own links want the token; others are public. */

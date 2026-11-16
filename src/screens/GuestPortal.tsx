@@ -31,6 +31,18 @@ function returnedFlow(): Flow | null {
   } catch { return null; }
 }
 
+const demoKey = () => { try { const h = new URLSearchParams(location.search).get('house'); return h ? `kaizen-demo-flow:${h}` : null; } catch { return null; } };
+function savedDemoFlow(): Flow | null {
+  const k = demoKey(); if (!k) return null;
+  try { const f = JSON.parse(localStorage.getItem(k) ?? 'null') as Flow | null; return f && typeof f === 'object' ? f : null; } catch { return null; }
+}
+function saveDemoFlow(f: Flow) { const k = demoKey(); if (!k) return; try { localStorage.setItem(k, JSON.stringify(f)); } catch { /* no storage */ } }
+/** "Start over" on the open demo link: forget this browser's saved check-in. */
+export function resetDemoFlow() {
+  const k = demoKey(); try { if (k) localStorage.removeItem(k); sessionStorage.removeItem(FLOW_KEY); sessionStorage.removeItem(VS_KEY); } catch { /* no storage */ }
+  const u = new URL(location.href); for (const x of ['paid', 'verified', 'step', 'sec']) u.searchParams.delete(x); location.href = u.toString();
+}
+
 // The houses are in Texas: the release time reads in Central.
 const whenLabel = (iso: string) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
 
@@ -40,7 +52,9 @@ export function GuestPortal({ stay, send, now = new Date(), demoBar, embedded = 
   const [sec, setSec] = useState<Sec>(startSec);
   const [pick, setPick] = useState<Upsell['kind'] | null>(null);
   const [sent, setSent] = useState<UpsellRequest[]>([]);
-  const [flow, setFlow] = useState<Flow>(() => (!embedded && returnedFlow()) || (stay.checkedIn ? doneFlow() : newFlow()));
+  const [flow, setFlow] = useState<Flow>(() => (!embedded && (returnedFlow() ?? savedDemoFlow())) || (stay.checkedIn ? doneFlow() : newFlow()));
+  // The open demo link (?house=) keeps its check-in in this browser, so a reload or Stripe's return does not start over.
+  useEffect(() => { if (!embedded) saveDemoFlow(flow); }, [flow, embedded]);
   // Back from Stripe Checkout (`?paid=cs_…`): the step is done only if Stripe says the session is complete.
   const [payNote, setPayNote] = useState<string | null>(null);
   useEffect(() => {
@@ -396,7 +410,8 @@ export function GuestDemoPage() {
   return <GuestPortal key={`${k}-${house.unit}`} stay={stay} send={async () => ({ ok: true })}
     demoBar={<div className="g-demo" role="group" aria-label="Demo stay">
       <span className="note"><Icon n="eye" /> Demo</span>
-      {DEMO_KEYS.map(x => <button key={x} className={x === k ? 'chip active' : 'chip'} onClick={() => pickDemo(x)}>{DEMO_LABEL[x]}</button>)}
+      {house.signed ? <button className="chip" onClick={resetDemoFlow}>Start over</button>
+        : DEMO_KEYS.map(x => <button key={x} className={x === k ? 'chip active' : 'chip'} onClick={() => pickDemo(x)}>{DEMO_LABEL[x]}</button>)}
       {house.units.length > 0 && <select className="g-house" value={house.unit} onChange={e => house.pick(e.target.value)} aria-label="House (from the Repository)">
         <option value="">Sample house</option>
         {house.units.map(u => <option key={u.id} value={u.id}>{u.name}</option>)}
@@ -423,7 +438,7 @@ function useHouse() {
     return () => { live = false; };
   }, [unit]);
   const pick = (id: string) => { setUnit(id); const u = new URL(location.href); if (id) u.searchParams.set('unit', id); else u.searchParams.delete('unit'); history.replaceState(history.state, '', u); };
-  return { units, unit, data, pick };
+  return { units, unit, data, pick, signed: new URLSearchParams(location.search).has('house') };
 }
 
 /** A real stay link (/guest/<id>.<sig>) — the API that checks the signature and reads Hostaway is not built yet. */
