@@ -23,11 +23,32 @@
 export interface AuthEnv {
   /** Set ONLY in local dev (.dev.vars). Never in Cloudflare. */
   ALLOW_UNAUTHENTICATED?: string;
+  /** Extra hostnames that Cloudflare Access protects (comma-separated), beside *.pages.dev. See `accessHost`. */
+  ACCESS_HOSTS?: string;
 }
 
 export interface Identity { email: string; local: boolean }
 
+/**
+ * Is this a hostname Cloudflare Access stands in front of? Only there does the identity header mean anything.
+ *
+ * The guest portal got its own domain (stay.…, 2026-11-16) — a custom domain of this same Pages project, with its DNS
+ * outside Cloudflare, so Access is NOT in front of it. The whole app answers there too, and on such a host the header
+ * below is whatever the caller typed: one `curl -H` away from being an admin. So identity is only ever read on the
+ * hosts Access is known to guard — the project's own *.pages.dev, local dev, and the ones named in ACCESS_HOSTS —
+ * and every other hostname is public: only the routes that carry their own credential (a signed link, a token) work.
+ * A team app moved to a custom domain must be put behind Access first, and then listed in ACCESS_HOSTS.
+ */
+export function accessHost(hostname: string, env: AuthEnv): boolean {
+  const h = hostname.toLowerCase();
+  if (h.endsWith('.pages.dev') || h === 'localhost' || h === '127.0.0.1' || h === '[::1]') return true;
+  return (env.ACCESS_HOSTS ?? '').split(',').map(x => x.trim().toLowerCase()).filter(Boolean).includes(h);
+}
+
 export function identify(request: Request, env: AuthEnv): Identity | null {
+  let host = '';
+  try { host = new URL(request.url).hostname; } catch { return null; }
+  if (!accessHost(host, env)) return null;
   const email = request.headers.get('Cf-Access-Authenticated-User-Email');
   if (email) return { email, local: false };
 

@@ -52,6 +52,12 @@ Hostaway client, sync, crypto, migrations.
   still redirect. A new public page needs its path added there (§134). `/api/report-link?stripe=<signed>` is a payee's
   Stripe setup link (§168) — same door, no new bypass.
   Empty list = any authenticated caller; DB failure = 503, never a pass (§29).
+- **Identity only on hosts Access guards (2026-11-16, `accessHost` in auth.ts).** A custom domain of this Pages project whose DNS
+  is outside Cloudflare (the guest portal's `stay.kaizenguestproperties.com`) has **no Access in front** — the identity header there
+  is whatever the caller types. `identify()` reads it only on `*.pages.dev`, localhost and the hosts in the `ACCESS_HOSTS` variable;
+  on any other hostname every signed-in route answers 403 and only the self-authenticating ones (signed link / token) work.
+  A team app on a custom domain: put it behind Access first, then list it in `ACCESS_HOSTS`. Still open: validate the Access JWT
+  (`Cf-Access-Jwt-Assertion`, team certs + AUD) instead of trusting the header — defence in depth.
 - Sign out (2026-10-26): a link to `/cdn-cgi/access/logout` (Access ends the session) in the phone's More list
   and the side rail's foot. The crew/vendor-only pages have no header and no sign-out yet.
 - **Payouts (§168):** permission `payouts` (`/api/payouts`) — paying invoices is not part of Operations' edits. Settings → Payments
