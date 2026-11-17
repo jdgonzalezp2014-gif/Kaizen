@@ -66,12 +66,19 @@ So: the layer + keys + one chosen provider first; saved answers and "auto" wait 
 
 ## Phase 4 — the assistant (modules: slack + platform)
 
+**First piece built 2026-11-17** (`docs/modules/platform.md` → Ask Kaizen): the in-app panel, Repository by rules, SOPs by a light
+model, reveal of secrets through the Repository's own door. Still to do: the same brain in Slack, tools that act, "how is the month".
+
 One brain, two doors: a chat panel in Kaizen OS and `@Kaizen` in Slack. Tools: read (Repository, SOPs, to-dos,
 stays, costs of a month) and act with a confirmation step (record an expense from an uploaded invoice — reusing
 `receipt-read.ts` — create a to-do). Answers in plain language ("how is the month going"). Acts as the person
 asking: their role decides what it may read or do.
 
 ## Phase 5 — audit and reorganise (one module per session)
+
+Owner, 2026-11-17 — first in this phase: **listing health in Guest Experience** = (1) are the listings connected on each channel
+(`ChannelStatus` in hostaway.ts already reads it — find where it is shown today and move it), (2) the reviews / stars per listing from
+the Google Apps Script scraper (`../price-monitor`, the ratings feed in finance.md) — rescue it and show the trend.
 
 - **Guest Experience**: check-in guides builder (from Repository), online check-in status per stay, listing ratings
   (the price-monitor Apps Script feed) — out of Finance.

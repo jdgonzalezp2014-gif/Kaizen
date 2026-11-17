@@ -1723,9 +1723,43 @@ button.link.lane-add, button.link.home-more { opacity: 1; }
 .sop-fab.none { color: var(--muted); }
 .sop-fab .sop-count { background: var(--accent); color: var(--on-accent); }
 main { padding-bottom: max(96px, calc(var(--tabbar-h) + 80px)); }
+/* 2026-11-17: the SOPs' button is a round "?"; the help assistant sits above it. */
+.sop-fab { width: 48px; height: 48px; padding: 0; justify-content: center; font-size: 20px; font-weight: 700; }
+.sop-fab .sop-count { position: absolute; top: -4px; right: -4px; }
+.as-fab { position: fixed; right: 22px; bottom: 22px; z-index: 40; width: 48px; height: 48px; padding: 0; display: inline-grid; place-items: center; border-radius: 50%;
+  background: var(--ink); color: var(--card); border: 1px solid var(--ink); box-shadow: var(--shadow-2); }
+.as-fab.lifted { bottom: 80px; }
+.as-fab:hover { transform: translateY(-1px); }
+.as-fab .icon { width: 20px; height: 20px; }
+.as-panel { position: fixed; right: 22px; bottom: 22px; z-index: 45; width: min(400px, calc(100vw - 24px)); height: min(560px, calc(100dvh - 44px)); display: flex; flex-direction: column;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--r-lg); box-shadow: var(--shadow-3); overflow: hidden; }
+.as-panel header { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 16px; border-bottom: 1px solid var(--line); }
+.as-panel header b { display: inline-flex; align-items: center; gap: 6px; }
+.as-panel header .ix-icon-btn { margin-left: auto; }
+.as-panel header .icon { width: 16px; height: 16px; }
+.as-talk { flex: 1; overflow: auto; padding: 12px 16px; display: grid; gap: 12px; align-content: start; }
+.as-turn { display: grid; gap: 8px; }
+.as-q { justify-self: end; max-width: 85%; margin: 0; padding: 8px 12px; border-radius: 16px 16px 4px 16px; background: var(--ink); color: var(--card); }
+.as-card { display: grid; gap: 6px; padding: 10px 12px; border: 1px solid var(--line); border-radius: var(--r-md); font-size: var(--fs-footnote); }
+.as-card p { margin: 0; white-space: pre-wrap; }
+.as-card h4 { display: flex; align-items: baseline; gap: 8px; margin: 0; font-size: var(--fs-callout); }
+.as-card h4 span { font-weight: 400; font-size: var(--fs-caption); color: var(--muted); }
+.as-card h4 .link { margin-left: auto; }
+.as-field { display: grid; grid-template-columns: 120px 1fr; gap: 8px; align-items: center; }
+.as-field > span { color: var(--muted); }
+.as-field b { font-weight: 600; overflow-wrap: anywhere; user-select: all; }
+.as-secret { font-family: var(--mono); }
+.as-field em { grid-column: 1 / -1; }
+.as-sop { display: flex; align-items: center; gap: 6px; padding: 6px 8px; background: var(--tint); border: 0; border-radius: var(--r-sm); color: var(--ink); text-align: left; font-weight: 600; }
+.as-sop:hover { background: var(--hover); }
+.as-sop .icon { width: 14px; height: 14px; flex: none; }
+.as-ask { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
+.as-ask input { flex: 1; min-width: 0; min-height: 36px; }
 @media (max-width: 720px) {
-  .sop-fab { right: 12px; bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom)); padding: 12px 14px; min-height: 44px; }
-  .sop-fab-word { display: none; }
+  .sop-fab { right: 12px; bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom)); }
+  .as-fab { right: 12px; bottom: calc(var(--tabbar-h) + 12px + env(safe-area-inset-bottom)); }
+  .as-fab.lifted { bottom: calc(var(--tabbar-h) + 70px + env(safe-area-inset-bottom)); }
+  .as-panel { right: 0; left: 0; bottom: var(--tabbar-h); width: auto; height: min(70dvh, 560px); border-radius: var(--r-lg) var(--r-lg) 0 0; }
 }
 /* Steps: the number ticks it; the line opens its detail. */
 .sop-steps > li { display: block; padding: 0; counter-increment: none; }

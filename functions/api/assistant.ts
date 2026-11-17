@@ -1,0 +1,67 @@
+/**
+ * POST /api/assistant { question } — the help assistant (owner, 2026-11-17; src/lib/assistant.ts).
+ * Rules first, a model only when it is needed:
+ *   1. the Repository: a question that names a record is answered from it, no AI (needs permission `repository`).
+ *      Secrets are returned as { column } to reveal through /api/repository-reveal — its permission, its log.
+ *   2. the SOPs (permission `sops`): ranked by words; no match = "no SOP covers this", still no AI; a match = the
+ *      light chat tier answers from those few (the same prompt as @Kaizen in Slack).
+ * Nothing is stored. The question is `redact`ed before it reaches a model (helpPrompt).
+ */
+import { db, type Env } from '../_lib/db.ts';
+import { accessOf, type SqlFn } from '../_lib/accounts.ts';
+import { askJson } from '../_lib/ai-chain.ts';
+import { identify, unauthorised } from '../_lib/auth.ts';
+import { can } from '../_lib/roles.ts';
+import { lookup, recName, type RepoRec } from '../../src/lib/assistant.ts';
+import { helpFromAi, helpPrompt, rankSops, type SopDoc } from '../../src/lib/slack-sops.ts';
+
+const json = (body: unknown, status = 200) => Response.json(body, { status, headers: { 'Cache-Control': 'no-store' } });
+
+async function repoRecords(sql: SqlFn): Promise<RepoRec[]> {
+  const [tables, columns, records, secrets] = await Promise.all([
+    sql`SELECT key, title, name_fields FROM repo_tables WHERE account_id = 1 AND archived_at IS NULL` as Promise<{ key: string; title: string; name_fields: string[] | null }[]>,
+    sql`SELECT table_key, key, title FROM repo_columns WHERE account_id = 1 ORDER BY table_key, position` as Promise<{ table_key: string; key: string; title: string }[]>,
+    sql`SELECT table_key, id, vals FROM repo_records WHERE account_id = 1 AND archived_at IS NULL` as Promise<{ table_key: string; id: string; vals: Record<string, unknown> }[]>,
+    sql`SELECT table_key, record_id, column_key FROM repo_secrets WHERE account_id = 1` as Promise<{ table_key: string; record_id: string; column_key: string }[]>,
+  ]);
+  const byTable = new Map(tables.map(t => [t.key, t]));
+  return records.filter(r => byTable.has(r.table_key)).map(r => {
+    const t = byTable.get(r.table_key)!;
+    return { table: r.table_key, tableTitle: t.title, id: r.id, name: recName(r.vals ?? {}, t.name_fields, r.id), vals: r.vals ?? {},
+      columns: columns.filter(c => c.table_key === r.table_key).map(c => ({ key: c.key, title: c.title })),
+      secrets: secrets.filter(s => s.table_key === r.table_key && s.record_id === r.id).map(s => s.column_key) };
+  });
+}
+
+export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+  const who = identify(request, env);
+  if (!who) return unauthorised();
+  const sql = db(env) as unknown as SqlFn;
+  const b = await request.json().catch(() => null) as { question?: unknown } | null;
+  const question = typeof b?.question === 'string' ? b.question.trim().slice(0, 600) : '';
+  if (question.length < 2) return json({ ok: false, message: 'Ask something.' }, 400);
+  const { permissions } = await accessOf(sql, who);
+
+  try {
+    if (can(permissions, 'repository')) {
+      const hits = lookup(question, await repoRecords(sql));
+      if (hits.length) return json({ ok: true, kind: 'records', hits, canReveal: can(permissions, 'repository.reveal') });
+    }
+    if (!can(permissions, 'sops')) return json({ ok: true, kind: 'none', answer: 'Your role does not include the SOPs.' });
+    const rows = await sql`SELECT o.id::text, o.title, o.purpose, o.trigger, o.steps, o.body, o.keywords, s.label AS section FROM sops o
+                             LEFT JOIN sop_sections s ON s.account_id = o.account_id AND s.key = o.section_key
+                            WHERE o.account_id = 1 AND o.deleted_at IS NULL AND o.status = 'published'` as SopDoc[];
+    const shown = rankSops(question, rows);
+    const brief = (s: SopDoc) => ({ id: s.id, title: s.title });
+    if (!shown.length) return json({ ok: true, kind: 'none', answer: 'No SOP covers this yet, and no Repository record has that name.' });
+    const p = helpPrompt(question, shown);
+    const r = await askJson(sql, env, p.system, p.user, [], { tier: 'chat' });
+    // No model answered: the closest SOPs by words, to read — better than nothing.
+    if (!r.ok) return json({ ok: true, kind: 'sops', answer: 'No AI could answer just now — these SOPs look closest:', sops: shown.slice(0, 3).map(brief), by: null });
+    const h = helpFromAi(r.json, shown);
+    if (!h.sops.length) return json({ ok: true, kind: 'none', answer: 'No SOP says what to do about exactly this.', sops: shown.slice(0, 3).map(brief), by: r.by });
+    return json({ ok: true, kind: 'sops', answer: h.answer, sops: h.sops.map(brief), missing: h.missing, by: r.by });
+  } catch (e) {
+    return json({ ok: false, message: e instanceof Error ? e.message : String(e) }, 500);
+  }
+};

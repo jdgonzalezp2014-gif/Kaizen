@@ -398,8 +398,9 @@ export function SopButton({ feature, onOpen }: { feature: string; onOpen: () => 
   const { data } = useSops(true);
   const count = forFeature(data?.sops ?? [], feature).length;
   return (
-    <button className={`sop-fab ${count ? '' : 'none'}`} onClick={onOpen} title={`SOPs for ${featureLabel(feature)}`}>
-      <span aria-hidden="true"><Icon n="book" /></span><span className="sop-fab-word"> SOPs for this screen</span>
+    <button className={`sop-fab ${count ? '' : 'none'}`} onClick={onOpen} title={`How this screen works — ${count} SOP${count === 1 ? '' : 's'} for ${featureLabel(feature)}`}
+            aria-label={`SOPs for ${featureLabel(feature)}`}>
+      <span aria-hidden="true">?</span>
       {count ? <span className="sop-count">{count}</span> : null}
     </button>
   );

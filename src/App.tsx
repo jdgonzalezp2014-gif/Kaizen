@@ -16,6 +16,7 @@ import { InspectPage } from './screens/Inspect.tsx';
 import { Sops } from './screens/Sops.tsx';
 import { Inbox } from './screens/Inbox.tsx';
 import { GuestPing } from './components/GuestPing.tsx';
+import { Assistant } from './components/Assistant.tsx';
 import { ModuleSoon } from './screens/ModuleSoon.tsx';
 import { MODULES, PLANNED_TABS, barLinks, isActive, navFor, whereLabel, type NavLink, type NavModule } from './lib/modules.ts';
 import { SopButton, SopPanel } from './components/Sops.tsx';
@@ -366,6 +367,11 @@ function TeamApp() {
           opened beside the work, not over it, and kept open across screens (§98). */}
       {!sopPanel && tab && tab !== 'sops' && allowed?.includes('sops') && featureOf(tab, opsNow) && (
         <SopButton key={featureOf(tab, opsNow)!} feature={featureOf(tab, opsNow)!} onOpen={() => setSopPanel(featureOf(tab, opsNow))} />
+      )}
+      {/* The help assistant (2026-11-17): above that "?", on every screen, for whoever may read the SOPs or the Repository. */}
+      {!sopPanel && !crewOnly && tab && (allowed?.includes('sops') || allowed?.includes('repository')) && (
+        <Assistant lifted={tab !== 'sops' && !!allowed?.includes('sops') && !!featureOf(tab, opsNow)}
+                   onSop={id => { setSopFocus(id); go('sops', { sop: id }); }} />
       )}
       {sopPanel && tab !== 'sops' && (
         <SopPanel key={sopPanel} feature={sopPanel} canEdit={can(permissions, 'sops.edit')} onClose={() => setSopPanel(null)}

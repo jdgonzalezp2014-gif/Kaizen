@@ -75,7 +75,7 @@ export const PERMISSIONS: Permission[] = [
   { key: 'guests.documents', label: 'Guest documents — see and upload IDs and rental agreements', routes: [
     { path: '/api/guest-docs', methods: ['POST'] }, { path: '/api/guest-docs-upload', methods: ['POST'] }] },
   { key: 'repository', label: 'Repository — look up records and documents', tab: 'repository', routes: [
-    { path: '/api/repository', methods: ['GET'] }, { path: '/api/repository-check', methods: ['GET'] }, { path: '/api/missing-data', methods: ['GET'] },
+    { path: '/api/repository', methods: ['GET'] }, { path: '/api/repository-check', methods: ['GET'] }, { path: '/api/assistant', methods: ['POST'] }, { path: '/api/missing-data', methods: ['GET'] },
     // The guest portal demo's house picker (guests module, 2026-11-09).
     { path: '/api/guest-guide', methods: ['GET'] }, { path: '/api/checkin-guide', methods: ['GET'] }, { path: '/api/checkin-photo', methods: ['GET'] }] },
   { key: 'repository.reveal', label: 'Repository — reveal passwords (each reveal is logged)', routes: [
@@ -106,7 +106,7 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/inbox-settings', methods: ['GET', 'POST'] }] },
   // SOPs (§92): the library tab, and each screen's "SOPs" button. Drafts are for editors only.
   { key: 'sops', label: 'SOPs — read the procedures and articles', tab: 'sops', routes: [
-    { path: '/api/sops', methods: ['GET'] }] },
+    { path: '/api/sops', methods: ['GET'] }, { path: '/api/assistant', methods: ['POST'] }] },
   { key: 'sops.edit', label: 'SOPs — write, publish, review and archive procedures and sections', routes: [
     { path: '/api/sops', methods: ['POST'] }] },
   { key: 'settings', label: 'Settings — credentials, members, roles, integrations', tab: 'settings', routes: [

@@ -172,3 +172,19 @@ Hostaway client, sync, crypto, migrations.
   (owner: two rows lose the look): ≥ 721 px the hidden side fades and gets ‹ › (`home-rail-wrap`, measured each render);
   phone swipes as before. Missing data reads Hostaway's listings once per Home visit (no cache — a just-filled field must
   disappear); add an `api_cache` like `forward` if Hostaway ever rate-limits.
+
+## Ask Kaizen — the help assistant (2026-11-17)
+
+- Files: `src/lib/assistant.ts` (+ test, pure: `lookup`, `recName`), `functions/api/assistant.ts` (POST `{ question }`),
+  `src/components/Assistant.tsx` (the round button above each screen's "?", and its panel). The SOPs' floating button is now a round "?".
+- **Rules before any model (owner: scripts first, save tokens).** 1) Repository: a question that names a record (all of its name's
+  telling words, or at least half) is answered from the record — 4 queries, no AI; fields = the ones asked for (wifi, password, code…,
+  English or Spanish), else the first 8. Secrets are only `{ column }`: the panel reveals through `/api/repository-reveal`
+  (permission `repository.reveal`, `repo_reveals` log) and hides the value after 30 s. 2) SOPs: `rankSops` by words; no match → no AI;
+  a match → ai-chain chat tier with `helpPrompt` (the same as @Kaizen in Slack). Seen on real data: "wifi de Amber Valley" 1 s by rules;
+  a process question ~3.5 s by flash-lite.
+- Route `/api/assistant` POST is under both `sops` and `repository`; the handler checks each part itself. Nothing is stored.
+- Not looked at in a browser yet (built and type-checked only). Hostaway `units` are not Repository records: "P2-1406 door code" finds
+  nothing unless the listing has a record. Next (roadmap phase 4): the same brain behind @Kaizen, tools that act (record an invoice).
+- **SOP sections follow the menu (migration 118, NOT applied):** one top section per module (`mod-*`), the old sections are their
+  children (keys unchanged). Draft SOP: `.sop-118.mjs`.

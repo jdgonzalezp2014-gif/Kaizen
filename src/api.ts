@@ -1096,3 +1096,11 @@ export interface InboxSettings { ok: true; templates: Template[]; ai: GuestAi; l
 export const getInboxSettings = () => call<InboxSettings | Fail>('/api/inbox-settings');
 export const saveInboxSettings = (body: Record<string, unknown>) =>
   call<InboxSettings | Fail>('/api/inbox-settings', { method: 'POST', body: JSON.stringify(body) });
+
+// ── The help assistant (2026-11-17): the Repository by rules, the SOPs by a light model ──
+import type { RepoAnswer } from './lib/assistant.ts';
+export type AssistantAnswer =
+  | { ok: true; kind: 'records'; hits: RepoAnswer[]; canReveal: boolean }
+  | { ok: true; kind: 'sops' | 'none'; answer: string; sops?: { id: string; title: string }[]; missing?: string; by?: string | null };
+export const askAssistant = (question: string) =>
+  call<AssistantAnswer | Fail>('/api/assistant', { method: 'POST', body: JSON.stringify({ question }) });
