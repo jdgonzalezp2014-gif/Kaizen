@@ -4,6 +4,9 @@ One reservation, everything about its guest (owner, 2026-11-16): the conversatio
 tied to the stay, scheduled and automatic messages, the guest portal link, and an AI draft written from the Repository
 and the SOPs. Hostaway and Quo keep the conversations; Kaizen keeps only its own outbox, templates and settings.
 
+Phase 1 of `docs/roadmap.md` (2026-11-16, migration 117): automations per listing / event / condition, the online
+check-in mark, one tab per channel, Hostaway's live webhook and the unanswered-guest watch.
+
 ## Files
 
 - Screen: `src/screens/Inbox.tsx` (three panes: list · thread · stay; `Conversation`, `Bubbles`, `Composer`, `StayPanel`,
@@ -15,13 +18,23 @@ and the SOPs. Hostaway and Quo keep the conversations; Kaizen keeps only its own
   `functions/api/inbox-settings.ts` (templates, AI, live switch, portal address).
 - Server: `functions/_lib/hostaway-messages.ts` (conversations client), `guest-outbox.ts` (the outbox: `deliver`,
   `runDue`), `guest-ai.ts` (`suggestReply`), `guest-link.ts` (`signGuest` / `verifyGuest`), `quo.ts` (`quoThread`).
-- Clock: `clock/index.ts` calls `/api/slack-cron?job=messages` every 5 minutes (a call of its own, beside Slack's).
+- Clock: `clock/index.ts` calls `/api/slack-cron?job=messages` every 5 minutes (a call of its own, beside Slack's):
+  `runDue` (the outbox) and then `watchPass` (who is still waiting).
+- Automations screen: `src/screens/Automations.tsx` (the bolt in the Inbox head, `?v=auto`): cards, starter `RECIPES`, quick replies, the editor.
+- Live: `src/lib/guest-watch.ts` (+ test, pure: `eventFrom`, `triagePrompt`/`triageFrom`, `toCheck`, `watchMessage`),
+  `functions/_lib/guest-events.ts` (`takeEvent`, `watchPass`, `openEvents`), `src/components/GuestPing.tsx` (the menu's count + desktop notice,
+  one poll of `/api/inbox?events=` per open app), the webhook door `POST /api/slack-cron?job=guest-event&k=<hookSecret>` (guest-link.ts).
 
 ## Tables (migration 116)
 
 `guest_messages` (the outbox: scheduled · staged · sent · failed · cancelled; `source` manual · scheduled · auto;
 `ai_draft`; unique per stay + template when `auto`), `message_templates`, and on `accounts`: `guest_ai` (jsonb),
 `guest_messages_live`, `guest_portal_url`.
+
+Migration 117: `message_templates.listing_ids` (NULL = all) · `only_if` (always | checkin_pending | checkin_done) · `hold_hours`;
+`guest_messages.via` (email | channel, NULL = the thread's own way); `guest_checkins` (one row per stay: the online check-in is done —
+`source` portal | team); `guest_events` (what the webhook reported: one row per guest message with `needs_reply`, `urgent`, `answered_at`,
+`reminded_at`); `accounts.guest_watch` ({ watch, waitMinutes }). Every read and write of these degrades without 117 (the old columns still work).
 
 ## Permissions
 
@@ -52,7 +65,37 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
   ENCRYPTION_KEY). **The portal moves to its own domain** — nothing else may build that link.
 - Times: `GUEST_TZ` = America/Chicago for check-in/out moments (per-account zone is product debt).
 
+- **Automations (117).** `planFor` is the one rule: listing scope (`appliesTo`), the trigger's moment (`dueAt`), the condition, the grace.
+  Event triggers (`booked`, `checkin_done`) count from when it happened; `hold_hours` = never earlier than that long before check-in
+  (done inside the hold → at once). `waiting` = after-check-in with no check-in yet; `skipped` = the condition does not hold
+  ("only if not done" is settled the moment it is done; "only if done" is judged at its moment). Two ways in, one path (`createDue`):
+  the clock's pass, and `fireStay(reservation)` the moment something happens (Mark done, the webhook's `reservation.created`). The unique
+  index makes them harmless together. An automatic row whose booking is no longer confirmed at send time is `cancelled`, not sent.
+- **House blanks** (`door_code`, `wifi_network`, `wifi_password`, `address`) are filled only on the server, only in automations
+  (`houseVars`): door code = `doorCodeFor(lock type, Repository guest code, the reservation's Hostaway `doorCode`)` — the portal's rule.
+  No value → the row is `failed` with the reason (never a blank code). The reply box refuses them. A sent code is in `guest_messages.body`.
+- **Recipes open paused**, and a new automation that needs a 117 column is inserted paused and switched on only once those are stored —
+  with sending on, an automation that silently became "all listings, always" would message every guest.
+- **Tabs** (`threadTabs`, `tabOf`): All · the booking channel (only for Airbnb/Vrbo/Booking/Expedia or when the thread has channel
+  messages) · Email (Hostaway has an address — `recipientEmail` / the reservation's `guestEmail`; the conversation's own `guestEmail` is a
+  relay address on every row, not a signal) · SMS. A reply from Email / the channel tab sets `via`; from All it travels as the thread talks.
+  **SMS is Quo only (owner, 2026-11-16: Hostaway's SMS costs per message — never sent from Kaizen);** Hostaway's own SMS automations show
+  read-only (All, and merged into the SMS tab when Quo is connected).
+- **Live events.** The webhook is a hint: `takeEvent` re-reads the conversation from Hostaway before believing anything. A guest message →
+  one `guest_events` row (deduped by Hostaway's message id) → triage by ai-chain's chat tier (no answer from any model = needs a reply).
+  Urgent → Slack `escalations` topic at once. `watchPass`: newest event per conversation, needs a reply, older than `waitMinutes`, not
+  told before → thread read again → answered (closed) / the guest left or cancelled (closed) / told ONCE. **No Slack line per message
+  (owner).** Events also close when: Kaizen sends, the list shows the host has the last word, the thread is opened and the host wrote last.
+  The list's "Needs reply" drops a conversation whose last message was sorted as needing none (`noReply`) — only while it is the last word.
+- The webhook's secret is derived (`hookSecret`, HMAC of the account key) — nothing stored; shown masked in Settings with Copy.
+  Holding it allows only reporting an event. `/api/slack-cron` is already outside Access and SELF_AUTHENTICATING.
+
 ## Not verified yet (no way to without a real guest or a key)
+
+- **117 is written, NOT applied** (2026-11-16). Seen working without it on real data (read-only harness): list, thread, tabs,
+  Automations screen, settings. Not run for real: saving an automation with listings/condition, Mark done → `fireStay`, `{{door_code}}`
+  on a real stay, a reply by Email (`communicationType: 'email'` — Hostaway may want a subject), the webhook's real body
+  (`eventFrom` is written from Hostaway's docs + the events PriceLabs' webhook lists), triage on a real message, the Slack line.
 
 - `sendMessage` (POST `/conversations/<id>/messages` `{ body, communicationType }`) — written from Hostaway's API,
   never run. Watch the first live send.
@@ -62,14 +105,22 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
 
 ## Open items
 
-- **Deploy:** `npm run migrate` (116) → push → `npx wrangler deploy -c clock/wrangler.toml` (the clock's second call)
-  → `node --env-file=.env.local .sop-116.mjs` (SOP draft) → tick `messages*` for the roles that need it.
+- **Deploy phase 1:** `npm run migrate` (117) → push → `node --env-file=.env.local .sop-117.mjs` (SOP: new version, or the draft)
+  → Settings → Integrations → Guest messages & AI: copy the webhook address into Hostaway (Settings → Integrations → Webhooks →
+  unified webhook) → check "Connected — last event" there after the next guest message. The watch posts to Slack's Escalations
+  channel (#kaizen-ops today) — change the channel or switch the watch off in the same panel. No clock redeploy needed.
+- First real use: one automation for one listing, watch its row in that guest's conversation; then the webhook's first events
+  (`SELECT event, needs_reply, urgent, why, preview FROM guest_events ORDER BY id DESC LIMIT 20`).
+- Calls (Quo) — later (owner). Quo's API lists calls / recordings / summaries; it cannot place one. Needs the account's Quo key first.
+- A booking-channel filter on automations (Airbnb only / direct only), and more events (payment received, extras bought) once the
+  portal's real door reports them (roadmap phase 2).
+- Web Push for a closed browser (today the notice needs Kaizen open in a tab).
 - Then: turn the AI to Suggest, read drafts for a few days; write the templates; read the staged rows beside Hostaway;
   only then turn sending ON and switch Hostaway's automations off one at a time (arrival instructions first).
-- Conditions on templates ("only if online check-in is not done") — waits for the guest portal to record check-ins.
+- The portal's real door must write `guest_checkins` (source `portal`) and call `fireStay` — phase 2; until then a person marks it.
 - The portal's real door (`/guest/<id>.<sig>` → `verifyGuest`) and its events (check-in done, extras, payments) feeding
   the stay panel — today the panel shows Hostaway's paid / agreement / ID.
-- Hostaway webhooks for new messages (today: reload every 2 minutes while open). Mark-as-read is not written back.
+- Mark-as-read is not written back to Hostaway.
 - Answering on its own ("auto") — not built; `guestAiFrom` reads it as suggest. `ai_draft` vs the sent text is the
   evidence for when to build it.
 - Claims & upselling still lives in Operations → To-do; Guest Services has a door to it.

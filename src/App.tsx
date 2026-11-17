@@ -15,6 +15,7 @@ import { guestLink } from './lib/guest-portal.ts';
 import { InspectPage } from './screens/Inspect.tsx';
 import { Sops } from './screens/Sops.tsx';
 import { Inbox } from './screens/Inbox.tsx';
+import { GuestPing } from './components/GuestPing.tsx';
 import { ModuleSoon } from './screens/ModuleSoon.tsx';
 import { MODULES, PLANNED_TABS, barLinks, isActive, navFor, whereLabel, type NavLink, type NavModule } from './lib/modules.ts';
 import { SopButton, SopPanel } from './components/Sops.tsx';
@@ -291,6 +292,10 @@ function TeamApp() {
   const openTodo = (id: string) => { setWorkFocus({ todo: id }); goOps('todos', { todo: id }); };
   const bell = allowed && can(permissions, 'todos') && allowed.includes('operations')
     ? <LiveBell onOpen={openTodo} /> : null;
+  // Guests waiting for an answer (Hostaway's webhook → guest_events): a count on Guest Services, and a desktop notice
+  // whose click opens that conversation — for whoever can open the Inbox.
+  const ping = allowed?.includes('inbox')
+    ? <GuestPing onOpen={c => { go('inbox', { c }); dispatchEvent(new PopStateEvent('popstate')); }} /> : null;
   // The menu: the company's modules, cut to what this person may open (src/lib/modules.ts).
   const nav = allowed ? navFor(allowed, permissions) : [];
   const onLink = (l: NavLink) => {
@@ -312,8 +317,8 @@ function TeamApp() {
         {phone && bell}
         <span className="phone-theme"><ThemeToggle /></span>
       </header>}
-      {!crewOnly && allowed && <SideNav nav={nav} tab={tab} view={opsNow} onLink={onLink} onReport={() => setReporting('new')} bell={phone ? null : bell} />}
-      {!crewOnly && allowed && <TabBar nav={nav} tab={tab} view={opsNow} onLink={onLink} onReport={() => setReporting('new')} />}
+      {!crewOnly && allowed && <SideNav nav={nav} tab={tab} view={opsNow} onLink={onLink} onReport={() => setReporting('new')} bell={phone ? null : bell} ping={phone ? null : ping} />}
+      {!crewOnly && allowed && <TabBar nav={nav} tab={tab} view={opsNow} onLink={onLink} onReport={() => setReporting('new')} ping={phone ? ping : null} />}
       {reporting && <ReportsDialog initial={reporting} where={whereLabel(nav, tab, opsNow)} onClose={() => setReporting(null)} />}
 
       {/* Only shown to someone who can act on it. Telling an ops account
@@ -379,8 +384,8 @@ const SIGN_OUT = '/cdn-cgi/access/logout';
  * half the app. Five fit; past five, four and "More", which lists the rest.
  * Hidden by CSS above 720px, where the header's tabs are shown instead.
  */
-function TabBar({ nav, tab, view, onLink, onReport }: {
-  nav: NavModule[]; tab: Tab | null; view?: string; onLink: (l: NavLink) => void; onReport: () => void;
+function TabBar({ nav, tab, view, onLink, onReport, ping }: {
+  nav: NavModule[]; tab: Tab | null; view?: string; onLink: (l: NavLink) => void; onReport: () => void; ping?: ReactNode;
 }) {
   const [more, setMore] = useState(false);
   if (!nav.length) return null;
@@ -394,7 +399,7 @@ function TabBar({ nav, tab, view, onLink, onReport }: {
         {shown.map(l => {
           const on = isActive(l, tab, view);
           return <button key={l.key} className={on ? 'tab active' : 'tab'} aria-current={on ? 'page' : undefined}
-                         onClick={() => onLink(l)}><TabIcon name={nav.find(m => m.links.includes(l))?.icon ?? l.tab} />{l.label === 'Overview' ? 'Home' : l.label === 'Movements' ? 'Operations' : l.label}</button>;
+                         onClick={() => onLink(l)}><TabIcon name={nav.find(m => m.links.includes(l))?.icon ?? l.tab} />{l.label === 'Overview' ? 'Home' : l.label === 'Movements' ? 'Operations' : l.label}{l.tab === 'inbox' && ping}</button>;
         })}
         <button className={!here && tab ? 'tab active' : 'tab'} aria-haspopup="dialog" onClick={() => setMore(true)}>
           <TabIcon name="more" />More
@@ -454,8 +459,8 @@ function Today({ compact = false }: { compact?: boolean }) {
  * Since 2026-11-16 the rail is the company's modules (src/lib/modules.ts): one icon per area, its screens under it —
  * Operations' views, Finance's three screens, the vendors' pages. A planned module carries its phase as a tag.
  */
-function SideNav({ nav, tab, view, onLink, onReport, bell }: {
-  nav: NavModule[]; tab: Tab | null; view?: string; onLink: (l: NavLink) => void; onReport: () => void; bell?: ReactNode;
+function SideNav({ nav, tab, view, onLink, onReport, bell, ping }: {
+  nav: NavModule[]; tab: Tab | null; view?: string; onLink: (l: NavLink) => void; onReport: () => void; bell?: ReactNode; ping?: ReactNode;
 }) {
   return (
     <aside className="side-nav" aria-label="Sections">
@@ -470,6 +475,7 @@ function SideNav({ nav, tab, view, onLink, onReport, bell }: {
               <button className="side-link" aria-current={active ? 'page' : undefined} onClick={() => onLink(first)} title={m.label}>
                 <TabIcon name={m.icon} /><span className="side-word">{m.label}{first.href && !sub ? ' ↗' : ''}</span>
                 {m.phase && <span className="side-word side-tag">{m.phase}</span>}
+                {m.key === 'guests' && ping}
               </button>
               {sub && (
                 <div className="side-sub" role="group" aria-label={m.label}>

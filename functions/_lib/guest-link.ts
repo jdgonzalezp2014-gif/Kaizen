@@ -19,3 +19,18 @@ export async function verifyGuest(encryptionKey: string, reservationId: string, 
   const want = await signGuest(encryptionKey, reservationId);
   return want.length === sig.length && [...want].reduce((d, c, i) => d | (c.charCodeAt(0) ^ sig.charCodeAt(i)), 0) === 0;
 }
+
+/**
+ * The secret Hostaway's webhook carries (`?k=` on /api/slack-cron?job=guest-event, or as the basic-auth password):
+ * derived from the account's key, so there is nothing to store and nothing to leak from the database. Shown once, to
+ * whoever may set the Inbox up (Settings → Integrations → Guest messages & AI).
+ */
+export async function hookSecret(encryptionKey: string): Promise<string> {
+  const k = await crypto.subtle.importKey('raw', unb64u(encryptionKey.replace(/=+$/, '')), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return b64u(new Uint8Array(await crypto.subtle.sign('HMAC', k, new TextEncoder().encode('hook:hostaway'))).slice(0, 24));
+}
+export async function verifyHook(encryptionKey: string, given: string | null): Promise<boolean> {
+  if (!given) return false;
+  const want = await hookSecret(encryptionKey);
+  return want.length === given.length && [...want].reduce((d, c, i) => d | (c.charCodeAt(0) ^ given.charCodeAt(i)), 0) === 0;
+}

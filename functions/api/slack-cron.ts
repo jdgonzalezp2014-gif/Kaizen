@@ -29,10 +29,24 @@ import { loadOps, pushHostNotes, reconcileRecent, recordCleanings } from '../_li
 import { pullAll } from '../_lib/hostaway-tasks.ts';
 import { watchCalendars } from '../_lib/calendar-watch.ts';
 import { runDue } from '../_lib/guest-outbox.ts';
+import { takeEvent, watchPass } from '../_lib/guest-events.ts';
+import { verifyHook } from '../_lib/guest-link.ts';
 
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const sql = db(env) as unknown as SqlFn;
+  // Hostaway's webhook (Guest Services → Inbox, 2026-11-16): a guest wrote, a booking was made. It cannot send the
+  // ingest header, so it carries its own secret — `?k=` or the basic-auth password (guest-link.ts `hookSecret`) — and
+  // can do nothing but report an event, which is then re-read from Hostaway. Same door as the clock: already outside Access.
+  const here = new URL(request.url);
+  if (here.searchParams.get('job') === 'guest-event') {
+    const basic = /^Basic (.+)$/i.exec(request.headers.get('Authorization') ?? '')?.[1];
+    let pass: string | null = null;
+    try { pass = basic ? atob(basic).split(':').slice(1).join(':') : null; } catch { pass = null; }
+    if (!(await verifyHook(env.ENCRYPTION_KEY, here.searchParams.get('k') ?? pass))) return Response.json({ ok: false, error: 'unauthenticated' }, { status: 403 });
+    try { return Response.json(await takeEvent(sql, env, await request.json().catch(() => null), here.origin)); }
+    catch (e) { return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
+  }
   const who = identify(request, env);
   if (who) {
     if (!can((await accessOf(sql, who)).permissions, 'settings')) return Response.json({ ok: false, error: 'forbidden' }, { status: 403 });
@@ -52,7 +66,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Guest Services → Inbox (2026-11-16): the guests' scheduled and automatic messages — a call of its own from the clock
   // (clock/index.ts), so a busy Slack tick can never delay a guest's message, nor the other way round.
   if (new URL(request.url).searchParams.get('job') === 'messages') {
-    try { return Response.json({ ok: true, messages: await runDue(sql, env) }); }
+    // …and, in the same call, the look at the guests still waiting for an answer (guest-events.ts): one failing never stops the other.
+    try {
+      const messages = await runDue(sql, env);
+      const watch = await watchPass(sql, env, here.origin).catch(e => ({ error: e instanceof Error ? e.message : String(e) }));
+      return Response.json({ ok: true, messages, watch });
+    }
     catch (e) { return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
   }
   // 2026-10-15: a tick may make 50 subrequests (Cloudflare's free plan; every query and call counts). The 8 AM and 3 PM

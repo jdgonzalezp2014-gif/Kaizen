@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aiPrompt, awaitingReply, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, planFor,
+import { aiPrompt, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, planFor,
   portalLink, stageOf, stayWindow, suggestionFromAi, varsFor, whenWords, zonedInstant, type InboxRow, type Stay, type Template, type ThreadMsg } from './inbox.ts';
 
 const stay: Stay = { reservationId: '71', listingId: '9', listing: 'P2-1406', guest: 'Ana Ruiz', arrival: '2026-11-20', departure: '2026-11-23', status: 'new', bookedAt: '2026-11-10T15:00:00Z' };
-const tpl = (o: Partial<Template>): Template => ({ id: 't1', name: 'Welcome', body: 'Hi {{first_name}}', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 24, active: true, ...o });
+const tpl = (o: Partial<Template>): Template => ({ id: 't1', name: 'Welcome', body: 'Hi {{first_name}}', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 24, active: true, listingIds: null, onlyIf: 'always', holdHours: null, ...o });
 const msg = (o: Partial<ThreadMsg>): ThreadMsg => ({ id: 'm', at: '2026-11-16T10:00:00Z', incoming: true, body: 'hi', channel: 'hostaway', status: 'received', ...o });
 
 test('a stay moves through its stages by the day', () => {
@@ -112,4 +112,69 @@ test('the portal link is built from the account\'s address only', () => {
   assert.equal(portalLink('http://x.com', '71', 'abc'), null);
   assert.ok(isPortalUrl('') && isPortalUrl('https://stay.example.com'));
   assert.ok(!isPortalUrl('javascript:alert(1)'));
+});
+
+test('an automation is for all listings or the chosen ones', () => {
+  assert.ok(appliesTo(tpl({}), '9'));
+  assert.ok(appliesTo(tpl({ listingIds: [] }), null));
+  assert.ok(appliesTo(tpl({ listingIds: ['9', '4'] }), '9'));
+  assert.ok(!appliesTo(tpl({ listingIds: ['4'] }), '9'));
+  assert.ok(!appliesTo(tpl({ listingIds: ['4'] }), null));
+  assert.equal(scopeWords(tpl({})), 'All listings');
+  assert.equal(scopeWords(tpl({ listingIds: ['4'] })), '1 listing');
+  const tz = 'America/Chicago', now = new Date('2026-11-19T23:00:00Z');
+  assert.deepEqual(planFor(stay, [tpl({ listingIds: ['4'] })], [], now, tz), []);
+  assert.deepEqual(planFor(stay, [tpl({ listingIds: ['9'] })], [], now, tz).map(p => p.state), ['due']);
+});
+
+test('after online check-in: waits for the guest, goes when done, and can be held until close to arrival', () => {
+  const tz = 'America/Chicago', code = tpl({ id: 'c', trigger: 'checkin_done', offsetHours: 0 });
+  // Check-in is 2026-11-20 16:00 CST = 22:00Z.
+  assert.deepEqual(planFor(stay, [code], [], new Date('2026-11-12T10:00:00Z'), tz).map(p => [p.state, p.at]), [['waiting', null]]);
+  const done = { ...stay, checkinDoneAt: '2026-11-12T10:00:00Z' };
+  assert.equal(dueAt(code, done, tz)!.toISOString(), '2026-11-12T10:00:00.000Z');
+  assert.deepEqual(planFor(done, [code], [], new Date('2026-11-12T10:01:00Z'), tz).map(p => p.state), ['due']);
+  const held = { ...code, holdHours: 48 };
+  assert.equal(dueAt(held, done, tz)!.toISOString(), '2026-11-18T22:00:00.000Z');
+  assert.deepEqual(planFor(done, [held], [], new Date('2026-11-12T10:01:00Z'), tz).map(p => p.state), ['planned']);
+  assert.deepEqual(planFor(done, [held], [], new Date('2026-11-18T22:05:00Z'), tz).map(p => p.state), ['due']);
+  // Done inside the hold: it goes at once.
+  assert.equal(dueAt(held, { ...stay, checkinDoneAt: '2026-11-20T15:00:00Z' }, tz)!.toISOString(), '2026-11-20T15:00:00.000Z');
+  assert.equal(whenWords(code), 'When online check-in is done');
+  assert.equal(whenWords(held), 'When online check-in is done, not before 2 days ahead of check-in');
+  assert.equal(whenWords(tpl({ trigger: 'checkin_done', offsetHours: 2 })), '2 hours after online check-in');
+  assert.deepEqual(stayWindow([held], '2026-11-16'), { from: '2026-11-13', to: '2026-11-19' });
+});
+
+test('a condition: a reminder is not needed once the check-in is done; "only if done" is judged at its moment', () => {
+  const tz = 'America/Chicago', before = new Date('2026-11-19T10:00:00Z'), at = new Date('2026-11-19T23:00:00Z');
+  const remind = tpl({ onlyIf: 'checkin_pending' }), thanks = tpl({ onlyIf: 'checkin_done' });
+  assert.deepEqual(planFor(stay, [remind], [], at, tz).map(p => p.state), ['due']);
+  assert.deepEqual(planFor({ ...stay, checkinDoneAt: '2026-11-18T10:00:00Z' }, [remind], [], before, tz).map(p => p.state), ['skipped']);
+  assert.deepEqual(planFor(stay, [thanks], [], before, tz).map(p => p.state), ['planned']);
+  assert.deepEqual(planFor(stay, [thanks], [], at, tz).map(p => p.state), ['skipped']);
+  assert.deepEqual(planFor({ ...stay, checkinDoneAt: '2026-11-18T10:00:00Z' }, [thanks], [], at, tz).map(p => p.state), ['due']);
+});
+
+test('house blanks are filled on the server; without a value the message is refused', () => {
+  const v = varsFor(stay, null, undefined, { door_code: ' 4821 ', wifi_network: 'Kaizen' });
+  assert.equal(fill('Code {{door_code}} · {{wifi_network}}', v).text, 'Code 4821 · Kaizen');
+  assert.deepEqual(fill('{{door_code}} {{wifi_password}}', varsFor(stay, null)).missing, ['door_code', 'wifi_password']);
+});
+
+test('each way in and out of a conversation is a tab, only the ones that exist', () => {
+  const m = (via: string | null, channel: 'hostaway' | 'sms' = 'hostaway') => ({ via, channel });
+  assert.equal(tabOf(m('channel')), 'chat');
+  assert.equal(tabOf(m('emailFormatted')), 'email');
+  assert.equal(tabOf(m('sms')), 'sms');
+  assert.equal(tabOf(m(null, 'sms')), 'sms');
+  assert.deepEqual(threadTabs({ channel: 'airbnbOfficial', hasEmail: false }, []), ['all', 'chat', 'sms']);
+  assert.deepEqual(threadTabs({ channel: 'direct', hasEmail: true }, []), ['all', 'email', 'sms']);
+  assert.deepEqual(threadTabs({ channel: 'partner', hasEmail: false }, [m('channel'), m('email')]), ['all', 'chat', 'email', 'sms']);
+});
+
+test('"thanks" is not waiting for an answer', () => {
+  assert.ok(waits({ lastIncoming: true }));
+  assert.ok(!waits({ lastIncoming: true, noReply: true }));
+  assert.ok(!waits({ lastIncoming: false }));
 });

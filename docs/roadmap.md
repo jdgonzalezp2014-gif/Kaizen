@@ -22,6 +22,11 @@ Push 5e9ab1f **before** the domain turns Active → set the portal address (Sett
 
 ## Phase 1 — Inbox: automations, channels, live messages (module: inbox)
 
+**Built 2026-11-16, not deployed** (migration 117 written, not applied — see `docs/modules/inbox.md`). Owner's answers that
+shaped it: SMS only through Quo (Hostaway's SMS costs — never sent from Kaizen); email through Hostaway; calls later; the door code
+comes from Hostaway and goes in the message *and* stays in the online check-in; no Slack line per message — a watch that reports a
+guest who is coming or in the house and still unanswered, with a light model deciding whether the message needs an answer at all.
+
 1. **Automations** (migration 117): a template gets *which listings* (all or chosen), *only if* (always · online
    check-in not done · done), a new trigger **After online check-in**, and *hold until N hours before check-in* (for
    door codes). New blanks: `door_code`, `wifi_network`, `wifi_password`, `address`. An automatic message is dropped
@@ -39,11 +44,17 @@ Push 5e9ab1f **before** the domain turns Active → set the portal address (Sett
 
 ## Phase 2 — the portal's real door (module: guests)
 
+Owner, 2026-11-16: build it so the team can open it and play — Stripe stays in **test mode**, but payments must really
+confirm (webhook or session check) and be recorded, so the whole flow can be tried before going live.
+
 `/guest/<id>.<sig>` reads the stay from Hostaway, saves the check-in on the server (`guest_checkins`), releases the
 door code by rule, turns "Request a change" into a to-do, and the stay host shows only the portal. Depends on Phase 0.
 Hostaway writes (extend a stay, add a fee) stay behind the owner's OK.
 
 ## Phase 3 — one AI for everything (module: platform)
+
+Owner, 2026-11-16: use ONE provider now and keep the keys of all of them; which use cases deserve AI is decided later.
+So: the layer + keys + one chosen provider first; saved answers and "auto" wait for that review.
 
 1. **Providers**: one layer (`ai.ts`) for Claude · Gemini · **Grok** (xAI, OpenAI-compatible) · Workers AI; the
    account picks the order in Settings → Integrations → AI; each use (guest replies, assistant, receipts) names a

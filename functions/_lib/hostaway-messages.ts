@@ -52,6 +52,8 @@ function rowOf(c: Raw): ConversationRow {
     unread: Number(c.hasUnreadMessages) === 1, lastAt, lastIncoming: !!got && (!sent || got >= sent),
     preview: preview(plain(str(last?.body) ?? '', guest)), phone: str(r.phone),
     payment: str(r.paymentStatus), agreement: str(r.reservationAgreement), idVerified: Number(r.isGuestIdentityVerified) === 1,
+    // Only that there is one: the address stays in Hostaway, which is who sends the email.
+    hasEmail: !!(str(c.recipientEmail) ?? str(r.guestEmail)),
   };
 }
 

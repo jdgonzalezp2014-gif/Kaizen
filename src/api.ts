@@ -1074,7 +1074,14 @@ export async function addStripeDomain(domain: string): Promise<{ ok: boolean; me
 import type { GuestAi, InboxRow, Planned, Suggestion as ReplySuggestion, Template, ThreadMsg, MsgStatus } from './lib/inbox.ts';
 export interface InboxList { ok: true; rows: InboxRow[]; today: string; more: boolean; live: boolean; aiMode: 'off' | 'suggest'; quo: boolean; templates: Template[] }
 export interface StayTask { id: string; title: string; status: string; priority: string; kind: string; dueOn: string | null; assignee: string | null; done: boolean }
-export interface InboxThread { ok: true; messages: ThreadMsg[]; tasks: StayTask[]; portalLink: string | null; phone: string | null; plan: Planned[] }
+export interface InboxThread { ok: true; messages: ThreadMsg[]; tasks: StayTask[]; portalLink: string | null; phone: string | null; plan: Planned[];
+  /** The online check-in, when it is done: when, and whether the guest's portal or a person marked it. */
+  checkin?: { at: string; source: string; by: string | null } | null }
+export interface InboxEvents { ok: true; last: number; waiting: number; fresh: { id: string; conversationId: string; guest: string; preview: string; urgent: boolean }[] }
+/** What Hostaway's webhook reported since `since` — Kaizen's own table, no Hostaway call: asked every half minute. */
+export const getInboxEvents = (since: number) => call<InboxEvents | Fail>(`/api/inbox?events=${since}`);
+export interface Automations { ok: true; templates: Template[]; stats: { id: string; status: MsgStatus; n: number; last: string | null }[]; units: { id: string; name: string }[]; live: boolean }
+export const getAutomations = () => call<Automations | Fail>('/api/inbox?automations=1');
 export interface InboxSms { ok: true; connected: boolean; phone: string | null; note: string; messages: ThreadMsg[] }
 export const getInbox = (offset = 0) => call<InboxList | Fail>(`/api/inbox${offset ? `?offset=${offset}` : ''}`);
 export const getInboxThread = (conversationId: string, reservationId: string) =>
@@ -1084,7 +1091,8 @@ export const inboxAction = (body: Record<string, unknown>) =>
   call<{ ok: true; status: MsgStatus; error?: string | null; id?: string } | Fail>('/api/inbox', { method: 'POST', body: JSON.stringify(body) });
 export const inboxSuggest = (conversationId: string) =>
   call<{ ok: true; suggestion: ReplySuggestion; by: string; sops: string[] } | Fail>('/api/inbox', { method: 'POST', body: JSON.stringify({ action: 'suggest', conversationId }) });
-export interface InboxSettings { ok: true; templates: Template[]; ai: GuestAi; live: boolean; portalUrl: string | null; migrated: boolean; hasClaudeKey: boolean; hasGeminiKey: boolean }
+export interface InboxSettings { ok: true; templates: Template[]; ai: GuestAi; live: boolean; portalUrl: string | null; migrated: boolean; hasClaudeKey: boolean; hasGeminiKey: boolean;
+  watch: { watch: boolean; waitMinutes: number }; watchChannel: string | null; migrated117: boolean; lastEventAt: string | null; hookUrl: string }
 export const getInboxSettings = () => call<InboxSettings | Fail>('/api/inbox-settings');
 export const saveInboxSettings = (body: Record<string, unknown>) =>
   call<InboxSettings | Fail>('/api/inbox-settings', { method: 'POST', body: JSON.stringify(body) });

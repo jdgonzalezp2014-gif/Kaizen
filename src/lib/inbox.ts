@@ -13,6 +13,9 @@ import type { GuestGuide } from './guest-portal.ts';
 import type { SopDoc } from './slack-sops.ts';
 
 export type Channel = 'hostaway' | 'sms';
+/** How a Hostaway message travels when a person chose: on the booking channel's own thread, or as an email to the guest. */
+export type Via = 'channel' | 'email';
+export const isVia = (v: unknown): v is Via => v === 'channel' || v === 'email';
 
 // ───────────────────────── stays ─────────────────────────
 
@@ -24,6 +27,8 @@ export interface Stay {
   checkInHour?: number | null; checkOutHour?: number | null;
   /** When it was booked, ISO — for the "after booking" trigger. */
   bookedAt?: string | null;
+  /** When the guest finished the online check-in (`guest_checkins`), ISO — null while it is not done. */
+  checkinDoneAt?: string | null;
 }
 
 export type Stage = 'inquiry' | 'upcoming' | 'arriving' | 'staying' | 'leaving' | 'past' | 'cancelled';
@@ -59,14 +64,20 @@ export interface InboxRow extends Stay {
   tasks: number; scheduled: number;
   /** What the guest has done so far, as Hostaway reports it: "Paid", "signed", ID checked. Kaizen's own portal reports here once it is live. */
   payment?: string | null; agreement?: string | null; idVerified?: boolean;
+  /** Hostaway has an email address for this guest (the address itself stays on the server). */
+  hasEmail?: boolean;
+  /** A light model read the guest's last message and it asks for nothing ("thanks!"): not counted as waiting. */
+  noReply?: boolean;
 }
 /** Hostaway's channel names as people say them. */
 const CHANNELS: Record<string, string> = { airbnbofficial: 'Airbnb', airbnb: 'Airbnb', homeaway: 'Vrbo', vrbo: 'Vrbo', bookingcom: 'Booking.com', expedia: 'Expedia',
   direct: 'Direct', partner: 'Partner', website: 'Website', bookingengine: 'Website' };
 export const channelLabel = (c: string) => CHANNELS[c.toLowerCase().replace(/[^a-z]/g, '')] ?? c;
+/** Does this guest wait for an answer? They wrote last — and not just to say thanks. */
+export const waits = (r: Pick<InboxRow, 'lastIncoming' | 'noReply'>) => r.lastIncoming && !r.noReply;
 export function matchesFilter(r: InboxRow, f: InboxFilter, today: DateStr): boolean {
   const st = stageOf(r, today);
-  if (f === 'unread') return r.lastIncoming;
+  if (f === 'unread') return waits(r);
   if (f === 'now') return st === 'arriving' || st === 'staying' || st === 'leaving';
   if (f === 'upcoming') return st === 'upcoming' || st === 'inquiry';
   if (f === 'past') return st === 'past' || st === 'cancelled';
@@ -120,6 +131,25 @@ export function mergeThread(channel: ThreadMsg[], outbox: ThreadMsg[]): ThreadMs
   return [...channel, ...extra].sort((a, b) => a.at < b.at ? -1 : a.at > b.at ? 1 : 0);
 }
 
+/** The conversation's ways in and out, one tab each: the booking channel's chat, email, text messages. */
+export type ThreadTab = 'all' | 'chat' | 'email' | 'sms';
+export const tabOf = (m: Pick<ThreadMsg, 'channel' | 'via'>): Exclude<ThreadTab, 'all'> =>
+  m.channel === 'sms' || m.via === 'sms' ? 'sms' : m.via === 'email' || m.via === 'emailFormatted' ? 'email' : 'chat';
+const OTA = /^(airbnb|vrbo|homeaway|booking|expedia)/i;
+/**
+ * The tabs a conversation gets (owner, 2026-11-16: each channel its own tab, only the ones that exist): chat when the
+ * booking came from a channel that has one (or the thread has such messages), email when Hostaway has the guest's
+ * address (or emails were exchanged), SMS always — it is Quo's, and says so when Quo is not connected.
+ */
+export function threadTabs(row: Pick<InboxRow, 'channel' | 'hasEmail'>, msgs: Pick<ThreadMsg, 'channel' | 'via'>[]): ThreadTab[] {
+  const has = (t: ThreadTab) => msgs.some(m => tabOf(m) === t);
+  const out: ThreadTab[] = ['all'];
+  if (OTA.test(row.channel.replace(/[^a-z]/gi, '')) || has('chat')) out.push('chat');
+  if (row.hasEmail || has('email')) out.push('email');
+  out.push('sms');
+  return out;
+}
+
 /** Does the guest wait for an answer? The last word in the thread is theirs. */
 export const awaitingReply = (msgs: ThreadMsg[]) => {
   const real = msgs.filter(m => m.status === 'received' || m.status === 'sent');
@@ -128,15 +158,27 @@ export const awaitingReply = (msgs: ThreadMsg[]) => {
 
 // ───────────────────────── templates and schedules ─────────────────────────
 
-export type Trigger = 'manual' | 'booked' | 'before_checkin' | 'after_checkin' | 'before_checkout' | 'after_checkout';
+export type Trigger = 'manual' | 'booked' | 'checkin_done' | 'before_checkin' | 'after_checkin' | 'before_checkout' | 'after_checkout';
 export const TRIGGERS: [Trigger, string][] = [
-  ['manual', 'Only when picked'], ['booked', 'After booking'], ['before_checkin', 'Before check-in'], ['after_checkin', 'After check-in'],
+  ['manual', 'Only when picked'], ['booked', 'After booking'], ['checkin_done', 'After online check-in'],
+  ['before_checkin', 'Before check-in'], ['after_checkin', 'After check-in'],
   ['before_checkout', 'Before check-out'], ['after_checkout', 'After check-out'],
 ];
+/** Triggers that count from something that happened (a booking, a finished online check-in), not from the stay's dates. */
+export const isEvent = (t: Trigger) => t === 'booked' || t === 'checkin_done';
+export type OnlyIf = 'always' | 'checkin_pending' | 'checkin_done';
+export const ONLY_IF: [OnlyIf, string][] = [['always', 'Always'], ['checkin_pending', 'Only if online check-in is not done'], ['checkin_done', 'Only if online check-in is done']];
 export interface Template {
   id: string; name: string; body: string; channel: Channel;
   trigger: Trigger; offsetHours: number; active: boolean;
+  /** The listings it is for — null = every listing. */
+  listingIds: string[] | null;
+  onlyIf: OnlyIf;
+  /** For event triggers: not earlier than this many hours before check-in (a door code is not sent weeks ahead). Null = as soon as it happens. */
+  holdHours: number | null;
 }
+export const appliesTo = (t: Pick<Template, 'listingIds'>, listingId: string | null | undefined) =>
+  !t.listingIds?.length || (!!listingId && t.listingIds.includes(listingId));
 export const MAX_BODY = 2000;
 export const MAX_OFFSET_HOURS = 24 * 30;
 
@@ -145,17 +187,22 @@ export const VARS: [string, string][] = [
   ['guest', 'Guest\'s full name'], ['first_name', 'Guest\'s first name'], ['listing', 'Listing name'],
   ['checkin', 'Arrival day'], ['checkout', 'Departure day'], ['checkin_time', 'Check-in time'], ['checkout_time', 'Check-out time'],
   ['nights', 'Number of nights'], ['portal_link', 'This stay\'s guest portal link'],
+  ['door_code', 'The door code (the reservation\'s own in Hostaway, else the Repository\'s guest code)'],
+  ['wifi_network', 'Wi-Fi network (Repository)'], ['wifi_password', 'Wi-Fi password (Repository)'], ['address', 'The listing\'s address (Repository)'],
 ];
+/** Blanks filled on the server from the house and the reservation — the reply box cannot fill them, an automation can. */
+export const HOUSE_VARS = ['door_code', 'wifi_network', 'wifi_password', 'address'];
 const hour12 = (h: number) => `${h % 12 === 0 ? 12 : h % 12} ${h < 12 ? 'AM' : 'PM'}`;
 const longDay = (d: DateStr) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric' }).format(new Date(`${d}T12:00:00Z`));
 
-export function varsFor(s: Stay, portalLink: string | null, defaults = { checkIn: 16, checkOut: 11 }): Record<string, string> {
+export function varsFor(s: Stay, portalLink: string | null, defaults = { checkIn: 16, checkOut: 11 }, house: Record<string, string | null | undefined> = {}): Record<string, string> {
   const n = s.arrival && s.departure ? Math.round((Date.parse(`${s.departure}T12:00:00Z`) - Date.parse(`${s.arrival}T12:00:00Z`)) / 86_400_000) : 0;
   return {
     guest: s.guest, first_name: s.guest.trim().split(/\s+/)[0] ?? '', listing: s.listing,
     checkin: s.arrival ? longDay(s.arrival) : '', checkout: s.departure ? longDay(s.departure) : '',
     checkin_time: hour12(s.checkInHour ?? defaults.checkIn), checkout_time: hour12(s.checkOutHour ?? defaults.checkOut),
     nights: n > 0 ? String(n) : '', portal_link: portalLink ?? '',
+    ...Object.fromEntries(HOUSE_VARS.map(k => [k, (house[k] ?? '').toString().trim()])),
   };
 }
 
@@ -169,6 +216,25 @@ export function fill(body: string, vars: Record<string, string>): { text: string
   });
   return { text, missing: [...missing] };
 }
+
+/**
+ * Starting points for the automations hosts ask for first (owner, 2026-11-16). Each opens in the editor PAUSED: the
+ * words are the company's to make its own, and with sending on an active automation reaches guests by itself.
+ */
+export const RECIPES: { key: string; icon: string; what: string; t: Omit<Template, 'id'> }[] = [
+  { key: 'code', icon: 'key', what: 'Sends the door code once the guest finishes the online check-in — never earlier than two days before arrival.',
+    t: { name: 'Door code after online check-in', channel: 'hostaway', trigger: 'checkin_done', offsetHours: 0, holdHours: 48, onlyIf: 'always', listingIds: null, active: false,
+      body: 'Hi {{first_name}}, your online check-in is complete — thank you! Your door code for {{listing}} is {{door_code}}. It works from {{checkin_time}} on {{checkin}}.' } },
+  { key: 'remind', icon: 'bell', what: 'Two days before arrival, only to guests who have not done the online check-in yet.',
+    t: { name: 'Online check-in reminder', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 48, holdHours: null, onlyIf: 'checkin_pending', listingIds: null, active: false,
+      body: 'Hi {{first_name}}, your stay at {{listing}} starts {{checkin}}. Please complete your online check-in to receive your door code: {{portal_link}}' } },
+  { key: 'out', icon: 'clock', what: 'The evening before departure: the check-out time.',
+    t: { name: 'Check-out reminder', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 16, holdHours: null, onlyIf: 'always', listingIds: null, active: false,
+      body: 'Hi {{first_name}}, we hope you are enjoying {{listing}}. A quick reminder that check-out is tomorrow, {{checkout}}, by {{checkout_time}}. Safe travels!' } },
+  { key: 'review', icon: 'sparkles', what: 'A day after check-out: a thank-you and the ask for a review.',
+    t: { name: 'Thank you & review', channel: 'hostaway', trigger: 'after_checkout', offsetHours: 24, holdHours: null, onlyIf: 'always', listingIds: null, active: false,
+      body: 'Hi {{first_name}}, thank you for staying at {{listing}}. If you enjoyed your stay, a review would mean a lot to our small team. We hope to host you again!' } },
+];
 
 /** `day` at `hour` on the wall clock of `tz`, as an instant. Two passes settle a daylight-saving edge. */
 export function zonedInstant(day: DateStr, hour: number, tz: string): Date {
@@ -184,9 +250,16 @@ export function zonedInstant(day: DateStr, hour: number, tz: string): Date {
 }
 
 /** When an automatic template goes for a stay — null when it has no moment (manual, or the stay has no dates). */
-export function dueAt(t: Pick<Template, 'trigger' | 'offsetHours'>, s: Stay, tz: string, defaults = { checkIn: 16, checkOut: 11 }): Date | null {
+export function dueAt(t: Pick<Template, 'trigger' | 'offsetHours'> & Partial<Pick<Template, 'holdHours'>>, s: Stay, tz: string, defaults = { checkIn: 16, checkOut: 11 }): Date | null {
   const h = Math.max(0, Math.min(MAX_OFFSET_HOURS, t.offsetHours)) * 3_600_000;
-  if (t.trigger === 'booked') return s.bookedAt ? new Date(Date.parse(s.bookedAt) + h) : null;
+  if (isEvent(t.trigger)) {
+    const from = t.trigger === 'booked' ? s.bookedAt : s.checkinDoneAt;
+    if (!from) return null;
+    const at = Date.parse(from) + h;
+    if (t.holdHours == null || !s.arrival) return new Date(at);
+    // Held: when it happened + the wait, but never earlier than `holdHours` ahead of check-in.
+    return new Date(Math.max(at, zonedInstant(s.arrival, s.checkInHour ?? defaults.checkIn, tz).getTime() - Math.max(0, t.holdHours) * 3_600_000));
+  }
   if (t.trigger === 'manual' || !s.arrival || !s.departure) return null;
   const inAt = zonedInstant(s.arrival, s.checkInHour ?? defaults.checkIn, tz).getTime();
   const outAt = zonedInstant(s.departure, s.checkOutHour ?? defaults.checkOut, tz).getTime();
@@ -194,16 +267,22 @@ export function dueAt(t: Pick<Template, 'trigger' | 'offsetHours'>, s: Stay, tz:
     : t.trigger === 'before_checkout' ? outAt - h : outAt + h);
 }
 
-export const whenWords = (t: Pick<Template, 'trigger' | 'offsetHours'>) => {
-  if (t.trigger === 'manual') return 'Only when picked';
-  const h = t.offsetHours, amount = h === 0 ? '' : h % 24 === 0 ? `${h / 24} day${h === 24 ? '' : 's'} ` : `${h} hour${h === 1 ? '' : 's'} `;
-  const [side, event] = t.trigger === 'booked' ? ['after', 'booking'] : t.trigger.split('_') as [string, string];
-  const ev = event === 'checkin' ? 'check-in' : event === 'checkout' ? 'check-out' : event;
-  return h === 0 ? `At ${ev}` : `${amount}${side} ${ev}`;
+const span = (h: number) => h % 24 === 0 ? `${h / 24} day${h === 24 ? '' : 's'}` : `${h} hour${h === 1 ? '' : 's'}`;
+const WHEN: Record<Exclude<Trigger, 'manual'>, [string, string]> = {
+  booked: ['after', 'booking'], checkin_done: ['after', 'online check-in'], before_checkin: ['before', 'check-in'], after_checkin: ['after', 'check-in'],
+  before_checkout: ['before', 'check-out'], after_checkout: ['after', 'check-out'],
 };
+export const whenWords = (t: Pick<Template, 'trigger' | 'offsetHours'> & Partial<Pick<Template, 'holdHours'>>) => {
+  if (t.trigger === 'manual') return 'Only when picked';
+  const [side, ev] = WHEN[t.trigger], h = t.offsetHours;
+  const base = h === 0 ? (t.trigger === 'checkin_done' ? 'When online check-in is done' : `At ${ev}`) : `${span(h)} ${side} ${ev}`;
+  return isEvent(t.trigger) && t.holdHours != null ? `${base}, not before ${span(t.holdHours)} ahead of check-in` : base;
+};
+export const scopeWords = (t: Pick<Template, 'listingIds'>) => !t.listingIds?.length ? 'All listings' : `${t.listingIds.length} listing${t.listingIds.length === 1 ? '' : 's'}`;
 
-export type PlanState = 'planned' | 'due' | 'missed' | MsgStatus;
-export interface Planned { templateId: string; name: string; channel: Channel; at: string; state: PlanState }
+/** `waiting` = it goes after something that has not happened yet (the online check-in); `skipped` = its condition says it is not needed. */
+export type PlanState = 'planned' | 'due' | 'missed' | 'waiting' | 'skipped' | MsgStatus;
+export interface Planned { templateId: string; name: string; channel: Channel; at: string | null; state: PlanState }
 
 /** A message is still worth sending this long after its moment; later, it is "missed" and left alone. */
 export const GRACE_HOURS = 6;
@@ -214,22 +293,28 @@ export const GRACE_HOURS = 6;
  */
 export function planFor(s: Stay, templates: Template[], log: { templateId: string | null; status: MsgStatus }[], now: Date, tz: string): Planned[] {
   if (!isConfirmed(s.status)) return [];
-  const out: Planned[] = [];
+  const out: Planned[] = [], checkedIn = !!s.checkinDoneAt;
   for (const t of templates) {
-    if (!t.active || t.trigger === 'manual') continue;
-    const at = dueAt(t, s, tz);
-    if (!at) continue;
+    if (!t.active || t.trigger === 'manual' || !appliesTo(t, s.listingId)) continue;
     const done = log.find(l => l.templateId === t.id);
+    const at = dueAt(t, s, tz);
+    if (!at) {
+      // Only "after online check-in" can be without a moment for a dated stay: it waits for the guest.
+      if (t.trigger === 'checkin_done' && s.arrival) out.push({ templateId: t.id, name: t.name, channel: t.channel, at: null, state: done ? done.status : 'waiting' });
+      continue;
+    }
     const late = now.getTime() - at.getTime();
+    // "Only if not done" is settled the moment the check-in is done; "only if done" is judged when its moment comes.
+    const unneeded = t.onlyIf === 'checkin_pending' ? checkedIn : t.onlyIf === 'checkin_done' ? !checkedIn && late >= 0 : false;
     out.push({ templateId: t.id, name: t.name, channel: t.channel, at: at.toISOString(),
-      state: done ? done.status : late < 0 ? 'planned' : late <= GRACE_HOURS * 3_600_000 ? 'due' : 'missed' });
+      state: done ? done.status : unneeded ? 'skipped' : late < 0 ? 'planned' : late <= GRACE_HOURS * 3_600_000 ? 'due' : 'missed' });
   }
-  return out.sort((a, b) => a.at < b.at ? -1 : 1);
+  return out.sort((a, b) => (a.at ?? '9') < (b.at ?? '9') ? -1 : 1);
 }
 
 /** The window of stays the clock has to look at so that no template's moment is outside it. */
 export function stayWindow(templates: Template[], today: DateStr): { from: DateStr; to: DateStr } {
-  const days = Math.ceil(Math.max(24, ...templates.filter(t => t.active && t.trigger !== 'manual').map(t => t.offsetHours)) / 24) + 1;
+  const days = Math.ceil(Math.max(24, ...templates.filter(t => t.active && t.trigger !== 'manual').map(t => Math.max(t.offsetHours, t.holdHours ?? 0))) / 24) + 1;
   return { from: addDays(today, -days), to: addDays(today, days) };
 }
 

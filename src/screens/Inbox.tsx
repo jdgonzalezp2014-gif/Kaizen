@@ -7,14 +7,15 @@
  * paragraphs — the how-to sits behind each "?" (CLAUDE.md); what a state or a limit says stays on screen.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { getInbox, getInboxSms, getInboxThread, inboxAction, inboxSuggest, saveInboxSettings, todoAction,
+import { getInbox, getInboxSms, getInboxThread, inboxAction, inboxSuggest, todoAction,
   type InboxList, type InboxSms, type InboxThread } from '../api.ts';
-import { FILTERS, MAX_BODY, STAGE_LABEL, TRIGGERS, VARS, channelLabel, fill, matchesFilter, searchHit, stageOf, varsFor, whenWords,
-  type Channel, type InboxFilter, type InboxRow, type Planned, type Suggestion, type Template, type ThreadMsg, type Trigger } from '../lib/inbox.ts';
+import { FILTERS, MAX_BODY, STAGE_LABEL, channelLabel, fill, matchesFilter, searchHit, stageOf, tabOf, threadTabs, varsFor, waits,
+  type Channel, type InboxFilter, type InboxRow, type Planned, type Suggestion, type ThreadMsg, type ThreadTab, type Via } from '../lib/inbox.ts';
 import { segments } from '../lib/sms.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Icon } from '../components/Icon.tsx';
-import { Modal } from '../components/Modal.tsx';
+import { GUEST_EVENT } from '../components/GuestPing.tsx';
+import { Automations } from './Automations.tsx';
 import { param, setParams } from '../components/useUrlState.ts';
 
 const TZ = 'America/Chicago';
@@ -48,7 +49,8 @@ export function Inbox({ canSend, canSetup, canTodos, onTodo, onSettings }: {
   const [filter, setFilter] = useState<InboxFilter>('all');
   const [q, setQ] = useState('');
   const [openId, setOpenId] = useState<string | null>(() => param('c'));
-  const [templatesOpen, setTemplatesOpen] = useState(false);
+  const [auto, setAuto] = useState(() => param('v') === 'auto');
+  const [notify, setNotify] = useState<NotificationPermission | 'none'>(typeof Notification === 'undefined' ? 'none' : Notification.permission);
 
   const load = (more = false) => {
     setLoading(true);
@@ -62,6 +64,14 @@ export function Inbox({ canSend, canSetup, canTodos, onTodo, onSettings }: {
       .finally(() => setLoading(false));
   };
   useEffect(() => { void load(); }, []);
+  // A guest wrote (Hostaway's webhook → GuestPing): the list is read again at once. And the address may name a
+  // conversation after the screen is open — a notice's click, a link from Slack.
+  useEffect(() => {
+    const fresh = () => { if (rows.length <= 50) void load(); };
+    const moved = () => { const c = param('c'); if (c) setOpenId(c); setAuto(param('v') === 'auto'); };
+    window.addEventListener(GUEST_EVENT, fresh); window.addEventListener('popstate', moved);
+    return () => { window.removeEventListener(GUEST_EVENT, fresh); window.removeEventListener('popstate', moved); };
+  }, [rows.length]);
   // New messages while the screen is open: a quiet reload every two minutes, only while someone is looking.
   useEffect(() => {
     const t = setInterval(() => { if (document.visibilityState === 'visible' && rows.length <= 50) void load(); }, 120_000);
@@ -72,23 +82,30 @@ export function Inbox({ canSend, canSetup, canTodos, onTodo, onSettings }: {
   const shown = useMemo(() => rows.filter(r => matchesFilter(r, filter, today) && searchHit(r, q)), [rows, filter, q, today]);
   const open = rows.find(r => r.conversationId === openId) ?? null;
   const pick = (id: string | null) => { setOpenId(id); setParams({ c: id }, { replace: true }); };
+  const showAuto = (on: boolean) => { setAuto(on); setParams({ v: on ? 'auto' : null }, { replace: true }); if (!on) void load(); };
+  const nWait = rows.filter(waits).length;
+
+  if (auto && canSetup) return <Automations onBack={() => showAuto(false)} />;
 
   return (
     <div className={`ix ${open ? 'has-open' : ''}`}>
       <aside className="ix-list" aria-label="Conversations">
         <div className="ix-list-head">
           <h2>Inbox <Hint>Every guest conversation from Hostaway, newest first, with its reservation. Open one to read it, answer, schedule a message,
-            see the to-dos of that stay and its SMS. <b>Needs reply</b> = the guest wrote last. A <Icon n="list" /> number is open to-dos for the stay;
-            a <Icon n="clock" /> number is messages waiting to go.</Hint></h2>
+            see the to-dos of that stay and its SMS. <b>Needs reply</b> = the guest wrote last — and, once Hostaway's live messages are connected (Settings →
+            Integrations → Guest messages &amp; AI), not just to say thanks. A <Icon n="list" /> number is open to-dos for the stay; a <Icon n="clock" /> number is
+            messages waiting to go. <Icon n="zap" /> opens the automations; <Icon n="bell" /> turns on this computer's notice when a guest writes.</Hint></h2>
           <span className="ix-head-tools">
-            {canSetup && <button type="button" className="ix-icon-btn" title="Message templates" aria-label="Message templates" onClick={() => setTemplatesOpen(true)}><Icon n="gear" /></button>}
+            {notify === 'default' && <button type="button" className="ix-icon-btn" title="Notify me on this computer when a guest writes" aria-label="Turn on notifications"
+                                              onClick={() => void Notification.requestPermission().then(setNotify)}><Icon n="bell" /></button>}
+            {canSetup && <button type="button" className="ix-icon-btn" title="Automations and quick replies" aria-label="Automations and quick replies" onClick={() => showAuto(true)}><Icon n="zap" /></button>}
             <button type="button" className="ix-icon-btn" title="Refresh" aria-label="Refresh" disabled={loading} onClick={() => void load()}><Icon n="repeat" /></button>
           </span>
         </div>
         <label className="ix-search"><Icon n="search" /><input type="search" value={q} placeholder="Guest or listing" aria-label="Search guest or listing" onChange={e => setQ(e.target.value)} /></label>
         <div className="ix-filters" role="tablist" aria-label="Filter">
           {FILTERS.map(([k, l]) => <button key={k} type="button" role="tab" aria-selected={filter === k} className={`ix-pill ${filter === k ? 'on' : ''}`} onClick={() => setFilter(k)}>
-            {l}{k === 'unread' && rows.some(r => r.lastIncoming) && <span className="ix-count">{rows.filter(r => r.lastIncoming).length}</span>}</button>)}
+            {l}{k === 'unread' && nWait > 0 && <span className="ix-count">{nWait}</span>}</button>)}
         </div>
         {err && <p className="banner error">{err}</p>}
         {list && !list.live && <p className="ix-state"><Icon n="eye" /> Sending is off — replies are staged.
@@ -96,12 +113,12 @@ export function Inbox({ canSend, canSetup, canTodos, onTodo, onSettings }: {
             each message is kept with the label <b>Staged</b>, so the team can compare it with what Hostaway sent. Hostaway keeps sending its own messages.</Hint></p>}
         <ul className="ix-rows">
           {shown.map(r => <li key={r.conversationId}>
-            <button type="button" className={`ix-row ${openId === r.conversationId ? 'on' : ''} ${r.lastIncoming ? 'wait' : ''}`} onClick={() => pick(r.conversationId)}>
+            <button type="button" className={`ix-row ${openId === r.conversationId ? 'on' : ''} ${waits(r) ? 'wait' : ''}`} onClick={() => pick(r.conversationId)}>
               <Avatar row={r} />
               <span className="ix-row-main">
                 <span className="ix-row-top"><b>{r.guest}</b><time>{shortWhen(r.lastAt)}</time></span>
                 <span className="ix-row-sub">{r.listing} · {range(r.arrival, r.departure)}</span>
-                <span className="ix-row-prev">{r.lastIncoming && <span className="ix-dot" aria-label="Needs reply" />}{r.preview || 'No messages yet'}</span>
+                <span className="ix-row-prev">{waits(r) && <span className="ix-dot" aria-label="Needs reply" />}{r.preview || 'No messages yet'}</span>
               </span>
               {(r.tasks > 0 || r.scheduled > 0) && <span className="ix-row-badges">
                 {r.tasks > 0 && <span title={`${r.tasks} open to-do${r.tasks === 1 ? '' : 's'}`}><Icon n="list" />{r.tasks}</span>}
@@ -120,19 +137,19 @@ export function Inbox({ canSend, canSetup, canTodos, onTodo, onSettings }: {
                         onTodo={onTodo} onSettings={onSettings} onChanged={() => void load()} />
         : <section className="ix-empty"><Icon n="message" /><p>Pick a conversation</p></section>}
 
-      {templatesOpen && list && <TemplatesDialog templates={list.templates} onClose={() => setTemplatesOpen(false)}
-                                                 onSaved={t => setList(l => l ? { ...l, templates: t } : l)} />}
     </div>
   );
 }
 
-type Pane = 'chat' | 'sms' | 'stay';
+type Pane = ThreadTab | 'stay';
+const TAB: Record<ThreadTab, { icon: string; label: string }> = { all: { icon: 'layers', label: 'All' }, chat: { icon: 'message', label: 'Chat' },
+  email: { icon: 'mail', label: 'Email' }, sms: { icon: 'phone', label: 'SMS' } };
 
 function Conversation({ row, list, canSend, canTodos, onBack, onTodo, onSettings, onChanged }: {
   row: InboxRow; list: InboxList; canSend: boolean; canTodos: boolean; onBack: () => void; onTodo: (id: string) => void;
   onSettings?: () => void; onChanged: () => void;
 }) {
-  const [pane, setPane] = useState<Pane>('chat');
+  const [pane, setPane] = useState<Pane>('all');
   const [thread, setThread] = useState<InboxThread | null>(null);
   const [sms, setSms] = useState<InboxSms | null>(null);
   const [err, setErr] = useState('');
@@ -147,6 +164,9 @@ function Conversation({ row, list, canSend, canTodos, onBack, onTodo, onSettings
   useEffect(() => { if (pane === 'sms' && !sms && row.reservationId) void loadSms(); }, [pane]);
   const after = () => { void loadThread(); if (sms) void loadSms(); onChanged(); };
 
+  const tabs = threadTabs(row, thread?.messages ?? []);
+  // Texts Hostaway itself sent (its automations) live in its thread, not in Quo: the SMS tab shows both, in order.
+  const hostSms = thread?.messages.filter(m => m.channel === 'hostaway' && tabOf(m) === 'sms') ?? [];
   const stay = <StayPanel row={row} stage={stage} thread={thread} canTodos={canTodos} canSend={canSend} onTodo={onTodo} onChanged={after} />;
   return (
     <>
@@ -158,20 +178,25 @@ function Conversation({ row, list, canSend, canTodos, onBack, onTodo, onSettings
           <span className={`ix-stage s-${stage}`}>{STAGE_LABEL[stage]}</span>
         </div>
         <div className="ix-tabs" role="tablist">
-          <button type="button" role="tab" aria-selected={pane === 'chat'} className={pane === 'chat' ? 'on' : ''} onClick={() => setPane('chat')}><Icon n="message" /> Chat{row.channel && <span className="ix-via">{channelLabel(row.channel)}</span>}</button>
-          <button type="button" role="tab" aria-selected={pane === 'sms'} className={pane === 'sms' ? 'on' : ''} onClick={() => setPane('sms')}><Icon n="phone" /> SMS</button>
+          {tabs.map(t => <button key={t} type="button" role="tab" aria-selected={pane === t} className={pane === t ? 'on' : ''} onClick={() => setPane(t)}>
+            <Icon n={TAB[t].icon} /> {t === 'chat' && row.channel ? channelLabel(row.channel) : TAB[t].label}</button>)}
           <button type="button" role="tab" aria-selected={pane === 'stay'} className={`ix-tab-stay ${pane === 'stay' ? 'on' : ''}`} onClick={() => setPane('stay')}><Icon n="bed" /> Stay</button>
+          <Hint label="What the tabs are">One tab per way of reaching this guest. <b>All</b> is everything in Hostaway's thread; a reply from it travels the way the
+            thread already talks. <b>{row.channel ? channelLabel(row.channel) : 'Chat'}</b> answers on the booking channel; <b>Email</b> sends an email through Hostaway to the
+            address it has for the guest; <b>SMS</b> is this company's Quo number. A tab only shows when that way exists for this guest.</Hint>
         </div>
         {err && <p className="banner error">{err}</p>}
 
-        {pane === 'chat' && <>
-          <Bubbles msgs={thread?.messages ?? null} canSend={canSend} onChanged={after} empty="No messages in this conversation yet." />
-          <Composer row={row} channel="hostaway" list={list} portalLink={thread?.portalLink ?? null} canSend={canSend} onSent={after} />
+        {(pane === 'all' || pane === 'chat' || pane === 'email') && <>
+          <Bubbles msgs={thread ? (pane === 'all' ? thread.messages : thread.messages.filter(m => tabOf(m) === pane)) : null} canSend={canSend} onChanged={after}
+                   empty={pane === 'email' ? 'No emails with this guest yet.' : 'No messages in this conversation yet.'} />
+          <Composer row={row} channel="hostaway" via={pane === 'all' ? null : pane === 'email' ? 'email' : 'channel'} list={list} portalLink={thread?.portalLink ?? null} canSend={canSend} onSent={after} />
         </>}
         {pane === 'sms' && (!row.reservationId
           ? <div className="ix-blank"><Icon n="phone" /><p>No reservation yet — SMS starts once the stay is booked.</p></div>
           : sms && !sms.connected
-            ? <div className="ix-blank"><Icon n="phone" /><p>Quo is not connected.</p>
+            ? <div className="ix-blank">{hostSms.length > 0 && <p className="note">{hostSms.length} text{hostSms.length === 1 ? '' : 's'} sent by Hostaway's own automations — in the All tab.</p>}
+                <Icon n="phone" /><p>Quo is not connected.</p>
                 <Hint label="How to connect Quo">SMS goes through this company's Quo number. Add the API key and the sending number in
                   Settings → Integrations → Quo; this tab then shows the texts with the guest's phone and sends from that number.</Hint>
                 {onSettings && <button type="button" className="ix-ghost" onClick={onSettings}>Open Integrations</button>}</div>
@@ -179,8 +204,9 @@ function Conversation({ row, list, canSend, canTodos, onBack, onTodo, onSettings
               ? <div className="ix-blank"><Icon n="phone" /><p>This reservation has no phone number.</p></div>
               : <>
                   {sms?.note && <p className="banner warn">{sms.note}</p>}
-                  <Bubbles msgs={sms?.messages ?? null} canSend={canSend} onChanged={after} empty={`No texts with ${sms?.phone ?? 'this guest'} yet.`} />
-                  <Composer row={row} channel="sms" list={list} portalLink={thread?.portalLink ?? null} canSend={canSend} onSent={after} />
+                  <Bubbles msgs={sms ? [...hostSms, ...sms.messages].sort((a, b) => a.at < b.at ? -1 : 1) : null} canSend={canSend} onChanged={after}
+                           empty={`No texts with ${sms?.phone ?? 'this guest'} yet.`} />
+                  <Composer row={row} channel="sms" via={null} list={list} portalLink={thread?.portalLink ?? null} canSend={canSend} onSent={after} />
                 </>)}
         {pane === 'stay' && <div className="ix-stay-inline">{stay}</div>}
       </section>
@@ -237,8 +263,10 @@ function Bubbles({ msgs, canSend, onChanged, empty }: { msgs: ThreadMsg[] | null
   );
 }
 
-function Composer({ row, channel, list, portalLink, canSend, onSent }: {
-  row: InboxRow; channel: Channel; list: InboxList; portalLink: string | null; canSend: boolean; onSent: () => void;
+function Composer({ row, channel, via, list, portalLink, canSend, onSent }: {
+  row: InboxRow; channel: Channel;
+  /** The tab it was written in: email or the booking channel's chat. Null = the way the thread already talks. */
+  via: Via | null; list: InboxList; portalLink: string | null; canSend: boolean; onSent: () => void;
 }) {
   const [text, setText] = useState('');
   const [templateId, setTemplateId] = useState('');
@@ -248,7 +276,7 @@ function Composer({ row, channel, list, portalLink, canSend, onSent }: {
   const [msg, setMsg] = useState('');
   const [ai, setAi] = useState<{ s: Suggestion; by: string; sops: string[] } | null>(null);
   const [aiDraft, setAiDraft] = useState<string | null>(null);
-  const templates = list.templates.filter(t => t.channel === channel);
+  const templates = list.templates.filter(t => t.channel === channel && t.active);
   const unfilled = [...new Set([...text.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)].map(m => m[1]!.toLowerCase()))];
   const seg = channel === 'sms' && text ? segments(text) : null;
 
@@ -270,7 +298,7 @@ function Composer({ row, channel, list, portalLink, canSend, onSent }: {
     setBusy('send'); setMsg('');
     const r = await inboxAction({
       action: scheduling ? 'schedule' : 'send', reservationId: row.reservationId, conversationId: row.conversationId, listingId: row.listingId,
-      channel, body: text, templateId: templateId || null, aiDraft, sendAt: scheduling && when ? new Date(when).toISOString() : undefined,
+      channel, via, body: text, templateId: templateId || null, aiDraft, sendAt: scheduling && when ? new Date(when).toISOString() : undefined,
     }).catch(e => ({ ok: false as const, message: String(e) }));
     setBusy('');
     if (!r.ok) { setMsg(r.message ?? 'Not sent.'); return; }
@@ -296,8 +324,8 @@ function Composer({ row, channel, list, portalLink, canSend, onSent }: {
           <button type="button" className="link tiny" onClick={() => setAi(null)}>Dismiss</button>
         </div>
       </div>}
-      <textarea className="ix-text" value={text} maxLength={MAX_BODY} rows={3} placeholder={channel === 'sms' ? 'Text message' : 'Write a reply'}
-                aria-label={channel === 'sms' ? 'Text message' : 'Reply'} onChange={e => setText(e.target.value)} />
+      <textarea className="ix-text" value={text} maxLength={MAX_BODY} rows={3} placeholder={channel === 'sms' ? 'Text message' : via === 'email' ? 'Write an email' : 'Write a reply'}
+                aria-label={channel === 'sms' ? 'Text message' : via === 'email' ? 'Email' : 'Reply'} onChange={e => setText(e.target.value)} />
       {unfilled.length > 0 && <p className="ix-state"><Icon n="alert" /> No value for {unfilled.map(u => `{{${u}}}`).join(', ')} — fill it in or remove it.</p>}
       {msg && <p className="ix-state warn"><Icon n="alert" /> {msg}</p>}
       <div className="ix-compose-bar">
@@ -312,14 +340,14 @@ function Composer({ row, channel, list, portalLink, canSend, onSent }: {
         <span className="ix-grow" />
         {seg && <span className="note" title={seg.encoding}>{seg.count} SMS</span>}
         <button type="button" className="ix-send" disabled={busy !== '' || !text.trim() || unfilled.length > 0 || (scheduling && !when)} onClick={() => void send()}>
-          {busy === 'send' ? 'Sending…' : scheduling ? 'Schedule' : list.live ? 'Send' : 'Stage'}</button>
+          {busy === 'send' ? 'Sending…' : scheduling ? 'Schedule' : !list.live ? 'Stage' : via === 'email' ? 'Send email' : 'Send'}</button>
       </div>
     </div>
   );
 }
 
 const PLAN_WORD: Record<Planned['state'], string> = { planned: 'Planned', due: 'Due now', missed: 'Missed', sent: 'Sent', staged: 'Staged', failed: 'Not sent',
-  scheduled: 'Retrying', cancelled: 'Cancelled', received: '' };
+  scheduled: 'Retrying', cancelled: 'Cancelled', received: '', waiting: 'After check-in', skipped: 'Not needed' };
 
 function StayPanel({ row, stage, thread, canTodos, canSend, onTodo, onChanged }: {
   row: InboxRow; stage: ReturnType<typeof stageOf>; thread: InboxThread | null; canTodos: boolean; canSend: boolean; onTodo: (id: string) => void; onChanged: () => void;
@@ -330,6 +358,16 @@ function StayPanel({ row, stage, thread, canTodos, canSend, onTodo, onChanged }:
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
   const [copied, setCopied] = useState(false);
+  const [ciBusy, setCiBusy] = useState(false);
+  const [ciMsg, setCiMsg] = useState('');
+  const ci = thread?.checkin ?? null;
+  const markCheckin = async (done: boolean) => {
+    setCiBusy(true); setCiMsg('');
+    const r = await inboxAction({ action: 'checkin', reservationId: row.reservationId, listingId: row.listingId, done }).catch(e => ({ ok: false as const, message: String(e) }));
+    setCiBusy(false);
+    if (!r.ok) setCiMsg(r.message ?? 'Not saved.');
+    onChanged();
+  };
   const nights = nightsOf(row.arrival, row.departure);
   const waiting = thread?.messages.filter(m => m.ours && m.status === 'scheduled') ?? [];
   const add = async () => {
@@ -363,6 +401,19 @@ function StayPanel({ row, stage, thread, canTodos, canSend, onTodo, onChanged }:
         </div>}
       </div>
 
+      {row.reservationId && <div className="ix-card">
+        <h4>Online check-in <Hint>Whether this guest finished the online check-in. The guest portal records it by itself once its real link is live; until then a
+          person marks it here. Marking it done is what sends the automations that go <b>After online check-in</b> (the door code) — at once, or at their
+          "not before" moment — and stops the reminders meant for guests who have not done it.</Hint></h4>
+        {ci
+          ? <p className="ix-ci yes"><Icon n="check" /> Done {fmt(ci.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+              <span>{ci.source === 'team' ? `marked by ${(ci.by ?? 'the team').split('@')[0]}` : 'by the guest'}</span>
+              {canSend && ci.source === 'team' && <button type="button" className="link tiny" disabled={ciBusy} onClick={() => void markCheckin(false)}>Undo</button>}</p>
+          : <p className="ix-ci"><Icon n="clock" /> Not done yet
+              {canSend && thread && <button type="button" className="ix-ghost" disabled={ciBusy} onClick={() => void markCheckin(true)}>{ciBusy ? 'Saving…' : 'Mark done'}</button>}</p>}
+        {ciMsg && <p className="ix-state warn">{ciMsg}</p>}
+      </div>}
+
       {row.reservationId && canTodos && <div className="ix-card">
         <h4>To-dos <span className="ix-count">{thread?.tasks.filter(t => !t.done).length ?? 0}</span>
           <Hint>The team's to-dos tied to this stay — the same ones as Operations → To-do. Add one here and it is created there, for this listing and this guest.</Hint>
@@ -390,12 +441,13 @@ function StayPanel({ row, stage, thread, canTodos, canSend, onTodo, onChanged }:
 
       {row.reservationId && <div className="ix-card">
         <h4>Scheduled <span className="ix-count">{waiting.length + (thread?.plan.filter(p => p.state === 'planned' || p.state === 'due').length ?? 0)}</span>
-          <Hint>Messages still to go for this stay: the ones a person scheduled, and the automatic ones from the templates (gear, top of the inbox) with the moment each
-            one goes. Each automatic message goes once per stay. A scheduled one can be cancelled from the conversation.</Hint></h4>
+          <Hint>Messages still to go for this stay: the ones a person scheduled, and the automations (<Icon n="zap" />, top of the inbox) that apply to this listing, with
+            the moment each one goes. <b>After check-in</b> = it waits for the guest's online check-in; <b>Not needed</b> = its condition does not hold. Each automatic
+            message goes once per stay. A scheduled one can be cancelled from the conversation.</Hint></h4>
         <ul className="ix-plan">
           {waiting.map(m => <li key={m.id}><Icon n="clock" /><span>{m.body.slice(0, 60)}</span><time>{fmt(m.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time></li>)}
           {thread?.plan.map(p => <li key={p.templateId} className={`p-${p.state}`}><Icon n={p.channel === 'sms' ? 'phone' : 'message'} /><span>{p.name}</span>
-            <time title={PLAN_WORD[p.state]}>{p.state === 'planned' ? fmt(p.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : PLAN_WORD[p.state]}</time></li>)}
+            <time title={PLAN_WORD[p.state]}>{p.state === 'planned' && p.at ? fmt(p.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : PLAN_WORD[p.state]}</time></li>)}
         </ul>
         {thread && !waiting.length && !thread.plan.length && <p className="note">Nothing scheduled.</p>}
       </div>}
@@ -409,77 +461,5 @@ function StayPanel({ row, stage, thread, canTodos, canSend, onTodo, onChanged }:
           : <p className="note">Not live yet — no portal address set.</p>}
       </div>}
     </>
-  );
-}
-
-const BLANK: Template = { id: '', name: '', body: '', channel: 'hostaway', trigger: 'manual', offsetHours: 0, active: true };
-
-function TemplatesDialog({ templates, onClose, onSaved }: { templates: Template[]; onClose: () => void; onSaved: (t: Template[]) => void }) {
-  const [edit, setEdit] = useState<Template | null>(null);
-  const [days, setDays] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [msg, setMsg] = useState('');
-  const area = useRef<HTMLTextAreaElement>(null);
-  const start = (t: Template) => { setEdit(t); setDays(t.offsetHours > 0 && t.offsetHours % 24 === 0); setMsg(''); };
-  const send = async (body: Record<string, unknown>) => {
-    setBusy(true); setMsg('');
-    const r = await saveInboxSettings(body).catch(e => ({ ok: false as const, message: String(e) }));
-    setBusy(false);
-    if (!r.ok) { setMsg(r.message ?? 'Not saved.'); return false; }
-    onSaved(r.templates); return true;
-  };
-  const insert = (v: string) => {
-    if (!edit) return;
-    const el = area.current, at = el?.selectionStart ?? edit.body.length;
-    setEdit({ ...edit, body: `${edit.body.slice(0, at)}{{${v}}}${edit.body.slice(el?.selectionEnd ?? at)}` });
-    el?.focus();
-  };
-  return (
-    <Modal title="Message templates" onClose={onClose} wide>
-      {!edit && <>
-        <div className="ix-tpl-head">
-          <Hint label="How templates work">A template is a message with blanks ({'{{first_name}}'}, {'{{checkin}}'}…) that Kaizen fills for each stay. <b>Only when picked</b> templates
-            appear in the reply box. The others go on their own at their moment — once per stay, only for confirmed bookings — through the outbox, which
-            tries again if a send fails. While guest messages are off they are kept as <b>Staged</b>, not sent.</Hint>
-          <button type="button" className="ix-send" onClick={() => start(BLANK)}>New template</button>
-        </div>
-        <ul className="ix-tpls">
-          {templates.map(t => <li key={t.id} className={t.active ? '' : 'off'}>
-            <button type="button" className="ix-tpl" onClick={() => start(t)}>
-              <Icon n={t.channel === 'sms' ? 'phone' : 'message'} />
-              <span><b>{t.name}</b><span>{whenWords(t)}{t.active ? '' : ' · paused'}</span></span>
-            </button>
-          </li>)}
-        </ul>
-        {!templates.length && <p className="note">No templates yet.</p>}
-        {msg && <p className="ix-state warn">{msg}</p>}
-      </>}
-      {edit && <div className="ix-form ix-tpl-form">
-        <label>Name<input value={edit.name} maxLength={80} onChange={e => setEdit({ ...edit, name: e.target.value })} /></label>
-        <div className="ix-form-row">
-          <label>Channel<select value={edit.channel} onChange={e => setEdit({ ...edit, channel: e.target.value as Channel })}>
-            <option value="hostaway">Chat (Hostaway)</option><option value="sms">SMS (Quo)</option></select></label>
-          <label>Goes<select value={edit.trigger} onChange={e => setEdit({ ...edit, trigger: e.target.value as Trigger })}>
-            {TRIGGERS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
-          {edit.trigger !== 'manual' && <label>How long<span className="ix-offset">
-            <input type="number" min={0} max={days ? 30 : 720} value={days ? edit.offsetHours / 24 : edit.offsetHours}
-                   onChange={e => setEdit({ ...edit, offsetHours: Math.max(0, Math.round(Number(e.target.value) || 0)) * (days ? 24 : 1) })} />
-            <select value={days ? 'd' : 'h'} aria-label="Unit" onChange={e => { const d = e.target.value === 'd'; setDays(d); setEdit({ ...edit, offsetHours: d ? Math.round(edit.offsetHours / 24) * 24 : edit.offsetHours }); }}>
-              <option value="h">hours</option><option value="d">days</option></select></span></label>}
-        </div>
-        <label>Message<textarea ref={area} className="ix-text" rows={6} maxLength={MAX_BODY} value={edit.body} onChange={e => setEdit({ ...edit, body: e.target.value })} /></label>
-        <div className="ix-vars" aria-label="Insert a blank">{VARS.map(([k, l]) => <button key={k} type="button" className="ix-pill" title={l} onClick={() => insert(k)}>{k}</button>)}</div>
-        <label className="ix-check"><input type="checkbox" checked={edit.active} onChange={e => setEdit({ ...edit, active: e.target.checked })} /> Active</label>
-        {msg && <p className="ix-state warn">{msg}</p>}
-        <div className="ix-form-row">
-          <button type="button" className="ix-send" disabled={busy || !edit.name.trim() || !edit.body.trim()}
-                  onClick={() => void send({ action: 'template', ...edit, id: edit.id || undefined }).then(ok => { if (ok) setEdit(null); })}>Save</button>
-          <button type="button" className="ix-ghost" onClick={() => setEdit(null)}>Back</button>
-          <span className="ix-grow" />
-          {edit.id && <button type="button" className="link tiny danger" disabled={busy}
-                              onClick={() => void send({ action: 'removeTemplate', id: edit.id }).then(ok => { if (ok) setEdit(null); })}>Delete</button>}
-        </div>
-      </div>}
-    </Modal>
   );
 }

@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react';
 import { getInboxSettings, saveInboxSettings, type InboxSettings } from '../api.ts';
 import { AI_MODELS, type AiProvider, type GuestAi } from '../lib/inbox.ts';
+import { WAIT_CHOICES } from '../lib/guest-watch.ts';
 import { Hint } from './Hint.tsx';
 import { Icon } from './Icon.tsx';
 
@@ -16,6 +17,7 @@ export function GuestAiPanel({ onSaved }: { onSaved?: (s: InboxSettings) => void
   const [portal, setPortal] = useState('');
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState('');
+  const [copied, setCopied] = useState(false);
   const take = (r: InboxSettings) => { setS(r); setAi(r.ai); setPortal(r.portalUrl ?? ''); onSaved?.(r); };
   useEffect(() => { void getInboxSettings().then(r => { if (r.ok) take(r); else setMsg(r.message ?? 'Could not load.'); }).catch(e => setMsg(String(e))); }, []);
   const save = async (body: Record<string, unknown>) => {
@@ -75,6 +77,39 @@ export function GuestAiPanel({ onSaved }: { onSaved?: (s: InboxSettings) => void
           <label>Address<input value={portal} placeholder="https://stay.yourcompany.com" spellCheck={false} onChange={e => setPortal(e.target.value)} /></label>
           <button className="secondary" disabled={busy} onClick={() => void save({ portalUrl: portal })}>Save</button>
         </div>
+      </div>
+      <div className="card">
+        <h2>Live guest messages <Hint>Hostaway tells Kaizen the moment a guest writes or a booking is made. With it: the count of guests waiting on the menu, this
+          computer's notice, "After booking" automations at once instead of within 5 minutes, and the watch below. To connect: in Hostaway → Settings → Integrations →
+          Webhooks, add a <b>unified webhook</b> with this address (leave login and password empty — the address carries its own secret). Anyone holding the address
+          can only report an event; Kaizen re-reads the truth from Hostaway. Treat it like a password all the same.</Hint></h2>
+        {!s.migrated117 && <p className="note warn"><Icon n="alert" /> Needs migration 117 first (npm run migrate).</p>}
+        <div className="row">
+          <label>Webhook address<input readOnly value={s.hookUrl.replace(/k=.+$/, 'k=••••••••')} spellCheck={false} onFocus={e => e.target.select()} /></label>
+          <button className="secondary" onClick={() => { void navigator.clipboard?.writeText(s.hookUrl); setCopied(true); setTimeout(() => setCopied(false), 1500); }}>{copied ? 'Copied' : 'Copy'}</button>
+        </div>
+        <p className="note">{s.lastEventAt ? <><Icon n="check" /> Connected — last event {new Date(s.lastEventAt).toLocaleString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}.</>
+          : <><Icon n="clock" /> Nothing received yet.</>}</p>
+      </div>
+      <div className="card">
+        <h2>Unanswered guests <Hint>No Slack line per message. A light AI model reads each guest message as it arrives and sorts it: does it ask for an answer
+          ("thanks!" does not), is it urgent (locked out, no power, a leak…). <b>Urgent</b> is told to the team at once. Anything else that asks for an answer and is
+          still unanswered after the wait below is reported <b>once</b> — only for guests who are coming or in the house; one who already left is not chased. Before
+          reporting, the conversation is read again: an answer given from Hostaway's own app counts. It posts to Slack's <b>Escalations</b> channel (Settings →
+          Integrations → Slack → channels). Needs live guest messages, above.</Hint></h2>
+        <div className="row">
+          <label className="check inline">
+            <input type="checkbox" checked={s.watch.watch} disabled={busy} onChange={e => void save({ watch: { ...s.watch, watch: e.target.checked } })} />
+            <span>Tell the team in Slack</span>
+          </label>
+          <label>After waiting
+            <select value={s.watch.waitMinutes} disabled={busy || !s.watch.watch} onChange={e => void save({ watch: { ...s.watch, waitMinutes: Number(e.target.value) } })}>
+              {[...new Set([...WAIT_CHOICES, s.watch.waitMinutes])].sort((a, b) => a - b).map(m => <option key={m} value={m}>{m < 60 ? `${m} minutes` : `${m / 60} hour${m === 60 ? '' : 's'}`}</option>)}
+            </select>
+          </label>
+        </div>
+        {s.watch.watch && <p className={s.watchChannel ? 'note' : 'note warn'}>{s.watchChannel ? <><Icon n="check" /> Posts to #{s.watchChannel}.</>
+          : <><Icon n="alert" /> No Escalations channel chosen in Slack's settings — nothing is posted until one is.</>}</p>}
       </div>
       {msg && <p className="note">{msg}</p>}
     </>
