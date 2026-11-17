@@ -155,10 +155,8 @@ others = activity log), `claims` (case_url, reservation, deleted_at), `hostaway_
   `baseRev` on something already there → 409 `already` ("Already done by X"). Without `baseRev` (Slack, field links,
   Hostaway pull, vendor pages) a save writes as before. An untouched open form takes others' changes at once.
   `fresh` also carries to-dos done/cancelled by someone else since the last answer (`event`; cursor `since` = the
-  DB's `now()` from the previous answer, matched on `done_at`). A hidden tab still asks once a minute. The bell chimes
-  (two Web Audio notes, `src/components/chime.ts`, no file) and, with permission and the tab hidden, shows a desktop
-  Notification. Its gear (per browser, localStorage): events New / Done / Cancelled, sound on/off + volume + Test,
-  desktop status (on / blocked → how to allow / Turn on). Browsers play nothing until the page has had a click or key.
+  DB's `now()` from the previous answer, matched on `done_at`). A hidden tab still asks once a minute. Since 2026-11-17
+  the bell also carries guest messages and its settings are a menu of their own — see platform.md → "The bell".
   In the rail its panel is `position: fixed` beside the expanded rail — the rail's `overflow: hidden` clipped it.
 - The Slack clock also runs `pullAll` every tick (its own 2-minute pace) so Hostaway-made tasks arrive without anyone
   opening a list (§166).

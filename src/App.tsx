@@ -287,16 +287,17 @@ function TeamApp() {
 
   // A cleaner signed in sees only their page, which has its own one-line top (§134).
   const crewOnly = allowed?.length === 1 && (allowed[0] === 'crew' || allowed[0] === 'vendor');
-  // §166: new work from anyone, while the app is open — for whoever can see the to-dos. One bell: the header on a
-  // phone, the side rail's foot on a bigger screen (the header is hidden there).
+  // §166 + 2026-11-17: one bell for guest messages (whoever can open the Inbox) and work updates (whoever can see the
+  // to-dos). The header on a phone, the side rail's foot on a bigger screen (the header is hidden there).
   const phone = usePhone();
   const openTodo = (id: string) => { setWorkFocus({ todo: id }); goOps('todos', { todo: id }); };
-  const bell = allowed && can(permissions, 'todos') && allowed.includes('operations')
-    ? <LiveBell onOpen={openTodo} /> : null;
-  // Guests waiting for an answer (Hostaway's webhook → guest_events): a count on Guest Services, and a desktop notice
-  // whose click opens that conversation — for whoever can open the Inbox.
-  const ping = allowed?.includes('inbox')
-    ? <GuestPing onOpen={c => { go('inbox', { c }); dispatchEvent(new PopStateEvent('popstate')); }} /> : null;
+  const openConversation = (c: string) => { go('inbox', { c }); dispatchEvent(new PopStateEvent('popstate')); };
+  const bellTasks = !!allowed && can(permissions, 'todos') && allowed.includes('operations');
+  const bellMessages = !!allowed?.includes('inbox');
+  const bell = bellTasks || bellMessages
+    ? <LiveBell tasks={bellTasks} messages={bellMessages} onTodo={openTodo} onConversation={openConversation} /> : null;
+  // Guests waiting for an answer (Hostaway's webhook → guest_events): a count on Guest Services; their notices are the bell's.
+  const ping = bellMessages ? <GuestPing /> : null;
   // The menu: the company's modules, cut to what this person may open (src/lib/modules.ts).
   const nav = allowed ? navFor(allowed, permissions) : [];
   const onLink = (l: NavLink) => {
@@ -359,7 +360,8 @@ function TeamApp() {
       {tab === 'sops'     && <Sops focus={sopFocus} onFocused={() => setSopFocus(undefined)} />}
       {tab === 'settings' && <Settings />}
       {tab === 'inbox'    && <Inbox canSend={can(permissions, 'messages.send')} canSetup={can(permissions, 'messages.setup')}
-                                    canTodos={can(permissions, 'todos') && !!allowed?.includes('operations')} onTodo={openTodo}
+                                    canTodos={can(permissions, 'todos') && !!allowed?.includes('operations')}
+                                    canClaims={can(permissions, 'todos') && can(permissions, 'claims')} onTodo={openTodo}
                                     onSettings={allowed?.includes('settings') ? () => go('settings', { int: 'guestai' }) : undefined} />}
       {planned && <ModuleSoon mod={planned} />}
 

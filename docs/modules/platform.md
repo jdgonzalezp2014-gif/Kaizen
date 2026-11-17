@@ -173,6 +173,21 @@ Hostaway client, sync, crypto, migrations.
   phone swipes as before. Missing data reads Hostaway's listings once per Home visit (no cache — a just-filled field must
   disappear); add an `api_cache` like `forward` if Hostaway ever rate-limits.
 
+## The bell — guest messages + task alerts (2026-11-17)
+Owner: "the notifications of messages and task alerts in the bell, with a professional customization and test menu".
+- `src/components/LiveBell.tsx`: one list (last 40, localStorage `kaizen.notify.feed`) of guest messages (`useGuestFeed`
+  from GuestPing — whoever can open the Inbox) and work updates (`useLive` — whoever sees the to-dos); All / Messages /
+  Tasks chips when both. Click → the to-do or the conversation. Bell shown if either applies. A grey dot = paused.
+- `src/components/NotifySettings.tsx` (the gear → modal, portaled to body): Status checklist (sound unlocked, volume,
+  desktop permission + Turn on, pause, quiet hours) + Pause 30 min / 1 h / 4 h / until 8 AM; per kind: on, urgent only
+  (messages: guest AI's `urgent`; tasks: priority high/urgent), tone (Chime/Ding/Soft/Pulse/Silent + Play), notice on
+  screen, desktop notice, and two test buttons (normal / urgent) that go through the same path as a real one
+  (`BELL_TEST` window event; marked "Test", open nothing; desktop shows even with the tab visible). One volume; quiet
+  hours (local clock, across midnight) with "urgent still rings". Reset to defaults.
+- Rules are pure in `src/lib/notify.ts` (`normalizePrefs` — also reads the §166 `kaizen.live.sound` once, `inQuiet`,
+  `decide`): filters keep a notice out of the list; pause / quiet hours only silence it. Prefs: localStorage `kaizen.notify.prefs`.
+- Tones: `src/components/chime.ts` (Web Audio, no files). Per browser only — no cross-device settings or "seen" (open item).
+
 ## Ask Kaizen — the help assistant (2026-11-17)
 
 - Files: `src/lib/assistant.ts` (+ test, pure: `lookup`, `recName`), `functions/api/assistant.ts` (POST `{ question }`),

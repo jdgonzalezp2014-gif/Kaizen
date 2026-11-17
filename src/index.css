@@ -3780,6 +3780,12 @@ a.gx-tile { text-decoration: none; }
 .ix-add:hover { border-color: var(--ink); }
 .ix-form { display: grid; gap: 8px; }
 .ix-form input, .ix-form select { min-height: 34px; }
+/* The chat's + (2026-11-17): pick what it becomes, then say what. */
+.ix-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.ix-kind { display: grid; justify-items: start; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: inherit; text-align: left; cursor: pointer; }
+.ix-kind span { font-size: 12px; color: var(--muted); }
+.ix-kind.on { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.live-dot { position: absolute; top: 4px; right: 4px; width: 9px; height: 9px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bg); }
 .ix-form .ix-state { margin: 0; }
 .ix-tasks, .ix-plan, .ix-tpls { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
 .ix-tasks button { display: grid; grid-template-columns: 16px 1fr auto; align-items: center; gap: 8px; width: 100%; padding: 6px 4px; background: none; border: 0;
@@ -3884,4 +3890,55 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
   .ix-thread { position: fixed; z-index: 35; inset: 0 0 var(--tabbar-h) 0; background: var(--card); }
   .ix-back { display: inline-grid; }
   .ix-msg { max-width: 86%; }
+}
+
+/* ── the bell: messages + tasks, and its settings (2026-11-17) ─────────── */
+.live-paused { position: absolute; bottom: -2px; right: -4px; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); border: 2px solid var(--card); }
+.live-tabs { display: flex; gap: 6px; margin: 0 6px; }
+.live-tabs .chip { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-footnote); }
+.live-state { margin: 0 6px; display: flex; align-items: center; gap: 6px; font-size: var(--fs-footnote); color: var(--muted); }
+.live-empty { margin: 4px 6px 8px; }
+.live-what { flex-wrap: wrap; gap: 5px; }
+.live-urgent { color: var(--warn); display: inline-flex; align-items: center; gap: 3px; }
+.live-test { font-size: var(--fs-caption); font-weight: 650; padding: 0 6px; border-radius: var(--r-pill); border: 1px dashed var(--line-strong); }
+.nset { display: flex; flex-direction: column; gap: var(--s-3); }
+.nset-card { border: 1px solid var(--line); border-radius: var(--r-md, 12px); padding: 12px 14px; display: flex; flex-direction: column; gap: 4px; background: var(--card); }
+.nset-card.muted .nset-row { opacity: .55; }
+.nset-card h3 { margin: 0 0 4px; display: flex; align-items: center; gap: 8px; font-size: var(--fs-callout); }
+.nset-card h3 > .nset-switch { margin-left: auto; }
+.nset-row { display: flex; align-items: center; justify-content: space-between; gap: var(--s-3); padding: 8px 0; border-top: 1px solid var(--line); }
+.nset-label { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.nset-label > span:first-child { font-weight: 600; }
+.nset-ctl { flex: none; display: flex; align-items: center; }
+.nset-switch { position: relative; display: inline-flex; width: 40px; height: 24px; flex: none; cursor: pointer; }
+.nset-switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: inherit; }
+.nset-switch span { position: absolute; inset: 0; border-radius: 12px; background: var(--line-strong); transition: background .15s; }
+.nset-switch span::after { content: ''; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--card); box-shadow: 0 1px 2px rgb(0 0 0 / .25); transition: transform .15s; }
+.nset-switch input:checked + span { background: var(--green); }
+.nset-switch input:checked + span::after { transform: translateX(16px); }
+.nset-switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.nset-switch.off { cursor: not-allowed; opacity: .5; }
+.nset-tone, .nset-times, .nset-vol { display: inline-flex; align-items: center; gap: 8px; }
+.nset-vol input[type=range] { width: 160px; }
+.nset-times input { width: 110px; }
+.nset-chips { display: inline-flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.nset-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border: 1px solid var(--line); border-radius: var(--r-pill); font-size: var(--fs-footnote); font-weight: 600; color: var(--muted); cursor: pointer; }
+.nset-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.nset-chip.on { border-color: var(--ink); color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.nset-chip:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.nset-test { display: flex; gap: 8px; flex-wrap: wrap; padding-top: 10px; border-top: 1px solid var(--line); }
+.nset-test button, .nset-tone button, .nset-pause button { display: inline-flex; align-items: center; gap: 5px; }
+.nset-status { background: var(--tint); }
+.nset-checks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-footnote); }
+.nset-checks li { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.nset-checks li.ok svg { color: var(--green); }
+.nset-checks li.no { color: var(--warn); }
+.nset-pause { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-top: 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.nset-pause .note { display: inline-flex; align-items: center; gap: 5px; margin-right: 4px; }
+.nset-foot { display: flex; align-items: center; justify-content: space-between; gap: var(--s-2); }
+.nset-foot .note { display: inline-flex; align-items: center; gap: 5px; }
+@media (max-width: 720px) {
+  .nset-row { flex-wrap: wrap; }
+  .nset-ctl { margin-left: auto; }
+  .nset-vol input[type=range] { width: 120px; }
 }

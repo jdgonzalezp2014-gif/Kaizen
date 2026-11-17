@@ -22,7 +22,7 @@ check-in mark, one tab per channel, Hostaway's live webhook and the unanswered-g
   `runDue` (the outbox) and then `watchPass` (who is still waiting).
 - Automations screen: `src/screens/Automations.tsx` (the bolt in the Inbox head, `?v=auto`): cards, starter `RECIPES`, quick replies, the editor.
 - Live: `src/lib/guest-watch.ts` (+ test, pure: `eventFrom`, `triagePrompt`/`triageFrom`, `toCheck`, `watchMessage`),
-  `functions/_lib/guest-events.ts` (`takeEvent`, `watchPass`, `openEvents`), `src/components/GuestPing.tsx` (the menu's count + desktop notice,
+  `functions/_lib/guest-events.ts` (`takeEvent`, `watchPass`, `openEvents`), `src/components/GuestPing.tsx` (the menu's count + `useGuestFeed` → the bell, which rings/notifies — platform.md → "The bell";
   one poll of `/api/inbox?events=` per open app), the webhook door `POST /api/slack-cron?job=guest-event&k=<hookSecret>` (guest-link.ts).
 
 ## Tables (migration 116)
@@ -124,3 +124,7 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
 - Answering on its own ("auto") — not built; `guestAiFrom` reads it as suggest. `ai_draft` vs the sent text is the
   evidence for when to build it.
 - Claims & upselling still lives in Operations → To-do; Guest Services has a door to it.
+
+- 2026-11-17 (owner): the conversation's To-dos "+" opens a pop-up — Task / Repair (work order) / Purchase (purchase order)
+  go to Operations → To-do; Upsell (category from `UPSELL_CATEGORIES`) opens a case in Claims & upselling (needs `claims`).
+  The bell shows a dot for anything new; the count stays on Guest Services. The menu's Leadership is now "Home".
