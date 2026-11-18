@@ -171,9 +171,10 @@ function Profit() {
           </p>
         </div>
         <dl className="stats">
-          <div><dt>Revenue <Hint>The reservations' totals from Hostaway, without the taxes the channel collects and remits (Airbnb's
-            occupancy tax, Vrbo's taxes) — those were never Kaizen's money. What the channel keeps (Airbnb's host fee, Vrbo /
-            Booking.com commissions) is a cost: Costs → "Channel fees", spread over the stay's nights like its revenue.</Hint></dt><dd>{money(board.portfolio.revenue)}</dd></div>
+          <div><dt>Revenue <Hint>Net: what reaches the bank from each reservation. Hostaway's total without the taxes the channel collects
+            and remits (Airbnb's occupancy tax, Vrbo's taxes) and without what the channel keeps (Airbnb's host fee, Vrbo / Booking.com
+            commissions). ADR and RevPAN are net too. Expedia does not report its commission to Hostaway, so its stays stay at the
+            total.</Hint></dt><dd>{money(board.portfolio.revenue)}</dd></div>
           {board.portfolio.otherIncome > 0 && (
             <div><dt>Other income <Hint>Claims, upsells entered by the team (pet fees, late check-ins collected outside the
               reservation) and what the guest portal sold through Stripe (waiver, extras — Revenue → Portal sales). Counted in net

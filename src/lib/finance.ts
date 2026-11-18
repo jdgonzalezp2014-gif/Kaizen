@@ -25,7 +25,7 @@ export interface Reservation {
   channel?: string;
   /** Taxes inside `totalPaid` that the channel collects and remits (Airbnb's occupancy tax, Vrbo's taxAmount) — never Kaizen's money. */
   taxes?: number;
-  /** What the channel keeps (Airbnb's host fee and withholdings, a commission) — a cost of the stay (owner, 2026-11-17). */
+  /** What the channel keeps (Airbnb's host fee and withholdings, a commission) — off revenue: revenue is net (owner, 2026-11-17). */
   channelFee?: number;
 }
 
@@ -47,18 +47,6 @@ export function channelCut(r: Record<string, unknown>): { taxes: number; channel
     return { taxes: round(taxes), channelFee: round(Math.min(fee, Math.max(0, total - taxes))) };
   }
   return { taxes: round(n('taxAmount')), channelFee: round(n('channelCommissionAmount')) };
-}
-
-export const CHANNEL_FEES = 'Channel fees';
-
-/**
- * Each stay's channel fee as a one-off cost spread over its nights — the same days its revenue is spread over, so a
- * stay crossing the window's edge splits both alike and every cost view (by unit, by category, ROI) carries it.
- */
-export function channelFeeCosts(rs: (Reservation & { status?: string })[]): CostRow[] {
-  return rs.filter(r => (r.channelFee ?? 0) > 0 && r.totalPaid > 0 && r.arrival && r.departure && reservationCounts(r.status))
-    .map(r => ({ listingId: r.listingId, shared: false, start: r.arrival, end: addDays(r.departure, -1), category: CHANNEL_FEES,
-                 frequency: 'One-time', amount: r.channelFee!, source: 'variable' as const }));
 }
 
 /** A cost row from 💸 Costs or 🏠 Fixed Monthly Costs. */
@@ -125,8 +113,9 @@ export function reservationContribution(r: Reservation, p: Period) {
   const nights = Math.max(1, daysBetween(r.arrival, r.departure));
   const paid = r.totalPaid > 0;
   const cleaning = paid ? (r.cleaningFee || 0) : 0;
-  // Taxes the channel remits pass through: in the guest's total, never in Kaizen's revenue (owner, 2026-11-17).
-  const nightlyNet = paid ? Math.max(0, r.totalPaid - cleaning - (r.taxes || 0)) / nights : 0;
+  // Revenue is NET (owner, 2026-11-17: "I don't handle the taxes — leave it as net income"): what reaches the bank —
+  // without the taxes the channel remits and without what the channel keeps.
+  const nightlyNet = paid ? Math.max(0, r.totalPaid - cleaning - (r.taxes || 0) - (r.channelFee || 0)) / nights : 0;
 
   const lastNight = addDays(r.departure, -1);
   const occupied = overlapDays(r.arrival, lastNight, p.from, p.to);

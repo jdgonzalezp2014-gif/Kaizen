@@ -57,9 +57,9 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
 - Approvals Home door: pending `cleaning_extras` + `field_expenses` surface as a Pulse on Home
   (count + $ at stake, gated on `operations.edit`) that opens Operations → Cleaners — nothing
   else on Home shows them, and a field purchase stays unpaid until approved.
-- **Revenue is net of the channel's taxes; the channel's cut is a cost (§176).** `channelCut` (finance.ts) per Hostaway
-  stay → `taxes` (out of revenue) and `channelFee` → `channelFeeCosts` → "Channel fees", spread over the stay's nights,
-  added to the cost rows in `/api/portfolio` (live, never stored). Airbnb: total − occupancy tax − expected payout.
+- **Revenue is NET (§176, owner 2026-11-17: "I don't handle the taxes — leave it as net income").** `channelCut` (finance.ts)
+  per Hostaway stay → `taxes` and `channelFee`, both subtracted in `reservationContribution` (live, never stored): revenue, ADR and
+  RevPAN are what reaches the bank. Airbnb: total − occupancy tax − expected payout = its cut. Expedia reports no cut.
 - **Guest portal sales (§176):** `guest_payments` (119) → `portalIncome` (other income, kind `portal`, live only) and
   `portalFeeCosts` ("Payment fees"); Revenue → **Portal sales** (`PortalSales.tsx`, `/api/guest-payments`, permission
   `revenue`) lists every payment, test ones marked. Pure lib `src/lib/guest-payments.ts`; server `functions/_lib/guest-payments.ts`.

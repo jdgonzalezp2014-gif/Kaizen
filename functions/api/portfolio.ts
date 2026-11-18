@@ -13,7 +13,7 @@ import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { addDays, today } from '../../src/lib/dates.ts';
 import { caseResult, isUpsell } from '../../src/lib/claims.ts';
-import { channelFeeCosts, type CostRow } from '../../src/lib/finance.ts';
+import type { CostRow } from '../../src/lib/finance.ts';
 import { portalFeeCosts, portalIncome } from '../../src/lib/guest-payments.ts';
 import { guestPaymentsBetween } from '../_lib/guest-payments.ts';
 
@@ -120,8 +120,6 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       amount: Number(e.amount),
       source: e.frequency === 'Monthly' ? 'fixed' : 'variable'
     })),
-      // Owner, 2026-11-17: what Airbnb / Vrbo / Booking.com keep of each stay, read live with the stay (finance.ts channelCut).
-      ...channelFeeCosts(reservations),
       ...portalFeeCosts(portal)],
     income: [...(claims as { unit_id: string | null; on_day: string; category: string | null; received: number; owner_work: number }[])
       .map(c => ({ unitId: c.unit_id, on: c.on_day, amount: caseResult({ requested: 0, received: c.received, repairWork: 0, ownerWork: c.owner_work }).kept,

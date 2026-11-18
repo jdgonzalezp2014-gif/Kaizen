@@ -4646,9 +4646,9 @@ kept (`airbnbListingHostFee`, and on 24 stays a further withholding — `airbnbE
 Vrbo/Booking.com/partners report `channelCommissionAmount` ($4.7k) and `taxAmount` ($1k). Revenue counted all of it.
 
 - **Taxes leave revenue** (`reservationContribution` subtracts `taxes`): never Kaizen's money, and they inflated ADR.
-- **The channel's cut is a cost** — `channelCut` (finance.ts) per stay, turned by `channelFeeCosts` into a one-off cost
-  "Channel fees" spread over the stay's nights (the days its revenue is spread over), added in `/api/portfolio`. Read live
-  with the stay, never stored: it follows a modified or cancelled booking with no sync. Expedia's cut is not in Hostaway.
+- **The channel's cut leaves revenue too** — `channelCut` (finance.ts) per stay; first built as a "Channel fees" cost, then
+  (owner, same day: "I don't handle the taxes — leave it as net income") subtracted in `reservationContribution`: revenue is
+  net, what reaches the bank. Read live with the stay, never stored. Expedia's cut is not in Hostaway.
 - Effect: October −$15.0k profit ($3.5k taxes, $11.5k fees); Jul–Oct −$50.2k.
 - **Guest portal → books:** `guest_payments` (119), one row per Checkout Session, written by `recordSession` when the page
   confirms the session and by Stripe's webhook (`/api/report-link?stripe-event`, signed with `stripe_webhook_secret_enc`):

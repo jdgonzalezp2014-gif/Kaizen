@@ -153,7 +153,7 @@ export interface HostawayReservation {
   nights: number;
   totalPaid: number;
   cleaningFee: number;
-  /** Inside totalPaid: taxes the channel remits, and what the channel keeps (finance.ts channelCut). */
+  /** Inside totalPaid: taxes the channel remits, and what the channel keeps (finance.ts channelCut) — both off revenue. */
   taxes: number;
   channelFee: number;
   /** For the operations board. Never the portal URL — that is a login token. */
