@@ -139,3 +139,8 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
   `signed` (`signedOf`; none = done), `idVerified`. Checked 2026-11-17 on 46 stays: paymentStatus Paid/Unknown, agreement
   signed/not_signed, **ID verified false on all** → ID conditions useless until the portal reports it. New recipe: Payment reminder.
 - 2026-11-17 (owner): small links beside the stage in the conversation header — **H** opens the reservation in Hostaway, **A** in Airbnb (host page by its HM confirmation code, `bookingLinks`); other channels: Hostaway only.
+- 2026-11-17 (owner, "simplify"): the stay's side = stay card · **Online check-in in one line** (Done / Not done + Mark done) ·
+  folded sections (`<details>`, count + own "+"): **Work** (task / repair / purchase → Operations → To-do), **Claims** (start a
+  case), **Upselling** (upsell cases + **Extend stay**: POST `extend` reads the live Hostaway calendar, `calendarFit` — free nights
+  before/after + Hostaway prices; the change is an alteration made in Hostaway / Airbnb via the header links, never from here),
+  **Scheduled**. Thread GET adds `cases` (claims of the stay, needs `claims`) and `order` on tasks. A case opens in Claims & upselling.

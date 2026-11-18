@@ -7,14 +7,14 @@
  * paragraphs — the how-to sits behind each "?" (CLAUDE.md); what a state or a limit says stays on screen.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { getInbox, getInboxSms, getInboxThread, inboxAction, inboxSuggest, saveClaim, todoAction,
+import { getInbox, getInboxSms, getInboxThread, inboxAction, inboxExtend, inboxSuggest, saveClaim, todoAction, type ExtendFit, type StayCase,
   type InboxList, type InboxSms, type InboxThread } from '../api.ts';
 import { FILTERS, MAX_BODY, STAGE_LABEL, bookingLinks, channelLabel, fill, matchesFilter, searchHit, stageOf, tabOf, threadTabs, varsFor, waits,
   type Channel, type InboxFilter, type InboxRow, type Planned, type Suggestion, type ThreadMsg, type ThreadTab, type Via } from '../lib/inbox.ts';
 import { segments } from '../lib/sms.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Modal } from '../components/Modal.tsx';
-import { CASE_CATEGORIES, UPSELL_CATEGORIES } from '../lib/claims.ts';
+import { CASE_CATEGORIES, UPSELL_CATEGORIES, isUpsell } from '../lib/claims.ts';
 import { Icon } from '../components/Icon.tsx';
 import { BrandMark } from '../components/BrandMark.tsx';
 import { GUEST_EVENT } from '../components/GuestPing.tsx';
@@ -38,12 +38,14 @@ function Avatar({ row, size = 40 }: { row: Pick<InboxRow, 'guest' | 'photo'>; si
     : <span className="ix-avatar ix-initials" style={{ width: size, height: size }} aria-hidden="true">{initials(row.guest)}</span>;
 }
 
-export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, onSettings }: {
+export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, onClaim = () => {}, onSettings }: {
   canSend: boolean; canSetup: boolean; canTodos: boolean;
   /** May open a case in Claims & upselling (the chat's + offers an upsell). */
   canClaims?: boolean;
   /** Open a to-do where to-dos live (Operations → To-do). */
   onTodo: (id: string) => void;
+  /** Open a claim or upsell where cases live (Claims & upselling). */
+  onClaim?: (id: string) => void;
   /** Settings → Integrations → Guest messages & AI, for whoever may open it. */
   onSettings?: () => void;
 }) {
@@ -139,7 +141,7 @@ export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, 
 
       {open && list
         ? <Conversation key={open.conversationId} row={open} list={list} canSend={canSend} canTodos={canTodos} canClaims={canClaims} onBack={() => pick(null)}
-                        onTodo={onTodo} onSettings={onSettings} onChanged={() => void load()} />
+                        onTodo={onTodo} onClaim={onClaim} onSettings={onSettings} onChanged={() => void load()} />
         : <section className="ix-empty"><Icon n="message" /><p>Pick a conversation</p></section>}
 
     </div>
@@ -150,8 +152,8 @@ type Pane = ThreadTab | 'stay';
 const TAB: Record<ThreadTab, { icon: string; label: string }> = { all: { icon: 'layers', label: 'All' }, chat: { icon: 'message', label: 'Chat' },
   email: { icon: 'mail', label: 'Email' }, sms: { icon: 'phone', label: 'SMS' } };
 
-function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo, onSettings, onChanged }: {
-  row: InboxRow; list: InboxList; canSend: boolean; canTodos: boolean; canClaims: boolean; onBack: () => void; onTodo: (id: string) => void;
+function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo, onClaim, onSettings, onChanged }: {
+  row: InboxRow; list: InboxList; canSend: boolean; canTodos: boolean; canClaims: boolean; onBack: () => void; onTodo: (id: string) => void; onClaim: (id: string) => void;
   onSettings?: () => void; onChanged: () => void;
 }) {
   const [pane, setPane] = useState<Pane>('all');
@@ -173,7 +175,7 @@ function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo,
   const tabs = threadTabs(row, thread?.messages ?? []);
   // Texts Hostaway itself sent (its automations) live in its thread, not in Quo: the SMS tab shows both, in order.
   const hostSms = thread?.messages.filter(m => m.channel === 'hostaway' && tabOf(m) === 'sms') ?? [];
-  const stay = <StayPanel row={row} stage={stage} thread={thread} canTodos={canTodos} canClaims={canClaims} canSend={canSend} onTodo={onTodo} onChanged={after} />;
+  const stay = <StayPanel row={row} stage={stage} thread={thread} canTodos={canTodos} canClaims={canClaims} canSend={canSend} onTodo={onTodo} onClaim={onClaim} onChanged={after} />;
   return (
     <>
       <section className="ix-thread" aria-label={`Conversation with ${row.guest}`}>
@@ -371,8 +373,33 @@ const NEW_KINDS: { key: NewKind; label: string; icon: string; hint: string; plac
   { key: 'upsell', label: 'Upsell', icon: 'card', hint: 'Claims & upselling', placeholder: 'Details (amount, time…)' },
 ];
 
-function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, onChanged }: {
-  row: InboxRow; stage: ReturnType<typeof stageOf>; thread: InboxThread | null; canTodos: boolean; canClaims: boolean; canSend: boolean; onTodo: (id: string) => void; onChanged: () => void;
+type Group = 'work' | 'claim' | 'upsell';
+const GROUP_OF: Record<NewKind, Group> = { task: 'work', repair: 'work', purchase: 'work', claim: 'claim', upsell: 'upsell' };
+const closedCase = (status: string) => /^(resolved|paid|dismissed|closed)$/i.test(status);
+
+/** A section of the stay's side that opens on a click (owner, 2026-11-17: "not all of them showing"); the count stays visible. */
+function Fold({ title, count, hint, onAdd, addLabel, children }: { title: string; count: number; hint: ReactNode; onAdd?: () => void; addLabel?: string; children: ReactNode }) {
+  return (
+    <details className="ix-card ix-fold">
+      <summary><h4>{title} <span className="ix-count">{count}</span><Hint>{hint}</Hint>
+        {onAdd && <button type="button" className="ix-add" aria-label={addLabel ?? 'Add'} onClick={e => { e.preventDefault(); onAdd(); }}>+</button>}</h4></summary>
+      {children}
+    </details>
+  );
+}
+
+function CaseList({ cases, onOpen }: { cases: StayCase[]; onOpen: (id: string) => void }) {
+  return <ul className="ix-tasks">{cases.map(c => <li key={c.id}>
+    <button type="button" className={closedCase(c.status) ? 'done' : ''} onClick={() => onOpen(c.id)} title="Open in Claims & upselling">
+      <Icon n={closedCase(c.status) ? 'done' : isUpsell(c.category) ? 'card' : 'alert'} /><span>{c.category ?? 'Case'}{c.description ? ` — ${c.description}` : ''}</span>
+      <time>{c.received > 0 ? `$${Math.round(c.received)}` : c.requested > 0 ? `$${Math.round(c.requested)} asked` : c.status}</time>
+    </button>
+  </li>)}</ul>;
+}
+
+function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, onClaim, onChanged }: {
+  row: InboxRow; stage: ReturnType<typeof stageOf>; thread: InboxThread | null; canTodos: boolean; canClaims: boolean; canSend: boolean; onTodo: (id: string) => void;
+  onClaim: (id: string) => void; onChanged: () => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
@@ -405,10 +432,25 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
     onChanged();
   };
   const [kind, setKind] = useState<NewKind>('task');
+  const [group, setGroup] = useState<Group>('work');
   const [category, setCategory] = useState('');
   const isCase = kind === 'claim' || kind === 'upsell';
   const cats = kind === 'claim' ? CASE_CATEGORIES : UPSELL_CATEGORIES;
-  const kinds = NEW_KINDS.filter(k => k.key === 'claim' || k.key === 'upsell' ? canClaims : canTodos);
+  // 2026-11-17 (owner): three sections, each with its own + — Work (task / repair / purchase), Claims, Upselling.
+  const kinds = NEW_KINDS.filter(k => GROUP_OF[k.key] === group);
+  const open = (g: Group) => { setGroup(g); setKind(NEW_KINDS.find(k => GROUP_OF[k.key] === g)!.key); setCategory(''); setMsg(''); setAdding(true); };
+  const tasks = thread?.tasks ?? [];
+  const claims = (thread?.cases ?? []).filter(c => !isUpsell(c.category));
+  const upsells = (thread?.cases ?? []).filter(c => isUpsell(c.category));
+  const links = bookingLinks(row);
+  const [ext, setExt] = useState<ExtendFit | { message: string } | null>(null);
+  const [extBusy, setExtBusy] = useState(false);
+  const extend = async () => {
+    setExtBusy(true);
+    const r = await inboxExtend({ listingId: row.listingId, arrival: row.arrival, departure: row.departure }).catch(e => ({ ok: false as const, message: String(e) }));
+    setExtBusy(false);
+    setExt(r.ok ? r : { message: ('message' in r && r.message) || 'Could not read the calendar.' });
+  };
   const stay = `${row.guest} · ${range(row.arrival, row.departure)}`;
   const add = async () => {
     setBusy(true); setMsg('');
@@ -448,63 +490,87 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
         </div>}
       </div>
 
-      {row.reservationId && <div className="ix-card">
-        <h4>Online check-in <Hint>Whether this guest finished the online check-in. The guest portal records it by itself once its real link is live; until then a
-          person marks it here. Marking it done is what sends the automations that go <b>After online check-in</b> (the door code) — at once, or at their
-          "not before" moment — and stops the reminders meant for guests who have not done it.</Hint></h4>
+      {row.reservationId && <div className="ix-card ix-ci-row">
+        <span className="ix-ci-label">Online check-in <Hint>Whether this guest finished the online check-in. The guest portal records it by itself once its real
+          link is live; until then a person marks it here. Marking it done sends the automations that go <b>After online check-in</b> (the door code) and
+          stops the reminders meant for guests who have not done it.</Hint></span>
         {ci
-          ? <p className="ix-ci yes"><Icon n="check" /> Done {fmt(ci.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
-              <span>{ci.source === 'team' ? `marked by ${(ci.by ?? 'the team').split('@')[0]}` : 'by the guest'}</span>
-              {canSend && ci.source === 'team' && <button type="button" className="link tiny" disabled={ciBusy} onClick={() => void markCheckin(false)}>Undo</button>}</p>
-          : <p className="ix-ci"><Icon n="clock" /> Not done yet
-              {canSend && thread && <button type="button" className="ix-ghost" disabled={ciBusy} onClick={() => void markCheckin(true)}>{ciBusy ? 'Saving…' : 'Mark done'}</button>}</p>}
+          ? <span className="ix-ci yes" title={`${fmt(ci.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} — ${ci.source === 'team' ? `marked by ${(ci.by ?? 'the team').split('@')[0]}` : 'by the guest'}`}>
+              <Icon n="check" /> Done
+              {canSend && ci.source === 'team' && <button type="button" className="link tiny" disabled={ciBusy} onClick={() => void markCheckin(false)}>Undo</button>}</span>
+          : <span className="ix-ci"><Icon n="clock" /> Not done
+              {canSend && thread && <button type="button" className="ix-ghost" disabled={ciBusy} onClick={() => void markCheckin(true)}>{ciBusy ? 'Saving…' : 'Mark done'}</button>}</span>}
         {ciMsg && <p className="ix-state warn">{ciMsg}</p>}
       </div>}
 
-      {row.reservationId && (canTodos || canClaims) && <div className="ix-card">
-        <h4>To-dos <span className="ix-count">{thread?.tasks.filter(t => !t.done).length ?? 0}</span>
-          <Hint>The team's to-dos tied to this stay — the same ones as Operations → To-do. The + makes one for this listing and this guest: a <b>Task</b>, a <b>Repair</b> (work order), a <b>Purchase</b> (purchase order) — all in Operations → To-do — or a <b>Claim</b> (damage, noise…) or an <b>Upsell</b> (pet fee, early check-in…), which open a case in Claims &amp; upselling.</Hint>
-          <button type="button" className="ix-add" onClick={() => { setKind(kinds[0]!.key); setAdding(true); }} aria-label="Add a task, repair, purchase, claim or upsell">+</button></h4>
-        {adding && <Modal title="New from this chat" onClose={() => setAdding(false)}>
-          <div className="ix-form ix-new">
-            <div className="ix-kinds" role="radiogroup" aria-label="What is it">
-              {kinds.map(k => <button key={k.key} type="button" role="radio" aria-checked={kind === k.key}
-                                      className={kind === k.key ? 'ix-kind on' : 'ix-kind'} onClick={() => { setKind(k.key); setCategory(''); }}>
-                <Icon n={k.icon} /><b>{k.label}</b><span>{k.hint}</span></button>)}
-            </div>
-            {isCase && <select value={category || cats[0]} aria-label="Category" onChange={e => setCategory(e.target.value)}>
-              {cats.map(c => <option key={c}>{c}</option>)}</select>}
-            <input value={title} autoFocus placeholder={NEW_KINDS.find(k => k.key === kind)!.placeholder} aria-label="What" maxLength={300}
-                   onChange={e => setTitle(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && title.trim()) void add(); }} />
-            <div className="ix-form-row">
-              {!isCase && <input type="date" value={due} aria-label="Due" title="Due" onChange={e => setDue(e.target.value)} />}
-              <button type="button" className="ix-send" disabled={busy || !title.trim()} onClick={() => void add()}>{busy ? 'Adding…' : 'Add'}</button>
-              <button type="button" className="link tiny" onClick={() => setAdding(false)}>Cancel</button>
-            </div>
-            {msg && <p className="ix-state warn">{msg}</p>}
+      {adding && <Modal title={group === 'work' ? 'New work for this stay' : group === 'claim' ? 'New claim' : 'New upsell'} onClose={() => setAdding(false)}>
+        <div className="ix-form ix-new">
+          {kinds.length > 1 && <div className="ix-kinds" role="radiogroup" aria-label="What is it">
+            {kinds.map(k => <button key={k.key} type="button" role="radio" aria-checked={kind === k.key}
+                                    className={kind === k.key ? 'ix-kind on' : 'ix-kind'} onClick={() => { setKind(k.key); setCategory(''); }}>
+              <Icon n={k.icon} /><b>{k.label}</b><span>{k.hint}</span></button>)}
+          </div>}
+          {isCase && <select value={category || cats[0]} aria-label="Category" onChange={e => setCategory(e.target.value)}>
+            {cats.map(c => <option key={c}>{c}</option>)}</select>}
+          <input value={title} autoFocus placeholder={NEW_KINDS.find(k => k.key === kind)!.placeholder} aria-label="What" maxLength={300}
+                 onChange={e => setTitle(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && title.trim()) void add(); }} />
+          <div className="ix-form-row">
+            {!isCase && <input type="date" value={due} aria-label="Due" title="Due" onChange={e => setDue(e.target.value)} />}
+            <button type="button" className="ix-send" disabled={busy || !title.trim()} onClick={() => void add()}>{busy ? 'Adding…' : 'Add'}</button>
+            <button type="button" className="link tiny" onClick={() => setAdding(false)}>Cancel</button>
           </div>
-        </Modal>}
+          {msg && <p className="ix-state warn">{msg}</p>}
+        </div>
+      </Modal>}
+
+      {row.reservationId && canTodos && <Fold title="Work" count={tasks.filter(t => !t.done).length} onAdd={() => open('work')} addLabel="Add a task, repair or purchase"
+        hint={<>The team's work tied to this stay — the same as Operations → To-do. The + makes a <b>Task</b>, a <b>Repair</b> (work order) or a <b>Purchase</b>
+          (purchase order) for this listing and this guest.</>}>
         <ul className="ix-tasks">
-          {thread?.tasks.map(t => <li key={t.id}>
+          {tasks.map(t => <li key={t.id}>
             <button type="button" className={t.done ? 'done' : ''} onClick={() => onTodo(t.id)} title="Open in To-do">
-              <Icon n={t.done ? 'done' : t.kind === 'work_order' ? 'wrench' : 'list'} /><span>{t.title}</span>
+              <Icon n={t.done ? 'done' : t.order ? 'cart' : t.kind === 'work_order' ? 'wrench' : 'list'} /><span>{t.title}</span>
               {t.dueOn && !t.done && <time>{md(t.dueOn)}</time>}
             </button>
           </li>)}
         </ul>
-        {thread && !thread.tasks.length && !adding && <p className="note">None for this stay.</p>}
-      </div>}
+        {thread && !tasks.length && <p className="note">None for this stay.</p>}
+      </Fold>}
 
-      {row.reservationId && <div className="ix-card">
-        <h4>Scheduled <span className="ix-count">{waiting.length + pending.length}</span>
-          <Hint>Messages still to go for this stay: the ones a person scheduled, and the active automations (<Icon n="zap" />, top of the inbox) that apply to this
-            listing, with the moment each one goes. <b>After check-in</b> = it waits for the guest's online check-in; <b>Not needed</b> = its condition does not hold.
-            Each automatic message goes once per stay. <b>Cancel</b> stops one for this stay only (the automation stays on for everyone else); <b>Cancel all</b> stops
-            everything still to go — for when something happened (a cancellation, a change of plan). A cancelled automation can be put back with <b>Undo</b>.</Hint>
-          {canSend && waiting.length + pending.length > 1 && (sure
-            ? <span className="ix-hold-all"><button type="button" className="ix-ghost danger" disabled={holdBusy} onClick={() => void hold(pending.map(p => p.templateId), waiting.map(m => m.id))}>{holdBusy ? 'Cancelling…' : `Cancel ${waiting.length + pending.length}`}</button>
-                <button type="button" className="link tiny" onClick={() => setSure(false)}>Keep</button></span>
-            : <button type="button" className="ix-ghost" onClick={() => setSure(true)}>Cancel all</button>)}</h4>
+      {row.reservationId && canClaims && <Fold title="Claims" count={claims.filter(c => !closedCase(c.status)).length} onAdd={() => open('claim')} addLabel="Start a claim"
+        hint={<>Guest complaints and damage for this stay (damage, cleanliness, noise…) — the same cases as Claims &amp; upselling. The + starts one; its
+          repairs and purchases are added from the case.</>}>
+        <CaseList cases={claims} onOpen={onClaim} />
+        {thread && !claims.length && <p className="note">None for this stay.</p>}
+      </Fold>}
+
+      {row.reservationId && (canClaims || canSend) && <Fold title="Upselling" count={upsells.filter(c => !closedCase(c.status)).length} onAdd={canClaims ? () => open('upsell') : undefined} addLabel="Add an upsell"
+        hint={<>What this guest pays on top (pet fee, early check-in, late checkout…) — cases in Claims &amp; upselling, counted in Revenue once the money is
+          entered as received. <b>Extend stay</b> reads the listing's live Hostaway calendar: the free nights before and after, with Hostaway's price when it
+          has one. The change itself is an alteration made in Hostaway or the channel (the links), not here.</>}>
+        <CaseList cases={upsells} onOpen={onClaim} />
+        {thread && !upsells.length && <p className="note">None for this stay.</p>}
+        {row.listingId && row.arrival && row.departure && <div className="ix-extend">
+          {!ext ? <button type="button" className="ix-ghost" disabled={extBusy} onClick={() => void extend()}><Icon n="calendar" /> {extBusy ? 'Reading the calendar…' : 'Extend stay'}</button>
+            : 'message' in ext ? <p className="ix-state warn">{ext.message}</p>
+            : <>
+              <p><Icon n="calendar" /> <b>{ext.freeBefore}</b> free night{ext.freeBefore === 1 ? '' : 's'} before · <b>{ext.freeAfter}</b> after
+                {ext.freeAfter >= 7 || ext.freeBefore >= 7 ? <span className="note"> (looked 7 ahead)</span> : null}</p>
+              {ext.nightPrices && (ext.freeBefore + ext.freeAfter) > 0 && <p className="note">Hostaway's price: {[...ext.nightPrices.before, ...ext.nightPrices.after].map(p => `$${Math.round(p)}`).join(' · ')}</p>}
+              {(ext.freeBefore + ext.freeAfter) > 0 && <p className="ix-extend-go">Change the dates in {links.channel ? <><a href={links.channel.url} target="_blank" rel="noreferrer">{links.channel.label}</a> (an alteration the guest accepts)</> : links.hostaway ? <a href={links.hostaway} target="_blank" rel="noreferrer">Hostaway</a> : 'Hostaway'}.</p>}
+            </>}
+        </div>}
+      </Fold>}
+
+      {row.reservationId && <Fold title="Scheduled" count={waiting.length + pending.length}
+        hint={<>Messages still to go for this stay: the ones a person scheduled, and the active automations (<Icon n="zap" />, top of the inbox) that apply to this
+          listing, with the moment each one goes. <b>After check-in</b> = it waits for the guest's online check-in; <b>Not needed</b> = its condition does not hold.
+          Each automatic message goes once per stay. <b>Cancel</b> stops one for this stay only (the automation stays on for everyone else); <b>Cancel all</b> stops
+          everything still to go — for when something happened (a cancellation, a change of plan). A cancelled automation can be put back with <b>Undo</b>.</>}>
+        {canSend && waiting.length + pending.length > 1 && <p className="ix-hold-all">{sure
+          ? <><button type="button" className="ix-ghost danger" disabled={holdBusy} onClick={() => void hold(pending.map(p => p.templateId), waiting.map(m => m.id))}>{holdBusy ? 'Cancelling…' : `Cancel ${waiting.length + pending.length}`}</button>
+              <button type="button" className="link tiny" onClick={() => setSure(false)}>Keep</button></>
+          : <button type="button" className="ix-ghost" onClick={() => setSure(true)}>Cancel all</button>}</p>}
         <ul className="ix-plan">
           {waiting.map(m => <li key={m.id}><Icon n="clock" /><span>{m.body.slice(0, 60)}</span><time>{fmt(m.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time>
             {canSend && <button type="button" className="link tiny" disabled={holdBusy} onClick={() => void hold([], [m.id])}>Cancel</button>}</li>)}
@@ -515,7 +581,7 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
         </ul>
         {holdMsg && <p className="ix-state warn">{holdMsg}</p>}
         {thread && !waiting.length && !thread.plan.length && <p className="note">Nothing scheduled.</p>}
-      </div>}
+      </Fold>}
 
       {row.reservationId && <div className="ix-card">
         <h4>Guest portal <Hint>This stay's own portal link — online check-in, the arrival guide and extras. It is built from the portal's address in

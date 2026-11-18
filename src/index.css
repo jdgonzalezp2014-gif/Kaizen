@@ -3789,7 +3789,7 @@ a.gx-tile { text-decoration: none; }
 .ix-open-in a { display: inline-flex; align-items: center; justify-content: center; width: 24px; height: 24px; padding: 0; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--muted); text-decoration: none; }
 .ix-open-in a:hover { color: inherit; border-color: var(--line-strong); }
 .ix-open-in svg { width: 14px; height: 14px; }
-.ix-hold-all { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.ix-hold-all { display: flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .ix-ghost.danger { color: var(--red); border-color: currentColor; }
 .ix-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .ix-kind { display: grid; justify-items: start; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: inherit; text-align: left; cursor: pointer; }
@@ -3873,6 +3873,21 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
 .ix-ci span { color: var(--muted); }
 .ix-ci .icon { width: 14px; height: 14px; }
 .ix-ci .ix-ghost { margin-left: auto; }
+/* 2026-11-17: the stay's side is short — check-in in one line, the rest folded (count visible, a click opens it). */
+.ix-ci-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: var(--s-2) var(--s-4); }
+.ix-ci-label { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-callout); font-weight: 650; }
+.ix-ci-row .ix-ci { margin-left: auto; }
+.ix-ci-row .ix-ci.yes { color: var(--green); }
+.ix-fold { gap: 0; padding: 0; }
+.ix-fold > summary { list-style: none; cursor: pointer; padding: var(--s-3) var(--s-4); border-radius: var(--r-md); }
+.ix-fold > summary::-webkit-details-marker { display: none; }
+.ix-fold > summary:hover { background: var(--tint, rgba(127,127,127,.06)); }
+.ix-fold > summary h4::before { content: ''; width: 6px; height: 6px; border-right: 1.5px solid var(--muted); border-bottom: 1.5px solid var(--muted); transform: rotate(-45deg); transition: transform .15s; margin-right: 2px; }
+.ix-fold[open] > summary h4::before { transform: rotate(45deg); }
+.ix-fold[open] > :not(summary) { margin: 0 var(--s-4) var(--s-3); }
+.ix-fold[open] > summary { padding-bottom: var(--s-2); }
+.ix-extend p { margin: 4px 0; font-size: var(--fs-footnote); display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.ix-extend .icon { width: 14px; height: 14px; }
 .ix-tabs { align-items: center; overflow-x: auto; overflow-y: hidden; scrollbar-width: none; }
 .ix-tabs::-webkit-scrollbar { display: none; }
 .ix-tabs button { white-space: nowrap; flex: none; }

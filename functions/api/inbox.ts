@@ -5,7 +5,7 @@
  *   GET ?sms=<reservation id>        → the guest's SMS thread in Quo (the phone number never leaves the server)
  *   GET ?events=<last id>            → what Hostaway's webhook reported since: guests waiting for an answer (the rail's count, the browser's notification)
  *   GET ?automations=1               → the automations with what each one did in the last 30 days, and the listings to choose from
- *   POST { action: send | schedule | cancel | retry | suggest | checkin | hold | resume }
+ *   POST { action: send | schedule | cancel | retry | suggest | checkin | hold | resume | extend }
  * Reading is permission `messages`; anything that writes is `messages.send` (roles.ts). Sending goes through the outbox
  * (guest-outbox.ts): while the account's guest messages are off, "send" keeps the message as staged and says so.
  * The tables come with migration 116; until it runs the list and the threads still read (Hostaway needs no table).
@@ -20,10 +20,13 @@ import { openEvents } from '../_lib/guest-events.ts';
 import { GUEST_TZ, deliver, fireStay, guestLive, loadTemplates, outMsg, portalFor, type OutRow } from '../_lib/guest-outbox.ts';
 import { fetchConversation, fetchConversationOf, fetchConversations, fetchMessages } from '../_lib/hostaway-messages.ts';
 import { quoThread } from '../_lib/quo.ts';
+import { fetchCalendar } from '../_lib/hostaway.ts';
+import { calendarFit } from '../../src/lib/guest-portal.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { HOUSE_VARS, MAX_BODY, isVia, maskPhone, mergeThread, planFor, type Channel, type InboxRow } from '../../src/lib/inbox.ts';
 
 const ID = /^\d{1,20}$/;
+const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
 const bad = (message: string, status = 400) => Response.json({ ok: false, message }, { status });
 const json = (body: unknown) => Response.json(body, { headers: { 'Cache-Control': 'no-store' } });
 
@@ -93,13 +96,21 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const reservation = q.get('reservation') ?? '';
       if (!ID.test(conversation) || (reservation && !ID.test(reservation))) return bad('Which conversation?');
       const access = await accessOf(sql, who);
-      const [theirs, ours, tasks, templates, row, link, checkins] = await Promise.all([
+      const [theirs, ours, tasks, cases, templates, row, link, checkins] = await Promise.all([
         fetchMessages(creds, conversation),
         reservation ? outbox(sql, reservation, 'hostaway') : [],
+        // A purchase order is a to-do made as an order (clean_group 'request', todos.ts) — the Work section's third kind.
         reservation && can(access.permissions, 'todos')
-          ? sql`SELECT id::text AS id, title, status, priority, kind, due_on::text AS "dueOn", assignee, done_at IS NOT NULL AS done
-                  FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND reservation_id = ${reservation}
+          ? sql`SELECT id::text AS id, title, status, priority, kind, due_on::text AS "dueOn", assignee, done_at IS NOT NULL AS done,
+                       COALESCE(clean_group = 'request', false) AS "order"
+                  FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND reservation_id = ${reservation} AND parent_id IS NULL
                  ORDER BY done_at IS NOT NULL, created_at DESC LIMIT 50`
+          : [],
+        // 2026-11-17 (owner): the stay's claims and upsells, each in its own section of the conversation.
+        reservation && can(access.permissions, 'claims')
+          ? (sql`SELECT id::text AS id, category, status, description, requested::float AS requested, refund::float AS received
+                   FROM claims WHERE account_id = 1 AND deleted_at IS NULL AND reservation_id = ${reservation}
+                  ORDER BY created_at DESC LIMIT 30` as Promise<unknown[]>).catch(() => [])
           : [],
         loadTemplates(sql),
         fetchConversation(creds, conversation),
@@ -117,7 +128,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         await sql`UPDATE guest_events SET answered_at = now() WHERE account_id = 1 AND kind = 'message' AND conversation_id = ${conversation} AND answered_at IS NULL`.catch(() => {});
       }
       return json({
-        ok: true, messages: mergeThread(theirs, ours.map(outMsg)), tasks, portalLink: link, phone: maskPhone(row?.phone), checkin: ci,
+        ok: true, messages: mergeThread(theirs, ours.map(outMsg)), tasks, cases, portalLink: link, phone: maskPhone(row?.phone), checkin: ci,
         plan: row ? planFor({ ...row, checkinDoneAt: ci?.at ?? null }, templates, auto, new Date(), GUEST_TZ) : [],
       });
     }
@@ -195,6 +206,20 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const fired = await fireStay(sql, env, reservationId).catch(e => ({ skipped: e instanceof Error ? e.message : String(e) }));
       return json({ ok: true, status: 'sent', fired });
     } catch (e) { return /guest_checkins|does not exist/i.test(String(e)) ? bad('The database needs migration 117 first (npm run migrate).', 409) : bad(String(e), 500); }
+  }
+
+  // 2026-11-17 (owner): can this stay be extended? The listing's live Hostaway calendar around it — the free nights before
+  // and after (calendarFit, the same reading as the guest portal's Extra nights). Read only: the change itself is made in
+  // Hostaway or the channel (an alteration), never from here.
+  if (b.action === 'extend') {
+    const listingId = String(b.listingId ?? ''), arrival = String(b.arrival ?? ''), departure = String(b.departure ?? '');
+    if (!ID.test(listingId) || !DAY_RE.test(arrival) || !DAY_RE.test(departure)) return bad('Which stay?');
+    const shift = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+    try {
+      const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
+      const days = await fetchCalendar(creds, listingId, shift(arrival, -7), shift(departure, 7));
+      return json({ ok: true, ...calendarFit(days.map(d => ({ date: d.date, available: d.available, price: d.price })), arrival, departure) });
+    } catch (e) { return bad(`Hostaway: ${e instanceof Error ? e.message : String(e)}`, 502); }
   }
 
   // 2026-11-17 (owner): stop what is still to go for one stay — "something happened" (a cancellation, a change of plan).

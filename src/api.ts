@@ -1073,8 +1073,16 @@ export async function addStripeDomain(domain: string): Promise<{ ok: boolean; me
 // ── Guest Services → Inbox, the CRM (2026-11-16) ──
 import type { GuestAi, InboxRow, Planned, Suggestion as ReplySuggestion, Template, ThreadMsg, MsgStatus } from './lib/inbox.ts';
 export interface InboxList { ok: true; rows: InboxRow[]; today: string; more: boolean; live: boolean; aiMode: 'off' | 'suggest'; quo: boolean; templates: Template[] }
-export interface StayTask { id: string; title: string; status: string; priority: string; kind: string; dueOn: string | null; assignee: string | null; done: boolean }
-export interface InboxThread { ok: true; messages: ThreadMsg[]; tasks: StayTask[]; portalLink: string | null; phone: string | null; plan: Planned[];
+export interface StayTask { id: string; title: string; status: string; priority: string; kind: string; dueOn: string | null; assignee: string | null; done: boolean;
+  /** A purchase order (made as an order). */
+  order?: boolean }
+/** A claim or an upsell tied to the stay (Claims & upselling). */
+export interface StayCase { id: string; category: string | null; status: string; description: string | null; requested: number; received: number }
+/** The free nights around a stay on the listing's live Hostaway calendar (calendarFit). */
+export interface ExtendFit { ok: true; freeBefore: number; freeAfter: number; turnIn: boolean; turnOut: boolean; nightPrices: { before: number[]; after: number[] } | null }
+export const inboxExtend = (b: { listingId: string | null; arrival: string | null; departure: string | null }) =>
+  call<ExtendFit | Fail>('/api/inbox', { method: 'POST', body: JSON.stringify({ action: 'extend', ...b }) });
+export interface InboxThread { ok: true; messages: ThreadMsg[]; tasks: StayTask[]; cases?: StayCase[]; portalLink: string | null; phone: string | null; plan: Planned[];
   /** The online check-in, when it is done: when, and whether the guest's portal or a person marked it. */
   checkin?: { at: string; source: string; by: string | null } | null }
 export interface InboxEvents { ok: true; last: number; waiting: number; fresh: { id: string; conversationId: string; guest: string; preview: string; urgent: boolean }[] }
