@@ -28,8 +28,9 @@ export interface NavModule {
 }
 
 export const MODULES: NavModule[] = [
-  { key: 'leadership', label: 'Leadership', icon: 'home', links: [
-    { key: 'home', label: 'Overview', tab: 'home' }] },
+  // Owner 2026-11-17: Home is the main door — named Home, not Leadership.
+  { key: 'leadership', label: 'Home', icon: 'home', links: [
+    { key: 'home', label: 'Home', tab: 'home' }] },
   { key: 'guests', label: 'Guest Services', icon: 'inbox', links: [
     { key: 'inbox', label: 'Inbox', tab: 'inbox' },
     { key: 'claims', label: 'Claims & upselling', tab: 'operations', view: 'todos', params: { list: 'claims' }, perms: ['todos', 'claims'], alias: true }] },

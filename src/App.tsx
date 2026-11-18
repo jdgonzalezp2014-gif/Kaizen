@@ -360,7 +360,8 @@ function TeamApp() {
       {tab === 'sops'     && <Sops focus={sopFocus} onFocused={() => setSopFocus(undefined)} />}
       {tab === 'settings' && <Settings />}
       {tab === 'inbox'    && <Inbox canSend={can(permissions, 'messages.send')} canSetup={can(permissions, 'messages.setup')}
-                                    canTodos={can(permissions, 'todos') && !!allowed?.includes('operations')} onTodo={openTodo}
+                                    canTodos={can(permissions, 'todos') && !!allowed?.includes('operations')}
+                                    canClaims={can(permissions, 'todos') && can(permissions, 'claims')} onTodo={openTodo}
                                     onSettings={allowed?.includes('settings') ? () => go('settings', { int: 'guestai' }) : undefined} />}
       {planned && <ModuleSoon mod={planned} />}
 

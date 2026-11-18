@@ -7,12 +7,14 @@
  * paragraphs — the how-to sits behind each "?" (CLAUDE.md); what a state or a limit says stays on screen.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { getInbox, getInboxSms, getInboxThread, inboxAction, inboxSuggest, todoAction,
+import { getInbox, getInboxSms, getInboxThread, inboxAction, inboxSuggest, saveClaim, todoAction,
   type InboxList, type InboxSms, type InboxThread } from '../api.ts';
 import { FILTERS, MAX_BODY, STAGE_LABEL, channelLabel, fill, matchesFilter, searchHit, stageOf, tabOf, threadTabs, varsFor, waits,
   type Channel, type InboxFilter, type InboxRow, type Planned, type Suggestion, type ThreadMsg, type ThreadTab, type Via } from '../lib/inbox.ts';
 import { segments } from '../lib/sms.ts';
 import { Hint } from '../components/Hint.tsx';
+import { Modal } from '../components/Modal.tsx';
+import { CASE_CATEGORIES, UPSELL_CATEGORIES } from '../lib/claims.ts';
 import { Icon } from '../components/Icon.tsx';
 import { GUEST_EVENT } from '../components/GuestPing.tsx';
 import { Automations } from './Automations.tsx';
@@ -35,8 +37,10 @@ function Avatar({ row, size = 40 }: { row: Pick<InboxRow, 'guest' | 'photo'>; si
     : <span className="ix-avatar ix-initials" style={{ width: size, height: size }} aria-hidden="true">{initials(row.guest)}</span>;
 }
 
-export function Inbox({ canSend, canSetup, canTodos, onTodo, onSettings }: {
+export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, onSettings }: {
   canSend: boolean; canSetup: boolean; canTodos: boolean;
+  /** May open a case in Claims & upselling (the chat's + offers an upsell). */
+  canClaims?: boolean;
   /** Open a to-do where to-dos live (Operations → To-do). */
   onTodo: (id: string) => void;
   /** Settings → Integrations → Guest messages & AI, for whoever may open it. */
@@ -133,7 +137,7 @@ export function Inbox({ canSend, canSetup, canTodos, onTodo, onSettings }: {
       </aside>
 
       {open && list
-        ? <Conversation key={open.conversationId} row={open} list={list} canSend={canSend} canTodos={canTodos} onBack={() => pick(null)}
+        ? <Conversation key={open.conversationId} row={open} list={list} canSend={canSend} canTodos={canTodos} canClaims={canClaims} onBack={() => pick(null)}
                         onTodo={onTodo} onSettings={onSettings} onChanged={() => void load()} />
         : <section className="ix-empty"><Icon n="message" /><p>Pick a conversation</p></section>}
 
@@ -145,8 +149,8 @@ type Pane = ThreadTab | 'stay';
 const TAB: Record<ThreadTab, { icon: string; label: string }> = { all: { icon: 'layers', label: 'All' }, chat: { icon: 'message', label: 'Chat' },
   email: { icon: 'mail', label: 'Email' }, sms: { icon: 'phone', label: 'SMS' } };
 
-function Conversation({ row, list, canSend, canTodos, onBack, onTodo, onSettings, onChanged }: {
-  row: InboxRow; list: InboxList; canSend: boolean; canTodos: boolean; onBack: () => void; onTodo: (id: string) => void;
+function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo, onSettings, onChanged }: {
+  row: InboxRow; list: InboxList; canSend: boolean; canTodos: boolean; canClaims: boolean; onBack: () => void; onTodo: (id: string) => void;
   onSettings?: () => void; onChanged: () => void;
 }) {
   const [pane, setPane] = useState<Pane>('all');
@@ -167,7 +171,7 @@ function Conversation({ row, list, canSend, canTodos, onBack, onTodo, onSettings
   const tabs = threadTabs(row, thread?.messages ?? []);
   // Texts Hostaway itself sent (its automations) live in its thread, not in Quo: the SMS tab shows both, in order.
   const hostSms = thread?.messages.filter(m => m.channel === 'hostaway' && tabOf(m) === 'sms') ?? [];
-  const stay = <StayPanel row={row} stage={stage} thread={thread} canTodos={canTodos} canSend={canSend} onTodo={onTodo} onChanged={after} />;
+  const stay = <StayPanel row={row} stage={stage} thread={thread} canTodos={canTodos} canClaims={canClaims} canSend={canSend} onTodo={onTodo} onChanged={after} />;
   return (
     <>
       <section className="ix-thread" aria-label={`Conversation with ${row.guest}`}>
@@ -349,8 +353,17 @@ function Composer({ row, channel, via, list, portalLink, canSend, onSent }: {
 const PLAN_WORD: Record<Planned['state'], string> = { planned: 'Planned', due: 'Due now', missed: 'Missed', sent: 'Sent', staged: 'Staged', failed: 'Not sent',
   scheduled: 'Retrying', cancelled: 'Cancelled', received: '', waiting: 'After check-in', skipped: 'Not needed' };
 
-function StayPanel({ row, stage, thread, canTodos, canSend, onTodo, onChanged }: {
-  row: InboxRow; stage: ReturnType<typeof stageOf>; thread: InboxThread | null; canTodos: boolean; canSend: boolean; onTodo: (id: string) => void; onChanged: () => void;
+type NewKind = 'task' | 'repair' | 'purchase' | 'claim' | 'upsell';
+const NEW_KINDS: { key: NewKind; label: string; icon: string; hint: string; placeholder: string }[] = [
+  { key: 'task', label: 'Task', icon: 'list', hint: 'Something to do', placeholder: 'What needs doing?' },
+  { key: 'repair', label: 'Repair', icon: 'wrench', hint: 'Work order', placeholder: 'What is broken?' },
+  { key: 'purchase', label: 'Purchase', icon: 'cart', hint: 'Purchase order', placeholder: 'What to buy?' },
+  { key: 'claim', label: 'Claim', icon: 'alert', hint: 'Claims & upselling', placeholder: 'What happened?' },
+  { key: 'upsell', label: 'Upsell', icon: 'card', hint: 'Claims & upselling', placeholder: 'Details (amount, time…)' },
+];
+
+function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, onChanged }: {
+  row: InboxRow; stage: ReturnType<typeof stageOf>; thread: InboxThread | null; canTodos: boolean; canClaims: boolean; canSend: boolean; onTodo: (id: string) => void; onChanged: () => void;
 }) {
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
@@ -370,11 +383,24 @@ function StayPanel({ row, stage, thread, canTodos, canSend, onTodo, onChanged }:
   };
   const nights = nightsOf(row.arrival, row.departure);
   const waiting = thread?.messages.filter(m => m.ours && m.status === 'scheduled') ?? [];
+  const [kind, setKind] = useState<NewKind>('task');
+  const [category, setCategory] = useState('');
+  const isCase = kind === 'claim' || kind === 'upsell';
+  const cats = kind === 'claim' ? CASE_CATEGORIES : UPSELL_CATEGORIES;
+  const kinds = NEW_KINDS.filter(k => k.key === 'claim' || k.key === 'upsell' ? canClaims : canTodos);
+  const stay = `${row.guest} · ${range(row.arrival, row.departure)}`;
   const add = async () => {
     setBusy(true); setMsg('');
-    const r = await todoAction({ action: 'create', title, unitIds: row.listingId ? [row.listingId] : [], dueOn: due || null,
-      reservationId: row.reservationId, reservationLabel: `${row.guest} · ${range(row.arrival, row.departure)}` })
-      .catch(e => ({ ok: false as const, message: String(e) }));
+    // 2026-11-17 (owner): one + for what a chat turns into — a to-do, a repair, a purchase, or an upsell (a case in
+    // Claims & upselling, not a to-do: it carries money asked and received). A claim (damage, noise…) the same.
+    const r = isCase
+      ? await saveClaim({ unitId: row.listingId ?? null, category: category || cats[0], status: 'Open', source: 'Guest message',
+          description: title, reservationId: row.reservationId, reservationLabel: stay })
+          .then(x => ({ ok: x.ok, message: x.error })).catch(e => ({ ok: false, message: String(e) }))
+      : await todoAction({ action: 'create', title, unitIds: row.listingId ? [row.listingId] : [], dueOn: due || null,
+          kind: kind === 'repair' ? 'work_order' : 'task', asOrder: kind === 'purchase',
+          reservationId: row.reservationId, reservationLabel: stay })
+          .catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (!r.ok) { setMsg(r.message ?? 'Not added.'); return; }
     setTitle(''); setDue(''); setAdding(false); onChanged();
@@ -414,20 +440,29 @@ function StayPanel({ row, stage, thread, canTodos, canSend, onTodo, onChanged }:
         {ciMsg && <p className="ix-state warn">{ciMsg}</p>}
       </div>}
 
-      {row.reservationId && canTodos && <div className="ix-card">
+      {row.reservationId && (canTodos || canClaims) && <div className="ix-card">
         <h4>To-dos <span className="ix-count">{thread?.tasks.filter(t => !t.done).length ?? 0}</span>
-          <Hint>The team's to-dos tied to this stay — the same ones as Operations → To-do. Add one here and it is created there, for this listing and this guest.</Hint>
-          {!adding && <button type="button" className="ix-add" onClick={() => setAdding(true)} aria-label="Add a to-do">+</button>}</h4>
-        {adding && <div className="ix-form">
-          <input value={title} autoFocus placeholder="What needs doing?" aria-label="To-do" maxLength={300} onChange={e => setTitle(e.target.value)}
-                 onKeyDown={e => { if (e.key === 'Enter' && title.trim()) void add(); }} />
-          <div className="ix-form-row">
-            <input type="date" value={due} aria-label="Due" title="Due" onChange={e => setDue(e.target.value)} />
-            <button type="button" className="ix-send" disabled={busy || !title.trim()} onClick={() => void add()}>Add</button>
-            <button type="button" className="link tiny" onClick={() => setAdding(false)}>Cancel</button>
+          <Hint>The team's to-dos tied to this stay — the same ones as Operations → To-do. The + makes one for this listing and this guest: a <b>Task</b>, a <b>Repair</b> (work order), a <b>Purchase</b> (purchase order) — all in Operations → To-do — or a <b>Claim</b> (damage, noise…) or an <b>Upsell</b> (pet fee, early check-in…), which open a case in Claims &amp; upselling.</Hint>
+          <button type="button" className="ix-add" onClick={() => { setKind(kinds[0]!.key); setAdding(true); }} aria-label="Add a task, repair, purchase, claim or upsell">+</button></h4>
+        {adding && <Modal title="New from this chat" onClose={() => setAdding(false)}>
+          <div className="ix-form ix-new">
+            <div className="ix-kinds" role="radiogroup" aria-label="What is it">
+              {kinds.map(k => <button key={k.key} type="button" role="radio" aria-checked={kind === k.key}
+                                      className={kind === k.key ? 'ix-kind on' : 'ix-kind'} onClick={() => { setKind(k.key); setCategory(''); }}>
+                <Icon n={k.icon} /><b>{k.label}</b><span>{k.hint}</span></button>)}
+            </div>
+            {isCase && <select value={category || cats[0]} aria-label="Category" onChange={e => setCategory(e.target.value)}>
+              {cats.map(c => <option key={c}>{c}</option>)}</select>}
+            <input value={title} autoFocus placeholder={NEW_KINDS.find(k => k.key === kind)!.placeholder} aria-label="What" maxLength={300}
+                   onChange={e => setTitle(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && title.trim()) void add(); }} />
+            <div className="ix-form-row">
+              {!isCase && <input type="date" value={due} aria-label="Due" title="Due" onChange={e => setDue(e.target.value)} />}
+              <button type="button" className="ix-send" disabled={busy || !title.trim()} onClick={() => void add()}>{busy ? 'Adding…' : 'Add'}</button>
+              <button type="button" className="link tiny" onClick={() => setAdding(false)}>Cancel</button>
+            </div>
+            {msg && <p className="ix-state warn">{msg}</p>}
           </div>
-          {msg && <p className="ix-state warn">{msg}</p>}
-        </div>}
+        </Modal>}
         <ul className="ix-tasks">
           {thread?.tasks.map(t => <li key={t.id}>
             <button type="button" className={t.done ? 'done' : ''} onClick={() => onTodo(t.id)} title="Open in To-do">

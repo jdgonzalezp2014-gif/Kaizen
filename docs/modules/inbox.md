@@ -126,5 +126,5 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
 - Claims & upselling still lives in Operations → To-do; Guest Services has a door to it.
 
 - 2026-11-17 (owner): the conversation's To-dos "+" opens a pop-up — Task / Repair (work order) / Purchase (purchase order)
-  go to Operations → To-do; Upsell (category from `UPSELL_CATEGORIES`) opens a case in Claims & upselling (needs `claims`).
+  go to Operations → To-do; Claim (`CASE_CATEGORIES`) and Upsell (`UPSELL_CATEGORIES`) open a case in Claims & upselling (needs `claims`).
   The bell shows a dot for anything new; the count stays on Guest Services. The menu's Leadership is now "Home".

@@ -39,6 +39,6 @@ test('the phone bar is the first screen of the first modules, one per tab', () =
 test('where someone is, in words', () => {
   const nav = navFor(ALL_TABS, ['*']);
   assert.equal(whereLabel(nav, 'operations', 'inventory'), 'Operations › Inventory');
-  assert.equal(whereLabel(nav, 'home'), 'Leadership › Overview');
+  assert.equal(whereLabel(nav, 'home'), 'Home');
   assert.equal(whereLabel(nav, 'experience'), 'Guest Experience');
 });
