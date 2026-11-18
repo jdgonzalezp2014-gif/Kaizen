@@ -165,6 +165,8 @@ export interface HostawayReservation {
   agreement?: 'signed' | 'not_signed' | null;
   /** Hostaway's own identity verification (guest portal / channel): ID checked or not (§89). */
   idVerified?: boolean;
+  /** Hostaway's paymentStatus as it says it ("Paid", "Unpaid", "Unknown") — for the automations' conditions. */
+  paymentStatus?: string | null;
   guests?: number | null;
   /** Only to recognise the same guest booking again. Never sent to a browser. */
   phone?: string;
@@ -531,6 +533,7 @@ async function pagedReservationsWith(token: string, query: string,
         docName: `${r.guestFirstName ?? ''} ${r.guestLastName ?? ''}`.trim() || String(r.guestName ?? '').trim() || 'Guest',
         agreement: (r.reservationAgreement === 'signed' ? 'signed' : r.reservationAgreement ? 'not_signed' : null) as 'signed' | 'not_signed' | null,
         idVerified: Number(r.isGuestIdentityVerified) === 1 || Number(r.isGuestVerifiedByGovernmentId) === 1,
+        paymentStatus: r.paymentStatus ? String(r.paymentStatus) : null,
         guests: Number(r.numberOfGuests ?? r.adults) || null,
         phone: String(r.phone ?? ''),
         cancellationDate: r.cancellationDate ? String(r.cancellationDate) : null,

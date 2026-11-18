@@ -1,10 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { aiPrompt, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, planFor,
-  portalLink, stageOf, stayWindow, suggestionFromAi, varsFor, whenWords, zonedInstant, type InboxRow, type Stay, type Template, type ThreadMsg } from './inbox.ts';
+  portalLink, stageOf, stayWindow, suggestionFromAi, varsFor, whenWords, zonedInstant, type InboxRow, type Stay, type Template, type ThreadMsg, condWords, condsOf, paidOf, signedOf } from './inbox.ts';
 
 const stay: Stay = { reservationId: '71', listingId: '9', listing: 'P2-1406', guest: 'Ana Ruiz', arrival: '2026-11-20', departure: '2026-11-23', status: 'new', bookedAt: '2026-11-10T15:00:00Z' };
-const tpl = (o: Partial<Template>): Template => ({ id: 't1', name: 'Welcome', body: 'Hi {{first_name}}', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 24, active: true, listingIds: null, onlyIf: 'always', holdHours: null, ...o });
+const tpl = (o: Partial<Template>): Template => ({ id: 't1', name: 'Welcome', body: 'Hi {{first_name}}', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 24, active: true, listingIds: null, conditions: [], holdHours: null, ...o });
 const msg = (o: Partial<ThreadMsg>): ThreadMsg => ({ id: 'm', at: '2026-11-16T10:00:00Z', incoming: true, body: 'hi', channel: 'hostaway', status: 'received', ...o });
 
 test('a stay moves through its stages by the day', () => {
@@ -148,12 +148,26 @@ test('after online check-in: waits for the guest, goes when done, and can be hel
 
 test('a condition: a reminder is not needed once the check-in is done; "only if done" is judged at its moment', () => {
   const tz = 'America/Chicago', before = new Date('2026-11-19T10:00:00Z'), at = new Date('2026-11-19T23:00:00Z');
-  const remind = tpl({ onlyIf: 'checkin_pending' }), thanks = tpl({ onlyIf: 'checkin_done' });
+  const remind = tpl({ conditions: ['checkin_pending'] }), thanks = tpl({ conditions: ['checkin_done'] });
   assert.deepEqual(planFor(stay, [remind], [], at, tz).map(p => p.state), ['due']);
   assert.deepEqual(planFor({ ...stay, checkinDoneAt: '2026-11-18T10:00:00Z' }, [remind], [], before, tz).map(p => p.state), ['skipped']);
   assert.deepEqual(planFor(stay, [thanks], [], before, tz).map(p => p.state), ['planned']);
   assert.deepEqual(planFor(stay, [thanks], [], at, tz).map(p => p.state), ['skipped']);
   assert.deepEqual(planFor({ ...stay, checkinDoneAt: '2026-11-18T10:00:00Z' }, [thanks], [], at, tz).map(p => p.state), ['due']);
+});
+
+test('conditions: payment / agreement / ID, all must hold; unknown payment and no agreement count as done', () => {
+  const tz = 'America/Chicago', before = new Date('2026-11-19T10:00:00Z'), at = new Date('2026-11-19T23:00:00Z');
+  const payRemind = tpl({ conditions: ['payment_pending'] }), code = tpl({ conditions: ['checkin_done', 'payment_done'] });
+  assert.deepEqual(planFor({ ...stay, paid: false }, [payRemind], [], at, tz).map(p => p.state), ['due']);
+  assert.deepEqual(planFor({ ...stay, paid: true }, [payRemind], [], before, tz).map(p => p.state), ['skipped']);
+  assert.deepEqual(planFor({ ...stay, paid: null }, [payRemind], [], at, tz).map(p => p.state), ['skipped']);
+  assert.deepEqual(planFor({ ...stay, paid: false, checkinDoneAt: '2026-11-18T10:00:00Z' }, [code], [], at, tz).map(p => p.state), ['skipped']);
+  assert.deepEqual(planFor({ ...stay, paid: true, checkinDoneAt: '2026-11-18T10:00:00Z' }, [code], [], at, tz).map(p => p.state), ['due']);
+  assert.deepEqual(condsOf('payment_done,always,checkin_pending,checkin_done,x'), ['checkin_pending', 'payment_done']);
+  assert.deepEqual(condsOf('always'), []);
+  assert.equal(signedOf('not_signed'), false); assert.equal(signedOf(null), null); assert.equal(paidOf('Unknown'), null);
+  assert.equal(condWords(['checkin_pending', 'payment_done']), 'Check-in not done · Paid');
 });
 
 test('house blanks are filled on the server; without a value the message is refused', () => {

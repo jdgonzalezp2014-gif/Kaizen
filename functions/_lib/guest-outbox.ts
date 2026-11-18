@@ -25,8 +25,8 @@ import { sendSms } from './quo.ts';
 import { guestHouse } from '../api/guest-guide.ts';
 import { addDays, todayIn } from '../../src/lib/dates.ts';
 import { doorCodeFor } from '../../src/lib/guest-checkin.ts';
-import { GRACE_HOURS, HOUSE_VARS, fill, hostawayIso, isConfirmed, planFor, portalLink, stayWindow, varsFor,
-  type Channel, type MsgStatus, type OnlyIf, type Stay, type Template, type ThreadMsg, type Trigger, type Via } from '../../src/lib/inbox.ts';
+import { GRACE_HOURS, HOUSE_VARS, condsOf, fill, hostawayIso, isConfirmed, paidOf, planFor, signedOf, portalLink, stayWindow, varsFor,
+  type Channel, type MsgStatus, type Stay, type Template, type ThreadMsg, type Trigger, type Via } from '../../src/lib/inbox.ts';
 
 /** Kaizen's listings are all in Texas; a per-account zone is product debt (docs/product.md). */
 export const GUEST_TZ = 'America/Chicago';
@@ -52,9 +52,9 @@ export async function guestLive(sql: SqlFn): Promise<boolean> {
 }
 
 type TplRow = { id: string; name: string; body: string; channel: Channel; trigger: Trigger; offset_hours: number; active: boolean;
-  listing_ids?: string[] | null; only_if?: OnlyIf; hold_hours?: number | null };
+  listing_ids?: string[] | null; only_if?: string | null; hold_hours?: number | null };
 const tplOf = (r: TplRow): Template => ({ id: r.id, name: r.name, body: r.body, channel: r.channel, trigger: r.trigger, offsetHours: r.offset_hours, active: r.active,
-  listingIds: r.listing_ids?.length ? r.listing_ids : null, onlyIf: r.only_if ?? 'always', holdHours: r.hold_hours ?? null });
+  listingIds: r.listing_ids?.length ? r.listing_ids : null, conditions: condsOf(r.only_if), holdHours: r.hold_hours ?? null });
 
 export async function loadTemplates(sql: SqlFn): Promise<Template[]> {
   const rows = await (sql`SELECT id::text AS id, name, body, channel, trigger, offset_hours, active, listing_ids, only_if, hold_hours FROM message_templates
@@ -156,6 +156,7 @@ export async function deliver(sql: SqlFn, env: Env, row: Deliverable): Promise<{
 const stayOf = (r: HostawayReservation, names: Map<string, string>): Stay => ({
   reservationId: r.reservationId, listingId: r.listingId, listing: names.get(r.listingId) ?? '', guest: r.guestName ?? 'Guest',
   arrival: r.arrival, departure: r.departure, status: r.status, checkInHour: r.checkInHour, checkOutHour: r.checkOutHour, bookedAt: r.bookedAt,
+  paid: paidOf(r.paymentStatus), signed: r.agreement === 'signed' ? true : r.agreement === 'not_signed' ? false : null, idVerified: r.idVerified,
 });
 
 /** One reservation as Hostaway returns it by id (GET /reservations/<id>), as a stay. */
@@ -169,6 +170,8 @@ export function stayFromDetail(d: Record<string, unknown>, names: Map<string, st
     reservationId: String(d.id), listingId, listing: (listingId && names.get(listingId)) || text(d.listingName) || '', guest: text(d.guestName) ?? 'Guest',
     arrival: day(d.arrivalDate), departure: day(d.departureDate), status: text(d.status) ?? '', checkInHour: hour(d.checkInTime), checkOutHour: hour(d.checkOutTime),
     bookedAt: hostawayIso(d.reservationDate),
+    paid: paidOf(d.paymentStatus), signed: signedOf(d.reservationAgreement),
+    idVerified: Number(d.isGuestIdentityVerified) === 1 || Number(d.isGuestVerifiedByGovernmentId) === 1,
   };
 }
 

@@ -8,7 +8,7 @@
  *       real guest from here. It only runs when the account's guest messages are ON (guest-outbox.ts).
  */
 import { getAccessToken, type HostawayCredentials } from './hostaway.ts';
-import { hostawayIso, preview, type InboxRow, type ThreadMsg } from '../../src/lib/inbox.ts';
+import { hostawayIso, paidOf, preview, signedOf, type InboxRow, type ThreadMsg } from '../../src/lib/inbox.ts';
 
 const BASE = 'https://api.hostaway.com/v1';
 type Raw = Record<string, unknown>;
@@ -52,6 +52,7 @@ function rowOf(c: Raw): ConversationRow {
     unread: Number(c.hasUnreadMessages) === 1, lastAt, lastIncoming: !!got && (!sent || got >= sent),
     preview: preview(plain(str(last?.body) ?? '', guest)), phone: str(r.phone),
     payment: str(r.paymentStatus), agreement: str(r.reservationAgreement), idVerified: Number(r.isGuestIdentityVerified) === 1,
+    paid: paidOf(r.paymentStatus), signed: signedOf(r.reservationAgreement),
     // Only that there is one: the address stays in Hostaway, which is who sends the email.
     hasEmail: !!(str(c.recipientEmail) ?? str(r.guestEmail)),
   };

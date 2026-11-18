@@ -29,7 +29,24 @@ export interface Stay {
   bookedAt?: string | null;
   /** When the guest finished the online check-in (`guest_checkins`), ISO — null while it is not done. */
   checkinDoneAt?: string | null;
+  /** Hostaway's paymentStatus read as paid / not paid; null = Hostaway does not know (Expedia collects) or did not say. */
+  paid?: boolean | null;
+  /** The rental agreement: signed / not signed; null = no agreement on this booking. */
+  signed?: boolean | null;
+  /** Hostaway's identity check. */
+  idVerified?: boolean;
 }
+
+/** Hostaway's paymentStatus as a yes / no — "Unknown" (Expedia collects) is not "unpaid". */
+export const paidOf = (v: unknown): boolean | null => {
+  const st = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  return st === 'paid' ? true : st === 'unpaid' || st === 'partially paid' || st === 'partial' ? false : null;
+};
+/** Hostaway's reservationAgreement as a yes / no — null when the booking has none. */
+export const signedOf = (v: unknown): boolean | null => {
+  const st = typeof v === 'string' ? v.trim().toLowerCase() : '';
+  return st === 'signed' ? true : st ? false : null;
+};
 
 export type Stage = 'inquiry' | 'upcoming' | 'arriving' | 'staying' | 'leaving' | 'past' | 'cancelled';
 const INQUIRY = /^(inquiry|pending|awaiting|unconfirmed)/i;
@@ -166,14 +183,46 @@ export const TRIGGERS: [Trigger, string][] = [
 ];
 /** Triggers that count from something that happened (a booking, a finished online check-in), not from the stay's dates. */
 export const isEvent = (t: Trigger) => t === 'booked' || t === 'checkin_done';
-export type OnlyIf = 'always' | 'checkin_pending' | 'checkin_done';
-export const ONLY_IF: [OnlyIf, string][] = [['always', 'Always'], ['checkin_pending', 'Only if online check-in is not done'], ['checkin_done', 'Only if online check-in is done']];
+/**
+ * Conditions (owner, 2026-11-17): what an automation depends on — the online check-in, the payment, the agreement, the
+ * ID. Each is "not done yet" or "done"; all chosen must hold. "Not done yet" is a STOPPER: the moment it is done the
+ * message is not needed, whenever that happens (a reminder stops by itself). "Done" is judged at the message's moment.
+ * Stored in `message_templates.only_if` as a comma list ('' / 'always' = none) — the two older values are two of these.
+ */
+export type CondSubject = 'checkin' | 'payment' | 'agreement' | 'id';
+export type Cond = `${CondSubject}_${'pending' | 'done'}`;
+export const COND_SUBJECTS: [CondSubject, string, string, string][] = [
+  ['checkin', 'Online check-in', 'Not done', 'Done'],
+  ['payment', 'Payment', 'Pending', 'Paid'],
+  ['agreement', 'Agreement', 'Not signed', 'Signed'],
+  ['id', 'ID', 'Not verified', 'Verified'],
+];
+export const isCond = (v: unknown): v is Cond => typeof v === 'string' && /^(checkin|payment|agreement|id)_(pending|done)$/.test(v);
+/** One per subject, in a fixed order — what is saved. */
+export const condsOf = (v: unknown): Cond[] => {
+  const list = (Array.isArray(v) ? v : String(v ?? '').split(',')).map(x => String(x).trim()).filter(isCond);
+  return COND_SUBJECTS.flatMap(([k]) => list.find(c => c.startsWith(`${k}_`)) ?? []);
+};
+/** Is it so for this stay? An unknown payment or a booking without an agreement counts as done (never nagged, never held). */
+export function condMet(c: Cond, s: Stay): boolean {
+  const [k, want] = c.split('_') as [CondSubject, 'pending' | 'done'];
+  const done = k === 'checkin' ? !!s.checkinDoneAt : k === 'payment' ? s.paid !== false : k === 'agreement' ? s.signed !== false : !!s.idVerified;
+  return want === 'done' ? done : !done;
+}
+const COND_WORD: Record<Cond, string> = {
+  checkin_pending: 'Check-in not done', checkin_done: 'Check-in done', payment_pending: 'Payment pending', payment_done: 'Paid',
+  agreement_pending: 'Agreement not signed', agreement_done: 'Agreement signed', id_pending: 'ID not verified', id_done: 'ID verified',
+};
+/** "Check-in not done · Payment pending" — the automation's chip. */
+export const condWords = (cs: Cond[]) => cs.map(c => COND_WORD[c]).join(' · ');
+
 export interface Template {
   id: string; name: string; body: string; channel: Channel;
   trigger: Trigger; offsetHours: number; active: boolean;
   /** The listings it is for — null = every listing. */
   listingIds: string[] | null;
-  onlyIf: OnlyIf;
+  /** All must hold (see `Cond`); empty = always. */
+  conditions: Cond[];
   /** For event triggers: not earlier than this many hours before check-in (a door code is not sent weeks ahead). Null = as soon as it happens. */
   holdHours: number | null;
 }
@@ -223,16 +272,19 @@ export function fill(body: string, vars: Record<string, string>): { text: string
  */
 export const RECIPES: { key: string; icon: string; what: string; t: Omit<Template, 'id'> }[] = [
   { key: 'code', icon: 'key', what: 'Sends the door code once the guest finishes the online check-in — never earlier than two days before arrival.',
-    t: { name: 'Door code after online check-in', channel: 'hostaway', trigger: 'checkin_done', offsetHours: 0, holdHours: 48, onlyIf: 'always', listingIds: null, active: false,
+    t: { name: 'Door code after online check-in', channel: 'hostaway', trigger: 'checkin_done', offsetHours: 0, holdHours: 48, conditions: [], listingIds: null, active: false,
       body: 'Hi {{first_name}}, your online check-in is complete — thank you! Your door code for {{listing}} is {{door_code}}. It works from {{checkin_time}} on {{checkin}}.' } },
   { key: 'remind', icon: 'bell', what: 'Two days before arrival, only to guests who have not done the online check-in yet.',
-    t: { name: 'Online check-in reminder', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 48, holdHours: null, onlyIf: 'checkin_pending', listingIds: null, active: false,
+    t: { name: 'Online check-in reminder', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 48, holdHours: null, conditions: ['checkin_pending'], listingIds: null, active: false,
       body: 'Hi {{first_name}}, your stay at {{listing}} starts {{checkin}}. Please complete your online check-in to receive your door code: {{portal_link}}' } },
+  { key: 'pay', icon: 'card', what: 'Three days before arrival, only to guests whose payment is still pending — it stops by itself once they pay.',
+    t: { name: 'Payment reminder', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 72, holdHours: null, conditions: ['payment_pending'], listingIds: null, active: false,
+      body: 'Hi {{first_name}}, your stay at {{listing}} starts {{checkin}}. Your payment is still pending — you can complete it here: {{portal_link}}' } },
   { key: 'out', icon: 'clock', what: 'The evening before departure: the check-out time.',
-    t: { name: 'Check-out reminder', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 16, holdHours: null, onlyIf: 'always', listingIds: null, active: false,
+    t: { name: 'Check-out reminder', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 16, holdHours: null, conditions: [], listingIds: null, active: false,
       body: 'Hi {{first_name}}, we hope you are enjoying {{listing}}. A quick reminder that check-out is tomorrow, {{checkout}}, by {{checkout_time}}. Safe travels!' } },
   { key: 'review', icon: 'sparkles', what: 'A day after check-out: a thank-you and the ask for a review.',
-    t: { name: 'Thank you & review', channel: 'hostaway', trigger: 'after_checkout', offsetHours: 24, holdHours: null, onlyIf: 'always', listingIds: null, active: false,
+    t: { name: 'Thank you & review', channel: 'hostaway', trigger: 'after_checkout', offsetHours: 24, holdHours: null, conditions: [], listingIds: null, active: false,
       body: 'Hi {{first_name}}, thank you for staying at {{listing}}. If you enjoyed your stay, a review would mean a lot to our small team. We hope to host you again!' } },
 ];
 
@@ -293,19 +345,21 @@ export const GRACE_HOURS = 6;
  */
 export function planFor(s: Stay, templates: Template[], log: { templateId: string | null; status: MsgStatus }[], now: Date, tz: string): Planned[] {
   if (!isConfirmed(s.status)) return [];
-  const out: Planned[] = [], checkedIn = !!s.checkinDoneAt;
+  const out: Planned[] = [];
   for (const t of templates) {
     if (!t.active || t.trigger === 'manual' || !appliesTo(t, s.listingId)) continue;
     const done = log.find(l => l.templateId === t.id);
+    // A stopper ("not done yet") that no longer holds settles it at once; a "done" one waits for the message's moment.
+    const stopped = t.conditions.some(c => c.endsWith('_pending') && !condMet(c, s));
+    const unmet = t.conditions.some(c => !condMet(c, s));
     const at = dueAt(t, s, tz);
     if (!at) {
       // Only "after online check-in" can be without a moment for a dated stay: it waits for the guest.
-      if (t.trigger === 'checkin_done' && s.arrival) out.push({ templateId: t.id, name: t.name, channel: t.channel, at: null, state: done ? done.status : 'waiting' });
+      if (t.trigger === 'checkin_done' && s.arrival) out.push({ templateId: t.id, name: t.name, channel: t.channel, at: null, state: done ? done.status : stopped ? 'skipped' : 'waiting' });
       continue;
     }
     const late = now.getTime() - at.getTime();
-    // "Only if not done" is settled the moment the check-in is done; "only if done" is judged when its moment comes.
-    const unneeded = t.onlyIf === 'checkin_pending' ? checkedIn : t.onlyIf === 'checkin_done' ? !checkedIn && late >= 0 : false;
+    const unneeded = stopped || (unmet && late >= 0);
     out.push({ templateId: t.id, name: t.name, channel: t.channel, at: at.toISOString(),
       state: done ? done.status : unneeded ? 'skipped' : late < 0 ? 'planned' : late <= GRACE_HOURS * 3_600_000 ? 'due' : 'missed' });
   }

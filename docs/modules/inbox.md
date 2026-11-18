@@ -132,3 +132,9 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
   (two steps), Undo on a cancelled automation. POST `hold` / `resume` in `functions/api/inbox.ts`: a manual message →
   `cancelled`; an automation → its once-per-stay row written as `cancelled` with `created_by` (kept out of the thread), so the
   clock never makes it; `resume` deletes that row. The automation stays on for every other stay.
+- 2026-11-17 (owner): **conditions on automations** (not flows — owner dropped flows to keep it simple). `Template.conditions:
+  Cond[]` (online check-in / payment / agreement / ID × not done | done; all must hold), stored as a comma list in
+  `message_templates.only_if` (old values still read; no migration). "Not done" = stopper (skipped the moment it is done);
+  "done" judged at the moment. Facts on the clock's `Stay`: `paid` (`paidOf` Hostaway paymentStatus; Unknown = null = done),
+  `signed` (`signedOf`; none = done), `idVerified`. Checked 2026-11-17 on 46 stays: paymentStatus Paid/Unknown, agreement
+  signed/not_signed, **ID verified false on all** → ID conditions useless until the portal reports it. New recipe: Payment reminder.

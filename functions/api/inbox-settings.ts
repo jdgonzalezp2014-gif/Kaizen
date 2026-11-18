@@ -12,7 +12,7 @@ import { readWatch } from '../_lib/guest-events.ts';
 import { hookSecret } from '../_lib/guest-link.ts';
 import { guestLive, loadTemplates } from '../_lib/guest-outbox.ts';
 import { watchFrom } from '../../src/lib/guest-watch.ts';
-import { MAX_BODY, MAX_OFFSET_HOURS, ONLY_IF, TRIGGERS, guestAiFrom, isEvent, isModel, isPortalUrl, type Trigger } from '../../src/lib/inbox.ts';
+import { MAX_BODY, MAX_OFFSET_HOURS, TRIGGERS, condsOf, guestAiFrom, isEvent, isModel, isPortalUrl, type Trigger } from '../../src/lib/inbox.ts';
 
 const bad = (message: string, status = 400) => Response.json({ ok: false, message }, { status });
 const needs116 = (e: unknown) => /guest_watch/i.test(String(e)) ? bad('The database needs migration 117 first (npm run migrate).', 409)
@@ -59,7 +59,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const active = b.active !== false;
       // Migration 117: which listings, a condition, and — for what goes when something happens — the earliest it may go.
       const listings = Array.isArray(b.listingIds) ? [...new Set(b.listingIds.map(String).filter(x => /^\d{1,20}$/.test(x)))].slice(0, 500) : [];
-      const onlyIf = ONLY_IF.some(o => o[0] === b.onlyIf) ? String(b.onlyIf) : 'always';
+      // Conditions (2026-11-17): a comma list in only_if; an older page still sends one `onlyIf`.
+      const onlyIf = condsOf(b.conditions ?? b.onlyIf).join(',') || 'always';
       const hold = b.holdHours == null || b.holdHours === '' || !isEvent(trigger) ? null : Math.round(Number(b.holdHours));
       if (hold != null && (!Number.isFinite(hold) || hold < 0 || hold > MAX_OFFSET_HOURS)) return bad('"Not before" is between 0 and 30 days ahead of check-in.');
       const extra = listings.length > 0 || onlyIf !== 'always' || hold != null || trigger === 'checkin_done';

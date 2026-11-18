@@ -9,12 +9,12 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getAutomations, saveInboxSettings, type Automations as Data } from '../api.ts';
-import { HOUSE_VARS, MAX_BODY, ONLY_IF, RECIPES, TRIGGERS, VARS, isEvent, scopeWords, whenWords, type Channel, type OnlyIf, type Template, type Trigger } from '../lib/inbox.ts';
+import { COND_SUBJECTS, HOUSE_VARS, MAX_BODY, RECIPES, TRIGGERS, VARS, condWords, isEvent, scopeWords, whenWords, type Channel, type Cond, type Template, type Trigger } from '../lib/inbox.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { Modal } from '../components/Modal.tsx';
 
-const BLANK: Template = { id: '', name: '', body: '', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 24, active: true, listingIds: null, onlyIf: 'always', holdHours: null };
+const BLANK: Template = { id: '', name: '', body: '', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 24, active: true, listingIds: null, conditions: [], holdHours: null };
 const QUICK: Template = { ...BLANK, trigger: 'manual', offsetHours: 0 };
 const day = (iso: string) => new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric' }).format(new Date(iso));
 
@@ -86,7 +86,7 @@ export function Automations({ onBack }: { onBack: () => void }) {
               <p className="ix-auto-when"><Icon n="clock" /> {whenWords(t)}</p>
               <div className="ix-auto-chips">
                 <span title={t.listingIds?.length ? t.listingIds.map(unitName).join(', ') : 'Every listing, including new ones'}><Icon n="home" /> {scopeWords(t)}</span>
-                {t.onlyIf !== 'always' && <span><Icon n="filter" /> {t.onlyIf === 'checkin_pending' ? 'Check-in not done' : 'Check-in done'}</span>}
+                {t.conditions.length > 0 && <span><Icon n="filter" /> {condWords(t.conditions)}</span>}
                 <span><Icon n={t.channel === 'sms' ? 'phone' : 'message'} /> {t.channel === 'sms' ? 'SMS (Quo)' : 'Chat'}</span>
               </div>
               <p className="ix-auto-body">{t.body}</p>
@@ -176,9 +176,25 @@ function Editor({ t, units, live, busy, onClose, onSave, onDelete }: {
           <div className="ix-form-row">
             <label>For<select value={some ? 'some' : 'all'} onChange={x => { const s = x.target.value === 'some'; setSome(s); if (!s) setE({ ...e, listingIds: null }); }}>
               <option value="all">All listings</option><option value="some">Only these listings</option></select></label>
-            <label>Condition<select value={e.onlyIf} onChange={x => setE({ ...e, onlyIf: x.target.value as OnlyIf })}>
-              {ONLY_IF.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
           </div>
+          <fieldset className="ix-conds">
+            <legend>Only if <Hint label="How conditions work">Each one you set must hold for the message to go. <b>Not done / Pending / Not signed /
+              Not verified</b> work as a stopper: the moment the guest does it, the message is not needed any more — a reminder stops by itself, even
+              if its moment has not come. <b>Done / Paid / Signed / Verified</b> are checked when the message's moment comes; if it does not hold then,
+              the message is skipped for that stay. Payment, agreement and ID are what Hostaway reports; a payment Hostaway does not know (Expedia
+              collects) and a booking without an agreement count as done — nobody is chased for them. The online check-in is Kaizen's own (the guest
+              portal, or "Mark done" in the conversation). Hostaway's ID check was off on every stay seen on 2026-11-17 — until the
+              portal's own verification reports it, "ID verified" never holds.</Hint></legend>
+            {COND_SUBJECTS.map(([k, label, no, yes]) => {
+              const cur = e.conditions.find(c => c.startsWith(`${k}_`)) ?? '';
+              return <label key={k}>{label}<select value={cur} onChange={x => {
+                const rest = e.conditions.filter(c => !c.startsWith(`${k}_`));
+                const v = x.target.value as Cond | '';
+                setE({ ...e, conditions: COND_SUBJECTS.flatMap(([s2]) => (v && v.startsWith(`${s2}_`) ? [v] : rest.filter(c => c.startsWith(`${s2}_`)))) });
+              }}>
+                <option value="">Any</option><option value={`${k}_pending`}>{no}</option><option value={`${k}_done`}>{yes}</option></select></label>;
+            })}
+          </fieldset>
           {some && <div className="ix-units">
             <label className="ix-search"><Icon n="search" /><input type="search" value={q} placeholder="Listing" aria-label="Search a listing" onChange={x => setQ(x.target.value)} /></label>
             <ul>{shown.map(u => <li key={u.id}><label className="ix-check"><input type="checkbox" checked={picked.has(u.id)} onChange={() => toggle(u.id)} /> {u.name}</label></li>)}</ul>
