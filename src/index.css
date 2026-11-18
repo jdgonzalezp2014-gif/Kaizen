@@ -3784,6 +3784,11 @@ a.gx-tile { text-decoration: none; }
 .ix-conds { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px 10px; margin: 0; }
 .ix-conds legend { padding: 0 4px; font-weight: 600; }
 .ix-conds label { display: grid; gap: 4px; }
+.ix-pass-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ix-open-in { display: inline-flex; gap: 4px; }
+.ix-open-in a { display: inline-flex; align-items: center; gap: 2px; padding: 2px 6px; border: 1px solid var(--line); border-radius: 6px; font-size: 11px; font-weight: 600; color: var(--muted); text-decoration: none; }
+.ix-open-in a:hover { color: inherit; border-color: var(--line-strong); }
+.ix-open-in svg { width: 12px; height: 12px; }
 .ix-hold-all { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
 .ix-ghost.danger { color: var(--red); border-color: currentColor; }
 .ix-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }

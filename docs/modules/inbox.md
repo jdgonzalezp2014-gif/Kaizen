@@ -138,3 +138,4 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
   "done" judged at the moment. Facts on the clock's `Stay`: `paid` (`paidOf` Hostaway paymentStatus; Unknown = null = done),
   `signed` (`signedOf`; none = done), `idVerified`. Checked 2026-11-17 on 46 stays: paymentStatus Paid/Unknown, agreement
   signed/not_signed, **ID verified false on all** → ID conditions useless until the portal reports it. New recipe: Payment reminder.
+- 2026-11-17 (owner): small links beside the stage in the conversation header — **H** opens the reservation in Hostaway, **A** in Airbnb (host page by its HM confirmation code, `bookingLinks`); other channels: Hostaway only.

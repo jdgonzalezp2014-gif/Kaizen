@@ -37,6 +37,18 @@ export interface Stay {
   idVerified?: boolean;
 }
 
+/**
+ * Where to change the booking (owner, 2026-11-17): Hostaway's own page always; the channel's when Kaizen knows its address
+ * (Airbnb's host page by confirmation code). Others (Booking.com, Vrbo) have no stable link by code — Hostaway only.
+ */
+export function bookingLinks(r: Pick<InboxRow, 'reservationId' | 'channel' | 'channelCode'>): { hostaway: string | null; channel: { label: string; url: string } | null } {
+  const hostaway = /^\d+$/.test(r.reservationId) ? `https://dashboard.hostaway.com/reservations/${r.reservationId}` : null;
+  const code = r.channelCode ?? '';
+  const channel = /airbnb/i.test(r.channel) && /^HM[A-Z0-9]{6,12}$/.test(code)
+    ? { label: 'Airbnb', url: `https://www.airbnb.com/hosting/reservations/details/${code}` } : null;
+  return { hostaway, channel };
+}
+
 /** Hostaway's paymentStatus as a yes / no — "Unknown" (Expedia collects) is not "unpaid". */
 export const paidOf = (v: unknown): boolean | null => {
   const st = typeof v === 'string' ? v.trim().toLowerCase() : '';
@@ -83,6 +95,8 @@ export interface InboxRow extends Stay {
   payment?: string | null; agreement?: string | null; idVerified?: boolean;
   /** Hostaway has an email address for this guest (the address itself stays on the server). */
   hasEmail?: boolean;
+  /** The booking channel's confirmation code (Airbnb "HM…") — for the link that opens it there. */
+  channelCode?: string | null;
   /** A light model read the guest's last message and it asks for nothing ("thanks!"): not counted as waiting. */
   noReply?: boolean;
 }

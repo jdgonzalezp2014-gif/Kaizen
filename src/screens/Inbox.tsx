@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { getInbox, getInboxSms, getInboxThread, inboxAction, inboxSuggest, saveClaim, todoAction,
   type InboxList, type InboxSms, type InboxThread } from '../api.ts';
-import { FILTERS, MAX_BODY, STAGE_LABEL, channelLabel, fill, matchesFilter, searchHit, stageOf, tabOf, threadTabs, varsFor, waits,
+import { FILTERS, MAX_BODY, STAGE_LABEL, bookingLinks, channelLabel, fill, matchesFilter, searchHit, stageOf, tabOf, threadTabs, varsFor, waits,
   type Channel, type InboxFilter, type InboxRow, type Planned, type Suggestion, type ThreadMsg, type ThreadTab, type Via } from '../lib/inbox.ts';
 import { segments } from '../lib/sms.ts';
 import { Hint } from '../components/Hint.tsx';
@@ -154,6 +154,7 @@ function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo,
   onSettings?: () => void; onChanged: () => void;
 }) {
   const [pane, setPane] = useState<Pane>('all');
+  const links = bookingLinks(row);
   const [thread, setThread] = useState<InboxThread | null>(null);
   const [sms, setSms] = useState<InboxSms | null>(null);
   const [err, setErr] = useState('');
@@ -179,7 +180,12 @@ function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo,
           <button type="button" className="ix-icon-btn ix-back" aria-label="Back to the list" onClick={onBack}><Icon n="undo" /></button>
           <Avatar row={row} size={36} />
           <div className="ix-thread-who"><b>{row.guest}</b><span>{row.listing} · {range(row.arrival, row.departure)}</span></div>
-          <span className={`ix-stage s-${stage}`}>{STAGE_LABEL[stage]}</span>
+          <div className="ix-pass-top"><span className={`ix-stage s-${stage}`}>{STAGE_LABEL[stage]}</span>
+          {/* Where to change the booking (owner, 2026-11-17): small, beside the stage. */}
+          {row.reservationId && <span className="ix-open-in">
+            {links.hostaway && <a href={links.hostaway} target="_blank" rel="noreferrer" title="Open the reservation in Hostaway (to change it)" aria-label="Open in Hostaway"><Icon n="link" /> H</a>}
+            {links.channel && <a href={links.channel.url} target="_blank" rel="noreferrer" title={`Open the reservation in ${links.channel.label}`} aria-label={`Open in ${links.channel.label}`}><Icon n="link" /> {links.channel.label[0]}</a>}
+          </span>}</div>
         </div>
         <div className="ix-tabs" role="tablist">
           {tabs.map(t => <button key={t} type="button" role="tab" aria-selected={pane === t} className={pane === t ? 'on' : ''} onClick={() => setPane(t)}>

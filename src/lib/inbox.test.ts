@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { aiPrompt, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, planFor,
-  portalLink, stageOf, stayWindow, suggestionFromAi, varsFor, whenWords, zonedInstant, type InboxRow, type Stay, type Template, type ThreadMsg, condWords, condsOf, paidOf, signedOf } from './inbox.ts';
+  portalLink, stageOf, stayWindow, suggestionFromAi, varsFor, whenWords, zonedInstant, type InboxRow, type Stay, type Template, type ThreadMsg, bookingLinks, condWords, condsOf, paidOf, signedOf } from './inbox.ts';
 
 const stay: Stay = { reservationId: '71', listingId: '9', listing: 'P2-1406', guest: 'Ana Ruiz', arrival: '2026-11-20', departure: '2026-11-23', status: 'new', bookedAt: '2026-11-10T15:00:00Z' };
 const tpl = (o: Partial<Template>): Template => ({ id: 't1', name: 'Welcome', body: 'Hi {{first_name}}', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 24, active: true, listingIds: null, conditions: [], holdHours: null, ...o });
@@ -168,6 +168,13 @@ test('conditions: payment / agreement / ID, all must hold; unknown payment and n
   assert.deepEqual(condsOf('always'), []);
   assert.equal(signedOf('not_signed'), false); assert.equal(signedOf(null), null); assert.equal(paidOf('Unknown'), null);
   assert.equal(condWords(['checkin_pending', 'payment_done']), 'Check-in not done · Paid');
+});
+
+test('booking links: Hostaway always, Airbnb by its HM code only', () => {
+  assert.deepEqual(bookingLinks({ reservationId: '71', channel: 'airbnbOfficial', channelCode: 'HMYAFSWFWH' }),
+    { hostaway: 'https://dashboard.hostaway.com/reservations/71', channel: { label: 'Airbnb', url: 'https://www.airbnb.com/hosting/reservations/details/HMYAFSWFWH' } });
+  assert.equal(bookingLinks({ reservationId: '71', channel: 'bookingcom', channelCode: '123' }).channel, null);
+  assert.equal(bookingLinks({ reservationId: '', channel: 'airbnb', channelCode: null }).hostaway, null);
 });
 
 test('house blanks are filled on the server; without a value the message is refused', () => {

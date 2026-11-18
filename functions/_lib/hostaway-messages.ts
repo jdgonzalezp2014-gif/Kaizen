@@ -55,6 +55,7 @@ function rowOf(c: Raw): ConversationRow {
     paid: paidOf(r.paymentStatus), signed: signedOf(r.reservationAgreement),
     // Only that there is one: the address stays in Hostaway, which is who sends the email.
     hasEmail: !!(str(c.recipientEmail) ?? str(r.guestEmail)),
+    channelCode: str(r.confirmationCode) ?? /-confirmation-([A-Z0-9]+)$/.exec(str(r.channelReservationId) ?? '')?.[1] ?? null,
   };
 }
 
