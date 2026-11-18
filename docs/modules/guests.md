@@ -354,3 +354,14 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - Real stay data from Hostaway (photo, times, balance), the release-time rule, the Access bypass for `/guest`.
 - Team side: requests into To-do / Approvals and a Slack line; the SOP is written with it (the page is
   guest-facing, not a team screen — no `FEATURES` entry).
+
+### Extras paid on the spot + the books (2026-11-17, §176)
+
+- Owner: nothing waits for an OK — the payment is the confirmation. `requestMode`/`centralInstant`/`upsellRequest` deleted;
+  `paidExtra` / `PaidExtra` is what the page keeps ("Your extras · ✓ Paid"). Early / late on a same-day turnover:
+  `availability` → `{ ok: false, why: 'turnover' }` ("Not available — another guest that day"), also off the check-in bill.
+- Every extra's Pick pays through `StripePay` (the embedded checkout); `BillLine.item` names what was sold, and `StripePay`
+  sends the stay (id, unit name, guest) → session metadata → `guest_payments` (119, finance module).
+- **Open (Phase 2, the real link):** a paid extra must create the team's to-do (early check-in → the cleaner and Hostaway
+  times, mid-stay clean → a clean, crib / basket → prep) and attach the payment to the reservation and its listing — the demo
+  knows only the unit's name, so test payments land as "portfolio-wide".

@@ -9,8 +9,8 @@ import { loadStripe, type EmbeddedCheckout } from '../components/stripe-js.ts';
 import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, quote, requestMode, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
-import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, flowExtras, nextStep, onRequest, progress, rulesList, steps, SAMPLE_RULES,
+import { UPSELLS, quote, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
+import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type BillLine, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
 const STEP_ICON: Record<StepKey, string> = { details: 'user', identity: 'idcard', protection: 'shield', rules: 'book', extras: 'sparkles', pay: 'card' };
@@ -264,29 +264,22 @@ function Extras({ stay, flow, save }: S) {
   const toggle = (k: UpsellKind) => setEx(e => { const n = { ...e }; if (n[k]) delete n[k]; else { const u = UPSELLS.find(x => x.kind === k)!; n[k] = u.pick.type === 'time' ? { time: u.pick.options[1] ?? u.pick.options[0] } : {}; } return n; });
   const any = Object.keys(ex).length > 0;
   return <>
-    <div className="ci-extras">{list.map(({ u, turnover }) => {
+    <div className="ci-extras">{list.map(({ u }) => {
       const on = !!ex[u.kind];
       const price = (stay.prices?.[u.kind] ?? u.price) as number;
       return <section key={u.kind} className={`card ci-extra${on ? ' on' : ''}`}>
         <span className="g-up-icon" aria-hidden><Icon n={u.icon} /></span>
         <span className="ci-extra-main"><b>{u.title}</b>
           <span className="note">{usd(price)}{u.per === 'hour' ? ' / hour' : u.per === 'night' ? ' / night' : ''}{on && (u.per === 'hour' || u.per === 'night') && quote(stay, u, ex[u.kind]!) != null ? ` · ${usd(quote(stay, u, ex[u.kind]!)!)}` : ''}</span>
-          {u.per === 'hour' && modeLine(stay, u.kind, turnover) && <span className={`ci-mode${onRequest(stay, u.kind, new Date()) ? '' : ' ok'}`}>{modeLine(stay, u.kind, turnover)}</span>}
           {on && u.pick.type === 'time' && <span className="ci-times">{u.pick.options.map(t =>
             <button key={t} className={ex[u.kind]?.time === t ? 'chip active' : 'chip'} onClick={() => setEx(e => ({ ...e, [u.kind]: { time: t } }))}>{t}</button>)}</span>}
         </span>
         <button className={on ? 'chip active ci-add' : 'chip ci-add'} aria-pressed={on} onClick={() => toggle(u.kind)}>{on ? <><Icon n="check" /> Added</> : 'Add'}</button>
       </section>;
     })}</div>
-    <p className="ci-fine">Anything that needs our OK is charged only once we confirm it.</p>
+    <p className="ci-fine">What you add is paid with your check-in payment and confirmed right away.</p>
     <button className="g-cta" onClick={() => save({ ...flow, extras: ex, extrasSeen: true })}>{any ? 'Continue' : 'No thanks, continue'}</button>
   </>;
-}
-
-/** Early / late: confirmed right away when asked by 8 PM (Texas) the day before and nobody else is leaving/arriving. */
-function modeLine(stay: GuestStay, k: UpsellKind, turnover: boolean) {
-  const m = requestMode(stay, { kind: k }, new Date());
-  return m.mode === 'auto' ? '✓ Confirmed right away' : turnover || m.why === 'turnover' ? '' : 'Needs our OK';
 }
 
 /**
@@ -305,12 +298,12 @@ function Pay({ stay, flow, p, save, set }: S) {
     <section className="card ci-card ci-bill">
       {b.lines.map((l, i) => <div key={i} className="ci-line">
         <span><b>{l.label}</b>{l.note && <span className="note">{l.note}</span>}</span>
-        <span className="ci-amt">{money2(l.amount)}{l.kind !== 'charge' && <span className="ci-kind">{l.kind === 'hold' ? 'Hold' : 'If confirmed'}</span>}</span>
+        <span className="ci-amt">{money2(l.amount)}{l.kind !== 'charge' && <span className="ci-kind">Hold</span>}</span>
       </div>)}
       <div className="ci-line ci-sum"><span>Today</span><b>{money2(b.today)}</b></div>
       {b.hold > 0 && <div className="ci-line ci-sum ci-sub"><span>Held, released after check-out</span><span>{money2(b.hold)}</span></div>}
     </section>
-    <StripePay lines={b.lines} email={stay.guest?.email ?? null} label={label}
+    <StripePay lines={b.lines} email={stay.guest?.email ?? null} label={label} stay={stay}
       beforeRedirect={() => { try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); } catch { /* private mode: the page just starts over */ } }}
       onPaid={total => set({ ...flow, paid: true, paidTotal: total })} />
   </>;
@@ -321,8 +314,8 @@ function Pay({ stay, flow, p, save, set }: S) {
  * `onPaid` once the server confirms the session. Without a publishable key the server answers Stripe's hosted page
  * and the guest is sent there (`beforeRedirect` keeps what must survive the trip). Used by check-in and by extensions.
  */
-export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 'checkin' }: { lines: BillLine[]; email: string | null; label: string;
-  onPaid: (total: number | null) => void; beforeRedirect?: () => void; back?: string }) {
+export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 'checkin', stay }: { lines: BillLine[]; email: string | null; label: string;
+  onPaid: (total: number | null) => void; beforeRedirect?: () => void; back?: string; stay?: Pick<GuestStay, 'id' | 'unitName' | 'guest'> }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [embed, setEmbed] = useState<{ id: string; clientSecret: string; pk: string } | null>(null);
@@ -345,7 +338,9 @@ export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 
     u.searchParams.set('sec', back);
     try {
       const r = await fetch('/api/report-link?checkout=1', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lines, email, back: u.pathname + u.search, embedded: true }) });
+        // Which stay, for the books (guest_payments): the reservation and the house the guest paid from.
+        body: JSON.stringify({ lines, email, back: u.pathname + u.search, embedded: true,
+          stay: stay && { id: stay.id, unitName: stay.unitName, guest: stay.guest?.name ?? null } }) });
       const j = await r.json() as { url?: string; id?: string; clientSecret?: string; publishableKey?: string; message?: string };
       if (j.clientSecret && j.publishableKey && j.id) { setEmbed({ id: j.id, clientSecret: j.clientSecret, pk: j.publishableKey }); return; }
       if (j.url && beforeRedirect) { location.href = j.url; return; }

@@ -57,10 +57,18 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
 - Approvals Home door: pending `cleaning_extras` + `field_expenses` surface as a Pulse on Home
   (count + $ at stake, gated on `operations.edit`) that opens Operations → Cleaners — nothing
   else on Home shows them, and a field purchase stays unpaid until approved.
+- **Revenue is net of the channel's taxes; the channel's cut is a cost (§176).** `channelCut` (finance.ts) per Hostaway
+  stay → `taxes` (out of revenue) and `channelFee` → `channelFeeCosts` → "Channel fees", spread over the stay's nights,
+  added to the cost rows in `/api/portfolio` (live, never stored). Airbnb: total − occupancy tax − expected payout.
+- **Guest portal sales (§176):** `guest_payments` (119) → `portalIncome` (other income, kind `portal`, live only) and
+  `portalFeeCosts` ("Payment fees"); Revenue → **Portal sales** (`PortalSales.tsx`, `/api/guest-payments`, permission
+  `revenue`) lists every payment, test ones marked. Pure lib `src/lib/guest-payments.ts`; server `functions/_lib/guest-payments.ts`.
 - Money formatting pinned to `en-US` (§20). Dates: an optional filter is `null`, never `''` (§54).
 
 ## Open items
 
+- Stripe payout reconciliation (bank ↔ payouts) — not built (owner, 2026-11-17: later).
+- Expedia's commission is not in Hostaway: Expedia stays carry no channel fee.
 
 - Guest fees standard (2026-11-11, SOP #42 draft): every listing has the custom fee "Damage Waiver" (type
   `insuranceFee`, $12/night, mandatory; a general row with `appearsIn` + a Vrbo row `channelId 2002`) and active units

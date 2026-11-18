@@ -23,6 +23,42 @@ export interface Reservation {
   cleaningFee: number;
   bookedOn?: DateStr | '';
   channel?: string;
+  /** Taxes inside `totalPaid` that the channel collects and remits (Airbnb's occupancy tax, Vrbo's taxAmount) — never Kaizen's money. */
+  taxes?: number;
+  /** What the channel keeps (Airbnb's host fee and withholdings, a commission) — a cost of the stay (owner, 2026-11-17). */
+  channelFee?: number;
+}
+
+/**
+ * The channel's cut of one Hostaway reservation (checked on 250 stays, Jul–Oct 2026). Airbnb reports what it will pay
+ * out (`airbnbExpectedPayoutAmount`): everything between the guest's total and that payout, less the tax it remits,
+ * is Airbnb's — the host fee, and on ~1 stay in 8 a further withholding the fee alone does not explain. Vrbo, Booking.com
+ * and partners report `channelCommissionAmount` and `taxAmount`. Expedia and direct report none (Expedia's cut is not
+ * in Hostaway; direct pays only the card processor).
+ */
+export function channelCut(r: Record<string, unknown>): { taxes: number; channelFee: number } {
+  const n = (k: string) => { const v = Number(r[k]); return Number.isFinite(v) && v > 0 ? v : 0; };
+  const total = n('totalPrice');
+  const round = (x: number) => Math.round(x * 100) / 100;
+  if (n('airbnbExpectedPayoutAmount') > 0 || n('airbnbListingHostFee') > 0) {
+    const taxes = n('airbnbTransientOccupancyTaxPaidAmount');
+    const payout = n('airbnbExpectedPayoutAmount');
+    const fee = payout > 0 ? Math.max(0, total - taxes - payout) : n('airbnbListingHostFee');
+    return { taxes: round(taxes), channelFee: round(Math.min(fee, Math.max(0, total - taxes))) };
+  }
+  return { taxes: round(n('taxAmount')), channelFee: round(n('channelCommissionAmount')) };
+}
+
+export const CHANNEL_FEES = 'Channel fees';
+
+/**
+ * Each stay's channel fee as a one-off cost spread over its nights — the same days its revenue is spread over, so a
+ * stay crossing the window's edge splits both alike and every cost view (by unit, by category, ROI) carries it.
+ */
+export function channelFeeCosts(rs: (Reservation & { status?: string })[]): CostRow[] {
+  return rs.filter(r => (r.channelFee ?? 0) > 0 && r.totalPaid > 0 && r.arrival && r.departure && reservationCounts(r.status))
+    .map(r => ({ listingId: r.listingId, shared: false, start: r.arrival, end: addDays(r.departure, -1), category: CHANNEL_FEES,
+                 frequency: 'One-time', amount: r.channelFee!, source: 'variable' as const }));
 }
 
 /** A cost row from 💸 Costs or 🏠 Fixed Monthly Costs. */
@@ -89,7 +125,8 @@ export function reservationContribution(r: Reservation, p: Period) {
   const nights = Math.max(1, daysBetween(r.arrival, r.departure));
   const paid = r.totalPaid > 0;
   const cleaning = paid ? (r.cleaningFee || 0) : 0;
-  const nightlyNet = paid ? (r.totalPaid - cleaning) / nights : 0;
+  // Taxes the channel remits pass through: in the guest's total, never in Kaizen's revenue (owner, 2026-11-17).
+  const nightlyNet = paid ? Math.max(0, r.totalPaid - cleaning - (r.taxes || 0)) / nights : 0;
 
   const lastNight = addDays(r.departure, -1);
   const occupied = overlapDays(r.arrival, lastNight, p.from, p.to);
@@ -154,7 +191,7 @@ export function prorateCosts(rows: CostRow[], listingIds: string[], p: Period): 
  * reimbursement: the repair it pays for is already a cost) or an upsell (a pet fee, a late check-in collected
  * through the Resolution Center). §167: dated the day it was entered as received (`received_on`); Kaizen's part only.
  */
-export interface IncomeRow { unitId: string | null; on: string; amount: number; kind: 'claim' | 'upsell' }
+export interface IncomeRow { unitId: string | null; on: string; amount: number; kind: 'claim' | 'upsell' | 'portal' }
 export const incomeIn = (rows: IncomeRow[], p: Period, unitId?: string | null) =>
   rows.filter(r => r.on >= p.from && r.on <= p.to && (unitId === undefined || r.unitId === unitId)).reduce((a, r) => a + r.amount, 0);
 

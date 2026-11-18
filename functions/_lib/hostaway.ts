@@ -44,7 +44,7 @@ export class HostawayAuthError extends Error {}
 import type { DateStr } from '../../src/lib/dates.ts';
 import { addDays, daysBetween } from '../../src/lib/dates.ts';
 // One list of statuses that never occupied a night, shared with finance and urgency.
-import { reservationCounts } from '../../src/lib/finance.ts';
+import { channelCut, reservationCounts } from '../../src/lib/finance.ts';
 export { reservationCounts };
 
 const BASE = 'https://api.hostaway.com/v1';
@@ -153,6 +153,9 @@ export interface HostawayReservation {
   nights: number;
   totalPaid: number;
   cleaningFee: number;
+  /** Inside totalPaid: taxes the channel remits, and what the channel keeps (finance.ts channelCut). */
+  taxes: number;
+  channelFee: number;
   /** For the operations board. Never the portal URL — that is a login token. */
   guestName?: string;
   /**
@@ -528,6 +531,7 @@ async function pagedReservationsWith(token: string, query: string,
         nights: arrival && departure ? Math.max(1, daysBetween(arrival, departure)) : 0,
         totalPaid: total,
         cleaningFee: paid ? firstNumber(r, ['cleaningFee', 'cleaningFeeAmount']) : 0,
+        ...(paid ? channelCut(r) : { taxes: 0, channelFee: 0 }),
         guestName: String(r.guestName ??
           [r.guestFirstName, r.guestLastName].filter(Boolean).join(' ')).trim(),
         docName: `${r.guestFirstName ?? ''} ${r.guestLastName ?? ''}`.trim() || String(r.guestName ?? '').trim() || 'Guest',

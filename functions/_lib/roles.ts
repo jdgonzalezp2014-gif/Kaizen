@@ -29,7 +29,7 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/forward', methods: ['GET'] }, { path: '/api/market', methods: ['GET'] },
     { path: '/api/pricing', methods: ['POST'] }, { path: '/api/suggest', methods: ['POST'] }] },
   { key: 'revenue', label: 'Revenue — what the portfolio earns', tab: 'revenue', routes: [
-    { path: '/api/portfolio', methods: ['GET'] }] },
+    { path: '/api/portfolio', methods: ['GET'] }, { path: '/api/guest-payments', methods: ['GET'] }] },
   // No route of its own: it decides what /api/operations includes.
   { key: 'money', label: 'See booking values on the operations board', routes: [] },
   { key: 'operations', label: 'Operations — see the board, the cleanings calendar, inspections and notes', tab: 'operations', routes: [

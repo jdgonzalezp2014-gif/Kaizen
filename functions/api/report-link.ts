@@ -37,7 +37,7 @@ import { inspectGet, inspectPost } from '../_lib/inspect-link.ts';
 import { workAct, workOfToken, workPage, workPhoto } from '../_lib/vendor-work.ts';
 import { stripeOnboard } from '../_lib/payouts.ts';
 import { demoHouse } from '../_lib/guest-demo.ts';
-import { guestCheckout, guestCheckoutState, guestIdentity, guestIdentityState } from '../_lib/guest-pay.ts';
+import { guestCheckout, guestCheckoutState, guestIdentity, guestIdentityState, stripeWebhook } from '../_lib/guest-pay.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
 
@@ -93,6 +93,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const sql = db(env) as unknown as SqlFn;
+  // Stripe's webhook for guest portal payments (signed; guest-pay.ts) — the same public door, no new bypass.
+  if (new URL(request.url).searchParams.has('stripe-event')) return stripeWebhook(sql, env.ENCRYPTION_KEY, request);
   if (request.headers.has('X-Inspect-Token')) return inspectPost(sql, env.ENCRYPTION_KEY, request);
   if (new URL(request.url).searchParams.has('checkout')) return guestCheckout(sql, env.ENCRYPTION_KEY, request);
   if (new URL(request.url).searchParams.has('identity')) return guestIdentity(sql, env.ENCRYPTION_KEY, request);

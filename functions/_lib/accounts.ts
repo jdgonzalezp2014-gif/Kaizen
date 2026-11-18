@@ -22,6 +22,8 @@ export interface Account {
   hasStripeKey: boolean;
   /** Not a secret — the guest portal hands it to Stripe.js. Null until migration 115 and a key. */
   stripePublishableKey: string | null;
+  /** Stripe's webhook signing secret saved (migration 119) — guest payments reach the books even when the page never confirms. */
+  hasStripeWebhook: boolean;
   hasJinaKey: boolean;
   hasIngestToken: boolean;
   hasQuoKey: boolean;
@@ -112,6 +114,7 @@ export async function getAccount(sql: SqlFn, accountId = 1): Promise<Account | n
     hasClaudeKey: Boolean(r.claude_api_key_enc),
     hasStripeKey: Boolean(r.stripe_secret_key_enc),
     stripePublishableKey: await stripePublishableKey(sql, accountId),
+    hasStripeWebhook: await hasStripeWebhook(sql, accountId),
     hasJinaKey: Boolean(r.jina_api_key_enc),
     hasIngestToken: Boolean(r.ingest_token_enc),
     hasQuoKey: Boolean(r.quo_api_key_enc),
@@ -252,6 +255,14 @@ export async function saveCredentials(
            hostaway_token_enc = NULL, hostaway_token_expires_at = NULL
      WHERE id = ${accountId}
   `;
+}
+
+/** Read apart, like the publishable key, so a database without migration 119 still loads the account. */
+export async function hasStripeWebhook(sql: SqlFn, accountId = 1): Promise<boolean> {
+  try {
+    const [r] = await sql`SELECT stripe_webhook_secret_enc IS NOT NULL AS has FROM accounts WHERE id = ${accountId}` as { has: boolean }[];
+    return r?.has === true;
+  } catch { return false; }
 }
 
 /** The publishable key, read apart so a database without migration 115 still loads the account. */

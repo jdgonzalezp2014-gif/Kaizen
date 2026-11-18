@@ -4637,3 +4637,25 @@ checked every 15 minutes in the day against `crew_notified` (114) — the page's
 from what this cleaner was last told, not from the daily snapshot. Nights wait for 7 AM. Reassigned reads "cancelled" to the
 one who lost it (§134 rule).
 
+
+## §176 — The books get the channel's cut and the guest portal's Stripe sales (2026-11-17)
+
+Owner: "integrate the Stripe payments into accounting… shield it: bring Airbnb's costs from Hostaway". Measured on 250
+confirmed stays Jul–Oct 2026: Airbnb's `totalPrice` ($250k) carried $9.6k of occupancy tax Airbnb remits and $38k Airbnb
+kept (`airbnbListingHostFee`, and on 24 stays a further withholding — `airbnbExpectedPayoutAmount` is what reaches the bank);
+Vrbo/Booking.com/partners report `channelCommissionAmount` ($4.7k) and `taxAmount` ($1k). Revenue counted all of it.
+
+- **Taxes leave revenue** (`reservationContribution` subtracts `taxes`): never Kaizen's money, and they inflated ADR.
+- **The channel's cut is a cost** — `channelCut` (finance.ts) per stay, turned by `channelFeeCosts` into a one-off cost
+  "Channel fees" spread over the stay's nights (the days its revenue is spread over), added in `/api/portfolio`. Read live
+  with the stay, never stored: it follows a modified or cancelled booking with no sync. Expedia's cut is not in Hostaway.
+- Effect: October −$15.0k profit ($3.5k taxes, $11.5k fees); Jul–Oct −$50.2k.
+- **Guest portal → books:** `guest_payments` (119), one row per Checkout Session, written by `recordSession` when the page
+  confirms the session and by Stripe's webhook (`/api/report-link?stripe-event`, signed with `stripe_webhook_secret_enc`):
+  checkout completed · charge captured (a deposit hold: what is kept beyond the charges is "Security deposit kept") ·
+  charge refunded. Lines travel in the session's metadata (`item:amount`, held `~`). Income = kept lines of **live**
+  payments (`portalIncome`, kind `portal`, dated the day paid); Stripe's fee = "Payment fees" cost. Test mode is listed in
+  Revenue → Portal sales and never counted.
+- **Extras are paid on the spot** (owner: "it makes no sense to leave it blocked waiting — process it only when they pay"):
+  the 8 PM cut-off and "Needs our OK" are gone (`requestMode` deleted); early check-in / late check-out on a same-day
+  turnover is not offered at all; every extra in the Extras section pays through the same embedded Stripe Checkout.

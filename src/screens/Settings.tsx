@@ -811,6 +811,33 @@ function StripeInPage({ account, onSaved }: { account: Account; onSaved: () => v
       <button className="secondary" disabled={busy || !other.trim()} onClick={() => void add(other.trim())}>Register</button>
     </div>
     {msg && <p className="note">{msg}</p>}
+    <StripeWebhook account={account} onSaved={onSaved} />
+  </>;
+}
+
+/**
+ * Guest payments into the books (2026-11-17): the page records a payment when the guest finishes; Stripe's webhook also
+ * records the ones the page never saw (a closed tab) and every refund or captured deposit. The secret only checks that a
+ * call really comes from Stripe — the payment itself is always re-read from Stripe.
+ */
+function StripeWebhook({ account, onSaved }: { account: Account; onSaved: () => void }) {
+  const [w, setW] = useState('');
+  const [msg, setMsg] = useState('');
+  const [busy, setBusy] = useState(false);
+  const url = `${location.origin}/api/report-link?stripe-event`;
+  const save = async (body: Record<string, unknown>) => { setBusy(true); setMsg(''); const r = await saveSettings(body); setBusy(false); setMsg(r.ok ? 'Saved.' : (r.error ?? 'Failed.')); if (r.ok) { setW(''); onSaved(); } };
+  return <>
+    <h3 className="int-sub">Payments into the books <Hint>In Stripe → Developers → Webhooks → Add endpoint: paste this address and pick the events
+      checkout.session.completed, charge.captured and charge.refunded. Stripe then shows a signing secret (whsec_…) — paste it here. Without it, a
+      payment is still recorded when the guest's page confirms it; refunds and captured deposits need the webhook.</Hint></h3>
+    <p className="note">Endpoint <code>{url}</code> <button className="chip" onClick={() => void navigator.clipboard?.writeText(url)}>Copy</button></p>
+    <label>Webhook signing secret {account.hasStripeWebhook && <span className="ok-tag">saved</span>}
+      <input value={w} onChange={e => setW(e.target.value)} autoComplete="off" spellCheck={false} placeholder={account.hasStripeWebhook ? '•••••••• (saved)' : 'whsec_…'} />
+    </label>
+    <div className="button-row">
+      <button onClick={() => void save({ stripeWebhookSecret: w })} disabled={busy || !w.trim()}>Save secret</button>
+      {account.hasStripeWebhook && <button className="secondary" disabled={busy} onClick={() => void save({ clearStripeWebhook: true })}>Remove</button>}
+    </div>
   </>;
 }
 

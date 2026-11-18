@@ -13,6 +13,9 @@ import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { addDays, today } from '../../src/lib/dates.ts';
 import { caseResult, isUpsell } from '../../src/lib/claims.ts';
+import { channelFeeCosts, type CostRow } from '../../src/lib/finance.ts';
+import { portalFeeCosts, portalIncome } from '../../src/lib/guest-payments.ts';
+import { guestPaymentsBetween } from '../_lib/guest-payments.ts';
 
 interface CostRowDb {
   unit_id: string | null; shared: boolean;
@@ -53,7 +56,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
 
   // Hostaway and Postgres are independent; there is no reason to wait for
   // one before starting the other.
-  const [listings, reservations, expenses, claims, parkedRows] = await Promise.all([
+  const [listings, reservations, expenses, claims, parkedRows, portal] = await Promise.all([
     fetchListings(creds),
     fetchReservationsTouching(creds, from, to),
     sql`SELECT unit_id, shared, start_date, end_date, category, frequency, amount
@@ -68,7 +71,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     // The parked verdict, computed at sync time. Reading it costs one
     // cheap query; recomputing it would cost 27 calendar requests on
     // every dashboard load.
-    sql`SELECT id FROM units WHERE account_id = 1 AND parked = TRUE` as unknown as Promise<{ id: string }[]>
+    sql`SELECT id FROM units WHERE account_id = 1 AND parked = TRUE` as unknown as Promise<{ id: string }[]>,
+    // Owner, 2026-11-17: what the guest portal sold through Stripe — income; Stripe's fee — a cost. Live payments only.
+    guestPaymentsBetween(sql, from, to)
   ]);
 
   // A unit blocked solid for the next 45 days is not taking bookings,
@@ -105,7 +110,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     reservations,
     // Shape matches src/lib/finance.ts CostRow so the client can prorate
     // without a translation step.
-    costs: expenses.map(e => ({
+    costs: [...expenses.map((e): CostRow => ({
       listingId: e.unit_id ?? '',
       shared: e.shared || !e.unit_id,
       start: e.start_date,
@@ -115,9 +120,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       amount: Number(e.amount),
       source: e.frequency === 'Monthly' ? 'fixed' : 'variable'
     })),
-    income: (claims as { unit_id: string | null; on_day: string; category: string | null; received: number; owner_work: number }[])
+      // Owner, 2026-11-17: what Airbnb / Vrbo / Booking.com keep of each stay, read live with the stay (finance.ts channelCut).
+      ...channelFeeCosts(reservations),
+      ...portalFeeCosts(portal)],
+    income: [...(claims as { unit_id: string | null; on_day: string; category: string | null; received: number; owner_work: number }[])
       .map(c => ({ unitId: c.unit_id, on: c.on_day, amount: caseResult({ requested: 0, received: c.received, repairWork: 0, ownerWork: c.owner_work }).kept,
                    kind: isUpsell(c.category) ? 'upsell' as const : 'claim' as const }))
-      .filter(c => c.amount > 0)
+      .filter(c => c.amount > 0), ...portalIncome(portal)]
   });
 };

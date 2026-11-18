@@ -21,7 +21,7 @@ Vendor portal · Guest portal. Future: Sales & Growth, Schedules.
 | Service | Used for | Where the key lives |
 |---|---|---|
 | Hostaway | listings, reservations, calendar, door codes (`doorCode`), photos (`listingImages`), messages | `accounts.hostaway_*_enc` |
-| Stripe | guest payments (waiver, deposit hold, extras) + vendor payouts (Connect) | `accounts.stripe_secret_key_enc` (099); test keys only for now |
+| Stripe | guest payments (waiver, deposit hold, extras) + vendor payouts (Connect); webhook into the books | `accounts.stripe_secret_key_enc` (099), `stripe_webhook_secret_enc` (119); test keys only for now |
 | Slack | team alerts, approvals | `accounts.slack_*_enc` |
 | Google Drive | Repository files, check-in photos | OAuth per account |
 | Claude / Gemini | AI drafts, guest replies (next), pricing | `accounts.*_api_key_enc` |

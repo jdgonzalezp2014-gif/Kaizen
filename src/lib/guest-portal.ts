@@ -1,7 +1,7 @@
 /**
  * Guest portal (guests module, 2026-11-05): one page per stay — the stay, what is due, the arrival guide,
- * extras. Pure: the page and, later, the API share these rules. Nothing here charges or writes to Hostaway:
- * an extra is a *request* the team confirms; the money goes through the stay's pay link (Hostaway Payments).
+ * extras. Pure: the page and, later, the API share these rules. Nothing here charges or writes to Hostaway.
+ * An extra is paid on the spot through Stripe (owner, 2026-11-17: nothing waits for an OK — the payment is the sale).
  */
 
 import type { CheckinStep, HouseItem } from './checkin.ts';
@@ -170,11 +170,12 @@ export const UPSELLS: Upsell[] = [
   { kind: 'parking', title: 'Covered parking', icon: 'car', price: null, per: 'night', pick: { type: 'none' } },
 ];
 
-export type Availability = { ok: true; flag?: 'turnover' } | { ok: false; why: 'calendar' | 'price' | 'short' };
+export type Availability = { ok: true } | { ok: false; why: 'calendar' | 'price' | 'short' | 'turnover' };
 
 /**
- * Never promise what the calendar can't give: extra nights up to the free gap; early / late on a same-day
- * turnover are still asked for, flagged — the team confirms after the clean is planned.
+ * Never promise what the calendar can't give: extra nights up to the free gap. Extras are paid on the spot and nothing
+ * waits for the team's OK (owner, 2026-11-17), so early check-in / late check-out on a same-day turnover — another guest
+ * leaving or arriving that day — is simply not offered.
  */
 export function availability(s: GuestStay, u: Upsell): Availability {
   if (u.kind === 'extra-nights') {
@@ -184,7 +185,7 @@ export function availability(s: GuestStay, u: Upsell): Availability {
   }
   if (u.kind === 'mid-clean' && nights(s) < 4) return { ok: false, why: 'short' };
   if (u.kind === 'parking' && priceOf(s, u) == null) return { ok: false, why: 'price' };
-  if ((u.kind === 'early-checkin' && s.turnIn) || (u.kind === 'late-checkout' && s.turnOut)) return { ok: true, flag: 'turnover' };
+  if ((u.kind === 'early-checkin' && s.turnIn) || (u.kind === 'late-checkout' && s.turnOut)) return { ok: false, why: 'turnover' };
   return { ok: true };
 }
 
@@ -204,31 +205,6 @@ export function hoursOf(s: Pick<GuestStay, 'checkInTime' | 'checkOutTime'>, u: P
   if (t == null || std == null) return null;
   const diff = u.kind === 'early-checkin' ? std - t : t - std;
   return diff > 0 ? Math.ceil(diff / 60) : null;
-}
-
-/** A wall-clock time in Texas (Central) as an instant — the houses' time, whatever the guest's phone says. */
-export function centralInstant(ymd: string, hour: number): Date {
-  const [y, mo, d] = ymd.split('-').map(Number) as [number, number, number];
-  const guess = Date.UTC(y, mo - 1, d, hour);
-  const p = Object.fromEntries(new Intl.DateTimeFormat('en-US', { timeZone: 'America/Chicago', hourCycle: 'h23', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' })
-    .formatToParts(new Date(guess)).map(x => [x.type, x.value]));
-  const seen = Date.UTC(Number(p.year), Number(p.month) - 1, Number(p.day), Number(p.hour), Number(p.minute));
-  return new Date(guess - (seen - guess));
-}
-
-/**
- * Early check-in / late check-out (owner, 2026-11-15): asked by 8 PM (Central) the day before → confirmed on its own;
- * later, or the same day → the team approves. A turnover that day (another guest leaving / arriving) always needs
- * approval — the clean decides, however early the guest asked.
- */
-export type RequestMode = { mode: 'auto' } | { mode: 'approval'; why: 'late' | 'turnover' };
-export function requestMode(s: GuestStay, u: Pick<Upsell, 'kind'>, now: Date): RequestMode {
-  if (u.kind !== 'early-checkin' && u.kind !== 'late-checkout') return { mode: 'approval', why: 'late' };
-  if ((u.kind === 'early-checkin' && s.turnIn) || (u.kind === 'late-checkout' && s.turnOut)) return { mode: 'approval', why: 'turnover' };
-  const day = u.kind === 'early-checkin' ? s.arrival : s.departure;
-  const before = new Date(`${day}T12:00:00Z`); before.setUTCDate(before.getUTCDate() - 1);
-  const cutoff = centralInstant(before.toISOString().slice(0, 10), 20);
-  return now.getTime() < cutoff.getTime() ? { mode: 'auto' } : { mode: 'approval', why: 'late' };
 }
 
 /** What the guest picked: a time, nights before/after, or a quantity. */
@@ -253,7 +229,7 @@ export function clampNights(s: GuestStay, c: Choice) {
   return { before: Math.max(0, Math.min(c.before ?? 0, s.freeBefore)), after: Math.max(0, Math.min(c.after ?? 0, s.freeAfter)) };
 }
 
-/** A choice the request can be sent with: a time when it asks for one, at least one night. */
+/** A choice the extra can be paid with: a time when it asks for one, at least one night. */
 export function ready(s: GuestStay, u: Upsell, c: Choice): boolean {
   if (!availability(s, u).ok) return false;
   if (u.pick.type === 'time') return !!c.time && u.pick.options.includes(c.time);
@@ -261,32 +237,25 @@ export function ready(s: GuestStay, u: Upsell, c: Choice): boolean {
   return true;
 }
 
-/** "New upselling request" — what the system receives. Status lives on the team side. */
-export interface UpsellRequest {
+/** An extra the guest bought — paid on the spot; the payment is the confirmation (owner, 2026-11-17). */
+export interface PaidExtra {
   stayId: string;
   kind: UpsellKind;
   title: string;
   choice: Choice;
-  quote: number | null;
-  turnover: boolean;
-  /** Early / late asked in time with no turnover → confirmed on its own (a task + Slack line, no approval). */
-  mode: 'auto' | 'approval';
-  status: 'new' | 'confirmed' | 'declined' | 'paid';
+  amount: number;
   at: string;                 // ISO
 }
 
-export function upsellRequest(s: GuestStay, u: Upsell, c: Choice, now: Date): UpsellRequest {
+export function paidExtra(s: GuestStay, u: Upsell, c: Choice, now: Date): PaidExtra {
   const choice: Choice = u.pick.type === 'time' ? { time: c.time }
     : u.pick.type === 'nights' ? clampNights(s, c)
     : u.pick.type === 'qty' ? { qty: Math.max(1, Math.min(c.qty ?? 1, u.pick.max)) } : {};
-  const a = availability(s, u);
-  const mode = requestMode(s, u, now).mode;
-  return { stayId: s.id, kind: u.kind, title: u.title, choice, quote: quote(s, u, choice), turnover: a.ok && a.flag === 'turnover',
-    mode, status: mode === 'auto' ? 'confirmed' : 'new', at: now.toISOString() };
+  return { stayId: s.id, kind: u.kind, title: u.title, choice, amount: quote(s, u, choice) ?? 0, at: now.toISOString() };
 }
 
-/** One line for the request list and, later, the team's Slack line. */
-export function choiceLine(r: Pick<UpsellRequest, 'kind' | 'choice'>): string {
+/** One line for the guest's list of extras and, later, the team's Slack line. */
+export function choiceLine(r: Pick<PaidExtra, 'kind' | 'choice'>): string {
   const c = r.choice;
   if (r.kind === 'extra-nights') return [c.before ? `${c.before} before` : '', c.after ? `${c.after} after` : ''].filter(Boolean).join(' · ');
   if (c.time) return r.kind === 'early-checkin' ? `from ${c.time}` : `until ${c.time}`;

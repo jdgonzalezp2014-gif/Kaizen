@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { payState, guide, availability, quote, ready, upsellRequest, choiceLine, guestLink, minutesOf, hoursOf, centralInstant, requestMode, calendarFit, offered, extendStay, UPSELLS, type GuestStay } from './guest-portal.ts';
+import { payState, guide, availability, quote, ready, paidExtra, choiceLine, guestLink, minutesOf, hoursOf, calendarFit, offered, extendStay, UPSELLS, type GuestStay } from './guest-portal.ts';
 
 const stay = (o: Partial<GuestStay> = {}): GuestStay => ({
   id: '101', guestFirst: 'Ana', unitName: 'Frisco 3BR', address: null, photo: null,
@@ -25,31 +25,31 @@ test('check-in instructions need nothing due and the release time passed', () =>
   assert.equal(guide(stay({ paid: 75, guideReleaseAt: null }), NOW).open, false);
 });
 
-test('extra nights only as far as the calendar gap; turnover flags, never blocks', () => {
+test('extra nights only as far as the calendar gap; a turnover day does not offer early / late', () => {
   assert.deepEqual(availability(stay({ freeBefore: 0, freeAfter: 0 }), U('extra-nights')), { ok: false, why: 'calendar' });
   assert.deepEqual(availability(stay({ nightly: null }), U('extra-nights')), { ok: false, why: 'price' });
   assert.equal(quote(stay(), U('extra-nights'), { before: 5, after: 1 }), 360); // 1 before (gap) + 1 after
-  assert.deepEqual(availability(stay(), U('late-checkout')), { ok: true, flag: 'turnover' });
+  assert.deepEqual(availability(stay(), U('late-checkout')), { ok: false, why: 'turnover' });
   assert.deepEqual(availability(stay(), U('early-checkin')), { ok: true });
   assert.deepEqual(availability(stay(), U('mid-clean')), { ok: false, why: 'short' });
 });
 
-test('a request is ready only with what it asks for', () => {
+test('an extra is ready to pay only with what it asks for', () => {
   assert.equal(ready(stay(), U('early-checkin'), {}), false);
   assert.equal(ready(stay(), U('early-checkin'), { time: '1:00 PM' }), true);
   assert.equal(ready(stay(), U('extra-nights'), {}), false);
   assert.equal(ready(stay(), U('welcome'), {}), true);
 });
 
-test('the new upselling request keeps only its own choice, clamped, with its quote', () => {
-  const r = upsellRequest(stay(), U('crib'), { qty: 9, time: 'x' }, NOW);
+test('a paid extra keeps only its own choice, clamped, with its amount', () => {
+  const r = paidExtra(stay(), U('crib'), { qty: 9, time: 'x' }, NOW);
   assert.deepEqual(r.choice, { qty: 2 });
-  assert.equal(r.quote, 50);
-  assert.equal(r.status, 'new');
-  const l = upsellRequest(stay(), U('late-checkout'), { time: '1:00 PM' }, NOW);
-  assert.equal(l.turnover, true);
-  assert.equal(choiceLine(l), 'until 1:00 PM');
-  assert.equal(choiceLine(upsellRequest(stay(), U('extra-nights'), { after: 2 }, NOW)), '2 after');
+  assert.equal(r.amount, 50);
+  const e = paidExtra(stay({ turnIn: false }), U('early-checkin'), { time: '2:00 PM' }, NOW);
+  assert.equal(e.amount, 40);
+  assert.equal(choiceLine(e), 'from 2:00 PM');
+  assert.equal(choiceLine(paidExtra(stay(), U('extra-nights'), { after: 2 }, NOW)), '2 after');
+  assert.equal(ready(stay(), U('late-checkout'), { time: '1:00 PM' }), false); // turnover that day
 });
 
 test('the guest link: the Hostaway reservation id and its signature, nothing else', () => {
@@ -97,23 +97,6 @@ test('early / late: $20 per hour over the stay’s own times', () => {
   assert.equal(hoursOf(stay(), U('early-checkin'), '5:00 PM'), null);
   assert.equal(quote(stay(), U('early-checkin'), { time: '12:00 PM' }), 80);
   assert.equal(quote(stay(), U('late-checkout'), { time: '2:00 PM' }), 60);
-});
-
-test('Central time: 8 PM in Texas, in summer and in winter', () => {
-  assert.equal(centralInstant('2026-11-14', 20).toISOString(), '2026-11-15T02:00:00.000Z');
-  assert.equal(centralInstant('2026-07-14', 20).toISOString(), '2026-07-15T01:00:00.000Z');
-});
-
-test('request mode: by 8 PM the day before → automatic; later or a turnover → approval', () => {
-  const s = stay({ arrival: '2026-11-20', departure: '2026-11-23', turnIn: false, turnOut: false });
-  assert.deepEqual(requestMode(s, U('early-checkin'), new Date('2026-11-20T01:59:00Z')), { mode: 'auto' });       // Nov 19, 7:59 PM CST
-  assert.deepEqual(requestMode(s, U('early-checkin'), new Date('2026-11-20T02:00:00Z')), { mode: 'approval', why: 'late' });
-  assert.deepEqual(requestMode(s, U('late-checkout'), new Date('2026-11-21T12:00:00Z')), { mode: 'auto' });
-  assert.deepEqual(requestMode({ ...s, turnOut: true }, U('late-checkout'), new Date('2026-11-21T12:00:00Z')), { mode: 'approval', why: 'turnover' });
-  const r = upsellRequest(s, U('early-checkin'), { time: '2:00 PM' }, new Date('2026-11-18T12:00:00Z'));
-  assert.equal(r.mode, 'auto');
-  assert.equal(r.status, 'confirmed');
-  assert.equal(r.quote, 40);
 });
 
 test('Guest services: "No" hides an extra, blank offers it; prices from the record', async () => {

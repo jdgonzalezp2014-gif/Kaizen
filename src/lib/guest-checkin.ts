@@ -6,7 +6,7 @@
  * (protection + paid extras) through Stripe — demo only for now. Pure: no fetch, no React.
  */
 import { kindOf } from './unit-access.ts';
-import { UPSELLS, priceOf, quote, availability, requestMode, minutesOf, type Choice, type GuestStay, type UpsellKind } from './guest-portal.ts';
+import { UPSELLS, priceOf, quote, availability, minutesOf, type Choice, type GuestStay, type UpsellKind } from './guest-portal.ts';
 
 /** Protection values depend on what is rented: a room is not a house (owner, 2026-11-15). Per listing later. */
 export type UnitType = 'room' | 'apartment' | 'house';
@@ -72,9 +72,8 @@ export const newFlow = (): Flow => ({ details: false, arrival: null, identity: f
 /** A finished check-in (the demo's "checked in" stay). */
 export const doneFlow = (): Flow => ({ details: true, arrival: '6:00 PM', identity: true, protection: 'waiver', rules: true, extras: {}, extrasSeen: true, paid: true });
 
-/** Extras offered inside check-in. Early / late follow requestMode: in time and no turnover → charged now; else on request. */
+/** Extras offered inside check-in — charged with the one payment (owner, 2026-11-17: nothing waits for an OK). */
 export const FLOW_EXTRAS: UpsellKind[] = ['early-checkin', 'late-checkout', 'mid-clean', 'parking', 'welcome'];
-export const onRequest = (s: GuestStay, k: UpsellKind, now: Date) => (k === 'early-checkin' || k === 'late-checkout') && requestMode(s, { kind: k }, now).mode === 'approval';
 
 export type StepKey = 'details' | 'identity' | 'protection' | 'rules' | 'extras' | 'pay';
 export interface Step { key: StepKey; title: string; sub: string; done: boolean; required: boolean }
@@ -89,7 +88,7 @@ export function steps(f: Flow, s: GuestStay, p: Protection, now: Date = new Date
     { key: 'rules', title: 'House rules', sub: 'Read and agree', done: f.rules, required: true },
     { key: 'extras', title: 'Extras', sub: 'Optional', done: f.extrasSeen, required: false },
   ];
-  if (bill(f, s, p, now).lines.some(l => l.kind !== 'request')) out.push({ key: 'pay', title: 'Review and pay', sub: 'One payment, then you are in', done: f.paid, required: true });
+  if (bill(f, s, p, now).lines.length) out.push({ key: 'pay', title: 'Review and pay', sub: 'One payment, then you are in', done: f.paid, required: true });
   return out;
 }
 
@@ -100,23 +99,25 @@ export function nextStep(st: Step[]): StepKey | null {
   return null;
 }
 
-export interface BillLine { label: string; amount: number; kind: 'charge' | 'hold' | 'request'; note?: string }
+/** `item` = the upsell kind, `waiver` or `deposit` — what the books record the line as (guest-payments.ts). */
+export interface BillLine { label: string; amount: number; kind: 'charge' | 'hold'; note?: string; item?: string }
 const cents = (n: number) => Math.round(n * 100) / 100;
 
-/** What the one payment covers: charges today, a hold that is released, and requests charged only once confirmed. */
+/** What the one payment covers: charges today and a hold that is released after check-out. */
 export function bill(f: Flow, s: GuestStay, p: Protection, now: Date = new Date()): { lines: BillLine[]; today: number; hold: number } {
   const lines: BillLine[] = [];
   if (!channelCovers(s)) {
-    if (f.protection === 'waiver') lines.push({ label: 'Damage waiver', amount: p.waiver.price, kind: 'charge', note: `Covers up to $${p.waiver.cap.toLocaleString('en-US')}` });
-    if (f.protection === 'deposit') lines.push({ label: 'Security deposit', amount: p.deposit.hold, kind: 'hold', note: 'Held on your card, released after check-out' });
+    if (f.protection === 'waiver') lines.push({ label: 'Damage waiver', amount: p.waiver.price, kind: 'charge', item: 'waiver', note: `Covers up to $${p.waiver.cap.toLocaleString('en-US')}` });
+    if (f.protection === 'deposit') lines.push({ label: 'Security deposit', amount: p.deposit.hold, kind: 'hold', item: 'deposit', note: 'Held on your card, released after check-out' });
   }
   for (const k of FLOW_EXTRAS) {
     const c = f.extras[k];
     const u = UPSELLS.find(x => x.kind === k);
     if (!c || !u) continue;
     const q = quote(s, u, c);
-    if (q == null) continue;
-    lines.push({ label: u.title, amount: q, kind: onRequest(s, k, now) ? 'request' : 'charge', note: c.time ? (k === 'early-checkin' ? `From ${c.time}` : `Until ${c.time}`) : undefined });
+    // Not offered any more (a turnover came up since it was picked): it drops off the bill.
+    if (q == null || !availability(s, u).ok) continue;
+    lines.push({ label: u.title, amount: q, kind: 'charge', item: k, note: c.time ? (k === 'early-checkin' ? `From ${c.time}` : `Until ${c.time}`) : undefined });
   }
   const sum = (k: BillLine['kind']) => cents(lines.filter(l => l.kind === k).reduce((a, l) => a + l.amount, 0));
   return { lines, today: sum('charge'), hold: sum('hold') };
@@ -125,7 +126,7 @@ export function bill(f: Flow, s: GuestStay, p: Protection, now: Date = new Date(
 /** Which extras the stay can take during check-in (the calendar and the stay length still decide). */
 export function flowExtras(s: GuestStay) {
   return FLOW_EXTRAS.filter(k => !s.notOffered?.includes(k)).map(k => UPSELLS.find(u => u.kind === k)!).filter(u => availability(s, u).ok && priceOf(s, u) != null)
-    .map(u => ({ u, turnover: (availability(s, u) as { flag?: string }).flag === 'turnover' }));
+    .map(u => ({ u }));
 }
 
 /** The entry details (door code, Wi-Fi, guide): every required step done, then the release time. */

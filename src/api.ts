@@ -8,6 +8,7 @@ export interface Account {
   hasClaudeKey: boolean;
   hasStripeKey: boolean;
   stripePublishableKey?: string | null;
+  hasStripeWebhook?: boolean;
   hasJinaKey: boolean;
   hasIngestToken: boolean;
   hasQuoKey: boolean; quoFrom: string | null;
@@ -271,6 +272,8 @@ export interface ClaimMoney {
   requested: number; received: number; received_on: string | null; collected_via: string | null;
   repair_work: number; owner_work: number;
 }
+export const getGuestPayments = (from: string, to: string) =>
+  call<{ ok: true; payments: import('./lib/guest-payments.ts').GuestPayment[] } | { ok: false; message?: string }>(`/api/guest-payments?from=${from}&to=${to}`);
 export const getClaimsMoney = (from: string, to: string) =>
   call<{ ok: true; cases: ClaimMoney[] } | { ok: false; message?: string }>(`/api/claims-money?from=${from}&to=${to}`);
 export const saveClaimMoney = (body: { id: string } & CaseMoneyChange) =>

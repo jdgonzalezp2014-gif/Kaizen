@@ -13,6 +13,7 @@ import { money as fmtMoney, pct } from '../lib/format.ts';
 import { Loading } from '../components/Loading.tsx';
 import { rememberTiming, recallTiming } from '../lib/progress.ts';
 import { ClaimsMoney } from './Claims.tsx';
+import { PortalSales } from './PortalSales.tsx';
 import type { IncomeRow } from '../lib/finance.ts';
 import { useUrlState } from '../components/useUrlState.ts';
 
@@ -30,20 +31,19 @@ interface Portfolio {
 
 const money = fmtMoney;
 
-/** §162: Revenue, and — for Finance — the claims and upsells as money, beside it. */
+/** §162: Revenue, and — for Finance — the claims and upsells as money, beside it. 2026-11-17: the guest portal's sales. */
 export function Revenue({ canClaims = false }: { canClaims?: boolean }) {
-  const [sub, setSub] = useState<'profit' | 'claims'>('profit');
-  useUrlState('view', sub, setSub, { def: 'profit', valid: v => v === 'profit' || v === 'claims' });
+  const [sub, setSub] = useState<'profit' | 'claims' | 'portal'>('profit');
+  useUrlState('view', sub, setSub, { def: 'profit', valid: v => v === 'profit' || v === 'portal' || (v === 'claims' && canClaims) });
   return <>
-    {canClaims && (
-      <div className="row-controls">
-        <span className="seg" role="group" aria-label="Revenue view">
-          <button className={sub === 'profit' ? 'chip active' : 'chip'} onClick={() => setSub('profit')}>Profit</button>
-          <button className={sub === 'claims' ? 'chip active' : 'chip'} onClick={() => setSub('claims')}>Claims &amp; upselling</button>
-        </span>
-      </div>
-    )}
-    {sub === 'claims' && canClaims ? <ClaimsMoney /> : <Profit />}
+    <div className="row-controls">
+      <span className="seg" role="group" aria-label="Revenue view">
+        <button className={sub === 'profit' ? 'chip active' : 'chip'} onClick={() => setSub('profit')}>Profit</button>
+        <button className={sub === 'portal' ? 'chip active' : 'chip'} onClick={() => setSub('portal')}>Portal sales</button>
+        {canClaims && <button className={sub === 'claims' ? 'chip active' : 'chip'} onClick={() => setSub('claims')}>Claims &amp; upselling</button>}
+      </span>
+    </div>
+    {sub === 'claims' && canClaims ? <ClaimsMoney /> : sub === 'portal' ? <PortalSales /> : <Profit />}
   </>;
 }
 
@@ -171,12 +171,14 @@ function Profit() {
           </p>
         </div>
         <dl className="stats">
-          <div><dt>Revenue</dt><dd>{money(board.portfolio.revenue)}</dd></div>
+          <div><dt>Revenue <Hint>The reservations' totals from Hostaway, without the taxes the channel collects and remits (Airbnb's
+            occupancy tax, Vrbo's taxes) — those were never Kaizen's money. What the channel keeps (Airbnb's host fee, Vrbo /
+            Booking.com commissions) is a cost: Costs → "Channel fees", spread over the stay's nights like its revenue.</Hint></dt><dd>{money(board.portfolio.revenue)}</dd></div>
           {board.portfolio.otherIncome > 0 && (
-            <div><dt>Claims &amp; upsells <Hint>Received on claims and upsells (pet fees, late check-ins collected outside the
-              reservation), on the day it was entered as received. Counted in net; not in revenue, ADR or RevPAN, which are the
-              reservations'. When a repair was charged to the owner, the reimbursement is the owner's up to it — only the
-              rest is counted here.</Hint></dt><dd>{money(board.portfolio.otherIncome)}</dd></div>
+            <div><dt>Other income <Hint>Claims, upsells entered by the team (pet fees, late check-ins collected outside the
+              reservation) and what the guest portal sold through Stripe (waiver, extras — Revenue → Portal sales). Counted in net
+              on the day it came in; not in revenue, ADR or RevPAN, which are the reservations'. When a repair was charged to the
+              owner, the reimbursement is the owner's up to it — only the rest is counted here.</Hint></dt><dd>{money(board.portfolio.otherIncome)}</dd></div>
           )}
           <div><dt>Costs</dt><dd>{money(board.portfolio.costs.total)}</dd></div>
           <div><dt>Occupancy</dt><dd>{board.portfolio.occupancy == null ? '—'

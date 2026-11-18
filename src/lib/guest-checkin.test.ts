@@ -37,12 +37,14 @@ test('Airbnb: protection is covered by the channel, nothing to pay', () => {
   assert.equal(nextStep(st), null);
 });
 
-test('bill: waiver is charged, deposit is held, early/late are requests', () => {
-  assert.deepEqual(bill(f({ protection: 'waiver' }), stay(), P), { lines: [{ label: 'Damage waiver', amount: 49, kind: 'charge', note: 'Covers up to $1,500' }], today: 49, hold: 0 });
+test('bill: waiver is charged, deposit is held, extras are charged now; early on a turnover drops off', () => {
+  assert.deepEqual(bill(f({ protection: 'waiver' }), stay(), P), { lines: [{ label: 'Damage waiver', amount: 49, kind: 'charge', item: 'waiver', note: 'Covers up to $1,500' }], today: 49, hold: 0 });
   const b = bill(f({ protection: 'deposit', extras: { 'welcome': {}, 'early-checkin': { time: '1:00 PM' } } }), stay(), P);
   assert.equal(b.today, 35);
   assert.equal(b.hold, 250);
-  assert.deepEqual(b.lines.map(l => l.kind), ['hold', 'request', 'charge']);
+  assert.deepEqual(b.lines.map(l => l.kind), ['hold', 'charge']);
+  const n = bill(f({ extras: { 'early-checkin': { time: '1:00 PM' } } }), stay({ turnIn: false }), P);
+  assert.deepEqual(n.lines.map(l => [l.item, l.kind]), [['early-checkin', 'charge']]);
 });
 
 test('entry opens after the required steps and the release time', () => {
@@ -54,9 +56,10 @@ test('entry opens after the required steps and the release time', () => {
 });
 
 test('flow extras: a short stay hides the mid-stay clean', () => {
-  assert.deepEqual(flowExtras(stay()).map(x => x.u.kind), ['early-checkin', 'late-checkout', 'mid-clean', 'welcome']);
-  assert.deepEqual(flowExtras(stay({ departure: '2026-11-16' })).map(x => x.u.kind), ['early-checkin', 'late-checkout', 'welcome']);
-  assert.equal(flowExtras(stay())[0]!.turnover, true);
+  assert.deepEqual(flowExtras(stay({ turnIn: false })).map(x => x.u.kind), ['early-checkin', 'late-checkout', 'mid-clean', 'welcome']);
+  assert.deepEqual(flowExtras(stay({ turnIn: false, departure: '2026-11-16' })).map(x => x.u.kind), ['early-checkin', 'late-checkout', 'welcome']);
+  // A guest leaving the day this one arrives: no early check-in to sell.
+  assert.deepEqual(flowExtras(stay()).map(x => x.u.kind), ['late-checkout', 'mid-clean', 'welcome']);
 });
 
 test('rules: lines, bullets and "Title: detail" become short items', () => {

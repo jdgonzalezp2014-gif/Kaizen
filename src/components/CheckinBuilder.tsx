@@ -208,7 +208,7 @@ export function CheckinBuilder({ canEdit, say, onOpenRecord, findName, onBack }:
           {data!.users!.map(u => <option key={u.id} value={u.id}>as {u.name}</option>)}</select>}
         {!shared && unit && <a className="link" href={`/guest/demo?stay=paid&unit=${encodeURIComponent(unit)}`} target="_blank" rel="noopener">Open ↗</a>}
       </div>
-      {preview ? <div className="gp-phone g-scope"><GuestPortal key={tab} embedded startSec={tab === 'stay' ? 'guide' : tab} stay={preview} send={async () => ({ ok: true })} /></div>
+      {preview ? <div className="gp-phone g-scope"><GuestPortal key={tab} embedded startSec={tab === 'stay' ? 'guide' : tab} stay={preview} /></div>
         : <div className="gp-phone g-scope gp-phone-empty"><p className="note">The guest's page shows here.</p></div>}
     </aside>
   </div>;

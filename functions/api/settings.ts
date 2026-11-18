@@ -258,6 +258,14 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       try { await sql`UPDATE accounts SET stripe_publishable_key = ${pk || null} WHERE id = 1`; }
       catch { return Response.json({ ok: false, error: 'The database needs migration 115 first (npm run migrate).' }, { status: 409 }); }
     }
+    // Stripe's webhook signing secret (2026-11-17, migration 119): guest payments and refunds reach the books on their own.
+    if (typeof body.stripeWebhookSecret === 'string' && body.stripeWebhookSecret.trim()) {
+      const w = body.stripeWebhookSecret.trim();
+      if (!/^whsec_[A-Za-z0-9]{10,200}$/.test(w)) return Response.json({ ok: false, error: 'That is not a webhook signing secret (whsec_…).' }, { status: 400 });
+      try { await sql`UPDATE accounts SET stripe_webhook_secret_enc = ${await encrypt(w, env.ENCRYPTION_KEY)} WHERE id = 1`; }
+      catch { return Response.json({ ok: false, error: 'The database needs migration 119 first (npm run migrate).' }, { status: 409 }); }
+    }
+    if (body.clearStripeWebhook === true) await sql`UPDATE accounts SET stripe_webhook_secret_enc = NULL WHERE id = 1`.catch(() => undefined);
     if (typeof body.geminiModel === 'string' && body.geminiModel.trim()) {
       await sql`UPDATE accounts SET gemini_model = ${body.geminiModel.trim()} WHERE id = 1`;
     }
