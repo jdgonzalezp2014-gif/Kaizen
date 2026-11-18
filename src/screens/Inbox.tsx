@@ -128,7 +128,7 @@ export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, 
                 <span className="ix-row-prev">{waits(r) && <span className="ix-dot" aria-label="Needs reply" />}{r.preview || 'No messages yet'}</span>
               </span>
               {(r.tasks > 0 || r.scheduled > 0) && <span className="ix-row-badges">
-                {r.tasks > 0 && <span title={`${r.tasks} open to-do${r.tasks === 1 ? '' : 's'}`}><Icon n="list" />{r.tasks}</span>}
+                {r.tasks > 0 && <span className="hot" title={`${r.tasks} open to-do${r.tasks === 1 ? '' : 's'} — still to do`}><Icon n="alert" />{r.tasks}</span>}
                 {r.scheduled > 0 && <span title={`${r.scheduled} message${r.scheduled === 1 ? '' : 's'} waiting to go`}><Icon n="clock" />{r.scheduled}</span>}
               </span>}
             </button>
@@ -378,10 +378,17 @@ const GROUP_OF: Record<NewKind, Group> = { task: 'work', repair: 'work', purchas
 const closedCase = (status: string) => /^(resolved|paid|dismissed|closed)$/i.test(status);
 
 /** A section of the stay's side that opens on a click (owner, 2026-11-17: "not all of them showing"); the count stays visible. */
-function Fold({ title, count, hint, onAdd, addLabel, children }: { title: string; count: number; hint: ReactNode; onAdd?: () => void; addLabel?: string; children: ReactNode }) {
+/**
+ * A section of the stay's side that opens on a click (owner, 2026-11-17: "not all of them showing"); the count stays visible.
+ * `urgent` (Work, Claims): while anything is open its count is red with a "!" — so nothing is left undone behind a fold.
+ */
+function Fold({ title, count, hint, onAdd, addLabel, urgent = false, children }: { title: string; count: number; hint: ReactNode; onAdd?: () => void; addLabel?: string; urgent?: boolean; children: ReactNode }) {
+  const hot = urgent && count > 0;
   return (
-    <details className="ix-card ix-fold">
-      <summary><h4>{title} <span className="ix-count">{count}</span><Hint>{hint}</Hint>
+    <details className={hot ? 'ix-card ix-fold hot' : 'ix-card ix-fold'}>
+      <summary><h4>{title} {hot
+        ? <span className="ix-count hot" title={`${count} open — still to do`}><Icon n="alert" />{count}</span>
+        : <span className="ix-count">{count}</span>}<Hint>{hint}</Hint>
         {onAdd && <button type="button" className="ix-add" aria-label={addLabel ?? 'Add'} onClick={e => { e.preventDefault(); onAdd(); }}>+</button>}</h4></summary>
       {children}
     </details>
@@ -523,7 +530,7 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
         </div>
       </Modal>}
 
-      {row.reservationId && canTodos && <Fold title="Work" count={tasks.filter(t => !t.done).length} onAdd={() => open('work')} addLabel="Add a task, repair or purchase"
+      {row.reservationId && canTodos && <Fold title="Work" urgent count={tasks.filter(t => !t.done).length} onAdd={() => open('work')} addLabel="Add a task, repair or purchase"
         hint={<>The team's work tied to this stay — the same as Operations → To-do. The + makes a <b>Task</b>, a <b>Repair</b> (work order) or a <b>Purchase</b>
           (purchase order) for this listing and this guest.</>}>
         <ul className="ix-tasks">
@@ -537,7 +544,7 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
         {thread && !tasks.length && <p className="note">None for this stay.</p>}
       </Fold>}
 
-      {row.reservationId && canClaims && <Fold title="Claims" count={claims.filter(c => !closedCase(c.status)).length} onAdd={() => open('claim')} addLabel="Start a claim"
+      {row.reservationId && canClaims && <Fold title="Claims" urgent count={claims.filter(c => !closedCase(c.status)).length} onAdd={() => open('claim')} addLabel="Start a claim"
         hint={<>Guest complaints and damage for this stay (damage, cleanliness, noise…) — the same cases as Claims &amp; upselling. The + starts one; its
           repairs and purchases are added from the case.</>}>
         <CaseList cases={claims} onOpen={onClaim} />
