@@ -16,6 +16,7 @@ import { Hint } from '../components/Hint.tsx';
 import { Modal } from '../components/Modal.tsx';
 import { CASE_CATEGORIES, UPSELL_CATEGORIES } from '../lib/claims.ts';
 import { Icon } from '../components/Icon.tsx';
+import { BrandMark } from '../components/BrandMark.tsx';
 import { GUEST_EVENT } from '../components/GuestPing.tsx';
 import { Automations } from './Automations.tsx';
 import { param, setParams } from '../components/useUrlState.ts';
@@ -183,8 +184,8 @@ function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo,
           <div className="ix-pass-top"><span className={`ix-stage s-${stage}`}>{STAGE_LABEL[stage]}</span>
           {/* Where to change the booking (owner, 2026-11-17): small, beside the stage. */}
           {row.reservationId && <span className="ix-open-in">
-            {links.hostaway && <a href={links.hostaway} target="_blank" rel="noreferrer" title="Open the reservation in Hostaway (to change it)" aria-label="Open in Hostaway"><Icon n="link" /> H</a>}
-            {links.channel && <a href={links.channel.url} target="_blank" rel="noreferrer" title={`Open the reservation in ${links.channel.label}`} aria-label={`Open in ${links.channel.label}`}><Icon n="link" /> {links.channel.label[0]}</a>}
+            {links.hostaway && <a href={links.hostaway} target="_blank" rel="noreferrer" title="Open the reservation in Hostaway (to change it)" aria-label="Open in Hostaway"><BrandMark brand="hostaway" /></a>}
+            {links.channel && <a href={links.channel.url} target="_blank" rel="noreferrer" title={`Open the reservation in ${links.channel.label}`} aria-label={`Open in ${links.channel.label}`}><BrandMark brand="airbnb" /></a>}
           </span>}</div>
         </div>
         <div className="ix-tabs" role="tablist">
