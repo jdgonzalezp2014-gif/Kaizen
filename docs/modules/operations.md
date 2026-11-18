@@ -470,6 +470,11 @@ key had no SOPs.
   ("· closet"), "Own closet, nothing refills it", and a **Has closet** switch per unit (`inventory-items` `closet`, written to the
   Repository, audited). **Counted in** editable anywhere it shows (`MeasureEdit` on order and purchase lines → `measure` /
   `setMeasure`): the label only, quantities never converted. Practice has a closet (Practice Apt 2) refilled from S100. SOP #15 v16.
+- **Inventory layout (§177, 2026-11-17):** `InventoryBody` = tabs Places · To buy · History (localStorage `invTab`); Places =
+  `.inv-places` cards (`placeState`: ▲ reported not there / Never counted / Counted <day>) → `PlaceStock` with "‹ All places".
+  `PlaceStock`: Count first (`.inv-main`), table Item · Here · Counted · To order; `details` shows the planning columns, `fixing`
+  (± Correct) the − [n] + and ⇄ move. `OnsiteCount` → "Fill from a list (.md)": `src/lib/inventory-md.ts` (`parseCountText`,
+  `matchCounts`, `countTemplate`) fills `counts`; saved as any count. SOP #15 update: `.sop-inventory-1117.mjs` after deploy.
 - **Inventory (§134, §150): by PLACE, never by unit.** A place = a Repository record (`table/ROW-id`): a Storage
   row (S13, S1105…) or a house's own record (its closet). Which place a unit draws from = the Repository's
   `storage` column, the ONLY source (a house names itself; blank = ▲ no place), read every time by

@@ -4659,3 +4659,21 @@ Vrbo/Booking.com/partners report `channelCommissionAmount` ($4.7k) and `taxAmoun
 - **Extras are paid on the spot** (owner: "it makes no sense to leave it blocked waiting — process it only when they pay"):
   the 8 PM cut-off and "Needs our OK" are gone (`requestMode` deleted); early check-in / late check-out on a same-day
   turnover is not offered at all; every extra in the Extras section pays through the same embedded Stripe Checkout.
+
+## §177 — Inventory reorganised: Places · To buy · History; a count can be filled from a written list (2026-11-17)
+
+Owner: "fix the inventory so it can be used, reorganise it — act as an expert in UX and project management; counts in
+person, and .md documents that load on their own". Found on real data: of 22 storage places, **all but one had never been
+counted** — the record had nothing to compare against, so "to order" stayed blank and the page read as noise. The page was one
+long column: a select to pick the place, a 7-column table with − [n] + on every row, then the cart and the moves under it.
+
+- Three tabs (remembered per viewer): **Places** — a card per place with what it needs first (▲ reported not there; Never
+  counted — muted, it is the common state, not an alarm; or "Counted <day>"), how many to order / refill, Open ›; **To buy** —
+  the cart (unchanged); **History** — the moves (unchanged).
+- A place: 📱 Count is the first button (with Refill / Draft order beside it); the table is Item · Here · Counted · To order. The
+  planning columns (per clean, cleans ahead, keep at least) are behind **Details**; the record's − [n] + and ⇄ move behind
+  **± Correct** (with Save corrections + why, as before); ✎ Edit settings unchanged.
+- **Fill from a list (.md)** inside the Count sheet: a file or pasted text → `parseCountText` (bullets, "x", tables, "Name: n
+  unit") → `matchCounts` (same words = sure; ≥ ⅔ shared words with no tie = close, listed; else not matched, listed) against
+  this place's list, then the rest of the list → the sheet's counts; the person checks and saves as any count. "Download the
+  template" = the place's items, "- Name (measure): ". No AI, no server change (`src/lib/inventory-md.ts`).

@@ -3982,3 +3982,17 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
   .nset-ctl { margin-left: auto; }
   .nset-vol input[type=range] { width: 120px; }
 }
+
+/* Inventory redesign (2026-11-17): a card per place, its state in a word + icon (colour never alone). */
+.inv-head .seg { margin-top: 6px; }
+.inv-places { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; margin-bottom: 14px; }
+.inv-place { min-height: 0; }
+.inv-place .v-house-name { font-size: 1.1rem; }
+.inv-state { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.inv-state.attn { color: var(--warn); }
+.inv-state.ok { color: var(--good); }
+.inv-state.muted { color: var(--muted); }
+.inv-main { margin: 4px 0 12px; }
+.inv-md { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px dashed var(--line, #ccc); border-radius: var(--r-md, 12px); margin-bottom: 10px; }
+.inv-md textarea { width: 100%; font-family: inherit; }
+@media (max-width: 560px) { .inv-places { grid-template-columns: 1fr; } .inv-place { min-height: 0; } }

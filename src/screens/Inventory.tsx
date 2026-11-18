@@ -23,6 +23,7 @@ import { againstOrder, cartLinks, STORE_NAME, storeProduct } from '../lib/store-
 import { TX } from '../lib/crew-i18n.ts';
 import { guessKind, guessMeasure, itemName } from '../lib/order-text.ts';
 import { Icon, ic } from '../components/Icon.tsx';
+import { countTemplate, matchCounts, parseCountText, type CountLine } from '../lib/inventory-md.ts';
 
 const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "2026-10-12 …" → "Oct 12". */
@@ -84,14 +85,36 @@ export function InventoryView({ canEdit, api = REAL }: { canEdit: boolean; api?:
   return <InvApi.Provider value={api}><InventoryBody canEdit={canEdit} /></InvApi.Provider>;
 }
 
+type Tab = 'places' | 'buy' | 'history';
+const remembered = <T extends string>(k: string, ok: readonly T[], def: T): T => { try { const v = localStorage.getItem(k) as T | null; return v && ok.includes(v) ? v : def; } catch { return def; } };
+const remember = (k: string, v: string) => { try { localStorage.setItem(k, v); } catch { /* private window */ } };
+
+/** Where a place stands, in one line: what needs doing first (owner, 2026-11-17: "fix it so it can be used"). */
+function placeState(p: InvPlace): { tone: 'attn' | 'muted' | 'ok'; icon: string; word: string } {
+  const missing = p.items.filter(i => i.missingSince).length;
+  if (missing) return { tone: 'attn', icon: 'warning', word: `${missing} reported not there — count it` };
+  const counted = p.items.map(i => i.countedAt).filter((x): x is string => !!x).sort();
+  // Never counted is the state of most places today, not an alarm: the card says it, the ▲ stays for what was reported.
+  if (p.items.length && !counted.length) return { tone: 'muted', icon: 'clock', word: 'Never counted — open it and count' };
+  if (!counted.length) return { tone: 'muted', icon: 'box', word: 'Nothing on its list yet' };
+  return { tone: 'ok', icon: 'check', word: `Counted ${short(counted[counted.length - 1]!)}` };
+}
+
+/**
+ * Redesign (owner, 2026-11-17, "reorganise it, act as an expert in UX"): three tabs instead of one long page — Places
+ * (a card per place with its state; open one to see and count it), To buy (the one cart) and History (the moves).
+ * Storage / Houses still split the places so neither list is overwhelming.
+ */
 function InventoryBody({ canEdit }: { canEdit: boolean }) {
   const api = useContext(InvApi);
   const [inv, setInv] = useState<Inventory | null>(null);
   const [err, setErr] = useState('');
   const [place, setPlace] = useState<string | null>(null);
   // Owner, 2026-10-15: storage and houses apart, so neither list is overwhelming. Remembered per viewer.
-  const [view, setViewRaw] = useState<View>(() => { try { return localStorage.getItem('invView') === 'house' ? 'house' : 'storage'; } catch { return 'storage'; } });
-  const setView = (v: View) => { setViewRaw(v); setPlace(null); try { localStorage.setItem('invView', v); } catch { /* private window */ } };
+  const [view, setViewRaw] = useState<View>(() => remembered('invView', ['storage', 'house'] as const, 'storage'));
+  const setView = (v: View) => { setViewRaw(v); setPlace(null); remember('invView', v); };
+  const [tab, setTabRaw] = useState<Tab>(() => remembered('invTab', ['places', 'buy', 'history'] as const, 'places'));
+  const setTab = (t: Tab) => { setTabRaw(t); remember('invTab', t); };
   const load = () => api.get().then(r => { if (r.ok) { setInv(r); setErr(''); } else setErr(r.message ?? 'Could not load.'); })
     .catch(e => setErr(String(e)));
   useEffect(() => { void load(); }, []);
@@ -99,41 +122,63 @@ function InventoryBody({ canEdit }: { canEdit: boolean }) {
   if (!inv) return <p className="note loading-dot">Loading the inventory…</p>;
 
   const shown = inv.places.filter(p => viewOf(p) === view);
-  const flagged = shown.filter(p => p.items.some(i => i.missingSince));
-  const never = shown.filter(p => p.place && p.items.length && p.items.every(i => !i.countedAt));
-  // Storage: the busiest place first (the one most units draw from). Houses: by name.
-  const current = shown.find(p => vk(p) === place) ?? (view === 'storage' ? [...shown].sort((a, b) => b.units.length - a.units.length)[0] : shown[0]);
+  // Storage: the busiest place first (the one most units draw from), then what needs attention. Houses: by name.
+  const order = (p: InvPlace) => placeState(p).tone === 'attn' ? 0 : 1;
+  const sorted = view === 'storage' ? [...shown].sort((a, b) => b.units.length - a.units.length) : [...shown].sort((a, b) => order(a) - order(b) || a.name.localeCompare(b.name));
+  const current = place ? shown.find(p => vk(p) === place) ?? null : null;
   const nHouses = inv.places.filter(p => p.view === 'house').length;
+  // Orders not bought yet, and the draft being written.
+  const nCart = inv.orders.filter(o => !o.purchases).length + (inv.draft?.lines.length ? 1 : 0);
+  const attn = shown.filter(p => placeState(p).tone === 'attn').length;
   return (
     <div className="inv">
-      <div className="card">
-        <h2>Inventory <Hint>Two views. <b>Storage</b>: the supplies cleans use, kept in places — a storage, or a house's own closet — never in each unit.
-          Each unit draws from the place its Repository record names (<Icon n="gear" /> Setup → Inventory shows the map). <b>Houses</b>: each house's
-          furniture and equipment (linens, dishes, appliances) — it lives in the house, so it is counted and ordered there. Both are counted the same way.
-          The stock is the last count plus what was bought, minus what cleaners took. Counting resets the record and shows how far off it was.
-          Cleaners and their helpers report from their pages; they cannot count or correct.</Hint></h2>
-        <span className="seg" role="group" aria-label="Inventory view">
-          <button aria-pressed={view === 'storage'} className={view === 'storage' ? 'chip active' : 'chip'} onClick={() => setView('storage')}><Icon n="box" /> Storage · supplies</button>
-          <button aria-pressed={view === 'house'} className={view === 'house' ? 'chip active' : 'chip'} onClick={() => setView('house')}><Icon n="home" /> Houses · furniture{nHouses ? ` (${nHouses})` : ''}</button>
+      <div className="card inv-head">
+        <h2>Inventory <Hint>Three tabs. <b>Places</b>: a card per place with what it needs first — open one to see its stock and count it
+          (📱 Count works on a phone, standing in the storage; a .md or text list can fill the count too). <b>To buy</b>: the one cart — an
+          order is a purchase without a price or a receipt. <b>History</b>: every count, purchase, correction and what cleaners took.
+          <br /><b>Storage</b> holds the supplies cleans use, in a storage or a house's own closet — never in each unit; each unit draws from the
+          place its Repository record names (<Icon n="gear" /> Setup → Inventory shows the map). <b>Houses</b> holds each house's furniture and
+          equipment. The stock is the last count plus what was bought, minus what cleaners took. Cleaners report from their pages; they cannot
+          count or correct.</Hint></h2>
+        <span className="seg" role="group" aria-label="Inventory section">
+          <button aria-pressed={tab === 'places'} className={tab === 'places' ? 'chip active' : 'chip'} onClick={() => setTab('places')}><Icon n="box" /> Places{attn ? ` · ▲ ${attn}` : ''}</button>
+          <button aria-pressed={tab === 'buy'} className={tab === 'buy' ? 'chip active' : 'chip'} onClick={() => setTab('buy')}><Icon n="receipt" /> To buy{nCart ? ` · ${nCart}` : ''}</button>
+          <button aria-pressed={tab === 'history'} className={tab === 'history' ? 'chip active' : 'chip'} onClick={() => setTab('history')}><Icon n="clock" /> History</button>
         </span>
-        <p className="note">
-          {flagged.length ? <span className="breach"><Icon n="warning" /> {flagged.length} place{flagged.length === 1 ? '' : 's'} with something reported not there: {flagged.map(placeTitle).join(', ')}</span>
-                          : '✓ Nothing reported missing.'}
-          {' · '}{never.length} of {shown.filter(p => p.place).length} {view === 'house' ? 'houses' : 'places'} never counted.
-          {view === 'storage' && inv.unassigned.length > 0 && <> · <span className="breach">▲ {inv.unassigned.length} unit{inv.unassigned.length === 1 ? '' : 's'} with no
-            place: {inv.unassigned.map(u => u.name).join(', ')}</span></>}
-        </p>
-        {current && <label>{view === 'house' ? 'House' : 'Place'}
-          <select value={vk(current)} onChange={e => setPlace(e.target.value)}>
-            {shown.map(p => <option key={vk(p)} value={vk(p)}>
-              {placeTitle(p)}{view === 'storage' && p.units.length && !p.self ? ` · ${p.units.length} unit${p.units.length === 1 ? '' : 's'}` : ''}{p.items.some(i => i.missingSince) ? ' ⚠' : ''}</option>)}
-          </select></label>}
-        {!current && view === 'house' && <p className="note">No house has a Repository record yet — add them in Repository → Units.</p>}
       </div>
-      {current && <PlaceStock key={vk(current)} inv={inv} p={current} canEdit={canEdit} onSaved={setInv} />}
+      {tab === 'places' && <>
+        {current ? <>
+          <div className="button-row"><button className="secondary" onClick={() => setPlace(null)}>‹ All {view === 'house' ? 'houses' : 'places'}</button></div>
+          <PlaceStock key={vk(current)} inv={inv} p={current} canEdit={canEdit} onSaved={setInv} />
+        </> : <>
+          <div className="row-controls">
+            <span className="seg" role="group" aria-label="Inventory view">
+              <button aria-pressed={view === 'storage'} className={view === 'storage' ? 'chip active' : 'chip'} onClick={() => setView('storage')}><Icon n="box" /> Storage · supplies</button>
+              <button aria-pressed={view === 'house'} className={view === 'house' ? 'chip active' : 'chip'} onClick={() => setView('house')}><Icon n="home" /> Houses · furniture{nHouses ? ` (${nHouses})` : ''}</button>
+            </span>
+          </div>
+          {view === 'storage' && inv.unassigned.length > 0 && <p className="banner warn">▲ {inv.unassigned.length} unit{inv.unassigned.length === 1 ? '' : 's'} with no
+            supplies place: {inv.unassigned.map(u => u.name).join(', ')} — set it in <Icon n="gear" /> Setup → Inventory.</p>}
+          {!shown.length && <p className="note">{view === 'house' ? 'No house has a Repository record yet — add them in Repository → Units.' : 'No storage yet.'}</p>}
+          <div className="inv-places">{sorted.map(p => {
+            const st = placeState(p);
+            const toBuy = p.items.filter(l => (p.from ? l.toRefill ?? 0 : l.toOrder) > 0).length;
+            const ahead = p.units.reduce((a, u) => a + u.cleansAhead, 0);
+            return <button key={vk(p)} className="card v-house inv-place" onClick={() => setPlace(vk(p))}>
+              <span className="v-house-name"><Icon n={p.view === 'house' ? 'home' : 'box'} /> {placeTitle(p)}</span>
+              <span className="note">{!p.place ? 'Units that had no place' : p.view === 'house' ? `${p.items.length} item${p.items.length === 1 ? '' : 's'}`
+                : p.units.length && !p.self ? `${p.units.length} unit${p.units.length === 1 ? '' : 's'} · ${ahead} clean${ahead === 1 ? '' : 's'} in ${inv.aheadDays} d`
+                : `${p.items.length} item${p.items.length === 1 ? '' : 's'}`}</span>
+              <span className={`inv-state ${st.tone}`}><Icon n={st.icon} /> {st.word}</span>
+              {toBuy > 0 && <span className="v-house-n">{toBuy} to {p.from ? 'refill' : 'order'}</span>}
+              <span className="v-house-go">Open ›</span>
+            </button>;
+          })}</div>
+        </>}
+      </>}
       {/* Owner, 2026-10-15: one cart — an order is a purchase without a price or a receipt. */}
-      {canEdit ? <CartCard inv={inv} onSaved={setInv} /> : <OrderPlan inv={inv} canEdit={false} onSaved={setInv} />}
-      <RecentMoves inv={inv} />
+      {tab === 'buy' && (canEdit ? <CartCard inv={inv} onSaved={setInv} /> : <OrderPlan inv={inv} canEdit={false} onSaved={setInv} />)}
+      {tab === 'history' && <RecentMoves inv={inv} />}
     </div>
   );
 }
@@ -161,6 +206,10 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
   const [mode, setMode] = useState<'view' | 'edit'>('view');
   // §150, owner: counting is done onsite, on a phone — a sheet like the inspection's.
   const [onsite, setOnsite] = useState(false);
+  // 2026-11-17 redesign: the record's − [n] + and ⇄ move only in "Correct" — a plain list by default; the planning
+  // columns (per clean, cleans ahead, keep at least) behind "Details".
+  const [fixing, setFixing] = useState(false);
+  const [details, setDetails] = useState(false);
   const [msg, setMsg] = useState('');
   const [busy, setBusy] = useState(false);
   // "On record" corrected in place (something brought from outside, a loss…) — staged, then saved with why,
@@ -202,10 +251,19 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
   const edit = canEdit && !!p.place;
   // A house's furniture is not used up by cleans: no per-clean columns there.
   const house = p.view === 'house';
+  const plan = details || mode === 'edit';
+  const cols = 4 + (house || plan ? 1 : 0) + (!house && plan ? 2 : 0) + (mode === 'edit' ? 1 : 0);
   return (
     <div className="card">
       {onsite && <OnsiteCount inv={inv} p={p} onSaved={onSaved} onClose={() => setOnsite(false)} />}
       <h2>{placeTitle(p)}</h2>
+      {edit && mode === 'view' && !fixing && <div className="button-row inv-main">
+        <button onClick={() => { setOnsite(true); setMsg(''); }}><Icon n="phone" /> Count {placeTitle(p)}</button>
+        {p.from && !refill && <button className="secondary" disabled={busy} onClick={() => { startRefill(); setMsg(''); }}>
+          ⇄ Refill from {fromPlace ? placeLabel(fromPlace.name) : 'storage'}{toRefill.length ? ` (${toRefill.length})` : ''}</button>}
+        {!p.from && <button className="secondary" disabled={busy || !shortItems.length} title={shortItems.length ? '' : 'Nothing short here (counted places only)'}
+                onClick={() => void draftShort()}><Icon n="note" /> Draft order for what's short{shortItems.length ? ` (${shortItems.length})` : ''}</button>}
+      </div>}
       <p className="note">
         {!p.place ? <>▲ What cleaners took for units that had no place at the time. Give those units a place in the Repository; these
           moves stay here.</>
@@ -226,8 +284,8 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
         {p.look.photos.map((f, k) => <Fragment key={f.url}> · <a href={f.url} target="_blank" rel="noreferrer">photo {k + 1}</a></Fragment>)}</p>}
       <div className="grid-scroll">
         <table className="units compact">
-          <thead><tr><th>Item</th><th className="n">On record</th><th>Counted</th>{!house && <><th className="n">Per clean</th>
-            <th className="n">Cleans take ({inv.aheadDays} d)</th></>}<th className="n">Keep at least</th><th className="n">{p.from ? 'To refill' : 'To order'}</th>
+          <thead><tr><th>Item</th><th className="n">Here</th><th>Counted</th>{!house && plan && <><th className="n">Per clean</th>
+            <th className="n">Cleans take ({inv.aheadDays} d)</th></>}{(house || plan) && <th className="n">Keep at least</th>}<th className="n">{p.from ? 'To refill' : 'To order'}</th>
             {mode === 'edit' && <th></th>}</tr></thead>
           <tbody>
             {items.map(i => {
@@ -238,14 +296,14 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
               const mv = moving?.id === i.id ? moving : null;
               return (
                 <Fragment key={i.id}>
-                {i.id === firstFurniture && <tr><td colSpan={9} className="sub-n"><b>Furniture here</b> — kept in this {p.self ? 'closet' : 'storage'}; ⇄ moves it to a house or elsewhere.</td></tr>}
+                {i.id === firstFurniture && <tr><td colSpan={cols} className="sub-n"><b>Furniture here</b> — kept in this {p.self ? 'closet' : 'storage'}; ⇄ moves it to a house or elsewhere.</td></tr>}
                 <tr>
                   <td>{mode === 'edit' ? <span className="inv-edit">
                       <input value={e.name ?? i.baseName ?? i.name} maxLength={120} aria-label="Name" onChange={x => ed(i.id, 'name', x.target.value)} />
                       <input value={e.measure ?? i.measure} maxLength={20} aria-label="Counted in" className="inv-measure" onChange={x => ed(i.id, 'measure', x.target.value)} />
                     </span> : <><b>{i.name}</b> <span className="sub-n">{i.measure}</span>{(i.kind === 'furniture') !== house && <span className="sub-n"> · {i.kind === 'furniture' ? 'furniture' : 'supply'}</span>}</>}
                     {l?.missingSince && <div className="breach"><Icon n="warning" /> reported not there {short(l.missingSince)} — count it</div>}
-                    {edit && mode === 'view' && !mv && (l?.qty ?? 0) > 0 && <div><button className="link tiny" disabled={busy}
+                    {edit && fixing && !mv && (l?.qty ?? 0) > 0 && <div><button className="link tiny" disabled={busy}
                       onClick={() => setMoving({ id: i.id, qty: '', to: '' })}>⇄ move</button></div>}
                     {mv && <div className="row" style={{ gap: 6, alignItems: 'center' }}>
                       <input className="inv-qty" type="number" min="0" step="1" placeholder="How many" aria-label="How many to move" value={mv.qty}
@@ -257,7 +315,7 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
                       }}>Move</button>
                       <button className="link tiny" onClick={() => setMoving(null)}>Cancel</button>
                     </div>}</td>
-                  <td className="n">{edit && mode === 'view' ? (
+                  <td className="n">{edit && fixing ? (
                     <span className="inv-adj">
                       <button type="button" aria-label={`One less ${i.name}`} disabled={busy || val <= 0} onClick={() => setTo(i.id, val - 1, now)}>−</button>
                       <input type="number" inputMode="decimal" min="0" step="any" aria-label={`${i.name} on record`} value={fmt(val) === '—' ? '0' : String(Math.round(val * 100) / 100)}
@@ -266,15 +324,15 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
                       <span className="inv-delta">{fix[i.id] ? (fix[i.id]! > 0 ? `+${fix[i.id]}` : fix[i.id]) : ''}</span>
                     </span>) : fmt(l?.qty)}</td>
                   <td>{l?.countedAt ? short(l.countedAt) : <span className="sub-n">never</span>}</td>
-                  {!house && <><td className="n">{mode === 'edit'
+                  {!house && plan && <><td className="n">{mode === 'edit'
                     ? <input className="inv-qty" type="number" min="0" step="any" aria-label="Estimate per clean" value={e.perClean ?? (i.perClean == null ? '' : String(i.perClean))}
                              onChange={x => ed(i.id, 'perClean', x.target.value)} />
                     : <>{fmt(l?.perClean)}{l?.perClean != null && <span className="sub-n">{l.learned ? ` avg of ${l.reportedCleans}` : ' est.'}</span>}</>}</td>
                   <td className="n">{l?.need ? l.need : '—'}</td></>}
-                  <td className="n">{mode === 'edit'
+                  {(house || plan) && <td className="n">{mode === 'edit'
                     ? <input className="inv-qty" type="number" min="0" step="any" aria-label="Keep at least here" placeholder={fmt(i.reorderAt)}
                              value={e.min ?? (l?.minOwn ? String(l.min) : '')} onChange={x => ed(i.id, 'min', x.target.value)} />
-                    : <>{fmt(l?.min)}{l?.min != null && <span className="sub-n">{l.minOwn ? ' here' : ' item'}</span>}</>}</td>
+                    : <>{fmt(l?.min)}{l?.min != null && <span className="sub-n">{l.minOwn ? ' here' : ' item'}</span>}</>}</td>}
                   <td className="n">{l?.toOrder ? <b>{l.toOrder}</b> : l?.toRefill ? <b>{l.toRefill}</b> : '—'}</td>
                   {mode === 'edit' && <td className="n nowrap">
                     <button className="link tiny" disabled={busy} onClick={() => void send({ action: 'hide', place: p.place, itemId: i.id, hide: true }, `${i.name}: not kept here.`)}><Icon n="eyeOff" /> Not here</button>{' '}
@@ -307,21 +365,26 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
       </>}
       {edit && (
         <div className="button-row">
-          {mode === 'view' && fixes.length > 0 && <>
+          {fixing && fixes.length > 0 && <>
             <input value={why} maxLength={500} placeholder="Why — e.g. brought from outside, broken, lent" onChange={x => setWhy(x.target.value)} />
             <button disabled={busy || !why.trim()}
                     onClick={async () => { if (await send({ action: 'adjusts', place: p.place, note: why, adjusts: fixes.map(([itemId, qty]) => ({ itemId, qty })) },
-                                                      `Corrected ${fixes.length} item${fixes.length === 1 ? '' : 's'}.`)) { setFix({}); setWhy(''); } }}>
+                                                      `Corrected ${fixes.length} item${fixes.length === 1 ? '' : 's'}.`)) { setFix({}); setWhy(''); setFixing(false); } }}>
               Save corrections ({fixes.length})</button>
             <button className="secondary" onClick={() => { setFix({}); setWhy(''); }}>Undo</button>
           </>}
-          {mode === 'view' && !fixes.length && <>
-            <button onClick={() => { setOnsite(true); setMsg(''); }}><Icon n="phone" /> Count {placeTitle(p)}</button>
-            {p.from && !refill && <button className="secondary" disabled={busy} onClick={() => { startRefill(); setMsg(''); }}>
-              ⇄ Refill from {fromPlace ? placeLabel(fromPlace.name) : 'storage'}{toRefill.length ? ` (${toRefill.length})` : ''}</button>}
-            {!p.from && <button className="secondary" disabled={busy || !shortItems.length} title={shortItems.length ? '' : 'Nothing short here (counted places only)'}
-                    onClick={() => void draftShort()}><Icon n="note" /> Draft order for what's short{shortItems.length ? ` (${shortItems.length})` : ''}</button>}
+          {fixing && !fixes.length && <>
+            <span className="note">− [n] + changes what is on record; ⇄ move takes it to another place.</span>
+            <button className="secondary" onClick={() => { setFixing(false); setMoving(null); }}>Done</button>
+          </>}
+          {mode === 'view' && !fixing && <>
+            <button className="secondary" onClick={() => setDetails(d => !d)} aria-pressed={details}>{details ? 'Hide details' : 'Details'}</button>
+            <button className="secondary" onClick={() => { setFixing(true); setMsg(''); }}>± Correct</button>
             <button className="secondary" onClick={() => { setMode('edit'); setEds({}); setMsg(''); }}>✎ Edit settings</button>
+            <span className="note"><Hint label="Count, correct or edit?"><b>Count</b> = you looked: it replaces the record and shows how far off it was.
+              <b> ± Correct</b> = you know the number changed without counting (brought from outside, broken, lent) — say why. <b>Edit settings</b> =
+              names, "counted in", the estimate per clean and how much to keep here. What was bought goes in To buy → Record a purchase, with its cost.
+              <b> Details</b> shows the planning columns: per clean, what the coming cleans take, keep at least.</Hint></span>
           </>}
           {mode === 'edit' && <>
             <button disabled={busy || !edited.length} onClick={async () => {
@@ -354,8 +417,6 @@ function PlaceStock({ inv, p, canEdit, onSaved }: { inv: Inventory; p: InvPlace;
           {msg && <span className="note">{msg}</span>}
         </div>
       </div>}
-      {edit && mode === 'view' && <p className="note">Correcting a count <Hint>− [n] + on “On record” corrects it (say why); a full count replaces it. What was bought
-        goes in <Icon n="receipt" /> Record a purchase (below), with its cost.</Hint></p>}
     </div>
   );
 }
@@ -400,6 +461,24 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
     catch (e) { setMsg(String(e)); return null; } finally { setBusy(false); }
   };
   const set = (id: string, n: number) => setCounts(c => ({ ...c, [id]: Math.max(0, Math.min(99999, n)) }));
+  // A written count (owner, 2026-11-17): a .md / text list fills the sheet; the person checks it and saves as usual.
+  const [md, setMd] = useState<{ text: string; result?: { filled: number; close: string[]; unmatched: CountLine[] } } | null>(null);
+  const fillFrom = (text: string) => {
+    const lines = parseCountText(text);
+    // This place's list first; then the rest of the list (counted here, it joins the place).
+    const here = matchCounts(lines, shown);
+    const rest = matchCounts(here.unmatched, inv.items.filter(i => i.active && !shown.includes(i) && !p.hidden.includes(i.id) && (p.view !== 'house' || i.kind === 'furniture')));
+    const all = [...here.matched, ...rest.matched];
+    setCounts(c => ({ ...c, ...Object.fromEntries(all.map(m => [m.itemId, m.qty])) }));
+    const nameOf = (id: string) => inv.items.find(i => i.id === id)?.name ?? id;
+    setMd({ text, result: { filled: all.length, close: all.filter(m => m.close).map(m => `“${m.line.name}” → ${nameOf(m.itemId)}`), unmatched: rest.unmatched } });
+  };
+  const template = () => {
+    const day = new Date().toLocaleDateString('en-CA');
+    const blob = new Blob([countTemplate(placeTitle(p), shown, day)], { type: 'text/markdown' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = `count-${placeTitle(p).replace(/[^a-z0-9]+/gi, '-').toLowerCase()}-${day}.md`;
+    a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  };
   const save = async () => {
     const r = await act({ action: 'count', place: p.place, view: viewOf(p), counts: Object.entries(counts).map(([itemId, qty]) => ({ itemId, qty })), look: look.trim() }, files);
     if (r) onClose();
@@ -410,7 +489,25 @@ function OnsiteCount({ inv, p, onSaved, onClose }: { inv: Inventory; p: InvPlace
         <div className="onsite-top">
           <input value={q} placeholder="Find an item…" onChange={e => setQ(e.target.value)} />
           <span className="sub-n">Count what is really here. Untouched items keep their record.</span>
+          {!md && <button type="button" className="link tiny" onClick={() => setMd({ text: '' })}><Icon n="note" /> Fill from a list (.md)</button>}
         </div>
+        {md && <div className="inv-md">
+          <b><Icon n="note" /> Fill from a written count <Hint>Counted on paper, in a notes app or with an assistant? Paste the list or open the .md file:
+            one item and its number per line — "Paper towels: 12", "12 x Paper towels", a table… The template has this place's items ready to fill.
+            Each line fills the item with the same name; a name that is close is filled and listed so you can check it; anything else is listed as
+            not matched (add it below, or fix the name). Nothing is saved until you press Save the count.</Hint></b>
+          <span className="button-row">
+            <label className="chip"><input type="file" accept=".md,.markdown,.txt,text/markdown,text/plain" hidden
+              onChange={e => { const f = e.target.files?.[0]; if (f) void f.text().then(t => { setMd({ text: t }); fillFrom(t); }); e.target.value = ''; }} /> Open a file</label>
+            <button type="button" className="chip" onClick={template}>Download the template</button>
+            <button type="button" className="link tiny" onClick={() => setMd(null)}>Close</button>
+          </span>
+          <textarea rows={5} value={md.text} placeholder={'Paper towels: 12\nToilet paper: 30\n…'} onChange={e => setMd({ text: e.target.value })} />
+          <button type="button" className="secondary" disabled={!md.text.trim()} onClick={() => fillFrom(md.text)}>Fill the count</button>
+          {md.result && <p className="note" role="status">✓ {md.result.filled} filled — check them below, then save.
+            {md.result.close.length > 0 && <> ▲ Close names: {md.result.close.join(' · ')}.</>}
+            {md.result.unmatched.length > 0 && <span className="breach"> ▲ Not matched: {md.result.unmatched.map(l => `${l.name} (${l.qty})`).join(', ')}.</span>}</p>}
+        </div>}
         {list.map(i => {
           const l = levelOf(i.id);
           const n = counts[i.id];
