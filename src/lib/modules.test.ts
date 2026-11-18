@@ -26,9 +26,8 @@ test('the module that lights up is the one that owns the screen', () => {
   assert.equal(moduleOf(nav, 'operations', 'calendar')!.key, 'vendors');
   assert.equal(moduleOf(nav, 'inbox')!.key, 'guests');
   assert.equal(moduleOf(nav, 'repository')!.key, 'core');
-  // The claims shortcut and the portal preview are doors, not places.
-  const claims = nav.find(m => m.key === 'guests')!.links.find(l => l.key === 'claims')!;
-  assert.equal(isActive(claims, 'operations', 'todos'), false);
+  // The portal preview is a door, not a place; Guest Services is the CRM alone (the claims shortcut went, 2026-11-17).
+  assert.deepEqual(nav.find(m => m.key === 'guests')!.links.map(l => l.label), ['CRM']);
 });
 
 test('the phone bar is the first screen of the first modules, one per tab', () => {

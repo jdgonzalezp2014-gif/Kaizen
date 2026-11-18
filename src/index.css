@@ -3897,7 +3897,11 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
 .ix-tabs::-webkit-scrollbar { display: none; }
 .ix-tabs button { white-space: nowrap; flex: none; }
 /* The count of guests waiting, on the menu: in the row, not floating over the icon as the bell's does. */
-.side-link .guest-ping, .tab .guest-ping { position: static; margin-left: auto; flex: none; }
+.side-link .guest-ping, .side-sublink .guest-ping, .tab .guest-ping { position: static; margin-left: auto; flex: none; }
+.side-sublink:has(.guest-ping) { display: flex; align-items: center; }
+/* Guest Services: a red dot on its icon while a guest waits — the count is the CRM's (owner, 2026-11-17). */
+.side-icon { position: relative; display: inline-grid; flex: none; }
+.guest-dot { position: absolute; top: -1px; right: -2px; width: 8px; height: 8px; border-radius: 50%; background: var(--red); box-shadow: 0 0 0 2px var(--rail, var(--bg)); }
 .tab { position: relative; }
 .tab .guest-ping { position: absolute; top: 4px; right: calc(50% - 20px); margin: 0; }
 

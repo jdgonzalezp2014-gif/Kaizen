@@ -98,7 +98,7 @@ export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, 
     <div className={`ix ${open ? 'has-open' : ''}`}>
       <aside className="ix-list" aria-label="Conversations">
         <div className="ix-list-head">
-          <h2>Inbox <Hint>Every guest conversation from Hostaway, newest first, with its reservation. Open one to read it, answer, schedule a message,
+          <h2>CRM <Hint>Every guest conversation from Hostaway, newest first, with its reservation. Open one to read it, answer, schedule a message,
             see the to-dos of that stay and its SMS. <b>Needs reply</b> = the guest wrote last — and, once Hostaway's live messages are connected (Settings →
             Integrations → Guest messages &amp; AI), not just to say thanks. A <Icon n="list" /> number is open to-dos for the stay; a <Icon n="clock" /> number is
             messages waiting to go. <Icon n="zap" /> opens the automations; <Icon n="bell" /> turns on this computer's notice when a guest writes.</Hint></h2>

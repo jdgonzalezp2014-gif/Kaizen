@@ -145,3 +145,4 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
   before/after + Hostaway prices; the change is an alteration made in Hostaway / Airbnb via the header links, never from here),
   **Scheduled**. Thread GET adds `cases` (claims of the stay, needs `claims`) and `order` on tasks. A case opens in Claims & upselling.
 - 2026-11-17 (owner): open Work and Claims on a stay are red with a "!" (section count, fold border) until closed; the list row's open to-dos badge too.
+- 2026-11-17 (owner): menu — Guest Services shows only a red dot on its icon while a guest waits; its one door is renamed **CRM** (the screen's title too) and carries the count; the "Claims & upselling" shortcut was removed (`alwaysSub` keeps CRM drawn under the module).

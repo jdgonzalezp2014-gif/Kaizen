@@ -298,6 +298,7 @@ function TeamApp() {
     ? <LiveBell tasks={bellTasks} messages={bellMessages} onTodo={openTodo} onConversation={openConversation} /> : null;
   // Guests waiting for an answer (Hostaway's webhook → guest_events): a count on Guest Services; their notices are the bell's.
   const ping = bellMessages ? <GuestPing /> : null;
+  const dot = bellMessages ? <GuestPing dot /> : null;
   // The menu: the company's modules, cut to what this person may open (src/lib/modules.ts).
   const nav = allowed ? navFor(allowed, permissions) : [];
   const onLink = (l: NavLink) => {
@@ -319,7 +320,7 @@ function TeamApp() {
         {phone && bell}
         <span className="phone-theme"><ThemeToggle /></span>
       </header>}
-      {!crewOnly && allowed && <SideNav nav={nav} tab={tab} view={opsNow} onLink={onLink} onReport={() => setReporting('new')} bell={phone ? null : bell} ping={phone ? null : ping} />}
+      {!crewOnly && allowed && <SideNav nav={nav} tab={tab} view={opsNow} onLink={onLink} onReport={() => setReporting('new')} bell={phone ? null : bell} ping={phone ? null : ping} dot={phone ? null : dot} />}
       {!crewOnly && allowed && <TabBar nav={nav} tab={tab} view={opsNow} onLink={onLink} onReport={() => setReporting('new')} ping={phone ? ping : null} />}
       {reporting && <ReportsDialog initial={reporting} where={whereLabel(nav, tab, opsNow)} onClose={() => setReporting(null)} />}
 
@@ -468,8 +469,8 @@ function Today({ compact = false }: { compact?: boolean }) {
  * Since 2026-11-16 the rail is the company's modules (src/lib/modules.ts): one icon per area, its screens under it —
  * Operations' views, Finance's three screens, the vendors' pages. A planned module carries its phase as a tag.
  */
-function SideNav({ nav, tab, view, onLink, onReport, bell, ping }: {
-  nav: NavModule[]; tab: Tab | null; view?: string; onLink: (l: NavLink) => void; onReport: () => void; bell?: ReactNode; ping?: ReactNode;
+function SideNav({ nav, tab, view, onLink, onReport, bell, ping, dot }: {
+  nav: NavModule[]; tab: Tab | null; view?: string; onLink: (l: NavLink) => void; onReport: () => void; bell?: ReactNode; ping?: ReactNode; dot?: ReactNode;
 }) {
   return (
     <aside className="side-nav" aria-label="Sections">
@@ -477,20 +478,19 @@ function SideNav({ nav, tab, view, onLink, onReport, bell, ping }: {
       <nav className="side-list">
         {nav.map(m => {
           const active = m.links.some(l => isActive(l, tab, view));
-          const sub = m.links.length > 1;
+          const sub = m.links.length > 1 || !!m.alwaysSub;
           const first = m.links.find(l => !l.alias) ?? m.links[0]!;
           return (
             <div key={m.key} className={`side-item ${active ? 'active' : ''} ${sub ? 'has-sub' : ''}`}>
               <button className="side-link" aria-current={active ? 'page' : undefined} onClick={() => onLink(first)} title={m.label}>
-                <TabIcon name={m.icon} /><span className="side-word">{m.label}{first.href && !sub ? ' ↗' : ''}</span>
+                <span className="side-icon"><TabIcon name={m.icon} />{m.key === 'guests' && dot}</span><span className="side-word">{m.label}{first.href && !sub ? ' ↗' : ''}</span>
                 {m.phase && <span className="side-word side-tag">{m.phase}</span>}
-                {m.key === 'guests' && ping}
               </button>
               {sub && (
                 <div className="side-sub" role="group" aria-label={m.label}>
                   {m.links.map(l => (
                     <button key={l.key} className={isActive(l, tab, view) ? 'side-sublink active' : 'side-sublink'}
-                            onClick={() => onLink(l)}>{l.label}{l.href ? ' ↗' : ''}</button>
+                            onClick={() => onLink(l)}>{l.label}{l.href ? ' ↗' : ''}{l.tab === 'inbox' && ping}</button>
                   ))}
                 </div>
               )}

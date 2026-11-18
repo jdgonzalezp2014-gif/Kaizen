@@ -22,6 +22,8 @@ export interface NavLink {
 export interface NavModule {
   key: string; label: string; icon: string;
   phase?: 'Phase 2' | 'Future';
+  /** Draw its doors under it even when there is only one (Guest Services → CRM, whose count sits on the door). */
+  alwaysSub?: boolean;
   /** What a planned module will hold — its empty page lists these, nothing else. */
   plan?: string[];
   links: NavLink[];
@@ -31,9 +33,10 @@ export const MODULES: NavModule[] = [
   // Owner 2026-11-17: Home is the main door — named Home, not Leadership.
   { key: 'leadership', label: 'Home', icon: 'home', links: [
     { key: 'home', label: 'Home', tab: 'home' }] },
-  { key: 'guests', label: 'Guest Services', icon: 'inbox', links: [
-    { key: 'inbox', label: 'Inbox', tab: 'inbox' },
-    { key: 'claims', label: 'Claims & upselling', tab: 'operations', view: 'todos', params: { list: 'claims' }, perms: ['todos', 'claims'], alias: true }] },
+  // Owner 2026-11-17: the Inbox is the CRM; the claims shortcut is gone (claims and upsells live in Operations → To-do and in
+  // each conversation). One door, still drawn under the module: the CRM carries the count, the module only a dot.
+  { key: 'guests', label: 'Guest Services', icon: 'inbox', alwaysSub: true, links: [
+    { key: 'inbox', label: 'CRM', tab: 'inbox' }] },
   { key: 'operations', label: 'Operations', icon: 'operations', links: [
     { key: 'board', label: 'Movements', tab: 'operations', view: 'board' },
     { key: 'todos', label: 'To-do', tab: 'operations', view: 'todos', perms: ['todos'] },

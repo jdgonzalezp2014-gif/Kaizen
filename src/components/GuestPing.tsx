@@ -45,12 +45,13 @@ export function useGuestFeed(on: boolean, cb: (f: GuestFresh[]) => void) {
   }, [on]);
 }
 
-/** The count beside "Guest Services". */
-export function GuestPing() {
+/** The count beside the CRM; `dot`: only a red dot, on Guest Services' icon (owner, 2026-11-17). */
+export function GuestPing({ dot = false }: { dot?: boolean }) {
   const [n, setN] = useState(waiting);
   useEffect(() => {
     subs.add(setN); start();
     return () => { subs.delete(setN); stop(); };
   }, []);
+  if (dot) return n > 0 ? <span className="guest-dot" role="img" aria-label={`${n} guest${n === 1 ? '' : 's'} waiting`} /> : null;
   return n > 0 ? <b className="live-count guest-ping" title={`${n} guest${n === 1 ? '' : 's'} waiting for an answer`}>{n > 9 ? '9+' : n}</b> : null;
 }
