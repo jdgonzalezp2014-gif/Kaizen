@@ -3781,6 +3781,8 @@ a.gx-tile { text-decoration: none; }
 .ix-form { display: grid; gap: 8px; }
 .ix-form input, .ix-form select { min-height: 34px; }
 /* The chat's + (2026-11-17): pick what it becomes, then say what. */
+.ix-hold-all { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; }
+.ix-ghost.danger { color: var(--red); border-color: currentColor; }
 .ix-kinds { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
 .ix-kind { display: grid; justify-items: start; gap: 2px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: inherit; text-align: left; cursor: pointer; }
 .ix-kind span { font-size: 12px; color: var(--muted); }

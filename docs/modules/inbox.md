@@ -128,3 +128,7 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
 - 2026-11-17 (owner): the conversation's To-dos "+" opens a pop-up — Task / Repair (work order) / Purchase (purchase order)
   go to Operations → To-do; Claim (`CASE_CATEGORIES`) and Upsell (`UPSELL_CATEGORIES`) open a case in Claims & upselling (needs `claims`).
   The bell shows a dot for anything new; the count stays on Guest Services. The menu's Leadership is now "Home".
+- 2026-11-17 (owner): **cancel what is scheduled, per stay** — the conversation's Scheduled card: Cancel per row, Cancel all
+  (two steps), Undo on a cancelled automation. POST `hold` / `resume` in `functions/api/inbox.ts`: a manual message →
+  `cancelled`; an automation → its once-per-stay row written as `cancelled` with `created_by` (kept out of the thread), so the
+  clock never makes it; `resume` deletes that row. The automation stays on for every other stay.

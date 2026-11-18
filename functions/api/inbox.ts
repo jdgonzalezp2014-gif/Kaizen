@@ -5,7 +5,7 @@
  *   GET ?sms=<reservation id>        → the guest's SMS thread in Quo (the phone number never leaves the server)
  *   GET ?events=<last id>            → what Hostaway's webhook reported since: guests waiting for an answer (the rail's count, the browser's notification)
  *   GET ?automations=1               → the automations with what each one did in the last 30 days, and the listings to choose from
- *   POST { action: send | schedule | cancel | retry | suggest | checkin }
+ *   POST { action: send | schedule | cancel | retry | suggest | checkin | hold | resume }
  * Reading is permission `messages`; anything that writes is `messages.send` (roles.ts). Sending goes through the outbox
  * (guest-outbox.ts): while the account's guest messages are off, "send" keeps the message as staged and says so.
  * The tables come with migration 116; until it runs the list and the threads still read (Hostaway needs no table).
@@ -27,15 +27,18 @@ const ID = /^\d{1,20}$/;
 const bad = (message: string, status = 400) => Response.json({ ok: false, message }, { status });
 const json = (body: unknown) => Response.json(body, { headers: { 'Cache-Control': 'no-store' } });
 
+// An automation a person held for this stay (action 'hold') is a mark, not a message: it stays out of the thread.
 const outbox = (sql: SqlFn, reservationId: string, channel: Channel) =>
   (sql`SELECT id::text AS id, reservation_id, conversation_id, listing_id, channel, body, status, send_at, sent_at, attempts, error,
               template_id::text AS template_id, source, created_by, via
          FROM guest_messages WHERE account_id = 1 AND reservation_id = ${reservationId} AND channel = ${channel}
+          AND NOT (source = 'auto' AND status = 'cancelled' AND created_by IS NOT NULL)
         ORDER BY send_at` as Promise<OutRow[]>)
     // Before migration 117 there is no `via` column: the rows still read.
     .catch(() => sql`SELECT id::text AS id, reservation_id, conversation_id, listing_id, channel, body, status, send_at, sent_at, attempts, error,
               template_id::text AS template_id, source, created_by
          FROM guest_messages WHERE account_id = 1 AND reservation_id = ${reservationId} AND channel = ${channel}
+          AND NOT (source = 'auto' AND status = 'cancelled' AND created_by IS NOT NULL)
         ORDER BY send_at` as Promise<OutRow[]>).catch(() => [] as OutRow[]);
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
@@ -192,6 +195,32 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const fired = await fireStay(sql, env, reservationId).catch(e => ({ skipped: e instanceof Error ? e.message : String(e) }));
       return json({ ok: true, status: 'sent', fired });
     } catch (e) { return /guest_checkins|does not exist/i.test(String(e)) ? bad('The database needs migration 117 first (npm run migrate).', 409) : bad(String(e), 500); }
+  }
+
+  // 2026-11-17 (owner): stop what is still to go for one stay — "something happened" (a cancellation, a change of plan).
+  // A manual message waiting is cancelled; an automation is held by writing its once-per-stay row as 'cancelled'
+  // (the unique index guest_messages_auto_once), so the clock never makes it. `resume` deletes that row: it goes again.
+  if (b.action === 'hold' || b.action === 'resume') {
+    if (!ID.test(reservationId)) return bad('Which stay?');
+    const ids = (Array.isArray(b.templateIds) ? b.templateIds : []).map(String).filter(x => ID.test(x)).slice(0, 50);
+    const msgs = (Array.isArray(b.messageIds) ? b.messageIds : []).map(x => String(x).replace(/^k/, '')).filter(x => ID.test(x)).slice(0, 50);
+    try {
+      if (b.action === 'resume') {
+        await sql`DELETE FROM guest_messages WHERE account_id = 1 AND reservation_id = ${reservationId} AND source = 'auto'
+                  AND status = 'cancelled' AND template_id::text = ANY(${ids})`;
+        return json({ ok: true, status: 'scheduled' });
+      }
+      if (msgs.length) await sql`UPDATE guest_messages SET status = 'cancelled' WHERE account_id = 1 AND reservation_id = ${reservationId}
+                                 AND status = 'scheduled' AND id::text = ANY(${msgs})`;
+      const templates = (await loadTemplates(sql)).filter(t => ids.includes(t.id));
+      const listingId = b.listingId && ID.test(String(b.listingId)) ? String(b.listingId) : null;
+      for (const t of templates) {
+        await sql`INSERT INTO guest_messages (account_id, reservation_id, conversation_id, listing_id, channel, body, status, send_at, template_id, source, created_by)
+                  VALUES (1, ${reservationId}, ${conversationId}, ${listingId}, ${t.channel}, ${`Held: ${t.name}`}, 'cancelled', now(), ${t.id}, 'auto', ${who.email})
+                  ON CONFLICT DO NOTHING`;
+      }
+      return json({ ok: true, status: 'cancelled' });
+    } catch (e) { return needs116(e); }
   }
 
   if (b.action === 'cancel' || b.action === 'retry') {

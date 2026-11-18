@@ -350,6 +350,8 @@ function Composer({ row, channel, via, list, portalLink, canSend, onSent }: {
   );
 }
 
+/** What an automation still has ahead of it for this stay — what Cancel / Cancel all stop. */
+const PENDING: Planned['state'][] = ['planned', 'due', 'waiting'];
 const PLAN_WORD: Record<Planned['state'], string> = { planned: 'Planned', due: 'Due now', missed: 'Missed', sent: 'Sent', staged: 'Staged', failed: 'Not sent',
   scheduled: 'Retrying', cancelled: 'Cancelled', received: '', waiting: 'After check-in', skipped: 'Not needed' };
 
@@ -383,6 +385,18 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
   };
   const nights = nightsOf(row.arrival, row.departure);
   const waiting = thread?.messages.filter(m => m.ours && m.status === 'scheduled') ?? [];
+  const pending = thread?.plan.filter(p => PENDING.includes(p.state)) ?? [];
+  const [sure, setSure] = useState(false);
+  const [holdBusy, setHoldBusy] = useState(false);
+  const [holdMsg, setHoldMsg] = useState('');
+  const hold = async (templateIds: string[], messageIds: string[], resume = false) => {
+    setHoldBusy(true); setHoldMsg('');
+    const r = await inboxAction({ action: resume ? 'resume' : 'hold', reservationId: row.reservationId, conversationId: row.conversationId,
+      listingId: row.listingId, templateIds, messageIds }).catch(e => ({ ok: false as const, message: String(e) }));
+    setHoldBusy(false); setSure(false);
+    if (!r.ok) setHoldMsg(('message' in r && r.message) || 'Not saved.');
+    onChanged();
+  };
   const [kind, setKind] = useState<NewKind>('task');
   const [category, setCategory] = useState('');
   const isCase = kind === 'claim' || kind === 'upsell';
@@ -475,15 +489,24 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
       </div>}
 
       {row.reservationId && <div className="ix-card">
-        <h4>Scheduled <span className="ix-count">{waiting.length + (thread?.plan.filter(p => p.state === 'planned' || p.state === 'due').length ?? 0)}</span>
-          <Hint>Messages still to go for this stay: the ones a person scheduled, and the automations (<Icon n="zap" />, top of the inbox) that apply to this listing, with
-            the moment each one goes. <b>After check-in</b> = it waits for the guest's online check-in; <b>Not needed</b> = its condition does not hold. Each automatic
-            message goes once per stay. A scheduled one can be cancelled from the conversation.</Hint></h4>
+        <h4>Scheduled <span className="ix-count">{waiting.length + pending.length}</span>
+          <Hint>Messages still to go for this stay: the ones a person scheduled, and the active automations (<Icon n="zap" />, top of the inbox) that apply to this
+            listing, with the moment each one goes. <b>After check-in</b> = it waits for the guest's online check-in; <b>Not needed</b> = its condition does not hold.
+            Each automatic message goes once per stay. <b>Cancel</b> stops one for this stay only (the automation stays on for everyone else); <b>Cancel all</b> stops
+            everything still to go — for when something happened (a cancellation, a change of plan). A cancelled automation can be put back with <b>Undo</b>.</Hint>
+          {canSend && waiting.length + pending.length > 1 && (sure
+            ? <span className="ix-hold-all"><button type="button" className="ix-ghost danger" disabled={holdBusy} onClick={() => void hold(pending.map(p => p.templateId), waiting.map(m => m.id))}>{holdBusy ? 'Cancelling…' : `Cancel ${waiting.length + pending.length}`}</button>
+                <button type="button" className="link tiny" onClick={() => setSure(false)}>Keep</button></span>
+            : <button type="button" className="ix-ghost" onClick={() => setSure(true)}>Cancel all</button>)}</h4>
         <ul className="ix-plan">
-          {waiting.map(m => <li key={m.id}><Icon n="clock" /><span>{m.body.slice(0, 60)}</span><time>{fmt(m.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time></li>)}
+          {waiting.map(m => <li key={m.id}><Icon n="clock" /><span>{m.body.slice(0, 60)}</span><time>{fmt(m.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}</time>
+            {canSend && <button type="button" className="link tiny" disabled={holdBusy} onClick={() => void hold([], [m.id])}>Cancel</button>}</li>)}
           {thread?.plan.map(p => <li key={p.templateId} className={`p-${p.state}`}><Icon n={p.channel === 'sms' ? 'phone' : 'message'} /><span>{p.name}</span>
-            <time title={PLAN_WORD[p.state]}>{p.state === 'planned' && p.at ? fmt(p.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : PLAN_WORD[p.state]}</time></li>)}
+            <time title={PLAN_WORD[p.state]}>{p.state === 'planned' && p.at ? fmt(p.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : PLAN_WORD[p.state]}</time>
+            {canSend && PENDING.includes(p.state) && <button type="button" className="link tiny" disabled={holdBusy} onClick={() => void hold([p.templateId], [])}>Cancel</button>}
+            {canSend && p.state === 'cancelled' && <button type="button" className="link tiny" disabled={holdBusy} onClick={() => void hold([p.templateId], [], true)}>Undo</button>}</li>)}
         </ul>
+        {holdMsg && <p className="ix-state warn">{holdMsg}</p>}
         {thread && !waiting.length && !thread.plan.length && <p className="note">Nothing scheduled.</p>}
       </div>}
 
