@@ -13,7 +13,7 @@ import { useGuestFeed, type GuestFresh } from './GuestPing.tsx';
 import { Icon } from './Icon.tsx';
 import { Popover } from './Popover.tsx';
 import { Hint } from './Hint.tsx';
-import { chime } from './chime.ts';
+import { chime, soundReady, testChime } from './chime.ts';
 import { NotifySettings, loadPrefs, savePrefs, BELL_TEST } from './NotifySettings.tsx';
 import { decide, type Kind, type NotifyPrefs } from '../lib/notify.ts';
 
@@ -101,12 +101,24 @@ export function LiveBell({ tasks, messages, onTodo, onConversation }: {
     return () => removeEventListener(BELL_TEST, t);
   });
 
+  const [ready, setReady] = useState(soundReady());
+  useEffect(() => {
+    if (ready) return;
+    const t = window.setInterval(() => { if (soundReady()) setReady(true); }, 1000);
+    return () => window.clearInterval(t);
+  }, [ready]);
   const both = tasks && messages;
   const list = feed.items.filter(x => (show === 'all' || x.kind === show) && (x.kind === 'tasks' ? tasks : messages));
   const paused = prefs.pausedUntil > Date.now();
   const title = both ? 'Notifications' : messages ? 'Guest messages' : 'Work updates';
+  // 2026-11-17 (owner: "I don't hear them"): a browser keeps a page silent until it is clicked once. Until then a small
+  // "Sound off" sits by the bell; its click turns sound on (and plays the tone, so it is heard working).
+  const silent = !ready && !paused && ((messages && prefs.messages.on && prefs.messages.tone !== 'none') || (tasks && prefs.tasks.on && prefs.tasks.tone !== 'none'));
   return (
     <>
+      {silent && <button type="button" className="sound-off" title="The browser keeps Kaizen silent until you click it once. Click to turn the sound on."
+                         onClick={() => { testChime(prefs.volume, messages ? prefs.messages.tone : prefs.tasks.tone); }}>
+        <Icon n="mute" /><span>Sound off</span></button>}
       <Popover align="right" className="live-bell" label={feed.unread ? `${feed.unread} notification${feed.unread === 1 ? '' : 's'}` : title}
                button={<span onClick={() => setFeed(p => p.unread ? { ...p, unread: 0 } : p)}>
                  <Icon n="bell" />{feed.unread > 0 && <span className="live-dot" aria-hidden="true" />}

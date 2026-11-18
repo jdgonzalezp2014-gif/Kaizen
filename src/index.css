@@ -2867,6 +2867,12 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
 
 /* §166: live work — the bell in the header, its list, and the notice when new work arrives. */
 .live-bell { margin-left: auto; position: relative; }
+/* Until the page is clicked once the browser keeps it silent — said, small, by the bell (2026-11-17). */
+.sound-off { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border: 1px solid var(--red); border-radius: var(--r-pill);
+  background: none; color: var(--red); font-size: 11px; font-weight: 650; cursor: pointer; white-space: nowrap; }
+.sound-off .icon { width: 13px; height: 13px; }
+.side-foot .sound-off span { display: none; }
+.side-nav:hover .side-foot .sound-off span, .side-nav.open .side-foot .sound-off span { display: inline; }
 .today-chip + .live-bell, .live-bell + .phone-theme { margin-left: 0; }
 .live-bell .pop-btn { position: relative; display: inline-flex; align-items: center; justify-content: center; min-width: 36px; min-height: 36px;
   background: none; border: 0; border-radius: var(--r-sm); color: var(--ink); cursor: pointer; font-size: 18px; }

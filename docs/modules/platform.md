@@ -203,3 +203,4 @@ Owner: "the notifications of messages and task alerts in the bell, with a profes
   nothing unless the listing has a record. Next (roadmap phase 4): the same brain behind @Kaizen, tools that act (record an invoice).
 - **SOP sections follow the menu (migration 118, NOT applied):** one top section per module (`mod-*`), the old sections are their
   children (keys unchanged). Draft SOP: `.sop-118.mjs`.
+- 2026-11-17: "Sound off" by the bell until the page is clicked once (browsers keep a page silent until then); its click turns sound on and plays the tone. `testChime` now waits for the audio context to open (the first click was silent).

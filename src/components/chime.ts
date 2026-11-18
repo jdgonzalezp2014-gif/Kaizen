@@ -14,10 +14,10 @@ const NOTES: Record<Exclude<Tone, 'none'>, { type: OscillatorType; notes: Note[]
 };
 
 let ctx: AudioContext | null = null;
-const unlock = () => { try { ctx ??= new AudioContext(); void ctx.resume(); } catch { /* no Web Audio */ } };
+const unlock = (): Promise<void> => { try { ctx ??= new AudioContext(); return ctx.resume(); } catch { return Promise.resolve(); /* no Web Audio */ } };
 if (typeof window !== 'undefined') {
-  addEventListener('pointerdown', unlock, { once: true });
-  addEventListener('keydown', unlock, { once: true });
+  addEventListener('pointerdown', () => void unlock(), { once: true });
+  addEventListener('keydown', () => void unlock(), { once: true });
 }
 /** Whether a sound can play now (false until the first click or key since Kaizen opened). */
 export const soundReady = () => ctx?.state === 'running';
@@ -38,4 +38,5 @@ export function chime(volume: number, tone: Tone = 'chime') {
 }
 
 /** For a "Play" button: it is a click, so the context can open right there. */
-export function testChime(volume: number, tone: Tone = 'chime') { unlock(); chime(volume, tone); }
+// The context opens asynchronously: the note waits for it, or the first click would stay silent.
+export function testChime(volume: number, tone: Tone = 'chime') { void unlock().then(() => chime(volume, tone)); }
