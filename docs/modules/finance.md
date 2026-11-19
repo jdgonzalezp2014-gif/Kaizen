@@ -119,3 +119,4 @@ UI only; tokens and shared components from `docs/design-system.md`.
   the text, the receipts (through `/api/comment-image`, which now serves purchase and field receipts too) and "Open the
   to-do #N ›" when there is one. Each line shows its source (icon + word) and its note's first line; only a typed line has ✕
   (automatic lines follow their source). The "?" on Note explains it.
+- Revenue → Portal sales (§178 round 2): payments that settled an upsell case show apart as "Upsell links" (their income is the case's); Kept and Stripe fees include them.

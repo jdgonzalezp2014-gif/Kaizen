@@ -565,8 +565,8 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
 
       {row.reservationId && (canClaims || canSend) && <Fold title="Upselling" count={upsells.filter(c => !closedCase(c.status)).length} onAdd={canClaims ? () => open('upsell') : undefined} addLabel="Add an upsell"
         hint={<>What this guest pays on top (pet fee, early check-in, late checkout…) — cases in Claims &amp; upselling, counted in Revenue once the money is
-          entered as received. The + goes on to <b>charge the guest</b>: on Airbnb through its Resolution Center / Change reservation; on any other channel
-          Kaizen blocks the nights or sets the hour in Hostaway and makes a Stripe pay link (the guest also sees it on their stay page). <b>Extend stay</b>
+          entered as received. The + goes on to <b>charge the guest</b>: a card pay link (the guest also sees it on their stay page), or on Airbnb the
+          Resolution Center; Kaizen sets the nights or the hour up in Hostaway once it is paid. <b>Extend stay</b>
           reads the listing's live Hostaway calendar: the free nights before and after, with Hostaway's price when it has one — to sell them, + → Extra nights.</>}>
         <CaseList cases={upsells} onOpen={onClaim} />
         {thread && !upsells.length && <p className="note">None for this stay.</p>}

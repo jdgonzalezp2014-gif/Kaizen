@@ -1,16 +1,18 @@
 /**
- * Charging an upsell from the team's side (owner, 2026-11-19): an upsell case opened in the Inbox (the chat's +) or in
- * Operations → To-do is carried out from there — the money through Stripe, the dates held in Hostaway — instead of
- * someone doing it by hand in three places.
+ * Charging an upsell from the team's side (owner, 2026-11-19, §178; round 2 the same day): an upsell case opened in the
+ * Inbox or in Operations → To-do is carried out from there.
  *
- *  - **Airbnb**: Airbnb collects. Kaizen charges nothing and blocks nothing (an alteration needs the nights open): it
- *    hands the team the Resolution Center (money) and the reservation's page (change the dates), and a message for
- *    the guest.
- *  - **Every other channel**: Kaizen holds what the upsell takes — the extra nights blocked on the calendar, the
- *    new check-in / check-out hour on the reservation — and makes a payment link (Stripe Checkout) that also shows
- *    on the guest's portal page as a pending payment. Paid → the case gets its price and closes as Paid.
+ *  - **How the guest pays** (`methodsFor`): any channel → a card pay link (Stripe Checkout, also on the guest's stay
+ *    page as a pending payment). Airbnb also → the Resolution Center (the team asks there, then marks it received).
+ *    An Airbnb date change made as an alteration is done on Airbnb itself (the links) — not a charge here.
+ *  - **Nothing moves before the money** (owner): the nights, the hour are applied once the payment is confirmed —
+ *    Stripe says paid, or the team marks the Resolution Center money received.
+ *  - **Then** (`applyPlan`): an hour → written on the reservation (every channel, Airbnb too). Extra nights on a direct
+ *    booking → the reservation itself is extended in Hostaway (the lock code, the clean and the messages follow it);
+ *    on a channel booking (Airbnb paid outside, Vrbo, Booking.com, Expedia) → the nights are blocked on the calendar
+ *    and the team gets an urgent to-do for what the reservation no longer knows (door code, clean, check-out messages).
  *
- * Pure: the server (functions/_lib/upsell-charge.ts) reads Hostaway and Stripe and calls these.
+ * Pure: the server (functions/_lib/upsell-charge.ts, charge-settle.ts) reads Hostaway and Stripe and calls these.
  */
 import { addDays, type DateStr } from './dates.ts';
 
@@ -107,24 +109,76 @@ export function airbnbLinks(confirmationCode: string | null | undefined) {
   };
 }
 
-/** The message the team pastes in the chat for an Airbnb guest (agents draft, humans send). */
-export function airbnbGuestText(need: ChargeNeed, label: string, amount: number | null): string {
-  const usd = amount && amount > 0 ? ` ($${amount.toFixed(2)})` : '';
-  return need === 'nights'
-    ? `Happy to extend your stay! I just sent you a change request for your reservation on Airbnb${usd} — please accept it from your trip in the Airbnb app and the nights are yours.`
-    : `All set for ${label}${usd}! I just sent you a payment request through Airbnb's Resolution Center — you can accept it from your Airbnb messages or at ${AIRBNB_RESOLUTION}.`;
+/** How the guest can pay: a card link anywhere; on Airbnb also its Resolution Center. */
+export type ChargeMethod = 'card' | 'rc';
+export const methodsFor = (airbnb: boolean): ChargeMethod[] => airbnb ? ['rc', 'card'] : ['card'];
+
+/** A booking Kaizen owns (no channel behind it): its own dates can be moved in Hostaway. */
+export const isDirect = (channel: string | null | undefined) => /^(direct|website|bookingengine|manual|owner)$/i.test((channel ?? '').replace(/[^a-z]/gi, ''));
+
+/** What applying a paid upsell does in Hostaway. */
+export type ApplyPlan = { kind: 'none' } | { kind: 'hour'; field: 'checkin' | 'checkout'; hour: number }
+  | { kind: 'extend'; arrival: DateStr; departure: DateStr } | { kind: 'block'; nights: DateStr[] };
+export function applyPlan(c: { need: ChargeNeed; hour: number | null; nights: DateStr[] }, stay: { channel: string; arrival: DateStr | null; departure: DateStr | null }): ApplyPlan {
+  if ((c.need === 'checkin' || c.need === 'checkout') && c.hour != null) return { kind: 'hour', field: c.need, hour: c.hour };
+  if (c.need !== 'nights' || !c.nights.length) return { kind: 'none' };
+  if (isDirect(stay.channel) && stay.arrival && stay.departure) {
+    const sorted = [...c.nights].sort();
+    const arrival = sorted[0]! < stay.arrival ? sorted[0]! : stay.arrival;
+    const last = sorted[sorted.length - 1]!;
+    const departure = last >= stay.departure ? addDays(last, 1) : stay.departure;
+    return { kind: 'extend', arrival, departure };
+  }
+  return { kind: 'block', nights: [...c.nights].sort() };
 }
 
-/** The message for any other guest: the payment link. */
-export function payGuestText(label: string, amount: number, url: string): string {
-  return `Here is the link to pay for ${label} ($${amount.toFixed(2)}): ${url} — it is also on your stay page under Pending payments.`;
+/** Contiguous runs of nights — one calendar write per run. */
+export function runsOf(nights: DateStr[]): { from: DateStr; to: DateStr }[] {
+  const out: { from: DateStr; to: DateStr }[] = [];
+  for (const d of [...nights].sort()) {
+    const last = out[out.length - 1];
+    if (last && addDays(last.to, 1) === d) last.to = d; else out.push({ from: d, to: d });
+  }
+  return out;
+}
+
+/** The urgent to-do when the nights are blocked but the reservation still ends (or starts) on its old day. */
+export function followUp(unit: string, guest: string | null, stay: { arrival: DateStr | null; departure: DateStr | null }, nights: DateStr[]) {
+  const sorted = [...nights].sort();
+  const after = sorted.filter(d => stay.departure && d >= stay.departure);
+  const before = sorted.filter(d => stay.arrival && d < stay.arrival);
+  const who = guest ?? 'The guest';
+  const out = after.length ? addDays(after[after.length - 1]!, 1) : null;
+  const lines = [
+    out ? `${who} now leaves ${out} instead of ${stay.departure}.` : '',
+    before.length ? `${who} now arrives ${before[0]} instead of ${stay.arrival}.` : '',
+    'The nights are blocked in Hostaway, but the reservation keeps its dates (paid outside the channel). Do now:',
+    '1. Door code: make it work for the new dates (the lock follows the reservation).',
+    out ? `2. Clean: move the check-out clean from ${stay.departure} to ${out} and tell the cleaner.` : '2. Clean: the arrival clean must be ready for the earlier day.',
+    '3. Messages: cancel the check-out messages planned for the old day (CRM → the stay → Scheduled) and send them on the new one.',
+  ].filter(Boolean);
+  return { title: `Extended stay — ${unit}: door code, clean, messages`, description: lines.join('\n') };
+}
+
+/** The message for an Airbnb guest asked through the Resolution Center (agents draft, humans send). */
+export function rcGuestText(label: string, amount: number): string {
+  return `All set for ${label} ($${amount.toFixed(2)})! I just sent you a payment request through Airbnb's Resolution Center — you can accept it from your Airbnb messages or at ${AIRBNB_RESOLUTION}. As soon as it is paid we set everything up.`;
+}
+
+/** The message with the card link (and the stay page, when the portal has an address). */
+export function payGuestText(label: string, amount: number, url: string, stayPage?: string | null): string {
+  return `Here is the link to pay for ${label} ($${amount.toFixed(2)}): ${url} — as soon as it is paid we set everything up.${stayPage ? ` You will also find it on your stay page: ${stayPage}` : ''}`;
 }
 
 export type ChargeStatus = 'pending' | 'paid' | 'cancelled';
 /** One charge as the team and the portal see it. */
 export interface UpsellCharge {
-  id: string; claimId: string; reservationId: string; label: string; amount: number; status: ChargeStatus;
-  payUrl: string | null; nights: DateStr[]; hour: number | null; need: ChargeNeed;
-  /** What Kaizen did in Hostaway, in words ("3 nights blocked", "check-out 2:00 PM set") — or why it could not. */
-  holds: string[]; createdBy: string; createdAt: string; paidAt: string | null; livemode: boolean;
+  id: string; claimId: string; reservationId: string; label: string; amount: number; status: ChargeStatus; method: ChargeMethod;
+  /** The card link — pending card charges only. */
+  payUrl: string | null;
+  /** What was sold: applied in Hostaway only once paid. */
+  nights: DateStr[]; hour: number | null; need: ChargeNeed;
+  /** What Kaizen did in Hostaway after the payment, in words ("reservation extended to 2026-11-30", "2 nights blocked"). */
+  holds: string[]; applyError: string | null; refunded: number;
+  createdBy: string; createdAt: string; paidAt: string | null; livemode: boolean;
 }

@@ -29,11 +29,14 @@ export function PortalSales() {
 
   const s = useMemo(() => {
     const all = list ?? [];
-    const live = all.filter(p => p.livemode);
+    // §178: a payment that settled an upsell case is the case's income (Revenue → Claims & upselling) — shown apart, never
+    // in Portal sales, so this screen and Profit agree.
+    const cases = all.filter(p => p.livemode && p.claimId);
+    const live = all.filter(p => p.livemode && !p.claimId);
     const kept = (ps: GuestPayment[]) => ps.reduce((a, p) => a + keptLines(p).reduce((b, l) => b + l.amount, 0), 0);
     return {
-      live, test: all.filter(p => !p.livemode),
-      sales: kept(live), fees: live.reduce((a, p) => a + (p.fee ?? 0), 0),
+      live, test: all.filter(p => !p.livemode), cases, caseSales: kept(cases),
+      sales: kept(live), fees: [...live, ...cases].reduce((a, p) => a + (p.fee ?? 0), 0),
       held: live.filter(p => p.status === 'held').reduce((a, p) => a + p.amount, 0),
       byItem: salesByItem(live), testSales: kept(all.filter(p => !p.livemode)), testByItem: salesByItem(all.filter(p => !p.livemode)),
     };
@@ -48,7 +51,8 @@ export function PortalSales() {
       <dl className="strip">
         <div><dt>Portal sales</dt><dd>{money2(s.sales)}<small>{s.live.length} payment(s) · in net</small></dd></div>
         <div><dt>Stripe fees</dt><dd>{money2(s.fees)}<small>in Costs · Payment fees</small></dd></div>
-        <div><dt>Kept</dt><dd>{money2(s.sales - s.fees)}<small>sales − fees</small></dd></div>
+        <div><dt>Kept</dt><dd>{money2(s.sales + s.caseSales - s.fees)}<small>sales + upsell links − fees</small></dd></div>
+        {s.cases.length > 0 && <div><dt>Upsell links</dt><dd>{money2(s.caseSales)}<small>{s.cases.length} payment(s) · counted in Claims &amp; upselling</small></dd></div>}
         {s.held > 0 && <div><dt>Held</dt><dd>{money2(s.held)}<small>deposits not captured yet</small></dd></div>}
         {s.test.length > 0 && <div><dt>Test mode</dt><dd>{money2(s.testSales)}<small>{s.test.length} payment(s) · not counted</small></dd></div>}
       </dl>

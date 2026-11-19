@@ -34,3 +34,12 @@ jobs:
         run: |
           if [ -z "$KAIZEN_URL" ] || [ -z "$KAIZEN_INGEST_TOKEN" ]; then exit 0; fi
           curl -sS --fail-with-body -X POST "$KAIZEN_URL/api/slack-cron?job=calendar" -H "X-Kaizen-Ingest: $KAIZEN_INGEST_TOKEN"
+      # Upsell charges (§178): a paid Stripe page nobody reported — hourly backup of the clock's 5-minute sweep.
+      - name: Sweep upsell charges
+        if: ${{ !cancelled() }}
+        env:
+          KAIZEN_URL: ${{ secrets.KAIZEN_URL }}
+          KAIZEN_INGEST_TOKEN: ${{ secrets.KAIZEN_INGEST_TOKEN }}
+        run: |
+          if [ -z "$KAIZEN_URL" ] || [ -z "$KAIZEN_INGEST_TOKEN" ]; then exit 0; fi
+          curl -sS --fail-with-body -X POST "$KAIZEN_URL/api/slack-cron?job=charges" -H "X-Kaizen-Ingest: $KAIZEN_INGEST_TOKEN"

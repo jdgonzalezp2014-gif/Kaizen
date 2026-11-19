@@ -4023,3 +4023,6 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
 .gl-amt { font-weight: 600; }
 .gl-pay { background: var(--accent); color: var(--on-accent); padding: 8px 16px; border-radius: 10px; text-decoration: none; font-weight: 600; }
 .gl-paid { opacity: .8; }
+.uc-ways { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+.uc-past .uc-hold, .uc-past .uc-err { flex-basis: 100%; display: inline-flex; align-items: center; gap: 4px; padding-left: 20px; }
+.uc-past .uc-err { color: var(--amber); }

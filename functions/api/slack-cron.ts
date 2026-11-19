@@ -31,6 +31,7 @@ import { watchCalendars } from '../_lib/calendar-watch.ts';
 import { runDue } from '../_lib/guest-outbox.ts';
 import { takeEvent, watchPass } from '../_lib/guest-events.ts';
 import { verifyHook } from '../_lib/guest-link.ts';
+import { sweepCharges } from '../_lib/upsell-charge.ts';
 
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
@@ -61,6 +62,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // beside the rest of a tick under the 50-subrequest cap). Same door as the clock: already bypassed in Access.
   if (new URL(request.url).searchParams.get('job') === 'calendar') {
     try { return Response.json({ ok: true, calendar: await watchCalendars(sql, await getCredentials(sql, env.ENCRYPTION_KEY)) }); }
+    catch (e) { return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
+  }
+  // Upsell charges (§178, 2026-11-19): a paid Stripe page nobody reported (no webhook yet) — its own call from the clock.
+  if (new URL(request.url).searchParams.get('job') === 'charges') {
+    try { return Response.json({ ok: true, charges: await sweepCharges(sql, env.ENCRYPTION_KEY) }); }
     catch (e) { return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
   }
   // Guest Services → Inbox (2026-11-16): the guests' scheduled and automatic messages — a call of its own from the clock

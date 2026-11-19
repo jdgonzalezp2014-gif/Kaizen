@@ -4696,3 +4696,12 @@ Decisions:
 - **Counted once.** The case's received is the income (§167); its `guest_payments` row carries `claim_id` and is left out of Portal sales;
   Stripe's fee still counts as a cost. Settling is guarded by `status = 'pending'`, so the page return and the webhook move it once.
 - Pay link = Kaizen's own page in front of Stripe Checkout (sessions expire in 24 h; the link does not), on the portal's domain.
+
+Round 2 (owner, same day, after an audit of the use cases): the guest pays by card or — on Airbnb — through the Resolution Center; Airbnb date
+changes as alterations stay on Airbnb, the hour is set from Kaizen everywhere. **Nothing moves in Hostaway before the money** (the hold-first
+rule above is replaced): once paid, an hour is written; extra nights extend a direct booking's own dates (so the lock, the clean and the
+messages follow), and on a channel booking — the reservation cannot move — the nights are blocked and an urgent to-do asks for the door code,
+the clean and the messages. Refusals become urgent to-dos, refunds come off the case, a sweep on the clock stands in for Stripe's webhook, and
+Portal sales shows upsell-link payments apart so it agrees with Profit. Accepted as is (owner): no turnover check on early/late (no last-minute
+requests), Vrbo / Booking.com / Expedia paid by card, the generic Resolution Center link.
+

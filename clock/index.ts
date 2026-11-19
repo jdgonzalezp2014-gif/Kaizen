@@ -15,9 +15,10 @@ export default {
       const call = (job = '') => fetch(`${env.KAIZEN_URL}/api/slack-cron${job}`, { method: 'POST', headers: { 'X-Kaizen-Ingest': env.KAIZEN_INGEST_TOKEN } });
       // Two calls, each with its own budget: Slack's messages, then the guests' scheduled messages (Guest Services →
       // Inbox, 2026-11-16). One failing never stops the other; either failing marks the run failed.
-      const [slack, guests] = await Promise.allSettled([call(), call('?job=messages')]);
+      // …and the upsell charges' sweep (§178): a paid Stripe page nobody reported, while no Stripe webhook is set.
+      const [slack, guests, charges] = await Promise.allSettled([call(), call('?job=messages'), call('?job=charges')]);
       const failed: string[] = [];
-      for (const [name, r] of [['slack-cron', slack], ['guest messages', guests]] as const) {
+      for (const [name, r] of [['slack-cron', slack], ['guest messages', guests], ['upsell charges', charges]] as const) {
         if (r.status === 'rejected') { failed.push(`${name}: ${String(r.reason)}`); continue; }
         // Seen in `wrangler tail` and the Worker's logs; a failure throws so Cloudflare marks the run failed.
         console.log(name, r.value.status, (await r.value.text()).slice(0, 300));

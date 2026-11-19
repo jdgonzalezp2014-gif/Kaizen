@@ -395,3 +395,25 @@ the extra charges, and show them in the guest's portal as pending payments."
   real Stripe payment back through the webhook.
 - Open: extending the reservation's own dates in Hostaway after a paid extension (manual — the block holds the nights); a Stripe test payment
   end to end; the full portal on the stay link (Phase 2).
+
+#### Round 2 (owner, same day, after the audit) — migration 121
+- **How the guest pays** (`methodsFor`): card everywhere; Airbnb also the **Resolution Center** (`method = 'rc'`: "Log the RC request" →
+  "Mark received" with what came in → `rcReceived`). Airbnb + Extra nights also offers **Change it on Airbnb** (the alteration; nothing logged).
+  The hour is set from Kaizen on Airbnb too.
+- **Nothing moves before the money** (owner: "only block with a confirmed payment"): `createCharge` only checks it is possible (nights free, hour
+  valid); `charge-settle.ts` applies after the payment (`applyPlan`): hour → `pushStayTimes`; nights on a **direct** booking (`isDirect`) →
+  `PUT /reservations/<id>` with the new dates, read back (and a warning if Hostaway changed `totalPrice`); on a channel booking (Airbnb paid
+  outside, Vrbo, Booking, Expedia) or when the extension is refused → the nights blocked in runs (`runsOf`, one PUT each, read back) + an
+  **urgent to-do** due today on the stay and the case (`followUp`: door code, clean, check-out messages). Any refusal → urgent to-do
+  "Paid upsell not set up" + `apply_error`. Test card → no income and **no Hostaway** (a test card must not block a real calendar).
+- **Pay page** re-checks before opening Stripe (`stillPossible`): a cancelled reservation cancels the charge; taken nights stop the payment.
+  No idempotency key (a reused key after an expired page handed back the dead page).
+- **Without a webhook** (owner sets Stripe later): `POST /api/slack-cron?job=charges` → `sweepCharges` (pending card charges with a Stripe page;
+  the first finished one is recorded). Called by the clock (`clock/index.ts` — **needs `npx wrangler deploy` in `clock/`**) and hourly by
+  `.github/workflows/slack-cron.yml`.
+- **Refunds** (`syncChargeRefund`, from `recordSession`): the refunded part comes off the case; all of it → Resolved, received 0. Hostaway is not undone.
+- **Portal sales** lists upsell-link payments apart ("Upsell links — counted in Claims & upselling"); Kept and Stripe fees include them.
+- Migration **121**: `method`, `applied_at`, `apply_error`, `refunded`, `todo_id`; unique pending charge per case. SOP #3 v8: `.sop-121.mjs`.
+- Tested on Neon branch `test-upsell-charge-r2` (2026-11-19): RC on a real Airbnb stay → Paid, nothing in Hostaway; RC refused on Vrbo; one pending
+  per case; card link → pay page → Stripe test page; sweep; "paid but not set up" → urgent to-do; partial + full refund. **Not tried: the
+  reservation extension PUT and the calendar block on a real listing** — watch the first real paid extension.

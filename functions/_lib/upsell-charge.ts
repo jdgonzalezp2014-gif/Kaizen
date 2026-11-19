@@ -1,45 +1,52 @@
 /**
- * Upsells carried out from the team's side (owner, 2026-11-19; pure rules in src/lib/upsell-charge.ts).
+ * Upsells carried out from the team's side (owner, 2026-11-19, §178 + round 2; pure rules in src/lib/upsell-charge.ts).
  *
- *  GET  /api/upsell-charge?claim=<id>               → the plan: the stay (channel, dates, hours), free nights, charges
- *  POST /api/upsell-charge { action: 'create', … }  → hold in Hostaway, then a pending charge with its pay link
- *  POST /api/upsell-charge { action: 'cancel', id }  → release what was held, expire the Stripe page
+ *  GET  /api/upsell-charge?claim=<id>                 → the plan: the stay (channel, dates, hours), free nights, methods, charges
+ *  POST /api/upsell-charge { action: 'create', … }    → a pending charge: card (its pay link) or rc (asked in Airbnb's RC)
+ *  POST /api/upsell-charge { action: 'received', id } → RC money came in: settle it (and set Hostaway up)
+ *  POST /api/upsell-charge { action: 'cancel', id }   → not wanted any more (nothing was applied: only the Stripe page expires)
  *  GET  /api/report-link?pay=<id>.<sig>[&go=1|&done=<cs>]  → the guest's pay page (public door, no sign-in)
- *  GET  /api/report-link?charges=<res>.<sig>         → the stay's pending payments, for the portal page
+ *  GET  /api/report-link?charges=<res>.<sig>           → the stay's pending payments, for the portal page
+ *  POST /api/slack-cron?job=charges                    → the sweep: finished Stripe pages nobody reported (no webhook yet)
  *
- * Order matters: the hold first (nights blocked and read back, the hour written and read back), the charge only when
- * the hold worked — a guest must never pay for nights someone else can still book. Airbnb is never charged or blocked
- * here: Airbnb collects, and an alteration needs the nights open.
+ * Nothing moves in Hostaway before the money (owner): creating a charge only checks that what it sells is possible
+ * now; the nights / the hour are applied by charge-settle.ts once the payment is confirmed. The pay page checks again
+ * before opening Stripe (the reservation still on, the nights still free), so a guest is not taken to pay for nights
+ * that went meanwhile.
  *
  * Unlike the portal's own checkout (guest-pay.ts, sandbox only because its lines come from the page), the amount here
- * is set by a signed-in team member and kept on the server, so whichever Stripe mode is saved is used. A test-mode
- * payment settles the charge but is never income (charge-settle.ts).
+ * is set by a signed-in team member and kept on the server, so whichever Stripe mode is saved is used.
  */
 import type { SqlFn } from './accounts.ts';
 import { getCredentials } from './accounts.ts';
-import { fetchCalendar, fetchReservationDetail, fetchStandardHours, getAccessToken, setNightOpen } from './hostaway.ts';
-import { pushStayTimes } from './stay-times.ts';
+import { fetchCalendar, fetchReservationDetail, fetchStandardHours } from './hostaway.ts';
 import { stripeCall, stripeKey } from './payouts.ts';
 import { recordSession } from './guest-pay.ts';
-import { signCharge, verifyCharge, verifyGuest } from './guest-link.ts';
+import { signCharge, signGuest, verifyCharge, verifyGuest } from './guest-link.ts';
 import { saveCaseMoney } from './claim-money.ts';
+import { settleCharge } from './charge-settle.ts';
 import { toCents } from '../../src/lib/payouts.ts';
 import { encodeLines } from '../../src/lib/guest-payments.ts';
+import { portalLink } from '../../src/lib/inbox.ts';
 import { addDays, type DateStr } from '../../src/lib/dates.ts';
 import { isUpsell } from '../../src/lib/claims.ts';
-import { airbnbGuestText, airbnbLinks, chargeLabel, extraNights, freeAround, hourLabel, hourOptions, hourPrice, isAirbnb, itemOf,
-  needOf, nightsPrice, payGuestText, type ChargeNeed, type NightDay, type UpsellCharge } from '../../src/lib/upsell-charge.ts';
+import { airbnbLinks, chargeLabel, extraNights, freeAround, hourOptions, isAirbnb, itemOf, methodsFor, needOf, payGuestText, rcGuestText,
+  type ChargeMethod, type ChargeNeed, type NightDay, type UpsellCharge } from '../../src/lib/upsell-charge.ts';
 
 type Fail = { ok: false; message: string; status?: number };
 const fail = (message: string, status = 400): Fail => ({ ok: false, message, status });
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const str = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim() : null;
 const wholeHour = (v: unknown) => { const n = Number(v); return v != null && v !== '' && Number.isInteger(n) && n >= 0 && n <= 23 ? n : null; };
+const CANCELLED = /cancel|declin|expir/i;
 
 /** Where the guest's links live: the portal's own domain when set (no Access in front), else this host. */
-async function linkBase(sql: SqlFn, origin: string): Promise<string> {
+async function portalBase(sql: SqlFn): Promise<string | null> {
   const [a] = await (sql`SELECT guest_portal_url AS url FROM accounts WHERE id = 1` as Promise<{ url: string | null }[]>).catch(() => []);
-  const u = (a?.url ?? '').trim();
+  return (a?.url ?? '').trim() || null;
+}
+async function linkBase(sql: SqlFn, origin: string): Promise<string> {
+  const u = await portalBase(sql);
   try { return u ? new URL(u).origin : origin; } catch { return origin; }
 }
 const payPath = async (ek: string, id: string) => `/api/report-link?pay=${id}.${await signCharge(ek, id)}`;
@@ -53,20 +60,23 @@ async function claimOf(sql: SqlFn, id: string): Promise<ClaimRow | null> {
 }
 
 type ChargeRow = { id: string; claim_id: string; reservation_id: string; label: string; amount: number; status: UpsellCharge['status']; need: ChargeNeed;
-  nights: string[]; hour: number | null; holds: string[]; created_by: string; created_at: string; paid_at: string | null; livemode: boolean;
-  session_id: string | null; unit_id: string | null; unit_name: string | null; guest: string | null; guest_email: string | null; item: string };
-// One column list, three readers (Neon's tagged template cannot splice a fragment).
-const chargeById = async (sql: SqlFn, id: string) => (await sql`SELECT id::text AS id, claim_id::text AS claim_id, reservation_id, label, amount::float8 AS amount, status, need, nights, hour, holds, created_by, created_at, paid_at, livemode, session_id, unit_id, unit_name, guest, guest_email, item
+  method: ChargeMethod; nights: string[]; hour: number | null; holds: string[]; apply_error: string | null; refunded: number; created_by: string;
+  created_at: string; paid_at: string | null; livemode: boolean; session_id: string | null; unit_id: string | null; unit_name: string | null;
+  guest: string | null; guest_email: string | null; item: string };
+// One column list, four readers (Neon's tagged template cannot splice a fragment).
+const chargeById = async (sql: SqlFn, id: string) => (await sql`SELECT id::text AS id, claim_id::text AS claim_id, reservation_id, label, amount::float8 AS amount, status, need, method, nights, hour, holds, apply_error, refunded::float8 AS refunded, created_by, created_at, paid_at, livemode, session_id, unit_id, unit_name, guest, guest_email, item
   FROM upsell_charges WHERE account_id = 1 AND id::text = ${id}` as unknown as ChargeRow[])[0] ?? null;
-const chargesOfClaim = (sql: SqlFn, claimId: string) => sql`SELECT id::text AS id, claim_id::text AS claim_id, reservation_id, label, amount::float8 AS amount, status, need, nights, hour, holds, created_by, created_at, paid_at, livemode, session_id, unit_id, unit_name, guest, guest_email, item
+const chargesOfClaim = (sql: SqlFn, claimId: string) => sql`SELECT id::text AS id, claim_id::text AS claim_id, reservation_id, label, amount::float8 AS amount, status, need, method, nights, hour, holds, apply_error, refunded::float8 AS refunded, created_by, created_at, paid_at, livemode, session_id, unit_id, unit_name, guest, guest_email, item
   FROM upsell_charges WHERE account_id = 1 AND claim_id::text = ${claimId} ORDER BY id DESC` as unknown as Promise<ChargeRow[]>;
-const chargesOfStay = (sql: SqlFn, resId: string) => sql`SELECT id::text AS id, claim_id::text AS claim_id, reservation_id, label, amount::float8 AS amount, status, need, nights, hour, holds, created_by, created_at, paid_at, livemode, session_id, unit_id, unit_name, guest, guest_email, item
+const chargesOfStay = (sql: SqlFn, resId: string) => sql`SELECT id::text AS id, claim_id::text AS claim_id, reservation_id, label, amount::float8 AS amount, status, need, method, nights, hour, holds, apply_error, refunded::float8 AS refunded, created_by, created_at, paid_at, livemode, session_id, unit_id, unit_name, guest, guest_email, item
   FROM upsell_charges WHERE account_id = 1 AND reservation_id = ${resId} AND status <> 'cancelled' ORDER BY id` as unknown as Promise<ChargeRow[]>;
+const pendingSessions = (sql: SqlFn) => sql`SELECT id::text AS id, session_id FROM upsell_charges
+  WHERE account_id = 1 AND status = 'pending' AND method = 'card' AND session_id IS NOT NULL ORDER BY id LIMIT 5` as unknown as Promise<{ id: string; session_id: string }[]>;
 
 async function shapeCharge(ek: string, base: string, r: ChargeRow): Promise<UpsellCharge> {
-  return { id: r.id, claimId: r.claim_id, reservationId: r.reservation_id, label: r.label, amount: Number(r.amount), status: r.status,
-    payUrl: r.status === 'pending' ? base + await payPath(ek, r.id) : null, nights: r.nights ?? [], hour: r.hour, need: r.need,
-    holds: r.holds ?? [], createdBy: r.created_by, createdAt: new Date(r.created_at).toISOString(),
+  return { id: r.id, claimId: r.claim_id, reservationId: r.reservation_id, label: r.label, amount: Number(r.amount), status: r.status, method: r.method,
+    payUrl: r.status === 'pending' && r.method === 'card' ? base + await payPath(ek, r.id) : null, nights: r.nights ?? [], hour: r.hour, need: r.need,
+    holds: r.holds ?? [], applyError: r.apply_error, refunded: Number(r.refunded) || 0, createdBy: r.created_by, createdAt: new Date(r.created_at).toISOString(),
     paidAt: r.paid_at ? new Date(r.paid_at).toISOString() : null, livemode: r.livemode };
 }
 
@@ -105,21 +115,22 @@ export async function chargePlan(sql: SqlFn, ek: string, origin: string, claimId
   if (!c) return fail('That case is gone.', 404);
   if (!isUpsell(c.category)) return fail('Only an upsell is charged.');
   const base = await linkBase(sql, origin);
-  const rows = await chargesOfClaim(sql, claimId);
-  const charges = await Promise.all(rows.map(r => shapeCharge(ek, base, r)));
+  const charges = await Promise.all((await chargesOfClaim(sql, claimId)).map(r => shapeCharge(ek, base, r)));
   const need = needOf(c.category);
-  if (!c.reservation_id) return { ok: true as const, need, stay: null, free: null, nightDays: [], charges, links: null };
+  const none = { ok: true as const, need, stay: null, free: null, nightDays: [], charges, links: null, methods: [] as ChargeMethod[] };
+  if (!c.reservation_id) return none;
   const stay = await stayOf(sql, ek, c.reservation_id);
-  if (!stay) return { ok: true as const, need, stay: null, free: null, nightDays: [], charges, links: null, message: 'Hostaway did not return this reservation.' };
-  const nightDays = need === 'nights' && !stay.airbnb ? await nightsAround(sql, ek, stay) : [];
+  if (!stay) return { ...none, message: 'Hostaway did not return this reservation.' };
+  // Airbnb paid outside blocks the calendar too (owner), so every channel needs the nights around the stay.
+  const nightDays = need === 'nights' ? await nightsAround(sql, ek, stay) : [];
   const free = stay.arrival && stay.departure ? freeAround(nightDays, stay.arrival, stay.departure) : { before: 0, after: 0 };
-  return { ok: true as const, need, charges, nightDays, free,
+  return { ok: true as const, need, charges, nightDays, free, methods: methodsFor(stay.airbnb),
     stay: { channel: stay.channel, airbnb: stay.airbnb, arrival: stay.arrival, departure: stay.departure, checkInHour: stay.checkInHour,
-            checkOutHour: stay.checkOutHour, guest: stay.guest, hasEmail: !!stay.email },
+            checkOutHour: stay.checkOutHour, guest: stay.guest, cancelled: CANCELLED.test(stay.status) },
     links: stay.airbnb ? airbnbLinks(stay.code) : null };
 }
 
-export interface CreateBody { claim?: unknown; amount?: unknown; before?: unknown; after?: unknown; hour?: unknown }
+export interface CreateBody { claim?: unknown; amount?: unknown; before?: unknown; after?: unknown; hour?: unknown; method?: unknown }
 
 export async function createCharge(sql: SqlFn, ek: string, origin: string, b: CreateBody, who: string) {
   const claimId = String(b.claim ?? '');
@@ -131,108 +142,98 @@ export async function createCharge(sql: SqlFn, ek: string, origin: string, b: Cr
   if (!(amount > 0) || amount > 5000) return fail('The amount is dollars, above zero (at most $5,000).');
   const stay = await stayOf(sql, ek, c.reservation_id);
   if (!stay) return fail('Hostaway did not return this reservation.', 502);
-  if (/cancel|declin|expir/i.test(stay.status)) return fail(`The reservation is ${stay.status} in Hostaway.`);
+  if (CANCELLED.test(stay.status)) return fail(`The reservation is ${stay.status} in Hostaway.`);
+  const method: ChargeMethod = b.method === 'rc' ? 'rc' : 'card';
+  if (!methodsFor(stay.airbnb).includes(method)) return fail('The Resolution Center is Airbnb’s — this booking pays by card.');
   const need = needOf(c.category);
 
-  // Airbnb collects: nothing is charged or blocked here — the price is what is asked, and the team gets the doors.
-  if (stay.airbnb) {
-    // Money asked in the Resolution Center is upselling (§162); an alteration's price lands on the reservation instead.
-    await saveCaseMoney(sql, claimId, need === 'nights' ? { requested: amount } : { requested: amount, collectedVia: 'Resolution Center' }, who);
-    const label = chargeLabel(c.category!, {});
-    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
-              VALUES (1, 'claim', ${claimId}, 'note', ${`Airbnb: ${need === 'nights' ? 'change the reservation on Airbnb' : 'request the money in the Resolution Center'} — $${amount.toFixed(2)}.`}, ${who})`;
-    return { ok: true as const, airbnb: true, links: airbnbLinks(stay.code), guestText: airbnbGuestText(need, label, amount) };
-  }
-
-  const [open] = await sql`SELECT 1 AS x FROM upsell_charges WHERE account_id = 1 AND claim_id::text = ${claimId} AND status = 'pending'` as { x: number }[];
-  if (open) return fail('This case already has a pending charge — cancel it first.');
-  const creds = await getCredentials(sql, ek);
-  const holds: string[] = [];
+  // What it sells must be possible now; it is applied in Hostaway only once paid (charge-settle.ts).
   let nights: DateStr[] = [];
   let hour: number | null = null;
-
   if (need === 'nights') {
     if (!stay.listingId || !stay.arrival || !stay.departure) return fail('The reservation has no listing or dates in Hostaway.');
     const before = Math.max(0, Math.min(7, Math.floor(Number(b.before) || 0))), after = Math.max(0, Math.min(7, Math.floor(Number(b.after) || 0)));
     if (!before && !after) return fail('How many nights — before the arrival or after the departure?');
-    // Read again right before blocking: the plan the person saw may be minutes old.
-    const days = await nightsAround(sql, ek, stay);
-    const free = freeAround(days, stay.arrival, stay.departure);
-    if (before > free.before || after > free.after) return fail(`Not free any more: ${free.before} night(s) open before, ${free.after} after.`, 409);
+    const free = freeAround(await nightsAround(sql, ek, stay), stay.arrival, stay.departure);
+    if (before > free.before || after > free.after) return fail(`Not free: ${free.before} night(s) open before, ${free.after} after.`, 409);
     nights = extraNights(stay.arrival, stay.departure, before, after);
-    const token = await getAccessToken(creds);
-    const done: DateStr[] = [];
-    for (const d of nights) {
-      const w = await setNightOpen(creds, stay.listingId, d, false, token).catch(e => ({ ok: false, detail: e instanceof Error ? e.message : String(e) }));
-      if (!w.ok) {
-        // All or nothing: reopen what was blocked, charge nothing.
-        for (const x of done) await setNightOpen(creds, stay.listingId, x, true, token).catch(() => null);
-        return fail(`Hostaway did not block ${d}: ${w.detail}. Nothing was charged.`, 502);
-      }
-      done.push(d);
-    }
-    holds.push(`${nights.length} night${nights.length === 1 ? '' : 's'} blocked in Hostaway (${nights[0]}${nights.length > 1 ? ` – ${nights[nights.length - 1]}` : ''})`);
-    if (nightsPrice(days, nights) == null) holds.push('the calendar had no price for every night — the amount is the one typed');
   }
-
   if (need === 'checkin' || need === 'checkout') {
     const stayHour = need === 'checkin' ? stay.checkInHour : stay.checkOutHour;
     const h = wholeHour(b.hour);
-    if (stayHour == null) return fail("Hostaway has no standard hour for this stay — set it in Hostaway first.");
+    if (stayHour == null) return fail('Hostaway has no standard hour for this stay — set it in Hostaway first.');
     if (h == null || !hourOptions(need, stayHour).includes(h)) return fail('Pick the new hour.');
-    // The board's own path (stay-times.ts): written on the reservation, read back, logged in stay_time_pushes.
-    await pushStayTimes(sql, creds, ek, c.reservation_id, { [need]: hourLabel(h) }, who, null);
-    const [p] = await sql`SELECT outcome, detail FROM stay_time_pushes WHERE account_id = 1 AND reservation_id = ${c.reservation_id} AND kind = ${need}
-                           ORDER BY id DESC LIMIT 1` as { outcome: string; detail: string | null }[];
-    if (p?.outcome !== 'pushed') return fail(`Hostaway did not take the new hour: ${p?.detail ?? 'no answer'}. Nothing was charged.`, 502);
     hour = h;
-    holds.push(`${need === 'checkin' ? 'check-in' : 'check-out'} ${hourLabel(h)} set on the reservation (was ${hourLabel(stayHour)})`);
-    if (amount !== hourPrice(need, stayHour, h)) holds.push(`the rate would be $${hourPrice(need, stayHour, h)} — $${amount.toFixed(2)} typed`);
   }
 
   const label = chargeLabel(c.category!, { nights, hour });
   const k = await stripeKey(sql, ek).catch(() => null);
-  const [row] = await sql`
-    INSERT INTO upsell_charges (account_id, claim_id, reservation_id, unit_id, unit_name, guest, guest_email, need, label, item, amount, nights, hour, holds, livemode, created_by)
-    VALUES (1, ${claimId}::bigint, ${c.reservation_id}, ${stay.listingId ?? c.unit_id}, ${c.unit_name}, ${stay.guest}, ${stay.email}, ${need}, ${label},
-            ${itemOf(c.category!)}, ${amount}, ${nights}, ${hour}, ${holds}, ${k?.mode === 'live'}, ${who})
-    RETURNING id::text AS id` as { id: string }[];
-  await saveCaseMoney(sql, claimId, { requested: amount }, who);
+  if (method === 'card' && !k) return fail('Stripe is not set up (Settings → Integrations → Stripe) — there is no card link to make.', 503);
+  let row: { id: string } | undefined;
+  try {
+    [row] = await sql`
+      INSERT INTO upsell_charges (account_id, claim_id, reservation_id, unit_id, unit_name, guest, guest_email, need, label, item, amount, nights, hour, method, livemode, created_by)
+      VALUES (1, ${claimId}::bigint, ${c.reservation_id}, ${stay.listingId ?? c.unit_id}, ${c.unit_name}, ${stay.guest}, ${stay.email}, ${need}, ${label},
+              ${itemOf(c.category!)}, ${amount}, ${nights}, ${hour}, ${method}, ${method === 'rc' || k?.mode === 'live'}, ${who})
+      RETURNING id::text AS id` as { id: string }[];
+  } catch {
+    // The one-pending-per-case index (121): someone made one a moment ago.
+    return fail('This case already has a pending charge — cancel it first.', 409);
+  }
+  await saveCaseMoney(sql, claimId, method === 'rc' ? { requested: amount, collectedVia: 'Resolution Center' } : { requested: amount }, who);
+  const then = need === 'nights' ? ' — the nights are set up in Hostaway once it is paid' : hour != null ? ' — the hour is set in Hostaway once it is paid' : '';
   await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
-            VALUES (1, 'claim', ${claimId}, 'note', ${[`Payment link made: ${label} $${amount.toFixed(2)}.`, ...holds].join(' · ')}, ${who})`;
+            VALUES (1, 'claim', ${claimId}, 'note', ${`${method === 'rc' ? 'Asked through the Resolution Center' : 'Card pay link made'}: ${label} $${amount.toFixed(2)}${then}.`}, ${who})`;
+  if (method === 'rc') return { ok: true as const, method, id: row!.id, guestText: rcGuestText(label, amount), links: airbnbLinks(stay.code), warning: null };
   const url = (await linkBase(sql, origin)) + await payPath(ek, row!.id);
-  return { ok: true as const, airbnb: false, id: row!.id, url, holds, guestText: payGuestText(label, amount, url),
-    warning: k ? (k.mode === 'test' ? 'Stripe is in test mode: the link takes test cards only, and a test payment is not income.' : null)
-               : 'Stripe is not set up (Settings → Integrations → Stripe) — the link will not open a payment page until it is.' };
+  const stayPage = portalLink(await portalBase(sql), c.reservation_id, await signGuest(ek, c.reservation_id));
+  return { ok: true as const, method, id: row!.id, url, guestText: payGuestText(label, amount, url, stayPage),
+    warning: k?.mode === 'test' ? 'Stripe is in test mode: the link takes test cards only; a test payment is not income and changes nothing in Hostaway.' : null };
+}
+
+/** The team saw the Resolution Center money come in: settle it (case Paid, then Hostaway set up). */
+export async function rcReceived(sql: SqlFn, ek: string, id: string, amount: unknown, who: string) {
+  const r = await chargeById(sql, id);
+  if (!r) return fail('No such charge.', 404);
+  if (r.method !== 'rc' || r.status !== 'pending') return fail('Only a pending Resolution Center request is marked received.');
+  const got = amount === undefined || amount === '' ? Number(r.amount) : Math.round(Number(amount) * 100) / 100;
+  if (!(got > 0) || got > 5000) return fail('What came in, in dollars.');
+  const s = await settleCharge(sql, id, { via: 'rc', livemode: true, amount: got, by: who }, ek);
+  return s.ok ? { ok: true as const } : fail(s.message ?? 'Not saved.', 409);
 }
 
 export async function cancelCharge(sql: SqlFn, ek: string, id: string, who: string) {
   const r = await chargeById(sql, id);
   if (!r) return fail('No such charge.', 404);
   if (r.status !== 'pending') return fail(`It is ${r.status} — nothing to cancel.`);
-  // Claimed first, so a payment arriving now finds it cancelled (settleCharge only moves a pending one).
+  // Claimed first, so a payment arriving now finds it cancelled (settleCharge only moves a pending one). Nothing was
+  // applied in Hostaway yet — that only happens once paid — so there is nothing to undo there.
   const [took] = await sql`UPDATE upsell_charges SET status = 'cancelled', cancelled_at = now(), cancelled_by = ${who}
                             WHERE account_id = 1 AND id::text = ${id} AND status = 'pending' RETURNING id` as { id: string }[];
   if (!took) return fail('It just changed — reload.', 409);
-  const notes: string[] = [];
   const k = await stripeKey(sql, ek).catch(() => null);
   if (k && r.session_id) await stripeCall(k.key, 'POST', `/checkout/sessions/${r.session_id}/expire`).catch(() => null);
-  const creds = await getCredentials(sql, ek);
-  if (r.need === 'nights' && r.nights.length && r.unit_id) {
-    const token = await getAccessToken(creds);
-    const bad: string[] = [];
-    for (const d of r.nights) { const w = await setNightOpen(creds, r.unit_id, d, true, token).catch(() => ({ ok: false })); if (!w.ok) bad.push(d); }
-    notes.push(bad.length ? `could not reopen ${bad.join(', ')} — open them in Hostaway` : `${r.nights.length} night(s) reopened`);
-  }
-  if ((r.need === 'checkin' || r.need === 'checkout') && r.hour != null) {
-    await pushStayTimes(sql, creds, ek, r.reservation_id, { [r.need]: null }, who, null);
-    const [p] = await sql`SELECT outcome FROM stay_time_pushes WHERE account_id = 1 AND reservation_id = ${r.reservation_id} AND kind = ${r.need}
-                           ORDER BY id DESC LIMIT 1` as { outcome: string }[];
-    notes.push(p?.outcome === 'pushed' ? 'hour back to the standard one' : 'the hour could not be put back — fix it in Hostaway');
-  }
   await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
-            VALUES (1, 'claim', ${r.claim_id}, 'note', ${[`Charge cancelled: ${r.label} $${Number(r.amount).toFixed(2)}`, ...notes].join(' · ')}, ${who})`;
-  return { ok: true as const, notes };
+            VALUES (1, 'claim', ${r.claim_id}, 'note', ${`Charge cancelled: ${r.label} $${Number(r.amount).toFixed(2)}.`}, ${who})`;
+  return { ok: true as const, notes: [] as string[] };
+}
+
+/**
+ * The clock's sweep (owner: "build the logic; I'll set Stripe up later"): a guest who paid and closed the page before
+ * coming back, with no webhook set, would leave the charge pending. Every pending card charge that has a Stripe page is
+ * asked about; the first finished one is recorded (and set up). One a call — a setup is many requests.
+ */
+export async function sweepCharges(sql: SqlFn, ek: string) {
+  const k = await stripeKey(sql, ek).catch(() => null);
+  if (!k) return { checked: 0, settled: 0 };
+  const rows = await pendingSessions(sql).catch(() => []);
+  let checked = 0;
+  for (const r of rows) {
+    checked++;
+    const s = await stripeCall<{ status: string }>(k.key, 'GET', `/checkout/sessions/${r.session_id}`).catch(() => null);
+    if (s?.status === 'complete') { await recordSession(sql, k.key, r.session_id, ek); return { checked, settled: 1 }; }
+  }
+  return { checked, settled: 0 };
 }
 
 /* ── the guest's side (public door) ─────────────────────────────────────────── */
@@ -252,6 +253,29 @@ a.btn{display:block;text-align:center;background:var(--cta);color:#151515;text-d
     { status, headers: { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' } });
 }
 
+/** Before opening Stripe: is it still on? A cancelled stay cancels the charge; nights that went stop the payment. */
+async function stillPossible(sql: SqlFn, ek: string, r: ChargeRow): Promise<string | null> {
+  const stay = await stayOf(sql, ek, r.reservation_id).catch(() => null);
+  if (!stay) return null; // Hostaway unreachable: do not stop a payment over it; the setup checks again after.
+  if (CANCELLED.test(stay.status)) {
+    await sql`UPDATE upsell_charges SET status = 'cancelled', cancelled_at = now(), cancelled_by = 'Kaizen (reservation cancelled)'
+               WHERE account_id = 1 AND id::text = ${r.id} AND status = 'pending'`;
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'claim', ${r.claim_id}, 'note', ${`Charge cancelled on its own: the reservation is ${stay.status} in Hostaway.`}, 'Kaizen')`;
+    return 'cancelled';
+  }
+  if (r.need === 'nights' && r.nights.length && stay.listingId) {
+    const sorted = [...r.nights].sort();
+    const days = await fetchCalendar(await getCredentials(sql, ek), stay.listingId, sorted[0]!, sorted[sorted.length - 1]!).catch(() => null);
+    if (days && sorted.some(d => !days.find(x => x.date === d)?.available)) {
+      await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+                VALUES (1, 'claim', ${r.claim_id}, 'note', 'The guest opened the pay link, but the nights are no longer free — the payment was not opened. Cancel this charge or offer other dates.', 'Kaizen')`;
+      return 'taken';
+    }
+  }
+  return null;
+}
+
 export async function payPage(sql: SqlFn, ek: string, request: Request): Promise<Response> {
   const url = new URL(request.url);
   const token = url.searchParams.get('pay') ?? '';
@@ -260,18 +284,18 @@ export async function payPage(sql: SqlFn, ek: string, request: Request): Promise
   const k = await stripeKey(sql, ek).catch(() => null);
   const done = url.searchParams.get('done');
   if (done && k && /^cs_(test|live)_[A-Za-z0-9]{10,200}$/.test(done)) {
-    // Back from Stripe: record it now (the webhook does the same; whichever is first counts, once).
+    // Back from Stripe: record it now (the webhook and the sweep do the same; whichever is first counts, once).
     await recordSession(sql, k.key, done, ek).catch(() => null);
   }
-  const r = await chargeById(sql, id);
-  if (!r) return page('Not found', '<h1>This payment is gone</h1>', 404);
+  let r = await chargeById(sql, id);
+  if (!r || r.method !== 'card') return page('Not found', '<h1>This payment is gone</h1>', 404);
   const usd = `$${Number(r.amount).toFixed(2)}`;
-  const card = `<div class="card"><div class="row"><div><b>${esc(r.label)}</b><div class="mut">${esc(r.unit_name ?? 'Your stay')}</div></div><div class="amt">${usd}</div></div>`;
-  if (r.status === 'paid') return page('Paid', `<h1>Payment received</h1><p class="mut">Thank you${r.guest ? `, ${esc(r.guest.split(' ')[0]!)}` : ''} — you are all set.</p>${card}</div>`);
-  if (r.status === 'cancelled') return page('No longer due', `<h1>Nothing to pay</h1><p class="mut">This charge was cancelled.</p>${card}</div>`);
-  if (!k) return page('Not ready', `<h1>Payments are not open yet</h1><p class="mut">Please contact us.</p>${card}</div>`, 503);
+  const card = () => `<div class="card"><div class="row"><div><b>${esc(r!.label)}</b><div class="mut">${esc(r!.unit_name ?? 'Your stay')}</div></div><div class="amt">${usd}</div></div>`;
+  if (r.status === 'paid') return page('Paid', `<h1>Payment received</h1><p class="mut">Thank you${r.guest ? `, ${esc(r.guest.split(' ')[0]!)}` : ''} — we are setting it up for you.</p>${card()}</div>`);
+  if (r.status === 'cancelled') return page('No longer due', `<h1>Nothing to pay</h1><p class="mut">This charge was cancelled.</p>${card()}</div>`);
+  if (!k) return page('Not ready', `<h1>Payments are not open yet</h1><p class="mut">Please contact us.</p>${card()}</div>`, 503);
   if (url.searchParams.get('go') !== '1') {
-    return page(`Pay ${usd}`, `<h1>Your payment</h1><p class="mut">Secure payment by Stripe — card, Apple Pay or Google Pay.</p>${card}
+    return page(`Pay ${usd}`, `<h1>Your payment</h1><p class="mut">Secure payment by Stripe — card, Apple Pay or Google Pay.</p>${card()}
       <a class="btn" href="?pay=${esc(token)}&go=1">Pay ${usd}</a>${k.mode === 'test' ? '<p class="mut">Test mode — use card 4242 4242 4242 4242.</p>' : ''}</div>`);
   }
   // An open Stripe page is reused (a guest tapping twice must not make two payments possible).
@@ -280,6 +304,10 @@ export async function payPage(sql: SqlFn, ek: string, request: Request): Promise
     if (s?.status === 'open' && s.url) return Response.redirect(s.url, 303);
     if (s?.status === 'complete') { await recordSession(sql, k.key, r.session_id, ek).catch(() => null); return Response.redirect(`${url.origin}${url.pathname}?pay=${token}`, 303); }
   }
+  const why = await stillPossible(sql, ek, r);
+  if (why === 'cancelled') return page('No longer due', `<h1>Nothing to pay</h1><p class="mut">This stay was cancelled.</p>${card()}</div>`);
+  if (why === 'taken') return page('Not available', `<h1>Those nights are no longer available</h1><p class="mut">Nothing was charged — we will contact you with other options.</p>${card()}</div>`, 409);
+  r = (await chargeById(sql, id))!;
   const back = `${url.origin}${url.pathname}?pay=${token}`;
   const p: Record<string, string | number | undefined> = {
     mode: 'payment', 'payment_method_types[0]': 'card',
@@ -294,19 +322,20 @@ export async function payPage(sql: SqlFn, ek: string, request: Request): Promise
   };
   if (r.guest_email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(r.guest_email) && !/guest\.airbnb|relay/i.test(r.guest_email)) p.customer_email = r.guest_email;
   try {
-    const s = await stripeCall<{ id: string; url: string }>(k.key, 'POST', '/checkout/sessions', p, `charge-${r.id}-${Math.floor(Date.now() / 60000)}`);
+    // No idempotency key: a key reused after an expired page would hand back that dead page.
+    const s = await stripeCall<{ id: string; url: string }>(k.key, 'POST', '/checkout/sessions', p);
     await sql`UPDATE upsell_charges SET session_id = ${s.id} WHERE account_id = 1 AND id::text = ${r.id} AND status = 'pending'`;
     return Response.redirect(s.url, 303);
   } catch (e) {
-    return page('Could not open', `<h1>The payment page did not open</h1><p class="mut">${esc(e instanceof Error ? e.message : String(e))}</p>${card}</div>`, 502);
+    return page('Could not open', `<h1>The payment page did not open</h1><p class="mut">${esc(e instanceof Error ? e.message : String(e))}</p>${card()}</div>`, 502);
   }
 }
 
-/** The stay's charges for its portal page: pending ones with their pay link, and the ones paid. */
+/** The stay's charges for its portal page: pending card ones with their pay link, and the ones paid. */
 export async function stayCharges(sql: SqlFn, ek: string, origin: string, token: string): Promise<Response> {
   const m = /^(\d{1,20})\.([A-Za-z0-9_-]{6,64})$/.exec(token);
   if (!m || !await verifyGuest(ek, m[1]!, m[2]!)) return Response.json({ ok: false, message: 'This stay link is not valid.' }, { status: 403 });
-  const rows = await chargesOfStay(sql, m[1]!).catch(() => [] as ChargeRow[]);
+  const rows = (await chargesOfStay(sql, m[1]!).catch(() => [] as ChargeRow[])).filter(r => r.method === 'card' || r.status === 'paid');
   const base = await linkBase(sql, origin);
   const charges = await Promise.all(rows.map(async r => ({ id: r.id, label: r.label, amount: Number(r.amount), status: r.status,
     payUrl: r.status === 'pending' ? base + await payPath(ek, r.id) : null, paidAt: r.paid_at ? new Date(r.paid_at).toISOString() : null })));

@@ -260,21 +260,23 @@ export const getClaims = () => call<{ ok: boolean; claims: Claim[] }>('/api/clai
 export interface CaseMoneyChange { requested?: number; received?: number; receivedOn?: string; collectedVia?: string | null; category?: string | null }
 export const saveCaseMoney = (id: string, change: CaseMoneyChange) =>
   call<{ ok: boolean; error?: string }>('/api/claims', { method: 'POST', body: JSON.stringify({ action: 'money', id, ...change }) });
-import type { ChargeNeed, NightDay, UpsellCharge } from './lib/upsell-charge.ts';
+import type { ChargeMethod, ChargeNeed, NightDay, UpsellCharge } from './lib/upsell-charge.ts';
 /** 2026-11-19: an upsell carried out from its case — Hostaway hold + Stripe pay link (functions/_lib/upsell-charge.ts). */
 export interface ChargePlan {
-  ok: true; need: ChargeNeed; charges: UpsellCharge[];
+  ok: true; need: ChargeNeed; charges: UpsellCharge[]; methods: ChargeMethod[];
   nightDays: NightDay[]; free: { before: number; after: number } | null; message?: string;
   stay: { channel: string; airbnb: boolean; arrival: string | null; departure: string | null; checkInHour: number | null;
-          checkOutHour: number | null; guest: string | null; hasEmail: boolean } | null;
+          checkOutHour: number | null; guest: string | null; cancelled: boolean } | null;
   links: { resolution: string; reservation: string | null } | null;
 }
-export type ChargeMade = { ok: true; airbnb: true; links: { resolution: string; reservation: string | null }; guestText: string }
-  | { ok: true; airbnb: false; id: string; url: string; holds: string[]; guestText: string; warning: string | null };
+export type ChargeMade = { ok: true; method: 'rc'; id: string; links: { resolution: string; reservation: string | null }; guestText: string; warning: null }
+  | { ok: true; method: 'card'; id: string; url: string; guestText: string; warning: string | null };
 type Refused = { ok: false; message?: string; error?: string };
 export const getChargePlan = (claim: string) => call<ChargePlan | Refused>(`/api/upsell-charge?claim=${encodeURIComponent(claim)}`);
-export const makeCharge = (body: { claim: string; amount: number; before?: number; after?: number; hour?: number | null }) =>
+export const makeCharge = (body: { claim: string; amount: number; method: ChargeMethod; before?: number; after?: number; hour?: number | null }) =>
   call<ChargeMade | Refused>('/api/upsell-charge', { method: 'POST', body: JSON.stringify({ action: 'create', ...body }) });
+export const rcChargeReceived = (id: string, amount: number) =>
+  call<{ ok: true } | Refused>('/api/upsell-charge', { method: 'POST', body: JSON.stringify({ action: 'received', id, amount }) });
 export const cancelUpsellCharge = (id: string) =>
   call<{ ok: true; notes: string[] } | Refused>('/api/upsell-charge', { method: 'POST', body: JSON.stringify({ action: 'cancel', id }) });
 export const saveClaim = (body: Record<string, unknown>) =>

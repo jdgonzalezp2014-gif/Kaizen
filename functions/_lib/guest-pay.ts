@@ -21,7 +21,7 @@ import { stripeCall, stripeKey } from './payouts.ts';
 import { decrypt } from './crypto.ts';
 import { toCents } from '../../src/lib/payouts.ts';
 import { decodeLines, encodeLines, itemLabel, type PaidLine } from '../../src/lib/guest-payments.ts';
-import { settleCharge } from './charge-settle.ts';
+import { settleCharge, syncChargeRefund } from './charge-settle.ts';
 
 type Line = { label: string; amount: number; kind: 'charge' | 'hold'; note?: string; item?: string };
 /** Which stay the payment is for — the demo knows the unit's name; the real link (Phase 2) knows the reservation. */
@@ -147,8 +147,12 @@ export async function recordSession(sql: SqlFn, key: string, id: string, encrypt
     ON CONFLICT (account_id, session_id) DO UPDATE SET payment_intent = EXCLUDED.payment_intent, lines = EXCLUDED.lines, amount = EXCLUDED.amount,
       fee = COALESCE(EXCLUDED.fee, guest_payments.fee), refunded = EXCLUDED.refunded, status = EXCLUDED.status,
       guest = COALESCE(guest_payments.guest, EXCLUDED.guest), updated_at = now()`;
-  // An upsell charge the team made (upsell-charge.ts): paid → its case settles, once.
-  if (m.charge && status === 'paid') await settleCharge(sql, m.charge, s.id, s.livemode, encryptionKey);
+  // An upsell charge the team made (upsell-charge.ts): paid → its case settles and Hostaway is set up, once; a refund
+  // comes off the case (charge-settle.ts).
+  if (m.charge && (status === 'paid' || status === 'refunded')) {
+    await settleCharge(sql, m.charge, { via: 'card', sessionId: s.id, livemode: s.livemode }, encryptionKey);
+    if (refunded > 0) await syncChargeRefund(sql, m.charge, refunded);
+  }
   return s;
 }
 
