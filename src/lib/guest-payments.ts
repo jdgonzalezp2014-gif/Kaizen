@@ -24,6 +24,8 @@ export interface GuestPayment {
   refunded: number;
   status: 'paid' | 'held' | 'refunded';
   paidOn: string;             // YYYY-MM-DD, the day the guest paid
+  /** An upsell charge the team made (2026-11-19): its money is the case's (claims.refund), counted there once. */
+  claimId?: string | null;
 }
 
 export const ITEM_LABEL: Record<string, string> = {
@@ -58,7 +60,7 @@ export function keptLines(p: Pick<GuestPayment, 'lines' | 'refunded' | 'status'>
 
 /** Income for the books: live payments only, one row per kept line, dated the day the guest paid. */
 export function portalIncome(ps: GuestPayment[]): IncomeRow[] {
-  return ps.filter(p => p.livemode).flatMap(p => keptLines(p).map(l => ({ unitId: p.unitId, on: p.paidOn, amount: l.amount, kind: 'portal' as const })));
+  return ps.filter(p => p.livemode && !p.claimId).flatMap(p => keptLines(p).map(l => ({ unitId: p.unitId, on: p.paidOn, amount: l.amount, kind: 'portal' as const })));
 }
 
 /** Stripe's fee on each live payment, a one-off cost the day it was paid (shared when the unit is unknown). */

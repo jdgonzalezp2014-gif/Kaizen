@@ -15,6 +15,7 @@ import { segments } from '../lib/sms.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Modal } from '../components/Modal.tsx';
 import { CASE_CATEGORIES, UPSELL_CATEGORIES, isUpsell } from '../lib/claims.ts';
+import { UpsellCharge } from '../components/UpsellCharge.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { BrandMark } from '../components/BrandMark.tsx';
 import { GUEST_EVENT } from '../components/GuestPing.tsx';
@@ -370,7 +371,7 @@ const NEW_KINDS: { key: NewKind; label: string; icon: string; hint: string; plac
   { key: 'repair', label: 'Repair', icon: 'wrench', hint: 'Work order', placeholder: 'What is broken?' },
   { key: 'purchase', label: 'Purchase', icon: 'cart', hint: 'Purchase order', placeholder: 'What to buy?' },
   { key: 'claim', label: 'Claim', icon: 'alert', hint: 'Claims & upselling', placeholder: 'What happened?' },
-  { key: 'upsell', label: 'Upsell', icon: 'card', hint: 'Claims & upselling', placeholder: 'Details (amount, time…)' },
+  { key: 'upsell', label: 'Upsell', icon: 'card', hint: 'Charge the guest', placeholder: 'Details (optional)' },
 ];
 
 type Group = 'work' | 'claim' | 'upsell';
@@ -440,6 +441,8 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
   };
   const [kind, setKind] = useState<NewKind>('task');
   const [group, setGroup] = useState<Group>('work');
+  // 2026-11-19 (owner): an upsell made here goes straight on to its charge (Stripe pay link + Hostaway hold, or Airbnb's doors).
+  const [chargeFor, setChargeFor] = useState<string | null>(null);
   const [category, setCategory] = useState('');
   const isCase = kind === 'claim' || kind === 'upsell';
   const cats = kind === 'claim' ? CASE_CATEGORIES : UPSELL_CATEGORIES;
@@ -465,15 +468,17 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
     // Claims & upselling, not a to-do: it carries money asked and received). A claim (damage, noise…) the same.
     const r = isCase
       ? await saveClaim({ unitId: row.listingId ?? null, category: category || cats[0], status: 'Open', source: 'Guest message',
-          description: title, reservationId: row.reservationId, reservationLabel: stay })
-          .then(x => ({ ok: x.ok, message: x.error })).catch(e => ({ ok: false, message: String(e) }))
+          description: title.trim() || category || cats[0], reservationId: row.reservationId, reservationLabel: stay })
+          .then(x => ({ ok: x.ok, message: x.error, id: x.id })).catch(e => ({ ok: false, message: String(e), id: undefined }))
       : await todoAction({ action: 'create', title, unitIds: row.listingId ? [row.listingId] : [], dueOn: due || null,
           kind: kind === 'repair' ? 'work_order' : 'task', asOrder: kind === 'purchase',
           reservationId: row.reservationId, reservationLabel: stay })
           .catch(e => ({ ok: false as const, message: String(e) }));
     setBusy(false);
     if (!r.ok) { setMsg(r.message ?? 'Not added.'); return; }
-    setTitle(''); setDue(''); setAdding(false); onChanged();
+    setTitle(''); setDue('');
+    if (kind === 'upsell' && 'id' in r && r.id != null) setChargeFor(String(r.id)); else setAdding(false);
+    onChanged();
   };
   const fact = (icon: string, label: string, value: ReactNode) => <div className="ix-fact"><Icon n={icon} /><span>{label}</span><b>{value}</b></div>;
   return (
@@ -510,7 +515,12 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
         {ciMsg && <p className="ix-state warn">{ciMsg}</p>}
       </div>}
 
-      {adding && <Modal title={group === 'work' ? 'New work for this stay' : group === 'claim' ? 'New claim' : 'New upsell'} onClose={() => setAdding(false)}>
+      {adding && chargeFor && <Modal title={`${category || cats[0]} — charge the guest`} onClose={() => { setAdding(false); setChargeFor(null); }}>
+        <UpsellCharge claimId={chargeFor} hasStay onChanged={onChanged} />
+        <p className="note">The case is in Upselling below and in Operations → To-do; the charge can be made there later too.</p>
+        <button type="button" className="ix-send" onClick={() => { setAdding(false); setChargeFor(null); }}>Done</button>
+      </Modal>}
+      {adding && !chargeFor && <Modal title={group === 'work' ? 'New work for this stay' : group === 'claim' ? 'New claim' : 'New upsell'} onClose={() => setAdding(false)}>
         <div className="ix-form ix-new">
           {kinds.length > 1 && <div className="ix-kinds" role="radiogroup" aria-label="What is it">
             {kinds.map(k => <button key={k.key} type="button" role="radio" aria-checked={kind === k.key}
@@ -520,10 +530,10 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
           {isCase && <select value={category || cats[0]} aria-label="Category" onChange={e => setCategory(e.target.value)}>
             {cats.map(c => <option key={c}>{c}</option>)}</select>}
           <input value={title} autoFocus placeholder={NEW_KINDS.find(k => k.key === kind)!.placeholder} aria-label="What" maxLength={300}
-                 onChange={e => setTitle(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && title.trim()) void add(); }} />
+                 onChange={e => setTitle(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && (title.trim() || kind === 'upsell')) void add(); }} />
           <div className="ix-form-row">
             {!isCase && <input type="date" value={due} aria-label="Due" title="Due" onChange={e => setDue(e.target.value)} />}
-            <button type="button" className="ix-send" disabled={busy || !title.trim()} onClick={() => void add()}>{busy ? 'Adding…' : 'Add'}</button>
+            <button type="button" className="ix-send" disabled={busy || !(title.trim() || kind === 'upsell')} onClick={() => void add()}>{busy ? 'Adding…' : kind === 'upsell' ? 'Next: charge' : 'Add'}</button>
             <button type="button" className="link tiny" onClick={() => setAdding(false)}>Cancel</button>
           </div>
           {msg && <p className="ix-state warn">{msg}</p>}
@@ -553,8 +563,9 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
 
       {row.reservationId && (canClaims || canSend) && <Fold title="Upselling" count={upsells.filter(c => !closedCase(c.status)).length} onAdd={canClaims ? () => open('upsell') : undefined} addLabel="Add an upsell"
         hint={<>What this guest pays on top (pet fee, early check-in, late checkout…) — cases in Claims &amp; upselling, counted in Revenue once the money is
-          entered as received. <b>Extend stay</b> reads the listing's live Hostaway calendar: the free nights before and after, with Hostaway's price when it
-          has one. The change itself is an alteration made in Hostaway or the channel (the links), not here.</>}>
+          entered as received. The + goes on to <b>charge the guest</b>: on Airbnb through its Resolution Center / Change reservation; on any other channel
+          Kaizen blocks the nights or sets the hour in Hostaway and makes a Stripe pay link (the guest also sees it on their stay page). <b>Extend stay</b>
+          reads the listing's live Hostaway calendar: the free nights before and after, with Hostaway's price when it has one — to sell them, + → Extra nights.</>}>
         <CaseList cases={upsells} onOpen={onClaim} />
         {thread && !upsells.length && <p className="note">None for this stay.</p>}
         {row.listingId && row.arrival && row.departure && <div className="ix-extend">

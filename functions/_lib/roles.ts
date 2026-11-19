@@ -93,6 +93,8 @@ export const PERMISSIONS: Permission[] = [
   // §162: the cases are followed in Operations → To-do (Claims & upselling tab); their money is Finance's, below.
   { key: 'claims', label: 'Claims & upselling — record and follow guest claims and upsells (no figures)', routes: [
     { path: '/api/claims', methods: ['GET', 'POST', 'DELETE'] }, { path: '/api/stays', methods: ['GET'] },
+    // 2026-11-19: an upsell carried out from its case — Hostaway hold + Stripe pay link (upsell-charge.ts).
+    { path: '/api/upsell-charge', methods: ['GET', 'POST'] },
     { path: '/api/comment-image', methods: ['GET'] }] },
   { key: 'claims.money', label: 'Claims & upselling — money: requested, received, upsell revenue (Revenue tab)', routes: [
     { path: '/api/claims-money', methods: ['GET', 'POST'] }] },

@@ -4677,3 +4677,22 @@ long column: a select to pick the place, a 7-column table with − [n] + on ever
   unit") → `matchCounts` (same words = sure; ≥ ⅔ shared words with no tie = close, listed; else not matched, listed) against
   this place's list, then the rest of the list → the sheet's counts; the person checks and saves as any count. "Download the
   template" = the place's items, "- Name (measure): ". No AI, no server change (`src/lib/inventory-md.ts`).
+
+## §178 — Upsells are charged from their case: Stripe pay link + Hostaway hold; Airbnb through its Resolution Center (2026-11-19)
+
+Owner: an upsell opened in the CRM (Inbox) or in To-do should be carried out from there, connected to Stripe — except Airbnb, where the team
+gets the link to the Resolution Center or to change the dates. Elsewhere: block the dates, make the pay link, show it on the guest's portal
+as a pending payment.
+
+Decisions:
+- **Hold first, then the link.** A guest must never pay for nights someone else can still book, so the pay link exists only once Hostaway
+  reads back the block (nights) or the new hour. All-or-nothing on nights.
+- **Blocking, not extending.** Only proven, read-back writes are used (`setNightOpen`, `updateReservationTimes` via `pushStayTimes`). Changing
+  the reservation's own dates through the API is untried and channel-managed bookings may refuse it; the block keeps the nights meanwhile.
+- **Airbnb is not touched.** Airbnb collects; an alteration needs the nights open, so nothing is blocked. An alteration's price is on the
+  reservation (§162: not upselling); Resolution Center money is.
+- **Live mode allowed** (unlike the portal's own checkout): the amount is set by a signed-in team member on the server, never by the page.
+  Test-mode payments settle the charge but are never income.
+- **Counted once.** The case's received is the income (§167); its `guest_payments` row carries `claim_id` and is left out of Portal sales;
+  Stripe's fee still counts as a cost. Settling is guarded by `status = 'pending'`, so the page return and the webhook move it once.
+- Pay link = Kaizen's own page in front of Stripe Checkout (sessions expire in 24 h; the link does not), on the portal's domain.

@@ -34,3 +34,18 @@ export async function verifyHook(encryptionKey: string, given: string | null): P
   const want = await hookSecret(encryptionKey);
   return want.length === given.length && [...want].reduce((d, c, i) => d | (c.charCodeAt(0) ^ given.charCodeAt(i)), 0) === 0;
 }
+
+/**
+ * A pay link for one upsell charge (owner, 2026-11-19): /api/report-link?pay=<charge id>.<signature> — the same HMAC,
+ * its own prefix, so a stay's link never opens a charge and a charge's never opens the stay.
+ */
+export async function signCharge(encryptionKey: string, chargeId: string): Promise<string> {
+  const k = await crypto.subtle.importKey('raw', unb64u(encryptionKey.replace(/=+$/, '')), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
+  return b64u(new Uint8Array(await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(`charge:${chargeId}`))).slice(0, 16));
+}
+export async function verifyCharge(encryptionKey: string, token: string): Promise<string | null> {
+  const m = /^(\d{1,15})\.([A-Za-z0-9_-]{10,40})$/.exec(token);
+  if (!m) return null;
+  const want = await signCharge(encryptionKey, m[1]!);
+  return want.length === m[2]!.length && [...want].reduce((d, c, i) => d | (c.charCodeAt(0) ^ m[2]!.charCodeAt(i)), 0) === 0 ? m[1]! : null;
+}

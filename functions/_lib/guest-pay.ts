@@ -21,6 +21,7 @@ import { stripeCall, stripeKey } from './payouts.ts';
 import { decrypt } from './crypto.ts';
 import { toCents } from '../../src/lib/payouts.ts';
 import { decodeLines, encodeLines, itemLabel, type PaidLine } from '../../src/lib/guest-payments.ts';
+import { settleCharge } from './charge-settle.ts';
 
 type Line = { label: string; amount: number; kind: 'charge' | 'hold'; note?: string; item?: string };
 /** Which stay the payment is for — the demo knows the unit's name; the real link (Phase 2) knows the reservation. */
@@ -119,7 +120,7 @@ const texasDay = (unix: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 
  * is written whichever comes first and corrected by the other. A held (manual-capture) payment is `held` until the team
  * captures it; what is captured beyond the charges is the deposit kept, income too.
  */
-export async function recordSession(sql: SqlFn, key: string, id: string): Promise<Session> {
+export async function recordSession(sql: SqlFn, key: string, id: string, encryptionKey?: string): Promise<Session> {
   const s = await stripeCall<Session>(key, 'GET', `/checkout/sessions/${id}`, { 'expand[0]': 'payment_intent.latest_charge.balance_transaction' });
   if (s.status !== 'complete') return s;
   const pi = typeof s.payment_intent === 'object' ? s.payment_intent : null;
@@ -139,13 +140,15 @@ export async function recordSession(sql: SqlFn, key: string, id: string): Promis
   const amount = ch?.captured ? captured : s.amount_total / 100;
   const refunded = ch ? ch.amount_refunded / 100 : 0;
   await sql`
-    INSERT INTO guest_payments (account_id, session_id, payment_intent, livemode, reservation_id, unit_id, unit_name, guest, lines, amount, fee, refunded, status, paid_on)
+    INSERT INTO guest_payments (account_id, session_id, payment_intent, livemode, reservation_id, unit_id, unit_name, guest, lines, amount, fee, refunded, status, paid_on, claim_id)
     VALUES (1, ${s.id}, ${pi?.id ?? (typeof s.payment_intent === 'string' ? s.payment_intent : null)}, ${s.livemode}, ${m.reservation ?? null}, ${m.unit ?? null},
             ${m.unit_name ?? null}, ${m.guest ?? s.customer_details?.name ?? null}, ${JSON.stringify(lines)}::jsonb, ${amount}, ${fee}, ${refunded}, ${status},
-            ${texasDay(ch?.created ?? s.created)})
+            ${texasDay(ch?.created ?? s.created)}, ${/^\d+$/.test(m.claim ?? '') ? m.claim : null})
     ON CONFLICT (account_id, session_id) DO UPDATE SET payment_intent = EXCLUDED.payment_intent, lines = EXCLUDED.lines, amount = EXCLUDED.amount,
       fee = COALESCE(EXCLUDED.fee, guest_payments.fee), refunded = EXCLUDED.refunded, status = EXCLUDED.status,
       guest = COALESCE(guest_payments.guest, EXCLUDED.guest), updated_at = now()`;
+  // An upsell charge the team made (upsell-charge.ts): paid → its case settles, once.
+  if (m.charge && status === 'paid') await settleCharge(sql, m.charge, s.id, s.livemode, encryptionKey);
   return s;
 }
 
@@ -183,7 +186,7 @@ export async function stripeWebhook(sql: SqlFn, encryptionKey: string, request: 
     sessionId = row?.session_id ?? null;
   }
   // Not ours (a vendor payout, another product) → 200 so Stripe stops retrying.
-  if (sessionId) await recordSession(sql, k.key, sessionId);
+  if (sessionId) await recordSession(sql, k.key, sessionId, encryptionKey);
   return Response.json({ ok: true, recorded: !!sessionId });
 }
 

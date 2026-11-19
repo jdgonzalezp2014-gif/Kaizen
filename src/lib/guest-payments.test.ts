@@ -16,6 +16,8 @@ test('lines survive Stripe metadata: item and amount, held ones marked', () => {
 test('income: live payments only, held lines never, refunds off every line in proportion', () => {
   assert.deepEqual(portalIncome([pay()]).map(r => [r.amount, r.kind, r.on]), [[49, 'portal', '2026-11-17'], [40, 'portal', '2026-11-17']]);
   assert.deepEqual(portalIncome([pay({ livemode: false })]), []);
+  // An upsell charge's payment is the case's income (claims.refund) — never counted twice.
+  assert.deepEqual(portalIncome([pay({ claimId: '7' })]), []);
   assert.deepEqual(portalIncome([pay({ status: 'held' })]), []);
   assert.deepEqual(keptLines(pay({ refunded: 44.5 })).map(l => l.amount), [24.5, 20]);
   assert.deepEqual(keptLines(pay({ lines: [{ item: 'waiver', label: '', amount: 49 }, { item: 'deposit', label: '', amount: 250, hold: true }] })).map(l => l.item), ['waiver']);

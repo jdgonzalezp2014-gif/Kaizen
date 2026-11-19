@@ -12,7 +12,7 @@ import { Icon, ic } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, availability, extendStay, offered, choiceLine, mapsUrl, nights, priceOf, quote, ready, paidExtra,
+import { UPSELLS, availability, guestLink, extendStay, offered, choiceLine, mapsUrl, nights, priceOf, quote, ready, paidExtra,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellKind, type PaidExtra } from '../lib/guest-portal.ts';
 import { FLOW_KEY, VS_KEY, doorCodeFor, doneFlow, entry, newFlow, progress, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
 import { CheckinProgress, Island, PaidIsland, SecTop, StepIsland, StepScreen, StripePay, type IslandItem } from './GuestCheckin.tsx';
@@ -644,6 +644,33 @@ function useHouse(dates: { arrival: string; departure: string }) {
 }
 
 /** A real stay link (/guest/<id>.<sig>) — the API that checks the signature and reads Hostaway is not built yet. */
+/**
+ * The stay's own link (/guest/<reservation>.<sig>). The full portal on it is Phase 2 (docs/roadmap.md); what it already
+ * shows (owner, 2026-11-19) is the stay's **pending payments** — the upsells the team charged from the case
+ * (functions/_lib/upsell-charge.ts), each with its pay button, and the ones already paid.
+ */
+type StayCharge = { id: string; label: string; amount: number; status: 'pending' | 'paid'; payUrl: string | null; paidAt: string | null };
 export function GuestLinkPage() {
-  return <div className="report-page v-page g-page"><p className="banner warn">▲ This stay page is not active yet.</p></div>;
+  const gl = guestLink(location.pathname);
+  const [charges, setCharges] = useState<StayCharge[] | null>(null);
+  const [bad, setBad] = useState('');
+  useEffect(() => {
+    if (!gl?.sig) { setBad('This stay link is not valid.'); return; }
+    void fetch(`/api/report-link?charges=${gl.id}.${encodeURIComponent(gl.sig)}`).then(r => r.json() as Promise<{ ok: boolean; charges?: StayCharge[]; message?: string }>)
+      .then(j => j.ok ? setCharges(j.charges ?? []) : setBad(j.message ?? 'This stay link is not valid.')).catch(() => setBad('Could not load — try again.'));
+  }, [gl?.id, gl?.sig]);
+  const pending = charges?.filter(c => c.status === 'pending') ?? [];
+  const paid = charges?.filter(c => c.status === 'paid') ?? [];
+  return <div className="report-page v-page g-page">
+    {bad ? <p className="banner warn">▲ {bad}</p> : !charges ? <p className="note">Loading…</p> : <>
+      <h2 className="gl-title">Pending payments</h2>
+      {pending.length ? <ul className="gl-charges">{pending.map(c => <li key={c.id}>
+          <span><b>{c.label}</b></span><span className="gl-amt">{money2(c.amount)}</span>
+          {c.payUrl && <a className="gl-pay" href={c.payUrl}>Pay</a>}</li>)}</ul>
+        : <p className="note"><Icon n="check" /> Nothing to pay.</p>}
+      {paid.length > 0 && <ul className="gl-charges gl-paid">{paid.map(c => <li key={c.id}>
+        <span><Icon n="check" /> {c.label}</span><span className="gl-amt">{money2(c.amount)}</span><small>Paid</small></li>)}</ul>}
+      <p className="note">Your full stay page (check-in, door code, house guide) opens here soon.</p>
+    </>}
+  </div>;
 }

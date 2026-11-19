@@ -30,13 +30,14 @@ export function closeDate(status: string, sent: string | null | undefined,
  * counted there — only when it is collected through the Resolution Center, or no price is recorded on the
  * reservation, is it logged here.
  */
-export const UPSELL_CATEGORIES = ['Pet fee', 'Early check-in', 'Late check-in', 'Late checkout', 'Extra guest', 'Other upsell'];
+// 'Extra nights' (2026-11-19): charged from the case — the nights blocked in Hostaway, paid through Stripe (upsell-charge.ts).
+export const UPSELL_CATEGORIES = ['Extra nights', 'Pet fee', 'Early check-in', 'Late check-in', 'Late checkout', 'Extra guest', 'Other upsell'];
 export const CASE_CATEGORIES = ['Damage', 'Cleanliness', 'Maintenance', 'Noise', 'Access', 'Amenity', 'Wifi', 'Safety', 'Other'];
 export const CLAIM_CATEGORIES = [...CASE_CATEGORIES, ...UPSELL_CATEGORIES];
 export const isUpsell = (category: string | null | undefined) => !!category && UPSELL_CATEGORIES.includes(category);
 export const CLAIM_SOURCES = ['Airbnb', 'Booking.com', 'Vrbo', 'Expedia', 'Direct', 'In person'];
 /** How an upsell was collected (§167, SOP #3): an alteration counts only through the Resolution Center or unpriced. */
-export const COLLECTED_VIA = ['Resolution Center', 'Not priced on the reservation', 'Direct'];
+export const COLLECTED_VIA = ['Resolution Center', 'Not priced on the reservation', 'Direct', 'Stripe'];
 
 /**
  * A case as money (§167, owner 2026-10-15). Requested is an estimate — what was asked for. Received is what came in.

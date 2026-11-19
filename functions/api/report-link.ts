@@ -38,6 +38,7 @@ import { workAct, workOfToken, workPage, workPhoto } from '../_lib/vendor-work.t
 import { stripeOnboard } from '../_lib/payouts.ts';
 import { demoHouse } from '../_lib/guest-demo.ts';
 import { guestCheckout, guestCheckoutState, guestIdentity, guestIdentityState, stripeWebhook } from '../_lib/guest-pay.ts';
+import { payPage, stayCharges } from '../_lib/upsell-charge.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
 
@@ -66,6 +67,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (request.headers.has('X-Inspect-Token')) return inspectGet(sql, request);
   // Owner, 2026-10-25: a cleaner's or handyman's Stripe setup link — the same public door, no new bypass.
   if (new URL(request.url).searchParams.has('stripe')) return stripeOnboard(sql, env.ENCRYPTION_KEY, request);
+  // An upsell charge's pay page, and a stay's pending payments for its portal page (upsell-charge.ts, 2026-11-19).
+  if (new URL(request.url).searchParams.has('pay')) return payPage(sql, env.ENCRYPTION_KEY, request);
+  const stay = new URL(request.url).searchParams.get('charges');
+  if (stay) return stayCharges(sql, env.ENCRYPTION_KEY, new URL(request.url).origin, stay);
   // Guest portal: did the guest finish Stripe Checkout? (guest-pay.ts)
   const co = new URL(request.url).searchParams.get('checkout');
   if (co) return guestCheckoutState(sql, env.ENCRYPTION_KEY, co);

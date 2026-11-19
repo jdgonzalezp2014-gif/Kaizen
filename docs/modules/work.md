@@ -274,3 +274,4 @@ Slack as a source is Slack's logo linking to the message everywhere — row, des
 into it), comment ends; the open item's "From Slack" eyebrow is gone. Open item: the summary is small chips (symbol +
 few words: stage, priority, unit, dates, owner, vendor, cost, stay ↗), left-aligned, wrapping. Files are chips on one
 row that slides sideways. Brand marks: `components/ChannelMark.tsx` (Font Awesome Free, CC BY 4.0).
+- **Upsells charged from the case (§178, 2026-11-19):** an open upsell's panel has "Charge the guest" (`UpsellCharge`, guests module doc); new kind Extra nights; a paid link closes the case as Paid, collected via Stripe.

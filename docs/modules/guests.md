@@ -344,6 +344,7 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - Upsell money: when the team confirms a request, Kaizen adds it to the reservation (a fee / `financeField` line)
   so it shows in that same portal to pay. That is a **write to Hostaway** — the exact endpoint is not tried yet and
   needs the owner's OK (standing rule). Until then the team adds the charge by hand in Hostaway.
+  *(Superseded 2026-11-19, §178: an upsell is charged from its case — Stripe pay link + Hostaway hold — see the end of this file.)*
 - `paymentStatus` "Unknown" is not "unpaid": no warning on what Hostaway does not know.
 
 ### Open items
@@ -365,3 +366,32 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - **Open (Phase 2, the real link):** a paid extra must create the team's to-do (early check-in → the cleaner and Hostaway
   times, mid-stay clean → a clean, crib / basket → prep) and attach the payment to the reservation and its listing — the demo
   knows only the unit's name, so test payments land as "portfolio-wide".
+
+### Upsells charged from the team's side (§178, owner 2026-11-19)
+
+Owner: "an upsell made in the CRM or in To-do runs from the finance side, connected to Stripe, everything set up — except Airbnb:
+there, the link to the Resolution Center or to change the dates. Otherwise do it all from there: block the dates, make the pay link /
+the extra charges, and show them in the guest's portal as pending payments."
+- **One block, two doors:** `src/components/UpsellCharge.tsx` — in the case's panel (Operations → To-do → Claims & upselling,
+  `ClaimCase`, open upsells and Stripe-paid ones) and in the Inbox (the chat's + → Upsell → "Next: charge" opens it in the same pop-up).
+- **Rules** `src/lib/upsell-charge.ts` (+ test): `needOf` (Extra nights → nights, Early check-in → checkin, Late checkout → checkout,
+  rest → amount), `isAirbnb` (Hostaway `channelName`), $20/h (`hourPrice`, same as the portal), `freeAround` / `nightsPrice` (calendar),
+  `airbnbLinks` (Resolution Center + `hosting/reservations/details/<HM>`), the guest messages. New kind **Extra nights** in `UPSELL_CATEGORIES`;
+  `COLLECTED_VIA` + **Stripe**.
+- **Server** `functions/_lib/upsell-charge.ts`, API `/api/upsell-charge` (permission `claims`): the plan (stay read from Hostaway,
+  nights ±7 days), `create`, `cancel`. **Hold first, charge after:** nights blocked one by one with `setNightOpen` (read back; any failure
+  reopens the ones done, nothing charged); hours through the board's `pushStayTimes` (its log `stay_time_pushes` decides). Airbnb: no charge,
+  no block (an alteration needs the nights open) — the amount is saved as requested, "Resolution Center" unless it is nights.
+- **Pay link** `/api/report-link?pay=<id>.<sig>` (`signCharge`, guest-link.ts) on the portal's domain (`guest_portal_url` origin, else this
+  host): a small Kaizen page → `&go=1` → Stripe Checkout (open session reused) → `&done=<cs>` records it. Metadata `source=guest-portal-charge`,
+  `charge`, `claim` → `recordSession` → `settleCharge` (`charge-settle.ts`, `status='pending'` guard = once): live → case received +=
+  amount, via Stripe, status Paid, Slack claims line; test → charge paid + note, no income. `guest_payments.claim_id` keeps it out of Portal sales.
+- **Portal:** `/guest/<res>.<sig>` (`GuestLinkPage`) — until Phase 2 it shows only the stay's **Pending payments** (and paid ones) from
+  `/api/report-link?charges=<res>.<sig>`.
+- **Migration 120** (`upsell_charges`, `guest_payments.claim_id`, the `claims_collected_via_check` with Stripe) — written, NOT applied; needs 119 first.
+  Tested 2026-11-19 on Neon branch `test-upsell-charge-1119` (br-shy-fire-b51yaybf): Airbnb plan on a real stay, Vrbo nights plan (0 free both
+  sides, correct), Pet fee charge → pay page → Stripe test session (reused on a second tap), portal charges (bad signature refused), settle
+  twice = once, cancel → "Nothing to pay". **Not tried: the Hostaway writes** (blocking nights / setting the hour) on a real listing, and a
+  real Stripe payment back through the webhook.
+- Open: extending the reservation's own dates in Hostaway after a paid extension (manual — the block holds the nights); a Stripe test payment
+  end to end; the full portal on the stay link (Phase 2).

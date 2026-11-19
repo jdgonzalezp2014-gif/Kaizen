@@ -3996,3 +3996,30 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
 .inv-md { display: flex; flex-direction: column; gap: 8px; padding: 12px; border: 1px dashed var(--line, #ccc); border-radius: var(--r-md, 12px); margin-bottom: 10px; }
 .inv-md textarea { width: 100%; font-family: inherit; }
 @media (max-width: 560px) { .inv-places { grid-template-columns: 1fr; } .inv-place { min-height: 0; } }
+
+/* Charge an upsell from its case (2026-11-19, src/components/UpsellCharge.tsx) */
+.uc { border: 1px solid var(--line); border-radius: 12px; padding: 12px; margin: 8px 0 12px; display: grid; gap: 8px; }
+.uc-head { display: flex; align-items: center; gap: 6px; }
+.uc-head b { display: inline-flex; align-items: center; gap: 6px; }
+.uc-links, .uc-acts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0; }
+.uc-links a.chip { text-decoration: none; display: inline-flex; align-items: center; gap: 4px; }
+.uc-line { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.uc-amt { margin-left: auto; font-weight: 600; }
+.uc-charge .note { margin: 0; display: flex; align-items: center; gap: 4px; }
+.uc-form { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px; }
+.uc-steps { display: flex; flex-wrap: wrap; gap: 12px; }
+.uc-step, .uc-hour, .uc-amount { display: grid; gap: 2px; font-size: 12px; color: var(--muted); }
+.uc-stepper { display: inline-flex; align-items: center; gap: 8px; color: var(--ink); font-size: 14px; }
+.uc-stepper b { min-width: 1.5em; text-align: center; }
+.uc-made blockquote { margin: 4px 0 8px; padding: 8px 12px; border-left: 3px solid var(--line); font-size: 13px; }
+.uc-past { list-style: none; margin: 0; padding: 0; font-size: 13px; color: var(--muted); display: grid; gap: 2px; }
+.uc-past li { display: flex; align-items: center; gap: 4px; flex-wrap: wrap; }
+.uc-state { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 2px 8px; border-radius: 999px; border: 1px dashed var(--line-strong); }
+/* The stay link's pending payments (2026-11-19, GuestLinkPage) */
+.gl-title { margin: 16px 0 0; font-size: 20px; }
+.gl-charges { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.gl-charges li { display: flex; align-items: center; gap: 12px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.gl-charges li > span:first-child { flex: 1; display: inline-flex; align-items: center; gap: 6px; }
+.gl-amt { font-weight: 600; }
+.gl-pay { background: var(--accent); color: var(--on-accent); padding: 8px 16px; border-radius: 10px; text-decoration: none; font-weight: 600; }
+.gl-paid { opacity: .8; }

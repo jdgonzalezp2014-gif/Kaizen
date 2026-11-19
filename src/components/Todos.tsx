@@ -42,6 +42,7 @@ import { Icon, ic } from './Icon.tsx';
 import { hostawayReservationUrl } from '../lib/operations.ts';
 import { SlackMark } from './ChannelMark.tsx';
 import { WorkProof } from './WorkProof.tsx';
+import { UpsellCharge } from './UpsellCharge.tsx';
 import { Approvals, useApprovals } from '../screens/Approvals.tsx';
 import { setParams, useUrlState } from './useUrlState.ts';
 
@@ -1992,6 +1993,9 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
       {editing && <ClaimEdit claim={claim} onDone={saved => { setEditing(false); if (saved) onSaved?.(); }} />}
       <CaseMoneyBlock claim={claim} repairWork={repairWork} estimated={cost.estimated}
                       ownerWork={work.length ? cost.owner : claim.owner_work} onSaved={onSaved} />
+      {/* 2026-11-19 (owner): an upsell is carried out from here — Hostaway hold + Stripe pay link, or Airbnb's doors. */}
+      {isUpsell(claim.category) && (!isClosedClaim(claim.status) || claim.collected_via === 'Stripe')
+        ? <UpsellCharge claimId={String(claim.id)} hasStay={!!claim.reservation_id} onChanged={onSaved} /> : null}
       {canWork && (
         <div className="claim-case-work">
           <div className="claim-case-head">

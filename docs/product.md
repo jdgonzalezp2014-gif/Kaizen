@@ -64,3 +64,5 @@ come later for a fully in-page look. Built 2026-11-15 (`functions/_lib/guest-pay
 - 2026-11-16 (inbox, phase 1): automations, `guest_checkins`, `guest_events` and the watch are per `account_id`; the webhook secret is
   derived from the tenant's own key. **Hard-wired to Kaizen:** `GUEST_TZ` (America/Chicago) for every moment, the Slack topic
   `escalations` as the only place the watch reports, account id 1 in every query, English-only recipes and triage prompt.
+- 2026-11-19 (guests, upsell charges §178): per account — `upsell_charges`, the pay link's host from `guest_portal_url`, Stripe key from Settings.
+  **Hard-wired:** $20/hour for early/late, the 8 AM–6 PM hour window, Airbnb's URLs (Resolution Center, host reservation page), English guest texts.
