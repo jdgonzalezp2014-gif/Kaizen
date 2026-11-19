@@ -66,3 +66,5 @@ come later for a fully in-page look. Built 2026-11-15 (`functions/_lib/guest-pay
   `escalations` as the only place the watch reports, account id 1 in every query, English-only recipes and triage prompt.
 - 2026-11-19 (guests, upsell charges §178): per account — `upsell_charges`, the pay link's host from `guest_portal_url`, Stripe key from Settings.
   **Hard-wired:** $20/hour for early/late, the 8 AM–6 PM hour window, Airbnb's URLs (Resolution Center, host reservation page), English guest texts.
+- 2026-11-19 (inbox, guest AI audit): company facts per account (`guest_ai.business`). **Hard-wired:** `GUEST_SECTIONS` (Kaizen's SOP
+  section keys), the Repository column keys `listingFacts` reads (`max_guests`, `hw_*`, fees…), `UNIT_TABLES`, the English playbook prompt.

@@ -58,9 +58,8 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
   name for the row). Hostaway's dates are UTC.
 - The guest's phone never reaches the browser: masked in the stay panel, resolved on the server for SMS.
 - **The AI drafts, a person sends.** It asks exactly the provider + model in `accounts.guest_ai` (no chain), with the
-  account's own key; facts = `guestHouse()` (what the guest portal shows — door and lockbox codes excluded) + the 5
-  best-matching published SOPs + the last 12 messages. A low-confidence answer is a handoff. Conversation text is
-  treated as the guest speaking, never as instructions. Claude Opus/Sonnet 5.5 calls carry `fallbacks: "default"`.
+  account's own key. A low-confidence answer is a handoff. Conversation text is treated as the guest speaking, never as
+  instructions. Claude Opus/Sonnet 5.5 calls carry `fallbacks: "default"`. What it reads — see "The guest AI" below.
 - The portal link is `accounts.guest_portal_url` + `/guest/<reservation>.<sig>` (`signGuest`, HMAC with
   ENCRYPTION_KEY). **The portal moves to its own domain** — nothing else may build that link.
 - Times: `GUEST_TZ` = America/Chicago for check-in/out moments (per-account zone is product debt).
@@ -89,6 +88,33 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
   The list's "Needs reply" drops a conversation whose last message was sorted as needing none (`noReply`) — only while it is the last word.
 - The webhook's secret is derived (`hookSecret`, HMAC of the account key) — nothing stored; shown masked in Settings with Copy.
   Holding it allows only reporting an event. `/api/slack-cron` is already outside Access and SELF_AUTHENTICATING.
+
+## The guest AI — what it knows (audit 2026-11-19)
+
+Audited on 70 real guest messages (`guest_events.preview`): amenities (towels, a TV per bedroom), distance to a venue, early
+check-in / luggage, other units and dates, long-stay discounts, refunds after cancelling, booking approval, insurance stays,
+hot water / AC. Before, the draft saw only the portal guide — not the listing's text, capacity, fees, cancellation, amenities,
+the booking or any company policy — so most of those were guesses or handoffs. Now `suggestReply` (`guest-ai.ts`) gives:
+- **LISTING** = `guideFacts` (portal guide: Wi-Fi, address, times, parking, guest access, house rules, builder steps/house items,
+  extras) + `listingFacts` (`src/lib/guest-knowledge.ts`, a whitelist of the Repository record: title, type, area, max/included
+  guests, beds/baths, size, floor, elevator, min/max nights, cancellation, every fee, summary, description, the space,
+  neighborhood, getting around, other notes, utilities) + Hostaway amenities (`fetchListingAmenities`, needs includeResources=1).
+- **THIS BOOKING** = `stayFacts` from GET /reservations/{id}: channel, adults/children/infants/pets, nights, the booking's own
+  hours, total + balance, the guest's booking note; payment / agreement / ID / online check-in. **OPEN WORK** = open to-dos of the stay.
+- **COMPANY** = `guest_ai.business` (Settings → Integrations → Guest messages & AI → "Company facts for guests", ≤6000, jsonb, no
+  migration) — EMPTY today: the owner fills it (hours, emergency line, early/late, discounts, refunds, approval, insurance stays…).
+- **OTHER LISTINGS** (`portfolioFacts`: public title, area, beds, guests) — for "do you have another unit?"; availability never claimed.
+- **SOPs**: only sections `GUEST_SECTIONS` (guest, claims, maintenance, compliance, mod-guest-services/experience/portal) or no section;
+  framed as internal procedures. The cleaners'/Slack/pricing SOPs no longer reach a guest draft.
+- Guards in code, not only the prompt: `scrubCodes` on every fact (real records hold door codes in "Elevator"); before a booking
+  (inquiry / cancelled) no exact address, Wi-Fi, arrival steps, phone or manual; "Public address" is cut to the area (`areaOf` — it
+  holds the street on real records). Airbnb threads: never payment/contact/booking off Airbnb.
+- The prompt is a CX playbook per question type (amenity, early/late, broken, money, dates, distance, approval, upset, thanks) and
+  answers every question in the last messages. New output `missing` ("Missing: …" on the draft card) = the fact to add next.
+- Dry run on a real P2 inquiry (no model call): ~15.7k chars, record matched, 85 amenities, 0 codes from the records in the text.
+  **Not run against a model yet** — read the first drafts (and their "Missing") before trusting it.
+- Data gaps seen (Repository, 2026-11-19): listing text/fees filled on 21 of 44 records (the active ones); `svc_*`, waiver,
+  deposit, `guest_code`, `portal_photo` empty everywhere; houses have no parking notes; Hostaway amenities differ from the text.
 
 ## Not verified yet (no way to without a real guest or a key)
 
@@ -121,6 +147,7 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
 - The portal's real door (`/guest/<id>.<sig>` → `verifyGuest`) and its events (check-in done, extras, payments) feeding
   the stay panel — today the panel shows Hostaway's paid / agreement / ID.
 - Mark-as-read is not written back to Hostaway.
+- Fill "Company facts for guests" (owner) and read a week of drafts' "Missing" lines → Repository fields / facts.
 - Answering on its own ("auto") — not built; `guestAiFrom` reads it as suggest. `ai_draft` vs the sent text is the
   evidence for when to build it.
 - Claims & upselling still lives in Operations → To-do; Guest Services has a door to it.

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { lookup, recName, type RepoRec } from './assistant.ts';
+import { extraWords, lookup, recName, recordText, type RepoRec } from './assistant.ts';
 
 const cols = [{ key: 'name', title: 'Name' }, { key: 'wifi_name', title: 'WiFi network' }, { key: 'address', title: 'Address' }, { key: 'admin_code', title: 'Admin code' }, { key: 'password', title: 'WiFi password' }];
 const rec = (o: Partial<RepoRec>): RepoRec => ({ table: 'houses', tableTitle: 'Houses', id: 'H1', name: 'Amber Valley', columns: cols, secrets: ['admin_code', 'password'],
@@ -33,4 +33,25 @@ test('nothing asked shows the record; an unknown ask shows what there is', () =>
 test('a record is named by its table\'s name fields', () => {
   assert.equal(recName({ building: 'P2', unit: '1406' }, ['building', 'unit'], 'X'), 'P2 1406');
   assert.equal(recName({}, ['building'], 'X9'), 'X9');
+});
+
+test('a field asked by name is the answer; a question no field names wants a sentence', () => {
+  assert.equal(lookup('wifi amber valley', all)[0]!.matched, true);
+  assert.equal(lookup('amber valley', all)[0]!.matched, false);
+  assert.deepEqual(extraWords('what is the wifi of amber valley?', 'Amber Valley'), []);
+  assert.deepEqual(extraWords('does amber valley have a pool table', 'Amber Valley'), ['does', 'have', 'pool', 'table']);
+  assert.deepEqual(extraWords('check-in amber valley', 'Amber Valley'), []);
+});
+
+test('nothing asked: the fields people open a listing for come first', () => {
+  const r = rec({ columns: [{ key: 'name', title: 'Name' }, { key: 'active', title: 'Active' }, { key: 'lock_type', title: 'Lock Type' }, { key: 'hw_address', title: 'Address' }],
+    secrets: [], vals: { name: 'Amber Valley', active: 'Yes', lock_type: 'Smart', hw_address: '1 Main' } });
+  assert.deepEqual(lookup('amber valley', [r])[0]!.fields.map(f => f.label), ['Address', 'Lock Type', 'Name', 'Active']);
+});
+
+test('the record the model reads: no secret, no code', () => {
+  const r = rec({ columns: [...cols, { key: 'cleaner_code', title: 'Cleaner Code' }], vals: { name: 'Amber Valley', wifi_name: 'AV', cleaner_code: '4455', admin_code: '1' } });
+  const t = recordText(r);
+  assert.match(t, /WiFi network: AV/);
+  assert.doesNotMatch(t, /4455|Admin code/);
 });

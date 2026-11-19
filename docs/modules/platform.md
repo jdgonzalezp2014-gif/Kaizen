@@ -201,6 +201,12 @@ Owner: "the notifications of messages and task alerts in the bell, with a profes
 - Route `/api/assistant` POST is under both `sops` and `repository`; the handler checks each part itself. Nothing is stored.
 - Not looked at in a browser yet (built and type-checked only). Hostaway `units` are not Repository records: "P2-1406 door code" finds
   nothing unless the listing has a record. Next (roadmap phase 4): the same brain behind @Kaizen, tools that act (record an invoice).
+- **2026-11-19 (audit):** with nothing asked, a record shows the fields people open it for first (`FIRST`: address, lock, Wi-Fi,
+  check-in/out, guests, beds, parking…), not the table's first columns (Name, Active, Subitems). `FIELD_WORDS` gained check-in/out, pets,
+  guests, beds, rules, cancellation, fees, keys/fobs, trash, elevator (EN/ES). A question that names ONE record but no field it has, with
+  2+ other words (`extraWords`: "does Napa Valley have a pool table?"), goes to the chat tier with that record's non-secret fields
+  (`recordPrompt`, `recordText` — codes withheld by `scrubCodes`) and the sentence shows above the card (`found: false` = not recorded).
+  A field asked by name stays rules-only. Not seen in a browser.
 - **SOP sections follow the menu (migration 118, NOT applied):** one top section per module (`mod-*`), the old sections are their
   children (keys unchanged). Draft SOP: `.sop-118.mjs`.
 - 2026-11-17: "Sound off" by the bell until the page is clicked once (browsers keep a page silent until then); its click turns sound on and plays the tone. `testChime` now waits for the audio context to open (the first click was silent).

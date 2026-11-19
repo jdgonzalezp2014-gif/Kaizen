@@ -1,6 +1,8 @@
 /**
  * The guest AI (Guest Services → Inbox, owner 2026-11-16): a draft reply for the conversation on screen, written from
- * the listing's Repository record (as the guest portal shows it), the published SOPs that match, and the thread.
+ * the listing's Repository record (the portal's guide + the listing's own text, capacity, fees, policy), Hostaway's amenities
+ * and this booking (party, pets, hours, total), the work open on the stay, the company's general facts, the other listings,
+ * the published guest-side SOPs that match, and the thread (audit 2026-11-19: src/lib/guest-knowledge.ts).
  * It only drafts — a person reads it and sends. Answering on its own is not built.
  *
  * Unlike ai-chain.ts (whoever answers first), this asks exactly the provider and model the account chose in
@@ -13,8 +15,21 @@ import { askGemini, firstJson } from './ai-chain.ts';
 import { decrypt } from './crypto.ts';
 import type { Env } from './db.ts';
 import { guestHouse } from '../api/guest-guide.ts';
-import { aiPrompt, guestAiFrom, guideFacts, question, suggestionFromAi, type GuestAi, type Stay, type Suggestion, type ThreadMsg } from '../../src/lib/inbox.ts';
+import { fetchListingAmenities, fetchReservationDetail } from './hostaway.ts';
+import type { HostawayCredentials } from './hostaway.ts';
+import { aiPrompt, channelLabel, guestAiFrom, guideFacts, question, stageOf, suggestionFromAi, type GuestAi, type Stay, type Suggestion, type ThreadMsg } from '../../src/lib/inbox.ts';
+import { amenityLine, listingFacts, portfolioFacts, scrubCodes, stayFacts, workFacts } from '../../src/lib/guest-knowledge.ts';
 import { rankSops, type SopDoc } from '../../src/lib/slack-sops.ts';
+import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
+import { UNIT_TABLES } from '../../src/lib/repo-checks.ts';
+
+/**
+ * SOP sections a guest reply may draw on. The rest (cleaners' pages, Slack, roles, pricing, costs, inspections) are how the
+ * team uses Kaizen — ranked by words they still matched guest messages ("early" → the early-departure clean) and put
+ * internal detail in front of a guest-facing voice. An SOP with no section still counts. Section keys are per account
+ * (docs/product.md).
+ */
+const GUEST_SECTIONS = new Set(['guest', 'claims', 'maintenance', 'compliance', 'mod-guest-services', 'mod-experience', 'mod-portal']);
 
 const MS = 30000;
 
@@ -49,7 +64,9 @@ async function askClaude(key: string, model: string, system: string, user: strin
   }
 }
 
-export async function suggestReply(sql: SqlFn, env: Env, stay: Stay, thread: ThreadMsg[], today: string):
+type AiStay = Stay & { channel?: string; payment?: string | null; agreement?: string | null; idVerified?: boolean };
+
+export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: ThreadMsg[], today: string, creds?: HostawayCredentials | null):
   Promise<{ ok: true; suggestion: Suggestion; by: string; sops: string[] } | { ok: false; error: string }> {
   const cfg = await readGuestAi(sql);
   if (cfg.mode === 'off') return { ok: false, error: 'AI suggestions are off — turn them on in Settings → Integrations → Guest messages & AI.' };
@@ -60,16 +77,40 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: Stay, thread: Thr
   const key = enc ? await decrypt(enc, env.ENCRYPTION_KEY).catch(() => null) : null;
   if (!key) return { ok: false, error: `No ${cfg.provider === 'claude' ? 'Claude' : 'Gemini'} key yet — add it in Settings → Integrations → AI.` };
 
-  const [house, docs] = await Promise.all([
+  const booked = !['inquiry', 'cancelled'].includes(stageOf(stay, today));
+  const reservation = /^\d+$/.test(stay.reservationId) ? stay.reservationId : null;
+  const none = <T,>(v: T) => () => v;
+  const [house, docs, recs, units, detail, amenities, todos, done] = await Promise.all([
     // No Hostaway key passed: the facts need the record and the builder, not the cover photo or the calendar.
-    stay.listingId ? guestHouse(sql, stay.listingId).catch(() => null) : null,
-    sql`SELECT o.id::text, o.title, o.purpose, o.trigger, o.steps, o.body, o.keywords, s.label AS section FROM sops o
+    stay.listingId ? guestHouse(sql, stay.listingId).catch(none(null)) : null,
+    sql`SELECT o.id::text, o.title, o.purpose, o.trigger, o.steps, o.body, o.keywords, s.label AS section, o.section_key FROM sops o
           LEFT JOIN sop_sections s ON s.account_id = o.account_id AND s.key = o.section_key
-         WHERE o.account_id = 1 AND o.deleted_at IS NULL AND o.status = 'published'`.catch(() => []) as Promise<SopDoc[]>,
+         WHERE o.account_id = 1 AND o.deleted_at IS NULL AND o.status = 'published'`.catch(none([])) as Promise<(SopDoc & { section_key: string | null })[]>,
+    sql`SELECT table_key AS "table", id, vals FROM repo_records WHERE account_id = 1 AND table_key = ANY(${UNIT_TABLES}) AND archived_at IS NULL`.catch(none([])) as Promise<RepoRow[]>,
+    sql`SELECT id::text AS id, name, bedrooms, capacity FROM units WHERE account_id = 1 AND active ORDER BY name`.catch(none([])) as Promise<{ id: string; name: string; bedrooms: unknown; capacity: unknown }[]>,
+    creds && reservation ? fetchReservationDetail(creds, reservation).catch(none(null)) : null,
+    creds && stay.listingId ? fetchListingAmenities(creds, stay.listingId).catch(none([] as string[])) : [],
+    reservation ? sql`SELECT title, status, kind, due_on::text AS "dueOn" FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND done_at IS NULL
+                        AND reservation_id = ${reservation} AND parent_id IS NULL ORDER BY created_at DESC LIMIT 6`.catch(none([])) as Promise<{ title: string; status: string; kind: string | null; dueOn: string | null }[]> : [],
+    reservation ? sql`SELECT 1 FROM guest_checkins WHERE account_id = 1 AND reservation_id = ${reservation}`.catch(none(null)) as Promise<unknown[] | null> : null,
   ]);
-  const facts = guideFacts(house?.guide ?? null, { unitName: house?.unitName ?? stay.listing, notOffered: house?.notOffered, prices: house?.prices });
-  const sops = rankSops(question(thread), docs, 5);
-  const { system, user } = aiPrompt({ stay, today, facts, sops, thread, instructions: cfg.instructions, company: a?.name ?? 'the host' });
+  const unitName = house?.unitName ?? stay.listing;
+  const rec = repoMatch(unitName, recs);
+  const facts = scrubCodes([
+    guideFacts(house?.guide ?? null, { unitName, notOffered: house?.notOffered, prices: house?.prices, booked }),
+    ...listingFacts(rec?.vals, booked),
+    amenityLine(amenities),
+  ].filter(Boolean).join('\n'));
+  const stayLines = stayFacts(detail, { channel: stay.channel ? channelLabel(stay.channel) : undefined, payment: stay.payment, agreement: stay.agreement,
+    idVerified: stay.idVerified, checkinDone: done == null ? undefined : done.length > 0 });
+  const portfolio = portfolioFacts(units.map(u => {
+    const v = repoMatch(u.name, recs)?.vals ?? {};
+    return { name: u.name, title: (v.listing_title ?? v.hw_airbnb_title) as string | undefined, area: (v.hw_public_address ?? v.location) as string | undefined,
+      bedrooms: v.hw_bedrooms ?? u.bedrooms, guests: v.max_guests ?? u.capacity };
+  }), unitName);
+  const sops = rankSops(question(thread), docs.filter(d => !d.section_key || GUEST_SECTIONS.has(d.section_key)), 5);
+  const { system, user } = aiPrompt({ stay, today, facts, sops, thread, instructions: cfg.instructions, company: a?.name ?? 'the host',
+    business: scrubCodes(cfg.business), stayLines, work: workFacts(todos), portfolio, channel: stay.channel });
   const r = cfg.provider === 'claude' ? await askClaude(key, cfg.model, system, user)
     : await askGemini(key, cfg.model, system, user, [], MS).then(x => ({ ...x, by: cfg.model }));
   if (!r.json) return { ok: false, error: r.error ?? 'The model did not answer.' };

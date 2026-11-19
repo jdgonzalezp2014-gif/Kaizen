@@ -45,6 +45,7 @@ import type { DateStr } from '../../src/lib/dates.ts';
 import { addDays, daysBetween } from '../../src/lib/dates.ts';
 // One list of statuses that never occupied a night, shared with finance and urgency.
 import { channelCut, reservationCounts } from '../../src/lib/finance.ts';
+import { amenitiesOf } from '../../src/lib/guest-knowledge.ts';
 export { reservationCounts };
 
 const BASE = 'https://api.hostaway.com/v1';
@@ -811,6 +812,14 @@ export async function fetchListingCover(creds: HostawayCredentials, listingId: s
   }
   // None answers (P2-1406 has no photos in Hostaway, only a dead thumbnail): no cover — the record's Portal photo fills it.
   return null;
+}
+
+/** A listing's amenities as Hostaway lists them (present ones) — only with includeResources=1 (checked 2026-11-19: 105 on 366045, none without). */
+export async function fetchListingAmenities(creds: HostawayCredentials, listingId: string): Promise<string[]> {
+  const token = await getAccessToken(creds);
+  const res = await fetch(`${BASE}/listings/${encodeURIComponent(listingId)}?includeResources=1`, { headers: { Authorization: `Bearer ${token}` } });
+  if (!res.ok) return [];
+  return amenitiesOf(((await res.json()) as { result?: unknown }).result);
 }
 
 /** The signed agreement's bytes. Hostaway's own links want the token; others are public. */

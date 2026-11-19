@@ -327,12 +327,14 @@ function Composer({ row, channel, via, list, portalLink, canSend, onSent }: {
         <div className="ix-ai-head">
           <span><Icon n="sparkles" /> Suggested reply</span>
           <span className={`ix-conf c-${ai.s.confidence}`} title={`Model: ${ai.by}`}>{ai.s.handoff ? <><Icon n="hand" /> Needs a person</> : `${ai.s.confidence} confidence`}</span>
-          <Hint label="Where this comes from">Written by {ai.by} from this listing's Repository record, the published SOPs that match and the conversation.
+          <Hint label="Where this comes from">Written by {ai.by} from this listing's Repository record and Hostaway amenities, this booking, the company facts
+            (Settings → Integrations → Guest messages & AI), the guest-side SOPs that match and the conversation.
             It is a draft: read it, change it, then send. {ai.s.sources.length ? <>Used: {ai.s.sources.join(' · ')}.</> : 'It named no source.'}
             {ai.sops.length > 0 && <> SOPs it was shown: {ai.sops.join(' · ')}.</>}</Hint>
         </div>
         <p>{ai.s.reply}</p>
         {ai.s.reason && <p className="ix-ai-why">{ai.s.reason}</p>}
+        {ai.s.missing && <p className="ix-ai-why"><Icon n="alert" /> Missing: {ai.s.missing} — add it to the listing's record or the company facts.</p>}
         <div className="ix-ai-acts">
           <button type="button" className="ix-ghost" onClick={() => { setText(ai.s.reply); setAiDraft(ai.s.reply); setTemplateId(''); setAi(null); }}>Use</button>
           <button type="button" className="link tiny" onClick={() => setAi(null)}>Dismiss</button>

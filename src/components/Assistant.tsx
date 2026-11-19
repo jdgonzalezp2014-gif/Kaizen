@@ -52,14 +52,19 @@ export function Assistant({ lifted, onSop, onRecord }: {
     <section className="as-panel" aria-label="Ask Kaizen">
       <header><b><Icon n="sparkles" /> Ask Kaizen</b>
         <Hint label="What it can answer">Two things. <b>How do we…?</b> — answered from the published SOPs by a light AI model, with the SOPs it used.
-          <b> A listing, tool or account by name</b> ("wifi Amber Valley", "password Airbnb") — read straight from the Repository, no AI; a password or code
-          is a Reveal button that needs your role's permission and is logged, like in the Repository. Nothing typed here is saved.</Hint>
+          <b> A listing, tool or account by name</b> ("wifi Amber Valley", "password Airbnb", "check-in Preston") — read straight from the Repository, no AI; a password or code
+          is a Reveal button that needs your role's permission and is logged, like in the Repository. A question no field answers by name
+          ("does Napa Valley have a pool table?") is read from that record by a light AI model, in a sentence above the card. Nothing typed here is saved.</Hint>
         <button type="button" className="ix-icon-btn" aria-label="Close" onClick={() => setOpen(false)}>✕</button></header>
       <div className="as-talk">
         {!turns.length && <p className="note">Try: “wifi Amber Valley” · “password Airbnb” · “how do I record a receipt?”</p>}
         {turns.map((t, i) => <div key={i} className="as-turn">
           <p className="as-q">{t.q}</p>
           {t.err && <p className="ix-state warn"><Icon n="alert" /> {t.err}</p>}
+          {t.a?.ok && t.a.kind === 'records' && t.a.answer && <div className="as-card">
+            <p>{t.a.found === false && <Icon n="alert" />} {t.a.answer}</p>
+            {t.a.by && <p className="note tiny">{t.a.by.split(' (')[0]} · from the record below</p>}
+          </div>}
           {t.a?.ok && t.a.kind === 'records' && t.a.hits.map(h => <div key={`${h.table}${h.id}`} className="as-card">
             <h4>{h.name} <span>{h.tableTitle}</span>{onRecord && <button type="button" className="link tiny" onClick={() => onRecord(h.table, h.id)}>Open</button>}</h4>
             {h.fields.map(f => <div key={f.label} className="as-field"><span>{f.label}</span><b>{f.value}</b></div>)}

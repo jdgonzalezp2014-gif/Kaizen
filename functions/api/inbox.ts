@@ -186,7 +186,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         sql`SELECT id::text AS id, name FROM units WHERE account_id = 1` as Promise<{ id: string; name: string }[]>]);
       if (!row) return bad('That conversation is not in Hostaway any more.', 404);
       const stay = { ...row, listing: units.find(u => u.id === row.listingId)?.name ?? row.listing };
-      const r = await suggestReply(sql, env, stay, thread, todayIn(GUEST_TZ));
+      const r = await suggestReply(sql, env, stay, thread, todayIn(GUEST_TZ), creds);
       return r.ok ? json(r) : bad(r.error, 422);
     } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
   }

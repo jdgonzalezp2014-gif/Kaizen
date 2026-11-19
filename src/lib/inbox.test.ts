@@ -80,9 +80,9 @@ test('one timeline: the channel\'s copy of a sent message wins, staged and sched
 });
 
 test('the AI settings are made whole; "auto" does not exist yet', () => {
-  assert.deepEqual(guestAiFrom(null), { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '' });
+  assert.deepEqual(guestAiFrom(null), { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '' });
   assert.deepEqual(guestAiFrom({ mode: 'auto', provider: 'gemini', model: 'bad model!', instructions: ' be kind ' }),
-    { mode: 'suggest', provider: 'gemini', model: 'gemini-3.6-flash', instructions: 'be kind' });
+    { mode: 'suggest', provider: 'gemini', model: 'gemini-3.6-flash', instructions: 'be kind', business: '' });
 });
 
 test('the prompt carries the facts, the SOPs and the conversation — and no code is asked for', () => {
@@ -92,17 +92,38 @@ test('the prompt carries the facts, the SOPs and the conversation — and no cod
   assert.match(facts, /Not offered here: pet/);
   const p = aiPrompt({ stay, today: '2026-11-21', facts, sops: [{ id: '1', title: 'Late check-out', steps: [{ text: 'Check the board' }] }],
     thread: [msg({ body: 'Can I leave at 1pm?' }), msg({ status: 'staged', incoming: false, body: 'not sent' })], instructions: 'Sign as Kaizen', company: 'Kaizen' });
-  assert.match(p.system, /Never write a door code/);
+  assert.match(p.system, /Never write a door, gate or lockbox code/);
   assert.match(p.system, /Sign as Kaizen/);
   assert.match(p.user, /\[Late check-out\]/);
   assert.match(p.user, /GUEST: Can I leave at 1pm\?/);
   assert.doesNotMatch(p.user, /not sent/);
+  assert.match(p.user, /COMPANY\n\(no general facts written yet\)/);
+});
+
+test('before a booking: no address, Wi-Fi or arrival steps; Airbnb keeps it on Airbnb; the booking and company facts travel', () => {
+  const g = { address: '1 Main St', wifi: { network: 'Kaizen', password: 'pw' }, checkIn: '4 PM', checkOut: '11 AM', parking: null, access: null, manual: 'https://m', rules: 'No parties', phone: '555',
+    steps: [{ title: 'Door', text: 'Use the keypad' }] } as Parameters<typeof guideFacts>[0];
+  const pre = guideFacts(g, { unitName: 'X', booked: false });
+  assert.doesNotMatch(pre, /1 Main St|Kaizen|keypad|555|https:\/\/m/);
+  assert.match(pre, /House rules: No parties/);
+  const inquiry = { ...stay, status: 'inquiry' };
+  const p = aiPrompt({ stay: inquiry, today: '2026-11-21', facts: pre, sops: [], thread: [msg({ body: 'Is there a TV?' })], instructions: '', company: 'Kaizen',
+    business: 'Early check-in $20/hour', stayLines: ['Party: 2 adults'], work: ['Repair: AC — open'], portfolio: ['Lux 1B1B — Plano'], channel: 'airbnbOfficial' });
+  assert.match(p.system, /BEFORE a booking/);
+  assert.match(p.system, /Airbnb guest: never ask for or offer payment/);
+  assert.match(p.user, /COMPANY \(true for every listing\)\nEarly check-in \$20\/hour/);
+  assert.match(p.user, /THIS BOOKING\nParty: 2 adults/);
+  assert.match(p.user, /OPEN WORK ON THIS STAY \(internal\)\nRepair: AC/);
+  assert.match(p.user, /OTHER LISTINGS .*\nLux 1B1B/);
+  const booked = aiPrompt({ stay, today: '2026-11-21', facts: '', sops: [], thread: [], instructions: '', company: 'K', channel: 'vrbo' });
+  assert.doesNotMatch(booked.system, /BEFORE a booking|Airbnb guest/);
 });
 
 test('a suggestion keeps its shape: empty is nothing, low confidence hands off', () => {
   assert.equal(suggestionFromAi({ reply: ' ' }), null);
   assert.deepEqual(suggestionFromAi({ reply: 'Sure', confidence: 'high', handoff: false, reason: '', sources: ['Wi-Fi', 3] }),
-    { reply: 'Sure', confidence: 'high', handoff: false, reason: '', sources: ['Wi-Fi', '3'] });
+    { reply: 'Sure', confidence: 'high', handoff: false, reason: '', sources: ['Wi-Fi', '3'], missing: '' });
+  assert.equal(suggestionFromAi({ reply: 'Let me check', missing: ' TV per bedroom ' })!.missing, 'TV per bedroom');
   assert.equal(suggestionFromAi({ reply: 'Hm', confidence: 'what' })!.handoff, true);
 });
 

@@ -6,7 +6,7 @@
  */
 import { useEffect, useState } from 'react';
 import { getInboxSettings, saveInboxSettings, type InboxSettings } from '../api.ts';
-import { AI_MODELS, type AiProvider, type GuestAi } from '../lib/inbox.ts';
+import { AI_MODELS, MAX_BUSINESS, type AiProvider, type GuestAi } from '../lib/inbox.ts';
 import { WAIT_CHOICES } from '../lib/guest-watch.ts';
 import { Hint } from './Hint.tsx';
 import { Icon } from './Icon.tsx';
@@ -41,7 +41,9 @@ export function GuestAiPanel({ onSaved }: { onSaved?: (s: InboxSettings) => void
         </label>
       </div>
       <div className="card">
-        <h2>Reply AI <Hint>The assistant drafts a reply for the conversation on screen from the listing's Repository record, the published SOPs and the thread.
+        <h2>Reply AI <Hint>The assistant drafts a reply for the conversation on screen from the listing's Repository record (guide, description, capacity, fees,
+          house rules), Hostaway's amenities and this booking (party, pets, hours, total), the work open on the stay, the company facts below, the other
+          listings, the guest-side SOPs that match and the thread. Before a booking it leaves out the exact address, Wi-Fi and arrival steps; codes are always withheld.
           A person reads it and sends — it never answers on its own (that mode is not built). It uses this company's own API key from Integrations → AI,
           and exactly the model named here.</Hint></h2>
         <div className="row">
@@ -67,6 +69,15 @@ export function GuestAiPanel({ onSaved }: { onSaved?: (s: InboxSettings) => void
         <label>House style <Hint>Optional. How the company wants to sound — a sign-off, words to avoid, what to always mention. Rules about what is allowed
           belong in the SOPs, where the team reads them too.</Hint>
           <textarea className="ix-text" rows={3} maxLength={2000} value={ai.instructions} onChange={e => setAi({ ...ai, instructions: e.target.value })} />
+        </label>
+        <label>Company facts for guests <Hint>What is true for every listing and no Repository field holds — the AI may quote it to a guest. One line each:
+          the hours the team answers and the emergency line; early check-in and late check-out (price, how far ahead, who approves); luggage drop;
+          discounts for long stays; refunds and cancellations; booking approval (what we ask and how long it takes); insurance / relocation stays;
+          what to do if something breaks; pets, parties, smoking, quiet hours. Never a door or lockbox code. When a draft says “Missing: …”, the
+          fact usually belongs here or in the listing's record.</Hint>
+          <textarea className="ix-text" rows={6} maxLength={MAX_BUSINESS} value={ai.business}
+                    placeholder={'Team answers 8 AM – 10 PM Central; urgent issues 24/7 by message.\nEarly check-in: $20/hour before check-in, ask a day before, subject to approval.'}
+                    onChange={e => setAi({ ...ai, business: e.target.value })} />
         </label>
         <div className="row"><button disabled={busy} onClick={() => void save({ ai })}>Save</button></div>
       </div>

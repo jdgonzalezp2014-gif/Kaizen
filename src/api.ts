@@ -1128,7 +1128,7 @@ export const saveInboxSettings = (body: Record<string, unknown>) =>
 // ── The help assistant (2026-11-17): the Repository by rules, the SOPs by a light model ──
 import type { RepoAnswer } from './lib/assistant.ts';
 export type AssistantAnswer =
-  | { ok: true; kind: 'records'; hits: RepoAnswer[]; canReveal: boolean }
+  | { ok: true; kind: 'records'; hits: RepoAnswer[]; canReveal: boolean; answer?: string; found?: boolean; by?: string | null }
   | { ok: true; kind: 'sops' | 'none'; answer: string; sops?: { id: string; title: string }[]; missing?: string; by?: string | null };
 export const askAssistant = (question: string) =>
   call<AssistantAnswer | Fail>('/api/assistant', { method: 'POST', body: JSON.stringify({ question }) });
