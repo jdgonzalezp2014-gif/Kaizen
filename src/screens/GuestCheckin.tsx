@@ -15,7 +15,7 @@ import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, quote, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
-import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, cleanPhone, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
+import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, cleanEmail, cleanPhone, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type BillLine, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
 const STEP_ICON: Record<StepKey, string> = { details: 'user', identity: 'idcard', protection: 'shield', rules: 'book', extras: 'sparkles', pay: 'card' };
@@ -136,6 +136,8 @@ function Details({ stay, flow, save }: S) {
   const airbnb = channelCovers(stay);
   const [phone, setPhone] = useState(flow.phone ?? (airbnb ? '' : g?.phone ?? ''));
   const okPhone = cleanPhone(phone);
+  const [email, setEmail] = useState(flow.email ?? g?.email ?? '');
+  const okEmail = cleanEmail(email);
   const party = g ? [[g.adults, 'adult'], [g.children, 'child'], [g.infants, 'infant']].filter(([n]) => (n as number) > 0)
     .map(([n, w]) => `${n} ${w}${n === 1 ? '' : w === 'child' ? 'ren' : 's'}`).join(' · ') : `${stay.guests} guests`;
   return <>
@@ -144,7 +146,6 @@ function Details({ stay, flow, save }: S) {
         <Hint>These come from your reservation. Something wrong? Tap "Request a change" — someone from our team contacts you and fixes it.</Hint></div>
       <p className="ci-name">{g?.name ?? stay.guestFirst}</p>
       <dl className="ci-dl">
-        {g?.email && <><dt><Icon n="mail" /></dt><dd>{g.email}</dd></>}
         <dt><Icon n="users" /></dt><dd>{party}{stay.maxGuests ? <span className="note"> · up to {stay.maxGuests}</span> : null}</dd>
       </dl>
       {asked ? <p className="ci-ok"><Icon n="check" /> Sent — our team will contact you.</p>
@@ -155,17 +156,18 @@ function Details({ stay, flow, save }: S) {
         : <button className="chip ci-fix-go" onClick={() => setFix(true)}>Request a change</button>}
     </section>
     <section className="card ci-card ci-phone">
-      <label className="ci-q" htmlFor="ci-phone">Your mobile number</label>
-      <input id="ci-phone" type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="(555) 123-4567" />
-      <span className="note">{airbnb ? 'Airbnb does not share your number with us. ' : ''}We text you here about your stay — check-in, the door code, anything urgent.</span>
-      {phone.trim() && !okPhone && <span className="note warn">Add the full number (with country code if outside the US).</span>}
+      <span className="ci-q">Contact</span>
+      <label><Icon n="phone" /><input type="tel" inputMode="tel" autoComplete="tel" aria-label="Mobile number" aria-invalid={!!phone.trim() && !okPhone}
+        value={phone} onChange={e => setPhone(e.target.value)} placeholder="Mobile number" /></label>
+      <label><Icon n="mail" /><input type="email" inputMode="email" autoComplete="email" aria-label="Email" aria-invalid={!!email.trim() && !okEmail}
+        value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" /></label>
     </section>
     <section className="card ci-card">
       <span className="ci-q">Arrival time</span>
       <TimeStrip times={times} value={arr} set={setArr} />
     </section>
     {/* The real link turns `changeAsk` into a task for the team (open item); the demo only shows it was sent. */}
-    <button className="g-cta" disabled={!okPhone} onClick={() => save({ ...flow, details: true, arrival: arr, phone: okPhone, changeAsk: asked ? ask.trim() : null })}>Confirm</button>
+    <button className="g-cta" disabled={!okPhone || !okEmail} onClick={() => save({ ...flow, details: true, arrival: arr, phone: okPhone, email: okEmail, changeAsk: asked ? ask.trim() : null })}>Confirm</button>
   </>;
 }
 

@@ -67,6 +67,9 @@ export function cleanPhone(v: unknown): string | null {
   return plus && d.length >= 8 && d.length <= 15 ? `+${d}` : null;
 }
 
+/** An email as typed → trimmed and lower-cased, or null when it is not one. */
+export const cleanEmail = (v: unknown) => typeof v === 'string' && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v.trim()) && v.trim().length <= 200 ? v.trim().toLowerCase() : null;
+
 /** The guest's arrival time as shown ("6:30 PM", or LATE_ARRIVAL) — picked on a sliding strip (owner, 2026-11-16). */
 export type Arrival = string;
 export const LATE_ARRIVAL = 'After midnight';
@@ -75,6 +78,8 @@ export interface Flow {
   arrival: Arrival | null;
   /** The mobile number the guest confirmed or typed at check-in (owner, 2026-11-23: Airbnb's number does not work) — +E.164. */
   phone?: string | null;
+  /** The email the guest confirmed or corrected at check-in. */
+  email?: string | null;
   /** "Something is wrong" on the booking details: what the guest wrote. The real link opens a task for the team. */
   changeAsk?: string | null;
   identity: boolean;

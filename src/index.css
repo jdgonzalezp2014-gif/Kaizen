@@ -3372,8 +3372,11 @@ p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }
 .ci-covered { flex-direction: row; align-items: center; gap: 14px; } .ci-covered > svg { width: 28px; height: 28px; color: var(--accent); flex: 0 0 auto; }
 .ci-covered > span { display: flex; flex-direction: column; }
 .ci-phone { display: flex; flex-direction: column; gap: 8px; }
-.ci-phone input { font: inherit; font-size: 17px; padding: 12px 14px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface, transparent); color: inherit; }
-.ci-phone .warn { color: var(--warn, #b45309); }
+.ci-phone label { display: flex; align-items: center; gap: 10px; border: 1px solid var(--line-strong); border-radius: 12px; padding: 0 12px; color: var(--muted); }
+.ci-phone label:focus-within { border-color: var(--accent); }
+.ci-phone label:has([aria-invalid="true"]) { border-color: var(--warn, #b45309); }
+.ci-phone label svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.ci-phone input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 12px 0; border: 0; outline: 0; background: transparent; color: var(--text, inherit); }
 .ci-none { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; margin-top: -4px; background: none; border: 1px dashed var(--line); border-radius: 12px; text-align: left; font: inherit; font-size: 14px; color: var(--muted); cursor: pointer; }
 .ci-none.on { border-style: solid; border-color: var(--accent); color: inherit; }
 .ci-none small { font-size: 12px; line-height: 1.4; padding-left: 28px; color: var(--muted); }
