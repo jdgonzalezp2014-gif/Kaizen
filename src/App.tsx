@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Revenue } from './screens/Revenue.tsx';
 import { Units } from './screens/Units.tsx';
 import { Costs } from './screens/Costs.tsx';
+import { Analytics } from './screens/Analytics.tsx';
 import { Settings } from './screens/Settings.tsx';
 import { Operations } from './screens/Operations.tsx';
 import { Repository } from './screens/Repository.tsx';
@@ -32,7 +33,7 @@ import { usePhone } from './components/usePhone.ts';
 import { ReportsDialog } from './components/Reports.tsx';
 import { param, setParams } from './components/useUrlState.ts';
 
-type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor'
+type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'analytics' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor'
   // The module map (2026-11-16, src/lib/modules.ts): the Inbox, and the planned modules' empty pages.
   | 'inbox' | 'experience' | 'sales' | 'schedules';
 
@@ -158,7 +159,7 @@ function CrewShell({ token }: { token: string | null }) {
 }
 
 /** What the server draws when it does not say (it always does): the tabs a role can earn. The menu itself is MODULES. */
-const TABS: Tab[] = ['home', 'units', 'revenue', 'operations', 'repository', 'costs', 'inbox', 'sops', 'settings'];
+const TABS: Tab[] = ['home', 'units', 'revenue', 'operations', 'repository', 'costs', 'analytics', 'inbox', 'sops', 'settings'];
 
 function TeamApp() {
   // Null, not 'units'. Rendering a default tab before the role is known
@@ -358,6 +359,7 @@ function TeamApp() {
                                            canEdit={can(permissions, 'repository.edit')}
                                            canStructure={can(permissions, 'repository.structure')} />}
       {tab === 'costs'    && <Costs units={units} />}
+      {tab === 'analytics' && <Analytics />}
       {tab === 'sops'     && <Sops focus={sopFocus} onFocused={() => setSopFocus(undefined)} />}
       {tab === 'settings' && <Settings />}
       {tab === 'inbox'    && <Inbox canSend={can(permissions, 'messages.send')} canSetup={can(permissions, 'messages.setup')}

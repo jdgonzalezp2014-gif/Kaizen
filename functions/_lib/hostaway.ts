@@ -941,3 +941,51 @@ export async function setNightOpen(
     ? { ok: true, detail: `${open ? 'opened' : 'blocked'} and confirmed` }
     : { ok: false, detail: `Hostaway accepted the write but the night still reads ${open ? 'closed' : 'open'}.` };
 }
+
+/**
+ * Guest reviews, one per stay (Analytics, owner 2026-11-23). Not the listing's aggregate rating — §40 keeps that out
+ * because a recycled listing id carries old reviews; a review here is tied to its reservation and its listing, so the
+ * week's reviews are the week's guests. Hostaway honours `type`, `submittedAtStart/End` and `departureDateStart/End`
+ * (checked 2026-11-23); `rating` is out of 10 for every channel (Airbnb's 5 stars × 2).
+ */
+export interface GuestReview {
+  id: string; listingId: string; reservationId: string; channelId: number;
+  /** published / submitted (written, not shown yet) / pending / awaiting / expired. */
+  status: string;
+  rating: number | null;
+  submittedAt: DateStr | '';
+  departure: DateStr | '';
+  guest: string | null;
+  publicReview: string | null;
+  privateFeedback: string | null;
+  categories: { category: string; rating: number }[];
+}
+
+export async function fetchGuestReviews(
+  creds: HostawayCredentials, q: { submittedFrom: DateStr; submittedTo: DateStr } | { departureFrom: DateStr; departureTo: DateStr }
+): Promise<GuestReview[]> {
+  const token = await getAccessToken(creds);
+  // The End bound is exclusive of the day's time, so ask through the next day and cut by date below.
+  const filter = 'submittedFrom' in q
+    ? `&submittedAtStart=${q.submittedFrom}&submittedAtEnd=${addDays(q.submittedTo, 1)}`
+    : `&departureDateStart=${q.departureFrom}&departureDateEnd=${addDays(q.departureTo, 1)}`;
+  const raw: Record<string, any>[] = [];
+  for (let offset = 0; offset < 2000; offset += 200) {
+    const pg = await apiGetEnvelope<Record<string, any>>(`/reviews?type=guest-to-host&limit=200&offset=${offset}${filter}`, token);
+    raw.push(...pg.result);
+    if (pg.result.length < 200 || raw.length >= pg.count) break;
+  }
+  const num = (v: unknown) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v));
+  const text = (v: unknown) => (typeof v === 'string' && v.trim() ? v.trim() : null);
+  return raw.map(r => ({
+    id: String(r.id), listingId: String(r.listingMapId ?? ''), reservationId: String(r.reservationId ?? ''),
+    channelId: Number(r.channelId) || 0, status: String(r.status ?? ''),
+    rating: num(r.rating), submittedAt: asDate(r.submittedAt), departure: asDate(r.departureDate),
+    guest: text(r.reviewerName) ?? text(r.guestName), publicReview: text(r.publicReview), privateFeedback: text(r.privateFeedback),
+    categories: (Array.isArray(r.reviewCategory) ? r.reviewCategory : [])
+      .map((c: Record<string, unknown>) => ({ category: String(c.category ?? ''), rating: num(c.rating) }))
+      .filter((c: { category: string; rating: number | null }): c is { category: string; rating: number } => !!c.category && c.rating != null)
+  })).filter(r => 'submittedFrom' in q
+    ? r.submittedAt >= q.submittedFrom && r.submittedAt <= q.submittedTo
+    : r.departure >= q.departureFrom && r.departure <= q.departureTo);
+}

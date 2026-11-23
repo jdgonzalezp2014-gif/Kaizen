@@ -92,6 +92,7 @@ export const FEATURES: { key: string; label: string; tab: string; view?: string;
   { key: 'operations.setup', label: 'Operations · Setup', tab: 'operations', view: 'setup', section: 'systems' },
   { key: 'repository', label: 'Repository', tab: 'repository', section: 'systems' },
   { key: 'costs', label: 'Costs', tab: 'costs', section: 'finance' },
+  { key: 'analytics', label: 'Analytics', tab: 'analytics', section: 'finance' },
   { key: 'claims', label: 'Revenue · Claims & upselling', tab: 'revenue', section: 'claims' },
   { key: 'revenue.portal', label: 'Revenue · Portal sales', tab: 'revenue', view: 'portal', section: 'finance' },
   // Guest Services → Inbox, the CRM (2026-11-16).

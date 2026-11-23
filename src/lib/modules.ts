@@ -52,7 +52,8 @@ export const MODULES: NavModule[] = [
   { key: 'finance', label: 'Finance, Data & Tech', icon: 'revenue', links: [
     { key: 'units', label: 'Units', tab: 'units' },
     { key: 'revenue', label: 'Revenue', tab: 'revenue' },
-    { key: 'costs', label: 'Costs', tab: 'costs' }] },
+    { key: 'costs', label: 'Costs', tab: 'costs' },
+    { key: 'analytics', label: 'Analytics', tab: 'analytics' }] },
   { key: 'sales', label: 'Sales & Growth', icon: 'sales', phase: 'Future',
     plan: ['New properties pipeline', 'Landlord relations'],
     links: [{ key: 'sales', label: 'Sales & Growth', tab: 'sales' }] },

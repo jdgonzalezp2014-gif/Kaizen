@@ -1,7 +1,7 @@
 # Module: finance
 
 Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (first tab),
-**Revenue** (Profit · Claims & upselling), **Costs** (fixed · one-offs · cleanings cost view).
+**Revenue** (Profit · Claims & upselling), **Costs** (fixed · one-offs · cleanings cost view), **Analytics** (§179).
 
 ## Files
 
@@ -35,7 +35,7 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
 - Gemini: only this account's figures, a `missing` field, output bounded; never writes;
   logged as `origin='agent'` (§21, §25, §26). Model default `gemini-3.6-flash`.
 - Thresholds are calibrated on the portfolio's own distribution (§19a); the verdict leads (§19b).
-- Ratings come only from the Apps Script scraper (`../price-monitor`, script
+- Listing ratings (the aggregate) come only from the Apps Script scraper (`../price-monitor`, script
   `1jLlH2RIp-mcbtQ9ganST7S2jwCwFJZg2OoOLrg_wS53kWnawN9nlQsnm`): published CSV feed twice a day
   + `/api/observations` (token = its `KAIZEN_TOKEN`). Airbnb refuses Cloudflare's egress.
   Hostaway's rating is never used. 5-point scale. The feed's price is a 30-night **total** —
@@ -65,7 +65,21 @@ Profit per unit, pricing advice, costs, ratings and alerts. Tabs: **Units** (fir
   `revenue`) lists every payment, test ones marked. Pure lib `src/lib/guest-payments.ts`; server `functions/_lib/guest-payments.ts`.
 - Money formatting pinned to `en-US` (§20). Dates: an optional filter is `null`, never `''` (§54).
 
+## Analytics (§179, 2026-11-23)
+
+`src/screens/Analytics.tsx` + `analytics.css`, `/api/analytics`, pure `src/lib/analytics.ts`, permission `analytics`.
+Default range = last full week **Sunday–Saturday**; any dates (≤ 92 days); every figure vs the range just before.
+Executive summary (Net income · Spent · Occupancy · Reviews + four sentences) and four cards that open to detail.
+Spend = one-off `expenses` (+ Stripe fees); cleans from `cleanings`; reviews live from Hostaway `/v1/reviews`
+(`fetchGuestReviews` — per stay, /10, categories, private feedback). Monthly lines are NOT in it.
+Cleaning costs now sync hourly on the clock (slack-cron.ts → `syncCleaningCosts`); `/api/cron` is still called by nobody.
+
 ## Open items
+
+- **Analytics, later (owner 2026-11-23):** monthly view with rent + utilities prorated per unit; profit per unit
+  (income − spend) and occupancy per unit to see which units lose money; reviews over longer spans / trend.
+- Cleaner pay weeks are Saturday–Friday (crew.ts `periodOf`); the owner asked for Sunday–Saturday there too — asked
+  before changing (it moves invoices and payday). Operations module.
 
 - Stripe payout reconciliation (bank ↔ payouts) — not built (owner, 2026-11-17: later).
 - Expedia's commission is not in Hostaway: Expedia stays carry no channel fee.

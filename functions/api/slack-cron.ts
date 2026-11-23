@@ -32,6 +32,7 @@ import { runDue } from '../_lib/guest-outbox.ts';
 import { draftPass, takeEvent, watchPass } from '../_lib/guest-events.ts';
 import { verifyHook } from '../_lib/guest-link.ts';
 import { sweepCharges } from '../_lib/upsell-charge.ts';
+import { syncCleaningCosts } from '../_lib/field-costs.ts';
 
 
 export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
@@ -214,6 +215,11 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
         await recordCleanings(sql, ops);
         const reconciled = await reconcileRecent(sql, creds, ops.today);
         notes = { notes: await pushHostNotes(sql, creds, ops), reconciled };
+        // §137's "kept in step nightly" lived only in /api/cron, which nothing calls: from 2026-10-24 to 11-23 no clean
+        // reached Costs unless an extra was approved (found building Analytics). Hourly here, after the record; its
+        // own catch — a cost sync that fails must not free the hour for the notes.
+        try { (notes as Record<string, unknown>).costs = await syncCleaningCosts(sql, 'Kaizen (clock)'); }
+        catch (e) { (notes as Record<string, unknown>).costs = { error: e instanceof Error ? e.message : String(e) }; }
       } else notes = 'shadow';
     } catch (e) {
       await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${notesKey}`;

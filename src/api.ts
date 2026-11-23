@@ -140,6 +140,23 @@ export interface VariableExpense extends FixedLine {
 export const getFixed = (month: string) =>
   call<{ ok: boolean; month: string; lines: FixedLine[]; carryable: FixedLine[] }>(`/api/expenses?month=${month}`);
 
+/** Finance → Analytics: the range's rows and the previous range's (functions/api/analytics.ts). */
+export interface AnalyticsData {
+  ok: boolean; range: { from: string; to: string; days: number }; previous: { from: string; to: string }; asOf: string;
+  units: { id: string; name: string; live: boolean }[];
+  stays: { listingId: string; reservationId: string; arrival: string; departure: string; guestName: string | null;
+           totalPaid: number; cleaningFee: number; taxes: number; channelFee: number; channel: string }[];
+  costs: { id: string; on: string; unitId: string | null; category: string; amount: number; label: string | null; source: string; cleaner: string | null }[];
+  cleans: { key: string; on: string; unitId: string | null; unit: string; cleaner: string | null; price: number | null; deep: boolean }[];
+  income: { unitId: string | null; on: string; amount: number; kind: 'claim' | 'upsell' | 'portal' }[];
+  reviews: { id: string; listingId: string; reservationId: string; channelId: number; status: string; rating: number | null; submittedAt: string;
+             departure: string; guest: string | null; publicReview: string | null; privateFeedback: string | null; categories: { category: string; rating: number }[] }[];
+  departures: { listingId: string; status: string }[];
+  reviewError: string | null;
+}
+export const getAnalytics = (from?: string, to?: string) =>
+  call<AnalyticsData>(`/api/analytics${from ? `?from=${from}&to=${to ?? ''}` : ''}`);
+
 export const getVariable = (from?: string, to?: string) =>
   call<{ ok: boolean; expenses: VariableExpense[]; capped?: boolean }>(`/api/expenses${from || to ? `?from=${from ?? ''}&to=${to ?? ''}` : ''}`);
 

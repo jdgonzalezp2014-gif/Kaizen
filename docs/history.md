@@ -4705,3 +4705,35 @@ the clean and the messages. Refusals become urgent to-dos, refunds come off the 
 Portal sales shows upsell-link payments apart so it agrees with Profit. Accepted as is (owner): no turnover check on early/late (no last-minute
 requests), Vrbo / Booking.com / Expedia paid by card, the generic Resolution Center link.
 
+
+## §179 — Finance → Analytics: a week at a glance, and the cleans back in Costs (2026-11-23)
+
+Owner: "the week's costs and how they split; click cleaning → how many cleans, which cleaner cost most; the other kinds
+too; occupancy by day with the day's detail; net income; the reviews of the week. Weekly for now — monthly later with
+rent and utilities." Then: "the default week Sunday to Saturday, but any dates; an executive summary; minimalist."
+
+- **Screen** `src/screens/Analytics.tsx` (+ its own `analytics.css`, so index.css stays the other sessions'), door
+  Finance, Data & Tech → Analytics, permission `analytics` (its own: money and guests' words together). Range = last
+  full week Sun–Sat by default (`weekOf`), presets This week / Last 30 days, ‹ › steps by the range's length, two dates
+  (max 92 days). Everything is set against the same number of days just before.
+- **Executive summary**: Net income · Spent · Occupancy · Reviews, each with ↑/↓ vs before (arrow + word, no colour), and
+  four sentences built only from the figures (biggest kind of spend and who cleaned most; fullest night; net income;
+  reviews and how many to read). The limit stays visible: one-off spend only, rent and utilities not in.
+- **Four cards**, each opening across the width: Spent (share bar in ink steps, kinds as chips; Cleaning → cleans, deep,
+  average, by cleaner; every kind → by unit + lines), Occupancy (a column per night; a night → who was in, arrivals,
+  empty units; base = listings active and not parked, a blocked night counts as empty), Net income (finance.ts
+  `reservationContribution`, the same rule as Revenue, + claims/upsells/portal), Reviews (stars, categories weakest
+  first, "to read" = under 5 ★ or a category under 4 ★, private feedback shown, response rate = checkouts in the range
+  that already wrote).
+- **API** `GET /api/analytics?from=&to=` returns the rows of the range and the one before; `src/lib/analytics.ts`
+  computes (tested). Spend = `expenses` one-offs (+ Stripe fees from portal sales, like /api/portfolio); the cleaner of a
+  cleaning line comes from its note. The cleans themselves are read from `cleanings`, so "who cleaned" answers even when
+  Costs is behind.
+- **Reviews from Hostaway `/v1/reviews`** (`fetchGuestReviews`): per stay, guest-to-host, filtered by
+  `submittedAtStart/End` or `departureDateStart/End`; rating /10 (Airbnb ×2), categories, public + private text. §40 still
+  holds for the listing's aggregate rating (scraper only); a review tied to its reservation is not affected by recycled ids.
+- **Bug found and fixed:** §137's nightly `syncCleaningCosts` lived only in `/api/cron`, which nothing calls (behind Access).
+  No clean reached Costs from 2026-10-24 to 11-23 except when an extra was approved — profit was overstated by the
+  cleaners' pay of that month. Now the clock's hourly Host Notes pass runs it (slack-cron.ts), in its own catch.
+- **Later (owner):** monthly view with rent and utilities prorated per unit; profit per unit (income − spend, occupancy)
+  to see which units lose money; review reports over longer spans.

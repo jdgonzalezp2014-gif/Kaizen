@@ -30,6 +30,10 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/pricing', methods: ['POST'] }, { path: '/api/suggest', methods: ['POST'] }] },
   { key: 'revenue', label: 'Revenue — what the portfolio earns', tab: 'revenue', routes: [
     { path: '/api/portfolio', methods: ['GET'] }, { path: '/api/guest-payments', methods: ['GET'] }] },
+  // Owner, 2026-11-23: a week (or any range) at a glance — spend by kind, nights, net income, reviews. Money and guests'
+  // words together, so its own permission rather than riding on Revenue.
+  { key: 'analytics', label: 'Analytics — the week\'s costs, occupancy, net income and reviews', tab: 'analytics', routes: [
+    { path: '/api/analytics', methods: ['GET'] }] },
   // No route of its own: it decides what /api/operations includes.
   { key: 'money', label: 'See booking values on the operations board', routes: [] },
   { key: 'operations', label: 'Operations — see the board, the cleanings calendar, inspections and notes', tab: 'operations', routes: [
@@ -176,7 +180,7 @@ export function can(permissions: string[], key: string): boolean {
 /** The roles a new account starts with. `admin` is fixed; the rest are editable examples. */
 export const SEED_ROLES = [
   { key: 'admin', name: 'Admin', permissions: [ALL], builtin: true },
-  { key: 'manager', name: 'Manager', permissions: ['units', 'revenue', 'money', 'operations', 'operations.edit',
+  { key: 'manager', name: 'Manager', permissions: ['units', 'revenue', 'analytics', 'money', 'operations', 'operations.edit',
     'operations.setup', 'repository', 'repository.reveal', 'repository.edit', 'repository.structure',
     'costs', 'claims', 'sops', 'sops.edit'], builtin: false },
   { key: 'ops', name: 'Operations', permissions: ['operations', 'operations.edit', 'repository',

@@ -1,0 +1,96 @@
+/* Finance → Analytics (2026-11-23). Its own file so it never collides with index.css edits from other sessions.
+   Tokens only (docs/design-system.md): ink for data, status colours only where they carry a state. */
+
+.an-top { display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.an-top h1 { display: flex; align-items: center; gap: 6px; font-size: var(--fs-title2); }
+.an-range { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; }
+.an-presets { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+.an-dates { display: flex; align-items: center; gap: 6px; }
+.an-dates input { width: 140px; }
+.an-dates button { min-width: 36px; font-size: var(--fs-headline); }
+
+/* The executive summary: four figures, then the same in words. */
+.an-exec { margin-bottom: 16px; }
+.an-kpis { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 0 14px; }
+.an-kpis > div { padding: 2px 16px; border-left: 1px solid var(--line); }
+.an-kpis > div:first-child { border-left: 0; padding-left: 0; }
+.an-kpis dt { font-size: var(--fs-caption); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+.an-kpis dd { margin: 0; font-size: var(--fs-title1); font-weight: 650; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.an-kpis dd small, .an-panel-fig small, .an-mini dd small { font-size: var(--fs-footnote); font-weight: 500; color: var(--muted); }
+.an-delta { display: block; margin-top: 2px; font-size: var(--fs-footnote); color: var(--muted); font-variant-numeric: tabular-nums; }
+.an-lines { margin: 0; padding: 12px 0 0; list-style: none; border-top: 1px solid var(--line); display: grid; gap: 4px; }
+.an-lines li { font-size: var(--fs-callout); line-height: 1.45; }
+.an-lines li::before { content: '—'; color: var(--muted); margin-right: 8px; }
+.an-limit { margin: 10px 0 0; font-size: var(--fs-footnote); color: var(--muted); display: flex; align-items: center; gap: 6px; }
+
+/* The four sections: closed, a headline and a glance; open, the detail across the whole width. */
+.an-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; align-items: start; }
+.an-panel { margin: 0; }
+.an-panel.open { grid-column: 1 / -1; }
+.an-panel-top { display: flex; align-items: center; gap: 4px; }
+.an-panel-head { all: unset; cursor: pointer; flex: 1; display: flex; align-items: center; gap: 10px; min-height: 36px; border-radius: var(--r-xs); }
+.an-panel-head:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.an-panel-title { font-size: var(--fs-headline); font-weight: 600; }
+.an-panel-fig { margin-left: auto; font-size: var(--fs-title3); font-weight: 650; font-variant-numeric: tabular-nums; }
+.an-chev { width: 22px; text-align: center; color: var(--muted); font-size: var(--fs-title3); }
+.an-panel-sub { margin-top: 10px; }
+.an-panel-body { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
+.an-panel .muted, .an .muted { color: var(--muted); }
+
+.an-share { display: flex; height: 10px; border-radius: 5px; overflow: hidden; background: var(--tint); gap: 2px; }
+.an-share span { background: var(--ink); min-width: 2px; }
+.an-legend { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: var(--fs-footnote); color: var(--muted); }
+.an-legend b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+
+.an-bars { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.an-bars li { display: grid; grid-template-columns: minmax(90px, 160px) 1fr auto; align-items: center; gap: 10px; }
+.an-bars-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.an-bars-track { height: 8px; background: var(--tint); border-radius: 4px; overflow: hidden; }
+.an-bars-track span { display: block; height: 100%; background: var(--accent); opacity: .75; border-radius: 4px; }
+.an-bars-val { font-variant-numeric: tabular-nums; font-weight: 600; white-space: nowrap; }
+
+/* Night columns: height = share of live units with a guest. */
+.an-days { display: flex; gap: 6px; align-items: stretch; }
+.an-days.dense { gap: 2px; }
+.an-day { all: unset; flex: 1; min-width: 0; display: flex; flex-direction: column; align-items: center; gap: 4px; padding: 4px 0; border-radius: var(--r-xs); }
+button.an-day { cursor: pointer; }
+button.an-day:hover { background: var(--tint); }
+button.an-day:focus-visible { outline: 2px solid var(--accent); }
+.an-day.on { background: var(--tint); box-shadow: inset 0 -2px 0 var(--ink); }
+.an-day-col { position: relative; width: 70%; max-width: 34px; height: 64px; background: var(--tint); border-radius: 4px; overflow: hidden; }
+.an-day-col span { position: absolute; left: 0; right: 0; bottom: 0; background: var(--ink); opacity: .78; }
+.an-day-pct { font-size: var(--fs-footnote); font-weight: 600; font-variant-numeric: tabular-nums; }
+.an-day-lbl { font-size: var(--fs-caption); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+.an-days.dense .an-day-pct { display: none; }
+
+.an-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+.an-h { font-size: var(--fs-caption); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; font-weight: 600; margin: 18px 0 8px; }
+.an-mini { display: flex; flex-wrap: wrap; gap: 8px 28px; margin: 0 0 4px; }
+.an-mini dt { font-size: var(--fs-caption); color: var(--muted); }
+.an-mini dd { margin: 0; font-size: var(--fs-title3); font-weight: 650; font-variant-numeric: tabular-nums; }
+.an-table { width: 100%; }
+.an-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.an-empty { font-size: var(--fs-footnote); color: var(--muted); margin: 10px 0 0; }
+.an-empty b { color: var(--ink); }
+.an-small { font-size: var(--fs-footnote); margin: 6px 0 0; }
+
+.an-reviews { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 10px; }
+.an-reviews li { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--r-sm, 8px); }
+.an-reviews li.low { border-left: 3px solid var(--warn); }
+.an-reviews p { margin: 6px 0 0; line-height: 1.45; }
+.an-rev-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 10px; }
+.an-tag { font-size: var(--fs-footnote); color: var(--warn); font-weight: 600; }
+.an-private { color: var(--muted); font-style: italic; display: flex; gap: 6px; align-items: flex-start; }
+
+@media (max-width: 720px) {
+  .an-top { align-items: stretch; }
+  .an-range { align-items: stretch; }
+  .an-presets { justify-content: flex-start; }
+  .an-dates input { flex: 1; width: auto; min-width: 0; }
+  .an-kpis { grid-template-columns: 1fr 1fr; row-gap: 14px; }
+  .an-kpis > div:nth-child(3) { border-left: 0; padding-left: 0; }
+  .an-kpis dd { font-size: var(--fs-title2); }
+  .an-grid { grid-template-columns: 1fr; }
+  .an-bars li { grid-template-columns: minmax(80px, 110px) 1fr auto; }
+  .an-table th:nth-child(3), .an-table td:nth-child(3) { max-width: 160px; }
+}
