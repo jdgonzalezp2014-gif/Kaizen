@@ -160,6 +160,18 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   portal up to the day before ($20/h, confirmed when no turnover that day). A reminder (online check-in) goes AFTER the answer, never instead;
   never ask what the guest already said. **Company facts written** (guest_ai.business, 951 chars: pets, early/late, times, online check-in,
   inquiries — no hours/emergency line yet, owner adds). Real Claude drafts checked: an inquiry with a dog, an early check-in on a booked stay.
+- **Bad experiences + what the AI sees (owner, 2026-11-23, 4th pass — migration 124 `guest_issues`, NOT applied):** triage has `bad`
+  (the stay itself hurt: dirty, important thing broken, noise, pests, unsafe, misleading, rude, disappointment; NOT a small missing item the
+  host is bringing — checked on 3 real-like texts) → `recordIssue` (one open row per stay, `source` ai | team). Condition subject `issue`
+  ("Bad experience": None / Recorded) — `issue_pending` is a stopper; the **Thank you & review** recipe carries it. Clock facts `issuesOf`.
+  CRM: stay panel line "Bad experience" (Record with one line / Clear), a red mark on the list row, filter "Bad experience" (loaded page only).
+  The guest is told nothing. AI prompt: 40 messages (last 10 whole, older 400 chars), MESSAGES ALREADY SCHEDULED (Kaizen outbox rows +
+  `planFor` automations still to come; Hostaway's own automations are not readable — its public API has no endpoint), BAD EXPERIENCE ON
+  RECORD (never ask for a review), complaint → apologise + handoff, a scheduled message that would be wrong → said in `reason`.
+- **Quo / SMS (checked 2026-11-23):** key works, 5 numbers, `quo_from` = …3228 "Hikaru CS MAIN" — the SMS of matched guests are there.
+  The gap is the phone: **Airbnb gives Hostaway no guest phone (20 of 22 Airbnb stays)**; Vrbo/Booking.com do. Fix proposed: ask the phone in the
+  portal's online check-in when Hostaway has none, and a Quo webhook for incoming SMS → guest_events. `quo.ts` still on api.openphone.com (works).
+  No Kaizen automations exist yet (0 templates).
 - ⚠ The stay link `/guest/<id>.<sig>` still shows only Pending payments (Phase 2): a guest sent there today cannot do the check-in.
 
 ## Not verified yet (no way to without a real guest or a key)

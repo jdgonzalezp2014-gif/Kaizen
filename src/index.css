@@ -3891,6 +3891,11 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
 .ix-ci-label { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-callout); font-weight: 650; }
 .ix-ci-row .ix-ci { margin-left: auto; }
 .ix-ci-row .ix-ci.yes { color: var(--green); }
+/* 2026-11-23: a bad experience on record — red with its icon and words (colour never alone). */
+.ix-ci-row .ix-ci.warn { color: var(--red); max-width: 100%; }
+.ix-ci-row .ix-ci input { flex: 1; min-width: 160px; }
+.ix-issue { display: inline-flex; color: var(--red); flex: none; margin-right: 2px; }
+.ix-issue svg { width: 12px; height: 12px; }
 .ix-fold { gap: 0; padding: 0; }
 .ix-fold > summary { list-style: none; cursor: pointer; padding: var(--s-3) var(--s-4); border-radius: var(--r-md); }
 .ix-fold > summary::-webkit-details-marker { display: none; }

@@ -17,13 +17,13 @@ import type { Env } from './db.ts';
 import { guestHouse } from '../api/guest-guide.ts';
 import { fetchListingAmenities, fetchReservationDetail } from './hostaway.ts';
 import type { HostawayCredentials } from './hostaway.ts';
-import { aiPrompt, channelLabel, guestAiFrom, guideFacts, portalLines, question, stageOf, suggestionFromAi, type GuestAi, type Stay, type Suggestion, type ThreadMsg } from '../../src/lib/inbox.ts';
+import { aiPrompt, channelLabel, guestAiFrom, guideFacts, planFor, portalLines, question, stageOf, suggestionFromAi, type GuestAi, type Stay, type Suggestion, type ThreadMsg } from '../../src/lib/inbox.ts';
 import { nights as stayNights } from '../../src/lib/guest-portal.ts';
 import { portalFrom, protectionFor } from '../../src/lib/guest-checkin.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { getCredentials } from './accounts.ts';
 import { fetchConversation, fetchMessages } from './hostaway-messages.ts';
-import { GUEST_TZ } from './guest-outbox.ts';
+import { GUEST_TZ, issuesOf, loadTemplates } from './guest-outbox.ts';
 import { amenityLine, listingFacts, portfolioFacts, scrubCodes, stayFacts, workFacts } from '../../src/lib/guest-knowledge.ts';
 import { rankSops, type SopDoc } from '../../src/lib/slack-sops.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
@@ -86,7 +86,7 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
   const booked = !['inquiry', 'cancelled'].includes(stageOf(stay, today));
   const reservation = /^\d+$/.test(stay.reservationId) ? stay.reservationId : null;
   const none = <T,>(v: T) => () => v;
-  const [house, docs, recs, units, detail, amenities, todos, done, portalRow] = await Promise.all([
+  const [house, docs, recs, units, detail, amenities, todos, done, portalRow, issues, queued, templates] = await Promise.all([
     // No Hostaway key passed: the facts need the record and the builder, not the cover photo or the calendar.
     stay.listingId ? guestHouse(sql, stay.listingId).catch(none(null)) : null,
     sql`SELECT o.id::text, o.title, o.purpose, o.trigger, o.steps, o.body, o.keywords, s.label AS section, o.section_key FROM sops o
@@ -100,6 +100,10 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
                         AND reservation_id = ${reservation} AND parent_id IS NULL ORDER BY created_at DESC LIMIT 6`.catch(none([])) as Promise<{ title: string; status: string; kind: string | null; dueOn: string | null }[]> : [],
     reservation ? sql`SELECT 1 FROM guest_checkins WHERE account_id = 1 AND reservation_id = ${reservation}`.catch(none(null)) as Promise<unknown[] | null> : null,
     sql`SELECT guest_portal_url FROM accounts WHERE id = 1`.catch(none([])) as Promise<{ guest_portal_url: string | null }[]>,
+    reservation ? issuesOf(sql, [reservation]) : new Map<string, string>(),
+    reservation ? sql`SELECT body, send_at FROM guest_messages WHERE account_id = 1 AND reservation_id = ${reservation} AND status IN ('scheduled', 'staged')
+                        AND send_at > now() - interval '1 hour' ORDER BY send_at LIMIT 6`.catch(none([])) as Promise<{ body: string; send_at: string | Date }[]> : [],
+    loadTemplates(sql).catch(none([])),
   ]);
   // The portal decides what a booked guest may be told now (owner, 2026-11-23): before the online check-in, no arrival
   // details reach the facts at all — the prompt's rule is backed by what the model is shown.
@@ -129,8 +133,13 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
     : `Damage protection, chosen in the online check-in: a refundable $${p.deposit.hold} security deposit (a hold, released after check-out) or a non-refundable damage waiver of $${p.waiver.perNight} per night or $${p.waiver.min}, whichever is greater — $${p.waiver.price} for this ${n}-night stay.`;
   const portal = portalLines({ hasLink, checkinDone, oldPortalDone: stay.agreement === 'signed' || stay.idVerified === true, portalFirst: cfg.portalFirst,
     oldNotice: cfg.oldPortalNotice, protection, inHouse });
+  // What Kaizen will send this stay: rows already in the outbox, and automations still to come (Hostaway's own are not readable — its API has none).
+  const issue = reservation ? issues.get(reservation) ?? null : null;
+  const planned = planFor({ ...stay, checkinDoneAt: checkinDone ? 'done' : null, issue: !!issue }, templates, [], new Date(), GUEST_TZ)
+    .filter(p => p.state === 'planned' && p.at).slice(0, 6).map(p => `${p.at!.slice(0, 16).replace('T', ' ')} UTC — automation "${p.name}"`);
+  const scheduled = [...queued.map(q => `${new Date(q.send_at).toISOString().slice(0, 16).replace('T', ' ')} UTC — ${scrubCodes(q.body).replace(/\s+/g, ' ').slice(0, 160)}`), ...planned];
   const { system, user } = aiPrompt({ stay, today, facts, sops, thread, instructions: cfg.instructions, company: a?.name ?? 'the host',
-    business: scrubCodes(cfg.business), stayLines, work: workFacts(todos), portfolio, channel: stay.channel, portal });
+    business: scrubCodes(cfg.business), stayLines, work: workFacts(todos), portfolio, channel: stay.channel, portal, scheduled, issue });
   const r = cfg.provider === 'claude' ? await askClaude(key, cfg.model, system, user)
     : await askGemini(key, cfg.model, system, user, [], MS).then(x => ({ ...x, by: cfg.model }));
   if (!r.json) return { ok: false, error: r.error ?? 'The model did not answer.' };

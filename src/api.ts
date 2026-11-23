@@ -1111,7 +1111,9 @@ export interface InboxThread { ok: true; messages: ThreadMsg[]; tasks: StayTask[
   /** The online check-in, when it is done: when, and whether the guest's portal or a person marked it. */
   checkin?: { at: string; source: string; by: string | null } | null;
   /** Drafted when the guest wrote (guest-events.ts draftEvent): a suggestion, or why it could not be written. */
-  draft?: (ReplySuggestion & { by: string; sops: string[]; at: string }) | { error: string; at: string } | null }
+  draft?: (ReplySuggestion & { by: string; sops: string[]; at: string }) | { error: string; at: string } | null;
+  /** A bad experience on record (migration 124): the review ask is held while it is open. */
+  issue?: { why: string; source: string; by: string | null; at: string } | null }
 export interface InboxEvents { ok: true; last: number; waiting: number; fresh: { id: string; conversationId: string; guest: string; preview: string; urgent: boolean }[] }
 /** What Hostaway's webhook reported since `since` — Kaizen's own table, no Hostaway call: asked every half minute. */
 export const getInboxEvents = (since: number) => call<InboxEvents | Fail>(`/api/inbox?events=${since}`);

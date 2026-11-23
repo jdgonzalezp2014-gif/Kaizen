@@ -126,7 +126,7 @@ export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, 
               <span className="ix-row-main">
                 <span className="ix-row-top"><b>{r.guest}</b><time>{shortWhen(r.lastAt)}</time></span>
                 <span className="ix-row-sub">{r.listing} · {range(r.arrival, r.departure)}</span>
-                <span className="ix-row-prev">{waits(r) && <span className="ix-dot" aria-label="Needs reply" />}{waits(r) && r.drafted && <span className="ix-drafted" title="A reply is drafted" aria-label="Reply drafted"><Icon n="sparkles" /></span>}{r.preview || 'No messages yet'}</span>
+                <span className="ix-row-prev">{waits(r) && <span className="ix-dot" aria-label="Needs reply" />}{waits(r) && r.drafted && <span className="ix-drafted" title="A reply is drafted" aria-label="Reply drafted"><Icon n="sparkles" /></span>}{r.issue && <span className="ix-issue" title={`Bad experience: ${typeof r.issue === 'string' ? r.issue : 'on record'}`} aria-label="Bad experience on record"><Icon n="alert" /></span>}{r.preview || 'No messages yet'}</span>
               </span>
               {(r.tasks > 0 || r.scheduled > 0) && <span className="ix-row-badges">
                 {r.tasks > 0 && <span className="hot" title={`${r.tasks} open to-do${r.tasks === 1 ? '' : 's'} — still to do`}><Icon n="alert" />{r.tasks}</span>}
@@ -425,6 +425,19 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
   const [ciBusy, setCiBusy] = useState(false);
   const [ciMsg, setCiMsg] = useState('');
   const ci = thread?.checkin ?? null;
+  const issue = thread?.issue ?? null;
+  const [isWhy, setIsWhy] = useState<string | null>(null);
+  const [isBusy, setIsBusy] = useState(false);
+  const [isMsg, setIsMsg] = useState('');
+  const markIssue = async (on: boolean) => {
+    setIsBusy(true); setIsMsg('');
+    const r = await inboxAction({ action: 'issue', reservationId: row.reservationId, conversationId: row.conversationId, listingId: row.listingId, on, why: isWhy ?? '' })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    setIsBusy(false);
+    if (!r.ok) { setIsMsg(r.message ?? 'Not saved.'); return; }
+    setIsWhy(null);
+    onChanged();
+  };
   const markCheckin = async (done: boolean) => {
     setCiBusy(true); setCiMsg('');
     const r = await inboxAction({ action: 'checkin', reservationId: row.reservationId, listingId: row.listingId, done }).catch(e => ({ ok: false as const, message: String(e) }));
@@ -520,6 +533,25 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
           : <span className="ix-ci"><Icon n="clock" /> Not done
               {canSend && thread && <button type="button" className="ix-ghost" disabled={ciBusy} onClick={() => void markCheckin(true)}>{ciBusy ? 'Saving…' : 'Mark done'}</button>}</span>}
         {ciMsg && <p className="ix-state warn">{ciMsg}</p>}
+      </div>}
+
+      {row.reservationId && <div className="ix-card ix-ci-row">
+        <span className="ix-ci-label">Bad experience <Hint>Kept on record when a guest reports a bad experience (dirty, broken, noise, a complaint) — the AI records it
+          when it reads the message, or a person here. While it is on record, automations with the condition <b>No bad experience</b> (the review ask)
+          are not sent to this stay. The guest is told nothing about it. Clear it if it was not one.</Hint></span>
+        {issue
+          ? <span className="ix-ci warn" title={`${fmt(issue.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} — ${issue.source === 'team' ? `by ${(issue.by ?? 'the team').split('@')[0]}` : 'noticed by the AI'}`}>
+              <Icon n="alert" /> {issue.why}
+              {canSend && <button type="button" className="link tiny" disabled={isBusy} onClick={() => void markIssue(false)}>Clear</button>}</span>
+          : isWhy === null
+            ? <span className="ix-ci"><Icon n="check" /> None
+                {canSend && thread && <button type="button" className="ix-ghost" onClick={() => setIsWhy('')}>Record</button>}</span>
+            : <span className="ix-ci">
+                <input autoFocus value={isWhy} maxLength={300} placeholder="What happened, in one line" aria-label="What happened"
+                  onChange={e => setIsWhy(e.target.value)} onKeyDown={e => { if (e.key === 'Enter' && isWhy.trim()) void markIssue(true); if (e.key === 'Escape') setIsWhy(null); }} />
+                <button type="button" className="ix-ghost" disabled={isBusy || !isWhy.trim()} onClick={() => void markIssue(true)}>{isBusy ? 'Saving…' : 'Save'}</button>
+                <button type="button" className="link tiny" onClick={() => setIsWhy(null)}>Cancel</button></span>}
+        {isMsg && <p className="ix-state warn">{isMsg}</p>}
       </div>}
 
       {adding && chargeFor && <Modal title={`${category || cats[0]} — charge the guest`} onClose={() => { setAdding(false); setChargeFor(null); }}>

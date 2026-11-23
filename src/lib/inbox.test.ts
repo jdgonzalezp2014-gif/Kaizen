@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aiPrompt, portalLines, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, planFor,
+import { aiPrompt, condMet, RECIPES, portalLines, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, planFor,
   portalLink, stageOf, stayWindow, suggestionFromAi, varsFor, whenWords, zonedInstant, type InboxRow, type Stay, type Template, type ThreadMsg, bookingLinks, condWords, condsOf, paidOf, signedOf } from './inbox.ts';
 
 const stay: Stay = { reservationId: '71', listingId: '9', listing: 'P2-1406', guest: 'Ana Ruiz', arrival: '2026-11-20', departure: '2026-11-23', status: 'new', bookedAt: '2026-11-10T15:00:00Z' };
@@ -249,4 +249,16 @@ test('portal first (owner, 2026-11-23): no arrival details before the online che
   assert.match(p.system, /GUEST PORTAL, when given, decides/);
   const inquiry = aiPrompt({ stay: { ...stay, status: 'inquiry' }, today: '2026-11-21', facts: '', sops: [], thread: [], instructions: '', company: 'K', portal: portalLines(base) });
   assert.doesNotMatch(inquiry.user, /GUEST PORTAL/);
+});
+
+test('a bad experience on record holds the review ask; the AI sees it and what is scheduled (owner, 2026-11-23)', () => {
+  const s = { reservationId: '1', listingId: '1', listing: 'L', guest: 'Ana', arrival: '2026-11-20', departure: '2026-11-22', status: 'new' };
+  assert.equal(condMet('issue_pending', s), true);
+  assert.equal(condMet('issue_pending', { ...s, issue: 'dirty on arrival' }), false);
+  assert.deepEqual(condsOf('checkin_done,issue_pending'), ['checkin_done', 'issue_pending']);
+  assert.deepEqual(RECIPES.find(r => r.key === 'review')!.t.conditions, ['issue_pending']);
+  assert.equal(matchesFilter({ ...s, issue: 'noise' } as never, 'issue', '2026-11-23'), true);
+  const p = aiPrompt({ stay: s, today: '2026-11-23', facts: '', sops: [], thread: [], instructions: '', company: 'K', issue: 'dirty on arrival', scheduled: ['2026-11-23 15:00 UTC — automation "Thank you & review"'] });
+  assert.match(p.user, /BAD EXPERIENCE ON RECORD \(internal\): dirty on arrival[\s\S]*never ask this guest for a review/);
+  assert.match(p.user, /MESSAGES ALREADY SCHEDULED[\s\S]*Thank you & review/);
 });

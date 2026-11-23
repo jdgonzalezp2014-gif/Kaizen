@@ -71,6 +71,21 @@ export async function portalFor(sql: SqlFn, encryptionKey: string, reservationId
   return rows[0]?.url ? portalLink(rows[0].url, reservationId, await signGuest(encryptionKey, reservationId)) : null;
 }
 
+/** The open bad-experience records of these stays (`guest_issues`): reservation → why. Empty before migration 124. */
+export async function issuesOf(sql: SqlFn, reservationIds: string[]): Promise<Map<string, string>> {
+  if (!reservationIds.length) return new Map();
+  const rows = await (sql`SELECT reservation_id, why FROM guest_issues WHERE account_id = 1 AND cleared_at IS NULL AND reservation_id = ANY(${reservationIds})` as
+    Promise<{ reservation_id: string; why: string }[]>).catch(() => []);
+  return new Map(rows.map(r => [r.reservation_id, r.why]));
+}
+
+/** Owner, 2026-11-23: a bad experience goes on record (once per stay while open) — the review ask is then held. Nothing is said to the guest. */
+export async function recordIssue(sql: SqlFn, a: { reservationId: string; conversationId?: string | null; listingId?: string | null; why: string; source: 'ai' | 'team'; by?: string | null }) {
+  return (sql`INSERT INTO guest_issues (account_id, reservation_id, conversation_id, listing_id, why, source, created_by)
+              VALUES (1, ${a.reservationId}, ${a.conversationId ?? null}, ${a.listingId ?? null}, ${a.why.slice(0, 300)}, ${a.source}, ${a.by ?? null})
+              ON CONFLICT DO NOTHING RETURNING id::text AS id` as Promise<{ id: string }[]>).then(r => r.length > 0).catch(() => false);
+}
+
 /** When each of these stays finished its online check-in (`guest_checkins`) — empty before migration 117. */
 export async function checkinsOf(sql: SqlFn, reservationIds: string[]): Promise<Map<string, string>> {
   if (!reservationIds.length) return new Map();
@@ -214,14 +229,16 @@ export async function fireStay(sql: SqlFn, env: Env, reservationId: string, now 
   const templates = (await loadTemplates(sql)).filter(t => t.active && t.trigger !== 'manual');
   if (!templates.length) return { ...out, skipped: 'no automations' };
   const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
-  const [detail, units, done] = await Promise.all([
+  const [detail, units, done, issues] = await Promise.all([
     fetchReservationDetail(creds, reservationId),
     sql`SELECT id::text AS id, name FROM units WHERE account_id = 1` as Promise<{ id: string; name: string }[]>,
     checkinsOf(sql, [reservationId]),
+    issuesOf(sql, [reservationId]),
   ]);
   const stay = detail ? stayFromDetail(detail, new Map(units.map(u => [u.id, u.name]))) : null;
   if (!stay) return { ...out, skipped: 'Hostaway does not know this reservation' };
   stay.checkinDoneAt = done.get(reservationId) ?? null;
+  stay.issue = issues.has(reservationId);
   await createDue(sql, env, creds, stay, templates, await autoLog(sql, [reservationId]), now, out, PER_TICK);
   return out;
 }
@@ -266,10 +283,11 @@ export async function runDue(sql: SqlFn, env: Env, now = new Date()) {
   }
   if (!stays.length) return out;
   const ids = stays.map(s => s.reservationId);
-  const [log, done] = await Promise.all([autoLog(sql, ids), checkinsOf(sql, ids)]);
+  const [log, done, issues] = await Promise.all([autoLog(sql, ids), checkinsOf(sql, ids), issuesOf(sql, ids)]);
   for (const s of stays) {
     if (room <= 0) break;
     s.checkinDoneAt = done.get(s.reservationId) ?? null;
+    s.issue = issues.has(s.reservationId);
     room -= await createDue(sql, env, creds, s, templates, log.filter(l => l.reservation_id === s.reservationId), now, out, room);
   }
   return out;

@@ -14,7 +14,7 @@
 import { getCredentials, type SqlFn } from './accounts.ts';
 import { askJson } from './ai-chain.ts';
 import type { Env } from './db.ts';
-import { deliver, fireStay, guestLive, portalFor, GUEST_TZ } from './guest-outbox.ts';
+import { deliver, fireStay, guestLive, portalFor, recordIssue, GUEST_TZ } from './guest-outbox.ts';
 import { fetchConversation, fetchMessages } from './hostaway-messages.ts';
 import { postTo, slackSetup } from './slack.ts';
 import { readGuestAi, suggestFor } from './guest-ai.ts';
@@ -96,6 +96,8 @@ export async function takeEvent(sql: SqlFn, env: Env, payload: unknown, origin: 
                    needs_reply = ${by ? t.needsReply : null}, urgent = ${t.urgent}, why = ${t.why || null},
                    reminded_at = CASE WHEN ${told} THEN now() ELSE reminded_at END
              WHERE id = ${row.id}`;
+  // Owner, 2026-11-23: a bad experience goes on record — the review ask is held for this stay; the guest is told nothing about it.
+  if (t.bad && conv?.reservationId) await recordIssue(sql, { reservationId: conv.reservationId, conversationId, listingId: conv.listingId ?? null, why: t.why || preview(body, 200), source: 'ai' });
   // Owner, 2026-11-23: the reply is drafted now, so it is waiting in the Inbox when someone opens the conversation.
   // Only when an answer is needed (no triage = needed) and the stay is still open.
   if ((by ? t.needsReply : true) && open) {

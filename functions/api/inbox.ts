@@ -97,7 +97,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const reservation = q.get('reservation') ?? '';
       if (!ID.test(conversation) || (reservation && !ID.test(reservation))) return bad('Which conversation?');
       const access = await accessOf(sql, who);
-      const [theirs, ours, tasks, cases, templates, row, link, checkins, draft] = await Promise.all([
+      const [theirs, ours, tasks, cases, templates, row, link, checkins, draft, issueRows] = await Promise.all([
         fetchMessages(creds, conversation),
         reservation ? outbox(sql, reservation, 'hostaway') : [],
         // A purchase order is a to-do made as an order (clean_group 'request', todos.ts) — the Work section's third kind.
@@ -120,7 +120,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
           .catch(() => []) as Promise<{ completed_at: string | Date; source: string; marked_by: string | null }[]> : [],
         // The reply the AI drafted when the guest wrote (2026-11-23, guest-events.ts draftEvent) — waiting to be used or dismissed.
         draftOf(sql, conversation),
+        reservation ? (sql`SELECT why, source, created_by, created_at FROM guest_issues WHERE account_id = 1 AND reservation_id = ${reservation} AND cleared_at IS NULL`
+          .catch(() => []) as Promise<{ why: string; source: string; created_by: string | null; created_at: string | Date }[]>) : [],
       ]);
+      const issue = issueRows[0] ? { why: issueRows[0].why, source: issueRows[0].source, by: issueRows[0].created_by, at: new Date(issueRows[0].created_at).toISOString() } : null;
       // The plan counts every automatic row of the stay, whatever channel it went by (an SMS automation shows here too).
       const auto = reservation ? await (sql`SELECT template_id::text AS "templateId", status FROM guest_messages
                                              WHERE account_id = 1 AND reservation_id = ${reservation} AND source = 'auto'` as
@@ -131,13 +134,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         await sql`UPDATE guest_events SET answered_at = now() WHERE account_id = 1 AND kind = 'message' AND conversation_id = ${conversation} AND answered_at IS NULL`.catch(() => {});
       }
       return json({
-        ok: true, messages: mergeThread(theirs, ours.map(outMsg)), tasks, cases, portalLink: link, phone: maskPhone(row?.phone), checkin: ci, draft,
-        plan: row ? planFor({ ...row, checkinDoneAt: ci?.at ?? null }, templates, auto, new Date(), GUEST_TZ) : [],
+        ok: true, messages: mergeThread(theirs, ours.map(outMsg)), tasks, cases, portalLink: link, phone: maskPhone(row?.phone), checkin: ci, draft, issue,
+        plan: row ? planFor({ ...row, checkinDoneAt: ci?.at ?? null, issue: !!issue }, templates, auto, new Date(), GUEST_TZ) : [],
       });
     }
 
     const offset = Math.max(0, Math.min(2000, Number(q.get('offset')) || 0));
-    const [convs, units, tasks, waiting, templates, live, ai, acct, events, drafts] = await Promise.all([
+    const [convs, units, tasks, waiting, templates, live, ai, acct, events, drafts, issues] = await Promise.all([
       fetchConversations(creds, 50, offset),
       sql`SELECT id::text AS id, name FROM units WHERE account_id = 1` as Promise<{ id: string; name: string }[]>,
       sql`SELECT reservation_id AS id, count(*)::int AS n FROM todos
@@ -153,7 +156,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       // Conversations with an AI draft waiting (migration 122; empty without it).
       (sql`SELECT DISTINCT conversation_id AS id FROM guest_events WHERE account_id = 1 AND kind = 'message' AND answered_at IS NULL
             AND draft ? 'reply' AND created_at > now() - interval '7 days'` as Promise<{ id: string }[]>).catch(() => []),
+      // Bad experiences on record (migration 124; empty without it) — the row's mark and the "Bad experience" filter.
+      (sql`SELECT reservation_id AS id, why FROM guest_issues WHERE account_id = 1 AND cleared_at IS NULL` as Promise<{ id: string; why: string }[]>).catch(() => []),
     ]);
+    const issueOf = new Map(issues.map(i => [i.id, i.why]));
     const drafted = new Set(drafts.map(d => d.id));
     const triaged = new Map(events.map(e => [e.id, e]));
     // "Thanks!" is not waiting — but only while it IS the last word: a later message is a new question until it is sorted.
@@ -168,7 +174,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const nTasks = new Map(tasks.map(t => [t.id, t.n])), nWait = new Map(waiting.map(t => [t.id, t.n]));
     const rows: InboxRow[] = convs.map(({ phone: _phone, type: _type, ...c }) => ({
       ...c, listing: (c.listingId && names.get(c.listingId)) || c.listing || 'Unknown listing',
-      tasks: nTasks.get(c.reservationId) ?? 0, scheduled: nWait.get(c.reservationId) ?? 0, noReply: quiet(c), drafted: drafted.has(c.conversationId),
+      tasks: nTasks.get(c.reservationId) ?? 0, scheduled: nWait.get(c.reservationId) ?? 0, noReply: quiet(c), drafted: drafted.has(c.conversationId), issue: issueOf.get(c.reservationId) ?? null,
     }));
     return json({ ok: true, rows, today, more: convs.length === 50, live, aiMode: ai.mode, quo: acct[0]?.quo === true, templates });
   } catch (e) {
@@ -208,6 +214,23 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const fired = await fireStay(sql, env, reservationId).catch(e => ({ skipped: e instanceof Error ? e.message : String(e) }));
       return json({ ok: true, status: 'sent', fired });
     } catch (e) { return /guest_checkins|does not exist/i.test(String(e)) ? bad('The database needs migration 117 first (npm run migrate).', 409) : bad(String(e), 500); }
+  }
+
+  // Owner, 2026-11-23: a bad experience on record (or cleared, when it was not one). The review automation holds while one is open.
+  if (b.action === 'issue') {
+    if (!ID.test(reservationId)) return bad('Which stay?');
+    try {
+      if (b.on === false) {
+        await sql`UPDATE guest_issues SET cleared_at = now(), cleared_by = ${who.email} WHERE account_id = 1 AND reservation_id = ${reservationId} AND cleared_at IS NULL`;
+        return json({ ok: true, status: 'cancelled' });
+      }
+      const why = String(b.why ?? '').trim().slice(0, 300);
+      if (!why) return bad('What happened? One line.');
+      await sql`INSERT INTO guest_issues (account_id, reservation_id, conversation_id, listing_id, why, source, created_by)
+                VALUES (1, ${reservationId}, ${b.conversationId ? String(b.conversationId) : null}, ${b.listingId && ID.test(String(b.listingId)) ? String(b.listingId) : null}, ${why}, 'team', ${who.email})
+                ON CONFLICT DO NOTHING`;
+      return json({ ok: true, status: 'sent' });
+    } catch (e) { return /guest_issues|does not exist/i.test(String(e)) ? bad('The database needs migration 124 first (npm run migrate).', 409) : bad(String(e), 500); }
   }
 
   // 2026-11-17 (owner): can this stay be extended? The listing's live Hostaway calendar around it — the free nights before

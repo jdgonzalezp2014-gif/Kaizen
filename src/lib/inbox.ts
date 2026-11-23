@@ -35,6 +35,8 @@ export interface Stay {
   signed?: boolean | null;
   /** Hostaway's identity check. */
   idVerified?: boolean;
+  /** A bad experience is on record for this stay (`guest_issues`, migration 124) — the review ask is held. The list carries its why. */
+  issue?: boolean | string | null;
 }
 
 /**
@@ -80,12 +82,12 @@ export const STAGE_LABEL: Record<Stage, string> = {
   inquiry: 'Inquiry', upcoming: 'Upcoming', arriving: 'Arrives today', staying: 'In house', leaving: 'Leaves today', past: 'Checked out', cancelled: 'Cancelled',
 };
 
-export type InboxFilter = 'all' | 'unread' | 'now' | 'upcoming' | 'past';
+export type InboxFilter = 'all' | 'unread' | 'now' | 'upcoming' | 'past' | 'issue';
 /**
  * "Needs reply" is the guest having the last word — not Hostaway's unread flag, which is about Hostaway's own inbox
  * (42 of the 50 latest conversations were "unread" there on 2026-11-16, most of them long answered).
  */
-export const FILTERS: [InboxFilter, string][] = [['all', 'All'], ['unread', 'Needs reply'], ['now', 'In house'], ['upcoming', 'Upcoming'], ['past', 'Past']];
+export const FILTERS: [InboxFilter, string][] = [['all', 'All'], ['unread', 'Needs reply'], ['now', 'In house'], ['upcoming', 'Upcoming'], ['past', 'Past'], ['issue', 'Bad experience']];
 export interface InboxRow extends Stay {
   conversationId: string; photo: string | null; channel: string; guests: number | null;
   unread: boolean; lastAt: string | null; lastIncoming: boolean; preview: string;
@@ -114,6 +116,7 @@ export function matchesFilter(r: InboxRow, f: InboxFilter, today: DateStr): bool
   if (f === 'now') return st === 'arriving' || st === 'staying' || st === 'leaving';
   if (f === 'upcoming') return st === 'upcoming' || st === 'inquiry';
   if (f === 'past') return st === 'past' || st === 'cancelled';
+  if (f === 'issue') return !!r.issue;
   return true;
 }
 export const searchHit = (r: InboxRow, q: string) => {
@@ -205,15 +208,17 @@ export const isEvent = (t: Trigger) => t === 'booked' || t === 'checkin_done';
  * message is not needed, whenever that happens (a reminder stops by itself). "Done" is judged at the message's moment.
  * Stored in `message_templates.only_if` as a comma list ('' / 'always' = none) — the two older values are two of these.
  */
-export type CondSubject = 'checkin' | 'payment' | 'agreement' | 'id';
+export type CondSubject = 'checkin' | 'payment' | 'agreement' | 'id' | 'issue';
 export type Cond = `${CondSubject}_${'pending' | 'done'}`;
 export const COND_SUBJECTS: [CondSubject, string, string, string][] = [
   ['checkin', 'Online check-in', 'Not done', 'Done'],
   ['payment', 'Payment', 'Pending', 'Paid'],
   ['agreement', 'Agreement', 'Not signed', 'Signed'],
   ['id', 'ID', 'Not verified', 'Verified'],
+  // Owner, 2026-11-23: "no complaint" is a stopper like the others — a bad experience recorded at any time holds the message.
+  ['issue', 'Bad experience', 'None', 'Recorded'],
 ];
-export const isCond = (v: unknown): v is Cond => typeof v === 'string' && /^(checkin|payment|agreement|id)_(pending|done)$/.test(v);
+export const isCond = (v: unknown): v is Cond => typeof v === 'string' && /^(checkin|payment|agreement|id|issue)_(pending|done)$/.test(v);
 /** One per subject, in a fixed order — what is saved. */
 export const condsOf = (v: unknown): Cond[] => {
   const list = (Array.isArray(v) ? v : String(v ?? '').split(',')).map(x => String(x).trim()).filter(isCond);
@@ -222,12 +227,13 @@ export const condsOf = (v: unknown): Cond[] => {
 /** Is it so for this stay? An unknown payment or a booking without an agreement counts as done (never nagged, never held). */
 export function condMet(c: Cond, s: Stay): boolean {
   const [k, want] = c.split('_') as [CondSubject, 'pending' | 'done'];
-  const done = k === 'checkin' ? !!s.checkinDoneAt : k === 'payment' ? s.paid !== false : k === 'agreement' ? s.signed !== false : !!s.idVerified;
+  const done = k === 'checkin' ? !!s.checkinDoneAt : k === 'payment' ? s.paid !== false : k === 'agreement' ? s.signed !== false : k === 'issue' ? !!s.issue : !!s.idVerified;
   return want === 'done' ? done : !done;
 }
 const COND_WORD: Record<Cond, string> = {
   checkin_pending: 'Check-in not done', checkin_done: 'Check-in done', payment_pending: 'Payment pending', payment_done: 'Paid',
   agreement_pending: 'Agreement not signed', agreement_done: 'Agreement signed', id_pending: 'ID not verified', id_done: 'ID verified',
+  issue_pending: 'No bad experience', issue_done: 'Bad experience',
 };
 /** "Check-in not done · Payment pending" — the automation's chip. */
 export const condWords = (cs: Cond[]) => cs.map(c => COND_WORD[c]).join(' · ');
@@ -299,8 +305,8 @@ export const RECIPES: { key: string; icon: string; what: string; t: Omit<Templat
   { key: 'out', icon: 'clock', what: 'The evening before departure: the check-out time.',
     t: { name: 'Check-out reminder', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 16, holdHours: null, conditions: [], listingIds: null, active: false,
       body: 'Hi {{first_name}}, we hope you are enjoying {{listing}}. A quick reminder that check-out is tomorrow, {{checkout}}, by {{checkout_time}}. Safe travels!' } },
-  { key: 'review', icon: 'sparkles', what: 'A day after check-out: a thank-you and the ask for a review.',
-    t: { name: 'Thank you & review', channel: 'hostaway', trigger: 'after_checkout', offsetHours: 24, holdHours: null, conditions: [], listingIds: null, active: false,
+  { key: 'review', icon: 'sparkles', what: 'A day after check-out: a thank-you and the ask for a review — never to a stay with a bad experience on record.',
+    t: { name: 'Thank you & review', channel: 'hostaway', trigger: 'after_checkout', offsetHours: 24, holdHours: null, conditions: ['issue_pending'], listingIds: null, active: false,
       body: 'Hi {{first_name}}, thank you for staying at {{listing}}. If you enjoyed your stay, a review would mean a lot to our small team. We hope to host you again!' } },
 ];
 
@@ -492,6 +498,8 @@ export const question = (msgs: ThreadMsg[], n = 3) =>
 export function aiPrompt(a: {
   stay: Stay; today: DateStr; facts: string; sops: SopDoc[]; thread: ThreadMsg[]; instructions: string; company: string;
   business?: string; stayLines?: string[]; work?: string[]; portfolio?: string[]; channel?: string; portal?: string[];
+  /** Kaizen's messages already planned for this stay (owner, 2026-11-23). */ scheduled?: string[];
+  /** A bad experience on record for this stay (`guest_issues`). */ issue?: string | null;
 }) {
   const stage = stageOf(a.stay, a.today);
   const booked = stage !== 'inquiry' && stage !== 'cancelled';
@@ -535,7 +543,9 @@ export function aiPrompt(a: {
     '  lock battery, a broken key / lockbox / call box, the door will not open, the unit is not clean or not ready, someone is inside, a safety issue,',
     '  or anything the facts do not cover. Never invent a code or a step.',
     '- Upset guest, injury, police, threat, party, bad review threat, or anything else urgent → handoff with a calm, short holding reply.',
-    '- Thanks / ok / goodbye: a one-line friendly close (a check-out thank-you may invite them to leave a review); handoff false.',
+    '- Thanks / ok / goodbye: a one-line friendly close (a check-out thank-you may invite them to leave a review, never with a BAD EXPERIENCE ON RECORD); handoff false.',
+    '- A complaint or disappointment: apologise sincerely, say what you will do from the facts (or that you will check right away) → handoff.',
+    '  Never mention reviews, ratings or anything scheduled. If a MESSAGE ALREADY SCHEDULED would be wrong now, say so in reason (internal).',
     '',
     'Hard rules:',
     '- GUEST PORTAL, when given, decides what arrival information you may share now; follow it over everything else.',
@@ -559,14 +569,17 @@ export function aiPrompt(a: {
     a.stayLines?.length ? `\nTHIS BOOKING\n${a.stayLines.join('\n')}` : '',
     booked && a.portal?.length ? `\nGUEST PORTAL (online check-in)\n${a.portal.join('\n')}` : '',
     a.work?.length ? `\nOPEN WORK ON THIS STAY (internal)\n${a.work.join('\n')}` : '',
+    a.issue ? `\nBAD EXPERIENCE ON RECORD (internal): ${a.issue}\nBe extra warm and careful; never ask this guest for a review or rating.` : '',
+    a.scheduled?.length ? `\nMESSAGES ALREADY SCHEDULED FOR THIS STAY (internal — do not repeat what they will say; never mention them)\n${a.scheduled.join('\n')}` : '',
     a.business ? `\nCOMPANY (true for every listing)\n${a.business}` : '\nCOMPANY\n(no general facts written yet)',
     a.portfolio?.length ? `\nOTHER LISTINGS (availability unknown — the team checks)\n${a.portfolio.join('\n')}` : '',
     a.sops.length ? `\nSOPs (internal procedures — use them to decide what to promise; never quote internal details to the guest)\n${a.sops.map(s => [
       `[${s.title}]`, s.purpose ? `Purpose: ${s.purpose}` : '', s.trigger ? `When: ${s.trigger}` : '',
       s.steps.length ? `Steps: ${s.steps.map((x, i) => `${i + 1}. ${x.text}`).join(' ')}` : '', s.body ?? '',
     ].filter(Boolean).join('\n').slice(0, 1800)).join('\n\n')}` : '\nSOPs\n(none matched this conversation)',
-    `\nCONVERSATION (oldest first)\n${a.thread.filter(m => m.status === 'received' || m.status === 'sent').slice(-16)
-      .map(m => `${m.incoming ? 'GUEST' : 'HOST'}: ${m.body.replace(/\s+/g, ' ').slice(0, 1200)}`).join('\n')}`,
+    // Owner, 2026-11-23: the earlier conversation counts — 40 messages, the last 10 whole, older ones shortened.
+    `\nCONVERSATION (oldest first)\n${a.thread.filter(m => m.status === 'received' || m.status === 'sent').slice(-40)
+      .map((m, i, all) => `${m.incoming ? 'GUEST' : 'HOST'}: ${m.body.replace(/\s+/g, ' ').slice(0, i >= all.length - 10 ? 1200 : 400)}`).join('\n')}`,
     '\nDraft the host\'s next reply.',
   ].filter(Boolean).join('\n');
   return { system, user };
