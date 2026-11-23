@@ -219,9 +219,9 @@ function Report({ data, open, onOpen }: { data: AnalyticsData; open: string | nu
           <div><dt>Reviews</dt><dd>{now.rev.stars?.toFixed(2) ?? '—'} <small>★ · {now.rev.count}</small></dd>
             <Delta now={now.rev.stars} before={before.rev.stars} kind="stars" /></div>
         </dl>
-        <ul className="an-lines">{lines.map((l, i) => <li key={i}>{l}</li>)}</ul>
-        <p className="an-limit"><Icon n="alert" /> One-off spend only — rent and utilities are monthly and are not in these figures yet.</p>
       </section>
+      {/* Owner, 2026-11-23: the week in words sits apart from the figures — small, grey, plain sentences. */}
+      <p className="an-notes">{lines.join(' ')} <span className="an-limit">One-off spend only — rent and utilities are not in these figures yet.</span></p>
 
       <div className="an-grid">
         <Panel id="spent" open={open} onOpen={onOpen} icon="receipt" title="Spent" figure={money(now.spent)}
