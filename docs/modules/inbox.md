@@ -147,7 +147,8 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   **Slack's reminder** (`watchMessage` `draft`) says "A reply is drafted in the CRM" or why the AI could not draft. SOP #43: `.sop-draft-1123.mjs` after deploy.
 - **Urgent check-in = the AI solves it (owner, 2026-11-23: "unless it is beyond its control").** Triage has `checkin` (getting in: code,
   entry, finding the unit, arrival parking, the online check-in). `urgent && checkin` + open stay + `guest_ai.autoCheckin` (unset = on; Settings box
-  "Answer urgent check-in problems on its own") + guest messages live → `solveCheckin` (guest-events.ts) instead of the instant alert: forced draft →
+  box to come with the mode "Answer on its own" — **owner 2026-11-23: drafts only for now, so it is OFF: `autoCheckin` is true only when `mode` is 'auto', which
+  cannot be chosen yet**) + guest messages live → `solveCheckin` (guest-events.ts) instead of the instant alert: forced draft →
   `checkinAutoSend` gate (no handoff, confidence high, blanks filled via `varsFor` + `portalFor`, thread re-read: still waiting) → a `guest_messages`
   row (`source` manual, `created_by` 'Kaizen AI', not retried by the clock) → `deliver` → Slack `solvedMessage` (what was sent). Fails any gate →
   nothing sent, the urgent alert with "not answered by the AI: <why>" and the draft's state. Beyond control (code/lock fails after the steps, battery,

@@ -403,7 +403,8 @@ export interface GuestAi {
   portalFirst: boolean;
   /** A guest who finished the old check-in (Hostaway's agreement / ID) is told the system changed and asked to do the new one once. */
   oldPortalNotice: boolean;
-  /** Owner, 2026-11-23: an urgent check-in message the AI can fully solve is SENT by it (only with guest messages live); otherwise the team is alerted. */
+  /** Owner, 2026-11-23: an urgent check-in message the AI can fully solve is SENT by it — only once "Answer on its own" exists and is chosen
+   *  (owner: drafts only for now), and only with guest messages live; otherwise the team is alerted. */
   autoCheckin: boolean;
 }
 /** Suggestions for the model field — it is free text, so a newer model needs no deploy. */
@@ -411,11 +412,13 @@ export const AI_MODELS: Record<AiProvider, string[]> = {
   claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
   gemini: ['gemini-3.6-flash', 'gemini-3.5-flash-lite'],
 };
-export const AI_DEFAULT: GuestAi = { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true, autoCheckin: true };
+export const AI_DEFAULT: GuestAi = { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true, autoCheckin: false };
 export const MAX_BUSINESS = 6000;
 export const isModel = (m: string) => /^[\w.\-@/:]{3,80}$/.test(m);
 
 /** What the account saved, made whole. Answering on its own ("auto") does not exist yet: it reads as suggest. */
+/** "Answer on its own" is not built (owner, 2026-11-23: drafts only for now). Turning this on is the day the urgent check-in reply may send itself. */
+const ANSWERS_ON_ITS_OWN = false;
 export function guestAiFrom(j: unknown): GuestAi {
   const o = (j && typeof j === 'object' ? j : {}) as Record<string, unknown>;
   const provider: AiProvider = o.provider === 'gemini' ? 'gemini' : 'claude';
@@ -425,7 +428,7 @@ export function guestAiFrom(j: unknown): GuestAi {
     instructions: typeof o.instructions === 'string' ? o.instructions.trim().slice(0, 2000) : '',
     business: typeof o.business === 'string' ? o.business.trim().slice(0, MAX_BUSINESS) : '',
     // Unset = on: what the owner asked for (2026-11-23); a saved false turns each one off.
-    autoDraft: o.autoDraft !== false, portalFirst: o.portalFirst !== false, oldPortalNotice: o.oldPortalNotice !== false, autoCheckin: o.autoCheckin !== false,
+    autoDraft: o.autoDraft !== false, portalFirst: o.portalFirst !== false, oldPortalNotice: o.oldPortalNotice !== false, autoCheckin: ANSWERS_ON_ITS_OWN && o.mode === 'auto' && o.autoCheckin !== false,
   };
 }
 
