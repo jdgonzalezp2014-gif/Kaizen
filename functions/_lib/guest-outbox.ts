@@ -90,6 +90,14 @@ export async function openAfterOf(sql: SqlFn, stays: Stay[]): Promise<void> {
   }
 }
 
+/** Stays with an extra charge still pending (`upsell_charges`, the portal's "Pending payments"). No table yet = none. */
+export async function chargesDueOf(sql: SqlFn, reservationIds: string[]): Promise<Set<string>> {
+  if (!reservationIds.length) return new Set();
+  const rows = await (sql`SELECT DISTINCT reservation_id FROM upsell_charges WHERE account_id = 1 AND status = 'pending' AND reservation_id = ANY(${reservationIds})` as
+    Promise<{ reservation_id: string }[]>).catch(() => []);
+  return new Set(rows.map(r => String(r.reservation_id)));
+}
+
 export async function issuesOf(sql: SqlFn, reservationIds: string[]): Promise<Map<string, string>> {
   if (!reservationIds.length) return new Map();
   const rows = await (sql`SELECT reservation_id, why FROM guest_issues WHERE account_id = 1 AND cleared_at IS NULL AND reservation_id = ANY(${reservationIds})` as
@@ -253,10 +261,12 @@ export async function fireStay(sql: SqlFn, env: Env, reservationId: string, now 
     checkinsOf(sql, [reservationId]),
     issuesOf(sql, [reservationId]),
   ]);
+  const due = await chargesDueOf(sql, [reservationId]);
   const stay = detail ? stayFromDetail(detail, new Map(units.map(u => [u.id, u.name]))) : null;
   if (!stay) return { ...out, skipped: 'Hostaway does not know this reservation' };
   stay.checkinDoneAt = done.get(reservationId) ?? null;
   stay.issue = issues.has(reservationId);
+  stay.chargeDue = due.has(reservationId);
   if (templates.some(t => t.conditions.some(c => c.startsWith('open_')))) await openAfterOf(sql, [stay]);
   await createDue(sql, env, creds, stay, templates, await autoLog(sql, [reservationId]), now, out, PER_TICK);
   return out;
@@ -302,12 +312,13 @@ export async function runDue(sql: SqlFn, env: Env, now = new Date()) {
   }
   if (!stays.length) return out;
   const ids = stays.map(s => s.reservationId);
-  const [log, done, issues] = await Promise.all([autoLog(sql, ids), checkinsOf(sql, ids), issuesOf(sql, ids),
+  const [log, done, issues, unpaid] = await Promise.all([autoLog(sql, ids), checkinsOf(sql, ids), issuesOf(sql, ids), chargesDueOf(sql, ids),
     templates.some(t => t.conditions.some(c => c.startsWith('open_'))) ? openAfterOf(sql, stays) : null]);
   for (const s of stays) {
     if (room <= 0) break;
     s.checkinDoneAt = done.get(s.reservationId) ?? null;
     s.issue = issues.has(s.reservationId);
+    s.chargeDue = unpaid.has(s.reservationId);
     room -= await createDue(sql, env, creds, s, templates, log.filter(l => l.reservation_id === s.reservationId), now, out, room);
   }
   return out;

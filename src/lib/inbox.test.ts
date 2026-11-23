@@ -299,6 +299,8 @@ test('mid-stay goes on the middle day at 10 AM; monthly and open-night condition
   assert.equal(condMet('open_done', { ...stay, openAfter: true }), true);
   assert.equal(condMet('open_done', { ...stay, openAfter: false }), false);
   assert.equal(condMet('open_done', stay), false, 'calendar not seen = no offer');
+  assert.equal(condMet('charge_pending', { ...stay, chargeDue: true }), true);
+  assert.equal(condMet('charge_pending', stay), false, 'nothing pending = the reminder stops');
   // Messages read as people write them: no dashes.
   for (const r of RECIPES) assert.ok(!/[—–]/.test(r.t.body), r.t.name);
 });

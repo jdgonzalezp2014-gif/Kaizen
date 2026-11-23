@@ -40,6 +40,8 @@ export interface Stay {
   issue?: boolean | string | null;
   /** The night of check-out is open on the listing's calendar (the hourly look, `calendar_watch`) — null = not known. */
   openAfter?: boolean | null;
+  /** An extra charge the team made (`upsell_charges`, card or Airbnb Resolution Center) is still pending — the portal's "Pending payments". */
+  chargeDue?: boolean;
 }
 
 /**
@@ -237,7 +239,7 @@ export const isEvent = (t: Trigger) => t === 'booked' || t === 'checkin_done';
  * message is not needed, whenever that happens (a reminder stops by itself). "Done" is judged at the message's moment.
  * Stored in `message_templates.only_if` as a comma list ('' / 'always' = none) — the two older values are two of these.
  */
-export type CondSubject = 'checkin' | 'payment' | 'agreement' | 'id' | 'issue' | 'monthly' | 'open';
+export type CondSubject = 'checkin' | 'payment' | 'agreement' | 'id' | 'issue' | 'charge' | 'monthly' | 'open';
 export type Cond = `${CondSubject}_${'pending' | 'done'}`;
 export const COND_SUBJECTS: [CondSubject, string, string, string][] = [
   ['checkin', 'Online check-in', 'Not done', 'Done'],
@@ -246,13 +248,15 @@ export const COND_SUBJECTS: [CondSubject, string, string, string][] = [
   ['id', 'ID', 'Not verified', 'Verified'],
   // Owner, 2026-11-23: "no complaint" is a stopper like the others — a bad experience recorded at any time holds the message.
   ['issue', 'Bad experience', 'None', 'Recorded'],
+  // Owner, 2026-11-23: extra charges (early check-in, late check-out, extra nights, damage) not paid yet — the portal shows them to pay.
+  ['charge', 'Extra charges', 'Pending', 'All paid'],
   // Owner, 2026-11-23: monthly stays get the mid-stay cleaning note; an open night after check-out gets the extension offer.
   ['monthly', 'Stay length', 'Under 28 nights', '28 nights or more'],
   ['open', 'Night after check-out', 'Booked / blocked', 'Open'],
 ];
 /** A monthly stay (owner): 28 nights or more — Airbnb's own monthly line. */
 export const MONTHLY_NIGHTS = 28;
-export const isCond = (v: unknown): v is Cond => typeof v === 'string' && /^(checkin|payment|agreement|id|issue|monthly|open)_(pending|done)$/.test(v);
+export const isCond = (v: unknown): v is Cond => typeof v === 'string' && /^(checkin|payment|agreement|id|issue|charge|monthly|open)_(pending|done)$/.test(v);
 /** One per subject, in a fixed order — what is saved. */
 export const condsOf = (v: unknown): Cond[] => {
   const list = (Array.isArray(v) ? v : String(v ?? '').split(',')).map(x => String(x).trim()).filter(isCond);
@@ -263,7 +267,7 @@ export function condMet(c: Cond, s: Stay): boolean {
   const [k, want] = c.split('_') as [CondSubject, 'pending' | 'done'];
   // An unknown calendar is neither open nor booked: no extension is offered on a guess.
   if (k === 'open' && s.openAfter == null) return false;
-  const done = k === 'checkin' ? !!s.checkinDoneAt : k === 'payment' ? s.paid !== false : k === 'agreement' ? s.signed !== false : k === 'issue' ? !!s.issue
+  const done = k === 'checkin' ? !!s.checkinDoneAt : k === 'payment' ? s.paid !== false : k === 'agreement' ? s.signed !== false : k === 'issue' ? !!s.issue : k === 'charge' ? !s.chargeDue
     : k === 'monthly' ? !!s.arrival && !!s.departure && daysBetween(s.arrival, s.departure) >= MONTHLY_NIGHTS : k === 'open' ? !!s.openAfter : !!s.idVerified;
   return want === 'done' ? done : !done;
 }
@@ -271,7 +275,7 @@ const COND_WORD: Record<Cond, string> = {
   checkin_pending: 'Check-in not done', checkin_done: 'Check-in done', payment_pending: 'Payment pending', payment_done: 'Paid',
   agreement_pending: 'Agreement not signed', agreement_done: 'Agreement signed', id_pending: 'ID not verified', id_done: 'ID verified',
   issue_pending: 'No bad experience', issue_done: 'Bad experience',
-  monthly_pending: 'Under 28 nights', monthly_done: 'Monthly stay', open_pending: 'Night after booked', open_done: 'Night after open',
+  charge_pending: 'Extra charge pending', charge_done: 'Extra charges paid', monthly_pending: 'Under 28 nights', monthly_done: 'Monthly stay', open_pending: 'Night after booked', open_done: 'Night after open',
 };
 /** "Check-in not done · Payment pending" — the automation's chip. */
 export const condWords = (cs: Cond[]) => cs.map(c => COND_WORD[c]).join(' · ');
@@ -338,21 +342,27 @@ export const RECIPES: { key: string; icon: string; what: string; t: Omit<Templat
   { key: 'remind', icon: 'bell', what: 'Two days before arrival, only to guests who have not done the online check-in yet.',
     t: { name: 'Online check-in reminder', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 48, holdHours: null, conditions: ['checkin_pending'], listingIds: null, active: false,
       body: 'Hi {{first_name}}, your stay at {{listing}} starts {{checkin}}. Please complete your online check-in to receive your door code: {{portal_link}}' } },
+  { key: 'remind2', icon: 'bell', what: 'The morning of arrival (6 hours before check-in), a second reminder only if the online check-in is still not done.',
+    t: { name: 'Online check-in reminder (arrival day)', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 6, holdHours: null, conditions: ['checkin_pending'], listingIds: null, active: false,
+      body: 'Hi {{first_name}}, we are looking forward to having you at {{listing}} today! Your online check-in is still pending, and you will need it to get your door code: {{portal_link}}' } },
   { key: 'code', icon: 'key', what: 'Sends the door code once the guest finishes the online check-in, never earlier than two days before arrival.',
     t: { name: 'Door code after online check-in', channel: 'hostaway', trigger: 'checkin_done', offsetHours: 0, holdHours: 48, conditions: [], listingIds: null, active: false,
       body: 'Hi {{first_name}}, thank you for completing your online check-in. Your door code for {{listing}} is {{door_code}}, and it works from {{checkin_time}} on {{checkin}}.' } },
   { key: 'pay', icon: 'card', what: 'Three days before arrival, only to guests whose payment is still pending. It stops by itself once they pay.',
     t: { name: 'Payment reminder', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 72, holdHours: null, conditions: ['payment_pending'], listingIds: null, active: false,
       body: 'Hi {{first_name}}, your stay at {{listing}} starts {{checkin}}. Your payment is still pending, and you can complete it here: {{portal_link}}' } },
+  { key: 'charge', icon: 'card', what: 'The day before check-out, only if an extra charge (early check-in, late check-out, extra nights) is still not paid. It stops once it is paid.',
+    t: { name: 'Pending charge reminder', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 24, holdHours: null, conditions: ['charge_pending'], listingIds: null, active: false,
+      body: 'Hi {{first_name}}, a quick note: there is still a pending payment on your stay at {{listing}}. You can see it and pay here: {{portal_link}}' } },
   { key: 'howis', icon: 'sparkles', what: 'A day after check-in: how is everything, can we help with anything.',
     t: { name: 'How is everything', channel: 'hostaway', trigger: 'after_checkin', offsetHours: 24, holdHours: null, conditions: ['issue_pending'], listingIds: null, active: false,
       body: 'Hi {{first_name}}, we hope you are settling in well at {{listing}}. How is everything so far? If there is anything we can do to make your stay better, just let us know.' } },
   { key: 'midclean', icon: 'home', what: 'Monthly stays (28 nights or more), halfway through: a reminder of the mid-stay cleaning.',
     t: { name: 'Mid-stay cleaning', channel: 'hostaway', trigger: 'mid_stay', offsetHours: 0, holdHours: null, conditions: ['monthly_done'], listingIds: null, active: false,
       body: 'Hi {{first_name}}, we hope you are enjoying your time at {{listing}}. Your stay includes a mid-stay cleaning. Let us know which day works best for you and we will set it up.' } },
-  { key: 'extend', icon: 'calendar', what: 'Two days before check-out, only when the night after check-out is open on the calendar: would they like to stay longer.',
+  { key: 'extend', icon: 'calendar', what: 'Two days before check-out, only when the night after check-out is open on the calendar: we have some availability, would they like to extend.',
     t: { name: 'Extend your stay', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 48, holdHours: null, conditions: ['open_done'], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, we hope you are having a great stay at {{listing}}. If you would like to stay a few more nights, the place is open after {{checkout}}. Just reply here and we will take care of it.' } },
+      body: 'Hi {{first_name}}, we hope you are having a great stay at {{listing}}. If you would like to stay longer, we have some availability after {{checkout}}. Just let us know and we will check it for you.' } },
   { key: 'out', icon: 'clock', what: 'The evening before departure: the check-out time.',
     t: { name: 'Check-out reminder', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 16, holdHours: null, conditions: [], listingIds: null, active: false,
       body: 'Hi {{first_name}}, we hope you enjoyed {{listing}}. Just a reminder that check-out is tomorrow, {{checkout}}, by {{checkout_time}}. Safe travels!' } },
