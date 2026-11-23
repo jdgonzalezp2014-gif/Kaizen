@@ -49,10 +49,13 @@ test('news of a task: one message when new, a thread reply (and the first messag
   }) as unknown as typeof fetch;
   try {
     await notifyTask(sql, key, '5', 'created', 'juan@x.com');
-    assert.deepEqual(calls.map(c => c.method), ['chat.postMessage']);
+    // Owner, 2026-11-23: the short line in the channel, then the details as the thread's first reply.
+    assert.deepEqual(calls.map(c => c.method), ['chat.postMessage', 'chat.postMessage']);
     assert.equal(calls[0]!.body.get('channel'), 'C1');
     assert.equal(calls[0]!.body.get('thread_ts'), null);
     assert.match(calls[0]!.body.get('blocks')!, /\?todo=5/);
+    assert.equal(calls[1]!.body.get('thread_ts'), '111.1');
+    assert.match(calls[1]!.body.get('blocks')!, /Fix the AC/);
     calls.length = 0; task.status = 'completed';
     await notifyTask(sql, key, '5', 'completed', 'ana@x.com');
     assert.deepEqual(calls.map(c => c.method), ['chat.postMessage', 'chat.update']);

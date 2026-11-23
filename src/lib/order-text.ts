@@ -11,7 +11,7 @@
  */
 import { aliasKey, scoreItems, words, type ReceiptItem, type ReceiptLine } from './receipt.ts';
 import { cartLinks, type BuyOption } from './store-order.ts';
-import { DIVIDER, cartLine as cartHead, esc, guessUnit, toolButton, type Opt } from './slack.ts';
+import { cartCount, esc, guessUnit, toolButton, type Opt } from './slack.ts';
 
 type Block = Record<string, unknown>;
 const mrk = (text: string) => ({ type: 'mrkdwn', text: text.slice(0, 3000) });
@@ -323,9 +323,12 @@ export function orderDraftMessage(d: OrderDraft, id: string, o: { items: DraftIt
 /** Said in the thread once it is saved: what, where, on which to-do — and the store links, for whoever buys it. */
 export function orderSavedMessage(d: OrderDraft, o: { items: DraftItem[]; placeLabel: string; todoId: string; todoTitle: string; fresh: boolean; by: string; appUrl?: string }):
   { text: string; blocks: Block[] } {
-  // Owner, 2026-11-23: where it goes and 🛒 with how many — the lines are seen and managed in the to-do (Open).
+  // Owner, 2026-11-23: it is a reply in the thread, where the details go — 🛒 with how many, where, and the plain list.
+  const name = (id: string) => o.items.find(i => i.id === id)?.name ?? `item ${id}`;
+  const list = d.lines.slice(0, 30).map(l => `• ${esc(l.i ? name(l.i) : l.n?.name ?? l.t)} × ${l.q}`);
+  if (d.lines.length > 30) list.push(`…and ${d.lines.length - 30} more`);
   const open = o.appUrl ? toolButton(`${o.appUrl}/?todo=${encodeURIComponent(o.todoId)}`) : undefined;
-  return { text: `Purchase: ${o.placeLabel}`, blocks: [section(cartHead(o.placeLabel, d.lines.length), open), DIVIDER] };
+  return { text: `Purchase: ${o.placeLabel}`, blocks: [section(`*${cartCount(d.lines.length)} → ${esc(o.placeLabel)}*\n${list.join('\n')}`, open)] };
 }
 
 /** "Another item…" — every active item, the closest first (a menu holds 100). */

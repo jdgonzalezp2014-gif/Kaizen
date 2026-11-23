@@ -132,8 +132,10 @@ const plainWhat = (t: TaskLite) => t.isOrder ? 'Purchase order' : t.kind === 'wo
  * glyph where one has both), and a line under each message so they do not run together.
  */
 export const MARK = { todo: '☐', repair: '⚒\uFE0E', order: '▣', claim: '⚑', upsell: '$', guest: '⚠\uFE0E', checkin: '⌂', ai: '✓' } as const;
-/** Owner, 2026-11-23: a purchase is the unit and the cart with how many — the cart is the one emoji he asked for. */
-export const cartLine = (where: string, n?: number) => `*${esc(where)}*  ·  🛒${n ? ` ${n}` : ''}`;
+/** Owner, 2026-11-23: a purchase says the cart with how many — the cart is the one emoji he asked for. */
+export const cartCount = (n?: number) => `🛒${n ? ` ${n}` : ''}`;
+const kindWord = (t: Pick<TaskLite, 'isOrder' | 'kind'>) => t.isOrder ? 'purchase' : t.kind === 'work_order' ? 'repair' : 'to-do';
+const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
 export const DIVIDER: Block = { type: 'divider' };
 const taskMark = (t: TaskLite) => t.isOrder ? MARK.order : t.kind === 'work_order' ? MARK.repair : MARK.todo;
 
@@ -239,19 +241,27 @@ export function pickTask(list: { id?: string; title: string; unit?: string | nul
  * urgency question left Slack — the task is worked in Kaizen; a reply in its thread is still a comment (§153).
  */
 export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: string): { text: string; blocks: Block[] } {
-  // Owner, 2026-11-23: the title in bold and what it is, where — status, priority and who are seen when it is opened.
-  // A closed one says so, so an old message is not taken for open work.
+  // Owner, 2026-11-23: the channel says what it is ("New repair"), the unit and one small detail — a purchase, the cart with
+  // how many. The details are the first reply in its thread (`taskDetails`), where people comment. A closed one says so.
   const closed = t.status === 'completed' || t.status === 'cancelled' ? stageWord(t.status) : '';
-  // A purchase (owner, 2026-11-23): the unit and 🛒 with how many — the details are managed in the to-do (Open).
-  if (t.isOrder) return {
-    text: `Purchase ${event}: ${t.unit ?? t.title}`,
-    blocks: [section(`${cartLine(t.unit ?? t.title.replace(/^buy supplies:\s*/i, ''), t.orderLines)}${closed ? `\n${closed}` : ''}`, toolFor(appUrl, 'todo', t.id)), DIVIDER]
-  };
-  const line = [plainWhat(t), t.unit ? esc(t.unit) : '', closed].filter(Boolean).join(' · ');
+  const head = `${event === 'created' || event === 'for you' ? `New ${kindWord(t)}` : cap(kindWord(t))}${t.unit ? ` · ${t.unit}` : ''}`;
+  const detail = t.isOrder ? cartCount(t.orderLines) : esc(t.title.length > 90 ? `${t.title.slice(0, 89)}…` : t.title);
   return {
-    text: `${plainWhat(t)} ${event}: ${t.title}`,
-    blocks: [section(`${taskMark(t)}  *${esc(t.title)}*\n${line}`, toolFor(appUrl, 'todo', t.id)), DIVIDER]
+    text: `${head}${closed ? ` · ${closed}` : ''}: ${t.title}`,
+    blocks: [section(`${taskMark(t)}  *${esc(head)}*${closed ? ` · ${closed}` : ''}\n${detail}`, toolFor(appUrl, 'todo', t.id)), DIVIDER]
   };
+}
+
+/** The first reply in a new item's thread (owner, 2026-11-23): the details, so the channel line can stay short. */
+export function taskDetails(t: TaskLite, lines: { name: string; qty: number }[] = []): { text: string; blocks: Block[] } {
+  const facts = [t.priority === 'urgent' ? 'Urgent' : t.priority === 'high' ? 'High' : t.priority === 'medium' ? 'Medium' : t.priority === 'low' ? 'Low' : '',
+                 t.dueOn ? `finish by ${day(t.dueOn)}` : '', t.assignee ? `owner ${t.assignee}` : '', t.reservationLabel ? `stay ${t.reservationLabel}` : '']
+    .filter(Boolean).map(esc).join(' · ');
+  const desc = (t.description ?? '').replace(/\n?From Slack: \S+\s*$/, '').trim();
+  const body = [`*${esc(t.title)}*`, facts, desc ? esc(desc.length > 1200 ? `${desc.slice(0, 1199)}…` : desc) : '',
+    lines.length ? lines.slice(0, 30).map(l => `• ${esc(l.name)} × ${l.qty}`).join('\n') + (lines.length > 30 ? `\n…and ${lines.length - 30} more` : '') : '']
+    .filter(Boolean).join('\n');
+  return { text: `Details: ${t.title}`, blocks: [section(body)] };
 }
 
 /**
@@ -296,13 +306,19 @@ export function claimMessage(c: ClaimLite, event: string, by: string, appUrl?: s
     text: `${caseWord(c).split(' ')[1]} ${event}: ${claimTitle(c)}`,
     // Owner, 2026-11-23: the line and one 🛠 into Kaizen — status, comment and edit are done there.
     blocks: [
-      // Owner, 2026-11-23: what it is and where — the rest is seen when it is opened.
-      section(`${isUpsell(c.category) ? MARK.upsell : MARK.claim}  *${esc((c.description || c.category || 'Claim').slice(0, 80))}*\n` +
-        [caseWord(c).split(' ')[1], c.unit ?? 'Portfolio', ['Resolved', 'Paid', 'Dismissed'].includes(c.status) ? c.status : ''].filter(Boolean).map(x => esc(String(x))).join(' · '),
+      // Owner, 2026-11-23: "New upsell · CL1125" and one small detail; the details are the first reply in its thread.
+      section(`${isUpsell(c.category) ? MARK.upsell : MARK.claim}  *${event === 'opened' ? 'New ' + caseWord(c).split(' ')[1]!.toLowerCase() : caseWord(c).split(' ')[1]} · ${esc(c.unit ?? 'Portfolio')}*` +
+        `${['Resolved', 'Paid', 'Dismissed'].includes(c.status) ? ` · ${esc(c.status)}` : ''}\n${esc(c.category || (c.description ?? '').slice(0, 80) || 'Claim')}`,
         toolFor(appUrl, 'claim', c.id)),
       DIVIDER
     ]
   };
+}
+/** A new claim's first thread reply (owner, 2026-11-23): what happened, how serious, the platform's case. */
+export function claimDetails(c: ClaimLite): { text: string; blocks: Block[] } {
+  const body = [`*${esc((c.description || c.category || 'Claim').slice(0, 200))}*`, [c.category, c.severity, c.status].filter(Boolean).map(x => esc(String(x))).join(' · '),
+                c.description && c.description.length > 200 ? esc(c.description.slice(0, 1200)) : '', c.caseUrl ? link(c.caseUrl, 'Platform case') : ''].filter(Boolean).join('\n');
+  return { text: `Details: ${c.description || c.category || 'claim'}`, blocks: [section(body)] };
 }
 const claimStatusSelect = (c: ClaimLite): Block => ({
   type: 'static_select', action_id: 'claim_status', placeholder: plain('Status'),
@@ -1083,7 +1099,7 @@ export function quickTitle(text: string): { title: string; description: string |
 /** The reply in the request's thread: it is tracked, and the way to add details. */
 export function trackedReply(t: { id: string; title: string; kind: string; unit?: string | null }, under?: 'sub-task' | 'claim', appUrl?: string): { text: string; blocks: Block[] } {
   // Made inside a task's or a claim's thread (owner, Oct 2026): it belongs to that one.
-  if (t.kind === 'order') return { text: `Purchase saved in Kaizen: ${t.unit ?? t.title}`, blocks: [section(cartLine(t.unit ?? t.title), toolFor(appUrl, 'todo', t.id))] };
+  if (t.kind === 'order') return { text: `Purchase saved in Kaizen: ${t.title}`, blocks: [section(`${MARK.order}  *Purchase saved${t.unit ? ` · ${esc(t.unit)}` : ''}*`, toolFor(appUrl, 'todo', t.id))] };
   const kind = under === 'sub-task' ? 'Sub-task' : t.kind === 'work_order' ? 'Repair' : 'To-do';
   const mark = t.kind === 'work_order' ? MARK.repair : t.kind === 'order' ? MARK.order : MARK.todo;
   // Owner, 2026-11-23: small — what was saved, where, and Open. Details are added in Kaizen; a reply here is a comment.

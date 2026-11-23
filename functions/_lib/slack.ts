@@ -10,7 +10,7 @@
 import type { SqlFn } from './accounts.ts';
 import { decrypt } from './crypto.ts';
 import { PRIORITY_LABEL, STATUS_LABEL } from '../../src/lib/todos.ts';
-import { caseWord, claimMessage, dmTarget, esc, eventsOf, taskMessage, threadLine, type ClaimLite, type SlackConfig, type TaskLite, type Topic } from '../../src/lib/slack.ts';
+import { caseWord, claimDetails, claimMessage, dmTarget, esc, eventsOf, taskDetails, taskMessage, threadLine, type ClaimLite, type SlackConfig, type TaskLite, type Topic } from '../../src/lib/slack.ts';
 
 export interface SlackSetup { config: SlackConfig; token: string | null; secret: string | null }
 
@@ -91,6 +91,15 @@ export async function taskLite(sql: SqlFn, id: string): Promise<TaskLite | null>
                orderLines: t.order_lines == null ? undefined : Number(t.order_lines) } : null;
 }
 
+/** A purchase's lines, with the items' names — for its thread's details. */
+async function orderLinesOf(sql: SqlFn, todoId: string): Promise<{ name: string; qty: number }[]> {
+  const rows = await (sql`SELECT COALESCE(i.name, 'Item ' || (l->>'itemId')) AS name, COALESCE((l->>'qty')::numeric, 1) AS qty
+                           FROM inventory_orders o CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(o.lines) = 'array' THEN o.lines ELSE '[]'::jsonb END) AS l
+                           LEFT JOIN inventory_items i ON i.account_id = o.account_id AND i.id::text = l->>'itemId'
+                          WHERE o.account_id = 1 AND o.todo_id::text = ${todoId}` as Promise<{ name: string; qty: string | number }[]>).catch(() => []);
+  return rows.map(r => ({ name: r.name, qty: Number(r.qty) }));
+}
+
 export type TaskEvent = 'created' | 'assigned' | 'completed' | 'cancelled' | 'reopened' | 'status' | 'urgency' | 'kind' | 'hostaway';
 
 /**
@@ -158,7 +167,13 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
     return;
   }
   // New — or news of work that has no thread yet: the one message, and its thread from now on.
-  await rememberThread(sql, await postTo(s, 'tasks', taskMessage(t, word, who(by), app)), 'task', id);
+  const posted = await postTo(s, 'tasks', taskMessage(t, word, who(by), app));
+  await rememberThread(sql, posted, 'task', id);
+  // Owner, 2026-11-23: the details are the thread's first reply — the channel line stays short.
+  if (posted?.ok && posted.ts && posted.channel) {
+    const lines = t.isOrder ? await orderLinesOf(sql, id) : [];
+    await slackApi(s.token, 'chat.postMessage', { channel: posted.channel, thread_ts: posted.ts, unfurl_links: false, ...taskDetails(t, lines) }).catch(() => null);
+  }
 }
 // Owner, 2026-11-23: plain marks, no emoji, in the thread lines too.
 const ICON: Partial<Record<TaskEvent, string>> = { created: '+', completed: '✓', cancelled: '✕', reopened: '↺', assigned: '→', status: '·', urgency: '·', kind: '·', hostaway: '⇄' };
@@ -208,7 +223,10 @@ export async function notifyClaim(sql: SqlFn, key: string, id: string, event: 'o
     await slackApi(s.token, 'chat.update', { channel: home.channel, ts: home.ts, ...claimMessage(c, `· ${c.status}`, '', s.config.appUrl) }).catch(() => null);
     return;
   }
-  await rememberThread(sql, await postTo(s, 'claims', claimMessage(c, word ?? event, who(by), s.config.appUrl)), 'claim', id);
+  const posted = await postTo(s, 'claims', claimMessage(c, event === 'opened' ? 'opened' : word ?? event, who(by), s.config.appUrl));
+  await rememberThread(sql, posted, 'claim', id);
+  if (posted?.ok && posted.ts && posted.channel && event === 'opened')
+    await slackApi(s.token, 'chat.postMessage', { channel: posted.channel, thread_ts: posted.ts, unfurl_links: false, ...claimDetails(c) }).catch(() => null);
 }
 
 /**

@@ -49,15 +49,22 @@ test('reminders go once a day, at or after their hour', () => {
   assert.deepEqual(dueDigests(16, '2026-10-01', { digest: { afternoon: null } }, new Set()), ['morning']);
 });
 
-test('a task message is its line and one small 🛠 into Kaizen (owner, 2026-11-23)', () => {
+test('a task message: "New repair · unit", one small detail and Open; the details are its thread\'s first reply (owner, 2026-11-23)', async () => {
+  const { taskDetails } = await import('./slack.ts');
   const m = taskMessage({ id: '7', title: 'Fix <AC>', kind: 'work_order', status: 'pending', priority: 'high', unit: 'CL1125', assignee: 'Laura' }, 'created', 'juan', 'https://k.dev');
   const s = JSON.stringify(m.blocks);
-  assert.match(s, /Fix &lt;AC&gt;/);
-  assert.match(s, /\*Fix &lt;AC&gt;\*\\nRepair · CL1125"/);  // owner: status, priority and who only when opened
+  assert.match(s, /\*New repair · CL1125\*\\nFix &lt;AC&gt;"/);
+  assert.doesNotMatch(s, /High|Laura|juan/);
+  const d = JSON.stringify(taskDetails({ id: '7', title: 'Fix AC', kind: 'work_order', status: 'pending', priority: 'high', assignee: 'Laura', dueOn: '2026-11-24',
+    description: 'Blowing warm\n\nFrom Slack: https://x.slack.com/p1' }, [{ name: 'Filter', qty: 2 }]).blocks);
+  assert.match(d, /\*Fix AC\*\\nHigh · finish by Nov 24 · owner Laura\\nBlowing warm\\n• Filter × 2/);
+  assert.doesNotMatch(d, /From Slack/);
+  assert.match(JSON.stringify(taskMessage({ id: '8', title: 'Buy supplies: x', kind: 'task', status: 'pending', priority: 'none', unit: 'CL1125', isOrder: true, orderLines: 3 }, 'created', '').blocks),
+    /\*New purchase · CL1125\*\\n🛒 3/);
   assert.match(s, /"text":"Open".*"url":"https:\/\/k\.dev\/\?todo=7"/);
   assert.doesNotMatch(s, /task_complete|task_reopen|task_open|"type":"actions"/);
   assert.doesNotMatch(JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'pending', priority: 'none' }, 'created', '').blocks), /"Open"/);
-  assert.match(JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'completed', priority: 'none' }, '· Done', '').blocks), /To-do · Done/);
+  assert.match(JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'completed', priority: 'none' }, '· Done', '').blocks), /To-do\* · Done/);
   assert.match(JSON.stringify(taskList([])), /Nothing open/);
 });
 
@@ -477,8 +484,8 @@ test('§162: a purchase order from a mention, an upsell named as such, and the l
   assert.deepEqual(kaizenButton(undefined, 'todo', '5'), []);
   assert.match(JSON.stringify(kaizenButton('https://k.dev', 'todo', '5')), /https:\/\/k\.dev\/\?todo=5/);
   assert.match(JSON.stringify(taskMessage({ id: '5', title: 'Buy', kind: 'task', status: 'pending', priority: 'none', isOrder: true }, 'created', 'juan', 'https://k.dev')),
-    /Buy\*  ·  🛒.*\?todo=5/);
-  assert.match(JSON.stringify(claimMessage({ id: '9', category: 'Late check-in', severity: 'Low', status: 'Open' }, 'opened', 'juan', 'https://k.dev')), /Upsell · Portfolio.*\?claim=9/);
+    /New purchase\*\\n🛒.*\?todo=5/);
+  assert.match(JSON.stringify(claimMessage({ id: '9', category: 'Late check-in', severity: 'Low', status: 'Open' }, 'opened', 'juan', 'https://k.dev')), /New upsell · Portfolio\*\\nLate check-in.*\?claim=9/);
   assert.equal(threadLine('✓ Completed', 'juan').blocks.length, 1);
 });
 
