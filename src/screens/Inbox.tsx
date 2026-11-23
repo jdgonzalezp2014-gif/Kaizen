@@ -124,12 +124,12 @@ export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, 
             <button type="button" className={`ix-row ${openId === r.conversationId ? 'on' : ''} ${waits(r) ? 'wait' : ''}`} onClick={() => pick(r.conversationId)}>
               <Avatar row={r} />
               <span className="ix-row-main">
-                <span className="ix-row-top"><b>{r.guest}</b><time>{shortWhen(r.lastAt)}</time></span>
+                <span className="ix-row-top"><span className="ix-row-name"><b>{r.guest}</b>{!!r.pending?.length && <span className="ix-pending" title={`Pending: ${r.pending.join(' · ')}`}
+                  aria-label={`${r.pending.length} pending: ${r.pending.join(', ')}`}><Icon n="alert" />{r.pending.length > 1 ? r.pending.length : ''}</span>}</span><time>{shortWhen(r.lastAt)}</time></span>
                 <span className="ix-row-sub">{r.listing} · {range(r.arrival, r.departure)}</span>
                 <span className="ix-row-prev">{waits(r) && <span className="ix-dot" aria-label="Needs reply" />}{waits(r) && r.drafted && <span className="ix-drafted" title="A reply is drafted" aria-label="Reply drafted"><Icon n="sparkles" /></span>}{r.issue && <span className="ix-issue" title={`Bad experience: ${typeof r.issue === 'string' ? r.issue : 'on record'}`} aria-label="Bad experience on record"><Icon n="alert" /></span>}{r.preview || 'No messages yet'}</span>
               </span>
-              {(r.tasks > 0 || r.scheduled > 0) && <span className="ix-row-badges">
-                {r.tasks > 0 && <span className="hot" title={`${r.tasks} open to-do${r.tasks === 1 ? '' : 's'} — still to do`}><Icon n="alert" />{r.tasks}</span>}
+              {r.scheduled > 0 && <span className="ix-row-badges">
                 {r.scheduled > 0 && <span title={`${r.scheduled} message${r.scheduled === 1 ? '' : 's'} waiting to go`}><Icon n="clock" />{r.scheduled}</span>}
               </span>}
             </button>
@@ -355,8 +355,9 @@ function Composer({ row, channel, via, list, portalLink, draft, canSend, onSent 
           <option value="">Template…</option>
           {templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
         </select>}
-        {channel === 'hostaway' && list.aiMode === 'suggest' && <button type="button" className="ix-ghost" disabled={busy !== ''} onClick={() => void suggest()}>
-          <Icon n="sparkles" /> {busy === 'ai' ? 'Thinking…' : 'Suggest'}</button>}
+        {channel === 'hostaway' && list.aiMode === 'suggest' && <button type="button" className={`ix-ghost ix-icon-btn ${busy === 'ai' ? 'busy' : ''}`} disabled={busy !== ''} onClick={() => void suggest()}
+          aria-label={busy === 'ai' ? 'Writing a suggestion…' : 'Suggest a reply with AI'} title={busy === 'ai' ? 'Writing a suggestion…' : 'Suggest a reply with AI'}>
+          <Icon n="sparkles" /></button>}
         <button type="button" className={`ix-ghost ${scheduling ? 'on' : ''}`} aria-pressed={scheduling} onClick={() => setScheduling(v => !v)}><Icon n="clock" /> Later</button>
         {scheduling && <input type="datetime-local" className="ix-when" value={when} aria-label="Send at (your time)" title="Send at (your time)" onChange={e => setWhen(e.target.value)} />}
         <span className="ix-grow" />
@@ -601,7 +602,7 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
         {thread && !claims.length && <p className="note">None for this stay.</p>}
       </Fold>}
 
-      {row.reservationId && (canClaims || canSend) && <Fold title="Upselling" count={upsells.filter(c => !closedCase(c.status)).length} onAdd={canClaims ? () => open('upsell') : undefined} addLabel="Add an upsell"
+      {row.reservationId && (canClaims || canSend) && <Fold title="Upselling" urgent count={upsells.filter(c => !closedCase(c.status)).length} onAdd={canClaims ? () => open('upsell') : undefined} addLabel="Add an upsell"
         hint={<>What this guest pays on top (pet fee, early check-in, late checkout…) — cases in Claims &amp; upselling, counted in Revenue once the money is
           entered as received. The + goes on to <b>charge the guest</b>: a card pay link (the guest also sees it on their stay page), or on Airbnb the
           Resolution Center; Kaizen sets the nights or the hour up in Hostaway once it is paid. <b>Extend stay</b>

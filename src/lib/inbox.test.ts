@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aiPrompt, condMet, RECIPES, portalLines, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, senderName, planFor,
+import { aiPrompt, condMet, RECIPES, portalLines, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, senderName, pendingOf, caseLine, planFor,
   portalLink, stageOf, stayWindow, suggestionFromAi, varsFor, whenWords, zonedInstant, type InboxRow, type Stay, type Template, type ThreadMsg, bookingLinks, condWords, condsOf, paidOf, signedOf } from './inbox.ts';
 
 const stay: Stay = { reservationId: '71', listingId: '9', listing: 'P2-1406', guest: 'Ana Ruiz', arrival: '2026-11-20', departure: '2026-11-23', status: 'new', bookedAt: '2026-11-10T15:00:00Z' };
@@ -281,4 +281,10 @@ test('an Airbnb guest gets a profile link (their reviews from hosts); other chan
   assert.equal(bookingLinks({ ...r, guestAccount: '123456789' }).profile, 'https://www.airbnb.com/users/show/123456789');
   assert.equal(bookingLinks({ ...r, guestAccount: 'x/../1' }).profile, null);
   assert.equal(bookingLinks({ ...r, channel: 'homeaway', guestAccount: '123456789' }).profile, null);
+});
+
+test('pendingOf: to-dos, then claims and unpaid charges, one line each', () => {
+  assert.deepEqual(pendingOf(0, []), []);
+  assert.deepEqual(pendingOf(2, [caseLine({ category: 'Early check-in', requested: 20 }), caseLine({ category: 'Damage', requested: null })]),
+    ['2 open to-dos', 'Early check-in $20 — not paid yet', 'Claim open: Damage']);
 });

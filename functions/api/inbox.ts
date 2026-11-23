@@ -25,7 +25,7 @@ import { quoThread } from '../_lib/quo.ts';
 import { fetchCalendar } from '../_lib/hostaway.ts';
 import { calendarFit } from '../../src/lib/guest-portal.ts';
 import { todayIn } from '../../src/lib/dates.ts';
-import { HOUSE_VARS, MAX_BODY, isVia, maskPhone, mergeThread, planFor, senderName, type Channel, type InboxRow } from '../../src/lib/inbox.ts';
+import { HOUSE_VARS, MAX_BODY, isVia, maskPhone, mergeThread, pendingOf, caseLine, planFor, senderName, type Channel, type InboxRow } from '../../src/lib/inbox.ts';
 
 const ID = /^\d{1,20}$/;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -144,7 +144,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     }
 
     const offset = Math.max(0, Math.min(2000, Number(q.get('offset')) || 0));
-    const [convs, units, tasks, waiting, templates, live, ai, acct, events, drafts, issues] = await Promise.all([
+    const canClaims = can((await accessOf(sql, who)).permissions, 'claims');
+    const [convs, units, tasks, waiting, templates, live, ai, acct, events, drafts, issues, cases] = await Promise.all([
       fetchConversations(creds, 50, offset),
       sql`SELECT id::text AS id, name FROM units WHERE account_id = 1` as Promise<{ id: string; name: string }[]>,
       sql`SELECT reservation_id AS id, count(*)::int AS n FROM todos
@@ -162,6 +163,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
             AND draft ? 'reply' AND created_at > now() - interval '7 days'` as Promise<{ id: string }[]>).catch(() => []),
       // Bad experiences on record (migration 124; empty without it) — the row's mark and the "Bad experience" filter.
       (sql`SELECT reservation_id AS id, why FROM guest_issues WHERE account_id = 1 AND cleared_at IS NULL` as Promise<{ id: string; why: string }[]>).catch(() => []),
+      // Open claims and upsell charges (owner, 2026-11-23: an Airbnb charge or a Stripe link not paid yet is pending, beside the name).
+      canClaims ? (sql`SELECT reservation_id AS id, category, requested::float AS requested FROM claims
+                        WHERE account_id = 1 AND deleted_at IS NULL AND reservation_id IS NOT NULL
+                          AND status !~* '^(resolved|paid|dismissed|closed)$'` as Promise<{ id: string; category: string | null; requested: number | null }[]>).catch(() => []) : [],
     ]);
     const issueOf = new Map(issues.map(i => [i.id, i.why]));
     const drafted = new Set(drafts.map(d => d.id));
@@ -176,9 +181,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     if (answered.length) await sql`UPDATE guest_events SET answered_at = now() WHERE account_id = 1 AND kind = 'message' AND answered_at IS NULL AND conversation_id = ANY(${answered})`.catch(() => {});
     const names = new Map(units.map(u => [u.id, u.name]));
     const nTasks = new Map(tasks.map(t => [t.id, t.n])), nWait = new Map(waiting.map(t => [t.id, t.n]));
+    const casesOf = new Map<string, string[]>();
+    for (const c of cases) casesOf.set(c.id, [...casesOf.get(c.id) ?? [], caseLine(c)]);
     const rows: InboxRow[] = convs.map(({ phone: _phone, type: _type, ...c }) => ({
       ...c, listing: (c.listingId && names.get(c.listingId)) || c.listing || 'Unknown listing',
       tasks: nTasks.get(c.reservationId) ?? 0, scheduled: nWait.get(c.reservationId) ?? 0, noReply: quiet(c), drafted: drafted.has(c.conversationId), issue: issueOf.get(c.reservationId) ?? null,
+      pending: pendingOf(nTasks.get(c.reservationId) ?? 0, casesOf.get(c.reservationId) ?? []),
     }));
     return json({ ok: true, rows, today, more: convs.length === 50, live, aiMode: ai.mode, quo: acct[0]?.quo === true, templates });
   } catch (e) {

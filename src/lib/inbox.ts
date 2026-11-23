@@ -11,6 +11,7 @@
 import { addDays, type DateStr } from './dates.ts';
 import type { GuestGuide } from './guest-portal.ts';
 import type { SopDoc } from './slack-sops.ts';
+import { isUpsell } from './claims.ts';
 
 export type Channel = 'hostaway' | 'sms';
 /** How a Hostaway message travels when a person chose: on the booking channel's own thread, or as an email to the guest. */
@@ -98,6 +99,8 @@ export interface InboxRow extends Stay {
   unread: boolean; lastAt: string | null; lastIncoming: boolean; preview: string;
   /** Open to-dos tied to this stay, and messages waiting to go. */
   tasks: number; scheduled: number;
+  /** What is still open for this stay — to-dos, claims, charges not paid — one line each (the mark beside the guest's name). */
+  pending?: string[];
   /** What the guest has done so far, as Hostaway reports it: "Paid", "signed", ID checked. Kaizen's own portal reports here once it is live. */
   payment?: string | null; agreement?: string | null; idVerified?: boolean;
   /** Hostaway has an email address for this guest (the address itself stays on the server). */
@@ -176,6 +179,16 @@ export function mergeThread(channel: ThreadMsg[], outbox: ThreadMsg[]): ThreadMs
   const named = channel.map(c => c.incoming || c.by ? c : { ...c, by: sent.find(o => same(c.body, o.body))?.by ?? null });
   return [...named, ...extra].sort((a, b) => a.at < b.at ? -1 : a.at > b.at ? 1 : 0);
 }
+
+/** An open claim or upsell as the list's pending mark says it: an upsell is a charge the guest has not paid yet. */
+export const caseLine = (c: { category: string | null; requested: number | null }) => {
+  const money = c.requested && c.requested > 0 ? ` $${Math.round(c.requested)}` : '';
+  return isUpsell(c.category) ? `${c.category}${money} — not paid yet` : `Claim open${c.category ? `: ${c.category}` : ''}${money}`;
+};
+
+/** Everything still open for a stay, one line each (owner, 2026-11-23): to-dos first, then claims and charges. */
+export const pendingOf = (tasks: number, cases: string[]) =>
+  [...tasks > 0 ? [`${tasks} open to-do${tasks === 1 ? '' : 's'}`] : [], ...cases];
 
 /** A sender as the thread shows it: a person's first name (Hostaway's team, by email), else the address's name part. */
 export const senderName = (by: string | null | undefined, names: Map<string, string>) =>
