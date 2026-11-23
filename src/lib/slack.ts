@@ -238,10 +238,12 @@ export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: str
   // Owner, 2026-11-23: the title in bold and what it is, where — status, priority and who are seen when it is opened.
   // A closed one says so, so an old message is not taken for open work.
   const closed = t.status === 'completed' || t.status === 'cancelled' ? stageWord(t.status) : '';
-  const line = [plainWhat(t), t.unit ? esc(t.unit) : '', closed].filter(Boolean).join(' · ');
+  // A purchase: ▣ already says it — no "Purchase order" word, no "Buy supplies:" before the title.
+  const line = [t.isOrder ? '' : plainWhat(t), t.unit ? esc(t.unit) : '', closed].filter(Boolean).join(' · ');
+  const title = t.isOrder ? t.title.replace(/^buy supplies:\s*/i, '') : t.title;
   return {
     text: `${plainWhat(t)} ${event}: ${t.title}`,
-    blocks: [section(`${taskMark(t)}  *${esc(t.title)}*\n${line}`, toolFor(appUrl, 'todo', t.id)), DIVIDER]
+    blocks: [section(`${taskMark(t)}  *${esc(title)}*${line ? `\n${line}` : ''}`, toolFor(appUrl, 'todo', t.id)), DIVIDER]
   };
 }
 
