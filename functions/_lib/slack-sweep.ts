@@ -11,11 +11,41 @@
  */
 import type { SqlFn } from './accounts.ts';
 import { slackApi, type SlackSetup } from './slack.ts';
-import { dayRange, daySummary, sweepKind } from '../../src/lib/slack.ts';
+import { dayRange, daySummary, sweepKind, type DayStats } from '../../src/lib/slack.ts';
+import { getCredentials } from './accounts.ts';
+import { fetchListings, fetchReservationsTouching } from './hostaway.ts';
+import { occupancyByDay } from '../../src/lib/analytics.ts';
+import { guestPaymentsBetween } from './guest-payments.ts';
+import { portalIncome } from '../../src/lib/guest-payments.ts';
+
+/**
+ * The day in numbers for its summary (owner, 2026-11-23): occupancy that night — Analytics' rule (a stay covers the night,
+ * over the listings taking bookings: active and not parked) — and the upsells paid that day: upsell charges settled, plus
+ * the extras guests paid on their portal. A part that cannot be read is left out, never guessed.
+ */
+export async function dayStats(sql: SqlFn, ek: string, day: string, from: string, to: string): Promise<DayStats | null> {
+  const [occ, charges, portal] = await Promise.all([
+    (async () => {
+      const creds = await getCredentials(sql, ek);
+      const [listings, stays, parked] = await Promise.all([fetchListings(creds), fetchReservationsTouching(creds, day, day),
+        sql`SELECT id FROM units WHERE account_id = 1 AND parked = TRUE` as Promise<{ id: string }[]>]);
+      const off = new Set(parked.map(p => String(p.id)));
+      const live = listings.filter(l => l.active && !off.has(l.listingId)).map(l => l.listingId);
+      return occupancyByDay(stays.map(s => ({ ...s, reservationId: s.reservationId })) as never, live, day, day)[0] ?? null;
+    })().catch(() => null),
+    (sql`SELECT count(*)::int AS n, COALESCE(sum(amount), 0)::float8 AS total FROM upsell_charges
+          WHERE account_id = 1 AND status = 'paid' AND paid_at >= ${from} AND paid_at < ${to}` as Promise<{ n: number; total: number }[]>).catch(() => null),
+    guestPaymentsBetween(sql, day, day).then(portalIncome).catch(() => null)
+  ]);
+  if (!occ && !charges && !portal) return null;
+  const c = charges?.[0] ?? { n: 0, total: 0 };
+  return { occupied: occ?.occupied ?? 0, units: occ?.units ?? 0,
+           upsells: c.n + (portal?.length ?? 0), upsellAmount: c.total + (portal ?? []).reduce((a, p) => a + p.amount, 0) };
+}
 
 type Msg = { ts: string; text?: string; bot_id?: string; user?: string; reply_count?: number; reply_users?: string[] };
 
-export async function sweepDay(sql: SqlFn, s: SlackSetup, day: string, tz: string, budget = 38): Promise<{ deleted: number; kept: number; left: number; summary: boolean }> {
+export async function sweepDay(sql: SqlFn, s: SlackSetup, day: string, tz: string, budget = 38, ek?: string): Promise<{ deleted: number; kept: number; left: number; summary: boolean }> {
   const out = { deleted: 0, kept: 0, left: 0, summary: false };
   const token = s.token;
   const channels = [...new Set(['tasks', 'claims', 'reservations', 'escalations'].map(k => s.config.channels?.[k as 'tasks']?.id).filter((x): x is string => !!x))];
@@ -51,8 +81,11 @@ export async function sweepDay(sql: SqlFn, s: SlackSetup, day: string, tz: strin
     const go = mine.filter(m => !sticky(m));
     out.kept += mine.length - go.length;
     // The day's summary first, once, from everything Kaizen said that day (in the first channel that had any).
-    if (!summarised && !out.summary && mine.length) {
-      const m = daySummary(day, mine.map(x => x.text ?? '').map(sweepKind).filter((x): x is NonNullable<ReturnType<typeof sweepKind>> => !!x));
+    if (!summarised && !out.summary && ch === channels[0]) {
+      // Hostaway's listings and stays, the charges and the portal: ~6 subrequests, counted.
+      const stats = ek ? await dayStats(sql, ek, day, new Date(Number(from) * 1000).toISOString(), new Date(Number(to) * 1000).toISOString()) : null;
+      calls += ek ? 6 : 0;
+      const m = daySummary(day, mine.map(x => x.text ?? '').map(sweepKind).filter((x): x is NonNullable<ReturnType<typeof sweepKind>> => !!x), stats);
       if (m) {
         const p = await slackApi<{ ts?: string }>(token, 'chat.postMessage', { channel: ch, text: m.text, blocks: m.blocks, unfurl_links: false });
         calls++;

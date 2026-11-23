@@ -959,9 +959,12 @@ export function sweepKind(text: string): { kind: SweepKind; line: string } | nul
 
 const SWEEP_WORD: Record<SweepKind, [string, string]> = { repair: ['repair', 'repairs'], todo: ['to-do', 'to-dos'], purchase: ['purchase', 'purchases'],
   claim: ['claim', 'claims'], upsell: ['upsell', 'upsells'], guest: ['guest alert', 'guest alerts'], checkin: ['check-in list', 'check-in lists'], other: ['other', 'other'] };
-/** The one message a day leaves behind: the day, how many of each, ↗-free; the lines in its thread. Nothing said = null. */
-export function daySummary(dayStr: string, items: { kind: SweepKind; line: string }[]): { text: string; blocks: Block[]; details: { text: string; blocks: Block[] } } | null {
-  if (!items.length) return null;
+/** The day in numbers (owner, 2026-11-23): occupancy that night and the upsells paid that day. */
+export interface DayStats { occupied: number; units: number; upsells: number; upsellAmount: number }
+const usd0 = (n: number) => `$${Math.round(n).toLocaleString('en-US')}`;
+/** The one message a day leaves behind: the day, occupancy and upsells, how many of each message; the lines in its thread. */
+export function daySummary(dayStr: string, items: { kind: SweepKind; line: string }[], stats?: DayStats | null): { text: string; blocks: Block[]; details: { text: string; blocks: Block[] } } | null {
+  if (!items.length && !stats) return null;
   const n = new Map<SweepKind, number>();
   for (const i of items) n.set(i.kind, (n.get(i.kind) ?? 0) + 1);
   const order: SweepKind[] = ['repair', 'todo', 'purchase', 'claim', 'upsell', 'guest', 'checkin', 'other'];
@@ -969,8 +972,11 @@ export function daySummary(dayStr: string, items: { kind: SweepKind; line: strin
   const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${dayStr}T12:00:00Z`).getUTCDay()];
   const head = `${wd}, ${day(dayStr)}`;
   const list = items.slice(0, 60).map(i => `• ${esc(i.line)}`).join('\n') + (items.length > 60 ? `\n…and ${items.length - 60} more` : '');
-  return { text: `${head}: ${counts}`, blocks: [section(`◷  *${head}*\n${counts}`), DIVIDER],
-           details: { text: `${head} — what Kaizen said`, blocks: [section(list)] } };
+  const numbers = stats ? [stats.units ? `${Math.round(100 * stats.occupied / stats.units)}% occupied (${stats.occupied}/${stats.units})` : '',
+                           `${stats.upsells} upsell${stats.upsells === 1 ? '' : 's'}${stats.upsells ? ` · ${usd0(stats.upsellAmount)}` : ''}`].filter(Boolean).join(' · ') : '';
+  const lines = [numbers, counts].filter(Boolean).join('\n');
+  return { text: `${head}: ${[numbers, counts].filter(Boolean).join(' · ')}`, blocks: [section(`◷  *${head}*\n${lines}`), DIVIDER],
+           details: { text: `${head} — what Kaizen said`, blocks: [section(list || '_Kaizen said nothing else that day._')] } };
 }
 
 /** A local day as UTC instants [start, end) — for "closed today", "opened today". */

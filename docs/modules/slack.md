@@ -49,7 +49,9 @@ payment). DMs follow it too (`tellOwner`, the overdue nudge). New messages must 
   alert…", the lines in its thread; `slack_sent` `daysum:<day>:<ts>`) and takes down its own messages of the day (their own
   replies first). Kept: open work's messages, any message a person replied to, the cleans thread, summaries. ≤38 subrequests a
   pass; `sweepdone:<day>` when nothing is left. A guest alert whose earlier message was swept gets a fresh one.
-  One-time clean of #kaizen-ops the same day (`.x-clean.mjs`, run by hand): 321 Kaizen messages + 583 replies, open work
+  The summary's numbers (`dayStats`): occupancy that night (Analytics' rule: active, not parked listings) and the upsells paid
+  that day (upsell_charges paid + portal extras), e.g. "96% occupied (22/23) · 1 upsell · $20".
+  One-time clean of #kaizen-ops on 2026-11-23 (a one-off script, removed): 321 Kaizen messages + 583 replies; open work
   (16 tasks, 3 claims) posted again in the new format.
 
 ## What it does

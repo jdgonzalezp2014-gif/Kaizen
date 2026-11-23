@@ -512,4 +512,6 @@ test("the night's sweep: when, what each message was, and the one summary the da
   assert.match((s!.blocks[0] as { text: { text: string } }).text.text, /◷  \*Mon, Nov 23\*\n2 repairs · 1 guest alert$/);
   assert.match(JSON.stringify(s!.details), /• New repair · A: x/);
   assert.equal(daySummary('2026-11-23', []), null);
+  const w = daySummary('2026-11-23', [], { occupied: 18, units: 22, upsells: 3, upsellAmount: 115 });
+  assert.match((w!.blocks[0] as { text: { text: string } }).text.text, /\*Mon, Nov 23\*\n82% occupied \(18\/22\) · 3 upsells · \$115$/);
 });

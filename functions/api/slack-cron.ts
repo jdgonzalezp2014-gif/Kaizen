@@ -240,7 +240,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const sweepFor = sweepDue(localNow(teamTz(s.config)));
   if (notes === null && sweepFor && !(await sql`SELECT 1 FROM slack_sent WHERE account_id = 1 AND key = ${`sweepdone:${sweepFor}`}`).length) {
     try {
-      const r = await sweepDay(sql, s, sweepFor, teamTz(s.config));
+      const r = await sweepDay(sql, s, sweepFor, teamTz(s.config), 38, env.ENCRYPTION_KEY);
       if (!r.left) await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`sweepdone:${sweepFor}`}) ON CONFLICT DO NOTHING`;
       return Response.json({ ok: true, sent: out, nudged, hour, sweep: { day: sweepFor, ...r } });
     } catch (e) {
