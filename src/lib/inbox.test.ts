@@ -80,9 +80,9 @@ test('one timeline: the channel\'s copy of a sent message wins, staged and sched
 });
 
 test('the AI settings are made whole; "auto" does not exist yet', () => {
-  assert.deepEqual(guestAiFrom(null), { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true });
+  assert.deepEqual(guestAiFrom(null), { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true, autoCheckin: true });
   assert.deepEqual(guestAiFrom({ mode: 'auto', provider: 'gemini', model: 'bad model!', instructions: ' be kind ' }),
-    { mode: 'suggest', provider: 'gemini', model: 'gemini-3.6-flash', instructions: 'be kind', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true });
+    { mode: 'suggest', provider: 'gemini', model: 'gemini-3.6-flash', instructions: 'be kind', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true, autoCheckin: true });
   assert.equal(guestAiFrom({ autoDraft: false, oldPortalNotice: false }).autoDraft, false);
   assert.equal(guestAiFrom({ autoDraft: false, oldPortalNotice: false }).portalFirst, true);
 });

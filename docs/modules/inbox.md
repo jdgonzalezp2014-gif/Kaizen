@@ -57,7 +57,7 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
 - The list's preview of a Hostaway automated message is the raw template; the guest got it filled (`plain()` fills the
   name for the row). Hostaway's dates are UTC.
 - The guest's phone never reaches the browser: masked in the stay panel, resolved on the server for SMS.
-- **The AI drafts, a person sends.** It asks exactly the provider + model in `accounts.guest_ai` (no chain), with the
+- **The AI drafts, a person sends** — one exception, urgent check-in (below). It asks exactly the provider + model in `accounts.guest_ai` (no chain), with the
   account's own key. A low-confidence answer is a handoff. Conversation text is treated as the guest speaking, never as
   instructions. Claude Opus/Sonnet 5.5 calls carry `fallbacks: "default"`. What it reads — see "The guest AI" below.
 - The portal link is `accounts.guest_portal_url` + `/guest/<reservation>.<sig>` (`signGuest`, HMAC with
@@ -145,6 +145,14 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   are not held behind the online check-in (Wi-Fi/address answered). After the check-in: the draft gives the check-in instructions, the
   code stays in the portal. **Failed drafts retry** (`RETRY_DRAFT`: 3 tries, 20 min apart, `tries` on the draft, only while waiting, 6 h).
   **Slack's reminder** (`watchMessage` `draft`) says "A reply is drafted in the CRM" or why the AI could not draft. SOP #43: `.sop-draft-1123.mjs` after deploy.
+- **Urgent check-in = the AI solves it (owner, 2026-11-23: "unless it is beyond its control").** Triage has `checkin` (getting in: code,
+  entry, finding the unit, arrival parking, the online check-in). `urgent && checkin` + open stay + `guest_ai.autoCheckin` (unset = on; Settings box
+  "Answer urgent check-in problems on its own") + guest messages live → `solveCheckin` (guest-events.ts) instead of the instant alert: forced draft →
+  `checkinAutoSend` gate (no handoff, confidence high, blanks filled via `varsFor` + `portalFor`, thread re-read: still waiting) → a `guest_messages`
+  row (`source` manual, `created_by` 'Kaizen AI', not retried by the clock) → `deliver` → Slack `solvedMessage` (what was sent). Fails any gate →
+  nothing sent, the urgent alert with "not answered by the AI: <why>" and the draft's state. Beyond control (code/lock fails after the steps, battery,
+  broken lockbox/call box, unit not ready, someone inside, safety) = handoff in the prompt. Triage checked on real-like texts (gemini-3.5-flash-lite).
+  **Never run end to end** — the Claude key is refused; watch the first one.
 - ⚠ The stay link `/guest/<id>.<sig>` still shows only Pending payments (Phase 2): a guest sent there today cannot do the check-in.
 
 ## Not verified yet (no way to without a real guest or a key)

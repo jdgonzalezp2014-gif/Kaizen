@@ -14,13 +14,13 @@
 import { getCredentials, type SqlFn } from './accounts.ts';
 import { askJson } from './ai-chain.ts';
 import type { Env } from './db.ts';
-import { fireStay, GUEST_TZ } from './guest-outbox.ts';
+import { deliver, fireStay, guestLive, portalFor, GUEST_TZ } from './guest-outbox.ts';
 import { fetchConversation, fetchMessages } from './hostaway-messages.ts';
 import { postTo, slackSetup } from './slack.ts';
 import { readGuestAi, suggestFor } from './guest-ai.ts';
 import { todayIn } from '../../src/lib/dates.ts';
-import { STAGE_LABEL, awaitingReply, preview, stageOf } from '../../src/lib/inbox.ts';
-import { eventFrom, stayOpen, toCheck, triageFrom, triagePrompt, watchFrom, watchMessage, type GuestWatch, type OpenEvent, type Triage } from '../../src/lib/guest-watch.ts';
+import { STAGE_LABEL, awaitingReply, fill, preview, stageOf, varsFor } from '../../src/lib/inbox.ts';
+import { checkinAutoSend, eventFrom, solvedMessage, stayOpen, toCheck, triageFrom, triagePrompt, watchFrom, watchMessage, type GuestWatch, type OpenEvent, type Triage } from '../../src/lib/guest-watch.ts';
 
 export async function readWatch(sql: SqlFn): Promise<GuestWatch> {
   const rows = await (sql`SELECT guest_watch FROM accounts WHERE id = 1` as Promise<{ guest_watch: unknown }[]>).catch(() => []);
@@ -86,7 +86,9 @@ export async function takeEvent(sql: SqlFn, env: Env, payload: unknown, origin: 
   const watch = await readWatch(sql);
   const open = !conv || stayOpen(conv.departure, conv.status, today);
   let told = false;
-  if (t.urgent && watch.watch && open) {
+  // Owner, 2026-11-23: an urgent check-in message is first given to the AI to solve; the alert waits for its verdict (solveCheckin).
+  const solving = t.urgent && t.checkin && open && !!conv && (await readGuestAi(sql)).autoCheckin && await guestLive(sql);
+  if (t.urgent && watch.watch && open && !solving) {
     told = await tellTeam(sql, env, watchMessage({ guest: conv?.guest ?? 'A guest', listing, stage, body, minutes: 0, urgent: true, why: t.why, link: inboxLink(origin, conversationId) }));
   }
   await sql`UPDATE guest_events SET guest = ${conv?.guest ?? null}, reservation_id = COALESCE(reservation_id, ${conv?.reservationId || null}),
@@ -97,7 +99,8 @@ export async function takeEvent(sql: SqlFn, env: Env, payload: unknown, origin: 
   // Owner, 2026-11-23: the reply is drafted now, so it is waiting in the Inbox when someone opens the conversation.
   // Only when an answer is needed (no triage = needed) and the stay is still open.
   if ((by ? t.needsReply : true) && open) {
-    const job = draftEvent(sql, env, row.id, conversationId).catch(() => null);
+    const job = (solving ? solveCheckin(sql, env, { eventId: row.id, conversationId, conv: conv!, t, listing, stage, body, link: inboxLink(origin, conversationId), watch })
+      : draftEvent(sql, env, row.id, conversationId)).catch(() => null);
     if (defer) defer(job); else await job;
   }
   return { ok: true, took: 'message', waiting: t.needsReply, urgent: t.urgent, told, by };
@@ -157,9 +160,9 @@ const RETRY_DRAFT = { tries: 3, minutes: 20 };
  * Inbox to send or dismiss; never sent from here (owner: "a draft that can be sent or not", 2026-11-23). An error is kept
  * too, so a failing model is not asked again every pass. Off when the account's AI or "Draft on arrival" is off.
  */
-export async function draftEvent(sql: SqlFn, env: Env, eventId: string, conversationId: string, retry = false): Promise<EventDraft | null> {
+export async function draftEvent(sql: SqlFn, env: Env, eventId: string, conversationId: string, retry = false, force = false): Promise<EventDraft | null> {
   const cfg = await readGuestAi(sql);
-  if (cfg.mode === 'off' || !cfg.autoDraft) return null;
+  if (cfg.mode === 'off' || (!cfg.autoDraft && !force)) return null;
   // Claim it first: the webhook and the clock's catch-up must not both pay for the same draft.
   // A failed draft is tried again (RETRY_DRAFT) — 2026-11-23 the first real one died on a refused Claude key, and once the key
   // is fixed the guests still waiting should get theirs. `tries` rides on the pending claim so the count survives it.
@@ -172,6 +175,48 @@ export async function draftEvent(sql: SqlFn, env: Env, eventId: string, conversa
   const draft: EventDraft = r.ok ? { ...r.suggestion, by: r.by, sops: r.sops, at } : { error: r.error.slice(0, 300), at, tries: (claimed[0]?.tries ?? 0) + 1 };
   await sql`UPDATE guest_events SET draft = ${JSON.stringify(draft)}::jsonb WHERE id = ${eventId}`;
   return draft;
+}
+
+type Conv = NonNullable<Awaited<ReturnType<typeof fetchConversation>>>;
+
+/**
+ * An urgent check-in message (owner, 2026-11-23: "let it solve it, unless it is beyond its control"): the AI drafts, and if
+ * `checkinAutoSend` passes — no handoff, high confidence, every blank filled, nobody answered meanwhile, guest messages live —
+ * the reply goes out through the outbox like any typed one (a row first, `deliver`), and Slack gets one line of what was sent.
+ * Anything else: nothing is sent and the team gets the urgent alert, with the reason.
+ */
+async function solveCheckin(sql: SqlFn, env: Env, a: { eventId: string; conversationId: string; conv: Conv; t: Triage; listing: string; stage: string; body: string; link: string; watch: GuestWatch }) {
+  const d = await draftEvent(sql, env, a.eventId, a.conversationId, false, true);
+  const draft = d && !('error' in d) ? d : null;
+  let filled = { text: '', missing: [] as string[] }, waiting = false;
+  if (draft) {
+    const link = a.conv.reservationId ? await portalFor(sql, env.ENCRYPTION_KEY, a.conv.reservationId) : null;
+    filled = fill(draft.reply, varsFor(a.conv, link));
+    // The draft took seconds: a person may have answered from Hostaway meanwhile.
+    const thread = await fetchMessages(await getCredentials(sql, env.ENCRYPTION_KEY), a.conversationId, 12).catch(() => null);
+    waiting = !!thread && awaitingReply(thread);
+  }
+  const gate = checkinAutoSend({ triage: a.t, draft, enabled: true, live: true, stillWaiting: waiting, blanks: filled.missing });
+  let why = gate.send ? '' : gate.why;
+  if (gate.send) {
+    const [row] = await sql`INSERT INTO guest_messages (account_id, reservation_id, conversation_id, listing_id, channel, body, status, send_at, source, ai_draft, created_by)
+                            VALUES (1, ${a.conv.reservationId}, ${a.conversationId}, ${a.conv.listingId ?? null}, 'hostaway', ${filled.text}, 'scheduled', now(), 'manual', ${draft!.reply}, 'Kaizen AI')
+                            RETURNING id::text AS id` as { id: string }[];
+    // 'manual': a failed one is not retried later by the clock — a late answer to "I am at the door" helps nobody.
+    const r = await deliver(sql, env, { id: row!.id, reservation_id: a.conv.reservationId, conversation_id: a.conversationId, channel: 'hostaway', body: filled.text, attempts: 0, source: 'manual' });
+    if (r.status === 'sent') {
+      if (a.watch.watch) await tellTeam(sql, env, solvedMessage({ guest: a.conv.guest ?? 'A guest', listing: a.listing, stage: a.stage, body: a.body, reply: filled.text, link: a.link }));
+      return { sent: true };
+    }
+    why = `sending failed: ${r.error ?? r.status}`;
+  }
+  if (a.watch.watch) {
+    const told = await tellTeam(sql, env, watchMessage({ guest: a.conv.guest ?? 'A guest', listing: a.listing, stage: a.stage, body: a.body, minutes: 0, urgent: true,
+      why: [a.t.why, `not answered by the AI: ${why}`].filter(Boolean).join(' · '), link: a.link,
+      draft: d ? ('error' in d ? { error: d.error } : { ready: true }) : null }));
+    if (told) await sql`UPDATE guest_events SET reminded_at = now() WHERE id = ${a.eventId}`;
+  }
+  return { sent: false, why };
 }
 
 /** The clock's catch-up: one waiting message with no draft yet (the webhook's draft failed to start or ran out of time). */

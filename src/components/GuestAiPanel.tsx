@@ -89,6 +89,10 @@ export function GuestAiPanel({ onSaved }: { onSaved?: (s: InboxSettings) => void
         <label className="check inline"><input type="checkbox" checked={ai.oldPortalNotice} onChange={e => setAi({ ...ai, oldPortalNotice: e.target.checked })} />
           Tell guests who used the old check-in <Hint>A guest who already signed the agreement or gave an ID in Hostaway's old portal is thanked, told we moved
             to a new online check-in, and asked to complete it once.</Hint></label>
+        <label className="check inline"><input type="checkbox" checked={ai.autoCheckin} onChange={e => setAi({ ...ai, autoCheckin: e.target.checked })} />
+          Answer urgent check-in problems on its own <Hint>When a guest is stuck getting in (where is the code, how to enter, cannot find the unit) and the
+            facts fully answer it, the AI sends the reply itself and Slack gets a line saying so. Beyond its control (the code does not work, a broken lock,
+            the unit not ready, someone inside) or not sure → nothing is sent and the team gets the urgent alert. Only while guest messages are live.</Hint></label>
         <div className="row"><button disabled={busy} onClick={() => void save({ ai })}>Save</button></div>
       </div>
       <div className="card">

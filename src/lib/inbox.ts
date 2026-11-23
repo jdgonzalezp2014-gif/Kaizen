@@ -403,13 +403,15 @@ export interface GuestAi {
   portalFirst: boolean;
   /** A guest who finished the old check-in (Hostaway's agreement / ID) is told the system changed and asked to do the new one once. */
   oldPortalNotice: boolean;
+  /** Owner, 2026-11-23: an urgent check-in message the AI can fully solve is SENT by it (only with guest messages live); otherwise the team is alerted. */
+  autoCheckin: boolean;
 }
 /** Suggestions for the model field — it is free text, so a newer model needs no deploy. */
 export const AI_MODELS: Record<AiProvider, string[]> = {
   claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
   gemini: ['gemini-3.6-flash', 'gemini-3.5-flash-lite'],
 };
-export const AI_DEFAULT: GuestAi = { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true };
+export const AI_DEFAULT: GuestAi = { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true, autoCheckin: true };
 export const MAX_BUSINESS = 6000;
 export const isModel = (m: string) => /^[\w.\-@/:]{3,80}$/.test(m);
 
@@ -423,7 +425,7 @@ export function guestAiFrom(j: unknown): GuestAi {
     instructions: typeof o.instructions === 'string' ? o.instructions.trim().slice(0, 2000) : '',
     business: typeof o.business === 'string' ? o.business.trim().slice(0, MAX_BUSINESS) : '',
     // Unset = on: what the owner asked for (2026-11-23); a saved false turns each one off.
-    autoDraft: o.autoDraft !== false, portalFirst: o.portalFirst !== false, oldPortalNotice: o.oldPortalNotice !== false,
+    autoDraft: o.autoDraft !== false, portalFirst: o.portalFirst !== false, oldPortalNotice: o.oldPortalNotice !== false, autoCheckin: o.autoCheckin !== false,
   };
 }
 
@@ -511,7 +513,12 @@ export function aiPrompt(a: {
     '- Distances, venues, restaurants: only from The neighborhood / Getting around. No figure there → say the team will confirm; do not estimate.',
     '- Booking approval, ID, rental agreement, online check-in: explain what is still pending in THIS BOOKING and that it is needed before the',
     '  arrival instructions. If the agreement or ID is pending and they ask how to get in, remind them of that step first.',
-    '- Upset guest, injury, police, threat, party, bad review threat, or anything urgent → handoff with a calm, short holding reply.',
+    '- A guest stuck getting in (where is the code, how do I enter, cannot find the unit / the building / the lockbox, parking on arrival, the online',
+    '  check-in): SOLVE IT yourself when the facts and the portal rules answer it — the exact steps from LISTING, or the online check-in link that',
+    '  releases them — handoff false, confidence high. Beyond your control → handoff: the code or lock does not work after following the steps, a dead',
+    '  lock battery, a broken key / lockbox / call box, the door will not open, the unit is not clean or not ready, someone is inside, a safety issue,',
+    '  or anything the facts do not cover. Never invent a code or a step.',
+    '- Upset guest, injury, police, threat, party, bad review threat, or anything else urgent → handoff with a calm, short holding reply.',
     '- Thanks / ok / goodbye: a one-line friendly close (a check-out thank-you may invite them to leave a review); handoff false.',
     '',
     'Hard rules:',
