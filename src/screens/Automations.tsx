@@ -184,7 +184,9 @@ function Editor({ t, units, live, busy, onClose, onSave, onDelete }: {
               the message is skipped for that stay. Payment, agreement and ID are what Hostaway reports; a payment Hostaway does not know (Expedia
               collects) and a booking without an agreement count as done — nobody is chased for them. The online check-in is Kaizen's own (the guest
               portal, or "Mark done" in the conversation). Hostaway's ID check was off on every stay seen on 2026-11-17 — until the
-              portal's own verification reports it, "ID verified" never holds.</Hint></legend>
+              portal's own verification reports it, "ID verified" never holds. <b>Stay length</b>: a monthly stay is 28 nights or more.
+              <b>Night after check-out</b> is read from the hourly calendar look; when Kaizen has not seen the calendar in the last day, the
+              message is skipped (no extension is offered on a guess).</Hint></legend>
             {COND_SUBJECTS.map(([k, label, no, yes]) => {
               const cur = e.conditions.find(c => c.startsWith(`${k}_`)) ?? '';
               return <label key={k}>{label}<select value={cur} onChange={x => {

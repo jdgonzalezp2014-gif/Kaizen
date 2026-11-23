@@ -288,3 +288,17 @@ test('pendingOf: to-dos, then claims and unpaid charges, one line each', () => {
   assert.deepEqual(pendingOf(2, [caseLine({ category: 'Early check-in', requested: 20 }), caseLine({ category: 'Damage', requested: null })]),
     ['2 open to-dos', 'Early check-in $20 — not paid yet', 'Claim open: Damage']);
 });
+
+test('mid-stay goes on the middle day at 10 AM; monthly and open-night conditions (owner, 2026-11-23)', () => {
+  const tz = 'America/Chicago';
+  const long = { ...stay, arrival: '2026-12-01', departure: '2026-12-31' } as typeof stay;
+  assert.equal(dueAt(tpl({ trigger: 'mid_stay', offsetHours: 0 }), long, tz)!.toISOString(), '2026-12-16T16:00:00.000Z');
+  assert.equal(whenWords(tpl({ trigger: 'mid_stay', offsetHours: 0 })), 'Mid-stay, 10 AM');
+  assert.equal(condMet('monthly_done', long), true);
+  assert.equal(condMet('monthly_done', { ...long, departure: '2026-12-20' }), false);
+  assert.equal(condMet('open_done', { ...stay, openAfter: true }), true);
+  assert.equal(condMet('open_done', { ...stay, openAfter: false }), false);
+  assert.equal(condMet('open_done', stay), false, 'calendar not seen = no offer');
+  // Messages read as people write them: no dashes.
+  for (const r of RECIPES) assert.ok(!/[—–]/.test(r.t.body), r.t.name);
+});

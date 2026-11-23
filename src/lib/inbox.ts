@@ -8,7 +8,7 @@
  * Kaizen would send is kept as "staged" beside what Hostaway really sent — the owner's rule (2026-11-15: messages must
  * never fail) is that Hostaway's automations stay on until this sender has been watched side by side.
  */
-import { addDays, type DateStr } from './dates.ts';
+import { addDays, daysBetween, type DateStr } from './dates.ts';
 import type { GuestGuide } from './guest-portal.ts';
 import type { SopDoc } from './slack-sops.ts';
 import { isUpsell } from './claims.ts';
@@ -38,6 +38,8 @@ export interface Stay {
   idVerified?: boolean;
   /** A bad experience is on record for this stay (`guest_issues`, migration 124) — the review ask is held. The list carries its why. */
   issue?: boolean | string | null;
+  /** The night of check-out is open on the listing's calendar (the hourly look, `calendar_watch`) — null = not known. */
+  openAfter?: boolean | null;
 }
 
 /**
@@ -221,10 +223,10 @@ export const awaitingReply = (msgs: ThreadMsg[]) => {
 
 // ───────────────────────── templates and schedules ─────────────────────────
 
-export type Trigger = 'manual' | 'booked' | 'checkin_done' | 'before_checkin' | 'after_checkin' | 'before_checkout' | 'after_checkout';
+export type Trigger = 'manual' | 'booked' | 'checkin_done' | 'before_checkin' | 'after_checkin' | 'mid_stay' | 'before_checkout' | 'after_checkout';
 export const TRIGGERS: [Trigger, string][] = [
   ['manual', 'Only when picked'], ['booked', 'After booking'], ['checkin_done', 'After online check-in'],
-  ['before_checkin', 'Before check-in'], ['after_checkin', 'After check-in'],
+  ['before_checkin', 'Before check-in'], ['after_checkin', 'After check-in'], ['mid_stay', 'Mid-stay'],
   ['before_checkout', 'Before check-out'], ['after_checkout', 'After check-out'],
 ];
 /** Triggers that count from something that happened (a booking, a finished online check-in), not from the stay's dates. */
@@ -235,7 +237,7 @@ export const isEvent = (t: Trigger) => t === 'booked' || t === 'checkin_done';
  * message is not needed, whenever that happens (a reminder stops by itself). "Done" is judged at the message's moment.
  * Stored in `message_templates.only_if` as a comma list ('' / 'always' = none) — the two older values are two of these.
  */
-export type CondSubject = 'checkin' | 'payment' | 'agreement' | 'id' | 'issue';
+export type CondSubject = 'checkin' | 'payment' | 'agreement' | 'id' | 'issue' | 'monthly' | 'open';
 export type Cond = `${CondSubject}_${'pending' | 'done'}`;
 export const COND_SUBJECTS: [CondSubject, string, string, string][] = [
   ['checkin', 'Online check-in', 'Not done', 'Done'],
@@ -244,8 +246,13 @@ export const COND_SUBJECTS: [CondSubject, string, string, string][] = [
   ['id', 'ID', 'Not verified', 'Verified'],
   // Owner, 2026-11-23: "no complaint" is a stopper like the others — a bad experience recorded at any time holds the message.
   ['issue', 'Bad experience', 'None', 'Recorded'],
+  // Owner, 2026-11-23: monthly stays get the mid-stay cleaning note; an open night after check-out gets the extension offer.
+  ['monthly', 'Stay length', 'Under 28 nights', '28 nights or more'],
+  ['open', 'Night after check-out', 'Booked / blocked', 'Open'],
 ];
-export const isCond = (v: unknown): v is Cond => typeof v === 'string' && /^(checkin|payment|agreement|id|issue)_(pending|done)$/.test(v);
+/** A monthly stay (owner): 28 nights or more — Airbnb's own monthly line. */
+export const MONTHLY_NIGHTS = 28;
+export const isCond = (v: unknown): v is Cond => typeof v === 'string' && /^(checkin|payment|agreement|id|issue|monthly|open)_(pending|done)$/.test(v);
 /** One per subject, in a fixed order — what is saved. */
 export const condsOf = (v: unknown): Cond[] => {
   const list = (Array.isArray(v) ? v : String(v ?? '').split(',')).map(x => String(x).trim()).filter(isCond);
@@ -254,13 +261,17 @@ export const condsOf = (v: unknown): Cond[] => {
 /** Is it so for this stay? An unknown payment or a booking without an agreement counts as done (never nagged, never held). */
 export function condMet(c: Cond, s: Stay): boolean {
   const [k, want] = c.split('_') as [CondSubject, 'pending' | 'done'];
-  const done = k === 'checkin' ? !!s.checkinDoneAt : k === 'payment' ? s.paid !== false : k === 'agreement' ? s.signed !== false : k === 'issue' ? !!s.issue : !!s.idVerified;
+  // An unknown calendar is neither open nor booked: no extension is offered on a guess.
+  if (k === 'open' && s.openAfter == null) return false;
+  const done = k === 'checkin' ? !!s.checkinDoneAt : k === 'payment' ? s.paid !== false : k === 'agreement' ? s.signed !== false : k === 'issue' ? !!s.issue
+    : k === 'monthly' ? !!s.arrival && !!s.departure && daysBetween(s.arrival, s.departure) >= MONTHLY_NIGHTS : k === 'open' ? !!s.openAfter : !!s.idVerified;
   return want === 'done' ? done : !done;
 }
 const COND_WORD: Record<Cond, string> = {
   checkin_pending: 'Check-in not done', checkin_done: 'Check-in done', payment_pending: 'Payment pending', payment_done: 'Paid',
   agreement_pending: 'Agreement not signed', agreement_done: 'Agreement signed', id_pending: 'ID not verified', id_done: 'ID verified',
   issue_pending: 'No bad experience', issue_done: 'Bad experience',
+  monthly_pending: 'Under 28 nights', monthly_done: 'Monthly stay', open_pending: 'Night after booked', open_done: 'Night after open',
 };
 /** "Check-in not done · Payment pending" — the automation's chip. */
 export const condWords = (cs: Cond[]) => cs.map(c => COND_WORD[c]).join(' · ');
@@ -319,20 +330,33 @@ export function fill(body: string, vars: Record<string, string>): { text: string
  * Starting points for the automations hosts ask for first (owner, 2026-11-16). Each opens in the editor PAUSED: the
  * words are the company's to make its own, and with sending on an active automation reaches guests by itself.
  */
+// Owner, 2026-11-23: short, calm, natural — no dashes, nothing that reads written by a machine.
 export const RECIPES: { key: string; icon: string; what: string; t: Omit<Template, 'id'> }[] = [
-  { key: 'code', icon: 'key', what: 'Sends the door code once the guest finishes the online check-in — never earlier than two days before arrival.',
-    t: { name: 'Door code after online check-in', channel: 'hostaway', trigger: 'checkin_done', offsetHours: 0, holdHours: 48, conditions: [], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, your online check-in is complete — thank you! Your door code for {{listing}} is {{door_code}}. It works from {{checkin_time}} on {{checkin}}.' } },
+  { key: 'welcome', icon: 'message', what: 'Right after booking: thanks, and the link to the stay details and the online check-in.',
+    t: { name: 'Welcome', channel: 'hostaway', trigger: 'booked', offsetHours: 0, holdHours: null, conditions: [], listingIds: null, active: false,
+      body: 'Hi {{first_name}}, thank you for booking with us! We are really glad you chose {{listing}}. You can find the details of your stay here, and please complete your online check-in when you have a moment: {{portal_link}}' } },
   { key: 'remind', icon: 'bell', what: 'Two days before arrival, only to guests who have not done the online check-in yet.',
     t: { name: 'Online check-in reminder', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 48, holdHours: null, conditions: ['checkin_pending'], listingIds: null, active: false,
       body: 'Hi {{first_name}}, your stay at {{listing}} starts {{checkin}}. Please complete your online check-in to receive your door code: {{portal_link}}' } },
-  { key: 'pay', icon: 'card', what: 'Three days before arrival, only to guests whose payment is still pending — it stops by itself once they pay.',
+  { key: 'code', icon: 'key', what: 'Sends the door code once the guest finishes the online check-in, never earlier than two days before arrival.',
+    t: { name: 'Door code after online check-in', channel: 'hostaway', trigger: 'checkin_done', offsetHours: 0, holdHours: 48, conditions: [], listingIds: null, active: false,
+      body: 'Hi {{first_name}}, thank you for completing your online check-in. Your door code for {{listing}} is {{door_code}}, and it works from {{checkin_time}} on {{checkin}}.' } },
+  { key: 'pay', icon: 'card', what: 'Three days before arrival, only to guests whose payment is still pending. It stops by itself once they pay.',
     t: { name: 'Payment reminder', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 72, holdHours: null, conditions: ['payment_pending'], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, your stay at {{listing}} starts {{checkin}}. Your payment is still pending — you can complete it here: {{portal_link}}' } },
+      body: 'Hi {{first_name}}, your stay at {{listing}} starts {{checkin}}. Your payment is still pending, and you can complete it here: {{portal_link}}' } },
+  { key: 'howis', icon: 'sparkles', what: 'A day after check-in: how is everything, can we help with anything.',
+    t: { name: 'How is everything', channel: 'hostaway', trigger: 'after_checkin', offsetHours: 24, holdHours: null, conditions: ['issue_pending'], listingIds: null, active: false,
+      body: 'Hi {{first_name}}, we hope you are settling in well at {{listing}}. How is everything so far? If there is anything we can do to make your stay better, just let us know.' } },
+  { key: 'midclean', icon: 'home', what: 'Monthly stays (28 nights or more), halfway through: a reminder of the mid-stay cleaning.',
+    t: { name: 'Mid-stay cleaning', channel: 'hostaway', trigger: 'mid_stay', offsetHours: 0, holdHours: null, conditions: ['monthly_done'], listingIds: null, active: false,
+      body: 'Hi {{first_name}}, we hope you are enjoying your time at {{listing}}. Your stay includes a mid-stay cleaning. Let us know which day works best for you and we will set it up.' } },
+  { key: 'extend', icon: 'calendar', what: 'Two days before check-out, only when the night after check-out is open on the calendar: would they like to stay longer.',
+    t: { name: 'Extend your stay', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 48, holdHours: null, conditions: ['open_done'], listingIds: null, active: false,
+      body: 'Hi {{first_name}}, we hope you are having a great stay at {{listing}}. If you would like to stay a few more nights, the place is open after {{checkout}}. Just reply here and we will take care of it.' } },
   { key: 'out', icon: 'clock', what: 'The evening before departure: the check-out time.',
     t: { name: 'Check-out reminder', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 16, holdHours: null, conditions: [], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, we hope you are enjoying {{listing}}. A quick reminder that check-out is tomorrow, {{checkout}}, by {{checkout_time}}. Safe travels!' } },
-  { key: 'review', icon: 'sparkles', what: 'A day after check-out: a thank-you and the ask for a review — never to a stay with a bad experience on record.',
+      body: 'Hi {{first_name}}, we hope you enjoyed {{listing}}. Just a reminder that check-out is tomorrow, {{checkout}}, by {{checkout_time}}. Safe travels!' } },
+  { key: 'review', icon: 'sparkles', what: 'A day after check-out: a thank-you and the ask for a review, never to a stay with a bad experience on record.',
     t: { name: 'Thank you & review', channel: 'hostaway', trigger: 'after_checkout', offsetHours: 24, holdHours: null, conditions: ['issue_pending'], listingIds: null, active: false,
       body: 'Hi {{first_name}}, thank you for staying at {{listing}}. If you enjoyed your stay, a review would mean a lot to our small team. We hope to host you again!' } },
 ];
@@ -364,6 +388,8 @@ export function dueAt(t: Pick<Template, 'trigger' | 'offsetHours'> & Partial<Pic
   if (t.trigger === 'manual' || !s.arrival || !s.departure) return null;
   const inAt = zonedInstant(s.arrival, s.checkInHour ?? defaults.checkIn, tz).getTime();
   const outAt = zonedInstant(s.departure, s.checkOutHour ?? defaults.checkOut, tz).getTime();
+  // Mid-stay: the stay's middle day at 10 AM (a half-way instant would land at night), + the wait.
+  if (t.trigger === 'mid_stay') return new Date(zonedInstant(addDays(s.arrival, Math.floor(daysBetween(s.arrival, s.departure) / 2)), 10, tz).getTime() + h);
   return new Date(t.trigger === 'before_checkin' ? inAt - h : t.trigger === 'after_checkin' ? inAt + h
     : t.trigger === 'before_checkout' ? outAt - h : outAt + h);
 }
@@ -371,12 +397,12 @@ export function dueAt(t: Pick<Template, 'trigger' | 'offsetHours'> & Partial<Pic
 const span = (h: number) => h % 24 === 0 ? `${h / 24} day${h === 24 ? '' : 's'}` : `${h} hour${h === 1 ? '' : 's'}`;
 const WHEN: Record<Exclude<Trigger, 'manual'>, [string, string]> = {
   booked: ['after', 'booking'], checkin_done: ['after', 'online check-in'], before_checkin: ['before', 'check-in'], after_checkin: ['after', 'check-in'],
-  before_checkout: ['before', 'check-out'], after_checkout: ['after', 'check-out'],
+  mid_stay: ['after', 'mid-stay'], before_checkout: ['before', 'check-out'], after_checkout: ['after', 'check-out'],
 };
 export const whenWords = (t: Pick<Template, 'trigger' | 'offsetHours'> & Partial<Pick<Template, 'holdHours'>>) => {
   if (t.trigger === 'manual') return 'Only when picked';
   const [side, ev] = WHEN[t.trigger], h = t.offsetHours;
-  const base = h === 0 ? (t.trigger === 'checkin_done' ? 'When online check-in is done' : `At ${ev}`) : `${span(h)} ${side} ${ev}`;
+  const base = h === 0 ? (t.trigger === 'checkin_done' ? 'When online check-in is done' : t.trigger === 'mid_stay' ? 'Mid-stay, 10 AM' : `At ${ev}`) : `${span(h)} ${side} ${ev}`;
   return isEvent(t.trigger) && t.holdHours != null ? `${base}, not before ${span(t.holdHours)} ahead of check-in` : base;
 };
 export const scopeWords = (t: Pick<Template, 'listingIds'>) => !t.listingIds?.length ? 'All listings' : `${t.listingIds.length} listing${t.listingIds.length === 1 ? '' : 's'}`;

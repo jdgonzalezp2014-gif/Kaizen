@@ -24,7 +24,7 @@ import { fetchReservationDetail, fetchReservationsActiveSince, fetchReservations
 import { fetchConversationOf, fetchMessages, replyType, sendMessage } from './hostaway-messages.ts';
 import { sendSms } from './quo.ts';
 import { guestHouse } from '../api/guest-guide.ts';
-import { addDays, todayIn } from '../../src/lib/dates.ts';
+import { addDays, daysBetween, todayIn, type DateStr } from '../../src/lib/dates.ts';
 import { doorCodeFor } from '../../src/lib/guest-checkin.ts';
 import { GRACE_HOURS, HOUSE_VARS, condsOf, fill, hostawayIso, isConfirmed, paidOf, planFor, signedOf, portalLink, stayWindow, varsFor,
   type Channel, type MsgStatus, type Stay, type Template, type ThreadMsg, type Trigger, type Via } from '../../src/lib/inbox.ts';
@@ -73,6 +73,23 @@ export async function portalFor(sql: SqlFn, encryptionKey: string, reservationId
 }
 
 /** The open bad-experience records of these stays (`guest_issues`): reservation → why. Empty before migration 124. */
+/**
+ * Is the night of check-out open on each stay's listing? From the hourly calendar look (`calendar_watch`, a character a day
+ * from `from_day`, 'a' = open) — no Hostaway call. Only asked when an automation has the "night after check-out" condition.
+ */
+export async function openAfterOf(sql: SqlFn, stays: Stay[]): Promise<void> {
+  const ids = [...new Set(stays.map(s => s.listingId).filter((x): x is string => !!x))];
+  if (!ids.length) return;
+  const rows = await (sql`SELECT listing_id, from_day::text AS from_day, codes FROM calendar_watch WHERE account_id = 1 AND listing_id = ANY(${ids})
+                           AND checked_at > now() - interval '1 day'` as Promise<{ listing_id: string; from_day: string; codes: string }[]>).catch(() => []);
+  const look = new Map(rows.map(r => [r.listing_id, r]));
+  for (const s of stays) {
+    const r = s.listingId ? look.get(s.listingId) : undefined;
+    const c = r && s.departure ? r.codes[daysBetween(r.from_day as DateStr, s.departure)] : undefined;
+    s.openAfter = c === 'a' ? true : c === 'b' || c === 'r' || c === 'p' ? false : null;
+  }
+}
+
 export async function issuesOf(sql: SqlFn, reservationIds: string[]): Promise<Map<string, string>> {
   if (!reservationIds.length) return new Map();
   const rows = await (sql`SELECT reservation_id, why FROM guest_issues WHERE account_id = 1 AND cleared_at IS NULL AND reservation_id = ANY(${reservationIds})` as
@@ -240,6 +257,7 @@ export async function fireStay(sql: SqlFn, env: Env, reservationId: string, now 
   if (!stay) return { ...out, skipped: 'Hostaway does not know this reservation' };
   stay.checkinDoneAt = done.get(reservationId) ?? null;
   stay.issue = issues.has(reservationId);
+  if (templates.some(t => t.conditions.some(c => c.startsWith('open_')))) await openAfterOf(sql, [stay]);
   await createDue(sql, env, creds, stay, templates, await autoLog(sql, [reservationId]), now, out, PER_TICK);
   return out;
 }
@@ -284,7 +302,8 @@ export async function runDue(sql: SqlFn, env: Env, now = new Date()) {
   }
   if (!stays.length) return out;
   const ids = stays.map(s => s.reservationId);
-  const [log, done, issues] = await Promise.all([autoLog(sql, ids), checkinsOf(sql, ids), issuesOf(sql, ids)]);
+  const [log, done, issues] = await Promise.all([autoLog(sql, ids), checkinsOf(sql, ids), issuesOf(sql, ids),
+    templates.some(t => t.conditions.some(c => c.startsWith('open_'))) ? openAfterOf(sql, stays) : null]);
   for (const s of stays) {
     if (room <= 0) break;
     s.checkinDoneAt = done.get(s.reservationId) ?? null;

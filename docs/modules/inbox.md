@@ -180,6 +180,14 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   The gap is the phone: **Airbnb gives Hostaway no guest phone (20 of 22 Airbnb stays)**; Vrbo/Booking.com do. Fix proposed: ask the phone in the
   portal's online check-in when Hostaway has none, and a Quo webhook for incoming SMS → guest_events. `quo.ts` still on api.openphone.com (works).
   No Kaizen automations exist yet (0 templates).
+- **Recipes rewritten for going live (owner, 2026-11-23; Hostaway's automations already off, sending live):** short, calm, no dashes
+  (a test refuses — or – in a recipe body). New: **Welcome** (at booking: thanks + `{{portal_link}}` for details and the online check-in),
+  **How is everything** (24 h after check-in, held by a bad experience), **Mid-stay cleaning** (new trigger `mid_stay` = the middle day,
+  `floor(nights/2)`, at 10 AM + the wait; condition **Stay length** `monthly_done` = 28+ nights, `MONTHLY_NIGHTS`), **Extend your stay**
+  (48 h before check-out, condition **Night after check-out** `open_done`: the check-out night is 'a' in `calendar_watch`, looked at in
+  the last day — `openAfterOf` in guest-outbox.ts, no Hostaway call; not seen = skipped). Both new subjects are no-migration `only_if` tokens.
+  The conversation's Scheduled card and the AI's list do not read the calendar: an extension shows "planned" there until its moment.
+  Recipes are starters (paused); the owner creates each one from the Automations screen and switches it on after reading it.
 - ⚠ The stay link `/guest/<id>.<sig>` still shows only Pending payments (Phase 2): a guest sent there today cannot do the check-in.
 
 ## Who sent it + attachments (owner, 2026-11-23)
