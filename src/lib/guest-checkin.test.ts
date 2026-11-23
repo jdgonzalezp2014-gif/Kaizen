@@ -14,16 +14,16 @@ const NOW = new Date('2026-11-14T12:00:00Z');
 const f = (o: Partial<Flow>): Flow => ({ ...newFlow(), ...o });
 
 test('protection: defaults by unit type, a listing value wins, blanks keep the default', () => {
-  assert.deepEqual(protectionFor('house'), { waiver: { price: 70, min: 70, perNight: 12, cap: 3000 }, deposit: { hold: 300 } });
-  assert.deepEqual(protectionFor('room', { waiverMin: 35, waiverCap: null }), { waiver: { price: 35, min: 35, perNight: 12, cap: 1000 }, deposit: { hold: 300 } });
-  assert.equal(protectionFor('room', { depositHold: -5 }).deposit.hold, 300);
+  assert.deepEqual(protectionFor('house'), { waiver: { price: 60, min: 60, perNight: 12, cap: 3000 }, deposit: { hold: 500 } });
+  assert.deepEqual(protectionFor('room', { waiverMin: 35, waiverCap: null }), { waiver: { price: 35, min: 35, perNight: 12, cap: 1000 }, deposit: { hold: 500 } });
+  assert.equal(protectionFor('room', { depositHold: -5 }).deposit.hold, 500);
 });
 
 test('protection: the waiver is $/night × nights, never under the minimum (owner, 2026-11-23)', () => {
-  assert.equal(protectionFor('house', {}, 3).waiver.price, 70);   // 3 × 12 = 36 → the $70 minimum
-  assert.equal(protectionFor('house', {}, 6).waiver.price, 72);   // 6 × 12 = 72 > 70
+  assert.equal(protectionFor('house', {}, 3).waiver.price, 60);   // 3 × 12 = 36 → the $60 minimum
+  assert.equal(protectionFor('house', {}, 6).waiver.price, 72);   // 6 × 12 = 72 > 60
   assert.equal(protectionFor('house', { waiverNight: 15, waiverMin: 50 }, 4).waiver.price, 60);
-  assert.equal(protectionFor('house', {}, 0).waiver.price, 70);
+  assert.equal(protectionFor('house', {}, 0).waiver.price, 60);
 });
 
 test('steps: four required, extras optional, pay only when something is charged', () => {
@@ -43,15 +43,15 @@ test('Airbnb: waiver / deposit like everyone, or "none" (nothing to pay); other 
   const none = steps(f({ ...base, protection: 'none' }), stay({ channel: 'airbnb' }), P);
   assert.equal(none.some(x => x.key === 'pay'), false);
   assert.equal(nextStep(none), null);
-  assert.equal(bill(f({ protection: 'waiver' }), stay({ channel: 'airbnb' }), P).today, 70);
+  assert.equal(bill(f({ protection: 'waiver' }), stay({ channel: 'airbnb' }), P).today, 60);
   assert.equal(steps(f({ ...base, protection: 'none' }), stay(), P).find(x => x.key === 'protection')!.done, false);
 });
 
 test('bill: waiver is charged, deposit is held, extras are charged now; early on a turnover drops off', () => {
-  assert.deepEqual(bill(f({ protection: 'waiver' }), stay(), P), { lines: [{ label: 'Damage waiver', amount: 70, kind: 'charge', item: 'waiver', note: 'Covers up to $1,500' }], today: 70, hold: 0 });
+  assert.deepEqual(bill(f({ protection: 'waiver' }), stay(), P), { lines: [{ label: 'Damage waiver', amount: 60, kind: 'charge', item: 'waiver', note: 'Covers up to $1,500' }], today: 60, hold: 0 });
   const b = bill(f({ protection: 'deposit', extras: { 'welcome': {}, 'early-checkin': { time: '1:00 PM' } } }), stay(), P);
   assert.equal(b.today, 35);
-  assert.equal(b.hold, 300);
+  assert.equal(b.hold, 500);
   assert.deepEqual(b.lines.map(l => l.kind), ['hold', 'charge']);
   const n = bill(f({ extras: { 'early-checkin': { time: '1:00 PM' } } }), stay({ turnIn: false }), P);
   assert.deepEqual(n.lines.map(l => [l.item, l.kind]), [['early-checkin', 'charge']]);

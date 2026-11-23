@@ -13,8 +13,8 @@ export type UnitType = 'room' | 'apartment' | 'house';
 /** `waiver.price` is what this stay pays: the per-night rate × nights, never under the minimum (owner, 2026-11-23). */
 export interface Protection { waiver: { price: number; min: number; perNight: number; cap: number }; deposit: { hold: number } }
 
-/** Owner, 2026-11-23, every listing: $300 deposit, or a waiver of $12 a night with a $70 minimum. Caps are still placeholders. */
-const STANDARD = { min: 70, perNight: 12, hold: 300 };
+/** Owner, 2026-11-23, every listing: $500 deposit, or a waiver of $12 a night with a $60 minimum (was $300 / $70). Caps are still placeholders. */
+const STANDARD = { min: 60, perNight: 12, hold: 500 };
 export const PROTECTION_DEFAULTS: Record<UnitType, { waiver: { min: number; perNight: number; cap: number }; deposit: { hold: number } }> = {
   room: { waiver: { min: STANDARD.min, perNight: STANDARD.perNight, cap: 1000 }, deposit: { hold: STANDARD.hold } },
   apartment: { waiver: { min: STANDARD.min, perNight: STANDARD.perNight, cap: 1500 }, deposit: { hold: STANDARD.hold } },

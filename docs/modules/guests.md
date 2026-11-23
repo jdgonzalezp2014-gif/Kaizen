@@ -321,6 +321,7 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 
 ### Damage protection per listing + listing texts (owner, 2026-11-23 — migration 122)
 
+- **Changed the same day (migration 126):** deposit **$500** (was $300), waiver minimum **$60** (was $70), $12 a night stays — waiver = max($60, $12 × nights). 126 changed only records still on $300 / $70 (all 44); `STANDARD` in guest-checkin.ts too. **Open:** the Hostaway description notice still says $300 / $70 — the script skips fields that already have it, so it needs a replace pass (confirm first).
 - Owner: "$300 deposit or a damage waiver of $70 minimum or $12 a night, whichever is greater" — for every listing, per listing in the
   Repository. Fees: `damage_deposit` (Refundable damage deposit, $300), `insurance_fee` (now titled **Damage waiver per night**, $12 — the same
   field as Hostaway's nightly fee), `waiver_price` (moved to Fees, now **Damage waiver minimum**, $70). 122 fills blanks only. `deposit_hold`

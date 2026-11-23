@@ -69,7 +69,7 @@ come later for a fully in-page look. Built 2026-11-15 (`functions/_lib/guest-pay
 - 2026-11-19 (inbox, guest AI audit): company facts per account (`guest_ai.business`). **Hard-wired:** `GUEST_SECTIONS` (Kaizen's SOP
   section keys), the Repository column keys `listingFacts` reads (`max_guests`, `hw_*`, fees…), `UNIT_TABLES`, the English playbook prompt.
 - 2026-11-23 (inbox + guests, drafts on arrival / portal first): per account — `guest_ai.autoDraft|portalFirst|oldPortalNotice`, protection values
-  per listing in the Repository. **Hard-wired:** the protection defaults ($300 deposit, $12/night waiver, $70 minimum — `PROTECTION_DEFAULTS`),
+  per listing in the Repository. **Hard-wired:** the protection defaults ($500 deposit, $12/night waiver, $60 minimum — `PROTECTION_DEFAULTS`),
   "old check-in" = Hostaway's agreement signed / ID verified, `scripts/description-protection-notice.mjs` (Kaizen's English text and Hostaway fields).
 - 2026-11-23 (guests, the portal's real door): per account — `guest_flows`, the stay link's HMAC. **Hard-wired:** the release time (noon Central
   the day before arrival, `RELEASE_HOUR` / `STAY_TZ`), English guest texts and to-do titles, Cortland's / The Links' building guides (data, not code).
