@@ -371,7 +371,9 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   drive (pin), call box (owner 2026-11-23: one code for both buildings, stored only in the guide rows;
   entrance pin 33.0884292, -96.8424110 — the owner gave the same point for both buildings); step 3 = `{to_floor}` (new token: "It is on the
   first floor — no elevator needed" / "Take the elevator to the <floor> floor"). Photos (owner): Building 1 entrance + the CL-1125 map (steps 1–2),
-  Building 2 front (step 2), in CL-1125's Drive folder "Check-in photos", elevator to {floor}, door code; house items gym/pool fob, trash chute,
+  Building 2 front (step 2), in CL-1125's Drive folder "Check-in photos". Building 2 route (owner, 2026-11-23): main entrance → call box →
+  right → first door on the left past the red EXIT sign = parking garage → stairs, or the elevator behind the column on the right (another one on
+  the opposite side if it is out of service; map on that step) → floor → door, elevator to {floor}, door code; house items gym/pool fob, trash chute,
   check-out. Building 1 units get their own Drive video (1446, 1339, 1250, 1125, 1425, 1350, 1235 — shared by link). **Houses** (Amber Valley, Bobcat, Concord, Napa, Quest, Timber Crest,
   Preston): arrive (address + Maps pin from `units.lat/lng`) → smart-lock keypad with the door code. Preston's code: Guest check-in code ← the
   "Front door code" written in its Elevator field.
