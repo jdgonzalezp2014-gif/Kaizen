@@ -163,6 +163,7 @@ out of the Inventory view). Every view has a "⚙ Setup" chip by Refresh that op
 key had no SOPs.
 
 ## Rules that bite
+- **Worker subrequest limit (50 per request):** never loop a query per line in a save. Inventory counts/± corrections use `recordTeamMoves` (one INSERT); `recordMove` per line broke a 27-item storage count on 2026-11-23 (79e8a73).
 
 - **`ops_mode = 'live'` since 2026-09-25**: Kaizen decides and writes Host Notes; the
   Cleanings Log import refuses in live mode. One writer per record (§64, §68).
