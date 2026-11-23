@@ -63,3 +63,9 @@ test('house blocks: record blocks kept once, unknown refused; tokens for address
   const v = tokenVals({ hw_address: '1 Main St', checkin_from: '4 PM' }, 'Preston Vineyard');
   assert.equal(fillTokens('{address} from {checkin}', v), '1 Main St from 4 PM');
 });
+
+test('{to_floor}: no elevator on the first floor (owner, 2026-11-23)', () => {
+  assert.equal(fillTokens('{to_floor}, then follow the signs.', tokenVals({ floor: 'First' }, 'CL 1125')), 'It is on the first floor — no elevator needed, then follow the signs.');
+  assert.equal(fillTokens('{to_floor}.', tokenVals({ floor: 'Fourth' }, 'CL 1446')), 'Take the elevator to the fourth floor.');
+  assert.equal(fillTokens('{to_floor}.', tokenVals({}, 'X')), '{to_floor}.');
+});

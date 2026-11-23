@@ -85,11 +85,14 @@ export function cleanSteps(raw: unknown): { ok: true; steps: CheckinStep[] } | {
  * {lockbox} = the Units record's Lockbox, {unit} = the unit's number (P2-1304 → 1304), {floor} = its Floor ("third").
  * Shared guides (2026-11-09) lean on these: one text, every unit of the building. Unknown or empty tokens stay visible.
  */
-export const TOKENS = { unit: 'Unit number', floor: 'Floor', lockbox: 'Lockbox code', address: 'Address', checkin: 'Check-in time' } as const;
+export const TOKENS = { unit: 'Unit number', floor: 'Floor', to_floor: 'Way to the floor', lockbox: 'Lockbox code', address: 'Address', checkin: 'Check-in time' } as const;
 export const unitNumber = (name: string) => (name.match(/(\d{3,})\D*$/)?.[1] ?? name).trim();
 export function tokenVals(vals: Record<string, unknown> | null | undefined, unitName: string): Record<string, unknown> {
   const floor = typeof vals?.floor === 'string' ? vals.floor.trim().toLowerCase() : '';
-  return { ...(vals ?? {}), unit: unitNumber(unitName), floor, address: vals?.hw_address ?? null, checkin: vals?.checkin_from ?? null };
+  // Owner, 2026-11-23: a first-floor unit needs no elevator — one shared step reads right for every floor.
+  const to_floor = !floor ? '' : /^(first|1st|1|ground)\b/.test(floor) ? 'It is on the first floor — no elevator needed'
+    : `Take the elevator to the ${floor} floor`;
+  return { ...(vals ?? {}), unit: unitNumber(unitName), floor, to_floor, address: vals?.hw_address ?? null, checkin: vals?.checkin_from ?? null };
 }
 export function fillTokens(text: string, vals: Record<string, unknown> | null | undefined): string {
   return text.replace(/\{(\w+)\}/g, (all, k: string) => {
