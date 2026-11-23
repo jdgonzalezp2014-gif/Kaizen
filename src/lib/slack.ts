@@ -124,6 +124,7 @@ export function taskFacts(t: TaskLite): string {
           stageWord(t.status)].filter(Boolean).map(esc).join(' · ');
 }
 const what = (t: TaskLite) => t.isOrder ? '🛒 Purchase order' : t.kind === 'work_order' ? '🔧 Repair' : '☐ To-do';
+const plainWhat = (t: TaskLite) => t.isOrder ? 'Purchase order' : t.kind === 'work_order' ? 'Repair' : 'To-do';
 
 /**
  * §162: what Slack cannot do (record a purchase, a vendor's cost, merge, files…) is one click away — the item
@@ -227,12 +228,11 @@ export function pickTask(list: { id?: string; title: string; unit?: string | nul
  * urgency question left Slack — the task is worked in Kaizen; a reply in its thread is still a comment (§153).
  */
 export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: string): { text: string; blocks: Block[] } {
+  // Owner, 2026-11-23: no emoji — the title in bold, one plain line under it.
+  const line = [`${plainWhat(t)} ${event.replace(/^· /, '')}`, taskFacts(t), by ? `by ${esc(by)}` : ''].filter(Boolean).join(' · ');
   return {
-    text: `${what(t)} ${event}: ${t.title}`,
-    blocks: [
-      section(`${what(t)} ${event}: *${esc(t.title)}*`, toolFor(appUrl, 'todo', t.id)),
-      context(taskFacts(t), by ? `by ${esc(by)}` : '')
-    ]
+    text: `${plainWhat(t)} ${event}: ${t.title}`,
+    blocks: [section(`*${esc(t.title)}*\n${line}`, toolFor(appUrl, 'todo', t.id))]
   };
 }
 
@@ -275,11 +275,12 @@ const sevMark = (s: string) => s === 'Critical' || s === 'High' ? '🔴' : s ===
 export const caseWord = (c: Pick<ClaimLite, 'category'>) => isUpsell(c.category) ? '💲 Upsell' : '⚑ Claim';
 export function claimMessage(c: ClaimLite, event: string, by: string, appUrl?: string): { text: string; blocks: Block[] } {
   return {
-    text: `${caseWord(c)} ${event}: ${claimTitle(c)}`,
+    text: `${caseWord(c).split(' ')[1]} ${event}: ${claimTitle(c)}`,
     // Owner, 2026-11-23: the line and one 🛠 into Kaizen — status, comment and edit are done there.
     blocks: [
-      section(`${sevMark(c.severity)} ${caseWord(c)} ${event}: *${esc(claimTitle(c))}*`, toolFor(appUrl, 'claim', c.id)),
-      context([c.category, c.severity, c.status].filter(Boolean).map(esc).join(' · '), c.caseUrl ? link(c.caseUrl, 'platform case') : '', by ? `by ${esc(by)}` : '')
+      section(`*${esc((c.description || c.category || 'Claim').slice(0, 80))}*\n` +
+        [`${caseWord(c).split(' ')[1]} ${event.replace(/^· /, '')}`, c.unit ?? 'Portfolio', c.category, c.severity, c.status].filter(Boolean).map(x => esc(String(x))).join(' · ') +
+        (c.caseUrl ? ` · ${link(c.caseUrl, 'platform case')}` : '') + (by ? ` · by ${esc(by)}` : ''), toolFor(appUrl, 'claim', c.id))
     ]
   };
 }
@@ -452,11 +453,11 @@ export function digestMessage(d: DigestInput, kind: 'morning' | 'afternoon', app
  */
 export function checkinsDigest(d: Pick<DigestInput, 'today' | 'arrivals'>, appUrl?: string): { text: string; blocks: Block[]; count: number } {
   const due = d.arrivals.filter(a => a.date === d.today && a.checkedIn === false);
-  const head = `☀ Check-ins today not completed: ${due.length}`;
+  const head = `Check-ins today not completed · ${due.length}`;
   const blocks: Block[] = [section(`*${esc(head)}*`)];
   for (const a of due.slice(0, 45)) {
     const miss = [a.agreement === 'not_signed' ? 'agreement' : '', a.needsId && a.idInDrive === false ? 'ID' : ''].filter(Boolean).join(', ');
-    blocks.push(section(`*${esc(a.guest)}* · ${esc(a.unit)}${a.time ? ` · ${esc(a.time)}` : ''}${miss ? ` — ${miss}` : ''}`,
+    blocks.push(section(`*${esc(a.guest)}*\n${esc(a.unit)}${a.time ? ` · ${esc(a.time)}` : ''}${miss ? ` · Missing: ${miss}` : ''}`,
       appUrl && a.resId ? toolButton(`${appUrl}/?tab=inbox&r=${encodeURIComponent(a.resId)}`) : undefined));
   }
   if (due.length > 45) blocks.push(context(`…and ${due.length - 45} more`));

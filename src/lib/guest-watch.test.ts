@@ -86,5 +86,5 @@ test('an urgent check-in message is sent by the AI only when every gate holds', 
   assert.equal(checkinAutoSend({ ...ok, stillWaiting: false }).send, false);
   assert.equal(checkinAutoSend({ ...ok, draft: null }).send, false);
   assert.match(JSON.stringify(checkinAutoSend({ ...ok, blanks: ['door_code'] })), /door_code/);
-  assert.match(solvedMessage({ guest: 'Ana', listing: 'L', stage: 'Arrives today', body: 'code?', reply: 'Open your portal', link: 'l' }).blocks[0]!.text.text, /answered by the AI.*\n.*\n.*\n\*Sent:\* Open your portal/);
+  assert.match(solvedMessage({ guest: 'Ana', listing: 'L', stage: 'Arrives today', body: 'code?', reply: 'Open your portal', link: 'l' }).blocks[0]!.text.text, /Answered by the AI · Ana\*\n.*\n.*\n\*Sent:\* Open your portal/);
 });

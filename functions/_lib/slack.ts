@@ -157,7 +157,8 @@ export async function notifyTask(sql: SqlFn, key: string, id: string, event: Tas
   // New — or news of work that has no thread yet: the one message, and its thread from now on.
   await rememberThread(sql, await postTo(s, 'tasks', taskMessage(t, word, who(by), app)), 'task', id);
 }
-const ICON: Partial<Record<TaskEvent, string>> = { created: '➕', completed: '✓', cancelled: '✕', reopened: '↺', assigned: '🙋', status: '◐', urgency: '⚑', kind: '🔧', hostaway: '⇄' };
+// Owner, 2026-11-23: plain marks, no emoji, in the thread lines too.
+const ICON: Partial<Record<TaskEvent, string>> = { created: '+', completed: '✓', cancelled: '✕', reopened: '↺', assigned: '→', status: '·', urgency: '·', kind: '·', hostaway: '⇄' };
 
 /**
  * The owner hears it directly (§100): a task given to them — on creation
@@ -199,7 +200,7 @@ export async function notifyClaim(sql: SqlFn, key: string, id: string, event: 'o
   if (!c) return;
   const home = event === 'changed' ? await threadFor(sql, 'claim', id) : null;
   if (home) {
-    const line = threadLine(`◐ ${caseWord(c).split(' ')[1]} ${word ?? 'changed'}`, who(by));
+    const line = threadLine(`${caseWord(c).split(' ')[1]} ${word ?? 'changed'}`, who(by));
     await slackApi(s.token, 'chat.postMessage', { channel: home.channel, thread_ts: home.ts, text: line.text, blocks: [...line.blocks, ...extra], unfurl_links: false });
     await slackApi(s.token, 'chat.update', { channel: home.channel, ts: home.ts, ...claimMessage(c, `· ${c.status}`, '', s.config.appUrl) }).catch(() => null);
     return;

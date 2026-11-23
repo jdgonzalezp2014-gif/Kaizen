@@ -73,7 +73,7 @@ test('the clock\'s morning message: only today\'s check-ins not completed, each 
   const m = checkinsDigest({ today: '2026-11-24', arrivals: [a('1', '2026-11-24', false, 'not_signed'), a('2', '2026-11-24', true), a('3', '2026-11-25', false), a('4', '2026-11-24', null)] }, 'https://k.dev');
   assert.equal(m.count, 1);
   const s = JSON.stringify(m.blocks);
-  assert.match(s, /G1\* · CL1125 · 4:00 PM — agreement, ID/);
+  assert.match(s, /G1\*\\nCL1125 · 4:00 PM · Missing: agreement, ID/);
   assert.match(s, /\?tab=inbox&r=1/);
   assert.doesNotMatch(s, /G2|G3|G4/);
   assert.equal(checkinsDigest({ today: '2026-11-24', arrivals: [] }).count, 0);
@@ -474,8 +474,8 @@ test('§162: a purchase order from a mention, an upsell named as such, and the l
   assert.deepEqual(kaizenButton(undefined, 'todo', '5'), []);
   assert.match(JSON.stringify(kaizenButton('https://k.dev', 'todo', '5')), /https:\/\/k\.dev\/\?todo=5/);
   assert.match(JSON.stringify(taskMessage({ id: '5', title: 'Buy', kind: 'task', status: 'pending', priority: 'none', isOrder: true }, 'created', 'juan', 'https://k.dev')),
-    /🛒 Purchase order created.*\?todo=5/);
-  assert.match(JSON.stringify(claimMessage({ id: '9', category: 'Late check-in', severity: 'Low', status: 'Open' }, 'opened', 'juan', 'https://k.dev')), /💲 Upsell opened.*\?claim=9/);
+    /Purchase order created.*\?todo=5/);
+  assert.match(JSON.stringify(claimMessage({ id: '9', category: 'Late check-in', severity: 'Low', status: 'Open' }, 'opened', 'juan', 'https://k.dev')), /Upsell opened.*\?claim=9/);
   assert.equal(threadLine('✓ Completed', 'juan').blocks.length, 1);
 });
 
