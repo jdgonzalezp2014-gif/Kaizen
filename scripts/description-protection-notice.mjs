@@ -6,8 +6,9 @@
  *   node --env-file=.env.local scripts/description-protection-notice.mjs         change it
  *
  * Fields: `description` (direct / website / Expedia), `homeawayPropertyDescription` (Vrbo), `bookingcomPropertyDescription`
- * (Booking.com). Airbnb's own fields (airbnbSummary…) are NOT touched: Airbnb guests are covered by AirCover, the portal
- * charges them neither, and Airbnb does not allow asking for money outside it.
+ * (Booking.com), and since 2026-11-23 (owner: "la información tiene que estar en Airbnb… en la descripción y al final de las
+ * house rules") `airbnbNotes` (Airbnb's "Other details to note") and `houseRules` (shared by every channel, Airbnb included) —
+ * the portal asks Airbnb guests for the waiver or deposit too (with "None of them"). Those two get it even when empty.
  * Each field's text as it was is kept in listing_text_changes; a field that already has this notice is left alone, and an
  * older notice (2026-11-23: $300 / $70 → $500 / $60) is replaced in place.
  */
@@ -19,7 +20,8 @@ export const NOTICE = 'Damage protection: before check-in, guests complete our o
   '$500 security deposit (held on the card and released after check-out) or a non-refundable damage waiver of $12 per night ' +
   'or $60, whichever is greater.';
 const MARK = 'Damage protection: before check-in';
-const FIELDS = ['description', 'homeawayPropertyDescription', 'bookingcomPropertyDescription'];
+const FIELDS = ['description', 'homeawayPropertyDescription', 'bookingcomPropertyDescription', 'airbnbNotes', 'houseRules'];
+const ALWAYS = new Set(['airbnbNotes', 'houseRules']);   // an empty one does not fall back to `description`
 
 const DRY = process.argv.includes('--dry');
 const WHO = process.argv.find(a => a.startsWith('--by='))?.slice(5) ?? 'kaizen-script';
@@ -39,9 +41,9 @@ for (const l of listings) {
   const body = {}, before = {};
   for (const f of FIELDS) {
     const b = String(l[f] ?? '');
-    if (!b.trim() || b.includes(NOTICE)) continue;   // empty = the channel falls back to `description`
+    if ((!b.trim() && !ALWAYS.has(f)) || b.includes(NOTICE)) continue;   // empty = the channel falls back to `description`
     // An older notice (other amounts) is replaced in place — the paragraph runs from MARK to the end of its line.
-    before[f] = b; body[f] = b.includes(MARK) ? b.replace(new RegExp(`${MARK}[^\\n]*`), NOTICE) : `${b.trimEnd()}\n\n${NOTICE}`;
+    before[f] = b; body[f] = b.includes(MARK) ? b.replace(new RegExp(`${MARK}[^\\n]*`), NOTICE) : b.trim() ? `${b.trimEnd()}\n\n${NOTICE}` : NOTICE;
   }
   const fs = Object.keys(body);
   if (!fs.length) { tally.already++; console.log(`= ${id} ${l.name} — already has it`); continue; }
