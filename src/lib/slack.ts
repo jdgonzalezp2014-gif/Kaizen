@@ -245,7 +245,8 @@ export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: str
   // how many. The details are the first reply in its thread (`taskDetails`), where people comment. A closed one says so.
   const closed = t.status === 'completed' || t.status === 'cancelled' ? stageWord(t.status) : '';
   const head = `${event === 'created' || event === 'for you' ? `New ${kindWord(t)}` : cap(kindWord(t))}${t.unit ? ` · ${t.unit}` : ''}`;
-  const detail = t.isOrder ? cartCount(t.orderLines) : esc(t.title.length > 90 ? `${t.title.slice(0, 89)}…` : t.title);
+  // Owner, 2026-11-23: what to do sits behind the quote bar, set apart; a purchase is just 🛒 n.
+  const detail = t.isOrder ? cartCount(t.orderLines) : `> ${esc(t.title.length > 90 ? `${t.title.slice(0, 89)}…` : t.title)}`;
   return {
     text: `${head}${closed ? ` · ${closed}` : ''}: ${t.title}`,
     blocks: [section(`${taskMark(t)}  *${esc(head)}*${closed ? ` · ${closed}` : ''}\n${detail}`, toolFor(appUrl, 'todo', t.id)), DIVIDER]
@@ -258,7 +259,8 @@ export function taskDetails(t: TaskLite, lines: { name: string; qty: number }[] 
                  t.dueOn ? `finish by ${day(t.dueOn)}` : '', t.assignee ? `owner ${t.assignee}` : '', t.reservationLabel ? `stay ${t.reservationLabel}` : '']
     .filter(Boolean).map(esc).join(' · ');
   const desc = (t.description ?? '').replace(/\n?From Slack: \S+\s*$/, '').trim();
-  const body = [`*${esc(t.title)}*`, facts, desc ? esc(desc.length > 1200 ? `${desc.slice(0, 1199)}…` : desc) : '',
+  const quoted = desc ? `> ${esc(desc.length > 1200 ? `${desc.slice(0, 1199)}…` : desc).replace(/\n/g, '\n> ')}` : '';
+  const body = [`*${esc(t.title)}*`, facts, quoted,
     lines.length ? lines.slice(0, 30).map(l => `• ${esc(l.name)} × ${l.qty}`).join('\n') + (lines.length > 30 ? `\n…and ${lines.length - 30} more` : '') : '']
     .filter(Boolean).join('\n');
   return { text: `Details: ${t.title}`, blocks: [section(body)] };
@@ -308,7 +310,7 @@ export function claimMessage(c: ClaimLite, event: string, by: string, appUrl?: s
     blocks: [
       // Owner, 2026-11-23: "New upsell · CL1125" and one small detail; the details are the first reply in its thread.
       section(`${isUpsell(c.category) ? MARK.upsell : MARK.claim}  *${event === 'opened' ? 'New ' + caseWord(c).split(' ')[1]!.toLowerCase() : caseWord(c).split(' ')[1]} · ${esc(c.unit ?? 'Portfolio')}*` +
-        `${['Resolved', 'Paid', 'Dismissed'].includes(c.status) ? ` · ${esc(c.status)}` : ''}\n${esc(c.category || (c.description ?? '').slice(0, 80) || 'Claim')}`,
+        `${['Resolved', 'Paid', 'Dismissed'].includes(c.status) ? ` · ${esc(c.status)}` : ''}\n> ${esc((c.description || c.category || 'Claim').slice(0, 90))}`,
         toolFor(appUrl, 'claim', c.id)),
       DIVIDER
     ]
@@ -317,7 +319,7 @@ export function claimMessage(c: ClaimLite, event: string, by: string, appUrl?: s
 /** A new claim's first thread reply (owner, 2026-11-23): what happened, how serious, the platform's case. */
 export function claimDetails(c: ClaimLite): { text: string; blocks: Block[] } {
   const body = [`*${esc((c.description || c.category || 'Claim').slice(0, 200))}*`, [c.category, c.severity, c.status].filter(Boolean).map(x => esc(String(x))).join(' · '),
-                c.description && c.description.length > 200 ? esc(c.description.slice(0, 1200)) : '', c.caseUrl ? link(c.caseUrl, 'Platform case') : ''].filter(Boolean).join('\n');
+                c.description && c.description.length > 200 ? `> ${esc(c.description.slice(0, 1200)).replace(/\n/g, '\n> ')}` : '', c.caseUrl ? link(c.caseUrl, 'Platform case') : ''].filter(Boolean).join('\n');
   return { text: `Details: ${c.description || c.category || 'claim'}`, blocks: [section(body)] };
 }
 const claimStatusSelect = (c: ClaimLite): Block => ({

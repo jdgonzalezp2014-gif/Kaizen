@@ -125,7 +125,7 @@ export function watchMessage(a: { guest: string; listing: string; stage: string;
   const head = a.urgent ? `${MARK.guest}  *${a.guest} · ${a.listing}*` : `*${a.guest} · ${a.listing}* has waited ${waited(a.minutes)}`;
   return {
     text: a.urgent ? `Urgent guest message — ${a.guest}` : `${a.guest} is waiting for an answer`,
-    blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `${head}\n${preview(a.body, 90)}` }, accessory: toolButton(a.link) }, DIVIDER],
+    blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `${head}\n> ${preview(a.body, 90)}` }, accessory: toolButton(a.link) }, DIVIDER],
     details: { text: `Details: ${a.guest}`, blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: [a.stage, a.why].filter(Boolean).join(' · ') || ' ' }] },
                                                      { type: 'section', text: { type: 'mrkdwn', text: `> ${preview(a.body, 1500).replace(/\n/g, '\n> ')}` } }] }
   };

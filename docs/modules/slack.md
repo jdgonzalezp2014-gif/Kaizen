@@ -38,7 +38,7 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 ## The rule for every message (owner, 2026-11-23)
 
 The minimum on top, the details in the thread. A message = mark (one colour: ☐ to-do · ⚒ repair · ▣ purchase · ⚑ claim ·
-$ upsell · ⚠ guest · ⌂ check-ins · ✓ AI) + **what it is · unit** + one short detail (a purchase: 🛒 n) + a small ↗ button
+$ upsell · ⚠ guest · ⌂ check-ins · ✓ AI) + **what it is · unit** + one short detail behind the quote bar `>` (a guest's words, what to do; a purchase: 🛒 n) + a small ↗ button
 (`toolButton`, plain text, opens Kaizen at the right place) + a divider. Its first thread reply carries the details
 (`taskDetails`, `claimDetails`, `GuestAlert.details`); comments happen there. Changes later = one line in the thread.
 No colour emoji, no rows of action buttons — unless truly needed on top (the Received / Not there of a Resolution Center

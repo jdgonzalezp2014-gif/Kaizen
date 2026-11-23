@@ -59,7 +59,7 @@ test('the watch looks at the newest message per conversation, once it has waited
 
 test('the Slack line says who, how long, and opens the conversation', () => {
   const m = watchMessage({ guest: 'Ana Ruiz', listing: 'P2-1406', stage: 'Arrives today', body: 'Where do I park?', minutes: 42, urgent: false, why: 'asks about parking', link: 'https://x/?tab=inbox&c=44' });
-  assert.match((m.blocks[0] as { text: { text: string } }).text.text, /Ana Ruiz · P2-1406\* has waited 42 min\nWhere do I park\?/);
+  assert.match((m.blocks[0] as { text: { text: string } }).text.text, /Ana Ruiz · P2-1406\* has waited 42 min\n> Where do I park\?/);
   // Owner, 2026-11-23: the way in is the small 🛠 beside the line.
   assert.equal((m.blocks[0] as { accessory?: { url?: string; text?: { text?: string } } }).accessory?.url, 'https://x/?tab=inbox&c=44');
   assert.equal((m.blocks[0] as { accessory?: { text?: { text?: string } } }).accessory?.text?.text, '↗\uFE0E');
@@ -90,7 +90,7 @@ test('an urgent check-in message is sent by the AI only when every gate holds', 
 
 test('the same guest again that day: the new alert says "· 2 today" beside the name (owner, 2026-11-23)', () => {
   const m = countedMessage(watchMessage({ guest: 'Sarah Cary', listing: 'Quest', stage: 'In house', body: 'OMG', minutes: 0, urgent: true, why: '', link: 'l' }), 2);
-  assert.match((m.blocks[0] as { text: { text: string } }).text.text, /Sarah Cary · Quest\* · 2 today\nOMG/);
+  assert.match((m.blocks[0] as { text: { text: string } }).text.text, /Sarah Cary · Quest\* · 2 today\n> OMG/);
   assert.equal(m.blocks.length, 2);
 });
 
@@ -98,7 +98,7 @@ test('the channel line is guest, unit and a bit of the message; stage, why and t
   const long = 'x'.repeat(200);
   const m = watchMessage({ guest: 'Sarah Cary', listing: 'Quest', stage: 'In house', body: long, minutes: 0, urgent: true, why: 'very upset', link: 'l' });
   const line = (m.blocks[0] as { text: { text: string } }).text.text;
-  assert.match(line, /^⚠\uFE0E  \*Sarah Cary · Quest\*\nx+…?$/);
+  assert.match(line, /^⚠\uFE0E  \*Sarah Cary · Quest\*\n> x+…?$/);
   assert.ok(line.length < 130);
   assert.doesNotMatch(line, /In house|very upset/);
   assert.match(JSON.stringify(m.details), /In house · very upset/);
