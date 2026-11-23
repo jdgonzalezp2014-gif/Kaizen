@@ -15,7 +15,7 @@ import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, quote, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
-import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
+import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, cleanPhone, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type BillLine, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
 const STEP_ICON: Record<StepKey, string> = { details: 'user', identity: 'idcard', protection: 'shield', rules: 'book', extras: 'sparkles', pay: 'card' };
@@ -132,6 +132,10 @@ function Details({ stay, flow, save }: S) {
   const [fix, setFix] = useState(false);
   const [ask, setAsk] = useState(flow.changeAsk ?? '');
   const [asked, setAsked] = useState(!!flow.changeAsk);
+  // Airbnb hands over a relay number that does not take texts: those guests type theirs; others confirm the booking's.
+  const airbnb = channelCovers(stay);
+  const [phone, setPhone] = useState(flow.phone ?? (airbnb ? '' : g?.phone ?? ''));
+  const okPhone = cleanPhone(phone);
   const party = g ? [[g.adults, 'adult'], [g.children, 'child'], [g.infants, 'infant']].filter(([n]) => (n as number) > 0)
     .map(([n, w]) => `${n} ${w}${n === 1 ? '' : w === 'child' ? 'ren' : 's'}`).join(' · ') : `${stay.guests} guests`;
   return <>
@@ -141,7 +145,6 @@ function Details({ stay, flow, save }: S) {
       <p className="ci-name">{g?.name ?? stay.guestFirst}</p>
       <dl className="ci-dl">
         {g?.email && <><dt><Icon n="mail" /></dt><dd>{g.email}</dd></>}
-        {g?.phone && <><dt><Icon n="phone" /></dt><dd>{g.phone}</dd></>}
         <dt><Icon n="users" /></dt><dd>{party}{stay.maxGuests ? <span className="note"> · up to {stay.maxGuests}</span> : null}</dd>
       </dl>
       {asked ? <p className="ci-ok"><Icon n="check" /> Sent — our team will contact you.</p>
@@ -151,12 +154,18 @@ function Details({ stay, flow, save }: S) {
           </div>
         : <button className="chip ci-fix-go" onClick={() => setFix(true)}>Request a change</button>}
     </section>
+    <section className="card ci-card ci-phone">
+      <label className="ci-q" htmlFor="ci-phone">Your mobile number</label>
+      <input id="ci-phone" type="tel" inputMode="tel" autoComplete="tel" value={phone} onChange={e => setPhone(e.target.value)} placeholder="(555) 123-4567" />
+      <span className="note">{airbnb ? 'Airbnb does not share your number with us. ' : ''}We text you here about your stay — check-in, the door code, anything urgent.</span>
+      {phone.trim() && !okPhone && <span className="note warn">Add the full number (with country code if outside the US).</span>}
+    </section>
     <section className="card ci-card">
       <span className="ci-q">Arrival time</span>
       <TimeStrip times={times} value={arr} set={setArr} />
     </section>
     {/* The real link turns `changeAsk` into a task for the team (open item); the demo only shows it was sent. */}
-    <button className="g-cta" onClick={() => save({ ...flow, details: true, arrival: arr, changeAsk: asked ? ask.trim() : null })}>Confirm</button>
+    <button className="g-cta" disabled={!okPhone} onClick={() => save({ ...flow, details: true, arrival: arr, phone: okPhone, changeAsk: asked ? ask.trim() : null })}>Confirm</button>
   </>;
 }
 

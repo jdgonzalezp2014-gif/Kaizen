@@ -514,7 +514,7 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
         </div>
         {fact('users', 'Guests', row.guests ?? '—')}
         {fact('globe', 'Channel', row.channel ? channelLabel(row.channel) : '—')}
-        {fact('phone', 'Phone', thread?.phone ?? '—')}
+        {fact('phone', thread?.phoneConfirmed ? 'Phone · confirmed by guest' : 'Phone', thread?.phone ?? '—')}
         {row.reservationId && fact('clipboard', 'Reservation', `#${row.reservationId}`)}
         {row.reservationId && <div className="ix-done" aria-label="What the guest has done">
           <span className={/^paid$/i.test(row.payment ?? '') ? 'yes' : ''}><Icon n={/^paid$/i.test(row.payment ?? '') ? 'check' : 'card'} /> {row.payment || 'Payment —'}</span>

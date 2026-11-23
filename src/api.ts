@@ -1126,7 +1126,7 @@ export interface StayCase { id: string; category: string | null; status: string;
 export interface ExtendFit { ok: true; freeBefore: number; freeAfter: number; turnIn: boolean; turnOut: boolean; nightPrices: { before: number[]; after: number[] } | null }
 export const inboxExtend = (b: { listingId: string | null; arrival: string | null; departure: string | null }) =>
   call<ExtendFit | Fail>('/api/inbox', { method: 'POST', body: JSON.stringify({ action: 'extend', ...b }) });
-export interface InboxThread { ok: true; messages: ThreadMsg[]; tasks: StayTask[]; cases?: StayCase[]; portalLink: string | null; phone: string | null; plan: Planned[];
+export interface InboxThread { ok: true; messages: ThreadMsg[]; tasks: StayTask[]; cases?: StayCase[]; portalLink: string | null; phone: string | null; phoneConfirmed?: boolean; plan: Planned[];
   /** The online check-in, when it is done: when, and whether the guest's portal or a person marked it. */
   checkin?: { at: string; source: string; by: string | null } | null;
   /** Drafted when the guest wrote (guest-events.ts draftEvent): a suggestion, or why it could not be written. */
@@ -1138,7 +1138,7 @@ export interface InboxEvents { ok: true; last: number; waiting: number; fresh: {
 export const getInboxEvents = (since: number) => call<InboxEvents | Fail>(`/api/inbox?events=${since}`);
 export interface Automations { ok: true; templates: Template[]; stats: { id: string; status: MsgStatus; n: number; last: string | null }[]; units: { id: string; name: string }[]; live: boolean }
 export const getAutomations = () => call<Automations | Fail>('/api/inbox?automations=1');
-export interface InboxSms { ok: true; connected: boolean; phone: string | null; note: string; messages: ThreadMsg[] }
+export interface InboxSms { ok: true; connected: boolean; phone: string | null; phoneConfirmed?: boolean; note: string; messages: ThreadMsg[] }
 export const getInbox = (offset = 0) => call<InboxList | Fail>(`/api/inbox${offset ? `?offset=${offset}` : ''}`);
 export const getInboxThread = (conversationId: string, reservationId: string) =>
   call<InboxThread | Fail>(`/api/inbox?conversation=${encodeURIComponent(conversationId)}&reservation=${encodeURIComponent(reservationId)}`);

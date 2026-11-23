@@ -8,7 +8,7 @@
  */
 import { zonedInstant } from './inbox.ts';
 import type { Channel, GuestGuide, GuestStay } from './guest-portal.ts';
-import { newFlow, type Flow } from './guest-checkin.ts';
+import { cleanPhone, newFlow, type Flow } from './guest-checkin.ts';
 import type { UpsellKind } from './guest-portal.ts';
 
 export const STAY_TZ = 'America/Chicago';
@@ -112,6 +112,7 @@ export function cleanFlow(raw: unknown, server: { identity: boolean; paid: boole
   const f = newFlow();
   f.details = o.details === true;
   f.arrival = typeof o.arrival === 'string' && o.arrival.length <= 20 ? o.arrival : null;
+  f.phone = cleanPhone(o.phone);
   f.changeAsk = typeof o.changeAsk === 'string' && o.changeAsk.trim() ? o.changeAsk.trim().slice(0, 600) : null;
   f.protection = o.protection === 'waiver' || o.protection === 'deposit' || o.protection === 'none' ? o.protection : null;
   f.rules = o.rules === true;

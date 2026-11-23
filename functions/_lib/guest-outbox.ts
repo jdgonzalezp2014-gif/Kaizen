@@ -15,6 +15,7 @@
  * moment something happens to one stay (the online check-in is done, Hostaway's webhook says it was just booked).
  * The unique index (one automatic template per stay) is what makes the two harmless together.
  */
+import { confirmedPhone } from './guest-phone.ts';
 import { getCredentials, type SqlFn } from './accounts.ts';
 import { decrypt } from './crypto.ts';
 import type { Env } from './db.ts';
@@ -139,7 +140,7 @@ export async function deliver(sql: SqlFn, env: Env, row: Deliverable): Promise<{
         }
       } else {
         const [q] = await sql`SELECT quo_api_key_enc, quo_from FROM accounts WHERE id = 1` as { quo_api_key_enc: string | null; quo_from: string | null }[];
-        const phone = conv?.phone ?? null;
+        const phone = await confirmedPhone(sql, row.reservation_id) ?? conv?.phone ?? null;
         if (!phone) { status = 'failed'; error = 'The guest has no phone number on this reservation.'; }
         else {
           const r = await sendSms({ apiKey: q?.quo_api_key_enc ? await decrypt(q.quo_api_key_enc, env.ENCRYPTION_KEY) : null,

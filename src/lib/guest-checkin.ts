@@ -58,12 +58,23 @@ export const channelCovers = (s: Pick<GuestStay, 'channel'>) => s.channel === 'a
 const protectionDone = (f: Pick<Flow, 'protection'>, s: Pick<GuestStay, 'channel'>) =>
   f.protection === 'waiver' || f.protection === 'deposit' || (f.protection === 'none' && channelCovers(s));
 
+/** A phone number as the guest typed it → +E.164 (10 digits = US/Canada), or null when it cannot be one. */
+export function cleanPhone(v: unknown): string | null {
+  if (typeof v !== 'string') return null;
+  const plus = v.trim().startsWith('+'), d = v.replace(/\D/g, '');
+  if (!plus && d.length === 10) return `+1${d}`;
+  if (!plus && d.length === 11 && d.startsWith('1')) return `+${d}`;
+  return plus && d.length >= 8 && d.length <= 15 ? `+${d}` : null;
+}
+
 /** The guest's arrival time as shown ("6:30 PM", or LATE_ARRIVAL) — picked on a sliding strip (owner, 2026-11-16). */
 export type Arrival = string;
 export const LATE_ARRIVAL = 'After midnight';
 export interface Flow {
   details: boolean;
   arrival: Arrival | null;
+  /** The mobile number the guest confirmed or typed at check-in (owner, 2026-11-23: Airbnb's number does not work) — +E.164. */
+  phone?: string | null;
   /** "Something is wrong" on the booking details: what the guest wrote. The real link opens a task for the team. */
   changeAsk?: string | null;
   identity: boolean;

@@ -10,6 +10,7 @@
  * (guest-outbox.ts): while the account's guest messages are off, "send" keeps the message as staged and says so.
  * The tables come with migration 116; until it runs the list and the threads still read (Hostaway needs no table).
  */
+import { confirmedPhone } from '../_lib/guest-phone.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
@@ -83,13 +84,14 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         fetchConversationOf(creds, sms), outbox(sql, sms, 'sms'),
       ]);
       const connected = !!(a?.quo_api_key_enc && a.quo_from);
-      const phone = conv?.phone ?? null;
+      const mine = await confirmedPhone(sql, sms);
+      const phone = mine ?? conv?.phone ?? null;
       let note = '', theirs = [] as Awaited<ReturnType<typeof quoThread>>;
       if (connected && phone) {
         try { theirs = await quoThread({ apiKey: await decrypt(a!.quo_api_key_enc!, env.ENCRYPTION_KEY), from: a!.quo_from }, phone); }
         catch (e) { note = e instanceof Error ? e.message : String(e); }
       }
-      return json({ ok: true, connected, phone: maskPhone(phone), note, messages: mergeThread(theirs, ours.map(outMsg)) });
+      return json({ ok: true, connected, phone: maskPhone(phone), phoneConfirmed: !!mine, note, messages: mergeThread(theirs, ours.map(outMsg)) });
     }
 
     const conversation = q.get('conversation');
@@ -133,8 +135,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       if (theirs.length && !theirs[theirs.length - 1]!.incoming) {
         await sql`UPDATE guest_events SET answered_at = now() WHERE account_id = 1 AND kind = 'message' AND conversation_id = ${conversation} AND answered_at IS NULL`.catch(() => {});
       }
+      const mine = await confirmedPhone(sql, reservation);
       return json({
-        ok: true, messages: mergeThread(theirs, ours.map(outMsg)), tasks, cases, portalLink: link, phone: maskPhone(row?.phone), checkin: ci, draft, issue,
+        ok: true, messages: mergeThread(theirs, ours.map(outMsg)), tasks, cases, portalLink: link, phone: maskPhone(mine ?? row?.phone), phoneConfirmed: !!mine, checkin: ci, draft, issue,
         plan: row ? planFor({ ...row, checkinDoneAt: ci?.at ?? null, issue: !!issue }, templates, auto, new Date(), GUEST_TZ) : [],
       });
     }

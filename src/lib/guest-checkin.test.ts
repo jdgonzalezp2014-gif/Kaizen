@@ -109,3 +109,12 @@ test('arrivalTimes: from check-in every 30 minutes, then after midnight', () => 
   assert.equal(t[0], '4:00 PM'); assert.equal(t[1], '4:30 PM'); assert.equal(t.at(-2), '11:30 PM'); assert.equal(t.at(-1), LATE_ARRIVAL);
   assert.equal(arrivalTimes('3:15 PM')[0], '3:30 PM');
 });
+
+test('cleanPhone: US 10 / 11 digits and +country numbers; anything short is not a number', async () => {
+  const { cleanPhone } = await import('./guest-checkin.ts');
+  assert.equal(cleanPhone('(312) 555-0199'), '+13125550199');
+  assert.equal(cleanPhone('1 312 555 0199'), '+13125550199');
+  assert.equal(cleanPhone('+57 300 123 4567'), '+573001234567');
+  assert.equal(cleanPhone('555-0199'), null);
+  assert.equal(cleanPhone(42), null);
+});

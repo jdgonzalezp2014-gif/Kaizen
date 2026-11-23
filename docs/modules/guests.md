@@ -382,6 +382,7 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - Settings → Payments accepts live secret / restricted keys and `pk_live_` now (both must be the same mode — `embedKey`). The real stay link and
   upsell pay links run on it; the open demo (`/crew/guest-demo`) stays test-only and refuses to pay with a live key. **Vendor payouts by Stripe
   refuse a live key** (`LIVE_PAYOUTS_OFF`, payouts.ts) until the owner switches them on.
+- **Guest phone** (owner, 2026-11-23): the Details step asks for the mobile number (Airbnb: empty, typed; others: the booking's, confirmed) — `flow.phone` in guest_flows (+E.164, `cleanPhone`). `confirmedPhone()` (guest-phone.ts) wins over Hostaway's for the CRM ("confirmed by guest") and every Quo SMS (Inbox tab + automations).
 - **Test stays** (owner, 2026-11-23): `node --env-file=.env.local scripts/test-stay-link.mjs <listingId> [direct|airbnb] [YYYY-MM-DD] [nights]` mints a real /guest/ link for a made-up stay (id 77…, `testReservation()`): real house + live Stripe, nothing read from or written to Hostaway, no "after check-in" messages. To-dos it makes carry "Test Guest".
 - **Airbnb protection** (owner, 2026-11-23): Airbnb guests see the waiver / deposit too, plus a small "None of them" (`protection: 'none'`, Airbnb only) with a note that any damage goes to Airbnb as a claim, likely charged in full. No more "Covered by Airbnb".
 - **Identity step hidden** (owner, 2026-11-23): `IDENTITY_STEP_ON = false` in guest-checkin.ts — Stripe Identity (live) applied for, flow
