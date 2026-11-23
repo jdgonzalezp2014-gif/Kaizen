@@ -477,7 +477,7 @@ test('§162: a purchase order from a mention, an upsell named as such, and the l
   assert.deepEqual(kaizenButton(undefined, 'todo', '5'), []);
   assert.match(JSON.stringify(kaizenButton('https://k.dev', 'todo', '5')), /https:\/\/k\.dev\/\?todo=5/);
   assert.match(JSON.stringify(taskMessage({ id: '5', title: 'Buy', kind: 'task', status: 'pending', priority: 'none', isOrder: true }, 'created', 'juan', 'https://k.dev')),
-    /Purchase order.*\?todo=5/);
+    /Buy\*  ·  🛒.*\?todo=5/);
   assert.match(JSON.stringify(claimMessage({ id: '9', category: 'Late check-in', severity: 'Low', status: 'Open' }, 'opened', 'juan', 'https://k.dev')), /Upsell · Portfolio.*\?claim=9/);
   assert.equal(threadLine('✓ Completed', 'juan').blocks.length, 1);
 });

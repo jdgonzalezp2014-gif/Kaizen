@@ -79,13 +79,16 @@ export async function taskLite(sql: SqlFn, id: string): Promise<TaskLite | null>
                                t.description, t.parent_id, u.name AS unit,
                                (EXISTS (SELECT 1 FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id)
                                  OR (t.parent_id IS NULL AND t.clean_group IN ('request', 'inspection'))) AS is_order,
-                               t.urgency_pending AS asks_urgency
+                               t.urgency_pending AS asks_urgency,
+                               (SELECT CASE WHEN jsonb_typeof(o.lines) = 'array' THEN jsonb_array_length(o.lines) ELSE 0 END
+                                  FROM inventory_orders o WHERE o.account_id = 1 AND o.todo_id = t.id) AS order_lines
                           FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
                          WHERE t.account_id = 1 AND t.id::text = ${id}` as
     { id: string; title: string; kind: TaskLite['kind']; status: string; priority: string; assignee: string | null; due_on: string | null;
-      reservation_label: string | null; description: string | null; parent_id: string | null; unit: string | null; is_order: boolean; asks_urgency: boolean }[];
+      reservation_label: string | null; description: string | null; parent_id: string | null; unit: string | null; is_order: boolean; asks_urgency: boolean; order_lines: number | null }[];
   return t ? { id: t.id, title: t.title, kind: t.kind, status: t.status, priority: t.priority, assignee: t.assignee, dueOn: t.due_on,
-               reservationLabel: t.reservation_label, description: t.description, unit: t.unit, isOrder: !!t.is_order, asksUrgency: !!t.asks_urgency } : null;
+               reservationLabel: t.reservation_label, description: t.description, unit: t.unit, isOrder: !!t.is_order, asksUrgency: !!t.asks_urgency,
+               orderLines: t.order_lines == null ? undefined : Number(t.order_lines) } : null;
 }
 
 export type TaskEvent = 'created' | 'assigned' | 'completed' | 'cancelled' | 'reopened' | 'status' | 'urgency' | 'kind' | 'hostaway';

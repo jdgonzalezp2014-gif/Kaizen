@@ -110,6 +110,8 @@ export interface TaskLite {
   isOrder?: boolean;
   /** §162: a field report whose urgency the team has not answered yet — its message carries the answer buttons. */
   asksUrgency?: boolean;
+  /** A purchase's number of lines (items), when it has an order. */
+  orderLines?: number;
   unit?: string | null; assignee?: string | null; dueOn?: string | null; reservationLabel?: string | null; description?: string | null;
 }
 // §159: Slack says what Kaizen says — New → In progress → Done (or Cancelled); an order Purchase → Purchased.
@@ -130,6 +132,8 @@ const plainWhat = (t: TaskLite) => t.isOrder ? 'Purchase order' : t.kind === 'wo
  * glyph where one has both), and a line under each message so they do not run together.
  */
 export const MARK = { todo: '☐', repair: '⚒\uFE0E', order: '▣', claim: '⚑', upsell: '$', guest: '⚠\uFE0E', checkin: '⌂', ai: '✓' } as const;
+/** Owner, 2026-11-23: a purchase is the unit and the cart with how many — the cart is the one emoji he asked for. */
+export const cartLine = (where: string, n?: number) => `*${esc(where)}*  ·  🛒${n ? ` ${n}` : ''}`;
 export const DIVIDER: Block = { type: 'divider' };
 const taskMark = (t: TaskLite) => t.isOrder ? MARK.order : t.kind === 'work_order' ? MARK.repair : MARK.todo;
 
@@ -238,12 +242,15 @@ export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: str
   // Owner, 2026-11-23: the title in bold and what it is, where — status, priority and who are seen when it is opened.
   // A closed one says so, so an old message is not taken for open work.
   const closed = t.status === 'completed' || t.status === 'cancelled' ? stageWord(t.status) : '';
-  // A purchase: ▣ already says it — no "Purchase order" word, no "Buy supplies:" before the title.
-  const line = [t.isOrder ? '' : plainWhat(t), t.unit ? esc(t.unit) : '', closed].filter(Boolean).join(' · ');
-  const title = t.isOrder ? t.title.replace(/^buy supplies:\s*/i, '') : t.title;
+  // A purchase (owner, 2026-11-23): the unit and 🛒 with how many — the details are managed in the to-do (Open).
+  if (t.isOrder) return {
+    text: `Purchase ${event}: ${t.unit ?? t.title}`,
+    blocks: [section(`${cartLine(t.unit ?? t.title.replace(/^buy supplies:\s*/i, ''), t.orderLines)}${closed ? `\n${closed}` : ''}`, toolFor(appUrl, 'todo', t.id)), DIVIDER]
+  };
+  const line = [plainWhat(t), t.unit ? esc(t.unit) : '', closed].filter(Boolean).join(' · ');
   return {
     text: `${plainWhat(t)} ${event}: ${t.title}`,
-    blocks: [section(`${taskMark(t)}  *${esc(title)}*${line ? `\n${line}` : ''}`, toolFor(appUrl, 'todo', t.id)), DIVIDER]
+    blocks: [section(`${taskMark(t)}  *${esc(t.title)}*\n${line}`, toolFor(appUrl, 'todo', t.id)), DIVIDER]
   };
 }
 
@@ -1076,7 +1083,8 @@ export function quickTitle(text: string): { title: string; description: string |
 /** The reply in the request's thread: it is tracked, and the way to add details. */
 export function trackedReply(t: { id: string; title: string; kind: string; unit?: string | null }, under?: 'sub-task' | 'claim', appUrl?: string): { text: string; blocks: Block[] } {
   // Made inside a task's or a claim's thread (owner, Oct 2026): it belongs to that one.
-  const kind = under === 'sub-task' ? 'Sub-task' : t.kind === 'work_order' ? 'Repair' : t.kind === 'order' ? 'Purchase order' : 'To-do';
+  if (t.kind === 'order') return { text: `Purchase saved in Kaizen: ${t.unit ?? t.title}`, blocks: [section(cartLine(t.unit ?? t.title), toolFor(appUrl, 'todo', t.id))] };
+  const kind = under === 'sub-task' ? 'Sub-task' : t.kind === 'work_order' ? 'Repair' : 'To-do';
   const mark = t.kind === 'work_order' ? MARK.repair : t.kind === 'order' ? MARK.order : MARK.todo;
   // Owner, 2026-11-23: small — what was saved, where, and Open. Details are added in Kaizen; a reply here is a comment.
   const line = [`${kind} saved${under === 'claim' ? ' for this claim' : ''}`, t.unit ? esc(t.unit) : ''].filter(Boolean).join(' · ');
