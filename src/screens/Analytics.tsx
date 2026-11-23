@@ -215,7 +215,6 @@ function Report({ data, open, onOpen }: { data: AnalyticsData; open: string | nu
     ? `${money(waiting)} in field charges is waiting for someone to approve it (${data.pending.length}, the oldest from ${md(data.pending[0]!.on)}) — it is not in Spent until then.`
     : now.rev.low ? `${now.rev.low} review${now.rev.low === 1 ? '' : 's'} to read — under 5 ★ or a weak category.`
     : moves[0]?.text ?? `A steady stretch: ${money(netIn)} net income, ${money(now.spent)} spent, ${pct(now.occ)} occupancy.`;
-  const [more, setMore] = useState(false);
 
   const lines = [
     now.spent > 0 && top ? `Spent ${money(now.spent)}; ${top.key} is ${pct(top.share)} of it` +
@@ -240,12 +239,10 @@ function Report({ data, open, onOpen }: { data: AnalyticsData; open: string | nu
             <Delta now={now.rev.stars} before={before.rev.stars} kind="stars" /></div>
         </dl>
       </section>
-      {/* Owner, 2026-11-23: the week in words sits apart from the figures — small, grey, plain sentences. */}
-      <div className="an-notes">
-        <p className="an-insight">{insight}{' '}
-          <button className="link an-more" aria-expanded={more} onClick={() => setMore(!more)}>{more ? 'Less' : 'Read more'}</button></p>
-        {more && <p>{lines.join(' ')} <span className="an-limit">One-off spend only — rent and utilities are not in these figures yet.</span></p>}
-      </div>
+      {/* Owner, 2026-11-23: a short explanation under the figures — the insight and one line behind it, small and grey,
+          nothing to click. Built by rules from the figures on screen (no model). */}
+      <p className="an-notes"><span className="an-insight">{insight}</span> {lines[0] ?? ''}{' '}
+        <span className="an-limit">Rent and utilities are not included yet.</span></p>
 
       <div className="an-grid">
         <Panel id="spent" open={open} onOpen={onOpen} icon="receipt" title="Spent" figure={money(now.spent)}
