@@ -10,4 +10,4 @@ const b64u = b => Buffer.from(b).toString('base64').replace(/\+/g, '-').replace(
 const raw = Buffer.from(process.env.ENCRYPTION_KEY.replace(/=+$/, '').replace(/-/g, '+').replace(/_/g, '/'), 'base64');
 const k = await crypto.subtle.importKey('raw', raw, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
 const sig = b64u(new Uint8Array(await crypto.subtle.sign('HMAC', k, new TextEncoder().encode(`guest:${id}`))).slice(0, 16));
-console.log(`https://kaizen-01v.pages.dev/guest/${id}.${sig}`);
+console.log(`https://stay.kaizenguestproperties.com/guest/${id}.${sig}`);
