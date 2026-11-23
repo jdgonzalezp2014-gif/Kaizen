@@ -81,7 +81,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil
     return stayGet(sql, env, new URL(request.url), p => waitUntil(p));
   }
   const co = new URL(request.url).searchParams.get('checkout');
-  if (co) return guestCheckoutState(sql, env.ENCRYPTION_KEY, co);
+  if (co) return guestCheckoutState(sql, env.ENCRYPTION_KEY, co, null, new URL(request.url).searchParams.get('house'));
   // An open, signed demo link for one real unit (guest-demo.ts).
   if (new URL(request.url).searchParams.has('house')) return demoHouse(sql, env.ENCRYPTION_KEY, new URL(request.url));
   const vs = new URL(request.url).searchParams.get('identity');

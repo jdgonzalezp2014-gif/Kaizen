@@ -24,6 +24,7 @@ import { decodeLines, encodeLines, itemLabel, type PaidLine } from '../../src/li
 import { settleCharge, syncChargeRefund } from './charge-settle.ts';
 import type { Env } from './db.ts';
 import { loadStay, markStay, stayId } from './guest-stay.ts';
+import { verifyHouse } from './guest-demo.ts';
 import { mirrorTodos } from './inventory.ts';
 import { bill, protectionFor } from '../../src/lib/guest-checkin.ts';
 import { UPSELLS, availability, nights, offered, quote, type Choice } from '../../src/lib/guest-portal.ts';
@@ -79,11 +80,14 @@ async function sandbox(sql: SqlFn, encryptionKey: string) {
 
 export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: Request, env?: Env): Promise<Response> {
   const b = await request.json().catch(() => ({})) as { lines?: Line[]; email?: string; back?: string; embedded?: boolean; stay?: StayRef;
-    stayToken?: string; purpose?: 'checkin' | 'extra'; extra?: { kind?: string; choice?: Choice } };
+    stayToken?: string; purpose?: 'checkin' | 'extra'; extra?: { kind?: string; choice?: Choice }; house?: string };
   // The real stay link: its own bill, from the server.
   const real = env && b.stayToken ? await stayId(encryptionKey, b.stayToken) : null;
   if (b.stayToken && !real) return bad('This stay link is not valid.', 403);
-  const k = real ? await anyKey(sql, encryptionKey) : await sandbox(sql, encryptionKey);
+  // Owner, 2026-11-23 ("I want to test that it works"): a signed demo link (staff only, it expires) may pay with the
+  // live key too — the payer is whoever holds the link, so the page's lines only cost themselves; capped below.
+  const demoLive = !real && b.house ? await verifyHouse(encryptionKey, b.house) : null;
+  const k = real || demoLive ? await anyKey(sql, encryptionKey) : await sandbox(sql, encryptionKey);
   if (k instanceof Response) return k;
   const fromStay = real ? await stayLines(sql, env!, real, b.purpose, b.extra) : null;
   if (typeof fromStay === 'string') return bad(fromStay, 409);
@@ -91,6 +95,7 @@ export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: 
   const lines = (fromStay ? fromStay.lines : Array.isArray(b.lines) ? b.lines : []).filter(l => l && (l.kind === 'charge' || l.kind === 'hold'));
   if (!lines.length || lines.length > 8) return bad('Nothing to pay.');
   if (lines.some(l => typeof l.label !== 'string' || !(Number(l.amount) > 0) || Number(l.amount) > 5000)) return bad('A line is not valid.');
+  if (!real && lines.reduce((t, l) => t + Number(l.amount), 0) > 1500) return bad('A demo payment is limited to $1,500.');
   if (!portalPath(b.back)) return bad('Bad return page.');
   const origin = new URL(request.url).origin;
   const back = origin + b.back;
@@ -135,10 +140,11 @@ export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: 
   } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
 }
 
-export async function guestCheckoutState(sql: SqlFn, encryptionKey: string, id: string, stayToken?: string | null): Promise<Response> {
+export async function guestCheckoutState(sql: SqlFn, encryptionKey: string, id: string, stayToken?: string | null, house?: string | null): Promise<Response> {
   const real = stayToken ? await stayId(encryptionKey, stayToken) : null;
-  if (!(real ? /^cs_(test|live)_[A-Za-z0-9]{10,200}$/ : /^cs_test_[A-Za-z0-9]{10,200}$/).test(id)) return bad('Bad session.');
-  const k = real ? await anyKey(sql, encryptionKey) : await sandbox(sql, encryptionKey);
+  const demoLive = !real && house ? await verifyHouse(encryptionKey, house) : null;
+  if (!(real || demoLive ? /^cs_(test|live)_[A-Za-z0-9]{10,200}$/ : /^cs_test_[A-Za-z0-9]{10,200}$/).test(id)) return bad('Bad session.');
+  const k = real || demoLive ? await anyKey(sql, encryptionKey) : await sandbox(sql, encryptionKey);
   if (k instanceof Response) return k;
   try {
     const s = await recordSession(sql, k.key, id, encryptionKey);

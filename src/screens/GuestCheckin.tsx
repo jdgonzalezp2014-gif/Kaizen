@@ -7,7 +7,9 @@
 import { useEffect, useRef, useState } from 'react';
 import { stayToken } from '../lib/guest-portal.ts';
 /** `&stay=<token>` on the real stay link: the server then counts the check for this stay. */
-const stayQ = () => { const t = stayToken(); return t ? `&stay=${encodeURIComponent(t)}` : ''; };
+const stayQ = () => { const t = stayToken(); const h = houseToken(); return t ? `&stay=${encodeURIComponent(t)}` : h ? `&house=${encodeURIComponent(h)}` : ''; };
+/** The signed demo link's token (?house=…): with it the demo may pay with the live key (guest-pay.ts). */
+const houseToken = () => { try { return new URLSearchParams(location.search).get('house'); } catch { return null; } };
 import { loadStripe, type EmbeddedCheckout } from '../components/stripe-js.ts';
 import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
@@ -348,7 +350,7 @@ export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 
         // Which stay, for the books (guest_payments): the reservation and the house the guest paid from.
         body: JSON.stringify({ lines, email, back: u.pathname + u.search, embedded: true,
           stay: stay && { id: stay.id, unitName: stay.unitName, guest: stay.guest?.name ?? null },
-          stayToken: stayToken(), purpose: purpose ?? 'extra', extra }) });
+          stayToken: stayToken(), house: houseToken(), purpose: purpose ?? 'extra', extra }) });
       const j = await r.json() as { url?: string; id?: string; clientSecret?: string; publishableKey?: string; message?: string };
       if (j.clientSecret && j.publishableKey && j.id) { setEmbed({ id: j.id, clientSecret: j.clientSecret, pk: j.publishableKey }); return; }
       if (j.url && beforeRedirect) { location.href = j.url; return; }
@@ -363,8 +365,8 @@ export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 
       <button className="chip ci-embed-back" onClick={() => { setEmbed(null); setErr(null); }}>‹ Back to the summary</button>
     </> : <button className="g-cta" onClick={pay} disabled={busy}>{busy ? 'Opening secure payment…' : label}</button>}
     <p className="ci-stripe"><span><Icon n="lock" /> Secure payment by Stripe</span>
-      <span>Test mode <Hint>Pay right here: Apple Pay (iPhone / Safari), Google Pay (Chrome / Android) or a card.
-        Test card 4242 4242 4242 4242, any future date, any CVC. A deposit is only held — captured after check-out if something is owed.</Hint></span></p>
+      <span><Hint>Pay right here: Apple Pay (iPhone / Safari), Google Pay (Chrome / Android) or a card.
+        A deposit is only held — captured after check-out if something is owed.</Hint></span></p>
   </>;
 }
 
