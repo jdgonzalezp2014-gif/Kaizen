@@ -6,7 +6,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { cancelCharge, chargePlan, createCharge, rcReceived } from '../_lib/upsell-charge.ts';
+import { cancelCharge, chargePlan, createCharge, rcNotThere, rcReceived } from '../_lib/upsell-charge.ts';
 
 const answer = (r: { ok: boolean; status?: number }) => {
   const { status, ...rest } = r as { ok: boolean; status?: number };
@@ -31,6 +31,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   try {
     if (b.action === 'create') return answer(await createCharge(sql, env.ENCRYPTION_KEY, new URL(request.url).origin, b, who.email));
     if (b.action === 'received') return answer(await rcReceived(sql, env.ENCRYPTION_KEY, String(b.id ?? ''), b.amount, who.email));
+    if (b.action === 'not_there') return answer(await rcNotThere(sql, String(b.id ?? ''), who.email));
     if (b.action === 'cancel') return answer(await cancelCharge(sql, env.ENCRYPTION_KEY, String(b.id ?? ''), who.email));
   } catch (e) { return crash(e); }
   return Response.json({ ok: false, message: 'Unknown action.' }, { status: 400 });

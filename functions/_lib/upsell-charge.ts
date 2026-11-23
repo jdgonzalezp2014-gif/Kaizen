@@ -26,6 +26,7 @@ import { signCharge, signGuest, verifyCharge, verifyGuest } from './guest-link.t
 import { saveCaseMoney } from './claim-money.ts';
 import { settleCharge } from './charge-settle.ts';
 import { notifyClaim } from './slack.ts';
+import { rcCheckButtons } from '../../src/lib/slack.ts';
 import { toCents } from '../../src/lib/payouts.ts';
 import { encodeLines } from '../../src/lib/guest-payments.ts';
 import { portalLink } from '../../src/lib/inbox.ts';
@@ -203,6 +204,20 @@ export async function rcReceived(sql: SqlFn, ek: string, id: string, amount: unk
   return s.ok ? { ok: true as const } : fail(s.message ?? 'Not saved.', 409);
 }
 
+/**
+ * "Not there" (owner, 2026-11-23): the team looked in Airbnb and the money is not in. The guest's "I already paid" is taken
+ * back, so their stay page shows the request pending with its button again; a note says who looked.
+ */
+export async function rcNotThere(sql: SqlFn, id: string, who: string) {
+  const r = await chargeById(sql, id);
+  if (!r) return fail('No such charge.', 404);
+  if (r.method !== 'rc' || r.status !== 'pending') return fail(`It is ${r.status} — nothing to check.`);
+  await sql`DELETE FROM work_updates WHERE account_id = 1 AND subject = 'claim' AND subject_id::text = ${r.claim_id} AND kind = 'note' AND body LIKE ${`${SAID_PAID}%`}`;
+  await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+            VALUES (1, 'claim', ${r.claim_id}, 'note', ${`Not in Airbnb yet: ${r.label} $${Number(r.amount).toFixed(2)} — the guest sees it pending again.`}, ${who})`;
+  return { ok: true as const };
+}
+
 export async function cancelCharge(sql: SqlFn, ek: string, id: string, who: string) {
   const r = await chargeById(sql, id);
   if (!r) return fail('No such charge.', 404);
@@ -374,7 +389,8 @@ export async function staySaidPaid(sql: SqlFn, ek: string, token: string, charge
   if (!done) {
     await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
               VALUES (1, 'claim', ${r.claim_id}, 'note', ${`${SAID_PAID}: ${r.label} $${Number(r.amount).toFixed(2)} — check Airbnb and mark it received.`}, 'Guest (stay page)')`;
-    await notifyClaim(sql, ek, r.claim_id, 'changed', 'Guest (stay page)', '— the guest says it is paid in the Resolution Center; check Airbnb and mark it received').catch(() => {});
+    await notifyClaim(sql, ek, r.claim_id, 'changed', 'Guest (stay page)', `— ${r.label} $${Number(r.amount).toFixed(2)}: the guest says it is paid in Airbnb. Verify it`,
+      rcCheckButtons(r.id)).catch(() => {});
   }
   return Response.json({ ok: true, saidPaidAt: new Date().toISOString() }, { headers: { 'Cache-Control': 'no-store' } });
 }

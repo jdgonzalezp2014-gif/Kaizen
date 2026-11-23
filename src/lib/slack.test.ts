@@ -49,26 +49,36 @@ test('reminders go once a day, at or after their hour', () => {
   assert.deepEqual(dueDigests(16, '2026-10-01', { digest: { afternoon: null } }, new Set()), ['morning']);
 });
 
-test('a task message carries the buttons that act on it', () => {
-  const m = taskMessage({ id: '7', title: 'Fix <AC>', kind: 'work_order', status: 'pending', priority: 'high', unit: 'CL1125', assignee: 'Laura' }, 'created', 'juan');
+test('a task message is its line and one small 🛠 into Kaizen (owner, 2026-11-23)', () => {
+  const m = taskMessage({ id: '7', title: 'Fix <AC>', kind: 'work_order', status: 'pending', priority: 'high', unit: 'CL1125', assignee: 'Laura' }, 'created', 'juan', 'https://k.dev');
   const s = JSON.stringify(m.blocks);
   assert.match(s, /Fix &lt;AC&gt;/);
-  assert.match(s, /task_complete/);
-  // §143: Complete and Comment only — the first comment is what "started" means,
-  // and "Kaizen ↗" led to the front door rather than the task.
-  assert.doesNotMatch(s, /task_start|open_kaizen/);
-  assert.match(s, /task_open/);
   assert.match(s, / High · New/);  // §159: the shared words
-  const done = JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'completed', priority: 'none' }, 'completed', '').blocks);
-  assert.match(done, /task_reopen/);
-  assert.doesNotMatch(done, /task_complete/);
+  assert.match(s, /"text":"🛠".*"url":"https:\/\/k\.dev\/\?todo=7"/);
+  assert.doesNotMatch(s, /task_complete|task_reopen|task_open|"type":"actions"/);
+  assert.doesNotMatch(JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'pending', priority: 'none' }, 'created', '').blocks), /🛠/);
   assert.match(JSON.stringify(taskList([])), /Nothing open/);
 });
 
-test('a claim message lets the status be changed in place', () => {
-  const s = JSON.stringify(claimMessage({ id: '3', unit: 'P2-4308', category: 'Damage', severity: 'High', status: 'Open', description: 'Missing fob' }, 'opened', 'juan').blocks);
-  assert.match(s, /claim_status/);
-  assert.match(s, /"value":"Resolved\|3"/);
+test('a claim message is its line and one small 🛠 into Kaizen', () => {
+  const s = JSON.stringify(claimMessage({ id: '3', unit: 'P2-4308', category: 'Damage', severity: 'High', status: 'Open', description: 'Missing fob' }, 'opened', 'juan', 'https://k.dev').blocks);
+  assert.match(s, /"url":"https:\/\/k\.dev\/\?claim=3"/);
+  assert.doesNotMatch(s, /claim_status|claim_open|claim_edit/);
+});
+
+test('the clock\'s morning message: only today\'s check-ins not completed, each with its 🛠 to the stay', async () => {
+  const { checkinsDigest, rcCheckButtons } = await import('./slack.ts');
+  const a = (resId: string, date: string, checkedIn: boolean | null, agreement: 'signed' | 'not_signed' | null = 'signed') =>
+    ({ resId, date, time: '4:00 PM', unit: 'CL1125', guest: `G${resId}`, agreement, needsId: true, idInDrive: false, checkedIn });
+  const m = checkinsDigest({ today: '2026-11-24', arrivals: [a('1', '2026-11-24', false, 'not_signed'), a('2', '2026-11-24', true), a('3', '2026-11-25', false), a('4', '2026-11-24', null)] }, 'https://k.dev');
+  assert.equal(m.count, 1);
+  const s = JSON.stringify(m.blocks);
+  assert.match(s, /G1\* · CL1125 · 4:00 PM — agreement, ID/);
+  assert.match(s, /\?tab=inbox&r=1/);
+  assert.doesNotMatch(s, /G2|G3|G4/);
+  assert.equal(checkinsDigest({ today: '2026-11-24', arrivals: [] }).count, 0);
+  assert.match(JSON.stringify(rcCheckButtons('9')), /"action_id":"rc_received","value":"9".*"action_id":"rc_not_there","value":"9"/);
+  assert.doesNotMatch(JSON.stringify(rcCheckButtons('9')), /"style"/);
 });
 
 test('forms read back as the API bodies', () => {
@@ -355,7 +365,6 @@ test('a claim has its card: the case, its comments and the box; every row and me
   assert.deepEqual(JSON.parse(v.private_metadata), { id: '5', root: 'claims' });
   for (const k of ['P2-4308 · Broken TV', 'Comments* · 1', 'Asked the guest', '"focus_on_load":true']) assert.ok(s.includes(k), k);
   assert.match(JSON.stringify(claimList([c])), /"action_id":"claim_open","value":"5"/);
-  assert.match(JSON.stringify(claimMessage(c, 'opened', 'juan').blocks), /claim_open/);
 });
 
 test("a claim's card lists its work (each opens) and adds a to-do; a reply made in a thread says whose it is", () => {
@@ -470,11 +479,10 @@ test('§162: a purchase order from a mention, an upsell named as such, and the l
   assert.equal(threadLine('✓ Completed', 'juan').blocks.length, 1);
 });
 
-test('§162: a field report asks the team how urgent on its message — and can become a repair', async () => {
-  const { taskMessage } = await import('./slack.ts');
+test('§164: the urgency question is asked privately (crew channel), no longer on the team\'s message (owner, 2026-11-23)', async () => {
+  const { taskMessage, urgencyAsk } = await import('./slack.ts');
   const t = { id: '7', title: 'Problem at P2: leak', kind: 'task' as const, status: 'pending', priority: 'high', asksUrgency: true };
-  const s = JSON.stringify(taskMessage(t, 'created', 'Luz'));
-  for (const k of ['task_urgency_urgent', 'task_urgency_high', 'task_urgency_medium', 'task_urgency_low', 'task_make_repair', 'high|7']) assert.ok(s.includes(k), k);
-  assert.ok(!JSON.stringify(taskMessage({ ...t, asksUrgency: false }, 'created', 'Luz')).includes('task_urgency_'));
-  assert.ok(!JSON.stringify(taskMessage({ ...t, status: 'completed' }, 'created', 'Luz')).includes('task_urgency_'));
+  assert.ok(!JSON.stringify(taskMessage(t, 'created', 'Luz')).includes('task_urgency_'));
+  const s = JSON.stringify(urgencyAsk(t));
+  for (const k of ['task_urgency_urgent', 'task_urgency_low', 'task_make_repair', 'high|7']) assert.ok(s.includes(k), k);
 });

@@ -60,7 +60,9 @@ test('the watch looks at the newest message per conversation, once it has waited
 test('the Slack line says who, how long, and opens the conversation', () => {
   const m = watchMessage({ guest: 'Ana Ruiz', listing: 'P2-1406', stage: 'Arrives today', body: 'Where do I park?', minutes: 42, urgent: false, why: 'asks about parking', link: 'https://x/?tab=inbox&c=44' });
   assert.match(m.blocks[0]!.text.text, /Ana Ruiz\* has waited 42 min/);
-  assert.match(m.blocks[0]!.text.text, /<https:\/\/x\/\?tab=inbox&c=44\|Open the conversation>/);
+  // Owner, 2026-11-23: the way in is the small 🛠 beside the line.
+  assert.equal((m.blocks[0] as { accessory?: { url?: string; text?: { text?: string } } }).accessory?.url, 'https://x/?tab=inbox&c=44');
+  assert.equal((m.blocks[0] as { accessory?: { text?: { text?: string } } }).accessory?.text?.text, '🛠');
   assert.match(watchMessage({ guest: 'Ana', listing: 'L', stage: 'In house', body: 'locked out', minutes: 1, urgent: true, why: '', link: 'l' }).text, /^Urgent/);
 });
 

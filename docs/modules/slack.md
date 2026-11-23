@@ -37,8 +37,25 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 
 ## What it does
 
-- Clock: 8 AM (day + tasks named + claims, Manage per section, 💬 menu), 3 PM (missing for
-  tomorrow), 11:55 PM tasks check-out — Central. A stale morning is skipped after 3 PM.
+- **Less noise (owner, 2026-11-23 — "intentamos hacer muchas cosas con los bots"; measured: 76 bot posts/week in #kaizen-ops,
+  ~46 of them guest alerts).** Each work message = its line + ONE small grey **🛠** button (`toolButton`, a URL button, beside the
+  line) that opens the right place in Kaizen — `?todo=`, `?claim=`, `?tab=inbox&c=` / `&r=<reservation>` (Inbox opens that stay's
+  conversation). Gone from messages: ✓ Complete / Reopen / Manage on tasks, status select / Comment / Edit on claims, the urgency
+  question on #kaizen-ops (still asked privately in the cleaner's channel, `askOpsPrivately`). A reply in a task's thread is still a
+  comment (§153); `@Kaizen …` commands and `/kaizen today` (the whole day, with pop-ups) are unchanged.
+  - Clock: **one message a day at the morning hour (8 AM Central): only today's check-ins whose online check-in is not done**
+    (`checkinsDigest`; done = a `guest_checkins` row), each line with what is missing (agreement, ID) and its 🛠. None → nothing
+    posted (key `digest:morning:<day>` still taken). The 3 PM "Before tomorrow" and the 11:55 PM tasks check-out **went** (their
+    Settings fields/"Send now" still exist but the clock no longer sends them). The digest tick is a heavy one: the cleans' thread
+    waits for the next tick (`digestRan`).
+  - Guests (`guest-events.ts` `tellTeam`): **one Slack message per guest per day** (GUEST_TZ); more that day (another urgent one,
+    the AI's answer) go in its thread — `slack_sent` keys `guestts:<conversation>:<day>:<ts>`, no table. **"X is waiting for an
+    answer" is no longer posted**; `watchPass` still closes what was answered or left.
+  - Airbnb "I already paid": the line in the case's thread carries two small grey buttons **Received** (`rc_received` →
+    `rcReceived`, settles it) / **Not there** (`rc_not_there` → `rcNotThere`: the guest's note is taken back, so the stay page shows
+    it pending again, and a note says who looked). Both via `/api/upsell-charge` as the member (permission upsell-charge POST);
+    the buttons are then replaced by what was decided.
+  - Preview posted in #kaizen-task 2026-11-23. SOP 8 "Kaizen in Slack" not yet updated for this.
 - `/kaizen help|tasks|task|repair|claims|claim|today|cleans`; ⚡ New task / Report a repair /
   New claim; ⋯ Create task from message.
 - `@Kaizen new|repair <words>` → made at once (listing guessed, ✎ Add details in the thread);

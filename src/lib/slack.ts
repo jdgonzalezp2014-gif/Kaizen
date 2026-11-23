@@ -132,6 +132,18 @@ const what = (t: TaskLite) => t.isOrder ? '🛒 Purchase order' : t.kind === 'wo
 export const kaizenButton = (appUrl: string | undefined, kind: 'todo' | 'claim', id: string): Block[] =>
   appUrl ? [{ type: 'button', text: plain('Open in Kaizen ↗'), url: `${appUrl}/?${kind}=${encodeURIComponent(id)}`, action_id: 'open_kaizen' }] : [];
 
+/**
+ * Owner, 2026-11-23 ("too much noise — the bots try to do too much"): a message about work carries ONE small grey 🛠,
+ * beside its line, that opens the right place in Kaizen. The work is done there, not in Slack.
+ */
+export const toolButton = (url: string): Block => ({ type: 'button', text: plain('🛠'), url, action_id: 'open_kaizen' });
+const toolFor = (appUrl: string | undefined, kind: 'todo' | 'claim', id: string) =>
+  appUrl ? toolButton(`${appUrl}/?${kind}=${encodeURIComponent(id)}`) : undefined;
+
+/** Owner, 2026-11-23: the guest says they paid in Airbnb's Resolution Center — two small grey buttons, nothing else. */
+export const rcCheckButtons = (chargeId: string): Block[] =>
+  [{ type: 'actions', elements: [button('Received', 'rc_received', chargeId), button('Not there', 'rc_not_there', chargeId)] }];
+
 /** §162: a reply in an item's thread — who did what — instead of a new message in the channel. */
 export function threadLine(text: string, by?: string): { text: string; blocks: Block[] } {
   return { text, blocks: [context(`${text}${by ? ` · ${esc(by)}` : ''}`)] };
@@ -211,27 +223,15 @@ export function pickTask(list: { id?: string; title: string; unit?: string | nul
 }
 
 /**
- * Two buttons, not four (§143): the first comment is what "started" means
- * (/api/todos moves an untouched task to In progress when one lands), so a
- * Start button said nothing a comment does not; and "Kaizen ↗" opened the
- * app's front door, not the task, so it cost a line of the phone's screen
- * for a trip the person still had to finish by hand.
+ * A task's message: its line, its facts and the one 🛠 into Kaizen (owner, 2026-11-23). Complete, Manage and the
+ * urgency question left Slack — the task is worked in Kaizen; a reply in its thread is still a comment (§153).
  */
 export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: string): { text: string; blocks: Block[] } {
-  const closed = t.status === 'completed' || t.status === 'cancelled';
-  const title = `${what(t)} ${event}: *${esc(t.title)}*`;
   return {
     text: `${what(t)} ${event}: ${t.title}`,
     blocks: [
-      section(title),
-      context(taskFacts(t), by ? `by ${esc(by)}` : ''),
-      { type: 'actions', elements: [
-        ...(closed ? [button('↺ Reopen', 'task_reopen', t.id)] : [button('✓ Complete', 'task_complete', t.id, 'primary')]),
-        // Owner, 2026-10-14: "Manage", like the daily message — it opens the whole card, not only comments.
-        button('Manage', 'task_open', t.id),
-        ...kaizenButton(appUrl, 'todo', t.id)
-      ] },
-      ...(t.asksUrgency && !closed ? urgencyAsk(t) : [])
+      section(`${what(t)} ${event}: *${esc(t.title)}*`, toolFor(appUrl, 'todo', t.id)),
+      context(taskFacts(t), by ? `by ${esc(by)}` : '')
     ]
   };
 }
@@ -276,11 +276,10 @@ export const caseWord = (c: Pick<ClaimLite, 'category'>) => isUpsell(c.category)
 export function claimMessage(c: ClaimLite, event: string, by: string, appUrl?: string): { text: string; blocks: Block[] } {
   return {
     text: `${caseWord(c)} ${event}: ${claimTitle(c)}`,
+    // Owner, 2026-11-23: the line and one 🛠 into Kaizen — status, comment and edit are done there.
     blocks: [
-      section(`${sevMark(c.severity)} ${caseWord(c)} ${event}: *${esc(claimTitle(c))}*`),
-      context([c.category, c.severity, c.status].filter(Boolean).map(esc).join(' · '), c.caseUrl ? link(c.caseUrl, 'platform case') : '', by ? `by ${esc(by)}` : ''),
-      { type: 'actions', elements: [claimStatusSelect(c), button('💬 Comment', 'claim_open', c.id), button('✎ Edit', 'claim_edit', c.id),
-                                     ...kaizenButton(appUrl, 'claim', c.id)] }
+      section(`${sevMark(c.severity)} ${caseWord(c)} ${event}: *${esc(claimTitle(c))}*`, toolFor(appUrl, 'claim', c.id)),
+      context([c.category, c.severity, c.status].filter(Boolean).map(esc).join(' · '), c.caseUrl ? link(c.caseUrl, 'platform case') : '', by ? `by ${esc(by)}` : '')
     ]
   };
 }
@@ -378,7 +377,9 @@ export function claimList(list: ClaimLite[]): Block[] {
 
 export interface DigestInput {
   today: string; tomorrow: string;
-  arrivals: { resId?: string; date: string; time: string; unit: string; guest: string; agreement: 'signed' | 'not_signed' | null; needsId: boolean; idInDrive: boolean | null }[];
+  arrivals: { resId?: string; date: string; time: string; unit: string; guest: string; agreement: 'signed' | 'not_signed' | null; needsId: boolean; idInDrive: boolean | null;
+    /** The guest's online check-in is done (`guest_checkins`); null = not known (the table could not be read). */
+    checkedIn?: boolean | null }[];
   departures: { resId?: string; date: string; time: string; unit: string; cleaner: string | null; assigned: boolean; notNeeded: boolean; sameDay: boolean }[];
   /** Every open top-level task, flagged when late or due today. */
   tasks: { id?: string; title: string; unit?: string | null; overdue: boolean; dueToday: boolean; owner?: string | null }[];
@@ -442,6 +443,24 @@ export function digestMessage(d: DigestInput, kind: 'morning' | 'afternoon', app
   blocks.push(context(appUrl ? link(appUrl, 'Open Kaizen') : '', helpUrl ? link(helpUrl, '❓ How to use this') : ''));
   const head = kind === 'morning' ? `Today ${day(d.today)}` : `Before tomorrow ${day(d.tomorrow)}`;
   return { text: `${head}: ${missing ? `${missing} missing` : 'nothing missing'}`, blocks, missing };
+}
+
+/**
+ * The clock's one daily message (owner, 2026-11-23): only today's check-ins whose online check-in is not done, so the team
+ * checks them — each with its 🛠 to the stay's conversation in the Inbox. Nothing to check = nothing posted (`count` 0).
+ * The 3 PM "Before tomorrow" and the 11:55 PM tasks check-out went; `/kaizen today` still shows the whole day.
+ */
+export function checkinsDigest(d: Pick<DigestInput, 'today' | 'arrivals'>, appUrl?: string): { text: string; blocks: Block[]; count: number } {
+  const due = d.arrivals.filter(a => a.date === d.today && a.checkedIn === false);
+  const head = `☀ Check-ins today not completed: ${due.length}`;
+  const blocks: Block[] = [section(`*${esc(head)}*`)];
+  for (const a of due.slice(0, 45)) {
+    const miss = [a.agreement === 'not_signed' ? 'agreement' : '', a.needsId && a.idInDrive === false ? 'ID' : ''].filter(Boolean).join(', ');
+    blocks.push(section(`*${esc(a.guest)}* · ${esc(a.unit)}${a.time ? ` · ${esc(a.time)}` : ''}${miss ? ` — ${miss}` : ''}`,
+      appUrl && a.resId ? toolButton(`${appUrl}/?tab=inbox&r=${encodeURIComponent(a.resId)}`) : undefined));
+  }
+  if (due.length > 45) blocks.push(context(`…and ${due.length - 45} more`));
+  return { text: head, blocks, count: due.length };
 }
 
 /* ── the sections' pop-ups (§102) ───────────────────────────────────── */

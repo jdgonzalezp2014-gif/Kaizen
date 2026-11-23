@@ -17,8 +17,7 @@ import { decrypt } from '../_lib/crypto.ts';
 import { can } from '../_lib/roles.ts';
 import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { digestFacts } from '../_lib/slack-digest.ts';
-import { eventsOf, DEFAULT_DIGEST, DEFAULT_TASK_CHECK, teamTz, digestMessage, dmTarget, dueDigests, dueTaskChecks, esc, helpUrlOf, localNow, taskCheckMessage } from '../../src/lib/slack.ts';
-import { taskCheckFacts } from '../_lib/slack-taskcheck.ts';
+import { eventsOf, DEFAULT_DIGEST, teamTz, checkinsDigest, dmTarget, esc, localNow } from '../../src/lib/slack.ts';
 import { remindCleaners } from '../_lib/crew-slack.ts';
 import { tellScheduleChanges } from '../_lib/crew-changes.ts';
 import { handymenDay } from '../_lib/vendor-slack.ts';
@@ -90,20 +89,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   if (!s.token) return Response.json({ ok: true, sent: [], skipped: 'slack not set up' });
   const out: string[] = [];
 
-  // §107: the tasks' check-in and check-out, in the team's own time zone, to the tasks channel.
-  if (s.config.channels?.tasks) {
-    const tz = s.config.taskCheck?.tz ?? DEFAULT_TASK_CHECK.tz;
-    const now = localNow(tz);
-    const sentChecks = new Set((await sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE 'taskcheck:%' AND sent_at > now() - interval '3 days'` as { key: string }[]).map(r => r.key));
-    for (const c of dueTaskChecks(now, s.config, sentChecks)) {
-      const key = `taskcheck:${c.kind}:${c.day}`;
-      const claimed = await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${key}) ON CONFLICT DO NOTHING RETURNING key`;
-      if (!claimed.length) continue;
-      const r = await postTo(s, 'tasks', taskCheckMessage(c.kind, await taskCheckFacts(sql, c.day, tz), helpUrlOf(s.config)));
-      if (!r?.ok) await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;
-      else out.push(`${c.kind} ${c.day}`);
-    }
-  }
+  // §107's tasks check-in / check-out went (owner, 2026-11-23: noise nobody read at 11:55 PM).
 
   // §134: each cleaner's cleans in their own channel — today's in the morning, tomorrow's in the evening.
   {
@@ -150,17 +136,26 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   const hour = Number(new Intl.DateTimeFormat('en-US', { timeZone: TZ, hour: '2-digit', hourCycle: 'h23' }).format(new Date()));
   const nudged = await nudgeOverdue(sql, s, hour, today);
   // Owner, 2026-10-14: the day's summary first, then the cleans' thread — so the digest runs before it.
+  // Owner, 2026-11-23: one message a day, at the morning hour — only today's check-ins not completed (checkinsDigest).
+  // The 3 PM "Before tomorrow" went. Nothing to check = nothing posted, and the day still counts as done.
+  let digestRan = false;   // it reads the board: the cleans' thread then waits for the next tick (50 subrequests)
   if (s.config.channels?.reservations) {
-    const sent = new Set((await sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE ${`digest:%:${today}`}` as { key: string }[]).map(r => r.key));
-    const due = dueDigests(hour, today, s.config, sent);
-    const facts = due.length ? await digestFacts(sql, await getCredentials(sql, env.ENCRYPTION_KEY), env.ENCRYPTION_KEY) : null;
-    for (const kind of due) {
-      // Claimed first: two runs at once never send it twice.
-      const claimed = await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`digest:${kind}:${today}`}) ON CONFLICT DO NOTHING RETURNING key`;
-      if (!claimed.length) continue;
-      const r = await postTo(s, 'reservations', digestMessage(facts!, kind, s.config.appUrl, helpUrlOf(s.config)));
-      if (!r?.ok) await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${`digest:${kind}:${today}`}`;
-      else out.push(kind);
+    const at = s.config.digest?.morning === undefined ? DEFAULT_DIGEST.morning : s.config.digest.morning;
+    const key = `digest:morning:${today}`;
+    if (at != null && hour >= at && hour < 15
+        && (await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${key}) ON CONFLICT DO NOTHING RETURNING key`).length) {
+      digestRan = true;
+      try {
+        const m = checkinsDigest(await digestFacts(sql, await getCredentials(sql, env.ENCRYPTION_KEY), env.ENCRYPTION_KEY), s.config.appUrl);
+        if (m.count) {
+          const r = await postTo(s, 'reservations', m);
+          if (!r?.ok) await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;
+          else out.push(`check-ins ${m.count}`);
+        }
+      } catch (e) {
+        await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${key}`;
+        out.push(`check-ins failed: ${e instanceof Error ? e.message : String(e)}`);
+      }
     }
   }
 
@@ -174,7 +169,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       (await sql`SELECT 1 FROM slack_sent WHERE account_id = 1 AND key = ${`digest:morning:${today}`}`).length > 0;
     const waitUntilHm = String(Number(from.slice(0, 2)) + 1).padStart(2, '0') + ':00';
     // Never in the tick that just sent something (the summary): the next one, five minutes on, has its own 50.
-    if (!out.length && !nudged && now.hm >= from && now.hm < '20:00' && (summaryOut || now.hm >= waitUntilHm)) {
+    if (!out.length && !nudged && !digestRan && now.hm >= from && now.hm < '20:00' && (summaryOut || now.hm >= waitUntilHm)) {
       const day = todayIn('America/New_York');          // the board's day
       const key = `cleanday:${day}`;
       // 2026-10-15: the 8 AM run claimed the day and no thread came (Concord had a clean). A claim with no
@@ -196,7 +191,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       }
     }
   }
-  if (out.length || nudged) return Response.json({ ok: true, sent: out, nudged, hour, housekeeping: 'next tick' });
+  if (out.length || nudged || digestRan) return Response.json({ ok: true, sent: out, nudged, hour, housekeeping: 'next tick' });
 
   // The Host Notes on the clock: /api/cron was meant to push them, but nothing calls it (it sits behind
   // Access), so only stays someone edited got their note. Once an hour, not every 5-minute tick: the board

@@ -9,6 +9,7 @@
  */
 import type { DateStr } from './dates.ts';
 import { hostawayIso, preview } from './inbox.ts';
+import { toolButton } from './slack.ts';
 
 type Raw = Record<string, unknown>;
 const obj = (v: unknown): Raw => v && typeof v === 'object' && !Array.isArray(v) ? v as Raw : {};
@@ -121,8 +122,9 @@ const waited = (min: number) => min < 90 ? `${Math.round(min)} min` : `${Math.ro
 export function watchMessage(a: { guest: string; listing: string; stage: string; body: string; minutes: number; urgent: boolean; why: string; link: string; draft?: { ready: true } | { error: string } | null }) {
   const head = a.urgent ? `:rotating_light: *Urgent — ${a.guest}* · ${a.listing}` : `:hourglass_flowing_sand: *${a.guest}* has waited ${waited(a.minutes)} for an answer · ${a.listing}`;
   const d = !a.draft ? '' : 'ready' in a.draft ? '\n:sparkles: A reply is drafted in the CRM — read it, then send or edit.' : `\n:warning: The AI could not draft a reply: ${preview(a.draft.error, 160)}`;
-  const text = `${head}\n${a.stage}${a.why ? ` · _${a.why}_` : ''}\n> ${preview(a.body, 280)}${d}\n<${a.link}|Open the conversation>`;
-  return { text: a.urgent ? `Urgent guest message — ${a.guest}` : `${a.guest} is waiting for an answer`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text } }] };
+  const text = `${head}\n${a.stage}${a.why ? ` · _${a.why}_` : ''}\n> ${preview(a.body, 280)}${d}`;
+  // Owner, 2026-11-23: the way in is the small 🛠 beside it.
+  return { text: a.urgent ? `Urgent guest message — ${a.guest}` : `${a.guest} is waiting for an answer`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text }, accessory: toolButton(a.link) }] };
 }
 
 /**
@@ -144,6 +146,6 @@ export function checkinAutoSend(a: { triage: Triage; draft: { reply: string; con
 
 /** Slack's line when the bot solved an urgent check-in message itself — the team sees what went out. */
 export function solvedMessage(a: { guest: string; listing: string; stage: string; body: string; reply: string; link: string }) {
-  const text = `:white_check_mark: *${a.guest}* · ${a.listing} — urgent check-in message answered by the AI\n${a.stage}\n> ${preview(a.body, 280)}\n*Sent:* ${preview(a.reply, 500)}\n<${a.link}|Open the conversation>`;
-  return { text: `${a.guest}: check-in answered by the AI`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text } }] };
+  const text = `:white_check_mark: *${a.guest}* · ${a.listing} — urgent check-in message answered by the AI\n${a.stage}\n> ${preview(a.body, 280)}\n*Sent:* ${preview(a.reply, 500)}`;
+  return { text: `${a.guest}: check-in answered by the AI`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text }, accessory: toolButton(a.link) }] };
 }

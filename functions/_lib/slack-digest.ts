@@ -31,6 +31,11 @@ export async function digestFacts(sql: SqlFn, creds: HostawayCredentials, key: s
     try { docs = await docsStatus(sql, await driveToken(sql, key), want); } catch { docs = {}; }
   }
 
+  // Owner, 2026-11-23: the clock's message is the check-ins whose online check-in is not done — null when it cannot be read.
+  const inIds = rows.filter(r => r.kind === 'in').map(r => String(r.resId));
+  const done = inIds.length ? await (sql`SELECT reservation_id FROM guest_checkins WHERE account_id = 1 AND reservation_id = ANY(${inIds})` as
+    Promise<{ reservation_id: string }[]>).then(x => new Set(x.map(r => r.reservation_id))).catch(() => null) : new Set<string>();
+
   const [tasks, claims] = await Promise.all([
     sql`SELECT t.id::text, t.title, u.name AS unit, t.assignee, t.due_on::text AS due_on
           FROM todos t LEFT JOIN units u ON u.account_id = t.account_id AND u.id = t.unit_ids[1]
@@ -48,7 +53,8 @@ export async function digestFacts(sql: SqlFn, creds: HostawayCredentials, key: s
     today, tomorrow,
     arrivals: rows.filter(r => r.kind === 'in').map(r => ({
       resId: r.resId, date: r.date, time: r.time, unit: r.unit, guest: r.guest || 'guest', agreement: r.agreement,
-      needsId: needs.has(r.unitId), idInDrive: needs.has(r.unitId) && docs[r.resId] ? docs[r.resId]!.id.length > 0 : null
+      needsId: needs.has(r.unitId), idInDrive: needs.has(r.unitId) && docs[r.resId] ? docs[r.resId]!.id.length > 0 : null,
+      checkedIn: done ? done.has(String(r.resId)) : null
     })),
     departures: rows.filter(r => r.kind === 'out').map(r => ({
       resId: r.resId, date: r.date, time: r.time, unit: r.unit, cleaner: r.cleaner, assigned: r.assignment === 'assigned',

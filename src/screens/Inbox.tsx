@@ -85,6 +85,14 @@ export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onSettin
     return () => clearInterval(t);
   }, [rows.length]);
 
+  // Owner, 2026-11-23: Slack's 🛠 on a check-in names the reservation (`?r=`), not a conversation — open that stay's once the list is in.
+  useEffect(() => {
+    const r = param('r');
+    if (!r || openId) return;
+    const hit = rows.find(x => String(x.reservationId ?? '') === r);
+    if (hit) { setOpenId(hit.conversationId); setParams({ c: hit.conversationId, r: null }, { replace: true }); }
+  }, [rows]);
+
   const today = list?.today ?? '';
   const shown = useMemo(() => rows.filter(r => matchesFilter(r, filter, today) && searchHit(r, q)), [rows, filter, q, today]);
   const open = rows.find(r => r.conversationId === openId) ?? null;

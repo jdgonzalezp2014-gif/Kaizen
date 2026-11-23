@@ -40,6 +40,7 @@ import { askKind, recordBlocks } from '../../src/lib/slack-ask.ts';
 import { addToBlocks, sourceOf, suggestTarget, type AddSource, type AddTarget } from '../../src/lib/slack-addto.ts';
 import { supplyPlaces } from '../_lib/unit-access.ts';
 import * as reportsApi from './reports.ts';
+import * as upsellCharge from './upsell-charge.ts';
 import { REPORT_STATUS, readReportModal, reportMessage, reportModal, reportOffer, reportVerb, type ReportKind, type ReportStatus } from '../../src/lib/reports.ts';
 import { reportDm, reportLite } from '../_lib/report-slack.ts';
 import {
@@ -1359,6 +1360,21 @@ class Kaizen {
     const url: string = p.response_url ?? '';
     const inChannel = p.container?.type === 'message' && !p.container?.is_ephemeral;
     if (id === 'open_kaizen' || id.startsWith('open_hostaway_')) return ack();
+    // Owner, 2026-11-23: the guest says they paid in Airbnb — the team looked: Received settles it, Not there gives it back.
+    if (id === 'rc_received' || id === 'rc_not_there') {
+      if (!this.may('/api/upsell-charge', 'POST')) return this.deny('upsells');
+      this.ctx.waitUntil((async () => {
+        const r = await this.api(upsellCharge.onRequestPost, '/api/upsell-charge', 'POST', { action: id === 'rc_received' ? 'received' : 'not_there', id: value });
+        const said = r.ok ? (id === 'rc_received' ? '✓ Received — marked paid' : '✕ Not in Airbnb — the guest sees it pending again') : `Not saved: ${r.message ?? 'error'}`;
+        const msg = p.message as { text?: string; blocks?: { type?: string }[] } | undefined;
+        // The buttons go; the line stays, with what was decided and by whom.
+        if (r.ok && msg && p.container?.channel_id && p.container?.message_ts) {
+          await slackApi(this.s.token!, 'chat.update', { channel: p.container.channel_id, ts: p.container.message_ts, text: msg.text ?? said,
+            blocks: [...(msg.blocks ?? []).filter(b => b.type !== 'actions'), { type: 'context', elements: [{ type: 'mrkdwn', text: `${said} · <@${this.slackUser}>` }] }] });
+        } else await this.reply(url, { response_type: 'ephemeral', replace_original: false, text: said });
+      })().catch(() => {}));
+      return ack();
+    }
     const inView: string = p.container?.type === 'view' ? (p.view?.callback_id ?? '') : '';
     const viewId: string = p.view?.id ?? '';
 

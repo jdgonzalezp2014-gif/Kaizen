@@ -16,7 +16,7 @@ import { askJson } from './ai-chain.ts';
 import type { Env } from './db.ts';
 import { deliver, fireStay, guestLive, portalFor, recordIssue, GUEST_TZ } from './guest-outbox.ts';
 import { fetchConversation, fetchMessages } from './hostaway-messages.ts';
-import { postTo, slackSetup } from './slack.ts';
+import { postTo, slackApi, slackSetup } from './slack.ts';
 import { readGuestAi, suggestFor } from './guest-ai.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { STAGE_LABEL, awaitingReply, fill, preview, stageOf, varsFor } from '../../src/lib/inbox.ts';
@@ -29,9 +29,24 @@ export async function readWatch(sql: SqlFn): Promise<GuestWatch> {
 
 const inboxLink = (origin: string, conversationId: string) => `${origin}/?tab=inbox&c=${conversationId}`;
 
-async function tellTeam(sql: SqlFn, env: Env, msg: ReturnType<typeof watchMessage>): Promise<boolean> {
+/**
+ * The team hears about a guest in Slack — owner, 2026-11-23: ONE message per guest per day (the next day may be another
+ * story); what follows that day goes in its thread. `slack_sent` keeps the day's claim and, once posted, its ts
+ * (`guestts:<conversation>:<day>:<ts>`) — no table of its own.
+ */
+async function tellTeam(sql: SqlFn, env: Env, msg: ReturnType<typeof watchMessage>, conversationId: string): Promise<boolean> {
   const s = await slackSetup(sql, env.ENCRYPTION_KEY);
+  const ch = s.config.channels?.escalations?.id;
+  if (!s.token || !ch) return false;
+  const day = todayIn(GUEST_TZ);
+  const [had] = await (sql`SELECT key FROM slack_sent WHERE account_id = 1 AND key LIKE ${`guestts:${conversationId}:${day}:%`} LIMIT 1` as Promise<{ key: string }[]>).catch(() => []);
+  const ts = had?.key.split(':').pop();
+  if (ts) {
+    const r = await slackApi(s.token, 'chat.postMessage', { channel: ch, thread_ts: ts, text: msg.text, blocks: msg.blocks, unfurl_links: false }).catch(() => null);
+    return !!r?.ok;
+  }
   const r = await postTo(s, 'escalations', msg).catch(() => null);
+  if (r?.ok && r.ts) await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`guestts:${conversationId}:${day}:${r.ts}`}) ON CONFLICT DO NOTHING`.catch(() => {});
   return !!r?.ok;
 }
 
@@ -89,7 +104,7 @@ export async function takeEvent(sql: SqlFn, env: Env, payload: unknown, origin: 
   // Owner, 2026-11-23: an urgent check-in message is first given to the AI to solve; the alert waits for its verdict (solveCheckin).
   const solving = t.urgent && t.checkin && open && !!conv && (await readGuestAi(sql)).autoCheckin && await guestLive(sql);
   if (t.urgent && watch.watch && open && !solving) {
-    told = await tellTeam(sql, env, watchMessage({ guest: conv?.guest ?? 'A guest', listing, stage, body, minutes: 0, urgent: true, why: t.why, link: inboxLink(origin, conversationId) }));
+    told = await tellTeam(sql, env, watchMessage({ guest: conv?.guest ?? 'A guest', listing, stage, body, minutes: 0, urgent: true, why: t.why, link: inboxLink(origin, conversationId) }), conversationId);
   }
   await sql`UPDATE guest_events SET guest = ${conv?.guest ?? null}, reservation_id = COALESCE(reservation_id, ${conv?.reservationId || null}),
                    listing_id = COALESCE(listing_id, ${conv?.listingId ?? null}), preview = ${preview(body, 200)},
@@ -130,7 +145,6 @@ export async function watchPass(sql: SqlFn, env: Env, origin: string, now = new 
   if (!due.length) return out;
   const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
   const today = todayIn(GUEST_TZ, now);
-  const units = await sql`SELECT id::text AS id, name FROM units WHERE account_id = 1` as { id: string; name: string }[];
   for (const e of due) {
     out.checked++;
     const [conv, thread] = await Promise.all([fetchConversation(creds, e.conversationId).catch(() => null), fetchMessages(creds, e.conversationId, 12).catch(() => null)]);
@@ -139,14 +153,9 @@ export async function watchPass(sql: SqlFn, env: Env, origin: string, now = new 
     const close = async () => sql`UPDATE guest_events SET answered_at = now() WHERE account_id = 1 AND kind = 'message' AND conversation_id = ${e.conversationId} AND answered_at IS NULL`;
     if (!awaitingReply(thread)) { await close(); out.answered++; continue; }
     if (conv && !stayOpen(conv.departure, conv.status, today)) { await close(); out.left++; continue; }
-    const body = [...thread].reverse().find(m => m.incoming)?.body ?? e.preview ?? '';
-    const told = await tellTeam(sql, env, watchMessage({
-      guest: conv?.guest ?? e.guest ?? 'A guest', listing: units.find(u => u.id === conv?.listingId)?.name ?? conv?.listing ?? '',
-      stage: conv ? STAGE_LABEL[stageOf(conv, today)] : '', body, minutes: (now.getTime() - Date.parse(e.createdAt)) / 60_000, urgent: e.urgent, why: '',
-      link: inboxLink(origin, e.conversationId), draft: await draftOf(sql, e.conversationId).then(d => !d ? null : 'error' in d ? { error: d.error } : { ready: true as const }) }));
-    // No Escalations channel in Slack: nothing was told — the event stays open for the Inbox's own count, and is not asked about again.
+    // Owner, 2026-11-23: "X is waiting for an answer" left Slack (noise) — the Inbox shows who waits. The pass still closes
+    // what was answered or left, and marks the rest looked at so Hostaway is not asked again every 5 minutes.
     await sql`UPDATE guest_events SET checked_at = now(), reminded_at = now() WHERE account_id = 1 AND kind = 'message' AND conversation_id = ${e.conversationId} AND answered_at IS NULL`;
-    if (told) out.reminded++;
   }
   return out;
 }
@@ -207,7 +216,7 @@ async function solveCheckin(sql: SqlFn, env: Env, a: { eventId: string; conversa
     // 'manual': a failed one is not retried later by the clock — a late answer to "I am at the door" helps nobody.
     const r = await deliver(sql, env, { id: row!.id, reservation_id: a.conv.reservationId, conversation_id: a.conversationId, channel: 'hostaway', body: filled.text, attempts: 0, source: 'manual' });
     if (r.status === 'sent') {
-      if (a.watch.watch) await tellTeam(sql, env, solvedMessage({ guest: a.conv.guest ?? 'A guest', listing: a.listing, stage: a.stage, body: a.body, reply: filled.text, link: a.link }));
+      if (a.watch.watch) await tellTeam(sql, env, solvedMessage({ guest: a.conv.guest ?? 'A guest', listing: a.listing, stage: a.stage, body: a.body, reply: filled.text, link: a.link }), a.conversationId);
       return { sent: true };
     }
     why = `sending failed: ${r.error ?? r.status}`;
@@ -215,7 +224,7 @@ async function solveCheckin(sql: SqlFn, env: Env, a: { eventId: string; conversa
   if (a.watch.watch) {
     const told = await tellTeam(sql, env, watchMessage({ guest: a.conv.guest ?? 'A guest', listing: a.listing, stage: a.stage, body: a.body, minutes: 0, urgent: true,
       why: [a.t.why, `not answered by the AI: ${why}`].filter(Boolean).join(' · '), link: a.link,
-      draft: d ? ('error' in d ? { error: d.error } : { ready: true }) : null }));
+      draft: d ? ('error' in d ? { error: d.error } : { ready: true }) : null }), a.conversationId);
     if (told) await sql`UPDATE guest_events SET reminded_at = now() WHERE id = ${a.eventId}`;
   }
   return { sent: false, why };

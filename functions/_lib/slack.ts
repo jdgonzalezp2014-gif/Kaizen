@@ -189,7 +189,8 @@ export async function claimLite(sql: SqlFn, id: string): Promise<ClaimLite | nul
 }
 
 /** A claim's or upsell's news (§162): opened = one message in the claims channel; a change = a line in its thread. */
-export async function notifyClaim(sql: SqlFn, key: string, id: string, event: 'opened' | 'changed', by: string, word?: string): Promise<void> {
+/** `extra`: blocks under the thread line — the Resolution Center's Received / Not there (owner, 2026-11-23). */
+export async function notifyClaim(sql: SqlFn, key: string, id: string, event: 'opened' | 'changed', by: string, word?: string, extra: unknown[] = []): Promise<void> {
   const s = await slackSetup(sql, key);
   if (!s.token || !s.config.channels?.claims) return;
   const ev = eventsOf(s.config);
@@ -198,7 +199,8 @@ export async function notifyClaim(sql: SqlFn, key: string, id: string, event: 'o
   if (!c) return;
   const home = event === 'changed' ? await threadFor(sql, 'claim', id) : null;
   if (home) {
-    await slackApi(s.token, 'chat.postMessage', { channel: home.channel, thread_ts: home.ts, ...threadLine(`◐ ${caseWord(c).split(' ')[1]} ${word ?? 'changed'}`, who(by)), unfurl_links: false });
+    const line = threadLine(`◐ ${caseWord(c).split(' ')[1]} ${word ?? 'changed'}`, who(by));
+    await slackApi(s.token, 'chat.postMessage', { channel: home.channel, thread_ts: home.ts, text: line.text, blocks: [...line.blocks, ...extra], unfurl_links: false });
     await slackApi(s.token, 'chat.update', { channel: home.channel, ts: home.ts, ...claimMessage(c, `· ${c.status}`, '', s.config.appUrl) }).catch(() => null);
     return;
   }
