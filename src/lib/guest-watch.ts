@@ -119,19 +119,25 @@ const waited = (min: number) => min < 90 ? `${Math.round(min)} min` : `${Math.ro
 
 /** The one Slack message about a guest: who, where, since when, what they said, and the door to the conversation. */
 /** Owner, 2026-11-23: whether a reply is drafted is seen in the Inbox — not said here. */
-export function watchMessage(a: { guest: string; listing: string; stage: string; body: string; minutes: number; urgent: boolean; why: string; link: string }) {
-  // Owner, 2026-11-23: no emoji — bold name, one plain line, the message quoted.
-  const head = a.urgent ? `${MARK.guest}  *Urgent · ${a.guest}*` : `*${a.guest}* has waited ${waited(a.minutes)} for an answer`;
-  const text = `${head}\n${[a.listing, a.stage, a.why].filter(Boolean).join(' · ')}\n> ${preview(a.body, 280)}`;
-  // Owner, 2026-11-23: the way in is the small 🛠 beside it.
-  return { text: a.urgent ? `Urgent guest message — ${a.guest}` : `${a.guest} is waiting for an answer`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text }, accessory: toolButton(a.link) }, DIVIDER] };
+export function watchMessage(a: { guest: string; listing: string; stage: string; body: string; minutes: number; urgent: boolean; why: string; link: string }): GuestAlert {
+  // Owner, 2026-11-23: the channel line is the guest, the unit and a bit of what they said — clean. The rest (stay stage,
+  // why it is urgent, the whole message) is the first reply in its thread.
+  const head = a.urgent ? `${MARK.guest}  *${a.guest} · ${a.listing}*` : `*${a.guest} · ${a.listing}* has waited ${waited(a.minutes)}`;
+  return {
+    text: a.urgent ? `Urgent guest message — ${a.guest}` : `${a.guest} is waiting for an answer`,
+    blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `${head}\n${preview(a.body, 90)}` }, accessory: toolButton(a.link) }, DIVIDER],
+    details: { text: `Details: ${a.guest}`, blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: [a.stage, a.why].filter(Boolean).join(' · ') || ' ' }] },
+                                                     { type: 'section', text: { type: 'mrkdwn', text: `> ${preview(a.body, 1500).replace(/\n/g, '\n> ')}` } }] }
+  };
 }
+/** A guest's channel line and, for its thread, the details. */
+export interface GuestAlert { text: string; blocks: unknown[]; details?: { text: string; blocks: unknown[] } }
 
 /** The same guest's nth alert of the day (owner, 2026-11-23): "· 2 today" beside the name, so the new one says it. */
 export function countedMessage<M extends { text: string; blocks: unknown[] }>(m: M, n: number): M {
   const [first, ...rest] = m.blocks as { text?: { text?: string } }[];
   if (!first?.text?.text) return m;
-  return { ...m, blocks: [{ ...first, text: { ...first.text, text: first.text.text.replace(/\*\n/, `* · ${n} today\n`) } }, ...rest] };
+  return { ...m, blocks: [{ ...first, text: { ...first.text, text: first.text.text.replace(/\*(\n|$)/, `* · ${n} today$1`) } }, ...rest] };
 }
 
 /**
@@ -152,7 +158,11 @@ export function checkinAutoSend(a: { triage: Triage; draft: { reply: string; con
 }
 
 /** Slack's line when the bot solved an urgent check-in message itself — the team sees what went out. */
-export function solvedMessage(a: { guest: string; listing: string; stage: string; body: string; reply: string; link: string }) {
-  const text = `${MARK.ai}  *Answered by the AI · ${a.guest}*\n${[a.listing, a.stage].filter(Boolean).join(' · ')}\n> ${preview(a.body, 280)}\n*Sent:* ${preview(a.reply, 500)}`;
-  return { text: `${a.guest}: check-in answered by the AI`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text }, accessory: toolButton(a.link) }, DIVIDER] };
+export function solvedMessage(a: { guest: string; listing: string; stage: string; body: string; reply: string; link: string }): GuestAlert {
+  return {
+    text: `${a.guest}: check-in answered by the AI`,
+    blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `${MARK.ai}  *${a.guest} · ${a.listing}*\nAnswered by the AI` }, accessory: toolButton(a.link) }, DIVIDER],
+    details: { text: `Details: ${a.guest}`, blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: a.stage || ' ' }] },
+      { type: 'section', text: { type: 'mrkdwn', text: `> ${preview(a.body, 1000).replace(/\n/g, '\n> ')}\n*Sent:* ${preview(a.reply, 1500)}` } }] }
+  };
 }

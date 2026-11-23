@@ -20,7 +20,7 @@ import { postTo, slackApi, slackSetup } from './slack.ts';
 import { readGuestAi, suggestFor } from './guest-ai.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { STAGE_LABEL, awaitingReply, fill, preview, stageOf, varsFor } from '../../src/lib/inbox.ts';
-import { checkinAutoSend, countedMessage, eventFrom, solvedMessage, stayOpen, toCheck, triageFrom, triagePrompt, watchFrom, watchMessage, type GuestWatch, type OpenEvent, type Triage } from '../../src/lib/guest-watch.ts';
+import { checkinAutoSend, countedMessage, eventFrom, solvedMessage, type GuestAlert, stayOpen, toCheck, triageFrom, triagePrompt, watchFrom, watchMessage, type GuestWatch, type OpenEvent, type Triage } from '../../src/lib/guest-watch.ts';
 
 export async function readWatch(sql: SqlFn): Promise<GuestWatch> {
   const rows = await (sql`SELECT guest_watch FROM accounts WHERE id = 1` as Promise<{ guest_watch: unknown }[]>).catch(() => []);
@@ -37,7 +37,7 @@ const inboxLink = (origin: string, conversationId: string) => `${origin}/?tab=in
  * `slack_sent` keeps each post — `guestts:<conversation>:<day>:<ts>` (a message of its own) or `guestrep:…` (in the
  * thread) — no table of its own.
  */
-async function tellTeam(sql: SqlFn, env: Env, msg: ReturnType<typeof watchMessage>, conversationId: string): Promise<boolean> {
+async function tellTeam(sql: SqlFn, env: Env, msg: GuestAlert, conversationId: string): Promise<boolean> {
   const s = await slackSetup(sql, env.ENCRYPTION_KEY);
   const ch = s.config.channels?.escalations?.id;
   if (!s.token || !ch) return false;
@@ -47,19 +47,32 @@ async function tellTeam(sql: SqlFn, env: Env, msg: ReturnType<typeof watchMessag
   const roots = keys.filter(k => k.startsWith('guestts:')).map(k => k.split(':').pop()!).sort();
   const last = roots[roots.length - 1];
   const m = keys.length ? countedMessage(msg, keys.length + 1) : msg;
+  const say = (thread: string, x: { text: string; blocks: unknown[] }) =>
+    slackApi(s.token!, 'chat.postMessage', { channel: ch, thread_ts: thread, text: x.text, blocks: x.blocks, unfurl_links: false }).catch(() => null);
+  // The day so far (the earlier details, Kaizen's own replies), carried into the new thread so nothing of it is lost.
+  let earlier: { text: string; blocks: unknown[] }[] = [];
   if (last) {
-    const replies = await slackApi<{ messages?: { user?: string; bot_id?: string }[] }>(s.token, 'conversations.replies', { channel: ch, ts: last, limit: 20 }).catch(() => null);
+    const replies = await slackApi<{ messages?: { ts: string; text?: string; blocks?: unknown[]; bot_id?: string }[] }>(s.token, 'conversations.replies', { channel: ch, ts: last, limit: 50 }).catch(() => null);
     // Not readable = treated as answered: never take down a message whose thread could not be checked.
     const answered = !replies?.ok || !!replies.messages?.slice(1).some(x => !x.bot_id);
     if (answered) {
       const r = await slackApi<{ ts?: string }>(s.token, 'chat.postMessage', { channel: ch, thread_ts: last, reply_broadcast: true, text: m.text, blocks: m.blocks, unfurl_links: false }).catch(() => null);
       if (r?.ok && r.ts) await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`guestrep:${conversationId}:${day}:${r.ts}`}) ON CONFLICT DO NOTHING`.catch(() => {});
+      if (r?.ok && m.details) await say(last, m.details);
       return !!r?.ok;
     }
+    // Kaizen's replies first, then the message — a message taken down with replies would leave "This message was deleted".
+    const own = replies!.messages!.slice(1);
+    earlier = own.map(x => ({ text: x.text ?? '', blocks: x.blocks ?? [] }));
+    for (const x of own) await slackApi(s.token, 'chat.delete', { channel: ch, ts: x.ts }).catch(() => null);
     await slackApi(s.token, 'chat.delete', { channel: ch, ts: last }).catch(() => null);
   }
   const r = await postTo(s, 'escalations', m).catch(() => null);
-  if (r?.ok && r.ts) await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`guestts:${conversationId}:${day}:${r.ts}`}) ON CONFLICT DO NOTHING`.catch(() => {});
+  if (r?.ok && r.ts) {
+    await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`guestts:${conversationId}:${day}:${r.ts}`}) ON CONFLICT DO NOTHING`.catch(() => {});
+    for (const x of earlier) await say(r.ts, x);
+    if (m.details) await say(r.ts, m.details);
+  }
   return !!r?.ok;
 }
 

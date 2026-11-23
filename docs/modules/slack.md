@@ -50,7 +50,9 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
     waits for the next tick (`digestRan`).
   - Guests (`guest-events.ts` `tellTeam`): **one Slack message per guest per day** (GUEST_TZ); more that day (another urgent one,
     the AI's answer): the earlier message is taken down (`chat.delete`) and a new one posted at the bottom with "· n today"
-    (`countedMessage`) — unless someone of the team replied in its thread (or the thread could not be read): then the new one
+    (`countedMessage`); the channel line is only guest · unit and ~90 characters of the message, the stage, why and the whole
+    message are the thread's first reply (`GuestAlert.details`), and the earlier day's replies are carried into the new thread
+    (Kaizen's own replies are taken down first, so no "This message was deleted" is left) — unless someone of the team replied in its thread (or the thread could not be read): then the new one
     goes in that thread with `reply_broadcast`. `slack_sent` keys `guestts:<conversation>:<day>:<ts>` / `guestrep:…`, no table. **"X is waiting for an
     answer" is no longer posted**; `watchPass` still closes what was answered or left.
   - Airbnb "I already paid": the line in the case's thread carries two small grey buttons **Received** (`rc_received` →

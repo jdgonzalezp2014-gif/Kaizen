@@ -61,7 +61,7 @@ test('a task message: "New repair · unit", one small detail and Open; the detai
   assert.doesNotMatch(d, /From Slack/);
   assert.match(JSON.stringify(taskMessage({ id: '8', title: 'Buy supplies: x', kind: 'task', status: 'pending', priority: 'none', unit: 'CL1125', isOrder: true, orderLines: 3 }, 'created', '').blocks),
     /\*New purchase · CL1125\*\\n🛒 3/);
-  assert.match(s, /"text":"↗".*"url":"https:\/\/k\.dev\/\?todo=7"/);
+  assert.match(s, /"text":"↗\uFE0E".*"url":"https:\/\/k\.dev\/\?todo=7"/);
   assert.doesNotMatch(s, /task_complete|task_reopen|task_open|"type":"actions"/);
   assert.doesNotMatch(JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'pending', priority: 'none' }, 'created', '').blocks), /"↗"/);
   assert.match(JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'completed', priority: 'none' }, '· Done', '').blocks), /To-do\* · Done/);
@@ -339,7 +339,7 @@ test('@Kaizen new: the listing from the text, a short title, the reply with Add 
   // Owner, 2026-11-23: small — mark, title, what · where, and Open (no Add details / Comment buttons).
   const r = JSON.stringify(trackedReply({ id: '9', title: 'Fix AC', kind: 'work_order', unit: 'P2-4308' }, undefined, 'https://k.dev').blocks);
   assert.match(r, /\*Fix AC\*\\nRepair saved · P2-4308/);
-  assert.match(r, /"text":"↗".*\?todo=9/);
+  assert.match(r, /"text":"↗\uFE0E".*\?todo=9/);
   assert.doesNotMatch(r, /task_edit|task_open/);
 });
 
