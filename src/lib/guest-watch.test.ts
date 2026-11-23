@@ -59,7 +59,7 @@ test('the watch looks at the newest message per conversation, once it has waited
 
 test('the Slack line says who, how long, and opens the conversation', () => {
   const m = watchMessage({ guest: 'Ana Ruiz', listing: 'P2-1406', stage: 'Arrives today', body: 'Where do I park?', minutes: 42, urgent: false, why: 'asks about parking', link: 'https://x/?tab=inbox&c=44' });
-  assert.match(m.blocks[0]!.text.text, /Ana Ruiz\* has waited 42 min/);
+  assert.match((m.blocks[0] as { text: { text: string } }).text.text, /Ana Ruiz\* has waited 42 min/);
   // Owner, 2026-11-23: the way in is the small 🛠 beside the line.
   assert.equal((m.blocks[0] as { accessory?: { url?: string; text?: { text?: string } } }).accessory?.url, 'https://x/?tab=inbox&c=44');
   assert.equal((m.blocks[0] as { accessory?: { text?: { text?: string } } }).accessory?.text?.text, 'Open');
@@ -83,5 +83,5 @@ test('an urgent check-in message is sent by the AI only when every gate holds', 
   assert.equal(checkinAutoSend({ ...ok, stillWaiting: false }).send, false);
   assert.equal(checkinAutoSend({ ...ok, draft: null }).send, false);
   assert.match(JSON.stringify(checkinAutoSend({ ...ok, blanks: ['door_code'] })), /door_code/);
-  assert.match(solvedMessage({ guest: 'Ana', listing: 'L', stage: 'Arrives today', body: 'code?', reply: 'Open your portal', link: 'l' }).blocks[0]!.text.text, /Answered by the AI · Ana\*\n.*\n.*\n\*Sent:\* Open your portal/);
+  assert.match((solvedMessage({ guest: 'Ana', listing: 'L', stage: 'Arrives today', body: 'code?', reply: 'Open your portal', link: 'l' }).blocks[0] as { text: { text: string } }).text.text, /Answered by the AI · Ana\*\n.*\n.*\n\*Sent:\* Open your portal/);
 });

@@ -9,7 +9,7 @@
  */
 import type { DateStr } from './dates.ts';
 import { hostawayIso, preview } from './inbox.ts';
-import { toolButton } from './slack.ts';
+import { DIVIDER, MARK, toolButton } from './slack.ts';
 
 type Raw = Record<string, unknown>;
 const obj = (v: unknown): Raw => v && typeof v === 'object' && !Array.isArray(v) ? v as Raw : {};
@@ -121,10 +121,10 @@ const waited = (min: number) => min < 90 ? `${Math.round(min)} min` : `${Math.ro
 /** Owner, 2026-11-23: whether a reply is drafted is seen in the Inbox — not said here. */
 export function watchMessage(a: { guest: string; listing: string; stage: string; body: string; minutes: number; urgent: boolean; why: string; link: string }) {
   // Owner, 2026-11-23: no emoji — bold name, one plain line, the message quoted.
-  const head = a.urgent ? `*Urgent · ${a.guest}*` : `*${a.guest}* has waited ${waited(a.minutes)} for an answer`;
+  const head = a.urgent ? `${MARK.guest}  *Urgent · ${a.guest}*` : `*${a.guest}* has waited ${waited(a.minutes)} for an answer`;
   const text = `${head}\n${[a.listing, a.stage, a.why].filter(Boolean).join(' · ')}\n> ${preview(a.body, 280)}`;
   // Owner, 2026-11-23: the way in is the small 🛠 beside it.
-  return { text: a.urgent ? `Urgent guest message — ${a.guest}` : `${a.guest} is waiting for an answer`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text }, accessory: toolButton(a.link) }] };
+  return { text: a.urgent ? `Urgent guest message — ${a.guest}` : `${a.guest} is waiting for an answer`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text }, accessory: toolButton(a.link) }, DIVIDER] };
 }
 
 /**
@@ -146,6 +146,6 @@ export function checkinAutoSend(a: { triage: Triage; draft: { reply: string; con
 
 /** Slack's line when the bot solved an urgent check-in message itself — the team sees what went out. */
 export function solvedMessage(a: { guest: string; listing: string; stage: string; body: string; reply: string; link: string }) {
-  const text = `*Answered by the AI · ${a.guest}*\n${[a.listing, a.stage].filter(Boolean).join(' · ')}\n> ${preview(a.body, 280)}\n*Sent:* ${preview(a.reply, 500)}`;
-  return { text: `${a.guest}: check-in answered by the AI`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text }, accessory: toolButton(a.link) }] };
+  const text = `${MARK.ai}  *Answered by the AI · ${a.guest}*\n${[a.listing, a.stage].filter(Boolean).join(' · ')}\n> ${preview(a.body, 280)}\n*Sent:* ${preview(a.reply, 500)}`;
+  return { text: `${a.guest}: check-in answered by the AI`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text }, accessory: toolButton(a.link) }, DIVIDER] };
 }
