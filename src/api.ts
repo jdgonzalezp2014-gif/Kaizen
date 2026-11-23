@@ -1141,3 +1141,13 @@ export type AssistantAnswer =
   | { ok: true; kind: 'sops' | 'none'; answer: string; sops?: { id: string; title: string }[]; missing?: string; by?: string | null };
 export const askAssistant = (question: string) =>
   call<AssistantAnswer | Fail>('/api/assistant', { method: 'POST', body: JSON.stringify({ question }) });
+
+/** Settings → Integrations → AI → AI tasks (src/lib/ai-tasks.ts). */
+export interface AiTaskState {
+  key: import('./lib/ai-tasks.ts').AiTaskKey; steps: import('./lib/ai-tasks.ts').AiStep[]; saved: boolean;
+  last: { at: string; by: string | null; errors: string[] } | null;
+}
+export type AiTasksResult = { ok: true; migrated: boolean; keys: { gemini: boolean; claude: boolean }; tasks: AiTaskState[] } | { ok: false; message?: string };
+export const getAiTasks = () => call<AiTasksResult>('/api/ai-tasks');
+export const saveAiTask = (body: { task: string; steps?: import('./lib/ai-tasks.ts').AiStep[]; reset?: boolean }) =>
+  call<AiTasksResult>('/api/ai-tasks', { method: 'POST', body: JSON.stringify(body) });

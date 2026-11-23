@@ -1,12 +1,12 @@
 /**
  * Settings → Integrations → Guest messages & AI (owner, 2026-11-16): how the Inbox talks to guests for this account —
- * whether Kaizen really sends (off = staged), the reply AI (off / suggest, which provider's API and which model, the
+ * whether Kaizen really sends (off = staged), the reply AI (off / suggest — its models are in AI tasks, src/components/AiTasksPanel.tsx — the
  * house style), and the guest portal's address (it moves to its own domain; every link is built from this).
  * The API key is the account's own Claude / Gemini key, set in Integrations → AI — never typed here.
  */
 import { useEffect, useState } from 'react';
 import { getInboxSettings, saveInboxSettings, type InboxSettings } from '../api.ts';
-import { AI_MODELS, MAX_BUSINESS, type AiProvider, type GuestAi } from '../lib/inbox.ts';
+import { MAX_BUSINESS, type GuestAi } from '../lib/inbox.ts';
 import { WAIT_CHOICES } from '../lib/guest-watch.ts';
 import { Hint } from './Hint.tsx';
 import { Icon } from './Icon.tsx';
@@ -27,7 +27,6 @@ export function GuestAiPanel({ onSaved }: { onSaved?: (s: InboxSettings) => void
     if (r.ok) { take(r); setMsg('Saved.'); } else setMsg(r.message ?? 'Not saved.');
   };
   if (!s || !ai) return <div className="card"><p className="note">{msg || 'Loading…'}</p></div>;
-  const hasKey = ai.provider === 'claude' ? s.hasClaudeKey : s.hasGeminiKey;
   return (
     <>
       {!s.migrated && <p className="banner warn">The database needs migration 116 before any of this can be saved (npm run migrate).</p>}
@@ -45,7 +44,7 @@ export function GuestAiPanel({ onSaved }: { onSaved?: (s: InboxSettings) => void
           house rules), Hostaway's amenities and this booking (party, pets, hours, total), the work open on the stay, the company facts below, the other
           listings, the guest-side SOPs that match and the thread. Before a booking it leaves out the exact address, Wi-Fi and arrival steps; codes are always withheld.
           A person reads it and sends — it never answers on its own (that mode is not built). It uses this company's own API key from Integrations → AI,
-          and exactly the model named here.</Hint></h2>
+          and the models in AI tasks → Guest replies, in order: the next one writes only when the first fails, and the draft says which one wrote it.</Hint></h2>
         <div className="row">
           <label>Mode
             <select value={ai.mode} onChange={e => setAi({ ...ai, mode: e.target.value as GuestAi['mode'] })}>
@@ -54,18 +53,8 @@ export function GuestAiPanel({ onSaved }: { onSaved?: (s: InboxSettings) => void
               <option value="auto" disabled>Answer on its own — later</option>
             </select>
           </label>
-          <label>API
-            <select value={ai.provider} onChange={e => { const p = e.target.value as AiProvider; setAi({ ...ai, provider: p, model: AI_MODELS[p][0]! }); }}>
-              <option value="claude">Claude (Anthropic)</option>
-              <option value="gemini">Gemini (Google)</option>
-            </select>
-          </label>
-          <label>Model
-            <input value={ai.model} list="guest-ai-models" spellCheck={false} onChange={e => setAi({ ...ai, model: e.target.value })} />
-            <datalist id="guest-ai-models">{AI_MODELS[ai.provider].map(m => <option key={m} value={m} />)}</datalist>
-          </label>
+          <p className="note">Model: set in Integrations → AI → AI tasks → <b>Guest replies</b> (a first model and the ones behind it).</p>
         </div>
-        {!hasKey && <p className="note warn"><Icon n="alert" /> No {ai.provider === 'claude' ? 'Claude' : 'Gemini'} key stored yet — add it in Integrations → AI.</p>}
         <label>House style <Hint>Optional. How the company wants to sound — a sign-off, words to avoid, what to always mention. Rules about what is allowed
           belong in the SOPs, where the team reads them too.</Hint>
           <textarea className="ix-text" rows={3} maxLength={2000} value={ai.instructions} onChange={e => setAi({ ...ai, instructions: e.target.value })} />

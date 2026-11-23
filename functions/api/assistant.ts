@@ -53,7 +53,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
         const one = hits.length === 1 && !hits[0]!.matched ? recs.find(r => r.table === hits[0]!.table && r.id === hits[0]!.id) : undefined;
         if (!one || extraWords(question, one.name).length < 2) return json({ ok: true, kind: 'records', hits, canReveal });
         const p = recordPrompt(question, one);
-        const r = await askJson(sql, env, p.system, p.user, [], { tier: 'chat' });
+        const r = await askJson(sql, env, p.system, p.user, [], { task: 'assistant' });
         const answer = r.ok && typeof r.json.answer === 'string' ? r.json.answer.trim().slice(0, 800) : '';
         return json({ ok: true, kind: 'records', hits, canReveal, answer: answer || undefined, found: r.ok ? r.json.found !== false : undefined, by: r.ok ? r.by : null });
       }
@@ -66,7 +66,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     const brief = (s: SopDoc) => ({ id: s.id, title: s.title });
     if (!shown.length) return json({ ok: true, kind: 'none', answer: 'No SOP covers this yet, and no Repository record has that name.' });
     const p = helpPrompt(question, shown);
-    const r = await askJson(sql, env, p.system, p.user, [], { tier: 'chat' });
+    const r = await askJson(sql, env, p.system, p.user, [], { task: 'assistant' });
     // No model answered: the closest SOPs by words, to read — better than nothing.
     if (!r.ok) return json({ ok: true, kind: 'sops', answer: 'No AI could answer just now — these SOPs look closest:', sops: shown.slice(0, 3).map(brief), by: null });
     const h = helpFromAi(r.json, shown);

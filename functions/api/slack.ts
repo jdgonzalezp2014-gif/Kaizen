@@ -1037,7 +1037,7 @@ class Kaizen {
     const standard = standardFrom(std?.body) ?? undefined;
     const p = sopPrompt(sections, msgs.map(m => ({ who: m.role ? `${m.who} (${m.role})` : m.who, text: m.text })), current, standard);
     // A Slack waitUntil has 30 s in all, and the thread was already read: the chain gets 24.
-    const r = await askJson(this.sql, this.ctx.env, p.system, p.user, [], { tier: 'heavy', budgetMs: 24000 });
+    const r = await askJson(this.sql, this.ctx.env, p.system, p.user, [], { task: 'orders', budgetMs: 24000 });
     if (!r.ok) { await busy(`⚠ No AI could answer just now — try ✨ again in a minute. (${r.error.slice(0, 200)})`); return; }
     const review = reviewFromAi(r.json);
     await slackApi(this.s.token!, 'views.update', { view_id: view.id,
@@ -1063,7 +1063,7 @@ class Kaizen {
     const shown = rankSops(question, rows);
     if (!shown.length) return missing;
     const p = helpPrompt(question, shown);
-    const r = await askJson(this.sql, this.ctx.env, p.system, p.user, [], { tier: 'chat' });
+    const r = await askJson(this.sql, this.ctx.env, p.system, p.user, [], { task: 'assistant' });
     if (!r.ok) {
       // No model now: the best matches by words, to read — better than nothing.
       return { text: 'SOPs that may help', blocks: helpAnswerBlocks('No AI could answer just now — these SOPs look closest:', shown.slice(0, 3), this.s.config.appUrl) };

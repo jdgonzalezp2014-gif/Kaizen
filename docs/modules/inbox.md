@@ -57,7 +57,7 @@ need `todos` (the same `/api/todos` create as everywhere — the Hostaway task m
 - The list's preview of a Hostaway automated message is the raw template; the guest got it filled (`plain()` fills the
   name for the row). Hostaway's dates are UTC.
 - The guest's phone never reaches the browser: masked in the stay panel, resolved on the server for SMS.
-- **The AI drafts, a person sends** — one exception, urgent check-in (below). It asks exactly the provider + model in `accounts.guest_ai` (no chain), with the
+- **The AI drafts, a person sends** — one exception, urgent check-in (below). It asks the **Guest replies** chain of AI tasks (2026-11-23, platform.md; unset = `accounts.guest_ai`'s provider + model, then the other provider), with the
   account's own key. A low-confidence answer is a handoff. Conversation text is treated as the guest speaking, never as
   instructions. Claude Opus/Sonnet 5.5 calls carry `fallbacks: "default"`. What it reads — see "The guest AI" below.
 - The portal link is `accounts.guest_portal_url` + `/guest/<reservation>.<sig>` (`signGuest`, HMAC with

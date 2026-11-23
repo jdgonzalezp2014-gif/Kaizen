@@ -5,14 +5,12 @@
  * the published guest-side SOPs that match, and the thread (audit 2026-11-19: src/lib/guest-knowledge.ts).
  * It only drafts — a person reads it and sends. Answering on its own is not built.
  *
- * Unlike ai-chain.ts (whoever answers first), this asks exactly the provider and model the account chose in
- * Settings → Integrations → Guest messages & AI: a guest-facing voice should not change model from one reply to the next.
- * The key is the account's own (the same Claude / Gemini key the rest of Kaizen uses).
+ * The model is the "Guest replies" chain in Settings → Integrations → AI (owner, 2026-11-23): the first one answers; the next
+ * only when it fails or is busy, and the draft says which one wrote it. Unset = the model chosen in Guest messages & AI, then
+ * the other provider. The key is the account's own (the same Claude / Gemini key the rest of Kaizen uses).
  */
-import Anthropic from '@anthropic-ai/sdk';
 import type { SqlFn } from './accounts.ts';
-import { askGemini, firstJson } from './ai-chain.ts';
-import { decrypt } from './crypto.ts';
+import { askJson } from './ai-chain.ts';
 import type { Env } from './db.ts';
 import { guestHouse } from '../api/guest-guide.ts';
 import { fetchListingAmenities, fetchReservationDetail } from './hostaway.ts';
@@ -37,37 +35,10 @@ import { UNIT_TABLES } from '../../src/lib/repo-checks.ts';
  */
 const GUEST_SECTIONS = new Set(['guest', 'claims', 'maintenance', 'compliance', 'mod-guest-services', 'mod-experience', 'mod-portal']);
 
-const MS = 30000;
-
 /** The account's settings — the defaults (off) while migration 116 has not run. */
 export async function readGuestAi(sql: SqlFn): Promise<GuestAi> {
   const rows = await (sql`SELECT guest_ai FROM accounts WHERE id = 1` as Promise<{ guest_ai: unknown }[]>).catch(() => []);
   return guestAiFrom(rows[0]?.guest_ai);
-}
-
-/** Opus 5.5, Sonnet 5.5 and Fable can hand a declined request to another model inside the same call; Haiku cannot. */
-const hasFallback = (model: string) => /^claude-(opus-5|sonnet-5-5|fable-5)/.test(model);
-
-async function askClaude(key: string, model: string, system: string, user: string): Promise<{ json?: Record<string, unknown>; error?: string; by?: string }> {
-  try {
-    const client = new Anthropic({ apiKey: key, maxRetries: 1, timeout: MS });
-    const r = await client.beta.messages.create({
-      model, max_tokens: 4096, system,
-      // A short draft with a person waiting: low effort; thinking stays adaptive (the default).
-      output_config: { effort: 'low' },
-      ...(hasFallback(model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as never } : {}),
-      messages: [{ role: 'user', content: `${user}\n\nAnswer with the JSON only.` }],
-    });
-    if (r.stop_reason === 'refusal') return { error: `${model} declined to draft this one` };
-    const json = firstJson(r.content.map(b => b.type === 'text' ? b.text : '').join(''));
-    return json ? { json, by: r.model } : { error: `${model}: no JSON in the answer` };
-  } catch (e) {
-    if (e instanceof Anthropic.AuthenticationError) return { error: 'Claude refused the API key — check it in Settings → Integrations → AI.' };
-    if (e instanceof Anthropic.NotFoundError) return { error: `Claude does not know the model "${model}" — check it in Settings → Integrations.` };
-    if (e instanceof Anthropic.RateLimitError) return { error: `${model} is busy (429) — try again in a moment.` };
-    if (e instanceof Anthropic.APIError) return { error: `${model}: ${e.status ?? ''} ${e.message.slice(0, 140)}` };
-    return { error: `${model}: ${e instanceof Error ? e.message.slice(0, 140) : String(e)}` };
-  }
 }
 
 type AiStay = Stay & { channel?: string; payment?: string | null; agreement?: string | null; idVerified?: boolean };
@@ -77,11 +48,7 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
   const cfg = await readGuestAi(sql);
   if (cfg.mode === 'off') return { ok: false, error: 'AI suggestions are off — turn them on in Settings → Integrations → Guest messages & AI.' };
   if (!thread.some(m => m.incoming)) return { ok: false, error: 'The guest has not written yet — there is nothing to answer.' };
-  const [a] = await sql`SELECT name, gemini_api_key_enc, claude_api_key_enc FROM accounts WHERE id = 1` as
-    { name: string; gemini_api_key_enc: string | null; claude_api_key_enc: string | null }[];
-  const enc = cfg.provider === 'claude' ? a?.claude_api_key_enc : a?.gemini_api_key_enc;
-  const key = enc ? await decrypt(enc, env.ENCRYPTION_KEY).catch(() => null) : null;
-  if (!key) return { ok: false, error: `No ${cfg.provider === 'claude' ? 'Claude' : 'Gemini'} key yet — add it in Settings → Integrations → AI.` };
+  const [a] = await sql`SELECT name FROM accounts WHERE id = 1` as { name: string }[];
 
   const booked = !['inquiry', 'cancelled'].includes(stageOf(stay, today));
   const reservation = /^\d+$/.test(stay.reservationId) ? stay.reservationId : null;
@@ -140,12 +107,12 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
   const scheduled = [...queued.map(q => `${new Date(q.send_at).toISOString().slice(0, 16).replace('T', ' ')} UTC — ${scrubCodes(q.body).replace(/\s+/g, ' ').slice(0, 160)}`), ...planned];
   const { system, user } = aiPrompt({ stay, today, facts, sops, thread, instructions: cfg.instructions, company: a?.name ?? 'the host',
     business: scrubCodes(cfg.business), stayLines, work: workFacts(todos), portfolio, channel: stay.channel, portal, scheduled, issue });
-  const r = cfg.provider === 'claude' ? await askClaude(key, cfg.model, system, user)
-    : await askGemini(key, cfg.model, system, user, [], MS).then(x => ({ ...x, by: cfg.model }));
-  if (!r.json) return { ok: false, error: r.error ?? 'The model did not answer.' };
+  // Settings → Integrations → AI → Guest replies: the model chosen first, the next one only when it fails or is busy.
+  const r = await askJson(sql, env, system, user, [], { task: 'guest' });
+  if (!r.ok) return { ok: false, error: r.error || 'The model did not answer.' };
   const suggestion = suggestionFromAi(r.json);
   if (!suggestion) return { ok: false, error: 'The model answered without a reply.' };
-  return { ok: true, suggestion, by: r.by ?? cfg.model, sops: sops.map(s => s.title) };
+  return { ok: true, suggestion, by: r.by, sops: sops.map(s => s.title) };
 }
 
 /** The draft for one conversation, read fresh from Hostaway — the Suggest button and the webhook's automatic draft share it. */

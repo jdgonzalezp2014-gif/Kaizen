@@ -90,7 +90,7 @@ export async function readReceiptFiles(sql: SqlFn, env: Env, files: AiFile[], wi
   const user = `Supplies list (id | name | measure):\n${active.map(i => `${i.id} | ${i.name} | ${i.measure}`).join('\n')}\n\n` +
     (orders.length ? `Open orders (id | title | supplies asked for):\n${orders.map(o => `${o.todoId} | ${o.title} | ${o.lines.map(l => name.get(l.itemId) ?? '').filter(Boolean).join(', ')}`).join('\n')}\n\n` : '') +
     `Read the attached receipt${files.length > 1 ? ` (${files.length} images, in order)` : ''}.`;
-  const r = await askJson(sql, env, SYSTEM, user, files);
+  const r = await askJson(sql, env, SYSTEM, user, files, { task: 'receipts' });
   if (!r.ok) return { ok: false, message: r.error };
   const receipt = readReceipt(r.json, items, orders, aliases);
   const [before] = receipt.orderNo ? await sql`SELECT created_at::text AS at FROM receipt_reads WHERE account_id = 1 AND order_no = ${receipt.orderNo}

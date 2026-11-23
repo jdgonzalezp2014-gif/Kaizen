@@ -210,3 +210,14 @@ Owner: "the notifications of messages and task alerts in the bell, with a profes
 - **SOP sections follow the menu (migration 118, NOT applied):** one top section per module (`mod-*`), the old sections are their
   children (keys unchanged). Draft SOP: `.sop-118.mjs`.
 - 2026-11-17: "Sound off" by the bell until the page is clicked once (browsers keep a page silent until then); its click turns sound on and plays the tone. `testChime` now waits for the audio context to open (the first click was silent).
+
+## AI tasks — which AI answers each job, in order (2026-11-23)
+Owner: "each task with a first AI, a second, a different one; turn them on/off, move them". **Settings → Integrations → AI** = the keys card
+(Gemini, Claude, Jina; the old Gemini "Model" field is gone) + **AI tasks** (`src/components/AiTasksPanel.tsx`, `/api/ai-tasks`, permission `settings`).
+Tasks (`src/lib/ai-tasks.ts`): Questions to Kaizen (@Kaizen, Ask Kaizen, SOP keywords) · Sorting guest messages (triage) · Reading Slack threads
+(orders/carts, SOP drafts) · Receipts (no Workers AI — cannot see images) · Guest replies · Price suggestions & local events (Gemini only — web search).
+Each = up to 4 steps {provider gemini|workers|claude, model, on}, tried top to bottom by `askJson(…, { task })` (ai-chain.ts); off / no key / cannot do it
+= skipped (the card says why). Unsaved task = its default = the old fixed order, so nothing changed on deploy. Guest replies now fall back too (before:
+one model, no chain). `accounts.ai_last` is now per task (shown on each card; triage does not log). Column `accounts.ai_tasks` = **migration 125,
+NOT applied** — the code reads it through `to_jsonb(accounts)` so it runs before 125; saving needs 125. Not seen in a browser yet.
+

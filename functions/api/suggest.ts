@@ -14,6 +14,7 @@
  */
 import { fetchListings, fetchCalendar } from '../_lib/hostaway.ts';
 import { suggestPrice, fetchLocalEvents, type PricingContext } from '../_lib/gemini.ts';
+import { stepsFor } from '../../src/lib/ai-tasks.ts';
 import { decrypt } from '../_lib/crypto.ts';
 import { db, type Env } from '../_lib/db.ts';
 import { getAccount, getCredentials, type SqlFn } from '../_lib/accounts.ts';
@@ -34,8 +35,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   const account = await getAccount(sql);
   if (!account) return Response.json({ ok: false, error: 'No account.' }, { status: 409 });
 
-  const keyRows = (await sql`SELECT gemini_api_key_enc, gemini_model FROM accounts WHERE id = 1`) as
-    { gemini_api_key_enc: string | null; gemini_model: string }[];
+  const keyRows = (await sql`SELECT gemini_api_key_enc, gemini_model, to_jsonb(accounts)->'ai_tasks' AS ai_tasks FROM accounts WHERE id = 1`) as
+    { gemini_api_key_enc: string | null; gemini_model: string; ai_tasks: unknown }[];
   const enc = keyRows[0]?.gemini_api_key_enc;
   if (!enc) {
     return Response.json({ ok: false, error: 'no_gemini_key',
@@ -122,20 +123,24 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   // Searched before the recommendation so the model can weigh it, and
   // kept optional: if the lookup fails the advice still happens, just
   // without this input.
-  const model = keyRows[0]!.gemini_model || 'gemini-3.6-flash';
-  const events = await fetchLocalEvents(apiKey, model, listing.city, listing.state, from, to);
+  // Settings → Integrations → AI → Price suggestions: the Gemini models on, in order; the next one only when one fails.
+  const models = stepsFor('pricing', keyRows[0]!.ai_tasks, { geminiModel: keyRows[0]!.gemini_model }).filter(s => s.on).map(s => s.model);
+  if (!models.length) return Response.json({ ok: false, error: 'gemini_failed',
+    message: 'Every model for price suggestions is off — turn one on in Settings → Integrations → AI.' }, { status: 409 });
+  let events = await fetchLocalEvents(apiKey, models[0]!, listing.city, listing.state, from, to);
+  for (const m of models.slice(1)) { if (!events.error) break; events = await fetchLocalEvents(apiKey, m, listing.city, listing.state, from, to); }
   ctx.localEvents = events.text;
 
   let suggestion;
-  try {
-    suggestion = await suggestPrice(apiKey, model, ctx);
-    suggestion.events = events.text;
-    suggestion.eventSources = events.sources;
-    suggestion.eventsError = events.error;
-  } catch (err) {
-    return Response.json({ ok: false, error: 'gemini_failed',
-      message: err instanceof Error ? err.message : String(err) }, { status: 502 });
+  const failed: string[] = [];
+  for (const m of models) {
+    try { suggestion = await suggestPrice(apiKey, m, ctx); break; }
+    catch (err) { failed.push(err instanceof Error ? err.message : String(err)); }
   }
+  if (!suggestion) return Response.json({ ok: false, error: 'gemini_failed', message: failed.join(' · ') }, { status: 502 });
+  suggestion.events = events.text;
+  suggestion.eventSources = events.sources;
+  suggestion.eventsError = events.error;
 
   // Recorded as advice, with push_status 'none' — nothing was changed.
   // When a human later moves this price, the advice is already on file

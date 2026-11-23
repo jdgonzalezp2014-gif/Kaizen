@@ -80,7 +80,7 @@ export async function takeEvent(sql: SqlFn, env: Env, payload: unknown, origin: 
   let t: Triage = triageFrom(null), by = '';
   if (body) {
     const p = triagePrompt({ message: body, before: thread.slice(-7, -1).map(m => `${m.incoming ? 'GUEST' : 'HOST'}: ${m.body}`), stage, company: acct[0]?.name ?? 'the host' });
-    const r = await askJson(sql, env, p.system, p.user, [], { tier: 'chat', log: false }).catch(() => null);
+    const r = await askJson(sql, env, p.system, p.user, [], { task: 'triage', log: false }).catch(() => null);
     if (r?.ok) { t = triageFrom(r.json); by = r.by; }
   }
   const watch = await readWatch(sql);

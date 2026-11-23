@@ -37,7 +37,7 @@ export async function readRequestText(sql: SqlFn, env: Env, text: string,
     sql`SELECT text, item_id::text AS "itemId" FROM inventory_receipt_aliases WHERE account_id = 1` as Promise<{ text: string; itemId: string }[]>]);
   const active = items.filter(i => i.active);
   const user = `Supplies list (id | name | measure):\n${active.map(i => `${i.id} | ${i.name} | ${i.measure}`).join('\n')}\n\nWhat was asked:\n${said}`;
-  const r = await askJson(sql, env, SYSTEM, user, [], { ...(opts.budgetMs ? { budgetMs: opts.budgetMs } : {}), ...(opts.log === false ? { log: false } : {}) });
+  const r = await askJson(sql, env, SYSTEM, user, [], { task: 'orders', ...(opts.budgetMs ? { budgetMs: opts.budgetMs } : {}), ...(opts.log === false ? { log: false } : {}) });
   if (!r.ok) return { ok: false, message: r.error };
   // Every line is something to buy: the receipt's checks apply, its money fields are simply empty.
   const raw = { lines: (Array.isArray(r.json.lines) ? r.json.lines : []).map(l => ({ ...(l as object), kind: 'item' })) };
@@ -64,7 +64,7 @@ export async function readOrderLines(sql: SqlFn, env: Env, lines: { text: string
   Promise<{ ok: true; lines: (ReceiptLine | null)[]; by: string } | { ok: false; message: string }> {
   const active = opts.items.filter(i => i.active);
   const user = `Supplies (id|name|measure):\n${active.map(i => `${i.id}|${i.name}|${i.measure}`).join('\n')}\n\nList:\n${lines.map((l, k) => `${k + 1}: ${l.text}`).join('\n')}`;
-  const r = await askJson(sql, env, LINES_SYSTEM, user, [], { ...(opts.budgetMs ? { budgetMs: opts.budgetMs } : {}), ...(opts.log === false ? { log: false } : {}) });
+  const r = await askJson(sql, env, LINES_SYSTEM, user, [], { task: 'orders', ...(opts.budgetMs ? { budgetMs: opts.budgetMs } : {}), ...(opts.log === false ? { log: false } : {}) });
   if (!r.ok) return { ok: false, message: r.error };
   const raw = rowsToRaw(r.json.r, lines);
   const read = readReceipt({ lines: raw.filter(Boolean) }, opts.items, [], new Map(opts.learned.map(a => [a.text, a.itemId]))).lines;

@@ -20,9 +20,9 @@ export function integrations(a: IntegrationFlags): Integration[] {
     { key: 'stripe', name: 'Stripe', does: 'Guest payments (damage waiver, deposits, extras) and vendor payouts', state: on(a.hasStripeKey), required: false },
     { key: 'slack', name: 'Slack', does: 'Team alerts, daily messages, approvals', state: on(a.slack), required: false },
     { key: 'drive', name: 'Google Drive', does: 'Repository files and check-in photos', state: on(a.drive), required: false },
-    { key: 'ai', name: 'AI — Gemini & Claude', does: 'Price suggestions, market reading, drafts; guest replies next', state: on(a.hasGeminiKey || a.hasClaudeKey), required: false },
+    { key: 'ai', name: 'AI — Gemini & Claude', does: 'Keys, and which AI answers each task — first, second, different; on/off, in order', state: on(a.hasGeminiKey || a.hasClaudeKey), required: false },
     { key: 'quo', name: 'Quo', does: 'SMS alerts to the team, and texts with guests in the Inbox', state: on(a.hasQuoKey), required: false },
-    { key: 'guestai', name: 'Guest messages & AI', does: 'Inbox: sending to guests (staged until turned on), the reply AI and its model, the portal address', state: on(a.guestAi), required: false },
+    { key: 'guestai', name: 'Guest messages & AI', does: 'Inbox: sending to guests (staged until turned on), the reply AI, the portal address', state: on(a.guestAi), required: false },
     { key: 'identity', name: 'Identity verification', does: 'Guest ID + selfie at check-in (Truvi or Stripe Identity — not chosen yet)', state: 'later', required: false },
   ];
 }

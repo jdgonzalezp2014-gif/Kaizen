@@ -24,7 +24,7 @@ Vendor portal · Guest portal. Future: Sales & Growth, Schedules.
 | Stripe | guest payments (waiver, deposit hold, extras) + vendor payouts (Connect); webhook into the books | `accounts.stripe_secret_key_enc` (099), `stripe_webhook_secret_enc` (119); test keys only for now |
 | Slack | team alerts, approvals | `accounts.slack_*_enc` |
 | Google Drive | Repository files, check-in photos | OAuth per account |
-| Claude / Gemini | AI drafts, guest replies (next), pricing | `accounts.*_api_key_enc` |
+| Claude / Gemini / Workers AI | AI drafts, guest replies, pricing — per-task model order in AI tasks | `accounts.*_api_key_enc`, `accounts.ai_tasks` |
 | Quo | SMS | `accounts.quo_*` |
 | Identity | ID + selfie at check-in | not chosen (Truvi vs Stripe Identity) |
 

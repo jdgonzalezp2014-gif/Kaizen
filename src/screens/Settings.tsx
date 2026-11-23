@@ -9,6 +9,7 @@ import {
 import { ImportPanel } from './ImportPanel.tsx';
 import { SlackPanel } from '../components/SlackPanel.tsx';
 import { GuestAiPanel } from '../components/GuestAiPanel.tsx';
+import { AiTasksPanel } from '../components/AiTasksPanel.tsx';
 import { addStripeDomain, getInboxSettings, getPayouts, getSlack, getStripeDomains, type StripeDomain, newIngestToken, pullFeed, runCron, type FeedResult, type CronResult, type StripeStatus } from '../api.ts';
 import { integrations, type IntegrationFlags } from '../lib/integrations.ts';
 import { sanitize, segments } from '../lib/sms.ts';
@@ -133,7 +134,7 @@ export function Settings() {
     stripe: <StripePanel account={account} onSaved={() => void load()} />,
     slack: <SlackPanel />,
     drive: <DrivePanel />,
-    ai: <GeminiPanel account={account} onSaved={() => void load()} />,
+    ai: <><GeminiPanel account={account} onSaved={() => void load()} /><AiTasksPanel /></>,
     quo: <AlertsPanel account={account} onSaved={() => void load()} />,
     guestai: <GuestAiPanel />,
   }} />;
@@ -625,7 +626,7 @@ function DrivePanel() {
 }
 
 /**
- * The Gemini key.
+ * The AI keys (Gemini, Claude, Jina) and, below them, which AI answers each task (AiTasksPanel).
  *
  * Stored encrypted and never returned to the browser — the form can say
  * a key EXISTS, never what it is, which is the same rule the Hostaway
@@ -633,7 +634,6 @@ function DrivePanel() {
  */
 function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
   const [key, setKey] = useState('');
-  const [model, setModel] = useState(account.geminiModel ?? 'gemini-3.6-flash');
   const [jina, setJina] = useState('');
   const [claude, setClaude] = useState('');
   const [busy, setBusy] = useState(false);
@@ -642,7 +642,7 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
   const save = async () => {
     setBusy(true); setMsg('');
     const r = await saveSettings({
-      geminiApiKey: key || undefined, geminiModel: model, jinaApiKey: jina || undefined, claudeApiKey: claude || undefined });
+      geminiApiKey: key || undefined, jinaApiKey: jina || undefined, claudeApiKey: claude || undefined });
     setBusy(false);
     setKey(''); setJina(''); setClaude('');
     setMsg(r.ok ? 'Saved.' : (r.error ?? 'Failed.'));
@@ -651,28 +651,17 @@ function GeminiPanel({ account, onSaved }: { account: Account; onSaved: () => vo
 
   return (
     <div className="card">
-      <h2>AI suggestions &amp; market reading <Hint>Gemini reviews one unit at a time and recommends what to do with its price. It is given
-        only figures measured from your own account and is told it has no market data, so it
-        cannot quote comparable listings it has not seen. It never writes to Hostaway — every
-        change still goes through the same confirmation you would use by hand.
-        A free key comes from <code>aistudio.google.com/apikey</code>.</Hint></h2>
-      <div className="row">
-        <label>
-          API key {account.hasGeminiKey && <span className="ok-tag">one is stored</span>}
-          <input type="password" value={key} onChange={e => setKey(e.target.value)}
-                 placeholder={account.hasGeminiKey ? 'stored — type to replace' : 'AIza…'} />
-        </label>
-        <label>
-          Model
-          <input value={model} onChange={e => setModel(e.target.value)} />
-        </label>
-      </div>
+      <h2>AI keys <Hint>This company's own keys. Which model each job uses, and in what order, is set in AI tasks below.
+        Gemini: a free key from <code>aistudio.google.com/apikey</code> (busy at times on the free tier). Claude: a key from platform.claude.com
+        with prepaid credits and auto-reload off — the credits are the most it can ever spend. Price advice is given only figures measured
+        from your own account and never writes to Hostaway.</Hint></h2>
       <label>
-        Claude API key <span className="note">— optional, the last resort</span>
-        {account.hasClaudeKey && <span className="ok-tag">one is stored</span>}
-        <Hint>Kaizen's AI asks Gemini first, then Cloudflare's Workers AI, and Claude only when both fail or run out of time —
-          Haiku for Slack questions, Sonnet for receipts, carts and SOP drafts. Use a key from platform.claude.com with prepaid
-          credits and auto-reload off: the credits are the most it can ever spend.</Hint>
+        Gemini API key {account.hasGeminiKey && <span className="ok-tag">one is stored</span>}
+        <input type="password" value={key} onChange={e => setKey(e.target.value)}
+               placeholder={account.hasGeminiKey ? 'stored — type to replace' : 'AIza…'} />
+      </label>
+      <label>
+        Claude API key {account.hasClaudeKey && <span className="ok-tag">one is stored</span>}
         <input type="password" value={claude} onChange={e => setClaude(e.target.value)}
                placeholder={account.hasClaudeKey ? 'stored — type to replace' : 'sk-ant-…'} />
       </label>
