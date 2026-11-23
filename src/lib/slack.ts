@@ -995,6 +995,7 @@ export const MENTION_HELP = [
   'In a task’s thread: *@Kaizen* _your comment_ — saved as a comment · *@Kaizen comments* — the comments so far',
   '*@Kaizen newsop* _title_ — write an SOP · *@Kaizen sops* — the SOP library by section · ⋯ on a message → *Make SOP from this*',
   '*@Kaizen help* _how do we handle an early checkout?_ — the answer from the SOPs; if none covers it, the thread is asked to write one',
+  '*@Kaizen* _wifi amber valley_ · _¿cuál es la dirección de Napa?_ — any question: the Repository first (no AI), then the SOPs; 🔒 passwords only to you, logged',
   'Also: */kaizen* (type */kaizen help*) and the ⚡ shortcuts'
 ].join('\n');
 

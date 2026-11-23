@@ -148,6 +148,17 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 - **The clock makes two calls since 2026-11-16** (`clock/index.ts`): `/api/slack-cron` as before, and `/api/slack-cron?job=messages`
   (the guests' scheduled messages — inbox module). Independent: one failing does not stop the other. Needs a redeploy of the clock.
 
+### @Kaizen answers questions (2026-11-23)
+Owner: "if the second word is not a known one, take it as AI… we can save a lot with scripting". Text after @Kaizen (or in a DM) that is no
+command and is not in a task/claim thread (there it stays a comment) is classified **by script first** (`askKind`, `src/lib/slack-ask.ts`):
+*question* (`?`/`¿` or a question word first, EN/ES) → `Kaizen.askKaizen`: Repository by rules (`lookup`, the same as Ask Kaizen —
+shared `functions/_lib/assistant.ts`), a light model only to read ONE named record for an unnamed field, else the SOPs (`helpFromSops`,
+model only when an SOP matches); *lookup* (≤ 5 words) → the Repository only if a field is named ("wifi amber valley"); *todo* (longer, not
+asking) → the old "Make it a to-do?" buttons, nothing read. `@Kaizen help <q>` goes the same way. Secrets = `🔒 Show <field>` buttons
+(`ask_reveal_<col>`): permission repository.reveal, a `repo_reveals` row first, the value ephemeral to who tapped. Note: in the Repository
+the Wi-Fi password is a plain field (not a secret), so it is posted in the thread. Seen on real data (no model): "wifi amber valley" → the card;
+"fix the door lock at Amber Valley tomorrow" → to-do. Not tried in Slack yet.
+
 ## Slack API rules that bite
 
 - Web API **form-encoded** (read methods refuse JSON). ≤5 overflow options. **No duplicate

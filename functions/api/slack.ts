@@ -33,6 +33,10 @@ import * as sopsApi from './sops.ts';
 import { askJson, within } from '../_lib/ai-chain.ts';
 import { gapsInThread, standardFrom, draftFromAi, draftFromThread, helpAnswerBlocks, helpFromAi, helpMissingBlocks, helpPrompt, rankSops, type SopDoc, partialSopForm, readSopForm, reviewFromAi, reviewNote, sopBody, sopListModal, sopModal, sopPrompt, sopsBlocks, sopViewModal, slackText,
          type SopSectionLite, type SopSource } from '../../src/lib/slack-sops.ts';
+import { repoRecords } from '../_lib/assistant.ts';
+import { decrypt } from '../_lib/crypto.ts';
+import { extraWords, lookup, recordPrompt } from '../../src/lib/assistant.ts';
+import { askKind, recordBlocks } from '../../src/lib/slack-ask.ts';
 import { addToBlocks, sourceOf, suggestTarget, type AddSource, type AddTarget } from '../../src/lib/slack-addto.ts';
 import { supplyPlaces } from '../_lib/unit-access.ts';
 import * as reportsApi from './reports.ts';
@@ -178,9 +182,10 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     const member = await memberOf(sql, s.token!, String(ev.user ?? ''));
     if (!member.ok) { await sayPrivate(member.why); return; }
     const k = new Kaizen(ctx, sql, s, member.email, member.permissions, String(ev.user));
-    const wait = await say('🔎 Looking in the SOPs…');
+    const wait = await say('🔎 Looking it up…');
     // 2026-10-15: "Looking…" must never be the last word — a failure says so instead.
-    const m = await k.helpFromSops(arg, { channel: String(ev.channel), root: threadTsOf })
+    const m = await k.askKaizen(arg, { channel: String(ev.channel), root: threadTsOf }, { asked: true })
+      .then(x => x ?? { text: '', blocks: [] as unknown[] })
       .catch(() => ({ text: '⚠ Kaizen could not answer just now — ask again in a minute, or look in Kaizen → SOPs.', blocks: [] as unknown[] }));
     await replaceOrSay(wait as { ts?: string }, m);
     return;
@@ -261,7 +266,16 @@ async function mention(ctx: Ctx, sql: SqlFn, s: SlackSetup, ev: Record<string, a
     await say(m.text, m.blocks);
     return;
   }
-  // Plain text: a comment where there is a subject; elsewhere, an offer to track it.
+  // Plain text: a comment where there is a subject; elsewhere a question is answered (owner, 2026-11-23: "if the second word is
+  // not a known one, take it as AI") — records by rules, SOPs by words, a model only on a match — and anything else is offered as a to-do.
+  if (!t && arg.trim()) {
+    const where = { channel: String(ev.channel), root: threadTsOf };
+    const m = await within(25000, k.askKaizen(arg, where)).catch(() => ({ text: '⚠ Kaizen could not answer just now — ask again in a minute.', blocks: [] as unknown[] }));
+    if (m) {
+      await say(m.text, [...m.blocks, { type: 'context', elements: [{ type: 'mrkdwn', text: 'Meant as a to-do? *@Kaizen new* _what to do_ · *@Kaizen help* for everything Kaizen does here.' }] }]);
+      return;
+    }
+  }
   if (!t) {
     await say(`Make it a to-do? ${arg}`, [
       { type: 'section', text: { type: 'mrkdwn', text: `Kaizen can track *${arg.replace(/[<>&]/g, '').slice(0, 200)}* — pick what it is:` } },
@@ -1054,6 +1068,50 @@ class Kaizen {
       note: r.ok ? '🧵 Asked in the thread. When they answer, tap ✨ again — or close this and use *@Kaizen newsop* there later.' : `⚠ Could not post in the thread: ${r.error}` }) });
   }
   /** A question to the SOPs: a few by words, then a model picks and answers from them — or the thread is asked. */
+  /**
+   * "@Kaizen <question>" (owner, 2026-11-23) — Ask Kaizen in Slack: the Repository by rules first (no AI: "wifi amber valley",
+   * "codigo P2"), a light model only to read ONE named record for something no field is called, then the SOPs. `null` = the text
+   * names no record and is not shaped like a question: the caller offers it as a to-do, and no model was asked.
+   */
+  async askKaizen(question: string, from: { channel: string; root: string }, opts: { asked?: boolean } = {}): Promise<{ text: string; blocks: unknown[] } | null> {
+    const kind = askKind(question, opts.asked);
+    if (kind === 'todo') return null;
+    if (this.may('/api/repository', 'GET')) {
+      const recs = await repoRecords(this.sql);
+      const hits = lookup(question, recs);
+      // A short "wifi amber valley" is a lookup only when it names a field; a longer sentence only when it asks.
+      if (hits.length && (kind === 'question' || hits.some(h => h.matched))) {
+        const canReveal = this.may('/api/repository-reveal', 'POST');
+        const one = hits.length === 1 && !hits[0]!.matched ? recs.find(r => r.table === hits[0]!.table && r.id === hits[0]!.id) : undefined;
+        let answer: string | undefined, by: string | null = null;
+        if (one && extraWords(question, one.name).length >= 2) {
+          const p = recordPrompt(question, one);
+          const r = await askJson(this.sql, this.ctx.env, p.system, p.user, [], { task: 'assistant' });
+          if (r.ok && typeof r.json.answer === 'string' && r.json.answer.trim()) { answer = r.json.answer.trim().slice(0, 800); by = r.by; }
+        }
+        return { text: `From the Repository: ${hits.map(h => h.name).join(', ')}`, blocks: recordBlocks(hits, { canReveal, appUrl: this.s.config.appUrl, answer, by }) };
+      }
+    }
+    if (kind !== 'question') return null;
+    return this.helpFromSops(question, from);
+  }
+
+  /** 🔒 Show <field> under an answer: the value only to whoever tapped, written to repo_reveals first (the web's rule). */
+  private async revealFromAsk(value: string, url: string): Promise<Response> {
+    if (!this.may('/api/repository-reveal', 'POST')) return this.deny('revealing passwords');
+    const v = JSON.parse(value || '{}') as { table?: string; id?: string; column?: string };
+    const KEY = /^[a-z][a-z0-9_]{0,62}$/;
+    if (!v.table || !KEY.test(v.table) || !v.column || !KEY.test(v.column) || !v.id || String(v.id).length > 64) return ephemeral('Which secret?');
+    await this.sql`INSERT INTO repo_reveals (account_id, actor, table_key, row_id, column_key) VALUES (1, ${this.email}, ${v.table}, ${String(v.id)}, ${v.column})`;
+    const [row] = await this.sql`SELECT s.value_enc FROM repo_secrets s
+        JOIN repo_records r ON r.account_id = s.account_id AND r.table_key = s.table_key AND r.id = s.record_id AND r.archived_at IS NULL
+       WHERE s.account_id = 1 AND s.table_key = ${v.table} AND s.record_id = ${String(v.id)} AND s.column_key = ${v.column}` as { value_enc: string }[];
+    const plainValue = row ? await decrypt(row.value_enc, this.ctx.env.ENCRYPTION_KEY).catch(() => null) : null;
+    const text = plainValue == null ? 'No value is set.' : `🔒 \`${plainValue.replace(/`/g, "'")}\` — only you see this; the reveal is logged.`;
+    await this.reply(url, { response_type: 'ephemeral', replace_original: false, text });
+    return ack();
+  }
+
   async helpFromSops(question: string, from: { channel: string; root: string }): Promise<{ text: string; blocks: unknown[] }> {
     const missing = { text: 'No SOP covers this yet', blocks: helpMissingBlocks(question, from) };
     if (!this.may('/api/sops', 'GET')) return { text: 'Your Kaizen role does not include SOPs.', blocks: [] };
@@ -1329,6 +1387,7 @@ class Kaizen {
       })().catch(() => {}));
       return ack();
     }
+    if (id.startsWith('ask_reveal_')) return await this.revealFromAsk(value, url);
     // "@Kaizen order" drafts (2026-10-15) — only on the draft message itself (the task card's order fields are form inputs).
     if (id.startsWith('order_') && p.container?.type === 'message') return await this.orderAction(id, value, p);
     // SOPs (owner, 2026-10-14).
