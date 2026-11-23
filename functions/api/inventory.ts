@@ -38,7 +38,7 @@ import { db, type Env } from '../_lib/db.ts';
 import { commentToThread } from '../_lib/slack.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { createOrder, editNewItem, fieldPhotos, refillCloset, setMeasure, transfer, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder, laterOrder, setStoreLink, orderNote } from '../_lib/inventory.ts';
+import { createOrder, editNewItem, fieldPhotos, refillCloset, setMeasure, transfer, recordLook, hideItem, lowStock, mirrorTodos, newItem, overview, paidBack, recordMove, recordTeamMoves, recordPurchase, recordPurchases, removeItem, saveDraft, saveSettings, saveTodoOrder, laterOrder, setStoreLink, orderNote } from '../_lib/inventory.ts';
 import { learnAliases, learnProducts, readOrderMds, readReceiptFiles, receiptFiles } from '../_lib/receipt-read.ts';
 import { readRequestText } from '../_lib/request-read.ts';
 
@@ -70,7 +70,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       if (!given.length && !files.length && !look) return bad('Count at least one item, or add a photo or a note.');
       const photos = await fieldPhotos(sql, env.ENCRYPTION_KEY, files, `storage ${String(b.place ?? '')}`);
       await recordLook(sql, who.email, b.place, look, photos, given.length);
-      for (const c of given) await recordMove(sql, me, { kind: 'count', itemId: c.itemId, place: b.place, qty: c.qty, note: b.note });
+      await recordTeamMoves(sql, me, 'count', b.place, given, b.note);
       waitUntil(lowStock(sql, [String(b.place ?? '')]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
     } else if (b.action === 'readRequest') {
       // §159: ✨ Build the cart — the AI reads what was asked; nothing is saved.
@@ -104,7 +104,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
       const list = Array.isArray(b.adjusts) ? (b.adjusts as { itemId: unknown; qty: unknown }[]).filter(a => Number(a.qty)) : [];
       if (!list.length) return bad('Nothing to correct.');
       if (!String(b.note ?? '').trim()) return bad('Say why it is corrected.');
-      for (const a of list) await recordMove(sql, me, { kind: 'adjust', itemId: a.itemId, place: b.place, qty: a.qty, note: b.note });
+      await recordTeamMoves(sql, me, 'adjust', b.place, list, b.note);
       waitUntil(lowStock(sql, [String(b.place ?? '')]).then(ids => mirrorTodos(sql, env.ENCRYPTION_KEY, ids, who.email)).catch(() => {}));
     } else if (b.action === 'hide') {
       await hideItem(sql, who.email, b.place, b.itemId, b.hide !== false);

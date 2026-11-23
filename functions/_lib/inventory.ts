@@ -343,6 +343,37 @@ export async function recordMove(sql: SqlFn, who: Who, b: Record<string, unknown
 }
 
 /**
+ * The team's count or ± correction of many items at one place, saved in one INSERT.
+ * Not recordMove per line: each one costs ~5 queries (item + places + insert), and a
+ * Worker may make only 50 subrequests — a 27-item storage count failed with "Too many
+ * subrequests" (2026-11-23). Every line is checked before any is saved.
+ */
+export async function recordTeamMoves(sql: SqlFn, who: Who, kind: 'count' | 'adjust', place: unknown,
+                                      lines: { itemId: unknown; qty: unknown }[], note: unknown) {
+  if (who.source !== 'team') throw new Error('Counts and corrections are the team’s.');
+  const ids = lines.map(l => Number(l.itemId));
+  const [items, sp] = await Promise.all([
+    sql`SELECT id, kind FROM inventory_items WHERE account_id = 1 AND active AND id = ANY(${ids}::int[])` as Promise<{ id: number; kind: 'supply' | 'furniture' }[]>,
+    supplyPlaces(sql),
+  ]);
+  const kindOf = new Map(items.map(i => [Number(i.id), i.kind]));
+  const rows = lines.map(l => {
+    const itemId = Number(l.itemId);
+    if (!kindOf.has(itemId)) throw new Error('Which item?');
+    const qty = Math.round(Number(l.qty) * 100) / 100;
+    if (!Number.isFinite(qty) || (kind === 'adjust' ? qty === 0 : qty < 0) || Math.abs(qty) > 10000) throw new Error('How many?');
+    return { itemId, qty, key: placeOf(sp, who, null, null, place, kindOf.get(itemId)).key };
+  });
+  if (!rows.length) return 0;
+  const n = String(note ?? '').trim().slice(0, 500) || null;
+  await sql`INSERT INTO inventory_moves (account_id, item_id, place, unit_id, kind, qty, cleaning_key, note, photos, by_name, source, todo_id)
+            SELECT 1, r.item_id, r.place, NULL, ${kind}, r.qty, NULL, ${n}, '[]'::jsonb, ${who.name}, ${who.source}, NULL
+              FROM jsonb_to_recordset(${JSON.stringify(rows.map(r => ({ item_id: r.itemId, place: r.key, qty: r.qty })))}::jsonb)
+                   AS r(item_id int, place text, qty numeric)`;
+  return rows.length;
+}
+
+/**
  * What was taken from the storage for one clean, sent with one tap (§134).
  * All lines are checked before any is saved, so a mistake in one never
  * leaves half a report. It also ticks the clean's required "what I took" step.
