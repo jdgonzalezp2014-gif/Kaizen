@@ -38,13 +38,13 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
 ## What it does
 
 - **Less noise (owner, 2026-11-23 — "intentamos hacer muchas cosas con los bots"; measured: 76 bot posts/week in #kaizen-ops,
-  ~46 of them guest alerts).** Each work message = its line + ONE small grey **🛠** button (`toolButton`, a URL button, beside the
+  ~46 of them guest alerts).** Each work message = its line (bold title, then only what + where — no emoji, no status/priority/who) + ONE small grey **Open** button (first 🛠, owner changed it) (`toolButton`, a URL button, beside the
   line) that opens the right place in Kaizen — `?todo=`, `?claim=`, `?tab=inbox&c=` / `&r=<reservation>` (Inbox opens that stay's
   conversation). Gone from messages: ✓ Complete / Reopen / Manage on tasks, status select / Comment / Edit on claims, the urgency
   question on #kaizen-ops (still asked privately in the cleaner's channel, `askOpsPrivately`). A reply in a task's thread is still a
   comment (§153); `@Kaizen …` commands and `/kaizen today` (the whole day, with pop-ups) are unchanged.
   - Clock: **one message a day at the morning hour (8 AM Central): only today's check-ins whose online check-in is not done**
-    (`checkinsDigest`; done = a `guest_checkins` row), each line with what is missing (agreement, ID) and its 🛠. None → nothing
+    (`checkinsDigest`; done = a `guest_checkins` row), each line with what is missing (agreement, ID) and its Open. None → nothing
     posted (key `digest:morning:<day>` still taken). The 3 PM "Before tomorrow" and the 11:55 PM tasks check-out **went** (their
     Settings fields/"Send now" still exist but the clock no longer sends them). The digest tick is a heavy one: the cleans' thread
     waits for the next tick (`digestRan`).
