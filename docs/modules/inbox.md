@@ -168,6 +168,9 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   The guest is told nothing. AI prompt: 40 messages (last 10 whole, older 400 chars), MESSAGES ALREADY SCHEDULED (Kaizen outbox rows +
   `planFor` automations still to come; Hostaway's own automations are not readable — its public API has no endpoint), BAD EXPERIENCE ON
   RECORD (never ask for a review), complaint → apologise + handoff, a scheduled message that would be wrong → said in `reason`.
+- **Refunds / complaints (owner, 2026-11-23):** never offer a refund, credit or money back; no apology up front, no fault admitted. First reply:
+  thanks, "not our standard", checking with housekeeping (cleaning), solving it ASAP; only when they insist after that → ask what they would like,
+  promise nothing; always handoff. Company facts got a "Refunds:" line (1150 chars). Checked with Claude on a dirty-arrival + refund thread.
 - **Quo / SMS (checked 2026-11-23):** key works, 5 numbers, `quo_from` = …3228 "Hikaru CS MAIN" — the SMS of matched guests are there.
   The gap is the phone: **Airbnb gives Hostaway no guest phone (20 of 22 Airbnb stays)**; Vrbo/Booking.com do. Fix proposed: ask the phone in the
   portal's online check-in when Hostaway has none, and a Quo webhook for incoming SMS → guest_events. `quo.ts` still on api.openphone.com (works).
