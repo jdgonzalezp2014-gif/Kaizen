@@ -334,38 +334,39 @@ export function fill(body: string, vars: Record<string, string>): { text: string
  * Starting points for the automations hosts ask for first (owner, 2026-11-16). Each opens in the editor PAUSED: the
  * words are the company's to make its own, and with sending on an active automation reaches guests by itself.
  */
-// Owner, 2026-11-23: short, calm, natural — no dashes, nothing that reads written by a machine.
+// Owner, 2026-11-23: short, calm, natural — no dashes, nothing that reads written by a machine. No {{listing}}: it is the
+// internal unit name (CL1235, P2-1406), not what the guest knows the place by.
 export const RECIPES: { key: string; icon: string; what: string; t: Omit<Template, 'id'> }[] = [
   { key: 'welcome', icon: 'message', what: 'Right after booking: thanks, and the link to the stay details and the online check-in.',
     t: { name: 'Welcome', channel: 'hostaway', trigger: 'booked', offsetHours: 0, holdHours: null, conditions: [], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, thank you for booking with us! We are really glad you chose {{listing}}. You can find the details of your stay here, and please complete your online check-in when you have a moment: {{portal_link}}' } },
+      body: 'Hi {{first_name}}, thank you for booking with us! We are really glad you chose us. You can find the details of your stay here, and please complete your online check-in when you have a moment: {{portal_link}}' } },
   { key: 'remind', icon: 'bell', what: 'Two days before arrival, only to guests who have not done the online check-in yet.',
     t: { name: 'Online check-in reminder', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 48, holdHours: null, conditions: ['checkin_pending'], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, your stay at {{listing}} starts {{checkin}}. Please complete your online check-in to receive your door code: {{portal_link}}' } },
+      body: 'Hi {{first_name}}, your stay starts {{checkin}}. Please complete your online check-in to receive your door code: {{portal_link}}' } },
   { key: 'remind2', icon: 'bell', what: 'The morning of arrival (6 hours before check-in), a second reminder only if the online check-in is still not done.',
     t: { name: 'Online check-in reminder (arrival day)', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 6, holdHours: null, conditions: ['checkin_pending'], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, we are looking forward to having you at {{listing}} today! Your online check-in is still pending, and you will need it to get your door code: {{portal_link}}' } },
+      body: 'Hi {{first_name}}, we are looking forward to having you today! Your online check-in is still pending, and you will need it to get your door code: {{portal_link}}' } },
   { key: 'code', icon: 'key', what: 'Sends the door code once the guest finishes the online check-in, never earlier than two days before arrival.',
     t: { name: 'Door code after online check-in', channel: 'hostaway', trigger: 'checkin_done', offsetHours: 0, holdHours: 48, conditions: [], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, thank you for completing your online check-in. Your door code for {{listing}} is {{door_code}}, and it works from {{checkin_time}} on {{checkin}}.' } },
+      body: 'Hi {{first_name}}, thank you for completing your online check-in. Your door code is {{door_code}}, and it works from {{checkin_time}} on {{checkin}}.' } },
   { key: 'pay', icon: 'card', what: 'Three days before arrival, only to guests whose payment is still pending. It stops by itself once they pay.',
     t: { name: 'Payment reminder', channel: 'hostaway', trigger: 'before_checkin', offsetHours: 72, holdHours: null, conditions: ['payment_pending'], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, your stay at {{listing}} starts {{checkin}}. Your payment is still pending, and you can complete it here: {{portal_link}}' } },
+      body: 'Hi {{first_name}}, your stay starts {{checkin}}. Your payment is still pending, and you can complete it here: {{portal_link}}' } },
   { key: 'howis', icon: 'sparkles', what: 'A day after check-in: how is everything, can we help with anything.',
     t: { name: 'How is everything', channel: 'hostaway', trigger: 'after_checkin', offsetHours: 24, holdHours: null, conditions: ['issue_pending'], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, we hope you are settling in well at {{listing}}. How is everything so far? If there is anything we can do to make your stay better, just let us know.' } },
+      body: 'Hi {{first_name}}, we hope you are settling in well. How is everything so far? If there is anything we can do to make your stay better, just let us know.' } },
   { key: 'midclean', icon: 'home', what: 'Monthly stays (28 nights or more), halfway through: a reminder of the mid-stay cleaning.',
     t: { name: 'Mid-stay cleaning', channel: 'hostaway', trigger: 'mid_stay', offsetHours: 0, holdHours: null, conditions: ['monthly_done'], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, we hope you are enjoying your time at {{listing}}. Your stay includes a mid-stay cleaning. Let us know which day works best for you and we will set it up.' } },
+      body: 'Hi {{first_name}}, we hope you are enjoying your time with us. Your stay includes a mid-stay cleaning. Let us know which day works best for you and we will set it up.' } },
   { key: 'extend', icon: 'calendar', what: 'Two days before check-out, only when the night after check-out is open on the calendar: we have some availability, would they like to extend.',
     t: { name: 'Extend your stay', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 48, holdHours: null, conditions: ['open_done'], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, we hope you are having a great stay at {{listing}}. If you would like to stay longer, we have some availability after {{checkout}}. Just let us know and we will check it for you.' } },
+      body: 'Hi {{first_name}}, we hope you are having a great stay. If you would like to stay longer, we have some availability after {{checkout}}. Just let us know and we will check it for you.' } },
   { key: 'out', icon: 'clock', what: 'The evening before departure: the check-out time.',
     t: { name: 'Check-out reminder', channel: 'hostaway', trigger: 'before_checkout', offsetHours: 16, holdHours: null, conditions: [], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, we hope you enjoyed {{listing}}. Just a reminder that check-out is tomorrow, {{checkout}}, by {{checkout_time}}. Safe travels!' } },
+      body: 'Hi {{first_name}}, we hope you enjoyed your stay. Just a reminder that check-out is tomorrow, {{checkout}}, by {{checkout_time}}. Safe travels!' } },
   { key: 'review', icon: 'sparkles', what: 'A day after check-out: a thank-you and the ask for a review, never to a stay with a bad experience on record.',
     t: { name: 'Thank you & review', channel: 'hostaway', trigger: 'after_checkout', offsetHours: 24, holdHours: null, conditions: ['issue_pending'], listingIds: null, active: false,
-      body: 'Hi {{first_name}}, thank you for staying at {{listing}}. If you enjoyed your stay, a review would mean a lot to our small team. We hope to host you again!' } },
+      body: 'Hi {{first_name}}, thank you for staying with us. If you enjoyed your stay, a review would mean a lot to our small team. We hope to host you again!' } },
 ];
 
 /** `day` at `hour` on the wall clock of `tz`, as an instant. Two passes settle a daylight-saving edge. */

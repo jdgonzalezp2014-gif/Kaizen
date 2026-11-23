@@ -303,4 +303,5 @@ test('mid-stay goes on the middle day at 10 AM; monthly and open-night condition
   assert.equal(condMet('charge_pending', stay), false, 'nothing pending = the reminder stops');
   // Messages read as people write them: no dashes.
   for (const r of RECIPES) assert.ok(!/[—–]/.test(r.t.body), r.t.name);
+  for (const r of RECIPES) assert.ok(!r.t.body.includes('{{listing}}'), `${r.t.name}: the unit name is internal`);
 });
