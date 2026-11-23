@@ -201,6 +201,22 @@ function Report({ data, open, onOpen }: { data: AnalyticsData; open: string | nu
   const topCleaner = now.clean.byCleaner.find(c => c.key !== 'Unassigned');
 
   // The executive summary in words: what someone reads first, built only from the figures below it.
+  // The one thing to know first (owner, 2026-11-23: "give me the insight at once"), then the rest behind "Read more".
+  // Rules, not a model: the first that applies wins — money waiting on someone, guests unhappy, then the biggest move.
+  const change = (a: number, b: number) => (b ? (a - b) / b : null);
+  const spentCh = change(now.spent, before.spent), incomeCh = change(netIn, before.income.revenue + before.other);
+  const occCh = now.occ != null && before.occ != null ? now.occ - before.occ : null;
+  const moves = [
+    spentCh != null && Math.abs(spentCh) >= 0.15 ? { size: Math.abs(spentCh), text: `Spent ${spentCh > 0 ? 'rose' : 'fell'} ${pct(Math.abs(spentCh))} against the days before (${money(now.spent)} vs ${money(before.spent)})${top ? `; ${top.key} is ${pct(top.share)} of it` : ''}.` } : null,
+    incomeCh != null && Math.abs(incomeCh) >= 0.1 ? { size: Math.abs(incomeCh), text: `Net income ${incomeCh > 0 ? 'rose' : 'fell'} ${pct(Math.abs(incomeCh))} (${money(netIn)}).` } : null,
+    occCh != null && Math.abs(occCh) >= 0.05 ? { size: Math.abs(occCh) * 2, text: `Occupancy ${occCh > 0 ? 'rose' : 'fell'} ${Math.round(Math.abs(occCh) * 100)} points, to ${pct(now.occ)}.` } : null
+  ].filter((x): x is { size: number; text: string } => !!x).sort((a, b) => b.size - a.size);
+  const insight = data.pending.length
+    ? `${money(waiting)} in field charges is waiting for someone to approve it (${data.pending.length}, the oldest from ${md(data.pending[0]!.on)}) — it is not in Spent until then.`
+    : now.rev.low ? `${now.rev.low} review${now.rev.low === 1 ? '' : 's'} to read — under 5 ★ or a weak category.`
+    : moves[0]?.text ?? `A steady stretch: ${money(netIn)} net income, ${money(now.spent)} spent, ${pct(now.occ)} occupancy.`;
+  const [more, setMore] = useState(false);
+
   const lines = [
     now.spent > 0 && top ? `Spent ${money(now.spent)}; ${top.key} is ${pct(top.share)} of it` +
       (top.key === 'Cleaning' && now.clean.count ? ` — ${now.clean.count} cleans${topCleaner ? `, ${topCleaner.key} the most (${topCleaner.count}, ${money(topCleaner.total)})` : ''}.` : '.')
@@ -210,8 +226,8 @@ function Report({ data, open, onOpen }: { data: AnalyticsData; open: string | nu
     now.rev.count
       ? `${now.rev.count} review${now.rev.count === 1 ? '' : 's'}, ${now.rev.stars?.toFixed(2) ?? '—'} ★${now.rev.low ? ` — ${now.rev.low} to read` : ', none below 5 ★'}.`
       : 'No reviews were written in these dates.',
-    ...(data.pending.length ? [`${money(waiting)} in field charges (${data.pending.length}, mostly handymen) is waiting for approval and is not in Spent until approved.`] : [])
-  ];
+    ...moves.map(m => m.text)
+  ].filter(l => l !== insight);
 
   return (
     <>
@@ -225,7 +241,11 @@ function Report({ data, open, onOpen }: { data: AnalyticsData; open: string | nu
         </dl>
       </section>
       {/* Owner, 2026-11-23: the week in words sits apart from the figures — small, grey, plain sentences. */}
-      <p className="an-notes">{lines.join(' ')} <span className="an-limit">One-off spend only — rent and utilities are not in these figures yet.</span></p>
+      <div className="an-notes">
+        <p className="an-insight">{insight}{' '}
+          <button className="link an-more" aria-expanded={more} onClick={() => setMore(!more)}>{more ? 'Less' : 'Read more'}</button></p>
+        {more && <p>{lines.join(' ')} <span className="an-limit">One-off spend only — rent and utilities are not in these figures yet.</span></p>}
+      </div>
 
       <div className="an-grid">
         <Panel id="spent" open={open} onOpen={onOpen} icon="receipt" title="Spent" figure={money(now.spent)}

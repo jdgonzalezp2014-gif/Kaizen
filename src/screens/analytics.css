@@ -19,6 +19,10 @@
 .an-kpis dd small, .an-panel-fig small, .an-mini dd small { font-size: var(--fs-footnote); font-weight: 500; color: var(--muted); }
 .an-delta { display: block; margin-top: 2px; font-size: var(--fs-footnote); color: var(--muted); font-variant-numeric: tabular-nums; }
 .an-notes { margin: 0 2px 16px; font-size: var(--fs-footnote); line-height: 1.55; color: var(--muted); max-width: 90ch; }
+.an-notes p { margin: 0; }
+.an-notes p + p { margin-top: 6px; }
+.an-insight { color: var(--ink); font-size: var(--fs-body); }
+.an-more { font-size: var(--fs-footnote); margin-left: 4px; }
 .an-limit { opacity: .85; }
 
 /* The four sections: closed, a headline and a glance; open, the detail across the whole width. */
