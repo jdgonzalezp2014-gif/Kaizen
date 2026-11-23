@@ -49,7 +49,9 @@ with im:write, app_mentions:read, reactions:write, **channels:history (§144)** 
     Settings fields/"Send now" still exist but the clock no longer sends them). The digest tick is a heavy one: the cleans' thread
     waits for the next tick (`digestRan`).
   - Guests (`guest-events.ts` `tellTeam`): **one Slack message per guest per day** (GUEST_TZ); more that day (another urgent one,
-    the AI's answer) go in its thread — `slack_sent` keys `guestts:<conversation>:<day>:<ts>`, no table. **"X is waiting for an
+    the AI's answer): the earlier message is taken down (`chat.delete`) and a new one posted at the bottom with "· n today"
+    (`countedMessage`) — unless someone of the team replied in its thread (or the thread could not be read): then the new one
+    goes in that thread with `reply_broadcast`. `slack_sent` keys `guestts:<conversation>:<day>:<ts>` / `guestrep:…`, no table. **"X is waiting for an
     answer" is no longer posted**; `watchPass` still closes what was answered or left.
   - Airbnb "I already paid": the line in the case's thread carries two small grey buttons **Received** (`rc_received` →
     `rcReceived`, settles it) / **Not there** (`rc_not_there` → `rcNotThere`: the guest's note is taken back, so the stay page shows

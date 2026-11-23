@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { eventFrom, stayOpen, toCheck, triageFrom, triagePrompt, watchFrom, watchMessage, checkinAutoSend, solvedMessage, type OpenEvent } from './guest-watch.ts';
+import { eventFrom, stayOpen, toCheck, triageFrom, triagePrompt, watchFrom, watchMessage, checkinAutoSend, solvedMessage, countedMessage, type OpenEvent } from './guest-watch.ts';
 
 test('a webhook body is read loosely: a guest message, a new booking, and nothing else', () => {
   const m = eventFrom({ event: 'message.received', data: { id: 9001, conversationId: 44, reservationId: 71, listingMapId: 9, body: ' The code does not work ', isIncoming: 1, date: '2026-11-16 20:00:00' } });
@@ -84,4 +84,10 @@ test('an urgent check-in message is sent by the AI only when every gate holds', 
   assert.equal(checkinAutoSend({ ...ok, draft: null }).send, false);
   assert.match(JSON.stringify(checkinAutoSend({ ...ok, blanks: ['door_code'] })), /door_code/);
   assert.match((solvedMessage({ guest: 'Ana', listing: 'L', stage: 'Arrives today', body: 'code?', reply: 'Open your portal', link: 'l' }).blocks[0] as { text: { text: string } }).text.text, /Answered by the AI · Ana\*\n.*\n.*\n\*Sent:\* Open your portal/);
+});
+
+test('the same guest again that day: the new alert says "· 2 today" beside the name (owner, 2026-11-23)', () => {
+  const m = countedMessage(watchMessage({ guest: 'Sarah Cary', listing: 'Quest', stage: 'In house', body: 'OMG', minutes: 0, urgent: true, why: '', link: 'l' }), 2);
+  assert.match((m.blocks[0] as { text: { text: string } }).text.text, /Urgent · Sarah Cary\* · 2 today\nQuest/);
+  assert.equal(m.blocks.length, 2);
 });

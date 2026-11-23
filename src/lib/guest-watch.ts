@@ -127,6 +127,13 @@ export function watchMessage(a: { guest: string; listing: string; stage: string;
   return { text: a.urgent ? `Urgent guest message — ${a.guest}` : `${a.guest} is waiting for an answer`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text }, accessory: toolButton(a.link) }, DIVIDER] };
 }
 
+/** The same guest's nth alert of the day (owner, 2026-11-23): "· 2 today" beside the name, so the new one says it. */
+export function countedMessage<M extends { text: string; blocks: unknown[] }>(m: M, n: number): M {
+  const [first, ...rest] = m.blocks as { text?: { text?: string } }[];
+  if (!first?.text?.text) return m;
+  return { ...m, blocks: [{ ...first, text: { ...first.text, text: first.text.text.replace(/\*\n/, `* · ${n} today\n`) } }, ...rest] };
+}
+
 /**
  * Owner, 2026-11-23: "if it is urgent about check-in, let it solve it — unless it is beyond its control". The bot sends its
  * own reply only when every gate holds; any doubt = no send, and the team gets the urgent alert instead.
