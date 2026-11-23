@@ -20,14 +20,14 @@ function useHoverOpen() {
   };
 }
 
-export function Hint({ children, label = 'How this works' }: { children: ReactNode; label?: string }) {
+export function Hint({ children, label = 'How this works', mark = '?' }: { children: ReactNode; label?: string; mark?: string }) {
   const { open, setOpen, hover } = useHoverOpen();
   const id = useId();
   return (
     <span className="hint" {...hover}>
       <button type="button" className="hint-q" aria-label={label} aria-expanded={open} aria-describedby={open ? id : undefined}
               onClick={e => { e.stopPropagation(); setOpen(v => !v); }} onBlur={() => setOpen(false)}
-              onFocus={() => setOpen(true)} onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}>?</button>
+              onFocus={() => setOpen(true)} onKeyDown={e => { if (e.key === 'Escape') setOpen(false); }}>{mark}</button>
       {open && <span role="tooltip" id={id} className="hint-pop">{children}</span>}
     </span>
   );

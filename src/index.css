@@ -3376,6 +3376,7 @@ p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }
 .ci-phone label:focus-within { border-color: var(--accent); }
 .ci-phone label:has([aria-invalid="true"]) { border-color: var(--warn, #b45309); }
 .ci-phone label svg { width: 18px; height: 18px; flex: 0 0 auto; }
+.ci-phone .hint-q { color: var(--warn, #b45309); border-color: currentColor; font-weight: 700; }
 .ci-phone input { flex: 1; min-width: 0; font: inherit; font-size: 16px; padding: 12px 0; border: 0; outline: 0; background: transparent; color: var(--text, inherit); }
 .ci-none { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; margin-top: -4px; background: none; border: 1px dashed var(--line); border-radius: 12px; text-align: left; font: inherit; font-size: 14px; color: var(--muted); cursor: pointer; }
 .ci-none.on { border-style: solid; border-color: var(--accent); color: inherit; }

@@ -132,9 +132,9 @@ function Details({ stay, flow, save }: S) {
   const [fix, setFix] = useState(false);
   const [ask, setAsk] = useState(flow.changeAsk ?? '');
   const [asked, setAsked] = useState(!!flow.changeAsk);
-  // Airbnb hands over a relay number that does not take texts: those guests type theirs; others confirm the booking's.
+  // Airbnb's number often does not take texts (owner, 2026-11-23): prefilled anyway, marked "!" until the guest changes it.
   const airbnb = channelCovers(stay);
-  const [phone, setPhone] = useState(flow.phone ?? (airbnb ? '' : g?.phone ?? ''));
+  const [phone, setPhone] = useState(flow.phone ?? g?.phone ?? '');
   const okPhone = cleanPhone(phone);
   const [email, setEmail] = useState(flow.email ?? g?.email ?? '');
   const okEmail = cleanEmail(email);
@@ -158,7 +158,8 @@ function Details({ stay, flow, save }: S) {
     <section className="card ci-card ci-phone">
       <span className="ci-q">Contact</span>
       <label><Icon n="phone" /><input type="tel" inputMode="tel" autoComplete="tel" aria-label="Mobile number" aria-invalid={!!phone.trim() && !okPhone}
-        value={phone} onChange={e => setPhone(e.target.value)} placeholder="Mobile number" /></label>
+        value={phone} onChange={e => setPhone(e.target.value)} placeholder="Mobile number" />
+        {airbnb && !flow.phone && !!g?.phone && phone === g.phone && <Hint mark="!" label="Number from Airbnb">The number Airbnb provides — change it if it is not yours.</Hint>}</label>
       <label><Icon n="mail" /><input type="email" inputMode="email" autoComplete="email" aria-label="Email" aria-invalid={!!email.trim() && !okEmail}
         value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" /></label>
     </section>
