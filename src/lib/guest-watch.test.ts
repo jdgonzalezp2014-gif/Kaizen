@@ -62,7 +62,7 @@ test('the Slack line says who, how long, and opens the conversation', () => {
   assert.match((m.blocks[0] as { text: { text: string } }).text.text, /Ana Ruiz\* has waited 42 min/);
   // Owner, 2026-11-23: the way in is the small 🛠 beside the line.
   assert.equal((m.blocks[0] as { accessory?: { url?: string; text?: { text?: string } } }).accessory?.url, 'https://x/?tab=inbox&c=44');
-  assert.equal((m.blocks[0] as { accessory?: { text?: { text?: string } } }).accessory?.text?.text, 'Open');
+  assert.equal((m.blocks[0] as { accessory?: { text?: { text?: string } } }).accessory?.text?.text, '↗');
   assert.match(watchMessage({ guest: 'Ana', listing: 'L', stage: 'In house', body: 'locked out', minutes: 1, urgent: true, why: '', link: 'l' }).text, /^Urgent/);
 });
 

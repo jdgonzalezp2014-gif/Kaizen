@@ -147,10 +147,10 @@ export const kaizenButton = (appUrl: string | undefined, kind: 'todo' | 'claim',
   appUrl ? [{ type: 'button', text: plain('Open in Kaizen ↗'), url: `${appUrl}/?${kind}=${encodeURIComponent(id)}`, action_id: 'open_kaizen' }] : [];
 
 /**
- * Owner, 2026-11-23 ("too much noise — the bots try to do too much"): a message about work carries ONE small grey "Open",
+ * Owner, 2026-11-23 ("too much noise — the bots try to do too much"): a message about work carries ONE small grey "↗" (owner: a little arrow),
  * beside its line, that opens the right place in Kaizen. Nothing is done in Slack, so the button only opens.
  */
-export const toolButton = (url: string): Block => ({ type: 'button', text: plain('Open'), url, action_id: 'open_kaizen' });
+export const toolButton = (url: string): Block => ({ type: 'button', text: plain('↗'), url, action_id: 'open_kaizen' });
 const toolFor = (appUrl: string | undefined, kind: 'todo' | 'claim', id: string) =>
   appUrl ? toolButton(`${appUrl}/?${kind}=${encodeURIComponent(id)}`) : undefined;
 
