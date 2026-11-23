@@ -20,12 +20,12 @@ import { readGuestAi, suggestFor } from '../_lib/guest-ai.ts';
 import { draftOf } from '../_lib/guest-events.ts';
 import { openEvents } from '../_lib/guest-events.ts';
 import { GUEST_TZ, deliver, fireStay, guestLive, loadTemplates, outMsg, portalFor, type OutRow } from '../_lib/guest-outbox.ts';
-import { fetchConversation, fetchConversationOf, fetchConversations, fetchMessages } from '../_lib/hostaway-messages.ts';
+import { fetchConversation, fetchConversationOf, fetchConversations, fetchMessages, fetchTeam } from '../_lib/hostaway-messages.ts';
 import { quoThread } from '../_lib/quo.ts';
 import { fetchCalendar } from '../_lib/hostaway.ts';
 import { calendarFit } from '../../src/lib/guest-portal.ts';
 import { todayIn } from '../../src/lib/dates.ts';
-import { HOUSE_VARS, MAX_BODY, isVia, maskPhone, mergeThread, planFor, type Channel, type InboxRow } from '../../src/lib/inbox.ts';
+import { HOUSE_VARS, MAX_BODY, isVia, maskPhone, mergeThread, planFor, senderName, type Channel, type InboxRow } from '../../src/lib/inbox.ts';
 
 const ID = /^\d{1,20}$/;
 const DAY_RE = /^\d{4}-\d{2}-\d{2}$/;
@@ -99,8 +99,9 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const reservation = q.get('reservation') ?? '';
       if (!ID.test(conversation) || (reservation && !ID.test(reservation))) return bad('Which conversation?');
       const access = await accessOf(sql, who);
+      const names = await fetchTeam(creds);
       const [theirs, ours, tasks, cases, templates, row, link, checkins, draft, issueRows] = await Promise.all([
-        fetchMessages(creds, conversation),
+        fetchMessages(creds, conversation, 100, names),
         reservation ? outbox(sql, reservation, 'hostaway') : [],
         // A purchase order is a to-do made as an order (clean_group 'request', todos.ts) — the Work section's third kind.
         reservation && can(access.permissions, 'todos')
@@ -137,7 +138,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       }
       const mine = await confirmedPhone(sql, reservation);
       return json({
-        ok: true, messages: mergeThread(theirs, ours.map(outMsg)), tasks, cases, portalLink: link, phone: maskPhone(mine ?? row?.phone), phoneConfirmed: !!mine, checkin: ci, draft, issue,
+        ok: true, messages: mergeThread(theirs, ours.map(outMsg)).map(m => m.by ? { ...m, by: senderName(m.by, names.byEmail) } : m), tasks, cases, portalLink: link, phone: maskPhone(mine ?? row?.phone), phoneConfirmed: !!mine, checkin: ci, draft, issue,
         plan: row ? planFor({ ...row, checkinDoneAt: ci?.at ?? null, issue: !!issue }, templates, auto, new Date(), GUEST_TZ) : [],
       });
     }

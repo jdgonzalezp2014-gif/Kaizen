@@ -171,8 +171,15 @@ const same = (a: string, b: string) => a.replace(/\s+/g, ' ').trim() === b.repla
 export function mergeThread(channel: ThreadMsg[], outbox: ThreadMsg[]): ThreadMsg[] {
   const extra = outbox.filter(o => o.status !== 'cancelled'
     && !(o.status === 'sent' && channel.some(c => !c.incoming && same(c.body, o.body))));
-  return [...channel, ...extra].sort((a, b) => a.at < b.at ? -1 : a.at > b.at ? 1 : 0);
+  // The dropped copy still knows who wrote it — Hostaway records a message sent through the API under no one.
+  const sent = outbox.filter(o => o.status === 'sent' && o.by);
+  const named = channel.map(c => c.incoming || c.by ? c : { ...c, by: sent.find(o => same(c.body, o.body))?.by ?? null });
+  return [...named, ...extra].sort((a, b) => a.at < b.at ? -1 : a.at > b.at ? 1 : 0);
 }
+
+/** A sender as the thread shows it: a person's first name (Hostaway's team, by email), else the address's name part. */
+export const senderName = (by: string | null | undefined, names: Map<string, string>) =>
+  !by ? null : by.includes('@') ? names.get(by.toLowerCase()) ?? by.split('@')[0]! : by;
 
 /** The conversation's ways in and out, one tab each: the booking channel's chat, email, text messages. */
 export type ThreadTab = 'all' | 'chat' | 'email' | 'sms';

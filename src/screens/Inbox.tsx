@@ -263,7 +263,7 @@ function Bubbles({ msgs, canSend, onChanged, empty }: { msgs: ThreadMsg[] | null
             <div className="ix-meta">
               {pending && <span className={`ix-flag f-${m.status}`}><Icon n={m.status === 'scheduled' ? 'clock' : m.status === 'failed' ? 'alert' : 'eye'} /> {STATUS_WORD[m.status]}</span>}
               <span>{m.status === 'scheduled' ? fmt(m.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : clock(m.at)}</span>
-              {m.by && <span>{m.by.split('@')[0]}</span>}
+              {m.by && <span className="ix-by" title="Who sent it — the guest sees the listing's host account"><Icon n={/automat/i.test(m.by) ? 'zap' : m.by === 'Kaizen AI' ? 'sparkles' : 'user'} /> {m.by.split('@')[0]}</span>}
               {m.via && m.via !== 'channel' && <span>{m.via}</span>}
               {m.detail && m.status === 'failed' && <span className="ix-why">{m.detail}</span>}
               {canSend && m.ours && m.status === 'scheduled' && <button type="button" className="link tiny" disabled={busy === m.id} onClick={() => void act('cancel', m.id)}>Cancel</button>}

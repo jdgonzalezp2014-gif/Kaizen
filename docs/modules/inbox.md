@@ -182,6 +182,17 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   No Kaizen automations exist yet (0 templates).
 - ⚠ The stay link `/guest/<id>.<sig>` still shows only Pending payments (Phase 2): a guest sent there today cannot do the check-in.
 
+## Who sent it + attachments (owner, 2026-11-23)
+
+- "Everything shows as Derek": the channels (Airbnb, Vrbo…) show the listing's host account on every host message — Hostaway
+  sends as that account and nothing in its API changes it. Kaizen now names the sender under each bubble: Hostaway's `userId`
+  → first name (`fetchTeam`, GET /users, an hour per worker), `communicationId` → "Hostaway automation", Kaizen's own sends keep
+  `created_by` on the channel's copy (`mergeThread`; an email becomes the Hostaway first name, `senderName`). No name = written in
+  the channel's own app. Checked on a real thread: Amanda · Juan · Shannon · Hostaway automation.
+- **Attachments: Hostaway's send is text only** — its docs: "We do not support sending attachments in the message" (read
+  2026-11-23). Incoming photos already show (`imagesUrls`). Sending a photo would have to be a link (upload → Drive → a signed
+  public URL on the portal's domain, appended to the text) — proposed to the owner, not built.
+
 ## Not verified yet (no way to without a real guest or a key)
 
 - **117 is written, NOT applied** (2026-11-16). Seen working without it on real data (read-only harness): list, thread, tabs,

@@ -3743,6 +3743,7 @@ a.gx-tile { text-decoration: none; }
 .ix-bubble img { display: block; max-width: 220px; max-height: 220px; margin-top: 6px; border-radius: var(--r-sm); }
 .ix-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: var(--fs-caption); color: var(--muted); }
 .ix-msg.out .ix-meta { justify-content: flex-end; }
+.ix-by { display: inline-flex; align-items: center; gap: 3px; }
 .ix-flag { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
 .ix-flag .icon { width: 12px; height: 12px; }
 .ix-flag.f-failed, .ix-why { color: var(--red); }

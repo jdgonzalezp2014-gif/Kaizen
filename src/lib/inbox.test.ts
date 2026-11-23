@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aiPrompt, condMet, RECIPES, portalLines, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, planFor,
+import { aiPrompt, condMet, RECIPES, portalLines, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, senderName, planFor,
   portalLink, stageOf, stayWindow, suggestionFromAi, varsFor, whenWords, zonedInstant, type InboxRow, type Stay, type Template, type ThreadMsg, bookingLinks, condWords, condsOf, paidOf, signedOf } from './inbox.ts';
 
 const stay: Stay = { reservationId: '71', listingId: '9', listing: 'P2-1406', guest: 'Ana Ruiz', arrival: '2026-11-20', departure: '2026-11-23', status: 'new', bookedAt: '2026-11-10T15:00:00Z' };
@@ -78,6 +78,19 @@ test('one timeline: the channel\'s copy of a sent message wins, staged and sched
   assert.ok(awaitingReply([msg({})]));
   assert.ok(!awaitingReply(channel));
 });
+test('mergeThread: a message Kaizen sent keeps its author on the channel copy; Hostaway names win', () => {
+  const at = '2026-11-23T10:00:00.000Z';
+  const channel: ThreadMsg[] = [
+    { id: 'h1', at, incoming: false, body: 'Hi  there', channel: 'hostaway', status: 'sent' },
+    { id: 'h2', at, incoming: false, body: 'From Hostaway', channel: 'hostaway', status: 'sent', by: 'Shannon' },
+  ];
+  const ours: ThreadMsg[] = [{ id: 'k1', at, incoming: false, body: 'Hi there', channel: 'hostaway', status: 'sent', ours: true, by: 'amy@x.com' }];
+  assert.deepEqual(mergeThread(channel, ours).map(m => [m.id, m.by]), [['h1', 'amy@x.com'], ['h2', 'Shannon']]);
+  assert.equal(senderName('Amy@x.com', new Map([['amy@x.com', 'Amanda']])), 'Amanda');
+  assert.equal(senderName('bob@x.com', new Map()), 'bob');
+  assert.equal(senderName('Kaizen AI', new Map()), 'Kaizen AI');
+});
+
 
 test('the AI settings are made whole; "auto" does not exist yet', () => {
   assert.deepEqual(guestAiFrom(null), { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true, autoCheckin: false });

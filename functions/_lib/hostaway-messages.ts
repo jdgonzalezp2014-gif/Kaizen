@@ -4,7 +4,9 @@
  *       (dates, status, guest, phone) and its last message in `conversationMessages` — one call draws the whole list.
  *   GET /conversations?reservationId=<id> — the stay's conversation.
  *   GET /conversations/<id>/messages — `isIncoming` 1/0, `date` in UTC, `communicationType` (channel, email, sms…).
- *   POST /conversations/<id>/messages { body, communicationType } — NOT yet exercised: nothing has been sent to a
+ *   GET /users — the team: a host message's `userId` names who wrote it; `communicationId` = one of Hostaway's automations.
+ *   POST /conversations/<id>/messages { body, communicationType } — text only: Hostaway's docs say "We do not support
+ *       sending attachments in the message" (read 2026-11-23); attachments arrive only on incoming messages. NOT yet exercised: nothing has been sent to a
  *       real guest from here. It only runs when the account's guest messages are ON (guest-outbox.ts).
  */
 import { getAccessToken, type HostawayCredentials } from './hostaway.ts';
@@ -76,21 +78,50 @@ export async function fetchConversation(creds: HostawayCredentials, conversation
   return rows.length ? rowOf(rows[0]!) : null;
 }
 
-export function messageOf(m: Raw): ThreadMsg {
+/**
+ * The team as Hostaway knows it (GET /users): who wrote each host message (owner, 2026-11-23: "everything shows as
+ * Derek" — the channels show the listing's host account, but Hostaway keeps the sender's `userId` on every message).
+ * Kept an hour per worker: one call, the team rarely changes.
+ */
+export interface Team { byId: Map<string, string>; byEmail: Map<string, string> }
+let team: { at: number; t: Team } | null = null;
+export async function fetchTeam(creds: HostawayCredentials): Promise<Team> {
+  if (team && Date.now() - team.at < 3_600_000) return team.t;
+  const rows = await get(creds, '/users').catch(() => [] as Raw[]);
+  const t: Team = { byId: new Map(), byEmail: new Map() };
+  for (const u of rows) {
+    const name = str(u.firstName) ?? str(u.lastName);
+    if (!name) continue;
+    t.byId.set(String(u.id), name);
+    const e = str(u.email)?.toLowerCase();
+    if (e) t.byEmail.set(e, name);
+  }
+  if (rows.length) team = { at: Date.now(), t };
+  return t;
+}
+
+/** Who sent a host message: a Hostaway automation (`communicationId`), a team member (`userId`), or unknown (the channel's own app). */
+export function senderOf(m: Raw, names?: Team): string | null {
+  if (Number(m.isIncoming) === 1) return null;
+  if (m.communicationId != null && m.communicationId !== '' && m.communicationId !== 0) return 'Hostaway automation';
+  return m.userId != null ? names?.byId.get(String(m.userId)) ?? null : null;
+}
+
+export function messageOf(m: Raw, names?: Team): ThreadMsg {
   const incoming = Number(m.isIncoming) === 1;
   const st = str(m.status);
   return {
     id: `h${String(m.id)}`, at: hostawayIso(m.date) ?? hostawayIso(m.insertedOn) ?? new Date(0).toISOString(), incoming,
-    body: str(m.body) ?? '', channel: 'hostaway', via: str(m.communicationType),
+    body: str(m.body) ?? '', channel: 'hostaway', via: str(m.communicationType), by: senderOf(m, names),
     status: incoming ? 'received' : st === 'failed' || st === 'error' ? 'failed' : st === 'scheduled' || st === 'pending' ? 'scheduled' : 'sent',
     images: Array.isArray(m.imagesUrls) ? m.imagesUrls.filter((u): u is string => typeof u === 'string' && u.startsWith('https://')).slice(0, 6) : [],
   };
 }
 
 /** A conversation's messages, oldest first. */
-export async function fetchMessages(creds: HostawayCredentials, conversationId: string, limit = 100): Promise<ThreadMsg[]> {
+export async function fetchMessages(creds: HostawayCredentials, conversationId: string, limit = 100, names?: Team): Promise<ThreadMsg[]> {
   return (await get(creds, `/conversations/${encodeURIComponent(conversationId)}/messages?limit=${limit}`))
-    .map(messageOf).filter(m => m.body || m.images?.length).sort((a, b) => a.at < b.at ? -1 : 1);
+    .map(m => messageOf(m, names)).filter(m => m.body || m.images?.length).sort((a, b) => a.at < b.at ? -1 : 1);
 }
 
 /** How a reply travels: the way the thread already talks (an Airbnb thread answers on the channel, a direct one by email). */
