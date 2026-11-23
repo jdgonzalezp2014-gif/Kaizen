@@ -44,6 +44,14 @@ $ upsell · ⚠ guest · ⌂ check-ins · ✓ AI) + **what it is · unit** + one
 No colour emoji, no rows of action buttons — unless truly needed on top (the Received / Not there of a Resolution Center
 payment). DMs follow it too (`tellOwner`, the overdue nudge). New messages must follow it.
 
+- **The night's sweep (owner, 2026-11-23, `functions/_lib/slack-sweep.ts`):** from 23:30 team time (until 06:00 for the day
+  before), on quiet clock ticks, Kaizen posts ONE summary of the day (`daySummary`: "◷ Mon, Nov 23 · 2 repairs · 1 guest
+  alert…", the lines in its thread; `slack_sent` `daysum:<day>:<ts>`) and takes down its own messages of the day (their own
+  replies first). Kept: open work's messages, any message a person replied to, the cleans thread, summaries. ≤38 subrequests a
+  pass; `sweepdone:<day>` when nothing is left. A guest alert whose earlier message was swept gets a fresh one.
+  One-time clean of #kaizen-ops the same day (`.x-clean.mjs`, run by hand): 321 Kaizen messages + 583 replies, open work
+  (16 tasks, 3 claims) posted again in the new format.
+
 ## What it does
 
 - **Less noise (owner, 2026-11-23 — "intentamos hacer muchas cosas con los bots"; measured: 76 bot posts/week in #kaizen-ops,

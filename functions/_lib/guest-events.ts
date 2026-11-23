@@ -51,8 +51,10 @@ async function tellTeam(sql: SqlFn, env: Env, msg: GuestAlert, conversationId: s
     slackApi(s.token!, 'chat.postMessage', { channel: ch, thread_ts: thread, text: x.text, blocks: x.blocks, unfurl_links: false }).catch(() => null);
   // The day so far (the earlier details, Kaizen's own replies), carried into the new thread so nothing of it is lost.
   let earlier: { text: string; blocks: unknown[] }[] = [];
-  if (last) {
-    const replies = await slackApi<{ messages?: { ts: string; text?: string; blocks?: unknown[]; bot_id?: string }[] }>(s.token, 'conversations.replies', { channel: ch, ts: last, limit: 50 }).catch(() => null);
+  const replies = last ? await slackApi<{ messages?: { ts: string; text?: string; blocks?: unknown[]; bot_id?: string }[] }>(s.token, 'conversations.replies', { channel: ch, ts: last, limit: 50 }).catch(() => null) : null;
+  // Taken down already (the night's sweep, or by hand): nothing to replace — a fresh message.
+  const gone = !!replies && !replies.ok && ['thread_not_found', 'message_not_found'].includes(String(replies.error));
+  if (last && !gone) {
     // Not readable = treated as answered: never take down a message whose thread could not be checked.
     const answered = !replies?.ok || !!replies.messages?.slice(1).some(x => !x.bot_id);
     if (answered) {
@@ -62,7 +64,7 @@ async function tellTeam(sql: SqlFn, env: Env, msg: GuestAlert, conversationId: s
       return !!r?.ok;
     }
     // Kaizen's replies first, then the message — a message taken down with replies would leave "This message was deleted".
-    const own = replies!.messages!.slice(1);
+    const own = (replies?.messages ?? []).slice(1);
     earlier = own.map(x => ({ text: x.text ?? '', blocks: x.blocks ?? [] }));
     for (const x of own) await slackApi(s.token, 'chat.delete', { channel: ch, ts: x.ts }).catch(() => null);
     await slackApi(s.token, 'chat.delete', { channel: ch, ts: last }).catch(() => null);

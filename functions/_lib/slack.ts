@@ -92,7 +92,7 @@ export async function taskLite(sql: SqlFn, id: string): Promise<TaskLite | null>
 }
 
 /** A purchase's lines, with the items' names — for its thread's details. */
-async function orderLinesOf(sql: SqlFn, todoId: string): Promise<{ name: string; qty: number }[]> {
+export async function orderLinesOf(sql: SqlFn, todoId: string): Promise<{ name: string; qty: number }[]> {
   const rows = await (sql`SELECT COALESCE(i.name, 'Item ' || (l->>'itemId')) AS name, COALESCE((l->>'qty')::numeric, 1) AS qty
                            FROM inventory_orders o CROSS JOIN LATERAL jsonb_array_elements(CASE WHEN jsonb_typeof(o.lines) = 'array' THEN o.lines ELSE '[]'::jsonb END) AS l
                            LEFT JOIN inventory_items i ON i.account_id = o.account_id AND i.id::text = l->>'itemId'

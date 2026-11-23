@@ -937,6 +937,42 @@ export function localNow(tz: string, at = new Date()): { day: string; hm: string
   return { day: `${p.year}-${p.month}-${p.day}`, hm: `${p.hour}:${p.minute}` };
 }
 
+/* ── the night's sweep (owner, 2026-11-23) ───────────────────────────── */
+
+/** When the sweep runs, and which day it cleans: from 23:30 the day itself; until 06:00 the day before (a late clock). */
+export function sweepDue(now: { day: string; hm: string }): string | null {
+  if (now.hm >= '23:30') return now.day;
+  if (now.hm < '06:00') return new Date(Date.parse(`${now.day}T12:00:00Z`) - 864e5).toISOString().slice(0, 10);
+  return null;
+}
+
+export type SweepKind = 'repair' | 'todo' | 'purchase' | 'claim' | 'upsell' | 'guest' | 'checkin' | 'other';
+/** What one of Kaizen's messages was, from its text (the notification fallback every message carries). */
+export function sweepKind(text: string): { kind: SweepKind; line: string } | null {
+  const t = text.trim();
+  if (!t || /^(🧽 )?Cleans —/.test(t)) return null;
+  const kind: SweepKind = /^(New )?repair\b/i.test(t) ? 'repair' : /^(New )?to-do\b/i.test(t) ? 'todo' : /^(New )?purchase\b/i.test(t) ? 'purchase'
+    : /^(New )?upsell\b/i.test(t) ? 'upsell' : /^(New )?claim\b/i.test(t) ? 'claim'
+    : /^Urgent guest message|answered by the AI|is waiting for an answer/i.test(t) ? 'guest' : /^Check-ins today/i.test(t) ? 'checkin' : 'other';
+  return { kind, line: t.split('\n')[0]!.slice(0, 160) };
+}
+
+const SWEEP_WORD: Record<SweepKind, [string, string]> = { repair: ['repair', 'repairs'], todo: ['to-do', 'to-dos'], purchase: ['purchase', 'purchases'],
+  claim: ['claim', 'claims'], upsell: ['upsell', 'upsells'], guest: ['guest alert', 'guest alerts'], checkin: ['check-in list', 'check-in lists'], other: ['other', 'other'] };
+/** The one message a day leaves behind: the day, how many of each, ↗-free; the lines in its thread. Nothing said = null. */
+export function daySummary(dayStr: string, items: { kind: SweepKind; line: string }[]): { text: string; blocks: Block[]; details: { text: string; blocks: Block[] } } | null {
+  if (!items.length) return null;
+  const n = new Map<SweepKind, number>();
+  for (const i of items) n.set(i.kind, (n.get(i.kind) ?? 0) + 1);
+  const order: SweepKind[] = ['repair', 'todo', 'purchase', 'claim', 'upsell', 'guest', 'checkin', 'other'];
+  const counts = order.filter(k => n.get(k)).map(k => `${n.get(k)} ${SWEEP_WORD[k][n.get(k) === 1 ? 0 : 1]}`).join(' · ');
+  const wd = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][new Date(`${dayStr}T12:00:00Z`).getUTCDay()];
+  const head = `${wd}, ${day(dayStr)}`;
+  const list = items.slice(0, 60).map(i => `• ${esc(i.line)}`).join('\n') + (items.length > 60 ? `\n…and ${items.length - 60} more` : '');
+  return { text: `${head}: ${counts}`, blocks: [section(`◷  *${head}*\n${counts}`), DIVIDER],
+           details: { text: `${head} — what Kaizen said`, blocks: [section(list)] } };
+}
+
 /** A local day as UTC instants [start, end) — for "closed today", "opened today". */
 export function dayRange(day: string, tz: string): [string, string] {
   const offset = (t: number) => {

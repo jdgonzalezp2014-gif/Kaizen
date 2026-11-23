@@ -17,7 +17,8 @@ import { decrypt } from '../_lib/crypto.ts';
 import { can } from '../_lib/roles.ts';
 import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { digestFacts } from '../_lib/slack-digest.ts';
-import { eventsOf, DEFAULT_DIGEST, teamTz, checkinsDigest, dmTarget, esc, localNow, toolButton } from '../../src/lib/slack.ts';
+import { eventsOf, DEFAULT_DIGEST, teamTz, checkinsDigest, dmTarget, esc, localNow, sweepDue, toolButton } from '../../src/lib/slack.ts';
+import { sweepDay } from '../_lib/slack-sweep.ts';
 import { remindCleaners } from '../_lib/crew-slack.ts';
 import { tellScheduleChanges } from '../_lib/crew-changes.ts';
 import { handymenDay } from '../_lib/vendor-slack.ts';
@@ -231,6 +232,19 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
     catch (e) {
       await sql`DELETE FROM slack_sent WHERE account_id = 1 AND key = ${`crewchanges:${quarter}`}`;
       return Response.json({ ok: true, sent: out, nudged, hour, changes: { error: e instanceof Error ? e.message : String(e) } });
+    }
+  }
+
+  // Owner, 2026-11-23: the night's sweep — Kaizen's own messages of the day go, one summary of the day stays
+  // (slack-sweep.ts). From 23:30 team time, on quiet ticks, until a pass finds nothing left.
+  const sweepFor = sweepDue(localNow(teamTz(s.config)));
+  if (notes === null && sweepFor && !(await sql`SELECT 1 FROM slack_sent WHERE account_id = 1 AND key = ${`sweepdone:${sweepFor}`}`).length) {
+    try {
+      const r = await sweepDay(sql, s, sweepFor, teamTz(s.config));
+      if (!r.left) await sql`INSERT INTO slack_sent (account_id, key) VALUES (1, ${`sweepdone:${sweepFor}`}) ON CONFLICT DO NOTHING`;
+      return Response.json({ ok: true, sent: out, nudged, hour, sweep: { day: sweepFor, ...r } });
+    } catch (e) {
+      return Response.json({ ok: true, sent: out, nudged, hour, sweep: { day: sweepFor, error: e instanceof Error ? e.message : String(e) } });
     }
   }
 

@@ -496,3 +496,20 @@ test('§164: the urgency question is asked privately (crew channel), no longer o
   const s = JSON.stringify(urgencyAsk(t));
   for (const k of ['task_urgency_urgent', 'task_urgency_low', 'task_make_repair', 'high|7']) assert.ok(s.includes(k), k);
 });
+
+test("the night's sweep: when, what each message was, and the one summary the day keeps (owner, 2026-11-23)", async () => {
+  const { sweepDue, sweepKind, daySummary } = await import('./slack.ts');
+  assert.equal(sweepDue({ day: '2026-11-23', hm: '23:35' }), '2026-11-23');
+  assert.equal(sweepDue({ day: '2026-11-24', hm: '00:10' }), '2026-11-23');
+  assert.equal(sweepDue({ day: '2026-11-23', hm: '14:00' }), null);
+  assert.equal(sweepKind('New repair · Amber Valley: Fix door lock')?.kind, 'repair');
+  assert.equal(sweepKind('Purchase · CL1125 · Done: Buy supplies')?.kind, 'purchase');
+  assert.equal(sweepKind('Upsell opened: CL1125 · Late check-out')?.kind, 'upsell');
+  assert.equal(sweepKind('Urgent guest message — Sarah Cary')?.kind, 'guest');
+  assert.equal(sweepKind('Check-ins today not completed · 2')?.kind, 'checkin');
+  assert.equal(sweepKind('🧽 Cleans — Mon, Nov 23 · 3 of 7 done'), null);
+  const s = daySummary('2026-11-23', ['New repair · A: x', 'New repair · B: y', 'Urgent guest message — Sarah'].map(t => sweepKind(t)!));
+  assert.match((s!.blocks[0] as { text: { text: string } }).text.text, /◷  \*Mon, Nov 23\*\n2 repairs · 1 guest alert$/);
+  assert.match(JSON.stringify(s!.details), /• New repair · A: x/);
+  assert.equal(daySummary('2026-11-23', []), null);
+});
