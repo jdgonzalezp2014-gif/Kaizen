@@ -191,8 +191,8 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
 - Same day, 2nd pass (owner): **Online check-in reminder (arrival day)** (6 h before check-in, check-in not done) beside the 48 h one;
   extension text = "we have some availability after {{checkout}}" (one open night is enough). New condition **Extra charges**
   (`charge_pending` stopper / `charge_done`): a `upsell_charges` row `pending` (card or Airbnb RC) — `chargesDueOf`, the same rows the
-  portal's "Pending payments" shows (with Pay / Pay on Airbnb / "I already paid", parallel session). Recipe **Pending charge reminder**
-  (24 h before check-out). Hostaway's own reservation payment stays the **Payment** condition (Payment reminder, 72 h before).
+  portal's "Pending payments" shows (with Pay / Pay on Airbnb / "I already paid", parallel session). No guest recipe for it (owner: a pending charge
+  is for the team, a Slack notice later, not a message to the guest); the condition stays for any automation. Hostaway's own reservation payment stays the **Payment** condition (Payment reminder, 72 h before).
 - ⚠ The stay link `/guest/<id>.<sig>` still shows only Pending payments (Phase 2): a guest sent there today cannot do the check-in.
 
 ## Who sent it + attachments (owner, 2026-11-23)
