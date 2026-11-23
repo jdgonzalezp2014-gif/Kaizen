@@ -279,7 +279,7 @@ export const stayToken = () => typeof location === 'undefined' ? null : stayToke
 export function guestLink(path: string): { id: string; sig: string | null } | null {
   const p = path.replace(/\/+$/, '');
   if (p.toLowerCase() === '/guest/demo') return { id: 'demo', sig: null };
-  const m = /^\/guest\/(\d{1,12})\.([A-Za-z0-9_-]{6,64})$/.exec(p);
+  const m = /^\/guest\/(\d{1,20})\.([A-Za-z0-9_-]{6,64})$/.exec(p);
   return m ? { id: m[1]!, sig: m[2]! } : null;
 }
 

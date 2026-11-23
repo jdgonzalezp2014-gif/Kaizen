@@ -40,6 +40,22 @@ export function hourLabel(h: unknown, fallback: string): string {
 
 export const releaseAt = (arrival: string) => zonedInstant(prevDay(arrival), RELEASE_HOUR, STAY_TZ).toISOString();
 
+/**
+ * A test stay (owner, 2026-11-23: "replicate the guest's experience with real data, without touching Hostaway"): a
+ * 20-digit id 77 · channel (1 direct, 2 Airbnb) · arrival yyyymmdd · nights (2) · listing (7) that never exists in
+ * Hostaway (its ids are ~8 digits). The real house, guide, prices and Stripe; the guest and the dates are made up.
+ * Minted with scripts/test-stay-link.mjs; served on the same signed /guest/<id>.<sig> door as a real stay.
+ */
+export function testReservation(id: string): Record<string, unknown> | null {
+  const m = /^77([12])(\d{4})(\d{2})(\d{2})(\d{2})(\d{7})$/.exec(id);
+  if (!m) return null;
+  const arrival = `${m[2]}-${m[3]}-${m[4]}`, n = Number(m[5]), t = Date.parse(`${arrival}T12:00:00Z`);
+  if (!Number.isFinite(t) || n < 1) return null;
+  return { id, status: 'new', listingMapId: Number(m[6]), channelName: m[1] === '2' ? 'airbnbOfficial' : 'direct', arrivalDate: arrival,
+    departureDate: new Date(t + n * 86400000).toISOString().slice(0, 10), guestName: 'Test Guest', guestFirstName: 'Test',
+    numberOfGuests: 2, adults: 2, children: 0, infants: 0, pets: 0, isTest: true };
+}
+
 /** A booking the portal may serve: confirmed (new / modified / ownerStay); anything else is shown as closed. */
 export const isLive = (status: unknown) => /^(new|modified|ownerstay)$/i.test(String(status ?? ''));
 

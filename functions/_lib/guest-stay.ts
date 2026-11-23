@@ -23,7 +23,7 @@ import { mirrorTodos } from './inventory.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { doneFlow, doorCodeFor, entry, protectionFor, steps, type Flow } from '../../src/lib/guest-checkin.ts';
 import { nights, type GuestStay } from '../../src/lib/guest-portal.ts';
-import { cleanFlow, isLive, lockedStay, stayFrom } from '../../src/lib/guest-stay.ts';
+import { cleanFlow, isLive, lockedStay, stayFrom, testReservation } from '../../src/lib/guest-stay.ts';
 
 const no = (message: string, status = 403) => Response.json({ ok: false, message }, { status, headers: { 'Cache-Control': 'no-store' } });
 const str = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim() : null;
@@ -42,8 +42,8 @@ export interface Loaded {
 
 /** Everything the door knows about one stay right now. A string is why it cannot be served. */
 export async function loadStay(sql: SqlFn, env: Env, id: string, now = new Date(), defer?: (p: Promise<unknown>) => void): Promise<Loaded | string> {
-  const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
-  const r = await fetchReservationDetail(creds, id).catch(() => null);
+  const test = testReservation(id);
+  const r = test ?? await fetchReservationDetail(await getCredentials(sql, env.ENCRYPTION_KEY), id).catch(() => null);
   if (!r) return 'We could not find this reservation — message us and we will help.';
   if (!isLive(r.status)) return 'This reservation is no longer active. If that looks wrong, message us.';
   const listingId = String(r.listingMapId ?? '');
@@ -77,7 +77,8 @@ export async function loadStay(sql: SqlFn, env: Env, id: string, now = new Date(
     // Done = the event the "After online check-in" automations wait for (the door-code message): it runs now.
     const [ins] = await (sql`INSERT INTO guest_checkins (account_id, reservation_id, listing_id, source, marked_by)
                              VALUES (1, ${id}, ${listingId}, 'portal', 'guest') ON CONFLICT DO NOTHING RETURNING reservation_id` as Promise<unknown[]>).catch(() => []);
-    if (ins) { const job = fireStay(sql, env, id).catch(() => null); if (defer) defer(job); else await job; }
+    // A test stay has no Hostaway conversation: the "After online check-in" messages are not sent.
+    if (ins && !test) { const job = fireStay(sql, env, id).catch(() => null); if (defer) defer(job); else await job; }
   }
   const label = `${stay.guest?.name ?? stay.guestFirst} · ${stay.unitName} · ${stay.arrival} → ${stay.departure}`;
   return { stay: e.open ? stay : lockedStay(stay), flow, open: e.open, listingId, reservation: r, row, label };

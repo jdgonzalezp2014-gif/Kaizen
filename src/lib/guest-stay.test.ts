@@ -60,3 +60,12 @@ test('channels, hours, live statuses, the token from the path', () => {
   assert.equal(stayTokenOf('/guest/demo'), null);
   assert.equal(stayTokenOf('/crew/guest-demo'), null);
 });
+
+test('testReservation: 77 · channel · arrival · nights · listing → a made-up stay on a real house; anything else is not one', async () => {
+  const { testReservation } = await import('./guest-stay.ts');
+  const r = testReservation('77220261124020586508')!;
+  assert.equal(r.listingMapId, 586508); assert.equal(r.channelName, 'airbnbOfficial');
+  assert.equal(r.arrivalDate, '2026-11-24'); assert.equal(r.departureDate, '2026-11-26');
+  assert.equal(testReservation('45123456'), null);
+  assert.equal(testReservation('77120261124000586508'), null);
+});
