@@ -43,12 +43,17 @@ export interface Stay {
  * Where to change the booking (owner, 2026-11-17): Hostaway's own page always; the channel's when Kaizen knows its address
  * (Airbnb's host page by confirmation code). Others (Booking.com, Vrbo) have no stable link by code — Hostaway only.
  */
-export function bookingLinks(r: Pick<InboxRow, 'reservationId' | 'channel' | 'channelCode'>): { hostaway: string | null; channel: { label: string; url: string } | null } {
+export function bookingLinks(r: Pick<InboxRow, 'reservationId' | 'channel' | 'channelCode'> & { guestAccount?: string | null }):
+  { hostaway: string | null; channel: { label: string; url: string } | null; profile: string | null } {
   const hostaway = /^\d+$/.test(r.reservationId) ? `https://dashboard.hostaway.com/reservations/${r.reservationId}` : null;
   const code = r.channelCode ?? '';
   const channel = /airbnb/i.test(r.channel) && /^HM[A-Z0-9]{6,12}$/.test(code)
     ? { label: 'Airbnb', url: `https://www.airbnb.com/hosting/reservations/details/${code}` } : null;
-  return { hostaway, channel };
+  // Owner, 2026-11-23: the guest's rating. Airbnb does not hand it to Hostaway (guestRecommendations / guestTrips / verified-by-reviews are 0 on
+  // every stay) — but the guest's Airbnb profile shows the reviews other hosts left. Hostaway gives the Airbnb user id.
+  const acct = r.guestAccount ?? '';
+  const profile = /airbnb/i.test(r.channel) && /^\d{4,20}$/.test(acct) ? `https://www.airbnb.com/users/show/${acct}` : null;
+  return { hostaway, channel, profile };
 }
 
 /** Hostaway's paymentStatus as a yes / no — "Unknown" (Expedia collects) is not "unpaid". */
@@ -99,6 +104,8 @@ export interface InboxRow extends Stay {
   hasEmail?: boolean;
   /** The booking channel's confirmation code (Airbnb "HM…") — for the link that opens it there. */
   channelCode?: string | null;
+  /** The guest's account on the booking channel (Airbnb user id, Hostaway's guestExternalAccountId) — the profile link. */
+  guestAccount?: string | null;
   /** A light model read the guest's last message and it asks for nothing ("thanks!"): not counted as waiting. */
   noReply?: boolean;
   /** The AI drafted a reply when the guest wrote (2026-11-23) — it waits in the conversation. */

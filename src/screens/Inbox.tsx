@@ -189,6 +189,7 @@ function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo,
           {row.reservationId && <span className="ix-open-in">
             {links.hostaway && <a href={links.hostaway} target="_blank" rel="noreferrer" title="Open the reservation in Hostaway (to change it)" aria-label="Open in Hostaway"><BrandMark brand="hostaway" /></a>}
             {links.channel && <a href={links.channel.url} target="_blank" rel="noreferrer" title={`Open the reservation in ${links.channel.label}`} aria-label={`Open in ${links.channel.label}`}><BrandMark brand="airbnb" /></a>}
+            {links.profile && <a href={links.profile} target="_blank" rel="noreferrer" title="The guest's Airbnb profile — the reviews other hosts left them (Airbnb does not share the rating with Hostaway)" aria-label="Guest's Airbnb profile"><Icon n="user" /></a>}
           </span>}</div>
         </div>
         <div className="ix-tabs" role="tablist">

@@ -197,7 +197,7 @@ test('conditions: payment / agreement / ID, all must hold; unknown payment and n
 
 test('booking links: Hostaway always, Airbnb by its HM code only', () => {
   assert.deepEqual(bookingLinks({ reservationId: '71', channel: 'airbnbOfficial', channelCode: 'HMYAFSWFWH' }),
-    { hostaway: 'https://dashboard.hostaway.com/reservations/71', channel: { label: 'Airbnb', url: 'https://www.airbnb.com/hosting/reservations/details/HMYAFSWFWH' } });
+    { hostaway: 'https://dashboard.hostaway.com/reservations/71', channel: { label: 'Airbnb', url: 'https://www.airbnb.com/hosting/reservations/details/HMYAFSWFWH' }, profile: null });
   assert.equal(bookingLinks({ reservationId: '71', channel: 'bookingcom', channelCode: '123' }).channel, null);
   assert.equal(bookingLinks({ reservationId: '', channel: 'airbnb', channelCode: null }).hostaway, null);
 });
@@ -261,4 +261,11 @@ test('a bad experience on record holds the review ask; the AI sees it and what i
   const p = aiPrompt({ stay: s, today: '2026-11-23', facts: '', sops: [], thread: [], instructions: '', company: 'K', issue: 'dirty on arrival', scheduled: ['2026-11-23 15:00 UTC — automation "Thank you & review"'] });
   assert.match(p.user, /BAD EXPERIENCE ON RECORD \(internal\): dirty on arrival[\s\S]*never ask this guest for a review/);
   assert.match(p.user, /MESSAGES ALREADY SCHEDULED[\s\S]*Thank you & review/);
+});
+
+test('an Airbnb guest gets a profile link (their reviews from hosts); other channels and odd ids do not', () => {
+  const r = { reservationId: '5', channel: 'airbnbOfficial', channelCode: null };
+  assert.equal(bookingLinks({ ...r, guestAccount: '123456789' }).profile, 'https://www.airbnb.com/users/show/123456789');
+  assert.equal(bookingLinks({ ...r, guestAccount: 'x/../1' }).profile, null);
+  assert.equal(bookingLinks({ ...r, channel: 'homeaway', guestAccount: '123456789' }).profile, null);
 });

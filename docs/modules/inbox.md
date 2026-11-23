@@ -171,6 +171,11 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
 - **Refunds / complaints (owner, 2026-11-23):** never offer a refund, credit or money back; no apology up front, no fault admitted. First reply:
   thanks, "not our standard", checking with housekeeping (cleaning), solving it ASAP; only when they insist after that → ask what they would like,
   promise nothing; always handoff. Company facts got a "Refunds:" line (1150 chars). Checked with Claude on a dirty-arrival + refund thread.
+- **Guest rating (owner, 2026-11-23):** Airbnb does not give Hostaway the guest's rating — `guestRecommendations`, `guestTrips`,
+  `isGuestVerifiedByReviews` are 0 on every stay, inquiries too. Hostaway does give `guestExternalAccountId` (the Airbnb user id) →
+  `bookingLinks().profile` = airbnb.com/users/show/<id> (person icon beside H / A in the conversation head): the reviews other hosts left.
+  Accept / decline an inquiry stays manual (owner) — in Hostaway / Airbnb; the AI never accepts or promises availability.
+  Own data for later: Hostaway /reviews has our host-to-guest reviews (rating null; some carry 3 category scores) — usable for repeat guests.
 - **Quo / SMS (checked 2026-11-23):** key works, 5 numbers, `quo_from` = …3228 "Hikaru CS MAIN" — the SMS of matched guests are there.
   The gap is the phone: **Airbnb gives Hostaway no guest phone (20 of 22 Airbnb stays)**; Vrbo/Booking.com do. Fix proposed: ask the phone in the
   portal's online check-in when Hostaway has none, and a Quo webhook for incoming SMS → guest_events. `quo.ts` still on api.openphone.com (works).
