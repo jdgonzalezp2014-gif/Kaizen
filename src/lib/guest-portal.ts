@@ -5,6 +5,7 @@
  */
 
 import type { CheckinStep, HouseItem } from './checkin.ts';
+import { todayIn } from './dates.ts';
 
 export type Channel = 'direct' | 'airbnb' | 'vrbo' | 'booking' | 'partner' | 'other';
 
@@ -36,6 +37,9 @@ export interface GuestStay {
   freeAfter: number;          // …and right after departure
   turnIn: boolean;            // someone checks out the day this guest arrives
   turnOut: boolean;           // someone checks in the day this guest leaves
+  /** On a turnover: the other guest's hour that day (who leaves the day this guest arrives / arrives the day they leave). */
+  turnInGuest?: Neighbor | null;
+  turnOutGuest?: Neighbor | null;
   guideReleaseAt: string | null; // ISO; check-in instructions open from here (and only when nothing is due)
   pay: PayLink;
   /** From the Hostaway reservation (online check-in confirms them; the guest never retypes them). */
@@ -170,14 +174,54 @@ export const UPSELLS: Upsell[] = [
   { kind: 'parking', title: 'Covered parking', icon: 'car', price: null, per: 'night', pick: { type: 'none' } },
 ];
 
-export type Availability = { ok: true } | { ok: false; why: 'calendar' | 'price' | 'short' | 'turnover' };
+export type Availability = { ok: true } | { ok: false; why: 'calendar' | 'price' | 'short' | 'turnover' | 'notice' };
+
+/**
+ * The other guest on a same-day turnover: their hour that day (check-out of the one leaving, check-in of the one
+ * arriving; 0–23) and whether it is already moved — an early check-in / late check-out agreed in Kaizen, in Hostaway or
+ * paid. Null hour = not known.
+ */
+export interface Neighbor { hour: number | null; agreed: boolean }
+
+/** Hours the clean needs between one guest and the next (owner, 2026-11-23): apartments 2, houses 4. */
+export const CLEAN_HOURS: Record<NonNullable<GuestStay['unitType']>, number> = { room: 2, apartment: 2, house: 4 };
+
+/** The time options an early check-in / late check-out may offer this stay (`u.pick.options` minus what a turnover rules out). */
+export function timeOptions(s: GuestStay, u: Upsell, now: Date = new Date()): string[] {
+  if (u.pick.type !== 'time') return [];
+  const t = turnoverLimit(s, u, now);
+  if (!t.ok) return [];
+  const opts = u.pick.options.filter(o => hoursOf(s, u, o) != null);
+  if (t.limit == null) return opts;
+  return opts.filter(o => { const m = minutesOf(o)!; return u.kind === 'early-checkin' ? m >= t.limit! : m <= t.limit!; });
+}
+
+/**
+ * A same-day turnover (owner, 2026-11-23): early check-in / late check-out still sells when the other guest keeps their
+ * standard time and the clean keeps its hours (apartments 2, houses 4) — asked at least a day before (Central). The
+ * other guest already late / early, or not known → not offered. `limit` = minutes after midnight: the earliest
+ * check-in, or the latest check-out; null = no turnover that day.
+ */
+function turnoverLimit(s: GuestStay, u: Upsell, now: Date): { ok: true; limit: number | null } | { ok: false; why: 'turnover' | 'notice' } {
+  const early = u.kind === 'early-checkin';
+  if (!(early ? s.turnIn : s.turnOut)) return { ok: true, limit: null };
+  const n = early ? s.turnInGuest : s.turnOutGuest;
+  if (!n || n.agreed || n.hour == null) return { ok: false, why: 'turnover' };
+  if (todayIn('America/Chicago', now) >= (early ? s.arrival : s.departure)) return { ok: false, why: 'notice' };
+  const gap = CLEAN_HOURS[s.unitType ?? 'house'];
+  return { ok: true, limit: (early ? n.hour + gap : n.hour - gap) * 60 };
+}
+
+/** The guest's picked time is one the stay may have now. */
+export function allowedTime(s: GuestStay, u: Upsell, time: string | undefined, now: Date = new Date()): boolean {
+  return u.pick.type !== 'time' || (!!time && timeOptions(s, u, now).includes(time));
+}
 
 /**
  * Never promise what the calendar can't give: extra nights up to the free gap. Extras are paid on the spot and nothing
- * waits for the team's OK (owner, 2026-11-17), so early check-in / late check-out on a same-day turnover — another guest
- * leaving or arriving that day — is simply not offered.
+ * waits for the team's OK (owner, 2026-11-17). Early check-in / late check-out on a same-day turnover: `turnoverLimit`.
  */
-export function availability(s: GuestStay, u: Upsell): Availability {
+export function availability(s: GuestStay, u: Upsell, now: Date = new Date()): Availability {
   if (u.kind === 'extra-nights') {
     if (s.freeBefore + s.freeAfter <= 0) return { ok: false, why: 'calendar' };
     if (s.nightly == null && !s.nightPrices) return { ok: false, why: 'price' };
@@ -185,7 +229,11 @@ export function availability(s: GuestStay, u: Upsell): Availability {
   }
   if (u.kind === 'mid-clean' && nights(s) < 4) return { ok: false, why: 'short' };
   if (u.kind === 'parking' && priceOf(s, u) == null) return { ok: false, why: 'price' };
-  if ((u.kind === 'early-checkin' && s.turnIn) || (u.kind === 'late-checkout' && s.turnOut)) return { ok: false, why: 'turnover' };
+  if (u.pick.type === 'time') {
+    const t = turnoverLimit(s, u, now);
+    if (!t.ok) return t;
+    if (t.limit != null && !timeOptions(s, u, now).length) return { ok: false, why: 'turnover' };
+  }
   return { ok: true };
 }
 
@@ -230,9 +278,9 @@ export function clampNights(s: GuestStay, c: Choice) {
 }
 
 /** A choice the extra can be paid with: a time when it asks for one, at least one night. */
-export function ready(s: GuestStay, u: Upsell, c: Choice): boolean {
-  if (!availability(s, u).ok) return false;
-  if (u.pick.type === 'time') return !!c.time && u.pick.options.includes(c.time);
+export function ready(s: GuestStay, u: Upsell, c: Choice, now: Date = new Date()): boolean {
+  if (!availability(s, u, now).ok) return false;
+  if (u.pick.type === 'time') return allowedTime(s, u, c.time, now);
   if (u.pick.type === 'nights') { const n = clampNights(s, c); return n.before + n.after > 0; }
   return true;
 }
@@ -334,5 +382,7 @@ export function extendStay(s: GuestStay, x?: { before?: number; after?: number }
   const shift = (d: string, n: number) => { const t = new Date(`${d}T12:00:00Z`); t.setUTCDate(t.getUTCDate() + n); return t.toISOString().slice(0, 10); };
   return { ...s, arrival: shift(s.arrival, -b), departure: shift(s.departure, a), freeBefore: s.freeBefore - b, freeAfter: s.freeAfter - a,
     turnIn: b ? s.freeBefore - b === 0 && s.freeBefore < max : s.turnIn, turnOut: a ? s.freeAfter - a === 0 && s.freeAfter < max : s.turnOut,
+    // A moved side meets a guest not read yet: not known → early / late not offered on that side.
+    turnInGuest: b ? null : s.turnInGuest, turnOutGuest: a ? null : s.turnOutGuest,
     nightPrices: s.nightPrices ? { before: s.nightPrices.before.slice(b), after: s.nightPrices.after.slice(a) } : s.nightPrices };
 }

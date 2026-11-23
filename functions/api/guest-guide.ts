@@ -9,16 +9,58 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import { getCredentials, type SqlFn } from '../_lib/accounts.ts';
-import { fetchCalendar, fetchListingCover } from '../_lib/hostaway.ts';
+import { fetchCalendar, fetchListingCover, fetchReservationsTouching, fetchStandardHours, type HostawayCredentials } from '../_lib/hostaway.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
 import { UNIT_TABLES } from '../../src/lib/repo-checks.ts';
-import { calendarFit, emptyGuide, guideFrom, notOfferedFrom, pricesFrom } from '../../src/lib/guest-portal.ts';
+import { calendarFit, emptyGuide, type Neighbor, guideFrom, notOfferedFrom, pricesFrom } from '../../src/lib/guest-portal.ts';
 import { portalFrom } from '../../src/lib/guest-checkin.ts';
+import { hourOf } from '../../src/lib/stay-time.ts';
 import { composeGuide, tokenVals, type CheckinStep, type HouseItem } from '../../src/lib/checkin.ts';
 
 const isDay = (d: unknown): d is string => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d);
 const shift = (d: string, n: number) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+
+/**
+ * The other guest on a same-day turnover (owner, 2026-11-23): who leaves the day this stay arrives / arrives the day it
+ * leaves, their hour, and whether it is already moved the way that eats the clean — a later check-out / earlier check-in
+ * set in Kaizen (turnover_overrides), on the Hostaway reservation, paid in the portal or asked for by the team. Any
+ * read failing → null (not known), and early / late is not offered on that side.
+ */
+async function turnoverGuests(sql: SqlFn, creds: HostawayCredentials, unitId: string, arrival: string, departure: string,
+                              fit: { turnIn: boolean; turnOut: boolean }): Promise<{ turnInGuest: Neighbor | null; turnOutGuest: Neighbor | null }> {
+  const none = { turnInGuest: null, turnOutGuest: null };
+  if (!fit.turnIn && !fit.turnOut) return none;
+  try {
+    const [res, std] = await Promise.all([fetchReservationsTouching(creds, arrival, departure), fetchStandardHours(creds, unitId)]);
+    if (!std) return none;
+    const here = res.filter(r => r.listingId === unitId);
+    const prev = fit.turnIn ? here.find(r => r.departure === arrival) : undefined;
+    const next = fit.turnOut ? here.find(r => r.arrival === departure) : undefined;
+    const ids = [prev?.reservationId, next?.reservationId].filter((x): x is string => !!x);
+    if (!ids.length) return none;
+    const [ov, paid, asked] = await Promise.all([
+      sql`SELECT reservation_id, checkout_time, checkin_time FROM turnover_overrides WHERE account_id = 1 AND reservation_id = ANY(${ids})` as Promise<{ reservation_id: string; checkout_time: string | null; checkin_time: string | null }[]>,
+      sql`SELECT reservation_id, lines FROM guest_payments WHERE account_id = 1 AND reservation_id = ANY(${ids}) AND status IN ('paid', 'held')` as Promise<{ reservation_id: string; lines: { item?: string }[] }[]>,
+      sql`SELECT reservation_id, need FROM upsell_charges WHERE account_id = 1 AND reservation_id = ANY(${ids}) AND status IN ('pending', 'paid')` as Promise<{ reservation_id: string; need: string }[]>,
+    ]);
+    const bought = (id: string, item: string, need: string) =>
+      paid.some(p => p.reservation_id === id && (p.lines ?? []).some(l => l.item === item)) || asked.some(a => a.reservation_id === id && a.need === need);
+    const leaving = (r: typeof prev): Neighbor | null => {
+      if (!r) return null;
+      const o = ov.find(x => x.reservation_id === r.reservationId)?.checkout_time ?? null;
+      const hour = (o ? hourOf(o) : null) ?? r.checkOutHour ?? std.checkOutTime;
+      return { hour, agreed: !!o || hour > std.checkOutTime || bought(r.reservationId, 'late-checkout', 'checkout') };
+    };
+    const arriving = (r: typeof next): Neighbor | null => {
+      if (!r) return null;
+      const o = ov.find(x => x.reservation_id === r.reservationId)?.checkin_time ?? null;
+      const hour = (o ? hourOf(o) : null) ?? r.checkInHour ?? std.checkInTime;
+      return { hour, agreed: !!o || hour < std.checkInTime || bought(r.reservationId, 'early-checkin', 'checkin') };
+    };
+    return { turnInGuest: leaving(prev), turnOutGuest: arriving(next) };
+  } catch { return none; }
+}
 
 /** `stay` (arrival/departure) adds `calendar` — what Extras may offer around those dates. Null when Hostaway does not answer. */
 export async function guestHouse(sql: SqlFn, unitId: string, encryptionKey?: string, stay?: { arrival?: string | null; departure?: string | null }) {
@@ -41,11 +83,12 @@ export async function guestHouse(sql: SqlFn, unitId: string, encryptionKey?: str
   const ownPhoto = typeof rec?.vals?.portal_photo === 'string' && rec.vals.portal_photo.startsWith('https://') ? rec.vals.portal_photo : null;
   const creds = encryptionKey ? await getCredentials(sql, encryptionKey).catch(() => null) : null;
   const dated = isDay(stay?.arrival) && isDay(stay?.departure) && stay.arrival < stay.departure;
-  const [photo, calendar] = await Promise.all([
+  const [photo, fit] = await Promise.all([
     ownPhoto ?? (creds ? fetchListingCover(creds, unitId).catch(() => null) : null),
     creds && dated ? fetchCalendar(creds, unitId, shift(stay.arrival!, -8), shift(stay.departure!, 8))
       .then(days => days.length ? calendarFit(days, stay.arrival!, stay.departure!) : null, () => null) : null,
   ]);
+  const calendar = fit && creds ? { ...fit, ...await turnoverGuests(sql, creds, unitId, stay!.arrival!, stay!.departure!, fit) } : fit;
   const portal = portalFrom(rec?.vals);
   // Door code by Lock type (doorCodeFor): staff-only route; the guest's signed link must send it only once entry() opens.
   const str = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim() : null;

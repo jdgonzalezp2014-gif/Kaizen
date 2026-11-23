@@ -64,7 +64,7 @@ export interface HouseFacts {
   unitName: string; photo: string | null; lockType: string | null; guestCode: string | null;
   unitType: GuestStay['unitType'] | null; protection: GuestStay['protection'] | null; guide: GuestGuide | null;
   prices: GuestStay['prices']; notOffered?: UpsellKind[];
-  calendar?: Pick<GuestStay, 'freeBefore' | 'freeAfter' | 'turnIn' | 'turnOut' | 'nightPrices'> | null;
+  calendar?: Pick<GuestStay, 'freeBefore' | 'freeAfter' | 'turnIn' | 'turnOut' | 'turnInGuest' | 'turnOutGuest' | 'nightPrices'> | null;
 }
 
 /** The reservation as the portal shows it — with the whole guide; `lockedStay` takes out what must wait. */
@@ -83,6 +83,7 @@ export function stayFrom(r: Record<string, unknown>, h: HouseFacts, o: { checked
     total: 0, paid: 0, nightly: null,
     freeBefore: h.calendar?.freeBefore ?? 0, freeAfter: h.calendar?.freeAfter ?? 0,
     turnIn: h.calendar?.turnIn ?? false, turnOut: h.calendar?.turnOut ?? false, nightPrices: h.calendar?.nightPrices ?? null,
+    turnInGuest: h.calendar?.turnInGuest ?? null, turnOutGuest: h.calendar?.turnOutGuest ?? null,
     guideReleaseAt: releaseAt(arrival), pay: { provider: 'none', url: null },
     guest: { name: str(r.guestName) ?? first, email: str(r.guestEmail), phone: str(r.phone),
       adults: num(r.adults) || num(r.numberOfGuests) || 1, children: num(r.children), infants: num(r.infants), pets: num(r.pets) },

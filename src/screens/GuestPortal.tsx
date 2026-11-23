@@ -13,7 +13,7 @@ import { timeOfHour } from '../lib/stay-time.ts';
 import { Hint } from '../components/Hint.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, availability, guestLink, stayToken, extendStay, offered, choiceLine, mapsUrl, nights, priceOf, quote, ready, paidExtra,
+import { UPSELLS, availability, guestLink, stayToken, extendStay, offered, choiceLine, mapsUrl, nights, priceOf, quote, ready, paidExtra, timeOptions,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellKind, type PaidExtra } from '../lib/guest-portal.ts';
 import { FLOW_KEY, VS_KEY, doorCodeFor, doneFlow, entry, newFlow, progress, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
 import { CheckinProgress, Island, PaidIsland, SecTop, StepIsland, StepScreen, StripePay, type IslandItem } from './GuestCheckin.tsx';
@@ -318,7 +318,7 @@ function ExtrasTop({ stay, at, back, pick }: { stay: GuestStay; at: UpsellKind |
   return <SecTop back={back}><Island label="Extras" items={items} at={at ?? 'all'} pick={k => pick(k === 'all' ? null : k as UpsellKind)} /></SecTop>;
 }
 
-const ExtrasHint = () => <Hint>Pick an extra and pay for it right here — it is confirmed as soon as the payment goes through. Only what the house can give is offered: extra nights follow its live calendar, and an early check-in or late check-out is not offered on a day another guest leaves or arrives.</Hint>;
+const ExtrasHint = () => <Hint>Pick an extra and pay for it right here — it is confirmed as soon as the payment goes through. Only what the house can give is offered: extra nights follow its live calendar, and on a day another guest leaves or arrives, an early check-in or late check-out leaves time for the clean and is asked a day ahead.</Hint>;
 
 /** What check-in unlocks, shown but blocked (owner, 2026-11-15: "reading it and showing a block"): blurred lines + why. */
 function Locked({ g, goStep, title, icon, lines = 4 }: { g: Entry; goStep: (k: StepKey | null) => void; title: string; icon: string; lines?: number }) {
@@ -394,7 +394,7 @@ function priceLabel(stay: GuestStay, u: Upsell) {
 }
 
 function Extras({ stay, sent, choose }: { stay: GuestStay; sent: PaidExtra[]; choose: (k: Upsell['kind']) => void }) {
-  const NO = { calendar: 'Not available for your dates', price: 'Ask us for a price', short: 'For stays of 4+ nights', turnover: 'Not available — another guest that day' } as const;
+  const NO = { calendar: 'Not available for your dates', price: 'Ask us for a price', short: 'For stays of 4+ nights', turnover: 'Not available — another guest that day', notice: 'Another guest that day — ask a day ahead' } as const;
   return <>
     <Carousel label="Extras" of={of}>{offered(stay).map(u => {
       const a = availability(stay, u);
@@ -449,7 +449,7 @@ function Pick({ stay, u, paid, extend }: { stay: GuestStay; u: Upsell; paid: (c:
     <section className="card g-pick">
       <p className="g-pick-title"><span className="g-up-icon" aria-hidden><Icon n={u.icon} /></span> {u.title}</p>
       {u.pick.type === 'time' && <div className="g-times" role="radiogroup" aria-label={u.kind === 'early-checkin' ? 'Arrive from' : 'Leave by'}>
-        {u.pick.options.map(t => <button key={t} role="radio" aria-checked={c.time === t} className={c.time === t ? 'chip active' : 'chip'} onClick={() => setC({ time: t })}>{t}</button>)}
+        {timeOptions(stay, u).map(t => <button key={t} role="radio" aria-checked={c.time === t} className={c.time === t ? 'chip active' : 'chip'} onClick={() => setC({ time: t })}>{t}</button>)}
       </div>}
       {u.pick.type === 'nights' && <NightStrip stay={stay} c={c} set={setC} />}
       {u.pick.type === 'qty' && <Stepper label="How many" value={c.qty ?? 1} min={1} max={u.pick.max} set={v => setC({ qty: v })} />}
@@ -655,7 +655,7 @@ export function GuestDemoPage() {
  * which answers only behind the staff sign-in — on /crew/guest-demo (no sign-in) the picker simply never shows.
  */
 type HouseData = { unitName: string; notOffered?: GuestStay['notOffered']; photo?: string | null; lockType?: string | null; guestCode?: string | null; unitType?: GuestStay['unitType'] | null; protection?: GuestStay['protection']; guide: GuestGuide | null; prices: GuestStay['prices'];
-  calendar?: Pick<GuestStay, 'freeBefore' | 'freeAfter' | 'turnIn' | 'turnOut' | 'nightPrices'> | null };
+  calendar?: Pick<GuestStay, 'freeBefore' | 'freeAfter' | 'turnIn' | 'turnOut' | 'turnInGuest' | 'turnOutGuest' | 'nightPrices'> | null };
 function useHouse(dates: { arrival: string; departure: string }) {
   const [units, setUnits] = useState<{ id: string; name: string }[]>([]);
   const [unit, setUnit] = useState(() => new URLSearchParams(location.search).get('unit') ?? '');

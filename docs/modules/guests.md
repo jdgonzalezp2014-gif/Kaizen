@@ -444,6 +444,13 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - Owner: nothing waits for an OK — the payment is the confirmation. `requestMode`/`centralInstant`/`upsellRequest` deleted;
   `paidExtra` / `PaidExtra` is what the page keeps ("Your extras · ✓ Paid"). Early / late on a same-day turnover:
   `availability` → `{ ok: false, why: 'turnover' }` ("Not available — another guest that day"), also off the check-in bill.
+- **Turnover with room for the clean (owner, 2026-11-23):** on a same-day turnover, early check-in / late check-out IS
+  offered when the other guest keeps their standard time and the clean keeps `CLEAN_HOURS` (apartment/room 2 h, house 4 h):
+  check-in from their check-out + gap; check-out until their check-in − gap (`timeOptions` filters the chips). Asked at
+  least a day before (Central date < that day, else `why: 'notice'` "ask a day ahead"). The other guest already moved
+  (Kaizen `turnover_overrides` time, Hostaway hour later/earlier than the listing's standard, a paid `guest_payments` line
+  or an `upsell_charges` row for it) or not found → not offered. Server: `turnoverGuests()` in guest-guide.ts fills
+  `turnInGuest` / `turnOutGuest`; `allowedTime` re-checks the time in guest-pay and the check-in bill. No migration.
 - Every extra's Pick pays through `StripePay` (the embedded checkout); `BillLine.item` names what was sold, and `StripePay`
   sends the stay (id, unit name, guest) → session metadata → `guest_payments` (119, finance module).
 - **Open (Phase 2, the real link):** a paid extra must create the team's to-do (early check-in → the cleaner and Hostaway

@@ -14,7 +14,7 @@ import { loadStripe, type EmbeddedCheckout } from '../components/stripe-js.ts';
 import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, quote, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
+import { UPSELLS, quote, timeOptions, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
 import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, cleanEmail, cleanPhone, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type BillLine, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
@@ -280,7 +280,7 @@ function Rules({ stay, flow, save }: S) {
 function Extras({ stay, flow, save }: S) {
   const [ex, setEx] = useState(flow.extras);
   const list = flowExtras(stay);
-  const toggle = (k: UpsellKind) => setEx(e => { const n = { ...e }; if (n[k]) delete n[k]; else { const u = UPSELLS.find(x => x.kind === k)!; n[k] = u.pick.type === 'time' ? { time: u.pick.options[1] ?? u.pick.options[0] } : {}; } return n; });
+  const toggle = (k: UpsellKind) => setEx(e => { const n = { ...e }; if (n[k]) delete n[k]; else { const u = UPSELLS.find(x => x.kind === k)!; const o = timeOptions(stay, u); n[k] = u.pick.type === 'time' ? { time: o[1] ?? o[0] } : {}; } return n; });
   const any = Object.keys(ex).length > 0;
   return <>
     <div className="ci-extras">{list.map(({ u }) => {
@@ -290,7 +290,7 @@ function Extras({ stay, flow, save }: S) {
         <span className="g-up-icon" aria-hidden><Icon n={u.icon} /></span>
         <span className="ci-extra-main"><b>{u.title}</b>
           <span className="note">{usd(price)}{u.per === 'hour' ? ' / hour' : u.per === 'night' ? ' / night' : ''}{on && (u.per === 'hour' || u.per === 'night') && quote(stay, u, ex[u.kind]!) != null ? ` · ${usd(quote(stay, u, ex[u.kind]!)!)}` : ''}</span>
-          {on && u.pick.type === 'time' && <span className="ci-times">{u.pick.options.map(t =>
+          {on && u.pick.type === 'time' && <span className="ci-times">{timeOptions(stay, u).map(t =>
             <button key={t} className={ex[u.kind]?.time === t ? 'chip active' : 'chip'} onClick={() => setEx(e => ({ ...e, [u.kind]: { time: t } }))}>{t}</button>)}</span>}
         </span>
         <button className={on ? 'chip active ci-add' : 'chip ci-add'} aria-pressed={on} onClick={() => toggle(u.kind)}>{on ? <><Icon n="check" /> Added</> : 'Add'}</button>

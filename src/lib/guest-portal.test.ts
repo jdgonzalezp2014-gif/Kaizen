@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { payState, guide, availability, quote, ready, paidExtra, choiceLine, guestLink, minutesOf, hoursOf, calendarFit, offered, extendStay, UPSELLS, type GuestStay } from './guest-portal.ts';
+import { payState, guide, availability, quote, ready, paidExtra, choiceLine, guestLink, minutesOf, hoursOf, calendarFit, offered, extendStay, timeOptions, UPSELLS, type GuestStay } from './guest-portal.ts';
 
 const stay = (o: Partial<GuestStay> = {}): GuestStay => ({
   id: '101', guestFirst: 'Ana', unitName: 'Frisco 3BR', address: null, photo: null,
@@ -139,4 +139,29 @@ test('extendStay: a paid extension moves the dates and uses up the free nights',
   const y = extendStay(s, { before: 1, after: 3 });
   assert.equal(y.arrival, '2026-11-13'); assert.equal(y.turnIn, true); assert.equal(y.turnOut, true);
   assert.equal(extendStay(s, null), s);
+});
+
+test('turnover: early / late leave the clean its hours (apartment 2, house 4), a day ahead, never past a moved neighbour', () => {
+  const D = new Date('2026-11-12T18:00:00Z'); // Nov 12 in Central — two days before arrival
+  const inn = (o: Partial<GuestStay>) => stay({ turnIn: true, turnOut: false, turnInGuest: { hour: 11, agreed: false }, ...o });
+  // Apartment: the guest before leaves 11 AM → clean 11–1 → check-in from 1 PM.
+  assert.deepEqual(timeOptions(inn({ unitType: 'apartment' }), U('early-checkin'), D), ['1:00 PM', '2:00 PM', '3:00 PM']);
+  // House: 4 hours → from 3 PM.
+  assert.deepEqual(timeOptions(inn({ unitType: 'house' }), U('early-checkin'), D), ['3:00 PM']);
+  // The one leaving already has a late check-out → not offered.
+  assert.deepEqual(availability(inn({ turnInGuest: { hour: 11, agreed: true } }), U('early-checkin'), D), { ok: false, why: 'turnover' });
+  // Not known (no reservation read) → not offered.
+  assert.deepEqual(availability(inn({ turnInGuest: null }), U('early-checkin'), D), { ok: false, why: 'turnover' });
+  // The day itself (or later) → ask a day ahead.
+  assert.deepEqual(availability(inn({}), U('early-checkin'), new Date('2026-11-14T15:00:00Z')), { ok: false, why: 'notice' });
+  // Late check-out: the next guest arrives 4 PM → apartment until 2 PM, house until 12 PM.
+  const out = (o: Partial<GuestStay>) => stay({ turnOut: true, turnOutGuest: { hour: 16, agreed: false }, ...o });
+  assert.deepEqual(timeOptions(out({ unitType: 'apartment' }), U('late-checkout'), D), ['12:00 PM', '1:00 PM', '2:00 PM']);
+  assert.deepEqual(timeOptions(out({ unitType: 'house' }), U('late-checkout'), D), ['12:00 PM']);
+  assert.equal(ready(out({ unitType: 'house' }), U('late-checkout'), { time: '1:00 PM' }, D), false);
+  assert.equal(ready(out({ unitType: 'house' }), U('late-checkout'), { time: '12:00 PM' }, D), true);
+  // No room left at all (house, next guest early at 2 PM but not marked) → not offered.
+  assert.deepEqual(availability(out({ unitType: 'house', turnOutGuest: { hour: 14, agreed: false } }), U('late-checkout'), D), { ok: false, why: 'turnover' });
+  // No turnover: every option, any day.
+  assert.equal(timeOptions(stay({ turnOut: false }), U('late-checkout'), D).length, 4);
 });
