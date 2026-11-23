@@ -51,6 +51,9 @@ confirm (webhook or session check) and be recorded, so the whole flow can be tri
 door code by rule, turns "Request a change" into a to-do, and the stay host shows only the portal. Depends on Phase 0.
 Hostaway writes (extend a stay, add a fee) stay behind the owner's OK.
 
+**Built 2026-11-23 (owner: "create it"), migration 123 — see guests.md "The real door".** Not done: the stay host serving only
+the portal; extending the reservation in Hostaway after paid nights (a to-do for now).
+
 ## Phase 3 — one AI for everything (module: platform)
 
 Owner, 2026-11-16: use ONE provider now and keep the keys of all of them; which use cases deserve AI is decided later.

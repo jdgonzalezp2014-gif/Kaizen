@@ -34,7 +34,13 @@ export async function demoHouse(sql: SqlFn, encryptionKey: string, url: URL): Pr
   const unit = await verifyHouse(encryptionKey, url.searchParams.get('house') ?? '');
   if (!unit) return Response.json({ ok: false, message: 'This demo link is not valid or has expired.' }, { status: 403 });
   const photo = url.searchParams.get('photo');
-  if (photo) {
+  if (photo) return guidePhoto(sql, encryptionKey, unit, photo);
+  const house = await guestHouse(sql, unit, encryptionKey, { arrival: url.searchParams.get('arrival'), departure: url.searchParams.get('departure') });
+  return house ? Response.json(house, { headers: { 'Cache-Control': 'no-store' } }) : Response.json({ ok: false, message: 'No such unit.' }, { status: 404 });
+}
+
+/** A photo of a unit's arrival guide — only one its own guide (or its building's shared one) names. Also the stay link's. */
+export async function guidePhoto(sql: SqlFn, encryptionKey: string, unit: string, photo: string): Promise<Response> {
     // Only a photo this unit's own guide (or its building's shared one) names.
     if (!isPhotoId(photo)) return new Response('Which photo?', { status: 400 });
     const [named] = await sql`SELECT 1 AS ok FROM checkin_guides g, jsonb_array_elements(g.steps) s
@@ -46,7 +52,4 @@ export async function demoHouse(sql: SqlFn, encryptionKey: string, url: URL): Pr
     const type = res.headers.get('Content-Type') ?? '';
     if (!res.ok || !type.startsWith('image/')) return new Response('Photo unavailable.', { status: 502 });
     return new Response(res.body, { headers: { 'Content-Type': type, 'Cache-Control': 'private, max-age=86400' } });
-  }
-  const house = await guestHouse(sql, unit, encryptionKey, { arrival: url.searchParams.get('arrival'), departure: url.searchParams.get('departure') });
-  return house ? Response.json(house, { headers: { 'Cache-Control': 'no-store' } }) : Response.json({ ok: false, message: 'No such unit.' }, { status: 404 });
 }

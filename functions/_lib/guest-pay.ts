@@ -22,6 +22,12 @@ import { decrypt } from './crypto.ts';
 import { toCents } from '../../src/lib/payouts.ts';
 import { decodeLines, encodeLines, itemLabel, type PaidLine } from '../../src/lib/guest-payments.ts';
 import { settleCharge, syncChargeRefund } from './charge-settle.ts';
+import type { Env } from './db.ts';
+import { loadStay, markStay, stayId } from './guest-stay.ts';
+import { mirrorTodos } from './inventory.ts';
+import { bill, protectionFor } from '../../src/lib/guest-checkin.ts';
+import { UPSELLS, availability, nights, offered, quote, type Choice } from '../../src/lib/guest-portal.ts';
+import { todayIn } from '../../src/lib/dates.ts';
 
 type Line = { label: string; amount: number; kind: 'charge' | 'hold'; note?: string; item?: string };
 /** Which stay the payment is for — the demo knows the unit's name; the real link (Phase 2) knows the reservation. */
@@ -37,6 +43,33 @@ async function embedKey(sql: SqlFn, mode: 'test' | 'live') {
   return pk && pk.startsWith(`pk_${mode}_`) ? pk : null;
 }
 
+/** The real stay link (Phase 2): the bill is the server's, so a live key is allowed there. */
+async function anyKey(sql: SqlFn, encryptionKey: string) {
+  const k = await stripeKey(sql, encryptionKey).catch(() => null);
+  return k ?? bad('Payments are not set up yet — message us and we will help.', 503);
+}
+
+/**
+ * What a real stay pays, computed here from the stay as Hostaway and the Repository give it (never from the page):
+ * the check-in bill from the saved answers, or one extra priced by the same rules as the page shows.
+ */
+async function stayLines(sql: SqlFn, env: Env, id: string, purpose: unknown, extra: unknown) {
+  const l = await loadStay(sql, env, id);
+  if (typeof l === 'string') return l;
+  const prot = protectionFor(l.stay.unitType ?? 'house', l.stay.protection ?? {}, nights(l.stay));
+  if (purpose === 'checkin') {
+    if (l.flow.paid) return 'This check-in is already paid.';
+    return { l, lines: bill(l.flow, l.stay, prot).lines as Line[] };
+  }
+  const x = (extra && typeof extra === 'object' ? extra : {}) as { kind?: unknown; choice?: unknown };
+  const u = UPSELLS.find(v => v.kind === x.kind);
+  if (!u || !offered(l.stay).some(o => o.kind === u.kind) || !availability(l.stay, u).ok) return 'That extra is not available for this stay.';
+  const c = (x.choice && typeof x.choice === 'object' ? x.choice : {}) as Choice;
+  const q = quote(l.stay, u, { time: typeof c.time === 'string' ? c.time : undefined, before: Number(c.before) || 0, after: Number(c.after) || 0, qty: Number(c.qty) || undefined });
+  if (q == null || !(q > 0)) return 'That extra cannot be priced — message us and we will help.';
+  return { l, lines: [{ label: u.title, amount: q, kind: 'charge', item: u.kind, note: c.time ? `${u.kind === 'early-checkin' ? 'From' : 'Until'} ${c.time}` : undefined }] as Line[] };
+}
+
 async function sandbox(sql: SqlFn, encryptionKey: string) {
   const k = await stripeKey(sql, encryptionKey).catch(() => null);
   if (!k) return bad('Stripe is not set up — Settings → Integrations → Stripe.', 503);
@@ -44,11 +77,18 @@ async function sandbox(sql: SqlFn, encryptionKey: string) {
   return k;
 }
 
-export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: Request): Promise<Response> {
-  const k = await sandbox(sql, encryptionKey);
+export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: Request, env?: Env): Promise<Response> {
+  const b = await request.json().catch(() => ({})) as { lines?: Line[]; email?: string; back?: string; embedded?: boolean; stay?: StayRef;
+    stayToken?: string; purpose?: 'checkin' | 'extra'; extra?: { kind?: string; choice?: Choice } };
+  // The real stay link: its own bill, from the server.
+  const real = env && b.stayToken ? await stayId(encryptionKey, b.stayToken) : null;
+  if (b.stayToken && !real) return bad('This stay link is not valid.', 403);
+  const k = real ? await anyKey(sql, encryptionKey) : await sandbox(sql, encryptionKey);
   if (k instanceof Response) return k;
-  const b = await request.json().catch(() => ({})) as { lines?: Line[]; email?: string; back?: string; embedded?: boolean; stay?: StayRef };
-  const lines = (Array.isArray(b.lines) ? b.lines : []).filter(l => l && (l.kind === 'charge' || l.kind === 'hold'));
+  const fromStay = real ? await stayLines(sql, env!, real, b.purpose, b.extra) : null;
+  if (typeof fromStay === 'string') return bad(fromStay, 409);
+  if (fromStay) b.stay = { id: real, unitId: fromStay.l.listingId, unitName: fromStay.l.stay.unitName, guest: fromStay.l.stay.guest?.name ?? null };
+  const lines = (fromStay ? fromStay.lines : Array.isArray(b.lines) ? b.lines : []).filter(l => l && (l.kind === 'charge' || l.kind === 'hold'));
   if (!lines.length || lines.length > 8) return bad('Nothing to pay.');
   if (lines.some(l => typeof l.label !== 'string' || !(Number(l.amount) > 0) || Number(l.amount) > 5000)) return bad('A line is not valid.');
   if (!portalPath(b.back)) return bad('Bad return page.');
@@ -62,7 +102,8 @@ export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: 
     'payment_method_types[0]': 'card',
     success_url: `${back}${back.includes('?') ? '&' : '?'}paid={CHECKOUT_SESSION_ID}`,
     cancel_url: back,
-    'metadata[source]': 'guest-portal-demo',
+    'metadata[source]': real ? 'guest-portal' : 'guest-portal-demo',
+    'metadata[purpose]': real ? (b.purpose === 'checkin' ? 'checkin' : 'extra') : undefined,
     // What was sold, for the books (recordSession): item:amount per line, held lines marked ~.
     'metadata[lines]': encodeLines(lines.map(l => ({ item: short(l.item, 24) ?? (l.kind === 'hold' ? 'deposit' : 'other'), label: l.label, amount: Number(l.amount), hold: l.kind === 'hold' }))),
     'metadata[reservation]': short(b.stay?.id, 40),
@@ -89,16 +130,24 @@ export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: 
   });
   try {
     const s = await stripeCall<{ id: string; url: string | null; client_secret: string | null }>(k.key, 'POST', '/checkout/sessions', p);
+    if (real && b.purpose === 'checkin') await markStay(sql, real, fromStay!.l.listingId, { paySession: s.id });
     return Response.json(pk ? { ok: true, id: s.id, clientSecret: s.client_secret, publishableKey: pk } : { ok: true, url: s.url });
   } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
 }
 
-export async function guestCheckoutState(sql: SqlFn, encryptionKey: string, id: string): Promise<Response> {
-  if (!/^cs_test_[A-Za-z0-9]{10,200}$/.test(id)) return bad('Bad session.');
-  const k = await sandbox(sql, encryptionKey);
+export async function guestCheckoutState(sql: SqlFn, encryptionKey: string, id: string, stayToken?: string | null): Promise<Response> {
+  const real = stayToken ? await stayId(encryptionKey, stayToken) : null;
+  if (!(real ? /^cs_(test|live)_[A-Za-z0-9]{10,200}$/ : /^cs_test_[A-Za-z0-9]{10,200}$/).test(id)) return bad('Bad session.');
+  const k = real ? await anyKey(sql, encryptionKey) : await sandbox(sql, encryptionKey);
   if (k instanceof Response) return k;
   try {
-    const s = await recordSession(sql, k.key, id);
+    const s = await recordSession(sql, k.key, id, encryptionKey);
+    const m = s.metadata ?? {};
+    // The stay's own payment, confirmed by Stripe: only a session made for THIS reservation counts.
+    if (real && s.status === 'complete' && m.reservation === real) {
+      if (m.purpose === 'checkin') await markStay(sql, real, m.unit ?? null, { paySession: s.id, paidTotal: s.amount_total / 100 });
+      else await extraTodo(sql, encryptionKey, s, real);
+    }
     // A manual-capture (hold) session is complete but "unpaid" until the team captures — complete is what counts here.
     return Response.json({ ok: true, paid: s.status === 'complete', total: s.amount_total / 100 }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
@@ -197,9 +246,11 @@ export async function stripeWebhook(sql: SqlFn, encryptionKey: string, request: 
 /* ── Identity (Stripe Identity, sandbox — Truvi vs Stripe still open) ───────────────── */
 
 export async function guestIdentity(sql: SqlFn, encryptionKey: string, request: Request): Promise<Response> {
-  const k = await sandbox(sql, encryptionKey);
+  const b = await request.json().catch(() => ({})) as { back?: string; embedded?: boolean; stayToken?: string };
+  const real = b.stayToken ? await stayId(encryptionKey, b.stayToken) : null;
+  if (b.stayToken && !real) return bad('This stay link is not valid.', 403);
+  const k = real ? await anyKey(sql, encryptionKey) : await sandbox(sql, encryptionKey);
   if (k instanceof Response) return k;
-  const b = await request.json().catch(() => ({})) as { back?: string; embedded?: boolean };
   if (!portalPath(b.back)) return bad('Bad return page.');
   const back = new URL(request.url).origin + b.back;
   try {
@@ -210,22 +261,49 @@ export async function guestIdentity(sql: SqlFn, encryptionKey: string, request: 
       'options[document][allowed_types][0]': 'driving_license',
       'options[document][allowed_types][1]': 'passport',
       'options[document][allowed_types][2]': 'id_card',
-      'metadata[source]': 'guest-portal-demo',
+      'metadata[source]': real ? 'guest-portal' : 'guest-portal-demo',
+      'metadata[reservation]': real ?? undefined,
       // Stripe adds nothing to return_url: the page keeps the session id in the tab (sessionStorage) and checks it on return.
       return_url: `${back}${back.includes('?') ? '&' : '?'}verified=1`,
     });
+    if (real) await markStay(sql, real, null, { identityVs: v.id });
     return Response.json(pk ? { ok: true, id: v.id, clientSecret: v.client_secret, publishableKey: pk } : { ok: true, url: v.url, id: v.id });
   } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
 }
 
-export async function guestIdentityState(sql: SqlFn, encryptionKey: string, id: string): Promise<Response> {
+export async function guestIdentityState(sql: SqlFn, encryptionKey: string, id: string, stayToken?: string | null): Promise<Response> {
   if (!/^vs_[A-Za-z0-9]{10,200}$/.test(id)) return bad('Bad session.');
-  const k = await sandbox(sql, encryptionKey);
+  const real = stayToken ? await stayId(encryptionKey, stayToken) : null;
+  const k = real ? await anyKey(sql, encryptionKey) : await sandbox(sql, encryptionKey);
   if (k instanceof Response) return k;
   try {
     const v = await stripeCall<{ status: string; last_error?: { reason?: string } | null }>(k.key, 'GET', `/identity/verification_sessions/${id}`);
+    // Only the session this stay started counts for it (a session id from another stay changes nothing).
+    if (real && (v.status === 'verified' || v.status === 'processing')) {
+      const [row] = await sql`SELECT identity_vs FROM guest_flows WHERE account_id = 1 AND reservation_id = ${real}` as { identity_vs: string | null }[];
+      if (row?.identity_vs === id) await markStay(sql, real, null, { identityOk: true });
+    }
     // processing = submitted, Stripe is checking (seconds); verified = match. requires_input = failed or left.
     return Response.json({ ok: true, done: v.status === 'verified' || v.status === 'processing', status: v.status,
       message: v.status === 'requires_input' ? (v.last_error?.reason ?? 'Verification was not finished.') : undefined }, { headers: { 'Cache-Control': 'no-store' } });
   } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
+}
+
+/**
+ * An extra paid on the real stay link (Phase 2): the team's to-do, once per Stripe session — early check-in / late
+ * check-out (cleaner + the hours in Hostaway), extra nights (extend the reservation; Kaizen does not write it yet),
+ * a mid-stay clean, crib, basket, parking. The money is already in guest_payments.
+ */
+async function extraTodo(sql: SqlFn, encryptionKey: string, s: Session, reservation: string) {
+  const [seen] = await sql`SELECT 1 FROM todos WHERE account_id = 1 AND reservation_id = ${reservation} AND description LIKE ${'%' + s.id + '%'} LIMIT 1` as unknown[];
+  if (seen) return;
+  const m = s.metadata ?? {};
+  const what = decodeLines(m.lines).map(l => `${l.label} $${l.amount}`).join(', ') || 'an extra';
+  const [t] = await sql`INSERT INTO todos (account_id, title, description, unit_ids, created_by, kind, status, priority, due_on, reservation_id, reservation_label)
+                        VALUES (1, ${`Guest paid in the portal: ${what}`.slice(0, 300)},
+                                ${`Paid by card in the guest portal (Stripe ${s.id}). Set it up: early check-in / late check-out → the cleaner and the hours in Hostaway; extra nights → extend the reservation in Hostaway; a clean, crib, basket or parking → prepare it.`},
+                                ${m.unit ? [m.unit] : []}, 'Guest portal', 'task', 'pending', 'urgent', ${todayIn('America/New_York')}::date, ${reservation},
+                                ${[m.guest, m.unit_name].filter(Boolean).join(' · ') || null})
+                        RETURNING id::text AS id` as { id: string }[];
+  if (t) await mirrorTodos(sql, encryptionKey, [t.id], 'Guest portal').catch(() => {});
 }

@@ -12,7 +12,7 @@ import { Icon, ic } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, availability, guestLink, extendStay, offered, choiceLine, mapsUrl, nights, priceOf, quote, ready, paidExtra,
+import { UPSELLS, availability, guestLink, stayToken, extendStay, offered, choiceLine, mapsUrl, nights, priceOf, quote, ready, paidExtra,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellKind, type PaidExtra } from '../lib/guest-portal.ts';
 import { FLOW_KEY, VS_KEY, doorCodeFor, doneFlow, entry, newFlow, progress, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
 import { CheckinProgress, Island, PaidIsland, SecTop, StepIsland, StepScreen, StripePay, type IslandItem } from './GuestCheckin.tsx';
@@ -46,32 +46,49 @@ export function resetDemoFlow() {
 const whenLabel = (iso: string) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
 
 /** `embedded`: the builder's live preview — no URL state, no page-wide theme (the preview box carries `.g-scope`). */
-export function GuestPortal({ stay: booked, now = new Date(), demoBar, embedded = false, startSec = 'stay' }: {
-  stay: GuestStay; now?: Date; demoBar?: React.ReactNode; embedded?: boolean; startSec?: Sec }) {
+export function GuestPortal({ stay: booked, now = new Date(), demoBar, embedded = false, startSec = 'stay', remote }: {
+  stay: GuestStay; now?: Date; demoBar?: React.ReactNode; embedded?: boolean; startSec?: Sec;
+  /** The real stay link (Phase 2): the check-in as the server keeps it, and where each change is saved. */
+  remote?: { flow: Flow; save: (f: Flow) => void } }) {
   const [sec, setSec] = useState<Sec>(startSec);
   const [pick, setPick] = useState<Upsell['kind'] | null>(null);
   // What the guest bought on this visit (paid on the spot; the real link will read them back from guest_payments).
   const [sent, setSent] = useState<PaidExtra[]>([]);
   const [menu, setMenu] = useState(false);
-  const [flow, setFlow] = useState<Flow>(() => (!embedded && (returnedFlow() ?? savedDemoFlow())) || (booked.checkedIn ? doneFlow() : newFlow()));
+  const [flow, setFlow] = useState<Flow>(() => remote ? { ...remote.flow, ...(returnedFlow() ?? {}), identity: remote.flow.identity, paid: remote.flow.paid }
+    : (!embedded && (returnedFlow() ?? savedDemoFlow())) || (booked.checkedIn ? doneFlow() : newFlow()));
+  // The real link saves every change (a short pause first, so a fast tapper sends one save).
+  const first = useRef(true);
+  useEffect(() => {
+    if (!remote) return;
+    if (first.current) { first.current = false; return; }
+    const t = setTimeout(() => remote.save(flow), 350);
+    return () => clearTimeout(t);
+  }, [flow]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The server confirmed the ID check or the payment (Stripe): the page follows it.
+  useEffect(() => {
+    if (remote && (remote.flow.identity !== flow.identity || remote.flow.paid !== flow.paid) && (remote.flow.identity || remote.flow.paid))
+      setFlow(f => ({ ...f, identity: f.identity || remote.flow.identity, paid: f.paid || remote.flow.paid, paidTotal: f.paidTotal ?? remote.flow.paidTotal }));
+  }, [remote?.flow.identity, remote?.flow.paid]); // eslint-disable-line react-hooks/exhaustive-deps
   // A paid extension moves the stay's dates (and what is still free around them) everywhere on the page.
   const stay = extendStay(booked, flow.extended);
   // The open demo link (?house=) keeps its check-in in this browser, so a reload or Stripe's return does not start over.
-  useEffect(() => { if (!embedded) saveDemoFlow(flow); }, [flow, embedded]);
+  useEffect(() => { if (!embedded && !remote) saveDemoFlow(flow); }, [flow, embedded]); // eslint-disable-line react-hooks/exhaustive-deps
   // Back from Stripe Checkout (`?paid=cs_…`): the step is done only if Stripe says the session is complete.
   const [payNote, setPayNote] = useState<string | null>(null);
   useEffect(() => {
     if (embedded) return;
     const q = new URLSearchParams(location.search);
     const id = q.get('paid');
-    if (id) fetch(`/api/report-link?checkout=${encodeURIComponent(id)}`).then(r => r.json() as Promise<{ paid?: boolean; total?: number; message?: string }>).then(j => {
+    const st = stayToken() ? `&stay=${encodeURIComponent(stayToken()!)}` : '';
+    if (id) fetch(`/api/report-link?checkout=${encodeURIComponent(id)}${st}`).then(r => r.json() as Promise<{ paid?: boolean; total?: number; message?: string }>).then(j => {
       if (j.paid) setFlow(f => ({ ...f, paid: true, paidTotal: j.total ?? null }));
       else setPayNote(j.message ?? 'The payment was not completed.');
     }).catch(() => setPayNote('Could not check the payment.'));
     // Back from Stripe Identity (`?verified=1`): the session id was kept in the tab.
     let vs: string | null = null;
     try { vs = q.get('verified') ? sessionStorage.getItem(VS_KEY) : null; } catch { /* no storage */ }
-    if (vs) fetch(`/api/report-link?identity=${encodeURIComponent(vs)}`).then(r => r.json() as Promise<{ done?: boolean; message?: string }>).then(j => {
+    if (vs) fetch(`/api/report-link?identity=${encodeURIComponent(vs)}${st}`).then(r => r.json() as Promise<{ done?: boolean; message?: string }>).then(j => {
       if (j.done) { setFlow(f => ({ ...f, identity: true })); setStep(null); }
       else setPayNote(j.message ?? 'Verification was not finished.');
     }).catch(() => setPayNote('Could not check the verification.'));
@@ -430,7 +447,8 @@ function Pick({ stay, u, paid, extend }: { stay: GuestStay; u: Upsell; paid: (c:
       {u.pick.type === 'qty' && <Stepper label="How many" value={c.qty ?? 1} min={1} max={u.pick.max} set={v => setC({ qty: v })} />}
       <div className="g-total"><span>Total</span><b>{total != null ? money2(total) : '—'}</b></div>
       {ok ? <StripePay key={JSON.stringify(c)} email={stay.guest?.email ?? null} label={`${u.kind === 'extra-nights' ? 'Book' : 'Add'} & pay ${money2(total!)}`} back="extras"
-          stay={stay} lines={[{ label, amount: total!, kind: 'charge', item: u.kind, note: note || undefined }]} onPaid={onPaid} />
+          stay={stay} lines={[{ label, amount: total!, kind: 'charge', item: u.kind, note: note || undefined }]} onPaid={onPaid}
+          extra={{ kind: u.kind, choice: c as Record<string, unknown> }} />
         : <button className="g-cta" disabled>{u.pick.type === 'time' ? 'Pick a time' : u.pick.type === 'nights' ? 'Pick your nights' : 'Not available'}</button>}
     </section>
   </>;
@@ -643,34 +661,44 @@ function useHouse(dates: { arrival: string; departure: string }) {
   return { units, unit, data, pick, signed: new URLSearchParams(location.search).has('house') };
 }
 
-/** A real stay link (/guest/<id>.<sig>) — the API that checks the signature and reads Hostaway is not built yet. */
 /**
- * The stay's own link (/guest/<reservation>.<sig>). The full portal on it is Phase 2 (docs/roadmap.md); what it already
- * shows (owner, 2026-11-19) is the stay's **pending payments** — the upsells the team charged from the case
- * (functions/_lib/upsell-charge.ts), each with its pay button, and the ones already paid.
+ * The stay's own link (/guest/<reservation>.<sig>) — the portal's real door (Phase 2, owner 2026-11-23). The stay comes
+ * from Hostaway through /api/report-link?stay= (functions/_lib/guest-stay.ts); every answer is saved there; the address,
+ * Wi-Fi, arrival steps and door code arrive only once the server opens the entry. Charges the team made from a case
+ * (upsell links, §178) show under the page as "Pending payments".
  */
 type StayCharge = { id: string; label: string; amount: number; status: 'pending' | 'paid'; payUrl: string | null; paidAt: string | null };
+type StayAnswer = { ok: true; stay: GuestStay; flow: Flow; open: boolean } | { ok: false; message?: string };
 export function GuestLinkPage() {
   const gl = guestLink(location.pathname);
-  const [charges, setCharges] = useState<StayCharge[] | null>(null);
+  const token = gl?.sig ? `${gl.id}.${gl.sig}` : null;
+  const [data, setData] = useState<{ stay: GuestStay; flow: Flow } | null>(null);
+  const [charges, setCharges] = useState<StayCharge[]>([]);
   const [bad, setBad] = useState('');
+  const [saveNote, setSaveNote] = useState('');
   useEffect(() => {
-    if (!gl?.sig) { setBad('This stay link is not valid.'); return; }
-    void fetch(`/api/report-link?charges=${gl.id}.${encodeURIComponent(gl.sig)}`).then(r => r.json() as Promise<{ ok: boolean; charges?: StayCharge[]; message?: string }>)
-      .then(j => j.ok ? setCharges(j.charges ?? []) : setBad(j.message ?? 'This stay link is not valid.')).catch(() => setBad('Could not load — try again.'));
-  }, [gl?.id, gl?.sig]);
-  const pending = charges?.filter(c => c.status === 'pending') ?? [];
-  const paid = charges?.filter(c => c.status === 'paid') ?? [];
-  return <div className="report-page v-page g-page">
-    {bad ? <p className="banner warn">▲ {bad}</p> : !charges ? <p className="note">Loading…</p> : <>
-      <h2 className="gl-title">Pending payments</h2>
-      {pending.length ? <ul className="gl-charges">{pending.map(c => <li key={c.id}>
-          <span><b>{c.label}</b></span><span className="gl-amt">{money2(c.amount)}</span>
-          {c.payUrl && <a className="gl-pay" href={c.payUrl}>Pay</a>}</li>)}</ul>
-        : <p className="note"><Icon n="check" /> Nothing to pay.</p>}
-      {paid.length > 0 && <ul className="gl-charges gl-paid">{paid.map(c => <li key={c.id}>
-        <span><Icon n="check" /> {c.label}</span><span className="gl-amt">{money2(c.amount)}</span><small>Paid</small></li>)}</ul>}
-      <p className="note">Your full stay page (check-in, door code, house guide) opens here soon.</p>
-    </>}
-  </div>;
+    if (!token) { setBad('This stay link is not valid.'); return; }
+    const q = encodeURIComponent(token);
+    void fetch(`/api/report-link?stay=${q}`).then(r => r.json() as Promise<StayAnswer>)
+      .then(j => j.ok ? setData({ stay: j.stay, flow: j.flow }) : setBad(j.message ?? 'This stay link is not valid.')).catch(() => setBad('Could not load — try again.'));
+    void fetch(`/api/report-link?charges=${q}`).then(r => r.json() as Promise<{ ok: boolean; charges?: StayCharge[] }>)
+      .then(j => { if (j.ok) setCharges(j.charges ?? []); }).catch(() => undefined);
+  }, [token]);
+  const save = (f: Flow) => {
+    if (!token) return;
+    void fetch(`/api/report-link?stay=${encodeURIComponent(token)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ flow: f }) })
+      .then(r => r.json() as Promise<StayAnswer>)
+      .then(j => { if (j.ok) { setData({ stay: j.stay, flow: j.flow }); setSaveNote(''); } else setSaveNote(j.message ?? 'Not saved — check the connection.'); })
+      .catch(() => setSaveNote('Not saved — check the connection.'));
+  };
+  if (bad) return <div className="report-page v-page g-page"><p className="banner warn">▲ {bad}</p></div>;
+  if (!data) return <div className="report-page v-page g-page"><p className="note">Loading your stay…</p></div>;
+  const pending = charges.filter(c => c.status === 'pending');
+  return <GuestPortal stay={data.stay} remote={{ flow: data.flow, save }}
+    demoBar={<>
+      {saveNote && <p className="banner warn">▲ {saveNote}</p>}
+      {pending.length > 0 && <section className="card"><h2 className="gl-title">Pending payments</h2>
+        <ul className="gl-charges">{pending.map(c => <li key={c.id}><span><b>{c.label}</b></span><span className="gl-amt">{money2(c.amount)}</span>
+          {c.payUrl && <a className="gl-pay" href={c.payUrl}>Pay</a>}</li>)}</ul></section>}
+    </>} />;
 }

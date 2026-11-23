@@ -5,6 +5,9 @@
  * one payment. Demo: nothing is charged and nothing is saved; `onPay` is where Stripe goes.
  */
 import { useEffect, useRef, useState } from 'react';
+import { stayToken } from '../lib/guest-portal.ts';
+/** `&stay=<token>` on the real stay link: the server then counts the check for this stay. */
+const stayQ = () => { const t = stayToken(); return t ? `&stay=${encodeURIComponent(t)}` : ''; };
 import { loadStripe, type EmbeddedCheckout } from '../components/stripe-js.ts';
 import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
@@ -178,14 +181,14 @@ function Identity({ flow, save, set }: S) {
     for (const k of ['step', 'paid', 'verified', 'extra']) u.searchParams.delete(k);
     u.searchParams.set('sec', 'checkin');
     try {
-      const r = await fetch('/api/report-link?identity=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ back: u.pathname + u.search, embedded: true }) });
+      const r = await fetch('/api/report-link?identity=1', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ back: u.pathname + u.search, embedded: true, stayToken: stayToken() }) });
       const j = await r.json() as { url?: string; id?: string; clientSecret?: string; publishableKey?: string; message?: string };
       // Inside the portal: Stripe's ID check opens over the page; then the server says whether it went through.
       if (j.clientSecret && j.publishableKey && j.id) {
         const st = await loadStripe(j.publishableKey);
         const res = await st.verifyIdentity(j.clientSecret);
         if (res.error && res.error.code !== 'session_cancelled') { setErr(res.error.message ?? 'Verification did not finish.'); setBusy(false); return; }
-        const v = await fetch(`/api/report-link?identity=${encodeURIComponent(j.id)}`).then(x => x.json() as Promise<{ done?: boolean; message?: string }>);
+        const v = await fetch(`/api/report-link?identity=${encodeURIComponent(j.id)}${stayQ()}`).then(x => x.json() as Promise<{ done?: boolean; message?: string }>);
         if (v.done) { set({ ...flow, identity: true }); setBusy(false); return; }
         setErr(res.error ? 'Verification was closed before the end.' : v.message ?? 'Verification was not finished.'); setBusy(false); return;
       }
@@ -303,7 +306,7 @@ function Pay({ stay, flow, p, save, set }: S) {
       <div className="ci-line ci-sum"><span>Today</span><b>{money2(b.today)}</b></div>
       {b.hold > 0 && <div className="ci-line ci-sum ci-sub"><span>Held, released after check-out</span><span>{money2(b.hold)}</span></div>}
     </section>
-    <StripePay lines={b.lines} email={stay.guest?.email ?? null} label={label} stay={stay}
+    <StripePay lines={b.lines} email={stay.guest?.email ?? null} label={label} stay={stay} purpose="checkin"
       beforeRedirect={() => { try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); } catch { /* private mode: the page just starts over */ } }}
       onPaid={total => set({ ...flow, paid: true, paidTotal: total })} />
   </>;
@@ -314,8 +317,10 @@ function Pay({ stay, flow, p, save, set }: S) {
  * `onPaid` once the server confirms the session. Without a publishable key the server answers Stripe's hosted page
  * and the guest is sent there (`beforeRedirect` keeps what must survive the trip). Used by check-in and by extensions.
  */
-export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 'checkin', stay }: { lines: BillLine[]; email: string | null; label: string;
-  onPaid: (total: number | null) => void; beforeRedirect?: () => void; back?: string; stay?: Pick<GuestStay, 'id' | 'unitName' | 'guest'> }) {
+export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 'checkin', stay, purpose, extra }: { lines: BillLine[]; email: string | null; label: string;
+  onPaid: (total: number | null) => void; beforeRedirect?: () => void; back?: string; stay?: Pick<GuestStay, 'id' | 'unitName' | 'guest'>;
+  /** On the real stay link the server prices it itself (Phase 2): the check-in bill, or this one extra. */
+  purpose?: 'checkin' | 'extra'; extra?: { kind: string; choice: Record<string, unknown> } }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [embed, setEmbed] = useState<{ id: string; clientSecret: string; pk: string } | null>(null);
@@ -323,7 +328,7 @@ export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 
   useEffect(() => {
     if (!embed) return;
     let ec: EmbeddedCheckout | null = null; let live = true;
-    const done = () => void fetch(`/api/report-link?checkout=${encodeURIComponent(embed.id)}`).then(r => r.json() as Promise<{ paid?: boolean; total?: number; message?: string }>)
+    const done = () => void fetch(`/api/report-link?checkout=${encodeURIComponent(embed.id)}${stayQ()}`).then(r => r.json() as Promise<{ paid?: boolean; total?: number; message?: string }>)
       .then(j => { if (j.paid) { setEmbed(null); onPaid(j.total ?? null); } else setErr(j.message ?? 'The payment was not completed.'); }, () => setErr('Could not check the payment.'));
     loadStripe(embed.pk).then(st => st.initEmbeddedCheckout({ fetchClientSecret: async () => embed.clientSecret, onComplete: done }))
       .then(c => { if (!live) { c.destroy(); return; } ec = c; if (box.current) c.mount(box.current); setBusy(false); },
@@ -340,7 +345,8 @@ export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 
       const r = await fetch('/api/report-link?checkout=1', { method: 'POST', headers: { 'Content-Type': 'application/json' },
         // Which stay, for the books (guest_payments): the reservation and the house the guest paid from.
         body: JSON.stringify({ lines, email, back: u.pathname + u.search, embedded: true,
-          stay: stay && { id: stay.id, unitName: stay.unitName, guest: stay.guest?.name ?? null } }) });
+          stay: stay && { id: stay.id, unitName: stay.unitName, guest: stay.guest?.name ?? null },
+          stayToken: stayToken(), purpose: purpose ?? 'extra', extra }) });
       const j = await r.json() as { url?: string; id?: string; clientSecret?: string; publishableKey?: string; message?: string };
       if (j.clientSecret && j.publishableKey && j.id) { setEmbed({ id: j.id, clientSecret: j.clientSecret, pk: j.publishableKey }); return; }
       if (j.url && beforeRedirect) { location.href = j.url; return; }

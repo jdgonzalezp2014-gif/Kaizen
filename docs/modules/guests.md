@@ -342,6 +342,36 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   which `portalLink` does. `/crew/guest-demo` 200. **But the stay link shows only Pending payments** — Phase 2 (the check-in on the real link)
   is not built.
 
+### The real door — Phase 2 (owner 2026-11-23: "what is missing to migrate the guest portal? create it") — migration 123
+
+- `/guest/<res>.<sig>` (`GuestLinkPage`) is the whole portal now, from the server: `GET /api/report-link?stay=<token>` (`functions/_lib/guest-stay.ts`
+  `stayGet` → `loadStay`): Hostaway's reservation (`fetchReservationDetail`) + the house (`guestHouse`: Repository, guide, cover, live calendar) →
+  `stayFrom` (`src/lib/guest-stay.ts`, tested). `POST ?stay=` saves the guest's answers (`guest_flows.flow`, `cleanFlow`); the page saves every
+  change after 350 ms (`remote` prop of `GuestPortal`). Pending upsell charges (§178) show under the page.
+- **What the page cannot bend:** `identity` / `paid` are never read from the page — `identity_ok` is set when Stripe Identity says verified /
+  processing for the session THIS stay started (`identity_vs`), `paid_ok` when the Checkout session made for this reservation (`metadata.purpose =
+  checkin`) completes (page check or the webhook → `guest_payments`, reconciled on the next load). The bill is the server's (`stayLines`: `bill()` from
+  the saved answers, or one extra by `quote()`); the page's lines are ignored. So the real link may use a **live** Stripe key (`anyKey`); the demo
+  stays test-only.
+- **Locked until `entry()` opens** (all required steps + `releaseAt` = noon Central the day before arrival): `lockedStay` sends only the rules and
+  times — no address, Wi-Fi, steps, manual, phone or door code; guide photos (`?stay=&photo=`, `guidePhoto`) also wait. Door code = `doorCodeFor`
+  (Hostaway's reservation code, else the Repository's Guest check-in code).
+- **Steps done** → `guest_checkins` (source `portal`) + `fireStay` (the "After online check-in" automations) — even before the release time. A stay the
+  team marked in the Inbox counts as done. **Request a change** → one high to-do on the stay ("Guest asked for a change: …", again only if the text
+  changes; a failed insert is retried on the next save). **An extra paid on the link** → an urgent to-do once per Stripe session (set it up: hours in
+  Hostaway, extend the reservation, prepare the clean / crib / basket / parking).
+- Tested 2026-11-23 on Neon branch `test-portal-door-1123` (br-little-firefly-b5spv6vu, Slack/Drive/Hostaway tasks off, sending off) with real stays:
+  P2-1201 Vrbo (locked; page's `identity/paid: true` ignored; Stripe test session billed **$70** by the server against a fake $1 line; identity
+  session started; change to-do made once; with Stripe's marks simulated → steps done → guest_checkins 'portal', still locked until Nov 29 noon);
+  Quest (Vrbo, in house) and CL 1125 (Airbnb) → entry open with Hostaway's door code, address, Wi-Fi, pins (Google + Apple Maps), Cortland video;
+  phone screenshot fine. **Not tried:** a real card / ID through Stripe's own pages on the link (test the full flow once on a phone), the webhook path.
+- Arrival guides 2026-11-23: **Cortland** = `shared:cortland-building-1|2` (1xxx / 2xxx, like The Links), from the CL-1125 / CL-2359 house manuals:
+  drive (pin), call box (the slides' codes, stored only in the guide rows), elevator to {floor}, door code; house items gym/pool fob, trash chute,
+  check-out. Building 1 units get their own Drive video (1446, 1339, 1250, 1125, 1425, 1350, 1235 — shared by link). ⚠ The slides disagree on the
+  call box (the 1125 deck also says "#1250" for Building 1) — confirm on site. **Houses** (Amber Valley, Bobcat, Concord, Napa, Quest, Timber Crest,
+  Preston): arrive (address + Maps pin from `units.lat/lng`) → smart-lock keypad with the door code. Preston's code: Guest check-in code ← the
+  "Front door code" written in its Elevator field.
+
 ### Rules
 
 - Pay state = `total − paid` (≤ 0 → paid); channel `airbnb`/`vrbo` → collected by the channel, no gate.

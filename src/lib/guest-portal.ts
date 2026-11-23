@@ -269,6 +269,13 @@ export function choiceLine(r: Pick<PaidExtra, 'kind' | 'choice'>): string {
  * <sig> is an HMAC of the id with a server key (functions side, not written yet) — no token table, and
  * the team can rebuild a guest's link from the id. "/guest/demo" is the demo stay.
  */
+/** On the real stay link (/guest/<id>.<sig>): "<id>.<sig>", which every guest call to the server carries. Null elsewhere. */
+export function stayTokenOf(path: string): string | null {
+  const g = guestLink(path);
+  return g?.sig ? `${g.id}.${g.sig}` : null;
+}
+export const stayToken = () => typeof location === 'undefined' ? null : stayTokenOf(location.pathname);
+
 export function guestLink(path: string): { id: string; sig: string | null } | null {
   const p = path.replace(/\/+$/, '');
   if (p.toLowerCase() === '/guest/demo') return { id: 'demo', sig: null };

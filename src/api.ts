@@ -1,3 +1,4 @@
+import { stayToken } from './lib/guest-portal.ts';
 /** Thin typed client. Every call goes to a Pages Function; none touch a credential. */
 
 export interface Account {
@@ -829,6 +830,8 @@ export async function uploadCheckinPhoto(unit: string, file: File): Promise<{ ok
 }
 /** On an open demo link (?house=<signed>) photos come through the public door with the same token. */
 export const checkinPhotoUrl = (id: string) => {
+  const st = stayToken();
+  if (st) return `/api/report-link?stay=${encodeURIComponent(st)}&photo=${encodeURIComponent(id)}`;
   const h = typeof location !== 'undefined' ? new URLSearchParams(location.search).get('house') : null;
   return h ? `/api/report-link?house=${encodeURIComponent(h)}&photo=${encodeURIComponent(id)}` : `/api/checkin-photo?id=${encodeURIComponent(id)}`;
 };

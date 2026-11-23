@@ -39,6 +39,7 @@ import { stripeOnboard } from '../_lib/payouts.ts';
 import { demoHouse } from '../_lib/guest-demo.ts';
 import { guestCheckout, guestCheckoutState, guestIdentity, guestIdentityState, stripeWebhook } from '../_lib/guest-pay.ts';
 import { payPage, stayCharges } from '../_lib/upsell-charge.ts';
+import { stayGet, stayPost } from '../_lib/guest-stay.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
 
@@ -62,7 +63,7 @@ const gone = (ended = false) => Response.json({ ok: false, error: 'bad_link', me
   ? 'This clean is over or changed, so this link is closed. / Esta limpieza terminó o cambió, así que este enlace ya está cerrado.'
   : 'This link is not valid — ask for it again. / Este enlace no es válido — pídelo de nuevo.' }, { status: 403 });
 
-export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestGet: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const sql = db(env) as unknown as SqlFn;
   if (request.headers.has('X-Inspect-Token')) return inspectGet(sql, request);
   // Owner, 2026-10-25: a cleaner's or handyman's Stripe setup link — the same public door, no new bypass.
@@ -72,6 +73,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   const stay = new URL(request.url).searchParams.get('charges');
   if (stay) return stayCharges(sql, env.ENCRYPTION_KEY, new URL(request.url).origin, stay);
   // Guest portal: did the guest finish Stripe Checkout? (guest-pay.ts)
+  // The portal's real door (Phase 2, guest-stay.ts): the stay, its check-in, its guide photos.
+  if (new URL(request.url).searchParams.has('stay')) {
+    const q = new URL(request.url).searchParams;
+    if (q.get('checkout')) return guestCheckoutState(sql, env.ENCRYPTION_KEY, q.get('checkout')!, q.get('stay'));
+    if (q.get('identity')) return guestIdentityState(sql, env.ENCRYPTION_KEY, q.get('identity')!, q.get('stay'));
+    return stayGet(sql, env, new URL(request.url), p => waitUntil(p));
+  }
   const co = new URL(request.url).searchParams.get('checkout');
   if (co) return guestCheckoutState(sql, env.ENCRYPTION_KEY, co);
   // An open, signed demo link for one real unit (guest-demo.ts).
@@ -101,7 +109,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   // Stripe's webhook for guest portal payments (signed; guest-pay.ts) — the same public door, no new bypass.
   if (new URL(request.url).searchParams.has('stripe-event')) return stripeWebhook(sql, env.ENCRYPTION_KEY, request);
   if (request.headers.has('X-Inspect-Token')) return inspectPost(sql, env.ENCRYPTION_KEY, request);
-  if (new URL(request.url).searchParams.has('checkout')) return guestCheckout(sql, env.ENCRYPTION_KEY, request);
+  if (new URL(request.url).searchParams.has('checkout')) return guestCheckout(sql, env.ENCRYPTION_KEY, request, env);
+  if (new URL(request.url).searchParams.has('stay')) return stayPost(sql, env, request, p => waitUntil(p));
   if (new URL(request.url).searchParams.has('identity')) return guestIdentity(sql, env.ENCRYPTION_KEY, request);
   if (request.headers.has('X-Work-Token')) {
     const w = await workOfToken(sql, request);
