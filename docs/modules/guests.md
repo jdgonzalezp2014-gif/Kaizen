@@ -345,7 +345,7 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   is not built.
 
 #### Pending payments on the stay page (owner, 2026-11-23)
-- One bar at the top of `/guest/<res>.<sig>` (`PendingPayments`, GuestPortal.tsx): Airbnb pink `#e31c5f` (white text, 5.7:1), "You have N pending
+- One bar at the top of `/guest/<res>.<sig>` (`PendingPayments`, GuestPortal.tsx): the portal's gold (`--accent`, white text — owner 2026-11-23: not orange, not pink), "You have N pending
   payments ›", opens in place. Each: label, amount, "Secure payment on Airbnb" / "Secure card payment", **Pay** (card) or **Pay on Airbnb**
   (airbnb.com/resolutions) + **I already paid** → "Confirming". Every Resolution Center charge shows (any category), not only card ones.
 - **I already paid** (`POST /api/report-link?charges=<token>` {charge} → `staySaidPaid`): a note on the case (`Guest says they paid in the
