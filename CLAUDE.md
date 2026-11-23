@@ -76,6 +76,10 @@ git push origin master   # deploys
 
 ## Standing rules (from the owner)
 
+- **Slack messages are minimal (2026-11-23):** every message Kaizen posts (channels and DMs) shows only the minimum on top —
+  a one-colour mark, what it is, the unit, one short detail — and one small ↗ button into Kaizen. The details go in the
+  message's thread (first reply). No colour emoji (🛒 is the one exception), no rows of buttons: the work is done in Kaizen.
+  Unless a detail is truly needed on top. See `docs/modules/slack.md`.
 - **Ask before changing the daily file sheet or its Apps Script** (`../cliente-gas`) — the team edits it daily.
 - **Never run destructive Neon tools** without asking.
 - Never repeat or write back secrets; the Hostaway key is never shown.

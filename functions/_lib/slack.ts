@@ -192,10 +192,13 @@ export async function tellOwner(sql: SqlFn, key: string, id: string, by: string,
   const target = dmTarget(s.config, r.assignee_user_id);
   const t = await taskLite(sql, id);
   if (!target || !t) return;
+  // Owner, 2026-11-23 — the rule for every Slack message: the minimum on top, the details in its thread.
   const m = taskMessage(t, 'for you', who(by), s.config.appUrl);
-  const head = target.standIn ? `🧪 Test — would go to *${r.assignee}*: ${lead.toLowerCase()}` : `👋 ${lead}`;
-  await slackApi(s.token, 'chat.postMessage', { channel: target.to, text: `${lead}: ${t.title}`,
-    blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: head }] }, ...m.blocks] });
+  const head = target.standIn ? `Test — would go to *${r.assignee}*: ${lead.toLowerCase()}` : lead;
+  const sent = await slackApi<{ ts?: string; channel?: string }>(s.token, 'chat.postMessage', { channel: target.to, text: `${lead}: ${t.title}`,
+    blocks: [{ type: 'context', elements: [{ type: 'mrkdwn', text: head }] }, ...m.blocks.filter(b => (b as { type?: string }).type !== 'divider')] });
+  if (sent.ok && sent.ts) await slackApi(s.token, 'chat.postMessage', { channel: sent.channel ?? target.to, thread_ts: sent.ts, unfurl_links: false,
+    ...taskDetails(t, t.isOrder ? await orderLinesOf(sql, id) : []) }).catch(() => null);
 }
 
 export async function claimLite(sql: SqlFn, id: string): Promise<ClaimLite | null> {

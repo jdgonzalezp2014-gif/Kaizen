@@ -17,7 +17,7 @@ import { decrypt } from '../_lib/crypto.ts';
 import { can } from '../_lib/roles.ts';
 import { postTo, slackApi, slackSetup } from '../_lib/slack.ts';
 import { digestFacts } from '../_lib/slack-digest.ts';
-import { eventsOf, DEFAULT_DIGEST, teamTz, checkinsDigest, dmTarget, esc, localNow } from '../../src/lib/slack.ts';
+import { eventsOf, DEFAULT_DIGEST, teamTz, checkinsDigest, dmTarget, esc, localNow, toolButton } from '../../src/lib/slack.ts';
 import { remindCleaners } from '../_lib/crew-slack.ts';
 import { tellScheduleChanges } from '../_lib/crew-changes.ts';
 import { handymenDay } from '../_lib/vendor-slack.ts';
@@ -280,11 +280,13 @@ async function nudgeOverdue(sql: SqlFn, s: Awaited<ReturnType<typeof slackSetup>
   for (const [owner, list] of byOwner) {
     const target = dmTarget(s.config, owner);
     if (!target) continue;
-    const head = target.standIn ? `🧪 Test — would go to *${esc(list[0]!.assignee)}*` : '⏰ Overdue';
-    const r = await slackApi(s.token, 'chat.postMessage', { channel: target.to, text: `${list.length} overdue task${list.length === 1 ? '' : 's'}`,
-      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: `${head} — *${list.length} task${list.length === 1 ? '' : 's'} past their finish-by date*\n` +
-        list.map(t => `▲ ${esc(t.title)} · was due ${t.due_on}`).join('\n') } },
-        { type: 'context', elements: [{ type: 'mrkdwn', text: 'Type */kaizen tasks* to work them from here.' }] }] });
+    // Owner, 2026-11-23: the minimum on top — how many, and ↗ to them; the list in the thread.
+    const head = `${target.standIn ? `Test — would go to *${esc(list[0]!.assignee)}* · ` : ''}*${list.length} overdue task${list.length === 1 ? '' : 's'}*`;
+    const r = await slackApi<{ ts?: string; channel?: string }>(s.token, 'chat.postMessage', { channel: target.to, text: `${list.length} overdue task${list.length === 1 ? '' : 's'}`,
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: head }, ...(s.config.appUrl ? { accessory: toolButton(`${s.config.appUrl}/?tab=operations&view=todos`) } : {}) }] });
+    if (r.ok && r.ts) await slackApi(s.token, 'chat.postMessage', { channel: r.channel ?? target.to, thread_ts: r.ts,
+      text: list.map(t => `• ${t.title} · was due ${t.due_on}`).join('\n'),
+      blocks: [{ type: 'section', text: { type: 'mrkdwn', text: list.slice(0, 40).map(t => `• ${esc(t.title)} · was due ${t.due_on}`).join('\n') } }] }).catch(() => null);
     if (r.ok) n++;
   }
   return n;

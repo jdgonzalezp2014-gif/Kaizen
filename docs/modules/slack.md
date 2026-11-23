@@ -35,6 +35,15 @@ Workspace "Kaizen"; bot U0C5NJS538B; Juan U0C5CQSSVQV. All topics → **#kaizen-
 with im:write, app_mentions:read, reactions:write, **channels:history (§144)** and the
 `app_mention` event. DM mode `test`.
 
+## The rule for every message (owner, 2026-11-23)
+
+The minimum on top, the details in the thread. A message = mark (one colour: ☐ to-do · ⚒ repair · ▣ purchase · ⚑ claim ·
+$ upsell · ⚠ guest · ⌂ check-ins · ✓ AI) + **what it is · unit** + one short detail (a purchase: 🛒 n) + a small ↗ button
+(`toolButton`, plain text, opens Kaizen at the right place) + a divider. Its first thread reply carries the details
+(`taskDetails`, `claimDetails`, `GuestAlert.details`); comments happen there. Changes later = one line in the thread.
+No colour emoji, no rows of action buttons — unless truly needed on top (the Received / Not there of a Resolution Center
+payment). DMs follow it too (`tellOwner`, the overdue nudge). New messages must follow it.
+
 ## What it does
 
 - **Less noise (owner, 2026-11-23 — "intentamos hacer muchas cosas con los bots"; measured: 76 bot posts/week in #kaizen-ops,
