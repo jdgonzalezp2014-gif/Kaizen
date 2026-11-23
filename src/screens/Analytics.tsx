@@ -76,9 +76,11 @@ function Bars({ rows, value = r => money(r.total) }: { rows: { key: string; tota
 }
 
 /** A section of the summary: its headline figure on the closed card, its detail once opened. */
-function Panel({ id, open, onOpen, icon, title, hint, figure, sub, children }: {
+function Panel({ id, open, onOpen, icon, title, hint, figure, sub, subOpen = true, children }: {
   id: string; open: string | null; onOpen: (id: string | null) => void; icon: string; title: string; hint: React.ReactNode;
-  figure: React.ReactNode; sub: React.ReactNode; children: React.ReactNode;
+  figure: React.ReactNode; sub: React.ReactNode;
+  /** Keep the glance once open — false when the detail draws the same thing (Occupancy's nights). */
+  subOpen?: boolean; children: React.ReactNode;
 }) {
   const isOpen = open === id;
   return (
@@ -92,7 +94,7 @@ function Panel({ id, open, onOpen, icon, title, hint, figure, sub, children }: {
         </button>
         <Hint>{hint}</Hint>
       </div>
-      <div className="an-panel-sub">{sub}</div>
+      {(!isOpen || subOpen) && <div className="an-panel-sub">{sub}</div>}
       {isOpen && <div className="an-panel-body">{children}</div>}
     </section>
   );
@@ -234,7 +236,7 @@ function Report({ data, open, onOpen }: { data: AnalyticsData; open: string | nu
           <SpentDetail now={now} unitName={unitName} />
         </Panel>
 
-        <Panel id="occ" open={open} onOpen={onOpen} icon="bed" title="Occupancy" figure={pct(now.occ)}
+        <Panel id="occ" open={open} onOpen={onOpen} icon="bed" title="Occupancy" figure={pct(now.occ)} subOpen={false}
                hint={<p>Nights with a guest over nights available, on the {liveIds.length} listings taking bookings (active, not
                  parked). A blocked night counts as empty here. Open it and pick a night to see who was in and what was empty.</p>}
                sub={<DayColumns days={now.days} />}>
