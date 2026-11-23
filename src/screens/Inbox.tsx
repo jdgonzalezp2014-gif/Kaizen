@@ -17,6 +17,8 @@ import { Hint } from '../components/Hint.tsx';
 import { Modal } from '../components/Modal.tsx';
 import { CASE_CATEGORIES, UPSELL_CATEGORIES, isUpsell } from '../lib/claims.ts';
 import { UpsellCharge } from '../components/UpsellCharge.tsx';
+import { ClaimPop, TodoList } from '../components/Todos.tsx';
+import type { DateStr } from '../lib/dates.ts';
 import { Icon } from '../components/Icon.tsx';
 import { BrandMark } from '../components/BrandMark.tsx';
 import { GUEST_EVENT } from '../components/GuestPing.tsx';
@@ -40,14 +42,10 @@ function Avatar({ row, size = 40 }: { row: Pick<InboxRow, 'guest' | 'photo'>; si
     : <span className="ix-avatar ix-initials" style={{ width: size, height: size }} aria-hidden="true">{initials(row.guest)}</span>;
 }
 
-export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, onClaim = () => {}, onSettings }: {
+export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onSettings }: {
   canSend: boolean; canSetup: boolean; canTodos: boolean;
   /** May open a case in Claims & upselling (the chat's + offers an upsell). */
   canClaims?: boolean;
-  /** Open a to-do where to-dos live (Operations → To-do). */
-  onTodo: (id: string) => void;
-  /** Open a claim or upsell where cases live (Claims & upselling). */
-  onClaim?: (id: string) => void;
   /** Settings → Integrations → Guest messages & AI, for whoever may open it. */
   onSettings?: () => void;
 }) {
@@ -143,7 +141,7 @@ export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, 
 
       {open && list
         ? <Conversation key={open.conversationId} row={open} list={list} canSend={canSend} canTodos={canTodos} canClaims={canClaims} onBack={() => pick(null)}
-                        onTodo={onTodo} onClaim={onClaim} onSettings={onSettings} onChanged={() => void load()} />
+                        onSettings={onSettings} onChanged={() => void load()} />
         : <section className="ix-empty"><Icon n="message" /><p>Pick a conversation</p></section>}
 
     </div>
@@ -154,8 +152,8 @@ type Pane = ThreadTab | 'stay';
 const TAB: Record<ThreadTab, { icon: string; label: string }> = { all: { icon: 'layers', label: 'All' }, chat: { icon: 'message', label: 'Chat' },
   email: { icon: 'mail', label: 'Email' }, sms: { icon: 'phone', label: 'SMS' } };
 
-function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo, onClaim, onSettings, onChanged }: {
-  row: InboxRow; list: InboxList; canSend: boolean; canTodos: boolean; canClaims: boolean; onBack: () => void; onTodo: (id: string) => void; onClaim: (id: string) => void;
+function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onSettings, onChanged }: {
+  row: InboxRow; list: InboxList; canSend: boolean; canTodos: boolean; canClaims: boolean; onBack: () => void;
   onSettings?: () => void; onChanged: () => void;
 }) {
   const [pane, setPane] = useState<Pane>('all');
@@ -177,7 +175,7 @@ function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo,
   const tabs = threadTabs(row, thread?.messages ?? []);
   // Texts Hostaway itself sent (its automations) live in its thread, not in Quo: the SMS tab shows both, in order.
   const hostSms = thread?.messages.filter(m => m.channel === 'hostaway' && tabOf(m) === 'sms') ?? [];
-  const stay = <StayPanel row={row} stage={stage} thread={thread} canTodos={canTodos} canClaims={canClaims} canSend={canSend} onTodo={onTodo} onClaim={onClaim} onChanged={after} />;
+  const stay = <StayPanel row={row} stage={stage} thread={thread} canTodos={canTodos} canClaims={canClaims} canSend={canSend} today={list.today} onChanged={after} />;
   return (
     <>
       <section className="ix-thread" aria-label={`Conversation with ${row.guest}`}>
@@ -408,17 +406,22 @@ function Fold({ title, count, hint, onAdd, addLabel, urgent = false, children }:
 
 function CaseList({ cases, onOpen }: { cases: StayCase[]; onOpen: (id: string) => void }) {
   return <ul className="ix-tasks">{cases.map(c => <li key={c.id}>
-    <button type="button" className={closedCase(c.status) ? 'done' : ''} onClick={() => onOpen(c.id)} title="Open in Claims & upselling">
+    <button type="button" className={closedCase(c.status) ? 'done' : ''} onClick={() => onOpen(c.id)} title="Open">
       <Icon n={closedCase(c.status) ? 'done' : isUpsell(c.category) ? 'card' : 'alert'} /><span>{c.category ?? 'Case'}{c.description ? ` — ${c.description}` : ''}</span>
       <time>{c.received > 0 ? `$${Math.round(c.received)}` : c.requested > 0 ? `$${Math.round(c.requested)} asked` : c.status}</time>
     </button>
   </li>)}</ul>;
 }
 
-function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, onClaim, onChanged }: {
-  row: InboxRow; stage: ReturnType<typeof stageOf>; thread: InboxThread | null; canTodos: boolean; canClaims: boolean; canSend: boolean; onTodo: (id: string) => void;
-  onClaim: (id: string) => void; onChanged: () => void;
+function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, today, onChanged }: {
+  row: InboxRow; stage: ReturnType<typeof stageOf>; thread: InboxThread | null; canTodos: boolean; canClaims: boolean; canSend: boolean; today: DateStr;
+  onChanged: () => void;
 }) {
+  // Owner, 2026-11-23: a to-do or a case opens as a pop-up over the conversation — never a trip to Operations → To-do.
+  const [pop, setPop] = useState<{ todo?: string; claim?: string } | null>(null);
+  const onTodo = (id: string) => setPop({ todo: id });
+  const onClaim = (id: string) => setPop({ claim: id });
+  const closePop = () => { setPop(null); onChanged(); };
   const [adding, setAdding] = useState(false);
   const [title, setTitle] = useState('');
   const [due, setDue] = useState('');
@@ -512,6 +515,8 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
   const fact = (icon: string, label: string, value: ReactNode) => <div className="ix-fact"><Icon n={icon} /><span>{label}</span><b>{value}</b></div>;
   return (
     <>
+      {pop?.todo && <TodoList today={today} task={pop.todo} onClose={closePop} />}
+      {pop?.claim && <ClaimPop id={pop.claim} today={today} onClose={closePop} />}
       <div className="ix-card ix-pass">
         <span className={`ix-stage s-${stage}`}>{STAGE_LABEL[stage]}</span>
         <h3>{row.listing}</h3>
@@ -593,7 +598,7 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
           (purchase order) for this listing and this guest.</>}>
         <ul className="ix-tasks">
           {tasks.map(t => <li key={t.id}>
-            <button type="button" className={t.done ? 'done' : ''} onClick={() => onTodo(t.id)} title="Open in To-do">
+            <button type="button" className={t.done ? 'done' : ''} onClick={() => onTodo(t.id)} title="Open">
               <Icon n={t.done ? 'done' : t.order ? 'cart' : t.kind === 'work_order' ? 'wrench' : 'list'} /><span>{t.title}</span>
               {t.dueOn && !t.done && <time>{md(t.dueOn)}</time>}
             </button>

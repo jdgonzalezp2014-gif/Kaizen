@@ -2015,6 +2015,25 @@ export function ClaimCase({ claim, canWork, today, onSaved, onRemoved }: {
 }
 
 /**
+ * Owner, 2026-11-23: one case as a pop-up over the screen it was opened from (the CRM's stay panel) —
+ * the same card as in Claims & upselling, without leaving the conversation.
+ */
+export function ClaimPop({ id, today, onClose }: { id: string; today: DateStr; onClose: () => void }) {
+  const [claim, setClaim] = useState<Claim | null | undefined>(undefined);
+  const [err, setErr] = useState('');
+  const load = () => getClaims().then(r => setClaim((r.claims ?? []).find(c => String(c.id) === id) ?? null))
+    .catch(e => setErr(String(e)));
+  useEffect(() => { void load(); }, [id]);
+  useLive(n => { if (n.claims) void load(); });
+  return (
+    <Modal wide title={claim ? `${isUpsell(claim.category) ? 'Upsell' : 'Claim'} · ${claimLabel(claim)}` : 'Case'} onClose={onClose}>
+      {claim ? <ClaimCase claim={claim} canWork today={today} onSaved={() => void load()} onRemoved={onClose} />
+        : <p className={err ? 'breach' : 'note'}>{err || (claim === null ? 'That case is gone.' : 'Loading…')}</p>}
+    </Modal>
+  );
+}
+
+/**
  * A to-do's files (owner, Oct 2026): photos, PDFs, documents — several at once, kept in Drive. Files sent
  * with the Slack message @Kaizen made the to-do from (or later in its thread) land here too.
  */

@@ -272,3 +272,6 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
 - 2026-11-17 (owner): open Work and Claims on a stay are red with a "!" (section count, fold border) until closed; the list row's open to-dos badge too.
 - 2026-11-17 (owner): menu — Guest Services shows only a red dot on its icon while a guest waits; its one door is renamed **CRM** (the screen's title too) and carries the count; the "Claims & upselling" shortcut was removed (`alwaysSub` keeps CRM drawn under the module).
 - 2026-11-19 (§178, guests module): the Upselling section's + → **Upsell** goes on to "Charge the guest" (`UpsellCharge`) in the same pop-up — Airbnb: Resolution Center / change dates; others: Hostaway hold + Stripe pay link.
+- 2026-11-23 (owner): **a to-do or a case opens as a pop-up over the conversation** — no trip to Operations → To-do / Claims & upselling.
+  Work rows → `<TodoList task>` (the single-task pop-up Costs already used); Claims and Upselling rows → `ClaimPop` (Todos.tsx: the
+  `ClaimCase` card in a Modal, re-read on `claims` live events). Closing it reloads the stay panel. `Inbox` no longer takes `onTodo` / `onClaim`.
