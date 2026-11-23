@@ -87,11 +87,11 @@ const hasFallback = (model: string) => /^claude-(opus-5|sonnet-5-5|fable-5)/.tes
 async function claude(key: string, model: string, tier: AiTier, system: string, user: string, files: AiFile[], ms: number): Promise<{ json?: Record<string, unknown>; error?: string; by?: string }> {
   try {
     const client = new Anthropic({ apiKey: key, maxRetries: 0, timeout: ms });
-    const r = await client.messages.create({
+    const r = await client.beta.messages.create({
       model, max_tokens: 4096, system,
       // Low effort for a person waiting; thinking still counts toward max_tokens, which caps the call's cost.
       output_config: { effort: tier === 'chat' ? 'low' : 'medium' },
-      ...(hasFallback(model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as never } : {}),
+      ...(hasFallback(model) ? { betas: ['server-side-fallback-2026-07-01'], fallbacks: 'default' as const } : {}),
       messages: [{ role: 'user', content: [
         ...files.map(f => f.mimeType === 'application/pdf'
           ? { type: 'document' as const, source: { type: 'base64' as const, media_type: 'application/pdf' as const, data: f.data } }
