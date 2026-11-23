@@ -3797,6 +3797,11 @@ a.gx-tile { text-decoration: none; }
 .ix-dates div:last-child { text-align: right; }
 .ix-dates span { font-size: var(--fs-caption); color: var(--muted); }
 .ix-dates b { font-size: var(--fs-headline); }
+.ix-dates .ix-hour { font-size: var(--fs-caption); color: var(--muted); }
+.ix-dates div:last-child .ix-hour { justify-content: flex-end; }
+.ix-hour { display: inline-flex; align-items: center; gap: 3px; }
+.ix-hour.warn { color: var(--amber); font-weight: 650; }
+.ix-hour svg { width: 12px; height: 12px; }
 .ix-nights { padding: 2px 8px; border-radius: var(--r-pill); background: var(--tint); }
 .ix-fact { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 8px; font-size: var(--fs-footnote); color: var(--muted); }
 .ix-fact .icon { width: 15px; height: 15px; }

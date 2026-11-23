@@ -12,6 +12,7 @@ import { getInbox, getInboxSms, getInboxThread, inboxAction, inboxExtend, inboxS
 import { FILTERS, MAX_BODY, STAGE_LABEL, bookingLinks, channelLabel, fill, matchesFilter, searchHit, stageOf, tabOf, threadTabs, varsFor, waits,
   type Channel, type InboxFilter, type InboxRow, type Planned, type Suggestion, type ThreadMsg, type ThreadTab, type Via } from '../lib/inbox.ts';
 import { segments } from '../lib/sms.ts';
+import { hourWord } from '../lib/stay-time.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Modal } from '../components/Modal.tsx';
 import { CASE_CATEGORIES, UPSELL_CATEGORIES, isUpsell } from '../lib/claims.ts';
@@ -474,6 +475,12 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
   const tasks = thread?.tasks ?? [];
   const claims = (thread?.cases ?? []).filter(c => !isUpsell(c.category));
   const upsells = (thread?.cases ?? []).filter(c => isUpsell(c.category));
+  // Owner, 2026-11-23: the hours on the card, marked while an early/late charge is not paid — Hostaway's hour moves only once it is.
+  const unpaid = (cats: string[]) => upsells.find(c => !closedCase(c.status) && cats.includes(c.category ?? ''));
+  const unpaidIn = unpaid(['Early check-in', 'Late check-in']), unpaidOut = unpaid(['Late checkout']);
+  const hourOf = (h: number | null, open: StayCase | undefined) => <small className={open ? 'ix-hour warn' : 'ix-hour'}
+    title={open ? `${open.category} requested — not paid yet. Hostaway keeps this hour until it is paid.` : 'The hour Hostaway has for this stay'}>
+    {open && <Icon n="alert" />}{h == null ? '—' : hourWord(h)}{open ? ' · not paid' : ''}</small>;
   const links = bookingLinks(row);
   const [ext, setExt] = useState<ExtendFit | { message: string } | null>(null);
   const [extBusy, setExtBusy] = useState(false);
@@ -509,9 +516,9 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, onTodo, o
         <span className={`ix-stage s-${stage}`}>{STAGE_LABEL[stage]}</span>
         <h3>{row.listing}</h3>
         <div className="ix-dates">
-          <div><span>Check-in</span><b>{row.arrival ? md(row.arrival) : '—'}</b></div>
+          <div><span>Check-in</span><b>{row.arrival ? md(row.arrival) : '—'}</b>{hourOf(row.checkInHour ?? null, unpaidIn)}</div>
           <span className="ix-nights">{nights > 0 ? `${nights} night${nights === 1 ? '' : 's'}` : ''}</span>
-          <div><span>Check-out</span><b>{row.departure ? md(row.departure) : '—'}</b></div>
+          <div><span>Check-out</span><b>{row.departure ? md(row.departure) : '—'}</b>{hourOf(row.checkOutHour ?? null, unpaidOut)}</div>
         </div>
         {fact('users', 'Guests', row.guests ?? '—')}
         {fact('globe', 'Channel', row.channel ? channelLabel(row.channel) : '—')}

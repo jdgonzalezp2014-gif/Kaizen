@@ -197,6 +197,8 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   them) for anything still open on the stay — open to-dos, open claims, an upsell charge not paid yet (Airbnb Resolution Center or the
   Stripe link: the case stays Open until it is marked Paid) — `pendingOf` / `caseLine`, claims only for people with `claims`. It replaces
   the red to-dos count on the right. The stay's **Upselling** fold is red with "!" while a charge is open, like Work and Claims.
+  The stay card shows Hostaway's check-in / check-out **hours** under the dates; an open (unpaid) Early / Late check-in or Late checkout
+  case marks that hour amber "! · not paid" (Hostaway's hour moves only once the charge is paid — §178). Needs `claims` to see the mark.
   Bad experience keeps its own red mark in the preview line. **Suggest** is now the sparkle icon alone (owner: the word looked too important).
 
 ## Not verified yet (no way to without a real guest or a key)
