@@ -61,3 +61,11 @@ test('the Slack line says who, how long, and opens the conversation', () => {
   assert.match(m.blocks[0]!.text.text, /<https:\/\/x\/\?tab=inbox&c=44\|Open the conversation>/);
   assert.match(watchMessage({ guest: 'Ana', listing: 'L', stage: 'In house', body: 'locked out', minutes: 1, urgent: true, why: '', link: 'l' }).text, /^Urgent/);
 });
+
+test('the reminder says whether the AI drafted a reply, or why it could not', () => {
+  const base = { guest: 'Ana', listing: 'L', stage: 'In house', body: 'towels?', minutes: 70, urgent: false, why: '', link: 'l' };
+  const t = (draft?: Parameters<typeof watchMessage>[0]['draft']) => (watchMessage({ ...base, draft }).blocks[0]?.text as { text: string }).text;
+  assert.match(t({ ready: true }), /reply is drafted/);
+  assert.match(t({ error: 'Claude refused the API key' }), /could not draft.*refused/);
+  assert.doesNotMatch(t(), /draft/);
+});

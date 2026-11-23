@@ -229,7 +229,14 @@ test('portal first (owner, 2026-11-23): no arrival details before the online che
   assert.match(before, /NOT DONE/);
   assert.match(before, /complete the online check-in at \{\{portal_link\}\}/);
   assert.doesNotMatch(before, /PREVIOUS/);
-  assert.match(portalLines({ ...base, oldPortalDone: true }).join('\n'), /PREVIOUS check-in .* new online check-in/);
+  const old = portalLines({ ...base, oldPortalDone: true }).join('\n');
+  assert.match(old, /PREVIOUS check-in form .*Acknowledge it/);
+  assert.match(old, /new online check-in system.*avoid any problem or misunderstanding/);
+  assert.match(before, /already filled a form.*separate step/);
+  assert.match(portalLines({ ...base, checkinDone: true }).join('\n'), /give the check-in instructions/);
+  const inside = portalLines({ ...base, oldPortalDone: true, inHouse: true }).join('\n');
+  assert.match(inside, /already staying/);
+  assert.doesNotMatch(inside, /NOT DONE|PREVIOUS/);
   assert.doesNotMatch(portalLines({ ...base, oldPortalDone: true, oldNotice: false }).join('\n'), /PREVIOUS/);
   assert.match(portalLines({ ...base, checkinDone: true, oldPortalDone: true }).join('\n'), /DONE\. Their door code/);
   assert.doesNotMatch(portalLines({ ...base, checkinDone: true, oldPortalDone: true }).join('\n'), /PREVIOUS/);

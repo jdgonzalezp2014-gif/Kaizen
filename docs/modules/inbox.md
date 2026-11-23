@@ -135,6 +135,16 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
 - Tried 2026-11-23 with gemini-3.6-flash on a real Vrbo stay (P2-1201, agreement signed) + a made-up "door code / address / coffee maker /
   deposit" message: no code or address, the link blank, the old-check-in notice, coffee maker from amenities, $300 / $70. **Not seen yet: a
   draft written by the webhook** (needs 122 + deploy) — check `SELECT id, preview, draft FROM guest_events WHERE draft IS NOT NULL ORDER BY id DESC LIMIT 5`.
+- **Check 2026-11-23 (2nd pass, owner: "is it working, with Claude, from the portal?"):** 122+123 applied; webhook live (events every few
+  minutes); AI = Claude `claude-opus-5-5`, mode suggest. **The one webhook draft so far (event 246) failed: the stored Claude key is refused
+  by Anthropic (401 invalid x-api-key)** → the owner pastes a new key in Settings → Integrations → AI. Dry run on that real stay with the model
+  stubbed: ~23k chars to claude-opus-5-5, portal guide + Repository + booking + protection all in. "Company facts for guests" still empty.
+  ⚠ `accounts.guest_messages_live` is TRUE (sending on) — drafts are still never sent by themselves.
+- Same pass: **old Hostaway form** wording = acknowledge it (received, nothing lost) + the new check-in releases the arrival details "to avoid
+  any problem or misunderstanding"; a guest who says "I already did it" is never argued with. **Guests already inside** (`staying`/`leaving`)
+  are not held behind the online check-in (Wi-Fi/address answered). After the check-in: the draft gives the check-in instructions, the
+  code stays in the portal. **Failed drafts retry** (`RETRY_DRAFT`: 3 tries, 20 min apart, `tries` on the draft, only while waiting, 6 h).
+  **Slack's reminder** (`watchMessage` `draft`) says "A reply is drafted in the CRM" or why the AI could not draft. SOP #43: `.sop-draft-1123.mjs` after deploy.
 - ⚠ The stay link `/guest/<id>.<sig>` still shows only Pending payments (Phase 2): a guest sent there today cannot do the check-in.
 
 ## Not verified yet (no way to without a real guest or a key)

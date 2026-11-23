@@ -432,14 +432,19 @@ export function guestAiFrom(j: unknown): GuestAi {
  * done, and so whether arrival details may be given or the guest is asked to complete it first. The link is written as
  * {{portal_link}} — the Composer fills it, so a model never types (or invents) a signed URL.
  */
-export function portalLines(p: { hasLink: boolean; checkinDone: boolean; oldPortalDone: boolean; portalFirst: boolean; oldNotice: boolean; protection?: string | null }): string[] {
+export function portalLines(p: { hasLink: boolean; checkinDone: boolean; oldPortalDone: boolean; portalFirst: boolean; oldNotice: boolean; protection?: string | null; inHouse?: boolean }): string[] {
   if (!p.hasLink) return ['No guest portal yet: do not mention an online check-in or a link.'];
   const L: string[] = ['The portal link is written exactly as {{portal_link}} (it is filled in before sending). Mention it once at most.'];
-  if (p.checkinDone) L.push('Online check-in: DONE. Their door code, arrival steps and house guide are open in the portal ({{portal_link}}): answer arrival questions from LISTING, and for the code point them to the portal.');
+  // Already inside (in house / leaving today): holding the Wi-Fi back to push a check-in would only confuse them.
+  if (p.inHouse && !p.checkinDone) return [...L, 'The guest is already staying (they arrived): answer from LISTING normally, arrival and house details included. Do not ask for the online check-in unless they ask about it.'];
+  if (p.checkinDone) L.push('Online check-in: DONE. Their door code, arrival steps and house guide are open in the portal ({{portal_link}}): give the check-in instructions (address, arrival steps, parking, Wi-Fi) from LISTING when asked, and for the door code point them to the portal.');
   else if (p.portalFirst) L.push('Online check-in: NOT DONE. The door code, arrival steps, exact address, Wi-Fi and parking access are released only after it.',
     'If the guest asks for any of them, or how to get in, do not give them: ask them to complete the online check-in at {{portal_link}} (a few minutes: details, ID, damage protection, house rules) and say everything opens there right after. Answer their other questions normally.');
   else L.push('Online check-in: not done yet. You may invite them to complete it at {{portal_link}}.');
-  if (!p.checkinDone && p.oldPortalDone && p.oldNotice) L.push('They already completed our PREVIOUS check-in (rental agreement / ID). Thank them, say briefly that we moved to a new online check-in system, and ask them to complete it once at the link — it replaces the old one.');
+  // Owner, 2026-11-23: a guest who filled Hostaway's form must not feel asked twice by mistake — say we saw it, and why the new one.
+  if (!p.checkinDone && p.oldPortalDone && p.oldNotice) L.push('They already completed our PREVIOUS check-in form (rental agreement / ID, through Hostaway). Acknowledge it first and thank them — it was received, nothing was lost.',
+    'Then explain in one sentence that we moved to a new online check-in system, and it is the one that releases the door code and arrival details — so, to avoid any problem or misunderstanding at arrival, please complete it once at {{portal_link}} (it takes a few minutes). Never say their earlier form was wrong.');
+  if (!p.checkinDone && p.oldNotice) L.push('If the guest says they already filled a form, signed an agreement or sent their ID, do not argue: thank them, say the new online check-in at {{portal_link}} is a separate step that releases their arrival details, and ask them to complete it once.');
   if (p.protection) L.push(p.protection);
   return L;
 }

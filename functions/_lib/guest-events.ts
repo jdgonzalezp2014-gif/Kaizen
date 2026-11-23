@@ -138,7 +138,7 @@ export async function watchPass(sql: SqlFn, env: Env, origin: string, now = new 
     const told = await tellTeam(sql, env, watchMessage({
       guest: conv?.guest ?? e.guest ?? 'A guest', listing: units.find(u => u.id === conv?.listingId)?.name ?? conv?.listing ?? '',
       stage: conv ? STAGE_LABEL[stageOf(conv, today)] : '', body, minutes: (now.getTime() - Date.parse(e.createdAt)) / 60_000, urgent: e.urgent, why: '',
-      link: inboxLink(origin, e.conversationId) }));
+      link: inboxLink(origin, e.conversationId), draft: await draftOf(sql, e.conversationId).then(d => !d ? null : 'error' in d ? { error: d.error } : { ready: true as const }) }));
     // No Escalations channel in Slack: nothing was told — the event stays open for the Inbox's own count, and is not asked about again.
     await sql`UPDATE guest_events SET checked_at = now(), reminded_at = now() WHERE account_id = 1 AND kind = 'message' AND conversation_id = ${e.conversationId} AND answered_at IS NULL`;
     if (told) out.reminded++;
@@ -147,22 +147,29 @@ export async function watchPass(sql: SqlFn, env: Env, origin: string, now = new 
 }
 
 export type EventDraft = { reply: string; confidence: string; handoff: boolean; reason: string; sources: string[]; missing: string; by: string; sops: string[]; at: string }
-  | { error: string; at: string };
+  | { error: string; at: string; tries?: number };
+
+/** A failed draft: asked again up to 3 times in all, 20 minutes apart, while the guest still waits (6 h window of `draftPass`). */
+const RETRY_DRAFT = { tries: 3, minutes: 20 };
 
 /**
  * The AI's draft for a guest message, kept on its event (guest_events.draft, migration 122) — written once, shown in the
  * Inbox to send or dismiss; never sent from here (owner: "a draft that can be sent or not", 2026-11-23). An error is kept
  * too, so a failing model is not asked again every pass. Off when the account's AI or "Draft on arrival" is off.
  */
-export async function draftEvent(sql: SqlFn, env: Env, eventId: string, conversationId: string): Promise<EventDraft | null> {
+export async function draftEvent(sql: SqlFn, env: Env, eventId: string, conversationId: string, retry = false): Promise<EventDraft | null> {
   const cfg = await readGuestAi(sql);
   if (cfg.mode === 'off' || !cfg.autoDraft) return null;
   // Claim it first: the webhook and the clock's catch-up must not both pay for the same draft.
-  const claimed = await (sql`UPDATE guest_events SET draft = '{"pending":true}'::jsonb WHERE id = ${eventId} AND draft IS NULL RETURNING id` as Promise<unknown[]>).catch(() => []);
+  // A failed draft is tried again (RETRY_DRAFT) — 2026-11-23 the first real one died on a refused Claude key, and once the key
+  // is fixed the guests still waiting should get theirs. `tries` rides on the pending claim so the count survives it.
+  const claimed = await (sql`UPDATE guest_events SET draft = jsonb_build_object('pending', true, 'tries', COALESCE((draft->>'tries')::int, CASE WHEN draft ? 'error' THEN 1 ELSE 0 END))
+                              WHERE id = ${eventId} AND (draft IS NULL OR (${retry} AND draft ? 'error' AND COALESCE((draft->>'tries')::int, 1) < ${RETRY_DRAFT.tries}))
+                              RETURNING (draft->>'tries')::int AS tries` as Promise<{ tries: number }[]>).catch(() => []);
   if (!claimed.length) return null;
   const at = new Date().toISOString();
   const r = await suggestFor(sql, env, conversationId).catch(e => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) }));
-  const draft: EventDraft = r.ok ? { ...r.suggestion, by: r.by, sops: r.sops, at } : { error: r.error.slice(0, 300), at };
+  const draft: EventDraft = r.ok ? { ...r.suggestion, by: r.by, sops: r.sops, at } : { error: r.error.slice(0, 300), at, tries: (claimed[0]?.tries ?? 0) + 1 };
   await sql`UPDATE guest_events SET draft = ${JSON.stringify(draft)}::jsonb WHERE id = ${eventId}`;
   return draft;
 }
@@ -176,9 +183,15 @@ export async function draftPass(sql: SqlFn, env: Env) {
   // A draft claimed but never finished (the request died) is retried after 15 minutes.
   await sql`UPDATE guest_events SET draft = NULL WHERE account_id = 1 AND draft = '{"pending":true}'::jsonb AND answered_at IS NULL
               AND created_at > now() - interval '6 hours' AND created_at < now() - interval '15 minutes'`.catch(() => {});
-  const r = rows[0];
+  // Nothing new: one failed draft whose last try is old enough gets another (the newest guest first).
+  const again = rows.length ? [] : await (sql`SELECT id::text AS id, conversation_id FROM guest_events
+                           WHERE account_id = 1 AND kind = 'message' AND answered_at IS NULL AND conversation_id IS NOT NULL AND draft ? 'error'
+                             AND COALESCE((draft->>'tries')::int, 1) < ${RETRY_DRAFT.tries} AND (draft->>'at')::timestamptz < now() - make_interval(mins => ${RETRY_DRAFT.minutes})
+                             AND created_at > now() - interval '6 hours'
+                           ORDER BY id DESC LIMIT 1` as Promise<{ id: string; conversation_id: string }[]>).catch(() => []);
+  const r = rows[0] ?? again[0];
   if (!r) return { drafted: 0 };
-  const d = await draftEvent(sql, env, r.id, r.conversation_id);
+  const d = await draftEvent(sql, env, r.id, r.conversation_id, !rows[0]);
   return { drafted: d && !('error' in d) ? 1 : 0, error: d && 'error' in d ? d.error : undefined };
 }
 

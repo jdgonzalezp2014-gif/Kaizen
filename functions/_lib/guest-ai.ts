@@ -105,7 +105,8 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
   // details reach the facts at all — the prompt's rule is backed by what the model is shown.
   const hasLink = !!portalRow[0]?.guest_portal_url;
   const checkinDone = !!done?.length;
-  const held = booked && hasLink && cfg.portalFirst && !checkinDone;
+  const inHouse = ['staying', 'leaving'].includes(stageOf(stay, today));
+  const held = booked && hasLink && cfg.portalFirst && !checkinDone && !inHouse;
   const unitName = house?.unitName ?? stay.listing;
   const rec = repoMatch(unitName, recs);
   const facts = scrubCodes([
@@ -127,7 +128,7 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
   const protection = /airbnb/i.test(stay.channel ?? '') ? 'Damage protection: covered by Airbnb (AirCover) — no deposit or waiver for this guest.'
     : `Damage protection, chosen in the online check-in: a refundable $${p.deposit.hold} security deposit (a hold, released after check-out) or a non-refundable damage waiver of $${p.waiver.perNight} per night or $${p.waiver.min}, whichever is greater — $${p.waiver.price} for this ${n}-night stay.`;
   const portal = portalLines({ hasLink, checkinDone, oldPortalDone: stay.agreement === 'signed' || stay.idVerified === true, portalFirst: cfg.portalFirst,
-    oldNotice: cfg.oldPortalNotice, protection });
+    oldNotice: cfg.oldPortalNotice, protection, inHouse });
   const { system, user } = aiPrompt({ stay, today, facts, sops, thread, instructions: cfg.instructions, company: a?.name ?? 'the host',
     business: scrubCodes(cfg.business), stayLines, work: workFacts(todos), portfolio, channel: stay.channel, portal });
   const r = cfg.provider === 'claude' ? await askClaude(key, cfg.model, system, user)
