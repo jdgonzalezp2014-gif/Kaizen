@@ -370,7 +370,7 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - Arrival guides 2026-11-23: **Cortland** = `shared:cortland-building-1|2` (1xxx / 2xxx, like The Links), from the CL-1125 / CL-2359 house manuals:
   drive (pin), call box (owner 2026-11-23: one code for both buildings, stored only in the guide rows;
   entrance pin 33.0884292, -96.8424110 — the owner gave the same point for both buildings); step 3 = `{to_floor}` (new token: "It is on the
-  first floor — no elevator needed" / "Take the elevator to the <floor> floor"). Photos (owner): Building 1 entrance + the CL-1125 map (steps 1–2),
+  first floor — no elevator needed" / "Take the elevator to the <floor> floor"); both Cortland rows' "To your apartment" = "{to_floor}. Follow the signs to apartment {unit}." (DB, 2026-11-23 — the old text listed every floor). Photos (owner): Building 1 entrance + the CL-1125 map (steps 1–2),
   Building 2 front (step 2), in CL-1125's Drive folder "Check-in photos". Building 2 route (owner, 2026-11-23): main entrance → call box →
   right → first door on the left past the red EXIT sign = parking garage → stairs, or the elevator behind the column on the right (another one on
   the opposite side if it is out of service; map on that step) → floor → door, elevator to {floor}, door code; house items gym/pool fob, trash chute,
