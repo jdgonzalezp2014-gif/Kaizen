@@ -32,6 +32,7 @@
 .an-panel-fig { margin-left: auto; font-size: var(--fs-title3); font-weight: 650; font-variant-numeric: tabular-nums; }
 .an-chev { width: 22px; text-align: center; color: var(--muted); font-size: var(--fs-title3); }
 .an-panel-sub { margin-top: 10px; }
+.an-waiting { margin: 8px 0 0; font-size: var(--fs-footnote); color: var(--warn); font-weight: 600; }
 .an-panel-body { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--line); }
 .an-panel .muted, .an .muted { color: var(--muted); }
 

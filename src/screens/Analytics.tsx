@@ -194,6 +194,7 @@ function Report({ data, open, onOpen }: { data: AnalyticsData; open: string | nu
   }, [data, liveIds]);
 
   const { now, before } = m;
+  const waiting = data.pending.reduce((a, p) => a + p.amount, 0);
   const netIn = now.income.revenue + now.other;
   const busiest = [...now.days].sort((a, b) => b.occupied - a.occupied)[0];
   const top = now.cats[0];
@@ -208,7 +209,8 @@ function Report({ data, open, onOpen }: { data: AnalyticsData; open: string | nu
     `Net income ${money(netIn)} from ${now.income.nights} nights${now.other ? `, ${money(now.other)} of it claims, upsells and portal sales` : ''}.`,
     now.rev.count
       ? `${now.rev.count} review${now.rev.count === 1 ? '' : 's'}, ${now.rev.stars?.toFixed(2) ?? '—'} ★${now.rev.low ? ` — ${now.rev.low} to read` : ', none below 5 ★'}.`
-      : 'No reviews were written in these dates.'
+      : 'No reviews were written in these dates.',
+    ...(data.pending.length ? [`${money(waiting)} in field charges (${data.pending.length}, mostly handymen) is waiting for approval and is not in Spent until approved.`] : [])
   ];
 
   return (
@@ -229,11 +231,15 @@ function Report({ data, open, onOpen }: { data: AnalyticsData; open: string | nu
         <Panel id="spent" open={open} onOpen={onOpen} icon="receipt" title="Spent" figure={money(now.spent)}
                hint={<p>Every one-off line in Costs dated in the range (cleans, cleaners' extras, repairs, purchases, field
                  expenses, Stripe's fee on portal sales). Open a kind for its lines; Cleaning shows the cleans and who did them.
-                 Monthly lines (rent, utilities) are left out.</p>}
-               sub={now.cats.length ? <><ShareBar parts={now.cats} />
-                 <ul className="an-legend">{now.cats.slice(0, 5).map(c => <li key={c.key}>{c.key} <b>{pct(c.share)}</b></li>)}</ul></>
-                 : <span className="muted">{now.clean.count ? `▲ ${now.clean.count} cleans not in Costs yet — open for who cleaned.` : 'Nothing recorded.'}</span>}>
-          <SpentDetail now={now} unitName={unitName} />
+                 Monthly lines (rent, utilities) are left out. Charges a handyman or cleaner sent that nobody has approved yet are
+                 listed under "Waiting approval" — any date, never in the total — approve them in Vendor portal → Handymen.</p>}
+               sub={<>
+                 {now.cats.length ? <><ShareBar parts={now.cats} />
+                   <ul className="an-legend">{now.cats.slice(0, 5).map(c => <li key={c.key}>{c.key} <b>{pct(c.share)}</b></li>)}</ul></>
+                   : <span className="muted">{now.clean.count ? `▲ ${now.clean.count} cleans not in Costs yet — open for who cleaned.` : 'Nothing recorded.'}</span>}
+                 {data.pending.length > 0 && <p className="an-waiting">▲ {money(waiting)} waiting for approval · {data.pending.length} charge{data.pending.length === 1 ? '' : 's'} — not in the total</p>}
+               </>}>
+          <SpentDetail now={now} pending={data.pending} unitName={unitName} />
         </Panel>
 
         <Panel id="occ" open={open} onOpen={onOpen} icon="bed" title="Occupancy" figure={pct(now.occ)} subOpen={false}
@@ -270,11 +276,13 @@ type Built = {
   spent: number; cats: ReturnType<typeof slices>; clean: ReturnType<typeof cleaningSummary>; rev: ReturnType<typeof reviewSummary>;
 };
 
-function SpentDetail({ now, unitName }: { now: Built; unitName: (id: string | null) => string }) {
+function SpentDetail({ now, pending, unitName }: { now: Built; pending: AnalyticsData['pending']; unitName: (id: string | null) => string }) {
   // The cleans are read from the record itself, so "who cleaned" answers even when Costs is behind.
   const cats = now.clean.count && !now.cats.some(c => c.key === 'Cleaning')
     ? [...now.cats, { key: 'Cleaning', total: 0, count: 0, share: 0 }] : now.cats;
   const [cat, setCat] = useState<string | null>(cats[0]?.key ?? null);
+  const WAIT = 'Waiting approval';
+  const waitTotal = pending.reduce((a, p) => a + p.amount, 0);
   const lines = now.costs.filter(c => c.category === cat).sort((a, b) => b.amount - a.amount);
   const byUnit = slices(lines, c => unitName(c.unitId), c => c.amount);
   return (
@@ -285,7 +293,27 @@ function SpentDetail({ now, unitName }: { now: Built; unitName: (id: string | nu
             {c.key} · {money(c.total)}
           </button>
         ))}
+        {pending.length > 0 && (
+          <button role="tab" aria-selected={cat === WAIT} className={`chip${cat === WAIT ? ' active' : ''}`} onClick={() => setCat(WAIT)}>
+            ▲ {WAIT} · {money(waitTotal)}
+          </button>
+        )}
       </div>
+      {cat === WAIT && (
+        <>
+          <p className="note">Charges sent from the field that nobody approved yet — not in Costs, not in the total. Any date.</p>
+          <table className="an-table">
+            <thead><tr><th>Sent</th><th>Who</th><th>Unit</th><th>What</th><th className="num">Amount</th></tr></thead>
+            <tbody>
+              {pending.map(p => (
+                <tr key={p.id}><td>{dow(p.on)} {md(p.on)}</td><td>{p.who} <span className="muted">· {p.kind}</span></td>
+                  <td>{unitName(p.unitId)}</td><td>{p.description}{p.todoId ? <span className="muted"> · to-do #{p.todoId}</span> : null}</td>
+                  <td className="num">{money(p.amount)}</td></tr>
+              ))}
+            </tbody>
+          </table>
+        </>
+      )}
       {cat === 'Cleaning' && (
         <>
           <dl className="an-mini">

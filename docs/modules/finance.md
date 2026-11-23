@@ -78,9 +78,9 @@ Cleaning costs now sync hourly on the clock (slack-cron.ts → `syncCleaningCost
 
 - **Analytics, later (owner 2026-11-23):** monthly view with rent + utilities prorated per unit; profit per unit
   (income − spend) and occupancy per unit to see which units lose money; reviews over longer spans / trend.
-  Spend must also carry the **handymen's pay and the team's purchases** (owner 2026-11-23): since October only ~1 `repair`
-  and ~1 `inventory` line reached `expenses` — check that every paid handyman job (vendor portal / payouts) and every
-  purchase writes its expense before trusting Spent.
+  Handymen and purchases (owner 2026-11-23, "every expense has to show — now"): checked — every approved repair, purchase
+  and field charge IS in `expenses`; what was missing is approval: 13 handyman charges ($490, Tim, 10-28..11-17) sit
+  `pending` in `field_expenses`. Analytics lists pending charges apart ("Waiting approval", any date, never in the total).
 - Cleaner pay weeks are Saturday–Friday (crew.ts `periodOf`); the owner asked for Sunday–Saturday there too — asked
   before changing (it moves invoices and payday). Operations module.
 

@@ -152,6 +152,8 @@ export interface AnalyticsData {
   reviews: { id: string; listingId: string; reservationId: string; channelId: number; status: string; rating: number | null; submittedAt: string;
              departure: string; guest: string | null; publicReview: string | null; privateFeedback: string | null; categories: { category: string; rating: number }[] }[];
   departures: { listingId: string; status: string }[];
+  /** Field charges still waiting for approval — not in Costs, never in Spent's total. */
+  pending: { id: string; on: string; who: string; kind: string; unitId: string | null; category: string; amount: number; description: string; todoId: string | null }[];
   reviewError: string | null;
 }
 export const getAnalytics = (from?: string, to?: string) =>

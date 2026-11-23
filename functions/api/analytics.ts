@@ -46,7 +46,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   let reviewError: string | null = null;
   const reviewsOr = <T,>(p: Promise<T[]>) => p.catch(e => { reviewError = e instanceof Error ? e.message : String(e); return [] as T[]; });
 
-  const [listings, stays, costs, cleans, parked, claims, portal, reviews, departures] = await Promise.all([
+  const [listings, stays, costs, cleans, parked, claims, portal, reviews, departures, pending] = await Promise.all([
     fetchListings(creds),
     fetchReservationsTouching(creds, prevFrom, to),
     // One-offs only. The cleaner comes from the line's own note ('Cleaner: X · clean key', written by syncCleaningCosts).
@@ -66,7 +66,12 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     guestPaymentsBetween(sql, prevFrom, to),
     reviewsOr(fetchGuestReviews(creds, { submittedFrom: prevFrom, submittedTo: to })),
     // Who checked out in the range and whether they reviewed yet — the response rate.
-    reviewsOr(fetchGuestReviews(creds, { departureFrom: from, departureTo: to }))
+    reviewsOr(fetchGuestReviews(creds, { departureFrom: from, departureTo: to })),
+    // Owner, 2026-11-23: "every expense has to show". Money asked for in the field (a handyman's labour or materials, a
+    // cleaner's purchase) reaches Costs only once approved — so what still waits is listed apart, any age, never summed in.
+    sql`SELECT id::text, (created_at AT TIME ZONE 'America/New_York')::date::text AS on, source, by_name, unit_id, category,
+               amount::float8 AS amount, description, todo_id::text AS todo_id
+          FROM field_expenses WHERE account_id = 1 AND status = 'pending' ORDER BY created_at`
   ]);
 
   const parkedIds = new Set((parked as { id: string }[]).map(r => r.id));
@@ -93,6 +98,10 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       .map(c => ({ unitId: c.unit_id, on: c.on_day, amount: caseResult({ requested: 0, received: c.received, repairWork: 0, ownerWork: c.owner_work }).kept,
                    kind: isUpsell(c.category) ? 'upsell' : 'claim' }))
       .filter(c => c.amount > 0), ...portalIncome(portal)],
+    pending: (pending as Record<string, unknown>[]).map(p => ({
+      id: p.id, on: p.on, who: p.by_name, kind: p.source === 'vendor' ? 'Handyman' : p.source === 'cleaner' ? 'Cleaner' : 'Helper',
+      unitId: p.unit_id ?? null, category: p.category, amount: p.amount, description: p.description, todoId: p.todo_id ?? null
+    })),
     reviews, departures: departures.map(d => ({ listingId: d.listingId, status: d.status })),
     reviewError
   });
