@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aiPrompt, condMet, RECIPES, portalLines, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, senderName, pendingOf, caseLine, planFor,
+import { aiPrompt, condMet, RECIPES, phaseOf, stayOrder, portalLines, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, senderName, pendingOf, caseLine, planFor,
   portalLink, stageOf, stayWindow, suggestionFromAi, varsFor, whenWords, zonedInstant, type InboxRow, type Stay, type Template, type ThreadMsg, bookingLinks, condWords, condsOf, paidOf, signedOf } from './inbox.ts';
 
 const stay: Stay = { reservationId: '71', listingId: '9', listing: 'P2-1406', guest: 'Ana Ruiz', arrival: '2026-11-20', departure: '2026-11-23', status: 'new', bookedAt: '2026-11-10T15:00:00Z' };
@@ -304,4 +304,12 @@ test('mid-stay goes on the middle day at 10 AM; monthly and open-night condition
   // Messages read as people write them: no dashes.
   for (const r of RECIPES) assert.ok(!/[—–]/.test(r.t.body), r.t.name);
   for (const r of RECIPES) assert.ok(!r.t.body.includes('{{listing}}'), `${r.t.name}: the unit name is internal`);
+});
+
+test('automations sort along the stay and group by phase', () => {
+  const order = [...RECIPES].sort((a, b) => stayOrder(a.t) - stayOrder(b.t)).map(r => r.key);
+  assert.deepEqual(order, ['welcome', 'pay', 'remind', 'code', 'remind2', 'howis', 'midclean', 'extend', 'out', 'review']);
+  assert.equal(phaseOf({ trigger: 'checkin_done' }), 'before');
+  assert.equal(phaseOf({ trigger: 'mid_stay' }), 'during');
+  assert.equal(phaseOf({ trigger: 'after_checkout' }), 'after');
 });

@@ -9,7 +9,7 @@
  */
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { getAutomations, saveInboxSettings, type Automations as Data } from '../api.ts';
-import { COND_SUBJECTS, HOUSE_VARS, MAX_BODY, RECIPES, TRIGGERS, VARS, condWords, isEvent, scopeWords, whenWords, type Channel, type Cond, type Template, type Trigger } from '../lib/inbox.ts';
+import { COND_SUBJECTS, HOUSE_VARS, MAX_BODY, PHASES, RECIPES, phaseOf, stayOrder, TRIGGERS, VARS, condWords, isEvent, scopeWords, whenWords, type Channel, type Cond, type Template, type Trigger } from '../lib/inbox.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Icon } from '../components/Icon.tsx';
 import { Modal } from '../components/Modal.tsx';
@@ -50,7 +50,11 @@ export function Automations({ onBack }: { onBack: () => void }) {
     if (!r.ok) { setErr(r.message ?? 'Not deleted.'); return false; }
     void load(); return true;
   };
-  const autos = data?.templates.filter(t => t.trigger !== 'manual') ?? [], quick = data?.templates.filter(t => t.trigger === 'manual') ?? [];
+  // Along the stay, not by name: a full list then reads like the guest's trip (owner, 2026-11-23).
+  const autos = (data?.templates.filter(t => t.trigger !== 'manual') ?? []).sort((a, b) => stayOrder(a) - stayOrder(b)), quick = data?.templates.filter(t => t.trigger === 'manual') ?? [];
+  // A starter already made (same name) is not offered again — it would only crowd the screen.
+  const made = new Set(autos.map(t => t.name.trim().toLowerCase()));
+  const fresh = RECIPES.filter(r => !made.has(r.t.name.toLowerCase()));
   const unitName = (id: string) => data?.units.find(u => u.id === id)?.name ?? `#${id}`;
 
   return (
@@ -71,8 +75,12 @@ export function Automations({ onBack }: { onBack: () => void }) {
       {!data && !err && <p className="note ix-pad">Loading…</p>}
 
       {data && <>
+        {PHASES.map(([ph, label]) => {
+          const list = autos.filter(t => phaseOf(t) === ph);
+          return list.length > 0 && <section key={ph} className="ix-auto-phase">
+          <h3 className="ix-auto-sub">{label} <span className="ix-count">{list.length}</span></h3>
         <ul className="ix-auto-grid">
-          {autos.map(t => {
+          {list.map(t => {
             const s = stats.get(t.id);
             return <li key={t.id} className={`ix-auto-card ${t.active ? '' : 'off'}`}>
               <div className="ix-auto-top">
@@ -97,17 +105,21 @@ export function Automations({ onBack }: { onBack: () => void }) {
             </li>;
           })}
         </ul>
+        </section>;
+        })}
         {!autos.length && <p className="note ix-pad">No automations yet — start from one of these, or make your own.</p>}
 
+        {fresh.length > 0 && <>
         <h3 className="ix-auto-sub">Start from <Hint>Ready-made automations. Each opens in the editor, paused: read the words, make them yours, choose the listings, then turn it on.</Hint></h3>
         <ul className="ix-auto-grid recipes">
-          {RECIPES.map(r => <li key={r.key}>
+          {fresh.map(r => <li key={r.key}>
             <button type="button" className="ix-auto-card recipe" onClick={() => setEdit({ ...r.t, id: '' })}>
               <span className="ix-auto-top"><Icon n={r.icon} /><b>{r.t.name}</b></span>
               <span className="ix-auto-when">{r.what}</span>
             </button>
           </li>)}
         </ul>
+        </>}
 
         <h3 className="ix-auto-sub">Quick replies <span className="ix-count">{quick.length}</span>
           <Hint>Messages with blanks that a person picks in the reply box (the Template menu) — they never go on their own.</Hint>

@@ -195,6 +195,8 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   is for the team, a Slack notice later, not a message to the guest); the condition stays for any automation. Hostaway's own reservation payment stays the **Payment** condition (Payment reminder, 72 h before).
 - Owner switched on Welcome, both check-in reminders and Door code (2026-11-23). `{{listing}}` is the internal unit name (CL1235,
   P2-1406) → taken out of every recipe and of the 3 live templates (a test refuses it in recipes); no "house" either (P2 are apartments).
+- Then ALL ten starters made and ON (owner: they replace Hostaway's). The screen groups them Before arrival / During the stay /
+  After check-out (`phaseOf`), in stay order (`stayOrder`); "Start from" lists only starters not made yet (by name).
 - ⚠ The stay link `/guest/<id>.<sig>` still shows only Pending payments (Phase 2): a guest sent there today cannot do the check-in.
 
 ## Who sent it + attachments (owner, 2026-11-23)

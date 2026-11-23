@@ -413,6 +413,25 @@ export const whenWords = (t: Pick<Template, 'trigger' | 'offsetHours'> & Partial
   const base = h === 0 ? (t.trigger === 'checkin_done' ? 'When online check-in is done' : t.trigger === 'mid_stay' ? 'Mid-stay, 10 AM' : `At ${ev}`) : `${span(h)} ${side} ${ev}`;
   return isEvent(t.trigger) && t.holdHours != null ? `${base}, not before ${span(t.holdHours)} ahead of check-in` : base;
 };
+/** Where an automation sits in a stay (owner, 2026-11-23: the screen groups them so a full list stays readable). */
+export type Phase = 'before' | 'during' | 'after';
+export const PHASES: [Phase, string][] = [['before', 'Before arrival'], ['during', 'During the stay'], ['after', 'After check-out']];
+export const phaseOf = (t: Pick<Template, 'trigger'>): Phase =>
+  t.trigger === 'booked' || t.trigger === 'before_checkin' || t.trigger === 'checkin_done' ? 'before' : t.trigger === 'after_checkout' ? 'after' : 'during';
+/** Its order along the stay, in hours: booking first, then counting down to check-in, the stay, check-out, after. */
+export function stayOrder(t: Pick<Template, 'trigger' | 'offsetHours'> & Partial<Pick<Template, 'holdHours'>>): number {
+  const h = t.offsetHours;
+  switch (t.trigger) {
+    case 'booked': return -100_000 + h;
+    case 'before_checkin': return -h;
+    case 'checkin_done': return -(t.holdHours ?? 0) + 0.5; // goes once done, not before its hold — just after a reminder at the same hour
+    case 'after_checkin': return h;
+    case 'mid_stay': return 10_000 + h;
+    case 'before_checkout': return 20_000 - h;
+    case 'after_checkout': return 30_000 + h;
+    default: return 100_000;
+  }
+}
 export const scopeWords = (t: Pick<Template, 'listingIds'>) => !t.listingIds?.length ? 'All listings' : `${t.listingIds.length} listing${t.listingIds.length === 1 ? '' : 's'}`;
 
 /** `waiting` = it goes after something that has not happened yet (the online check-in); `skipped` = its condition says it is not needed. */
