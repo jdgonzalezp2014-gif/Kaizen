@@ -232,7 +232,7 @@ test('portal first (owner, 2026-11-23): no arrival details before the online che
   assert.match(before, /complete the online check-in at \{\{portal_link\}\}/);
   assert.doesNotMatch(before, /PREVIOUS/);
   const old = portalLines({ ...base, oldPortalDone: true }).join('\n');
-  assert.match(old, /PREVIOUS check-in form .*Acknowledge it/);
+  assert.match(old, /PREVIOUS check-in form .*acknowledge it/);
   assert.match(old, /new online check-in system.*avoid any problem or misunderstanding/);
   assert.match(before, /already filled a form.*separate step/);
   assert.match(portalLines({ ...base, checkinDone: true }).join('\n'), /give the check-in instructions/);

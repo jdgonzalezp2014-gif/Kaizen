@@ -154,6 +154,12 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   nothing sent, the urgent alert with "not answered by the AI: <why>" and the draft's state. Beyond control (code/lock fails after the steps, battery,
   broken lockbox/call box, unit not ready, someone inside, safety) = handoff in the prompt. Triage checked on real-like texts (gemini-3.5-flash-lite).
   **Never run end to end** — the Claude key is refused; watch the first one.
+- **Playbook, owner 2026-11-23 (3rd pass):** the host speaks in first person ("let me check and confirm") — never "the team"; an inquiry
+  with few details gets its question answered + up to 3 questions (dates, adults/children, pets kind/weight, reason for the trip); pets = yes
+  within the house rules (Repository `house_rules`: disclosed, ≤50 lbs) + `pet_fee` paid before arrival; early/late = the guest asks in the
+  portal up to the day before ($20/h, confirmed when no turnover that day). A reminder (online check-in) goes AFTER the answer, never instead;
+  never ask what the guest already said. **Company facts written** (guest_ai.business, 951 chars: pets, early/late, times, online check-in,
+  inquiries — no hours/emergency line yet, owner adds). Real Claude drafts checked: an inquiry with a dog, an early check-in on a booked stay.
 - ⚠ The stay link `/guest/<id>.<sig>` still shows only Pending payments (Phase 2): a guest sent there today cannot do the check-in.
 
 ## Not verified yet (no way to without a real guest or a key)
