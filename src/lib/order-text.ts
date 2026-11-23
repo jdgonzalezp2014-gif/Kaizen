@@ -323,14 +323,11 @@ export function orderDraftMessage(d: OrderDraft, id: string, o: { items: DraftIt
 /** Said in the thread once it is saved: what, where, on which to-do — and the store links, for whoever buys it. */
 export function orderSavedMessage(d: OrderDraft, o: { items: DraftItem[]; placeLabel: string; todoId: string; todoTitle: string; fresh: boolean; by: string; appUrl?: string }):
   { text: string; blocks: Block[] } {
-  const name = (id: string) => o.items.find(i => i.id === id)?.name ?? `item ${id}`;
-  const list = d.lines.map(l => `• ${esc(l.i ? name(l.i) : l.n?.name ?? l.t)} × ${l.q}${l.m === 'replace' ? ' (replaced)' : l.m === 'sum' ? ' (added)' : ''}`);
-  // Owner, 2026-11-23: small — the title, how many lines to where, Open; the lines under it for whoever buys.
+  // Owner, 2026-11-23: small, and managed in Kaizen — the title, how many lines to where, and Open. The lines and the store
+  // links are seen (and bought) there, not listed here.
   const head = `${MARK.order}  *${esc(o.todoTitle)}*\nPurchase order ${o.fresh ? 'made' : 'saved'} · ${d.lines.length} line${d.lines.length === 1 ? '' : 's'} → ${esc(o.placeLabel)}`;
-  const cart = cartLine(d, o.items);
   const open = o.appUrl ? toolButton(`${o.appUrl}/?todo=${encodeURIComponent(o.todoId)}`) : undefined;
-  return { text: `Purchase order saved on ${o.todoTitle}`,
-           blocks: [section(head, open), ...chunks(list).slice(0, 45).map(c => section(c)), ...(cart ? [context(cart)] : [])] };
+  return { text: `Purchase order saved on ${o.todoTitle}`, blocks: [section(head, open)] };
 }
 
 /** "Another item…" — every active item, the closest first (a menu holds 100). */
