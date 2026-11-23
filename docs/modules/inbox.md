@@ -193,6 +193,8 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   (`charge_pending` stopper / `charge_done`): a `upsell_charges` row `pending` (card or Airbnb RC) — `chargesDueOf`, the same rows the
   portal's "Pending payments" shows (with Pay / Pay on Airbnb / "I already paid", parallel session). No guest recipe for it (owner: a pending charge
   is for the team, a Slack notice later, not a message to the guest); the condition stays for any automation. Hostaway's own reservation payment stays the **Payment** condition (Payment reminder, 72 h before).
+- Owner switched on Welcome, both check-in reminders and Door code (2026-11-23). `{{listing}}` is the internal unit name (CL1235,
+  P2-1406) → taken out of every recipe and of the 3 live templates (a test refuses it in recipes); no "house" either (P2 are apartments).
 - ⚠ The stay link `/guest/<id>.<sig>` still shows only Pending payments (Phase 2): a guest sent there today cannot do the check-in.
 
 ## Who sent it + attachments (owner, 2026-11-23)
