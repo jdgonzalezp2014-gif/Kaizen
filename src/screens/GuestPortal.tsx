@@ -455,6 +455,12 @@ function Pick({ stay, u, paid, extend }: { stay: GuestStay; u: Upsell; paid: (c:
 }
 
 /** Check-in instructions: the builder's arrival steps (photos inline, video in a new tab), then the address. */
+/** **word** in a guide's text shows bold (owner, 2026-11-23: the call box code stands out); everything else stays plain text. */
+function boldText(text: string): React.ReactNode {
+  const parts = text.split(/\*\*([^*]+)\*\*/);
+  return parts.length === 1 ? text : parts.map((x, i) => i % 2 ? <b key={i}>{x}</b> : x);
+}
+
 function Arrival({ g }: { g: GuestGuide | null }) {
   const [view, setView] = useState<{ step: number; i: number } | null>(null);
   if (!g || (!g.steps?.length && !g.address)) return <div className="card g-guide"><p className="note"><Icon n="clock" /> Your check-in instructions will show here before arrival.</p></div>;
@@ -462,7 +468,7 @@ function Arrival({ g }: { g: GuestGuide | null }) {
     {g.steps && g.steps.length > 0 && <ol className="g-steps">
       {g.steps.map((st, i) => <li key={i} className="g-stepi">
         <span className="g-stepn" aria-hidden>{i + 1}</span>
-        <div className="g-stepb"><b>{st.title}</b>{st.text && <p className="g-text">{st.text}</p>}
+        <div className="g-stepb"><b>{st.title}</b>{st.text && <p className="g-text">{boldText(st.text)}</p>}
           {st.photos && st.photos.length > 0 && <span className={`g-pics n${st.photos.length}`}>
             {st.photos.map((id, j) => <button key={id} className="g-pic" onClick={() => setView({ step: i, i: j })} aria-label={`Open photo ${j + 1} of ${st.title}`}>
               <img src={checkinPhotoUrl(id)} alt={`${st.title} — photo`} loading="lazy" /></button>)}</span>}

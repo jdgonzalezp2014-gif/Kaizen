@@ -461,7 +461,7 @@ export function guideFacts(g: GuestGuide | null, extra: { unitName: string; notO
   if (g.rules) L.push(`House rules: ${g.rules}`);
   if (g.manual && booked) L.push(`House manual: ${g.manual}`);
   if (g.phone && booked) L.push(`Contact phone: ${g.phone}`);
-  if (booked) for (const s of g.steps ?? []) L.push(`Arrival step — ${s.title}: ${s.text}`);
+  if (booked) for (const s of g.steps ?? []) L.push(`Arrival step — ${s.title}: ${s.text.replace(/\*\*/g, '')}`);
   for (const h of g.house ?? []) if (h.text) L.push(`${h.title}: ${h.text}`);
   const prices = Object.entries(extra.prices ?? {});
   if (prices.length) L.push(`Extras priced for this listing: ${prices.map(([k, v]) => `${k} $${v}`).join(', ')}`);
