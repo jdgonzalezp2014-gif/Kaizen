@@ -53,10 +53,11 @@ test('a task message is its line and one small 🛠 into Kaizen (owner, 2026-11-
   const m = taskMessage({ id: '7', title: 'Fix <AC>', kind: 'work_order', status: 'pending', priority: 'high', unit: 'CL1125', assignee: 'Laura' }, 'created', 'juan', 'https://k.dev');
   const s = JSON.stringify(m.blocks);
   assert.match(s, /Fix &lt;AC&gt;/);
-  assert.match(s, / High · New/);  // §159: the shared words
-  assert.match(s, /"text":"🛠".*"url":"https:\/\/k\.dev\/\?todo=7"/);
+  assert.match(s, /\*Fix &lt;AC&gt;\*\\nRepair · CL1125"/);  // owner: status, priority and who only when opened
+  assert.match(s, /"text":"Open".*"url":"https:\/\/k\.dev\/\?todo=7"/);
   assert.doesNotMatch(s, /task_complete|task_reopen|task_open|"type":"actions"/);
-  assert.doesNotMatch(JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'pending', priority: 'none' }, 'created', '').blocks), /🛠/);
+  assert.doesNotMatch(JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'pending', priority: 'none' }, 'created', '').blocks), /"Open"/);
+  assert.match(JSON.stringify(taskMessage({ id: '7', title: 'x', kind: 'task', status: 'completed', priority: 'none' }, '· Done', '').blocks), /To-do · Done/);
   assert.match(JSON.stringify(taskList([])), /Nothing open/);
 });
 
@@ -474,8 +475,8 @@ test('§162: a purchase order from a mention, an upsell named as such, and the l
   assert.deepEqual(kaizenButton(undefined, 'todo', '5'), []);
   assert.match(JSON.stringify(kaizenButton('https://k.dev', 'todo', '5')), /https:\/\/k\.dev\/\?todo=5/);
   assert.match(JSON.stringify(taskMessage({ id: '5', title: 'Buy', kind: 'task', status: 'pending', priority: 'none', isOrder: true }, 'created', 'juan', 'https://k.dev')),
-    /Purchase order created.*\?todo=5/);
-  assert.match(JSON.stringify(claimMessage({ id: '9', category: 'Late check-in', severity: 'Low', status: 'Open' }, 'opened', 'juan', 'https://k.dev')), /Upsell opened.*\?claim=9/);
+    /Purchase order.*\?todo=5/);
+  assert.match(JSON.stringify(claimMessage({ id: '9', category: 'Late check-in', severity: 'Low', status: 'Open' }, 'opened', 'juan', 'https://k.dev')), /Upsell · Portfolio.*\?claim=9/);
   assert.equal(threadLine('✓ Completed', 'juan').blocks.length, 1);
 });
 

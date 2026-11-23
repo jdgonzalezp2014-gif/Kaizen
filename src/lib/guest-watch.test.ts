@@ -62,16 +62,13 @@ test('the Slack line says who, how long, and opens the conversation', () => {
   assert.match(m.blocks[0]!.text.text, /Ana Ruiz\* has waited 42 min/);
   // Owner, 2026-11-23: the way in is the small 🛠 beside the line.
   assert.equal((m.blocks[0] as { accessory?: { url?: string; text?: { text?: string } } }).accessory?.url, 'https://x/?tab=inbox&c=44');
-  assert.equal((m.blocks[0] as { accessory?: { text?: { text?: string } } }).accessory?.text?.text, '🛠');
+  assert.equal((m.blocks[0] as { accessory?: { text?: { text?: string } } }).accessory?.text?.text, 'Open');
   assert.match(watchMessage({ guest: 'Ana', listing: 'L', stage: 'In house', body: 'locked out', minutes: 1, urgent: true, why: '', link: 'l' }).text, /^Urgent/);
 });
 
-test('the reminder says whether the AI drafted a reply, or why it could not', () => {
-  const base = { guest: 'Ana', listing: 'L', stage: 'In house', body: 'towels?', minutes: 70, urgent: false, why: '', link: 'l' };
-  const t = (draft?: Parameters<typeof watchMessage>[0]['draft']) => (watchMessage({ ...base, draft }).blocks[0]?.text as { text: string }).text;
-  assert.match(t({ ready: true }), /reply is drafted/);
-  assert.match(t({ error: 'Claude refused the API key' }), /could not draft.*refused/);
-  assert.doesNotMatch(t(), /draft/);
+test('the alert does not talk about the draft — the Inbox shows it (owner, 2026-11-23)', () => {
+  const t = watchMessage({ guest: 'Ana', listing: 'L', stage: 'In house', body: 'towels?', minutes: 1, urgent: true, why: '', link: 'l' });
+  assert.doesNotMatch(JSON.stringify(t.blocks), /draft/i);
 });
 
 test('an urgent check-in message is sent by the AI only when every gate holds', () => {

@@ -223,8 +223,7 @@ async function solveCheckin(sql: SqlFn, env: Env, a: { eventId: string; conversa
   }
   if (a.watch.watch) {
     const told = await tellTeam(sql, env, watchMessage({ guest: a.conv.guest ?? 'A guest', listing: a.listing, stage: a.stage, body: a.body, minutes: 0, urgent: true,
-      why: [a.t.why, `not answered by the AI: ${why}`].filter(Boolean).join(' · '), link: a.link,
-      draft: d ? ('error' in d ? { error: d.error } : { ready: true }) : null }), a.conversationId);
+      why: [a.t.why, `not answered by the AI: ${why}`].filter(Boolean).join(' · '), link: a.link }), a.conversationId);
     if (told) await sql`UPDATE guest_events SET reminded_at = now() WHERE id = ${a.eventId}`;
   }
   return { sent: false, why };

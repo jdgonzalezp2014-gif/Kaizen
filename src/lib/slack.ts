@@ -134,10 +134,10 @@ export const kaizenButton = (appUrl: string | undefined, kind: 'todo' | 'claim',
   appUrl ? [{ type: 'button', text: plain('Open in Kaizen ↗'), url: `${appUrl}/?${kind}=${encodeURIComponent(id)}`, action_id: 'open_kaizen' }] : [];
 
 /**
- * Owner, 2026-11-23 ("too much noise — the bots try to do too much"): a message about work carries ONE small grey 🛠,
- * beside its line, that opens the right place in Kaizen. The work is done there, not in Slack.
+ * Owner, 2026-11-23 ("too much noise — the bots try to do too much"): a message about work carries ONE small grey "Open",
+ * beside its line, that opens the right place in Kaizen. Nothing is done in Slack, so the button only opens.
  */
-export const toolButton = (url: string): Block => ({ type: 'button', text: plain('🛠'), url, action_id: 'open_kaizen' });
+export const toolButton = (url: string): Block => ({ type: 'button', text: plain('Open'), url, action_id: 'open_kaizen' });
 const toolFor = (appUrl: string | undefined, kind: 'todo' | 'claim', id: string) =>
   appUrl ? toolButton(`${appUrl}/?${kind}=${encodeURIComponent(id)}`) : undefined;
 
@@ -228,8 +228,10 @@ export function pickTask(list: { id?: string; title: string; unit?: string | nul
  * urgency question left Slack — the task is worked in Kaizen; a reply in its thread is still a comment (§153).
  */
 export function taskMessage(t: TaskLite, event: string, by: string, appUrl?: string): { text: string; blocks: Block[] } {
-  // Owner, 2026-11-23: no emoji — the title in bold, one plain line under it.
-  const line = [`${plainWhat(t)} ${event.replace(/^· /, '')}`, taskFacts(t), by ? `by ${esc(by)}` : ''].filter(Boolean).join(' · ');
+  // Owner, 2026-11-23: the title in bold and what it is, where — status, priority and who are seen when it is opened.
+  // A closed one says so, so an old message is not taken for open work.
+  const closed = t.status === 'completed' || t.status === 'cancelled' ? stageWord(t.status) : '';
+  const line = [plainWhat(t), t.unit ? esc(t.unit) : '', closed].filter(Boolean).join(' · ');
   return {
     text: `${plainWhat(t)} ${event}: ${t.title}`,
     blocks: [section(`*${esc(t.title)}*\n${line}`, toolFor(appUrl, 'todo', t.id))]
@@ -278,9 +280,10 @@ export function claimMessage(c: ClaimLite, event: string, by: string, appUrl?: s
     text: `${caseWord(c).split(' ')[1]} ${event}: ${claimTitle(c)}`,
     // Owner, 2026-11-23: the line and one 🛠 into Kaizen — status, comment and edit are done there.
     blocks: [
+      // Owner, 2026-11-23: what it is and where — the rest is seen when it is opened.
       section(`*${esc((c.description || c.category || 'Claim').slice(0, 80))}*\n` +
-        [`${caseWord(c).split(' ')[1]} ${event.replace(/^· /, '')}`, c.unit ?? 'Portfolio', c.category, c.severity, c.status].filter(Boolean).map(x => esc(String(x))).join(' · ') +
-        (c.caseUrl ? ` · ${link(c.caseUrl, 'platform case')}` : '') + (by ? ` · by ${esc(by)}` : ''), toolFor(appUrl, 'claim', c.id))
+        [caseWord(c).split(' ')[1], c.unit ?? 'Portfolio', ['Resolved', 'Paid', 'Dismissed'].includes(c.status) ? c.status : ''].filter(Boolean).map(x => esc(String(x))).join(' · '),
+        toolFor(appUrl, 'claim', c.id))
     ]
   };
 }

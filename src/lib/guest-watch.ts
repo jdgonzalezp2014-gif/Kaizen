@@ -118,12 +118,11 @@ export function toCheck(events: OpenEvent[], now: Date, w: GuestWatch, max = 4):
 const waited = (min: number) => min < 90 ? `${Math.round(min)} min` : `${Math.round(min / 60)} h`;
 
 /** The one Slack message about a guest: who, where, since when, what they said, and the door to the conversation. */
-/** `draft`: the AI's draft for the message — 'ready', an error (said, so a broken key is seen in Slack, not only in the Inbox), or none. */
-export function watchMessage(a: { guest: string; listing: string; stage: string; body: string; minutes: number; urgent: boolean; why: string; link: string; draft?: { ready: true } | { error: string } | null }) {
+/** Owner, 2026-11-23: whether a reply is drafted is seen in the Inbox — not said here. */
+export function watchMessage(a: { guest: string; listing: string; stage: string; body: string; minutes: number; urgent: boolean; why: string; link: string }) {
   // Owner, 2026-11-23: no emoji — bold name, one plain line, the message quoted.
   const head = a.urgent ? `*Urgent · ${a.guest}*` : `*${a.guest}* has waited ${waited(a.minutes)} for an answer`;
-  const d = !a.draft ? '' : 'ready' in a.draft ? '\n_A reply is drafted in the Inbox._' : `\n_The AI could not draft a reply: ${preview(a.draft.error, 160)}_`;
-  const text = `${head}\n${[a.listing, a.stage, a.why].filter(Boolean).join(' · ')}\n> ${preview(a.body, 280)}${d}`;
+  const text = `${head}\n${[a.listing, a.stage, a.why].filter(Boolean).join(' · ')}\n> ${preview(a.body, 280)}`;
   // Owner, 2026-11-23: the way in is the small 🛠 beside it.
   return { text: a.urgent ? `Urgent guest message — ${a.guest}` : `${a.guest} is waiting for an answer`, blocks: [{ type: 'section', text: { type: 'mrkdwn', text }, accessory: toolButton(a.link) }] };
 }
