@@ -226,11 +226,8 @@ function Identity({ flow, save, set }: S) {
 }
 
 function ProtectionStep({ stay, flow, p, save }: S) {
-  const [pick, setPick] = useState<'waiver' | 'deposit'>(flow.protection ?? 'waiver');
-  if (channelCovers(stay)) return <>
-    <section className="card ci-card ci-covered"><Icon n="shield" /><span><b>Covered by Airbnb</b><span className="note">AirCover protects this stay — nothing to add.</span></span></section>
-    <button className="g-cta" onClick={() => save({ ...flow, protection: null })}>Continue</button>
-  </>;
+  const airbnb = channelCovers(stay);
+  const [pick, setPick] = useState<'waiver' | 'deposit' | 'none'>(flow.protection === 'none' && !airbnb ? 'waiver' : flow.protection ?? 'waiver');
   return <>
     <div className="ci-opts" role="radiogroup" aria-label="Damage protection">
       <button role="radio" aria-checked={pick === 'waiver'} className={`card ci-plan${pick === 'waiver' ? ' on' : ''}`} onClick={() => setPick('waiver')}>
@@ -244,9 +241,14 @@ function ProtectionStep({ stay, flow, p, save }: S) {
         <ul className="ci-pts"><li>Held on your card, not charged</li><li>Released 5–7 business days after check-out</li><li>Charged only if something is damaged</li></ul>
       </button>
     </div>
+    {airbnb && <button role="radio" aria-checked={pick === 'none'} className={`ci-none${pick === 'none' ? ' on' : ''}`} onClick={() => setPick('none')}>
+      <span className="ci-plan-top"><span className="ci-radio" aria-hidden /><span>None of them</span></span>
+      <small>Any damage reported, whatever the cost, goes to Airbnb as a claim and will most likely be charged to you in full.
+        With the waiver, accidental damage up to {usd(p.waiver.cap)} is on us.</small>
+    </button>}
     <p className="ci-fine">Not covered: damage on purpose, theft, smoking, unapproved pets, and anything above {usd(p.waiver.cap)}.
       <Hint>The waiver is a one-time fee ({usd(p.waiver.perNight)} per night or {usd(p.waiver.min)}, whichever is greater) that covers accidental damage during your stay, up to the limit. The deposit is a temporary hold on your card; we release it after check-out unless damage is reported.</Hint></p>
-    <button className="g-cta" onClick={() => save({ ...flow, protection: pick })}>Continue with the {pick === 'waiver' ? 'waiver' : 'deposit'}</button>
+    <button className="g-cta" onClick={() => save({ ...flow, protection: pick })}>{pick === 'none' ? 'Continue without protection' : `Continue with the ${pick === 'waiver' ? 'waiver' : 'deposit'}`}</button>
   </>;
 }
 

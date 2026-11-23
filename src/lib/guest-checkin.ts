@@ -50,8 +50,13 @@ export function portalFrom(vals: Record<string, unknown> | null | undefined): { 
   };
 }
 
-/** Airbnb covers damage itself (AirCover) and takes no waiver — the step is done for those guests. */
+/**
+ * Airbnb guests (owner, 2026-11-23) get the same waiver / deposit as everyone, plus a small "None of them": with no
+ * protection, any damage goes to Airbnb as a claim. Other channels must pick one of the two.
+ */
 export const channelCovers = (s: Pick<GuestStay, 'channel'>) => s.channel === 'airbnb';
+const protectionDone = (f: Pick<Flow, 'protection'>, s: Pick<GuestStay, 'channel'>) =>
+  f.protection === 'waiver' || f.protection === 'deposit' || (f.protection === 'none' && channelCovers(s));
 
 /** The guest's arrival time as shown ("6:30 PM", or LATE_ARRIVAL) — picked on a sliding strip (owner, 2026-11-16). */
 export type Arrival = string;
@@ -62,7 +67,7 @@ export interface Flow {
   /** "Something is wrong" on the booking details: what the guest wrote. The real link opens a task for the team. */
   changeAsk?: string | null;
   identity: boolean;
-  protection: 'waiver' | 'deposit' | null;
+  protection: 'waiver' | 'deposit' | 'none' | null;
   rules: boolean;
   /** Extras picked during check-in, with the guest's choice (time, …). */
   extras: Partial<Record<UpsellKind, Choice>>;
@@ -92,11 +97,10 @@ export const IDENTITY_STEP_ON = false;
 
 /** The steps in order. Extras are optional; Pay shows only when something is charged or held. */
 export function steps(f: Flow, s: GuestStay, p: Protection, now: Date = new Date()): Step[] {
-  const covered = channelCovers(s);
   const out: Step[] = [
     { key: 'details', title: 'Your details', sub: 'Confirm who is staying', done: f.details, required: true },
     ...(IDENTITY_STEP_ON ? [{ key: 'identity' as const, title: 'Identity', sub: 'ID and a quick selfie', done: f.identity, required: true }] : []),
-    { key: 'protection', title: 'Damage protection', sub: covered ? 'Covered by Airbnb' : 'Waiver or deposit', done: covered || f.protection != null, required: true },
+    { key: 'protection', title: 'Damage protection', sub: 'Waiver or deposit', done: protectionDone(f, s), required: true },
     { key: 'rules', title: 'House rules', sub: 'Read and agree', done: f.rules, required: true },
     { key: 'extras', title: 'Extras', sub: 'Optional', done: f.extrasSeen, required: false },
   ];
@@ -118,10 +122,8 @@ const cents = (n: number) => Math.round(n * 100) / 100;
 /** What the one payment covers: charges today and a hold that is released after check-out. */
 export function bill(f: Flow, s: GuestStay, p: Protection, now: Date = new Date()): { lines: BillLine[]; today: number; hold: number } {
   const lines: BillLine[] = [];
-  if (!channelCovers(s)) {
-    if (f.protection === 'waiver') lines.push({ label: 'Damage waiver', amount: p.waiver.price, kind: 'charge', item: 'waiver', note: `Covers up to $${p.waiver.cap.toLocaleString('en-US')}` });
-    if (f.protection === 'deposit') lines.push({ label: 'Security deposit', amount: p.deposit.hold, kind: 'hold', item: 'deposit', note: 'Held on your card, released after check-out' });
-  }
+  if (f.protection === 'waiver') lines.push({ label: 'Damage waiver', amount: p.waiver.price, kind: 'charge', item: 'waiver', note: `Covers up to $${p.waiver.cap.toLocaleString('en-US')}` });
+  if (f.protection === 'deposit') lines.push({ label: 'Security deposit', amount: p.deposit.hold, kind: 'hold', item: 'deposit', note: 'Held on your card, released after check-out' });
   for (const k of FLOW_EXTRAS) {
     const c = f.extras[k];
     const u = UPSELLS.find(x => x.kind === k);

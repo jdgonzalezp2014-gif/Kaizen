@@ -37,11 +37,14 @@ test('steps: four required, extras optional, pay only when something is charged'
   assert.deepEqual(progress(withWaiver), IDENTITY_STEP_ON ? { done: 3, of: 5 } : { done: 2, of: 4 });
 });
 
-test('Airbnb: protection is covered by the channel, nothing to pay', () => {
-  const st = steps(f({ details: true, identity: true, rules: true, extrasSeen: true }), stay({ channel: 'airbnb' }), P);
-  assert.equal(st.find(x => x.key === 'protection')!.done, true);
-  assert.equal(st.some(x => x.key === 'pay'), false);
-  assert.equal(nextStep(st), null);
+test('Airbnb: waiver / deposit like everyone, or "none" (nothing to pay); other channels cannot pick none', () => {
+  const base = { details: true, identity: true, rules: true, extrasSeen: true } as const;
+  assert.equal(steps(f(base), stay({ channel: 'airbnb' }), P).find(x => x.key === 'protection')!.done, false);
+  const none = steps(f({ ...base, protection: 'none' }), stay({ channel: 'airbnb' }), P);
+  assert.equal(none.some(x => x.key === 'pay'), false);
+  assert.equal(nextStep(none), null);
+  assert.equal(bill(f({ protection: 'waiver' }), stay({ channel: 'airbnb' }), P).today, 70);
+  assert.equal(steps(f({ ...base, protection: 'none' }), stay(), P).find(x => x.key === 'protection')!.done, false);
 });
 
 test('bill: waiver is charged, deposit is held, extras are charged now; early on a turnover drops off', () => {

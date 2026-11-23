@@ -3371,6 +3371,9 @@ p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }
 .ci-fine { margin: 0; font-size: 13px; color: var(--muted); display: flex; align-items: flex-start; gap: 6px; }
 .ci-covered { flex-direction: row; align-items: center; gap: 14px; } .ci-covered > svg { width: 28px; height: 28px; color: var(--accent); flex: 0 0 auto; }
 .ci-covered > span { display: flex; flex-direction: column; }
+.ci-none { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; margin-top: -4px; background: none; border: 1px dashed var(--line); border-radius: 12px; text-align: left; font: inherit; font-size: 14px; color: var(--muted); cursor: pointer; }
+.ci-none.on { border-style: solid; border-color: var(--accent); color: inherit; }
+.ci-none small { font-size: 12px; line-height: 1.4; padding-left: 28px; color: var(--muted); }
 .ci-rules { list-style: none; margin: 0; padding: 4px 18px !important; }
 .ci-rules li { display: flex; gap: 16px; padding: 14px 0; }
 .ci-rules li + li { border-top: 1px solid var(--line); }

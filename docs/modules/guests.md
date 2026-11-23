@@ -382,6 +382,7 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - Settings → Payments accepts live secret / restricted keys and `pk_live_` now (both must be the same mode — `embedKey`). The real stay link and
   upsell pay links run on it; the open demo (`/crew/guest-demo`) stays test-only and refuses to pay with a live key. **Vendor payouts by Stripe
   refuse a live key** (`LIVE_PAYOUTS_OFF`, payouts.ts) until the owner switches them on.
+- **Airbnb protection** (owner, 2026-11-23): Airbnb guests see the waiver / deposit too, plus a small "None of them" (`protection: 'none'`, Airbnb only) with a note that any damage goes to Airbnb as a claim, likely charged in full. No more "Covered by Airbnb".
 - **Identity step hidden** (owner, 2026-11-23): `IDENTITY_STEP_ON = false` in guest-checkin.ts — Stripe Identity (live) applied for, flow
   not finished. Hidden from the list and not required for the door code (server uses the same `steps()`). Flip to true to bring it back.
 - ⚠ **Deposit holds last ~7 days** (card authorisations): a guest who checks in early and picks the deposit makes the WHOLE payment manual-capture

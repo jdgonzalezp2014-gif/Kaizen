@@ -97,7 +97,7 @@ export function cleanFlow(raw: unknown, server: { identity: boolean; paid: boole
   f.details = o.details === true;
   f.arrival = typeof o.arrival === 'string' && o.arrival.length <= 20 ? o.arrival : null;
   f.changeAsk = typeof o.changeAsk === 'string' && o.changeAsk.trim() ? o.changeAsk.trim().slice(0, 600) : null;
-  f.protection = o.protection === 'waiver' || o.protection === 'deposit' ? o.protection : null;
+  f.protection = o.protection === 'waiver' || o.protection === 'deposit' || o.protection === 'none' ? o.protection : null;
   f.rules = o.rules === true;
   f.extrasSeen = o.extrasSeen === true;
   const ex = (o.extras && typeof o.extras === 'object' ? o.extras : {}) as Record<string, unknown>;
