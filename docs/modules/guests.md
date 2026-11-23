@@ -447,7 +447,9 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - **Turnover with room for the clean (owner, 2026-11-23):** on a same-day turnover, early check-in / late check-out IS
   offered when the other guest keeps their standard time and the clean keeps `CLEAN_HOURS` (apartment/room 2 h, house 4 h):
   check-in from their check-out + gap; check-out until their check-in − gap (`timeOptions` filters the chips). Asked at
-  least a day before (Central date < that day, else `why: 'notice'` "ask a day ahead"). The other guest already moved
+  least a day before (Central date < that day) it is sure; asked the same day it still sells but `needsApproval` →
+  "Subject to approval — refunded if we cannot" on the card, the Pick, the done screen and the paid line's note
+  (owner, 2026-11-23). ⚠ The team gets no alert for it yet: they see it only in the payment's line note. The other guest already moved
   (Kaizen `turnover_overrides` time, Hostaway hour later/earlier than the listing's standard, a paid `guest_payments` line
   or an `upsell_charges` row for it) or not found → not offered. Server: `turnoverGuests()` in guest-guide.ts fills
   `turnInGuest` / `turnOutGuest`; `allowedTime` re-checks the time in guest-pay and the check-in bill. No migration.

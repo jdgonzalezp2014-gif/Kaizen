@@ -27,7 +27,7 @@ import { loadStay, markStay, stayId } from './guest-stay.ts';
 import { verifyHouse } from './guest-demo.ts';
 import { mirrorTodos } from './inventory.ts';
 import { bill, protectionFor } from '../../src/lib/guest-checkin.ts';
-import { UPSELLS, allowedTime, availability, nights, offered, quote, type Choice } from '../../src/lib/guest-portal.ts';
+import { UPSELLS, APPROVAL_NOTE, allowedTime, availability, needsApproval, nights, offered, quote, type Choice } from '../../src/lib/guest-portal.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 
 type Line = { label: string; amount: number; kind: 'charge' | 'hold'; note?: string; item?: string };
@@ -69,7 +69,7 @@ async function stayLines(sql: SqlFn, env: Env, id: string, purpose: unknown, ext
   if (!allowedTime(l.stay, u, typeof c.time === 'string' ? c.time : undefined)) return 'That time is not available for this stay.';
   const q = quote(l.stay, u, { time: typeof c.time === 'string' ? c.time : undefined, before: Number(c.before) || 0, after: Number(c.after) || 0, qty: Number(c.qty) || undefined });
   if (q == null || !(q > 0)) return 'That extra cannot be priced — message us and we will help.';
-  return { l, lines: [{ label: u.title, amount: q, kind: 'charge', item: u.kind, note: c.time ? `${u.kind === 'early-checkin' ? 'From' : 'Until'} ${c.time}` : undefined }] as Line[] };
+  return { l, lines: [{ label: u.title, amount: q, kind: 'charge', item: u.kind, note: c.time ? `${u.kind === 'early-checkin' ? 'From' : 'Until'} ${c.time}${needsApproval(l.stay, u) ? ` · ${APPROVAL_NOTE}` : ''}` : undefined }] as Line[] };
 }
 
 async function sandbox(sql: SqlFn, encryptionKey: string) {

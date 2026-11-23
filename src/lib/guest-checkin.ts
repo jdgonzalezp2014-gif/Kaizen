@@ -6,7 +6,7 @@
  * (protection + paid extras) through Stripe — demo only for now. Pure: no fetch, no React.
  */
 import { kindOf } from './unit-access.ts';
-import { UPSELLS, priceOf, quote, availability, allowedTime, minutesOf, type Choice, type GuestStay, type UpsellKind } from './guest-portal.ts';
+import { UPSELLS, APPROVAL_NOTE, needsApproval, priceOf, quote, availability, allowedTime, minutesOf, type Choice, type GuestStay, type UpsellKind } from './guest-portal.ts';
 
 /** Protection values depend on what is rented: a room is not a house (owner, 2026-11-15). Per listing in the Repository. */
 export type UnitType = 'room' | 'apartment' | 'house';
@@ -147,7 +147,7 @@ export function bill(f: Flow, s: GuestStay, p: Protection, now: Date = new Date(
     const q = quote(s, u, c);
     // Not offered any more (a turnover came up since it was picked): it drops off the bill.
     if (q == null || !availability(s, u, now).ok || !allowedTime(s, u, c.time, now)) continue;
-    lines.push({ label: u.title, amount: q, kind: 'charge', item: k, note: c.time ? (k === 'early-checkin' ? `From ${c.time}` : `Until ${c.time}`) : undefined });
+    lines.push({ label: u.title, amount: q, kind: 'charge', item: k, note: c.time ? (k === 'early-checkin' ? `From ${c.time}` : `Until ${c.time}`) + (needsApproval(s, u, now) ? ` · ${APPROVAL_NOTE}` : '') : undefined });
   }
   const sum = (k: BillLine['kind']) => cents(lines.filter(l => l.kind === k).reduce((a, l) => a + l.amount, 0));
   return { lines, today: sum('charge'), hold: sum('hold') };

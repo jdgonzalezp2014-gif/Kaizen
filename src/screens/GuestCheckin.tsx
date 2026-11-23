@@ -14,7 +14,7 @@ import { loadStripe, type EmbeddedCheckout } from '../components/stripe-js.ts';
 import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
-import { UPSELLS, quote, timeOptions, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
+import { UPSELLS, APPROVAL_NOTE, needsApproval, quote, timeOptions, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
 import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, cleanEmail, cleanPhone, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type BillLine, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
@@ -292,6 +292,7 @@ function Extras({ stay, flow, save }: S) {
           <span className="note">{usd(price)}{u.per === 'hour' ? ' / hour' : u.per === 'night' ? ' / night' : ''}{on && (u.per === 'hour' || u.per === 'night') && quote(stay, u, ex[u.kind]!) != null ? ` · ${usd(quote(stay, u, ex[u.kind]!)!)}` : ''}</span>
           {on && u.pick.type === 'time' && <span className="ci-times">{timeOptions(stay, u).map(t =>
             <button key={t} className={ex[u.kind]?.time === t ? 'chip active' : 'chip'} onClick={() => setEx(e => ({ ...e, [u.kind]: { time: t } }))}>{t}</button>)}</span>}
+          {needsApproval(stay, u) && <span className="note">{APPROVAL_NOTE} (another guest that day)</span>}
         </span>
         <button className={on ? 'chip active ci-add' : 'chip ci-add'} aria-pressed={on} onClick={() => toggle(u.kind)}>{on ? <><Icon n="check" /> Added</> : 'Add'}</button>
       </section>;

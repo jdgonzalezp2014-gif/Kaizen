@@ -174,7 +174,7 @@ export const UPSELLS: Upsell[] = [
   { kind: 'parking', title: 'Covered parking', icon: 'car', price: null, per: 'night', pick: { type: 'none' } },
 ];
 
-export type Availability = { ok: true } | { ok: false; why: 'calendar' | 'price' | 'short' | 'turnover' | 'notice' };
+export type Availability = { ok: true } | { ok: false; why: 'calendar' | 'price' | 'short' | 'turnover' };
 
 /**
  * The other guest on a same-day turnover: their hour that day (check-out of the one leaving, check-in of the one
@@ -198,19 +198,29 @@ export function timeOptions(s: GuestStay, u: Upsell, now: Date = new Date()): st
 
 /**
  * A same-day turnover (owner, 2026-11-23): early check-in / late check-out still sells when the other guest keeps their
- * standard time and the clean keeps its hours (apartments 2, houses 4) — asked at least a day before (Central). The
- * other guest already late / early, or not known → not offered. `limit` = minutes after midnight: the earliest
- * check-in, or the latest check-out; null = no turnover that day.
+ * standard time and the clean keeps its hours (apartments 2, houses 4). Asked a day ahead (Central) it is sure; asked
+ * the same day it still sells, but subject to our approval and refunded if we cannot (`approval`). The other guest
+ * already late / early, or not known → not offered. `limit` = minutes after midnight: the earliest check-in, or the
+ * latest check-out; null = no turnover that day.
  */
-function turnoverLimit(s: GuestStay, u: Upsell, now: Date): { ok: true; limit: number | null } | { ok: false; why: 'turnover' | 'notice' } {
+function turnoverLimit(s: GuestStay, u: Upsell, now: Date): { ok: true; limit: number | null; approval: boolean } | { ok: false; why: 'turnover' } {
   const early = u.kind === 'early-checkin';
-  if (!(early ? s.turnIn : s.turnOut)) return { ok: true, limit: null };
+  if (!(early ? s.turnIn : s.turnOut)) return { ok: true, limit: null, approval: false };
   const n = early ? s.turnInGuest : s.turnOutGuest;
   if (!n || n.agreed || n.hour == null) return { ok: false, why: 'turnover' };
-  if (todayIn('America/Chicago', now) >= (early ? s.arrival : s.departure)) return { ok: false, why: 'notice' };
   const gap = CLEAN_HOURS[s.unitType ?? 'house'];
-  return { ok: true, limit: (early ? n.hour + gap : n.hour - gap) * 60 };
+  return { ok: true, limit: (early ? n.hour + gap : n.hour - gap) * 60,
+    approval: todayIn('America/Chicago', now) >= (early ? s.arrival : s.departure) };
 }
+
+/** Early / late on a turnover asked the same day: paid now, but subject to our approval — refunded if we cannot. */
+export function needsApproval(s: GuestStay, u: Upsell, now: Date = new Date()): boolean {
+  const t = turnoverLimit(s, u, now);
+  return t.ok && t.approval;
+}
+
+/** What the guest and the team read on such a line. */
+export const APPROVAL_NOTE = 'Subject to approval — refunded if we cannot';
 
 /** The guest's picked time is one the stay may have now. */
 export function allowedTime(s: GuestStay, u: Upsell, time: string | undefined, now: Date = new Date()): boolean {
@@ -231,7 +241,7 @@ export function availability(s: GuestStay, u: Upsell, now: Date = new Date()): A
   if (u.kind === 'parking' && priceOf(s, u) == null) return { ok: false, why: 'price' };
   if (u.pick.type === 'time') {
     const t = turnoverLimit(s, u, now);
-    if (!t.ok) return t;
+    if (!t.ok) return { ok: false, why: t.why };
     if (t.limit != null && !timeOptions(s, u, now).length) return { ok: false, why: 'turnover' };
   }
   return { ok: true };
