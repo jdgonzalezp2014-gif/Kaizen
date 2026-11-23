@@ -8,7 +8,8 @@
  * Fields: `description` (direct / website / Expedia), `homeawayPropertyDescription` (Vrbo), `bookingcomPropertyDescription`
  * (Booking.com). Airbnb's own fields (airbnbSummary…) are NOT touched: Airbnb guests are covered by AirCover, the portal
  * charges them neither, and Airbnb does not allow asking for money outside it.
- * Each field's text as it was is kept in listing_text_changes; a field that already has the notice is left alone.
+ * Each field's text as it was is kept in listing_text_changes; a field that already has this notice is left alone, and an
+ * older notice (2026-11-23: $300 / $70 → $500 / $60) is replaced in place.
  */
 import { neon } from '@neondatabase/serverless';
 import { getCredentials } from '../functions/_lib/accounts.ts';
@@ -38,8 +39,9 @@ for (const l of listings) {
   const body = {}, before = {};
   for (const f of FIELDS) {
     const b = String(l[f] ?? '');
-    if (!b.trim() || b.includes(MARK)) continue;   // empty = the channel falls back to `description`
-    before[f] = b; body[f] = `${b.trimEnd()}\n\n${NOTICE}`;
+    if (!b.trim() || b.includes(NOTICE)) continue;   // empty = the channel falls back to `description`
+    // An older notice (other amounts) is replaced in place — the paragraph runs from MARK to the end of its line.
+    before[f] = b; body[f] = b.includes(MARK) ? b.replace(new RegExp(`${MARK}[^\\n]*`), NOTICE) : `${b.trimEnd()}\n\n${NOTICE}`;
   }
   const fs = Object.keys(body);
   if (!fs.length) { tally.already++; console.log(`= ${id} ${l.name} — already has it`); continue; }
@@ -50,7 +52,7 @@ for (const l of listings) {
   const back = put.ok ? (await (await fetch(`${API}/listings/${id}`, { headers: H })).json()).result : null;
   let ok = true;
   for (const f of fs) {
-    const took = !!back && String(back[f] ?? '').includes(MARK);
+    const took = !!back && String(back[f] ?? '').includes(NOTICE);
     ok &&= took;
     await sql`INSERT INTO listing_text_changes (account_id, listing_id, field, before, after, outcome, detail, changed_by)
               VALUES (1, ${id}, ${f}, ${before[f]}, ${body[f]}, ${took ? 'changed' : 'failed'}, ${took ? null : detail || 'Wrote, but it did not come back — not confirmed.'}, ${WHO})`;
