@@ -1072,19 +1072,13 @@ export function quickTitle(text: string): { title: string; description: string |
 }
 
 /** The reply in the request's thread: it is tracked, and the way to add details. */
-export function trackedReply(t: { id: string; title: string; kind: string; unit?: string | null }, under?: 'sub-task' | 'claim'): { text: string; blocks: Block[] } {
+export function trackedReply(t: { id: string; title: string; kind: string; unit?: string | null }, under?: 'sub-task' | 'claim', appUrl?: string): { text: string; blocks: Block[] } {
   // Made inside a task's or a claim's thread (owner, Oct 2026): it belongs to that one.
-  const what = under === 'sub-task' ? 'sub-task of this task' : `${t.kind === 'work_order' ? 'repair' : t.kind === 'order' ? 'purchase order' : 'to-do'}${under === 'claim' ? ' for this claim' : ''}`;
-  return {
-    text: `📋 Tracked in Kaizen as a ${what}: ${t.title}`,
-    blocks: [
-      section(`📋 *Tracked in Kaizen* as a ${what}: *${esc(t.title)}*${t.unit ? ` · ${esc(t.unit)}` : ''}`),
-      { type: 'actions', elements: [
-        { type: 'button', text: plain('✎ Add details'), action_id: 'task_edit', value: t.id, style: 'primary' },
-        { type: 'button', text: plain('💬 Comment'), action_id: 'task_open', value: t.id }] },
-      context('Reply here with *@Kaizen* _your comment_ to add to it.')
-    ]
-  };
+  const kind = under === 'sub-task' ? 'Sub-task' : t.kind === 'work_order' ? 'Repair' : t.kind === 'order' ? 'Purchase order' : 'To-do';
+  const mark = t.kind === 'work_order' ? MARK.repair : t.kind === 'order' ? MARK.order : MARK.todo;
+  // Owner, 2026-11-23: small — what was saved, where, and Open. Details are added in Kaizen; a reply here is a comment.
+  const line = [`${kind} saved${under === 'claim' ? ' for this claim' : ''}`, t.unit ? esc(t.unit) : ''].filter(Boolean).join(' · ');
+  return { text: `${kind} saved in Kaizen: ${t.title}`, blocks: [section(`${mark}  *${esc(t.title)}*\n${line}`, toolFor(appUrl, 'todo', t.id))] };
 }
 
 /**

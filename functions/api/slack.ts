@@ -606,7 +606,7 @@ class Kaizen {
       ...(parent ? { parentId: parent.id } : {}), ...(claim ? { claimId: String(claim.id) } : {}),
       description: [description, link.permalink ? `From Slack: ${link.permalink.split('?')[0]}` : ''].filter(Boolean).join('\n\n') || null });
     if (!r.ok || !r.id) return r;
-    const m = trackedReply({ id: String(r.id), title, kind, unit: units.find(u => u.value === unit)?.label ?? null }, parent ? 'sub-task' : claim ? 'claim' : undefined);
+    const m = trackedReply({ id: String(r.id), title, kind, unit: units.find(u => u.value === unit)?.label ?? null }, parent ? 'sub-task' : claim ? 'claim' : undefined, this.s.config.appUrl);
     const posted = await slackApi<{ ts?: string }>(this.s.token!, 'chat.postMessage', { channel: thread.channel, thread_ts: thread.ts, ...m, unfurl_links: false });
     // From a DM the task's thread is its notice in the tasks channel (via 'slack-dm'), where the team talks — not the DM.
     if (posted.ok && !home && !dmChannel(thread.channel)) await rememberThread(this.sql, { ok: true, ...thread }, 'task', String(r.id));
@@ -1873,8 +1873,8 @@ class Kaizen {
       if (m.from && r.id) {
         // …and becomes the task's thread (§108): "@Kaizen …" there comments on it.
         const from = m.from;
-        this.ctx.waitUntil(slackApi(this.s.token!, 'chat.postMessage', { channel: from.channel, thread_ts: from.ts,
-          text: `📋 Tracked in Kaizen as a ${m.kind === 'work_order' ? 'repair' : 'task'}: *${String(body.title)}* — reply here with @Kaizen to comment` })
+        this.ctx.waitUntil(slackApi(this.s.token!, 'chat.postMessage', { channel: from.channel, thread_ts: from.ts, unfurl_links: false,
+          ...trackedReply({ id: String(r.id), title: String(body.title), kind: m.kind === 'work_order' ? 'work_order' : 'task' }, undefined, this.s.config.appUrl) })
           .then(() => fromDm ? undefined : rememberThread(this.sql, { ok: true, ...from }, 'task', String(r.id))).catch(() => {}));
       }
       // Edited on top of the card: back to the card, refreshed.

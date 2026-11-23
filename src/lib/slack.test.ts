@@ -329,9 +329,11 @@ test('@Kaizen new: the listing from the text, a short title, the reply with Add 
   const long = quickTitle(`${'word '.repeat(40)}\nmore`);
   assert.ok(long.title.length <= 120 && long.title.endsWith('…'));
   assert.match(String(long.description), /more$/);
-  const r = JSON.stringify(trackedReply({ id: '9', title: 'Fix AC', kind: 'work_order', unit: 'P2-4308' }).blocks);
-  assert.match(r, /as a repair: \*Fix AC\* · P2-4308/);
-  assert.match(r, /"action_id":"task_edit","value":"9"/);
+  // Owner, 2026-11-23: small — mark, title, what · where, and Open (no Add details / Comment buttons).
+  const r = JSON.stringify(trackedReply({ id: '9', title: 'Fix AC', kind: 'work_order', unit: 'P2-4308' }, undefined, 'https://k.dev').blocks);
+  assert.match(r, /\*Fix AC\*\\nRepair saved · P2-4308/);
+  assert.match(r, /"text":"Open".*\?todo=9/);
+  assert.doesNotMatch(r, /task_edit|task_open/);
 });
 
 test('💬 Comment on a task: a menu of the listed tasks, late first; the card opens with the box ready', () => {
@@ -374,8 +376,8 @@ test("a claim's card lists its work (each opens) and adds a to-do; a reply made 
   const s = JSON.stringify(claimCard(c));
   for (const k of ['Work* · 1 open of 2', '"action_id":"claim_task_open","value":"18"', '~New fob~', '"block_id":"task"', '"block_id":"repair"',
                  '"block_id":"files"', '"type":"file_input"']) assert.ok(s.includes(k), k);
-  assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'task' }, 'sub-task')), /sub-task of this task/);
-  assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'work_order' }, 'claim')), /repair for this claim/);
+  assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'task' }, 'sub-task')), /Sub-task saved/);
+  assert.match(JSON.stringify(trackedReply({ id: '9', title: 'x', kind: 'work_order' }, 'claim')), /Repair saved for this claim/);
 });
 
 test("a claim's private card shows its money; an upsell one amount; nothing when there is none (§167)", () => {

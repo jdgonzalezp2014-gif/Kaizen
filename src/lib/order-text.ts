@@ -11,7 +11,7 @@
  */
 import { aliasKey, scoreItems, words, type ReceiptItem, type ReceiptLine } from './receipt.ts';
 import { cartLinks, type BuyOption } from './store-order.ts';
-import { esc, guessUnit, kaizenButton, type Opt } from './slack.ts';
+import { esc, guessUnit, MARK, toolButton, type Opt } from './slack.ts';
 
 type Block = Record<string, unknown>;
 const mrk = (text: string) => ({ type: 'mrkdwn', text: text.slice(0, 3000) });
@@ -325,11 +325,12 @@ export function orderSavedMessage(d: OrderDraft, o: { items: DraftItem[]; placeL
   { text: string; blocks: Block[] } {
   const name = (id: string) => o.items.find(i => i.id === id)?.name ?? `item ${id}`;
   const list = d.lines.map(l => `• ${esc(l.i ? name(l.i) : l.n?.name ?? l.t)} × ${l.q}${l.m === 'replace' ? ' (replaced)' : l.m === 'sum' ? ' (added)' : ''}`);
-  const head = `🛒 Purchase order ${o.fresh ? 'made' : 'saved'} on *${esc(o.todoTitle)}* by <@${o.by}> — ${d.lines.length} line${d.lines.length === 1 ? '' : 's'} to *${esc(o.placeLabel)}*:`;
+  // Owner, 2026-11-23: small — the title, how many lines to where, Open; the lines under it for whoever buys.
+  const head = `${MARK.order}  *${esc(o.todoTitle)}*\nPurchase order ${o.fresh ? 'made' : 'saved'} · ${d.lines.length} line${d.lines.length === 1 ? '' : 's'} → ${esc(o.placeLabel)}`;
   const cart = cartLine(d, o.items);
-  const open = kaizenButton(o.appUrl, 'todo', o.todoId);
-  return { text: `🛒 Purchase order saved on ${o.todoTitle}`,
-           blocks: [section(head), ...chunks(list).slice(0, 45).map(c => section(c)), ...(cart ? [context(cart)] : []), ...(open.length ? [{ type: 'actions', elements: open }] : [])] };
+  const open = o.appUrl ? toolButton(`${o.appUrl}/?todo=${encodeURIComponent(o.todoId)}`) : undefined;
+  return { text: `Purchase order saved on ${o.todoTitle}`,
+           blocks: [section(head, open), ...chunks(list).slice(0, 45).map(c => section(c)), ...(cart ? [context(cart)] : [])] };
 }
 
 /** "Another item…" — every active item, the closest first (a menu holds 100). */
