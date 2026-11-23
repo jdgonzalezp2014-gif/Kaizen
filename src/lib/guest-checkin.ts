@@ -87,12 +87,15 @@ export const FLOW_EXTRAS: UpsellKind[] = ['early-checkin', 'late-checkout', 'mid
 export type StepKey = 'details' | 'identity' | 'protection' | 'rules' | 'extras' | 'pay';
 export interface Step { key: StepKey; title: string; sub: string; done: boolean; required: boolean }
 
+/** Owner, 2026-11-23: the ID + selfie step stays hidden until Stripe Identity is approved and the flow finished — flip to true to bring it back. */
+export const IDENTITY_STEP_ON = false;
+
 /** The steps in order. Extras are optional; Pay shows only when something is charged or held. */
 export function steps(f: Flow, s: GuestStay, p: Protection, now: Date = new Date()): Step[] {
   const covered = channelCovers(s);
   const out: Step[] = [
     { key: 'details', title: 'Your details', sub: 'Confirm who is staying', done: f.details, required: true },
-    { key: 'identity', title: 'Identity', sub: 'ID and a quick selfie', done: f.identity, required: true },
+    ...(IDENTITY_STEP_ON ? [{ key: 'identity' as const, title: 'Identity', sub: 'ID and a quick selfie', done: f.identity, required: true }] : []),
     { key: 'protection', title: 'Damage protection', sub: covered ? 'Covered by Airbnb' : 'Waiver or deposit', done: covered || f.protection != null, required: true },
     { key: 'rules', title: 'House rules', sub: 'Read and agree', done: f.rules, required: true },
     { key: 'extras', title: 'Extras', sub: 'Optional', done: f.extrasSeen, required: false },

@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bill, doorCodeFor, entry, portalFrom, newFlow, doneFlow, nextStep, progress, protectionFor, rulesList, steps, flowExtras, arrivalTimes, LATE_ARRIVAL, type Flow } from './guest-checkin.ts';
+import { bill, doorCodeFor, entry, portalFrom, newFlow, doneFlow, nextStep, progress, protectionFor, rulesList, steps, IDENTITY_STEP_ON, flowExtras, arrivalTimes, LATE_ARRIVAL, type Flow } from './guest-checkin.ts';
 import type { GuestStay } from './guest-portal.ts';
 
 const stay = (o: Partial<GuestStay> = {}): GuestStay => ({
@@ -28,13 +28,13 @@ test('protection: the waiver is $/night × nights, never under the minimum (owne
 
 test('steps: four required, extras optional, pay only when something is charged', () => {
   const st = steps(newFlow(), stay(), P);
-  assert.deepEqual(st.map(x => x.key), ['details', 'identity', 'protection', 'rules', 'extras']);
-  assert.deepEqual(progress(st), { done: 0, of: 4 });
+  assert.deepEqual(st.map(x => x.key), ['details', ...(IDENTITY_STEP_ON ? ['identity'] : []), 'protection', 'rules', 'extras']);
+  assert.deepEqual(progress(st), { done: 0, of: IDENTITY_STEP_ON ? 4 : 3 });
   assert.equal(nextStep(st), 'details');
   const withWaiver = steps(f({ details: true, identity: true, protection: 'waiver' }), stay(), P);
   assert.equal(withWaiver.at(-1)!.key, 'pay');
   assert.equal(nextStep(withWaiver), 'rules');
-  assert.deepEqual(progress(withWaiver), { done: 3, of: 5 });
+  assert.deepEqual(progress(withWaiver), IDENTITY_STEP_ON ? { done: 3, of: 5 } : { done: 2, of: 4 });
 });
 
 test('Airbnb: protection is covered by the channel, nothing to pay', () => {
