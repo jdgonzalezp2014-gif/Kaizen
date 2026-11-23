@@ -99,6 +99,8 @@ export interface InboxRow extends Stay {
   channelCode?: string | null;
   /** A light model read the guest's last message and it asks for nothing ("thanks!"): not counted as waiting. */
   noReply?: boolean;
+  /** The AI drafted a reply when the guest wrote (2026-11-23) — it waits in the conversation. */
+  drafted?: boolean;
 }
 /** Hostaway's channel names as people say them. */
 const CHANNELS: Record<string, string> = { airbnbofficial: 'Airbnb', airbnb: 'Airbnb', homeaway: 'Vrbo', vrbo: 'Vrbo', bookingcom: 'Booking.com', expedia: 'Expedia',
@@ -395,13 +397,19 @@ export interface GuestAi {
   /** What is true for every listing and no field holds (audit 2026-11-19): hours the team answers, the emergency line,
    *  early check-in / late check-out, discounts, refunds, booking approval, insurance stays. Free text the AI may quote. */
   business: string;
+  /** Owner, 2026-11-23: a draft is written the moment a guest writes (the webhook), waiting in the Inbox to be sent or not. */
+  autoDraft: boolean;
+  /** Arrival details (code, steps, address, Wi-Fi) only once the online check-in is done — until then the reply asks for it, with the link. */
+  portalFirst: boolean;
+  /** A guest who finished the old check-in (Hostaway's agreement / ID) is told the system changed and asked to do the new one once. */
+  oldPortalNotice: boolean;
 }
 /** Suggestions for the model field — it is free text, so a newer model needs no deploy. */
 export const AI_MODELS: Record<AiProvider, string[]> = {
   claude: ['claude-opus-5-5', 'claude-sonnet-5-5', 'claude-haiku-5-5'],
   gemini: ['gemini-3.6-flash', 'gemini-3.5-flash-lite'],
 };
-export const AI_DEFAULT: GuestAi = { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '' };
+export const AI_DEFAULT: GuestAi = { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true };
 export const MAX_BUSINESS = 6000;
 export const isModel = (m: string) => /^[\w.\-@/:]{3,80}$/.test(m);
 
@@ -414,7 +422,26 @@ export function guestAiFrom(j: unknown): GuestAi {
     mode: o.mode === 'suggest' || o.mode === 'auto' ? 'suggest' : 'off', provider, model,
     instructions: typeof o.instructions === 'string' ? o.instructions.trim().slice(0, 2000) : '',
     business: typeof o.business === 'string' ? o.business.trim().slice(0, MAX_BUSINESS) : '',
+    // Unset = on: what the owner asked for (2026-11-23); a saved false turns each one off.
+    autoDraft: o.autoDraft !== false, portalFirst: o.portalFirst !== false, oldPortalNotice: o.oldPortalNotice !== false,
   };
+}
+
+/**
+ * What the draft must know about the guest portal for a booked stay (owner, 2026-11-23): whether the online check-in is
+ * done, and so whether arrival details may be given or the guest is asked to complete it first. The link is written as
+ * {{portal_link}} — the Composer fills it, so a model never types (or invents) a signed URL.
+ */
+export function portalLines(p: { hasLink: boolean; checkinDone: boolean; oldPortalDone: boolean; portalFirst: boolean; oldNotice: boolean; protection?: string | null }): string[] {
+  if (!p.hasLink) return ['No guest portal yet: do not mention an online check-in or a link.'];
+  const L: string[] = ['The portal link is written exactly as {{portal_link}} (it is filled in before sending). Mention it once at most.'];
+  if (p.checkinDone) L.push('Online check-in: DONE. Their door code, arrival steps and house guide are open in the portal ({{portal_link}}): answer arrival questions from LISTING, and for the code point them to the portal.');
+  else if (p.portalFirst) L.push('Online check-in: NOT DONE. The door code, arrival steps, exact address, Wi-Fi and parking access are released only after it.',
+    'If the guest asks for any of them, or how to get in, do not give them: ask them to complete the online check-in at {{portal_link}} (a few minutes: details, ID, damage protection, house rules) and say everything opens there right after. Answer their other questions normally.');
+  else L.push('Online check-in: not done yet. You may invite them to complete it at {{portal_link}}.');
+  if (!p.checkinDone && p.oldPortalDone && p.oldNotice) L.push('They already completed our PREVIOUS check-in (rental agreement / ID). Thank them, say briefly that we moved to a new online check-in system, and ask them to complete it once at the link — it replaces the old one.');
+  if (p.protection) L.push(p.protection);
+  return L;
 }
 
 /**
@@ -454,7 +481,7 @@ export const question = (msgs: ThreadMsg[], n = 3) =>
  */
 export function aiPrompt(a: {
   stay: Stay; today: DateStr; facts: string; sops: SopDoc[]; thread: ThreadMsg[]; instructions: string; company: string;
-  business?: string; stayLines?: string[]; work?: string[]; portfolio?: string[]; channel?: string;
+  business?: string; stayLines?: string[]; work?: string[]; portfolio?: string[]; channel?: string; portal?: string[];
 }) {
   const stage = stageOf(a.stay, a.today);
   const booked = stage !== 'inquiry' && stage !== 'cancelled';
@@ -483,6 +510,7 @@ export function aiPrompt(a: {
     '- Thanks / ok / goodbye: a one-line friendly close (a check-out thank-you may invite them to leave a review); handoff false.',
     '',
     'Hard rules:',
+    '- GUEST PORTAL, when given, decides what arrival information you may share now; follow it over everything else.',
     '- Never write a door, gate or lockbox code, or a key location: say the arrival instructions carry it. "[withheld]" in a fact is a code: never guess it.',
     booked ? '' : '- This conversation is BEFORE a booking: do not share the exact address, Wi-Fi or arrival steps; answer to help them book.',
     airbnb ? '- This is an Airbnb guest: never ask for or offer payment, a phone number, an email or a booking outside Airbnb; changes and extra charges go through Airbnb.' : '',
@@ -501,6 +529,7 @@ export function aiPrompt(a: {
     `Stay: ${st.guest} · ${st.arrival ?? '?'} → ${st.departure ?? '?'} · status ${st.status} · ${STAGE_LABEL[stage]}`,
     `\nLISTING\n${a.facts}`,
     a.stayLines?.length ? `\nTHIS BOOKING\n${a.stayLines.join('\n')}` : '',
+    booked && a.portal?.length ? `\nGUEST PORTAL (online check-in)\n${a.portal.join('\n')}` : '',
     a.work?.length ? `\nOPEN WORK ON THIS STAY (internal)\n${a.work.join('\n')}` : '',
     a.business ? `\nCOMPANY (true for every listing)\n${a.business}` : '\nCOMPANY\n(no general facts written yet)',
     a.portfolio?.length ? `\nOTHER LISTINGS (availability unknown — the team checks)\n${a.portfolio.join('\n')}` : '',

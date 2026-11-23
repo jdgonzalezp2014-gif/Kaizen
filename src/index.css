@@ -3684,6 +3684,8 @@ a.gx-tile { text-decoration: none; }
 .ix-row.wait .ix-row-top b { font-weight: 700; }
 .ix-row.wait .ix-row-prev { color: var(--ink); }
 .ix-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); flex: none; }
+.ix-drafted { display: inline-flex; color: var(--accent); flex: none; margin-right: 2px; }
+.ix-drafted svg { width: 12px; height: 12px; }
 .ix-row-badges { display: grid; gap: 2px; justify-items: end; font-size: var(--fs-caption); color: var(--muted); flex: none; }
 .ix-row-badges span { display: inline-flex; align-items: center; gap: 3px; }
 .ix-row-badges .icon { width: 12px; height: 12px; }

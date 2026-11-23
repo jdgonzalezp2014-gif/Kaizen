@@ -68,3 +68,6 @@ come later for a fully in-page look. Built 2026-11-15 (`functions/_lib/guest-pay
   **Hard-wired:** $20/hour for early/late, the 8 AM–6 PM hour window, Airbnb's URLs (Resolution Center, host reservation page), English guest texts.
 - 2026-11-19 (inbox, guest AI audit): company facts per account (`guest_ai.business`). **Hard-wired:** `GUEST_SECTIONS` (Kaizen's SOP
   section keys), the Repository column keys `listingFacts` reads (`max_guests`, `hw_*`, fees…), `UNIT_TABLES`, the English playbook prompt.
+- 2026-11-23 (inbox + guests, drafts on arrival / portal first): per account — `guest_ai.autoDraft|portalFirst|oldPortalNotice`, protection values
+  per listing in the Repository. **Hard-wired:** the protection defaults ($300 deposit, $12/night waiver, $70 minimum — `PROTECTION_DEFAULTS`),
+  "old check-in" = Hostaway's agreement signed / ID verified, `scripts/description-protection-notice.mjs` (Kaizen's English text and Hostaway fields).

@@ -233,7 +233,7 @@ function ProtectionStep({ stay, flow, p, save }: S) {
       <button role="radio" aria-checked={pick === 'waiver'} className={`card ci-plan${pick === 'waiver' ? ' on' : ''}`} onClick={() => setPick('waiver')}>
         <span className="ci-plan-top"><span className="ci-radio" aria-hidden /><b>Damage waiver</b><span className="ci-badge">Recommended</span></span>
         <span className="ci-price">{usd(p.waiver.price)}<span> once</span></span>
-        <ul className="ci-pts"><li>Accidental damage covered up to {usd(p.waiver.cap)}</li><li>No hold on your card</li><li>No surprise bills after you leave</li></ul>
+        <ul className="ci-pts"><li>{usd(p.waiver.perNight)} per night, {usd(p.waiver.min)} minimum</li><li>Accidental damage covered up to {usd(p.waiver.cap)}</li><li>No hold on your card</li><li>No surprise bills after you leave</li></ul>
       </button>
       <button role="radio" aria-checked={pick === 'deposit'} className={`card ci-plan${pick === 'deposit' ? ' on' : ''}`} onClick={() => setPick('deposit')}>
         <span className="ci-plan-top"><span className="ci-radio" aria-hidden /><b>Security deposit</b></span>
@@ -242,7 +242,7 @@ function ProtectionStep({ stay, flow, p, save }: S) {
       </button>
     </div>
     <p className="ci-fine">Not covered: damage on purpose, theft, smoking, unapproved pets, and anything above {usd(p.waiver.cap)}.
-      <Hint>The waiver is a one-time fee that covers accidental damage during your stay, up to the limit. The deposit is a temporary hold on your card; we release it after check-out unless damage is reported.</Hint></p>
+      <Hint>The waiver is a one-time fee ({usd(p.waiver.perNight)} per night or {usd(p.waiver.min)}, whichever is greater) that covers accidental damage during your stay, up to the limit. The deposit is a temporary hold on your card; we release it after check-out unless damage is reported.</Hint></p>
     <button className="g-cta" onClick={() => save({ ...flow, protection: pick })}>Continue with the {pick === 'waiver' ? 'waiver' : 'deposit'}</button>
   </>;
 }

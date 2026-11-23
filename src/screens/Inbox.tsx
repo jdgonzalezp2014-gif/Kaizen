@@ -126,7 +126,7 @@ export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onTodo, 
               <span className="ix-row-main">
                 <span className="ix-row-top"><b>{r.guest}</b><time>{shortWhen(r.lastAt)}</time></span>
                 <span className="ix-row-sub">{r.listing} · {range(r.arrival, r.departure)}</span>
-                <span className="ix-row-prev">{waits(r) && <span className="ix-dot" aria-label="Needs reply" />}{r.preview || 'No messages yet'}</span>
+                <span className="ix-row-prev">{waits(r) && <span className="ix-dot" aria-label="Needs reply" />}{waits(r) && r.drafted && <span className="ix-drafted" title="A reply is drafted" aria-label="Reply drafted"><Icon n="sparkles" /></span>}{r.preview || 'No messages yet'}</span>
               </span>
               {(r.tasks > 0 || r.scheduled > 0) && <span className="ix-row-badges">
                 {r.tasks > 0 && <span className="hot" title={`${r.tasks} open to-do${r.tasks === 1 ? '' : 's'} — still to do`}><Icon n="alert" />{r.tasks}</span>}
@@ -204,7 +204,7 @@ function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo,
         {(pane === 'all' || pane === 'chat' || pane === 'email') && <>
           <Bubbles msgs={thread ? (pane === 'all' ? thread.messages : thread.messages.filter(m => tabOf(m) === pane)) : null} canSend={canSend} onChanged={after}
                    empty={pane === 'email' ? 'No emails with this guest yet.' : 'No messages in this conversation yet.'} />
-          <Composer row={row} channel="hostaway" via={pane === 'all' ? null : pane === 'email' ? 'email' : 'channel'} list={list} portalLink={thread?.portalLink ?? null} canSend={canSend} onSent={after} />
+          <Composer key={row.conversationId} row={row} channel="hostaway" via={pane === 'all' ? null : pane === 'email' ? 'email' : 'channel'} list={list} portalLink={thread?.portalLink ?? null} draft={thread?.draft ?? null} canSend={canSend} onSent={after} />
         </>}
         {pane === 'sms' && (!row.reservationId
           ? <div className="ix-blank"><Icon n="phone" /><p>No reservation yet — SMS starts once the stay is booked.</p></div>
@@ -220,7 +220,7 @@ function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onTodo,
                   {sms?.note && <p className="banner warn">{sms.note}</p>}
                   <Bubbles msgs={sms ? [...hostSms, ...sms.messages].sort((a, b) => a.at < b.at ? -1 : 1) : null} canSend={canSend} onChanged={after}
                            empty={`No texts with ${sms?.phone ?? 'this guest'} yet.`} />
-                  <Composer row={row} channel="sms" via={null} list={list} portalLink={thread?.portalLink ?? null} canSend={canSend} onSent={after} />
+                  <Composer key={`sms-${row.conversationId}`} row={row} channel="sms" via={null} list={list} portalLink={thread?.portalLink ?? null} canSend={canSend} onSent={after} />
                 </>)}
         {pane === 'stay' && <div className="ix-stay-inline">{stay}</div>}
       </section>
@@ -277,8 +277,8 @@ function Bubbles({ msgs, canSend, onChanged, empty }: { msgs: ThreadMsg[] | null
   );
 }
 
-function Composer({ row, channel, via, list, portalLink, canSend, onSent }: {
-  row: InboxRow; channel: Channel;
+function Composer({ row, channel, via, list, portalLink, draft, canSend, onSent }: {
+  row: InboxRow; channel: Channel; draft?: InboxThread['draft'];
   /** The tab it was written in: email or the booking channel's chat. Null = the way the thread already talks. */
   via: Via | null; list: InboxList; portalLink: string | null; canSend: boolean; onSent: () => void;
 }) {
@@ -288,7 +288,12 @@ function Composer({ row, channel, via, list, portalLink, canSend, onSent }: {
   const [scheduling, setScheduling] = useState(false);
   const [busy, setBusy] = useState<'' | 'send' | 'ai'>('');
   const [msg, setMsg] = useState('');
-  const [ai, setAi] = useState<{ s: Suggestion; by: string; sops: string[] } | null>(null);
+  const [ai, setAi] = useState<{ s: Suggestion; by: string; sops: string[]; auto?: boolean } | null>(null);
+  // The draft written when the guest wrote: shown once per draft, the same card as Suggest. Its time is its identity.
+  const draftAt = draft?.at ?? '';
+  useEffect(() => {
+    if (draft && 'reply' in draft && channel === 'hostaway') setAi({ s: draft, by: draft.by, sops: draft.sops, auto: true });
+  }, [draftAt, channel]); // eslint-disable-line react-hooks/exhaustive-deps
   const [aiDraft, setAiDraft] = useState<string | null>(null);
   const templates = list.templates.filter(t => t.channel === channel && t.active);
   const unfilled = [...new Set([...text.matchAll(/\{\{\s*([a-z_]+)\s*\}\}/gi)].map(m => m[1]!.toLowerCase()))];
@@ -325,7 +330,7 @@ function Composer({ row, channel, via, list, portalLink, canSend, onSent }: {
     <div className="ix-compose">
       {ai && <div className={`ix-ai ${ai.s.handoff ? 'handoff' : ''}`}>
         <div className="ix-ai-head">
-          <span><Icon n="sparkles" /> Suggested reply</span>
+          <span><Icon n="sparkles" /> {ai.auto ? 'Drafted when the guest wrote' : 'Suggested reply'}</span>
           <span className={`ix-conf c-${ai.s.confidence}`} title={`Model: ${ai.by}`}>{ai.s.handoff ? <><Icon n="hand" /> Needs a person</> : `${ai.s.confidence} confidence`}</span>
           <Hint label="Where this comes from">Written by {ai.by} from this listing's Repository record and Hostaway amenities, this booking, the company facts
             (Settings → Integrations → Guest messages & AI), the guest-side SOPs that match and the conversation.
@@ -336,7 +341,7 @@ function Composer({ row, channel, via, list, portalLink, canSend, onSent }: {
         {ai.s.reason && <p className="ix-ai-why">{ai.s.reason}</p>}
         {ai.s.missing && <p className="ix-ai-why"><Icon n="alert" /> Missing: {ai.s.missing} — add it to the listing's record or the company facts.</p>}
         <div className="ix-ai-acts">
-          <button type="button" className="ix-ghost" onClick={() => { setText(ai.s.reply); setAiDraft(ai.s.reply); setTemplateId(''); setAi(null); }}>Use</button>
+          <button type="button" className="ix-ghost" onClick={() => { const t = fill(ai.s.reply, varsFor(row, portalLink)).text; setText(t); setAiDraft(ai.s.reply); setTemplateId(''); setAi(null); }}>Use</button>
           <button type="button" className="link tiny" onClick={() => setAi(null)}>Dismiss</button>
         </div>
       </div>}

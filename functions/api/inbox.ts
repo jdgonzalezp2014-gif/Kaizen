@@ -15,7 +15,8 @@ import { accessOf, getCredentials, type SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { can } from '../_lib/roles.ts';
 import { decrypt } from '../_lib/crypto.ts';
-import { readGuestAi, suggestReply } from '../_lib/guest-ai.ts';
+import { readGuestAi, suggestFor } from '../_lib/guest-ai.ts';
+import { draftOf } from '../_lib/guest-events.ts';
 import { openEvents } from '../_lib/guest-events.ts';
 import { GUEST_TZ, deliver, fireStay, guestLive, loadTemplates, outMsg, portalFor, type OutRow } from '../_lib/guest-outbox.ts';
 import { fetchConversation, fetchConversationOf, fetchConversations, fetchMessages } from '../_lib/hostaway-messages.ts';
@@ -96,7 +97,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       const reservation = q.get('reservation') ?? '';
       if (!ID.test(conversation) || (reservation && !ID.test(reservation))) return bad('Which conversation?');
       const access = await accessOf(sql, who);
-      const [theirs, ours, tasks, cases, templates, row, link, checkins] = await Promise.all([
+      const [theirs, ours, tasks, cases, templates, row, link, checkins, draft] = await Promise.all([
         fetchMessages(creds, conversation),
         reservation ? outbox(sql, reservation, 'hostaway') : [],
         // A purchase order is a to-do made as an order (clean_group 'request', todos.ts) — the Work section's third kind.
@@ -117,6 +118,8 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         reservation ? portalFor(sql, env.ENCRYPTION_KEY, reservation) : null,
         reservation ? sql`SELECT completed_at, source, marked_by FROM guest_checkins WHERE account_id = 1 AND reservation_id = ${reservation}`
           .catch(() => []) as Promise<{ completed_at: string | Date; source: string; marked_by: string | null }[]> : [],
+        // The reply the AI drafted when the guest wrote (2026-11-23, guest-events.ts draftEvent) — waiting to be used or dismissed.
+        draftOf(sql, conversation),
       ]);
       // The plan counts every automatic row of the stay, whatever channel it went by (an SMS automation shows here too).
       const auto = reservation ? await (sql`SELECT template_id::text AS "templateId", status FROM guest_messages
@@ -128,13 +131,13 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
         await sql`UPDATE guest_events SET answered_at = now() WHERE account_id = 1 AND kind = 'message' AND conversation_id = ${conversation} AND answered_at IS NULL`.catch(() => {});
       }
       return json({
-        ok: true, messages: mergeThread(theirs, ours.map(outMsg)), tasks, cases, portalLink: link, phone: maskPhone(row?.phone), checkin: ci,
+        ok: true, messages: mergeThread(theirs, ours.map(outMsg)), tasks, cases, portalLink: link, phone: maskPhone(row?.phone), checkin: ci, draft,
         plan: row ? planFor({ ...row, checkinDoneAt: ci?.at ?? null }, templates, auto, new Date(), GUEST_TZ) : [],
       });
     }
 
     const offset = Math.max(0, Math.min(2000, Number(q.get('offset')) || 0));
-    const [convs, units, tasks, waiting, templates, live, ai, acct, events] = await Promise.all([
+    const [convs, units, tasks, waiting, templates, live, ai, acct, events, drafts] = await Promise.all([
       fetchConversations(creds, 50, offset),
       sql`SELECT id::text AS id, name FROM units WHERE account_id = 1` as Promise<{ id: string; name: string }[]>,
       sql`SELECT reservation_id AS id, count(*)::int AS n FROM todos
@@ -147,7 +150,11 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
       (sql`SELECT DISTINCT ON (conversation_id) conversation_id AS id, needs_reply, msg_at, created_at FROM guest_events
             WHERE account_id = 1 AND kind = 'message' AND conversation_id IS NOT NULL AND created_at > now() - interval '14 days'
             ORDER BY conversation_id, id DESC` as Promise<{ id: string; needs_reply: boolean | null; msg_at: string | Date | null; created_at: string | Date }[]>).catch(() => []),
+      // Conversations with an AI draft waiting (migration 122; empty without it).
+      (sql`SELECT DISTINCT conversation_id AS id FROM guest_events WHERE account_id = 1 AND kind = 'message' AND answered_at IS NULL
+            AND draft ? 'reply' AND created_at > now() - interval '7 days'` as Promise<{ id: string }[]>).catch(() => []),
     ]);
+    const drafted = new Set(drafts.map(d => d.id));
     const triaged = new Map(events.map(e => [e.id, e]));
     // "Thanks!" is not waiting — but only while it IS the last word: a later message is a new question until it is sorted.
     const quiet = (c: { conversationId: string; lastAt: string | null; lastIncoming: boolean }) => {
@@ -161,7 +168,7 @@ export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
     const nTasks = new Map(tasks.map(t => [t.id, t.n])), nWait = new Map(waiting.map(t => [t.id, t.n]));
     const rows: InboxRow[] = convs.map(({ phone: _phone, type: _type, ...c }) => ({
       ...c, listing: (c.listingId && names.get(c.listingId)) || c.listing || 'Unknown listing',
-      tasks: nTasks.get(c.reservationId) ?? 0, scheduled: nWait.get(c.reservationId) ?? 0, noReply: quiet(c),
+      tasks: nTasks.get(c.reservationId) ?? 0, scheduled: nWait.get(c.reservationId) ?? 0, noReply: quiet(c), drafted: drafted.has(c.conversationId),
     }));
     return json({ ok: true, rows, today, more: convs.length === 50, live, aiMode: ai.mode, quo: acct[0]?.quo === true, templates });
   } catch (e) {
@@ -181,13 +188,8 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (b.action === 'suggest') {
     if (!conversationId || !ID.test(conversationId)) return bad('Which conversation?');
     try {
-      const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
-      const [row, thread, units] = await Promise.all([fetchConversation(creds, conversationId), fetchMessages(creds, conversationId),
-        sql`SELECT id::text AS id, name FROM units WHERE account_id = 1` as Promise<{ id: string; name: string }[]>]);
-      if (!row) return bad('That conversation is not in Hostaway any more.', 404);
-      const stay = { ...row, listing: units.find(u => u.id === row.listingId)?.name ?? row.listing };
-      const r = await suggestReply(sql, env, stay, thread, todayIn(GUEST_TZ), creds);
-      return r.ok ? json(r) : bad(r.error, 422);
+      const r = await suggestFor(sql, env, conversationId);
+      return r.ok ? json(r) : bad(r.error, 'gone' in r ? 404 : 422);
     } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
   }
 

@@ -77,7 +77,7 @@ export function GuestPortal({ stay: booked, now = new Date(), demoBar, embedded 
     }).catch(() => setPayNote('Could not check the verification.'));
   }, [embedded]);
   const [step, setStep] = useState<StepKey | null>(null);
-  const prot = protectionFor(stay.unitType ?? 'house', stay.protection ?? {});
+  const prot = protectionFor(stay.unitType ?? 'house', stay.protection ?? {}, nights(stay));
   useUrlState('step', step ?? '', v => setStep((v || null) as StepKey | null), { def: '', on: !embedded });
   useUrlState('sec', sec, setSec, { def: 'stay', valid: v => (SECS as string[]).includes(v), on: !embedded });
   useUrlState('extra', pick ?? '', v => setPick((v || null) as Upsell['kind'] | null), { def: '', on: !embedded });

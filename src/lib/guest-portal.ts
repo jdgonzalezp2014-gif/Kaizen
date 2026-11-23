@@ -47,7 +47,7 @@ export interface GuestStay {
   checkedIn?: boolean;
   /** The guest's door code (Hostaway's per-reservation code when set) — shown only once check-in opens the entry. */
   doorCode?: string | null;
-  protection?: { waiverPrice?: number | null; waiverCap?: number | null; depositHold?: number | null } | null;
+  protection?: { waiverMin?: number | null; waiverNight?: number | null; waiverCap?: number | null; depositHold?: number | null } | null;
   /** The house's check-in guide, from its Repository record (null = none yet). Served only once the guide opens. */
   guide?: GuestGuide | null;
   /** House prices from the Repository's Fees, overriding the UPSELLS placeholders. */

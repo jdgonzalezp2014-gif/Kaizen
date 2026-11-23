@@ -116,6 +116,27 @@ the booking or any company policy — so most of those were guesses or handoffs.
 - Data gaps seen (Repository, 2026-11-19): listing text/fees filled on 21 of 44 records (the active ones); `svc_*`, waiver,
   deposit, `guest_code`, `portal_photo` empty everywhere; houses have no parking notes; Hostaway amenities differ from the text.
 
+## Drafts on arrival + online check-in first (owner, 2026-11-23 — migration 122)
+
+Owner: "the bot reads the messages and answers from the guest portal — it may ask them to fill it before giving info, send the link
+or answer; for now a draft that can be sent or not; later it takes care of it."
+- **When:** `takeEvent` (the webhook), after triage, when the message needs an answer (no triage = it does) and the stay is open →
+  `draftEvent` (guest-events.ts) through the request's `waitUntil`; stored on `guest_events.draft` (`{"pending":true}` claims it, then the
+  suggestion or `{error}` — never re-asked). Catch-up: the clock's `messages` job runs `draftPass` (one per pass, last 6 h; a claim older than
+  15 min is retried). Same brain as Suggest: `suggestFor(conversationId)` (guest-ai.ts).
+- **Inbox:** ✦ beside the dot in the list (`drafted`); the thread's `draft` opens the Composer's card as "Drafted when the guest wrote";
+  **Use** fills `{{portal_link}}` and the other blanks (`fill` + `varsFor`) — the model writes the link only as `{{portal_link}}`.
+  Composers are keyed by conversation now (a card no longer carries over to the next chat).
+- **Portal first** (`portalLines`, inbox.ts): booked stay + portal address + online check-in not done → the guide and listing facts are built
+  with `booked: false` (no address, Wi-Fi, steps, manual, phone reach the model) and the rule asks the guest to complete the check-in with the
+  link; done → arrival answered, the code stays in the portal. **Old check-in notice:** agreement `signed` or ID verified in Hostaway → "we moved
+  to a new online check-in, complete it once". **Damage protection** line from the Repository (`protectionFor`, nights); Airbnb = AirCover.
+- Settings → Guest messages & AI: three boxes (`autoDraft`, `portalFirst`, `oldPortalNotice`; unset = on, jsonb, no migration).
+- Tried 2026-11-23 with gemini-3.6-flash on a real Vrbo stay (P2-1201, agreement signed) + a made-up "door code / address / coffee maker /
+  deposit" message: no code or address, the link blank, the old-check-in notice, coffee maker from amenities, $300 / $70. **Not seen yet: a
+  draft written by the webhook** (needs 122 + deploy) — check `SELECT id, preview, draft FROM guest_events WHERE draft IS NOT NULL ORDER BY id DESC LIMIT 5`.
+- ⚠ The stay link `/guest/<id>.<sig>` still shows only Pending payments (Phase 2): a guest sent there today cannot do the check-in.
+
 ## Not verified yet (no way to without a real guest or a key)
 
 - **117 is written, NOT applied** (2026-11-16). Seen working without it on real data (read-only harness): list, thread, tabs,

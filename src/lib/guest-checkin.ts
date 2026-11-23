@@ -8,27 +8,35 @@
 import { kindOf } from './unit-access.ts';
 import { UPSELLS, priceOf, quote, availability, minutesOf, type Choice, type GuestStay, type UpsellKind } from './guest-portal.ts';
 
-/** Protection values depend on what is rented: a room is not a house (owner, 2026-11-15). Per listing later. */
+/** Protection values depend on what is rented: a room is not a house (owner, 2026-11-15). Per listing in the Repository. */
 export type UnitType = 'room' | 'apartment' | 'house';
-export interface Protection { waiver: { price: number; cap: number }; deposit: { hold: number } }
+/** `waiver.price` is what this stay pays: the per-night rate × nights, never under the minimum (owner, 2026-11-23). */
+export interface Protection { waiver: { price: number; min: number; perNight: number; cap: number }; deposit: { hold: number } }
 
-/** Placeholders until the owner sets them — Hostop's demo: waiver $49 covers $1,500; deposit $250 hold. */
-export const PROTECTION_DEFAULTS: Record<UnitType, Protection> = {
-  room: { waiver: { price: 29, cap: 1000 }, deposit: { hold: 150 } },
-  apartment: { waiver: { price: 49, cap: 1500 }, deposit: { hold: 250 } },
-  house: { waiver: { price: 79, cap: 3000 }, deposit: { hold: 500 } },
+/** Owner, 2026-11-23, every listing: $300 deposit, or a waiver of $12 a night with a $70 minimum. Caps are still placeholders. */
+const STANDARD = { min: 70, perNight: 12, hold: 300 };
+export const PROTECTION_DEFAULTS: Record<UnitType, { waiver: { min: number; perNight: number; cap: number }; deposit: { hold: number } }> = {
+  room: { waiver: { min: STANDARD.min, perNight: STANDARD.perNight, cap: 1000 }, deposit: { hold: STANDARD.hold } },
+  apartment: { waiver: { min: STANDARD.min, perNight: STANDARD.perNight, cap: 1500 }, deposit: { hold: STANDARD.hold } },
+  house: { waiver: { min: STANDARD.min, perNight: STANDARD.perNight, cap: 3000 }, deposit: { hold: STANDARD.hold } },
 };
 
-export interface ProtectionOverride { waiverPrice?: number | null; waiverCap?: number | null; depositHold?: number | null }
+export interface ProtectionOverride { waiverMin?: number | null; waiverNight?: number | null; waiverCap?: number | null; depositHold?: number | null }
 
-/** The unit type's defaults, with whatever the listing sets on top (a blank field keeps the default). */
-export function protectionFor(type: UnitType, o: ProtectionOverride = {}): Protection {
+/** The unit type's defaults, with whatever the listing sets on top (a blank field keeps the default), for a stay of `nights`. */
+export function protectionFor(type: UnitType, o: ProtectionOverride = {}, nights = 1): Protection {
   const d = PROTECTION_DEFAULTS[type];
   const n = (v: number | null | undefined, def: number) => (v != null && Number.isFinite(v) && v >= 0 ? v : def);
-  return { waiver: { price: n(o.waiverPrice, d.waiver.price), cap: n(o.waiverCap, d.waiver.cap) }, deposit: { hold: n(o.depositHold, d.deposit.hold) } };
+  const min = n(o.waiverMin, d.waiver.min), perNight = n(o.waiverNight, d.waiver.perNight);
+  const price = Math.round(Math.max(min, perNight * Math.max(1, Math.round(nights))) * 100) / 100;
+  return { waiver: { price, min, perNight, cap: n(o.waiverCap, d.waiver.cap) }, deposit: { hold: n(o.depositHold, d.deposit.hold) } };
 }
 
-/** The record's "Guest portal" section (migration 110): unit type + protection values; blanks keep the defaults. */
+/**
+ * The record's unit type (Guest portal, migration 110) and protection values — Fees since 2026-11-23 (migration 122):
+ * Refundable damage deposit, Damage waiver per night (the same field as Hostaway's nightly fee), Damage waiver minimum.
+ * Blanks keep the defaults.
+ */
 export function portalFrom(vals: Record<string, unknown> | null | undefined): { unitType: UnitType | null; protection: ProtectionOverride } {
   const num = (v: unknown) => { const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v.replace(/[$,\s]/g, '')) : NaN; return Number.isFinite(n) && n >= 0 ? n : null; };
   const t = typeof vals?.unit_type === 'string' ? vals.unit_type.toLowerCase() : '';
@@ -37,7 +45,8 @@ export function portalFrom(vals: Record<string, unknown> | null | undefined): { 
   const fromPt: UnitType | null = /room/.test(pt) ? 'room' : /apartment|condo|loft|studio|flat/.test(pt) ? 'apartment' : /house|home|villa|townhouse|cottage|cabin/.test(pt) ? 'house' : null;
   return {
     unitType: t === 'room' || t === 'apartment' || t === 'house' ? t : fromPt,
-    protection: { waiverPrice: num(vals?.waiver_price), waiverCap: num(vals?.waiver_cap), depositHold: num(vals?.deposit_hold) },
+    protection: { waiverMin: num(vals?.waiver_price), waiverNight: num(vals?.insurance_fee), waiverCap: num(vals?.waiver_cap),
+      depositHold: num(vals?.damage_deposit) ?? num(vals?.deposit_hold) },
   };
 }
 

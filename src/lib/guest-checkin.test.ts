@@ -14,9 +14,16 @@ const NOW = new Date('2026-11-14T12:00:00Z');
 const f = (o: Partial<Flow>): Flow => ({ ...newFlow(), ...o });
 
 test('protection: defaults by unit type, a listing value wins, blanks keep the default', () => {
-  assert.deepEqual(protectionFor('house'), { waiver: { price: 79, cap: 3000 }, deposit: { hold: 500 } });
-  assert.deepEqual(protectionFor('room', { waiverPrice: 35, waiverCap: null }), { waiver: { price: 35, cap: 1000 }, deposit: { hold: 150 } });
-  assert.equal(protectionFor('room', { depositHold: -5 }).deposit.hold, 150);
+  assert.deepEqual(protectionFor('house'), { waiver: { price: 70, min: 70, perNight: 12, cap: 3000 }, deposit: { hold: 300 } });
+  assert.deepEqual(protectionFor('room', { waiverMin: 35, waiverCap: null }), { waiver: { price: 35, min: 35, perNight: 12, cap: 1000 }, deposit: { hold: 300 } });
+  assert.equal(protectionFor('room', { depositHold: -5 }).deposit.hold, 300);
+});
+
+test('protection: the waiver is $/night × nights, never under the minimum (owner, 2026-11-23)', () => {
+  assert.equal(protectionFor('house', {}, 3).waiver.price, 70);   // 3 × 12 = 36 → the $70 minimum
+  assert.equal(protectionFor('house', {}, 6).waiver.price, 72);   // 6 × 12 = 72 > 70
+  assert.equal(protectionFor('house', { waiverNight: 15, waiverMin: 50 }, 4).waiver.price, 60);
+  assert.equal(protectionFor('house', {}, 0).waiver.price, 70);
 });
 
 test('steps: four required, extras optional, pay only when something is charged', () => {
@@ -38,10 +45,10 @@ test('Airbnb: protection is covered by the channel, nothing to pay', () => {
 });
 
 test('bill: waiver is charged, deposit is held, extras are charged now; early on a turnover drops off', () => {
-  assert.deepEqual(bill(f({ protection: 'waiver' }), stay(), P), { lines: [{ label: 'Damage waiver', amount: 49, kind: 'charge', item: 'waiver', note: 'Covers up to $1,500' }], today: 49, hold: 0 });
+  assert.deepEqual(bill(f({ protection: 'waiver' }), stay(), P), { lines: [{ label: 'Damage waiver', amount: 70, kind: 'charge', item: 'waiver', note: 'Covers up to $1,500' }], today: 70, hold: 0 });
   const b = bill(f({ protection: 'deposit', extras: { 'welcome': {}, 'early-checkin': { time: '1:00 PM' } } }), stay(), P);
   assert.equal(b.today, 35);
-  assert.equal(b.hold, 250);
+  assert.equal(b.hold, 300);
   assert.deepEqual(b.lines.map(l => l.kind), ['hold', 'charge']);
   const n = bill(f({ extras: { 'early-checkin': { time: '1:00 PM' } } }), stay({ turnIn: false }), P);
   assert.deepEqual(n.lines.map(l => [l.item, l.kind]), [['early-checkin', 'charge']]);
@@ -74,8 +81,9 @@ test('rules: lines, bullets and "Title: detail" become short items', () => {
 
 test('portal fields from the record: unit type and protection, blanks and junk ignored', () => {
   assert.deepEqual(portalFrom({ unit_type: 'Apartment', waiver_price: '$59', waiver_cap: 2000, deposit_hold: '' }),
-    { unitType: 'apartment', protection: { waiverPrice: 59, waiverCap: 2000, depositHold: null } });
-  assert.deepEqual(portalFrom(null), { unitType: null, protection: { waiverPrice: null, waiverCap: null, depositHold: null } });
+    { unitType: 'apartment', protection: { waiverMin: 59, waiverNight: null, waiverCap: 2000, depositHold: null } });
+  assert.deepEqual(portalFrom({ waiver_price: 70, insurance_fee: 12, damage_deposit: 300 }).protection, { waiverMin: 70, waiverNight: 12, waiverCap: null, depositHold: 300 });
+  assert.deepEqual(portalFrom(null), { unitType: null, protection: { waiverMin: null, waiverNight: null, waiverCap: null, depositHold: null } });
 });
 
 test('doorCodeFor: smart lock → reservation code, else the Repository code; fob / keys → none', () => {

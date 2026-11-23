@@ -1106,7 +1106,9 @@ export const inboxExtend = (b: { listingId: string | null; arrival: string | nul
   call<ExtendFit | Fail>('/api/inbox', { method: 'POST', body: JSON.stringify({ action: 'extend', ...b }) });
 export interface InboxThread { ok: true; messages: ThreadMsg[]; tasks: StayTask[]; cases?: StayCase[]; portalLink: string | null; phone: string | null; plan: Planned[];
   /** The online check-in, when it is done: when, and whether the guest's portal or a person marked it. */
-  checkin?: { at: string; source: string; by: string | null } | null }
+  checkin?: { at: string; source: string; by: string | null } | null;
+  /** Drafted when the guest wrote (guest-events.ts draftEvent): a suggestion, or why it could not be written. */
+  draft?: (ReplySuggestion & { by: string; sops: string[]; at: string }) | { error: string; at: string } | null }
 export interface InboxEvents { ok: true; last: number; waiting: number; fresh: { id: string; conversationId: string; guest: string; preview: string; urgent: boolean }[] }
 /** What Hostaway's webhook reported since `since` — Kaizen's own table, no Hostaway call: asked every half minute. */
 export const getInboxEvents = (since: number) => call<InboxEvents | Fail>(`/api/inbox?events=${since}`);

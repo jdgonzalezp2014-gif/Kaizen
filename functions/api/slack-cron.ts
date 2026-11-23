@@ -29,12 +29,12 @@ import { loadOps, pushHostNotes, reconcileRecent, recordCleanings } from '../_li
 import { pullAll } from '../_lib/hostaway-tasks.ts';
 import { watchCalendars } from '../_lib/calendar-watch.ts';
 import { runDue } from '../_lib/guest-outbox.ts';
-import { takeEvent, watchPass } from '../_lib/guest-events.ts';
+import { draftPass, takeEvent, watchPass } from '../_lib/guest-events.ts';
 import { verifyHook } from '../_lib/guest-link.ts';
 import { sweepCharges } from '../_lib/upsell-charge.ts';
 
 
-export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
+export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUntil }) => {
   const sql = db(env) as unknown as SqlFn;
   // Hostaway's webhook (Guest Services → Inbox, 2026-11-16): a guest wrote, a booking was made. It cannot send the
   // ingest header, so it carries its own secret — `?k=` or the basic-auth password (guest-link.ts `hookSecret`) — and
@@ -45,7 +45,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     let pass: string | null = null;
     try { pass = basic ? atob(basic).split(':').slice(1).join(':') : null; } catch { pass = null; }
     if (!(await verifyHook(env.ENCRYPTION_KEY, here.searchParams.get('k') ?? pass))) return Response.json({ ok: false, error: 'unauthenticated' }, { status: 403 });
-    try { return Response.json(await takeEvent(sql, env, await request.json().catch(() => null), here.origin)); }
+    try { return Response.json(await takeEvent(sql, env, await request.json().catch(() => null), here.origin, p => waitUntil(p))); }
     catch (e) { return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
   }
   const who = identify(request, env);
@@ -76,7 +76,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     try {
       const messages = await runDue(sql, env);
       const watch = await watchPass(sql, env, here.origin).catch(e => ({ error: e instanceof Error ? e.message : String(e) }));
-      return Response.json({ ok: true, messages, watch });
+      // A guest message whose draft the webhook did not finish (2026-11-23): one per pass — a draft is ~15 subrequests.
+      const drafts = await draftPass(sql, env).catch(e => ({ error: e instanceof Error ? e.message : String(e) }));
+      return Response.json({ ok: true, messages, watch, drafts });
     }
     catch (e) { return Response.json({ ok: false, error: e instanceof Error ? e.message : String(e) }, { status: 500 }); }
   }

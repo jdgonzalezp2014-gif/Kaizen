@@ -319,6 +319,29 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   Kaizen's sender is proven: outbox table + retries + a log per message, draft mode side by side first, then replace one message
   at a time (arrival instructions first). Grows with the restructure, not as a separate project.
 
+### Damage protection per listing + listing texts (owner, 2026-11-23 — migration 122)
+
+- Owner: "$300 deposit or a damage waiver of $70 minimum or $12 a night, whichever is greater" — for every listing, per listing in the
+  Repository. Fees: `damage_deposit` (Refundable damage deposit, $300), `insurance_fee` (now titled **Damage waiver per night**, $12 — the same
+  field as Hostaway's nightly fee), `waiver_price` (moved to Fees, now **Damage waiver minimum**, $70). 122 fills blanks only. `deposit_hold`
+  (Guest portal) is a fallback for `damage_deposit`. `protectionFor(type, o, nights)`: waiver = max(min, per night × nights); the portal passes
+  the stay's nights. Defaults = the same values for every unit type (caps still placeholders 1,000 / 1,500 / 3,000).
+- **Hostaway descriptions (written 2026-11-23, 23 active listings, all read back):** `scripts/description-protection-notice.mjs` appended a
+  "Damage protection: …" paragraph to `description`, `homeawayPropertyDescription` (Vrbo) and `bookingcomPropertyDescription`; the text as it
+  was is in `listing_text_changes`. Airbnb's fields untouched (AirCover; Airbnb forbids asking for money outside it).
+  ⚠ Hostaway still adds its own **$12/night Damage Waiver fee** to direct/Vrbo bookings (finance.md, 2026-11-11) — with the portal charging
+  the waiver too, that fee must go (or the portal must skip the waiver) before the portal charges for real: owner's call.
+- **Check-in guide coverage (2026-11-23, active units):** The Links 10/10 use a building guide (1xxx → building 1, 4xxx → building 4).
+  P2-4217 / P2-4222 had empty records — check-in/out times, guest access, rules, parking, phone, address copied from LP-4212 (same building,
+  repo_audit). **No arrival steps:** CL 1125, CL 1446, CL1250, CL1339, CL2260, CL2450 (one shared Cortland guide would cover them — owner
+  gives the entrance / where to go + photos), Amber Valley, Bobcat House, Concord, Napa Valley, Quest, Timber Crest; Preston has a 2-step test.
+  Houses: no Parking text anywhere; Bobcat House has no contact phone. Smart-lock houses get the door code from Hostaway's reservation —
+  Preston and Bobcat (Yale) had none on checked stays and have no Guest check-in code in the record.
+- **Links checked 2026-11-23:** `https://stay.kaizenguestproperties.com` answers 200 without sign-in (no Access on that host); `/guest/<id>.<sig>`
+  loads; a bad signature is refused (403); `kaizen-01v.pages.dev/guest/*` still asks for Google sign-in (Access) — links must use the stay host,
+  which `portalLink` does. `/crew/guest-demo` 200. **But the stay link shows only Pending payments** — Phase 2 (the check-in on the real link)
+  is not built.
+
 ### Rules
 
 - Pay state = `total − paid` (≤ 0 → paid); channel `airbnb`/`vrbo` → collected by the channel, no gate.

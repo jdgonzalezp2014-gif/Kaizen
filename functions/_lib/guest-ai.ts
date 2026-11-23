@@ -17,7 +17,13 @@ import type { Env } from './db.ts';
 import { guestHouse } from '../api/guest-guide.ts';
 import { fetchListingAmenities, fetchReservationDetail } from './hostaway.ts';
 import type { HostawayCredentials } from './hostaway.ts';
-import { aiPrompt, channelLabel, guestAiFrom, guideFacts, question, stageOf, suggestionFromAi, type GuestAi, type Stay, type Suggestion, type ThreadMsg } from '../../src/lib/inbox.ts';
+import { aiPrompt, channelLabel, guestAiFrom, guideFacts, portalLines, question, stageOf, suggestionFromAi, type GuestAi, type Stay, type Suggestion, type ThreadMsg } from '../../src/lib/inbox.ts';
+import { nights as stayNights } from '../../src/lib/guest-portal.ts';
+import { portalFrom, protectionFor } from '../../src/lib/guest-checkin.ts';
+import { todayIn } from '../../src/lib/dates.ts';
+import { getCredentials } from './accounts.ts';
+import { fetchConversation, fetchMessages } from './hostaway-messages.ts';
+import { GUEST_TZ } from './guest-outbox.ts';
 import { amenityLine, listingFacts, portfolioFacts, scrubCodes, stayFacts, workFacts } from '../../src/lib/guest-knowledge.ts';
 import { rankSops, type SopDoc } from '../../src/lib/slack-sops.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
@@ -80,7 +86,7 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
   const booked = !['inquiry', 'cancelled'].includes(stageOf(stay, today));
   const reservation = /^\d+$/.test(stay.reservationId) ? stay.reservationId : null;
   const none = <T,>(v: T) => () => v;
-  const [house, docs, recs, units, detail, amenities, todos, done] = await Promise.all([
+  const [house, docs, recs, units, detail, amenities, todos, done, portalRow] = await Promise.all([
     // No Hostaway key passed: the facts need the record and the builder, not the cover photo or the calendar.
     stay.listingId ? guestHouse(sql, stay.listingId).catch(none(null)) : null,
     sql`SELECT o.id::text, o.title, o.purpose, o.trigger, o.steps, o.body, o.keywords, s.label AS section, o.section_key FROM sops o
@@ -93,12 +99,18 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
     reservation ? sql`SELECT title, status, kind, due_on::text AS "dueOn" FROM todos WHERE account_id = 1 AND deleted_at IS NULL AND done_at IS NULL
                         AND reservation_id = ${reservation} AND parent_id IS NULL ORDER BY created_at DESC LIMIT 6`.catch(none([])) as Promise<{ title: string; status: string; kind: string | null; dueOn: string | null }[]> : [],
     reservation ? sql`SELECT 1 FROM guest_checkins WHERE account_id = 1 AND reservation_id = ${reservation}`.catch(none(null)) as Promise<unknown[] | null> : null,
+    sql`SELECT guest_portal_url FROM accounts WHERE id = 1`.catch(none([])) as Promise<{ guest_portal_url: string | null }[]>,
   ]);
+  // The portal decides what a booked guest may be told now (owner, 2026-11-23): before the online check-in, no arrival
+  // details reach the facts at all — the prompt's rule is backed by what the model is shown.
+  const hasLink = !!portalRow[0]?.guest_portal_url;
+  const checkinDone = !!done?.length;
+  const held = booked && hasLink && cfg.portalFirst && !checkinDone;
   const unitName = house?.unitName ?? stay.listing;
   const rec = repoMatch(unitName, recs);
   const facts = scrubCodes([
-    guideFacts(house?.guide ?? null, { unitName, notOffered: house?.notOffered, prices: house?.prices, booked }),
-    ...listingFacts(rec?.vals, booked),
+    guideFacts(house?.guide ?? null, { unitName, notOffered: house?.notOffered, prices: house?.prices, booked: booked && !held }),
+    ...listingFacts(rec?.vals, booked && !held),
     amenityLine(amenities),
   ].filter(Boolean).join('\n'));
   const stayLines = stayFacts(detail, { channel: stay.channel ? channelLabel(stay.channel) : undefined, payment: stay.payment, agreement: stay.agreement,
@@ -109,12 +121,30 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
       bedrooms: v.hw_bedrooms ?? u.bedrooms, guests: v.max_guests ?? u.capacity };
   }), unitName);
   const sops = rankSops(question(thread), docs.filter(d => !d.section_key || GUEST_SECTIONS.has(d.section_key)), 5);
+  const pf = portalFrom(rec?.vals);
+  const n = stay.arrival && stay.departure ? stayNights({ arrival: stay.arrival, departure: stay.departure }) : 1;
+  const p = protectionFor(pf.unitType ?? 'house', pf.protection, n);
+  const protection = /airbnb/i.test(stay.channel ?? '') ? 'Damage protection: covered by Airbnb (AirCover) — no deposit or waiver for this guest.'
+    : `Damage protection, chosen in the online check-in: a refundable $${p.deposit.hold} security deposit (a hold, released after check-out) or a non-refundable damage waiver of $${p.waiver.perNight} per night or $${p.waiver.min}, whichever is greater — $${p.waiver.price} for this ${n}-night stay.`;
+  const portal = portalLines({ hasLink, checkinDone, oldPortalDone: stay.agreement === 'signed' || stay.idVerified === true, portalFirst: cfg.portalFirst,
+    oldNotice: cfg.oldPortalNotice, protection });
   const { system, user } = aiPrompt({ stay, today, facts, sops, thread, instructions: cfg.instructions, company: a?.name ?? 'the host',
-    business: scrubCodes(cfg.business), stayLines, work: workFacts(todos), portfolio, channel: stay.channel });
+    business: scrubCodes(cfg.business), stayLines, work: workFacts(todos), portfolio, channel: stay.channel, portal });
   const r = cfg.provider === 'claude' ? await askClaude(key, cfg.model, system, user)
     : await askGemini(key, cfg.model, system, user, [], MS).then(x => ({ ...x, by: cfg.model }));
   if (!r.json) return { ok: false, error: r.error ?? 'The model did not answer.' };
   const suggestion = suggestionFromAi(r.json);
   if (!suggestion) return { ok: false, error: 'The model answered without a reply.' };
   return { ok: true, suggestion, by: r.by ?? cfg.model, sops: sops.map(s => s.title) };
+}
+
+/** The draft for one conversation, read fresh from Hostaway — the Suggest button and the webhook's automatic draft share it. */
+export async function suggestFor(sql: SqlFn, env: Env, conversationId: string):
+  Promise<Awaited<ReturnType<typeof suggestReply>> | { ok: false; error: string; gone: true }> {
+  const creds = await getCredentials(sql, env.ENCRYPTION_KEY);
+  const [row, thread, units] = await Promise.all([fetchConversation(creds, conversationId), fetchMessages(creds, conversationId),
+    sql`SELECT id::text AS id, name FROM units WHERE account_id = 1` as Promise<{ id: string; name: string }[]>]);
+  if (!row) return { ok: false, error: 'That conversation is not in Hostaway any more.', gone: true };
+  const stay = { ...row, listing: units.find(u => u.id === row.listingId)?.name ?? row.listing };
+  return suggestReply(sql, env, stay, thread, todayIn(GUEST_TZ), creds);
 }

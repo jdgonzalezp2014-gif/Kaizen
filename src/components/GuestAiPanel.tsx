@@ -79,6 +79,16 @@ export function GuestAiPanel({ onSaved }: { onSaved?: (s: InboxSettings) => void
                     placeholder={'Team answers 8 AM – 10 PM Central; urgent issues 24/7 by message.\nEarly check-in: $20/hour before check-in, ask a day before, subject to approval.'}
                     onChange={e => setAi({ ...ai, business: e.target.value })} />
         </label>
+        <label className="check inline"><input type="checkbox" checked={ai.autoDraft} onChange={e => setAi({ ...ai, autoDraft: e.target.checked })} />
+          Draft a reply when a guest writes <Hint>The moment Hostaway reports a guest message that needs an answer, the AI writes the reply and it waits
+            in that conversation (✦ in the list). Nobody is messaged: a person uses it, edits it, sends it — or dismisses it.</Hint></label>
+        <label className="check inline"><input type="checkbox" checked={ai.portalFirst} onChange={e => setAi({ ...ai, portalFirst: e.target.checked })} />
+          Online check-in first <Hint>Until the guest finishes the online check-in, the draft never gives the door code, arrival steps, exact address or
+            Wi-Fi: it asks the guest to complete it with their portal link, and answers everything else. Once it is done, arrival questions are answered
+            and the code stays in the portal.</Hint></label>
+        <label className="check inline"><input type="checkbox" checked={ai.oldPortalNotice} onChange={e => setAi({ ...ai, oldPortalNotice: e.target.checked })} />
+          Tell guests who used the old check-in <Hint>A guest who already signed the agreement or gave an ID in Hostaway's old portal is thanked, told we moved
+            to a new online check-in, and asked to complete it once.</Hint></label>
         <div className="row"><button disabled={busy} onClick={() => void save({ ai })}>Save</button></div>
       </div>
       <div className="card">

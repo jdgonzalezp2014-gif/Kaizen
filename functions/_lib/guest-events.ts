@@ -17,6 +17,7 @@ import type { Env } from './db.ts';
 import { fireStay, GUEST_TZ } from './guest-outbox.ts';
 import { fetchConversation, fetchMessages } from './hostaway-messages.ts';
 import { postTo, slackSetup } from './slack.ts';
+import { readGuestAi, suggestFor } from './guest-ai.ts';
 import { todayIn } from '../../src/lib/dates.ts';
 import { STAGE_LABEL, awaitingReply, preview, stageOf } from '../../src/lib/inbox.ts';
 import { eventFrom, stayOpen, toCheck, triageFrom, triagePrompt, watchFrom, watchMessage, type GuestWatch, type OpenEvent, type Triage } from '../../src/lib/guest-watch.ts';
@@ -34,8 +35,11 @@ async function tellTeam(sql: SqlFn, env: Env, msg: ReturnType<typeof watchMessag
   return !!r?.ok;
 }
 
-/** One webhook call. Always answers what it did; only a database that is down is an error (Hostaway retries those). */
-export async function takeEvent(sql: SqlFn, env: Env, payload: unknown, origin: string) {
+/**
+ * One webhook call. Always answers what it did; only a database that is down is an error (Hostaway retries those).
+ * `defer` (the request's waitUntil) lets the reply's draft be written after Hostaway has its answer.
+ */
+export async function takeEvent(sql: SqlFn, env: Env, payload: unknown, origin: string, defer?: (p: Promise<unknown>) => void) {
   const ev = eventFrom(payload);
   if (!ev) return { ok: true, took: 'ignored' };
 
@@ -90,6 +94,12 @@ export async function takeEvent(sql: SqlFn, env: Env, payload: unknown, origin: 
                    needs_reply = ${by ? t.needsReply : null}, urgent = ${t.urgent}, why = ${t.why || null},
                    reminded_at = CASE WHEN ${told} THEN now() ELSE reminded_at END
              WHERE id = ${row.id}`;
+  // Owner, 2026-11-23: the reply is drafted now, so it is waiting in the Inbox when someone opens the conversation.
+  // Only when an answer is needed (no triage = needed) and the stay is still open.
+  if ((by ? t.needsReply : true) && open) {
+    const job = draftEvent(sql, env, row.id, conversationId).catch(() => null);
+    if (defer) defer(job); else await job;
+  }
   return { ok: true, took: 'message', waiting: t.needsReply, urgent: t.urgent, told, by };
 }
 
@@ -134,4 +144,47 @@ export async function watchPass(sql: SqlFn, env: Env, origin: string, now = new 
     if (told) out.reminded++;
   }
   return out;
+}
+
+export type EventDraft = { reply: string; confidence: string; handoff: boolean; reason: string; sources: string[]; missing: string; by: string; sops: string[]; at: string }
+  | { error: string; at: string };
+
+/**
+ * The AI's draft for a guest message, kept on its event (guest_events.draft, migration 122) — written once, shown in the
+ * Inbox to send or dismiss; never sent from here (owner: "a draft that can be sent or not", 2026-11-23). An error is kept
+ * too, so a failing model is not asked again every pass. Off when the account's AI or "Draft on arrival" is off.
+ */
+export async function draftEvent(sql: SqlFn, env: Env, eventId: string, conversationId: string): Promise<EventDraft | null> {
+  const cfg = await readGuestAi(sql);
+  if (cfg.mode === 'off' || !cfg.autoDraft) return null;
+  // Claim it first: the webhook and the clock's catch-up must not both pay for the same draft.
+  const claimed = await (sql`UPDATE guest_events SET draft = '{"pending":true}'::jsonb WHERE id = ${eventId} AND draft IS NULL RETURNING id` as Promise<unknown[]>).catch(() => []);
+  if (!claimed.length) return null;
+  const at = new Date().toISOString();
+  const r = await suggestFor(sql, env, conversationId).catch(e => ({ ok: false as const, error: e instanceof Error ? e.message : String(e) }));
+  const draft: EventDraft = r.ok ? { ...r.suggestion, by: r.by, sops: r.sops, at } : { error: r.error.slice(0, 300), at };
+  await sql`UPDATE guest_events SET draft = ${JSON.stringify(draft)}::jsonb WHERE id = ${eventId}`;
+  return draft;
+}
+
+/** The clock's catch-up: one waiting message with no draft yet (the webhook's draft failed to start or ran out of time). */
+export async function draftPass(sql: SqlFn, env: Env) {
+  const rows = await (sql`SELECT id::text AS id, conversation_id FROM guest_events
+                           WHERE account_id = 1 AND kind = 'message' AND answered_at IS NULL AND needs_reply IS NOT FALSE AND draft IS NULL
+                             AND conversation_id IS NOT NULL AND created_at > now() - interval '6 hours'
+                           ORDER BY id DESC LIMIT 1` as Promise<{ id: string; conversation_id: string }[]>).catch(() => []);
+  // A draft claimed but never finished (the request died) is retried after 15 minutes.
+  await sql`UPDATE guest_events SET draft = NULL WHERE account_id = 1 AND draft = '{"pending":true}'::jsonb AND answered_at IS NULL
+              AND created_at > now() - interval '6 hours' AND created_at < now() - interval '15 minutes'`.catch(() => {});
+  const r = rows[0];
+  if (!r) return { drafted: 0 };
+  const d = await draftEvent(sql, env, r.id, r.conversation_id);
+  return { drafted: d && !('error' in d) ? 1 : 0, error: d && 'error' in d ? d.error : undefined };
+}
+
+/** The newest finished draft still waiting in a conversation (null before migration 122, or when none). */
+export async function draftOf(sql: SqlFn, conversationId: string): Promise<EventDraft | null> {
+  const rows = await (sql`SELECT draft FROM guest_events WHERE account_id = 1 AND kind = 'message' AND conversation_id = ${conversationId}
+                           AND answered_at IS NULL AND draft IS NOT NULL AND NOT (draft ? 'pending') ORDER BY id DESC LIMIT 1` as Promise<{ draft: EventDraft }[]>).catch(() => []);
+  return rows[0]?.draft ?? null;
 }

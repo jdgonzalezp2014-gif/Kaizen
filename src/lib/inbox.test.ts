@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { aiPrompt, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, planFor,
+import { aiPrompt, portalLines, appliesTo, awaitingReply, scopeWords, threadTabs, tabOf, waits, dueAt, fill, guestAiFrom, guideFacts, hostawayIso, isPortalUrl, maskPhone, matchesFilter, mergeThread, planFor,
   portalLink, stageOf, stayWindow, suggestionFromAi, varsFor, whenWords, zonedInstant, type InboxRow, type Stay, type Template, type ThreadMsg, bookingLinks, condWords, condsOf, paidOf, signedOf } from './inbox.ts';
 
 const stay: Stay = { reservationId: '71', listingId: '9', listing: 'P2-1406', guest: 'Ana Ruiz', arrival: '2026-11-20', departure: '2026-11-23', status: 'new', bookedAt: '2026-11-10T15:00:00Z' };
@@ -80,9 +80,11 @@ test('one timeline: the channel\'s copy of a sent message wins, staged and sched
 });
 
 test('the AI settings are made whole; "auto" does not exist yet', () => {
-  assert.deepEqual(guestAiFrom(null), { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '' });
+  assert.deepEqual(guestAiFrom(null), { mode: 'off', provider: 'claude', model: 'claude-opus-5-5', instructions: '', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true });
   assert.deepEqual(guestAiFrom({ mode: 'auto', provider: 'gemini', model: 'bad model!', instructions: ' be kind ' }),
-    { mode: 'suggest', provider: 'gemini', model: 'gemini-3.6-flash', instructions: 'be kind', business: '' });
+    { mode: 'suggest', provider: 'gemini', model: 'gemini-3.6-flash', instructions: 'be kind', business: '', autoDraft: true, portalFirst: true, oldPortalNotice: true });
+  assert.equal(guestAiFrom({ autoDraft: false, oldPortalNotice: false }).autoDraft, false);
+  assert.equal(guestAiFrom({ autoDraft: false, oldPortalNotice: false }).portalFirst, true);
 });
 
 test('the prompt carries the facts, the SOPs and the conversation — and no code is asked for', () => {
@@ -219,4 +221,23 @@ test('"thanks" is not waiting for an answer', () => {
   assert.ok(waits({ lastIncoming: true }));
   assert.ok(!waits({ lastIncoming: true, noReply: true }));
   assert.ok(!waits({ lastIncoming: false }));
+});
+
+test('portal first (owner, 2026-11-23): no arrival details before the online check-in; the old check-in is told the system changed', () => {
+  const base = { hasLink: true, checkinDone: false, oldPortalDone: false, portalFirst: true, oldNotice: true };
+  const before = portalLines(base).join('\n');
+  assert.match(before, /NOT DONE/);
+  assert.match(before, /complete the online check-in at \{\{portal_link\}\}/);
+  assert.doesNotMatch(before, /PREVIOUS/);
+  assert.match(portalLines({ ...base, oldPortalDone: true }).join('\n'), /PREVIOUS check-in .* new online check-in/);
+  assert.doesNotMatch(portalLines({ ...base, oldPortalDone: true, oldNotice: false }).join('\n'), /PREVIOUS/);
+  assert.match(portalLines({ ...base, checkinDone: true, oldPortalDone: true }).join('\n'), /DONE\. Their door code/);
+  assert.doesNotMatch(portalLines({ ...base, checkinDone: true, oldPortalDone: true }).join('\n'), /PREVIOUS/);
+  assert.match(portalLines({ ...base, portalFirst: false }).join('\n'), /may invite them/);
+  assert.deepEqual(portalLines({ ...base, hasLink: false }), ['No guest portal yet: do not mention an online check-in or a link.']);
+  const p = aiPrompt({ stay, today: '2026-11-21', facts: '', sops: [], thread: [], instructions: '', company: 'K', portal: portalLines(base) });
+  assert.match(p.user, /GUEST PORTAL \(online check-in\)\nThe portal link is written exactly as \{\{portal_link\}\}/);
+  assert.match(p.system, /GUEST PORTAL, when given, decides/);
+  const inquiry = aiPrompt({ stay: { ...stay, status: 'inquiry' }, today: '2026-11-21', facts: '', sops: [], thread: [], instructions: '', company: 'K', portal: portalLines(base) });
+  assert.doesNotMatch(inquiry.user, /GUEST PORTAL/);
 });
