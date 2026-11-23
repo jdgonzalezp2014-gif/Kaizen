@@ -25,12 +25,13 @@ import { recordSession } from './guest-pay.ts';
 import { signCharge, signGuest, verifyCharge, verifyGuest } from './guest-link.ts';
 import { saveCaseMoney } from './claim-money.ts';
 import { settleCharge } from './charge-settle.ts';
+import { notifyClaim } from './slack.ts';
 import { toCents } from '../../src/lib/payouts.ts';
 import { encodeLines } from '../../src/lib/guest-payments.ts';
 import { portalLink } from '../../src/lib/inbox.ts';
 import { addDays, type DateStr } from '../../src/lib/dates.ts';
 import { isUpsell } from '../../src/lib/claims.ts';
-import { airbnbLinks, chargeLabel, extraNights, freeAround, hourOptions, isAirbnb, itemOf, methodsFor, needOf, payGuestText, rcGuestText,
+import { AIRBNB_RESOLUTION, airbnbLinks, chargeLabel, extraNights, freeAround, hourOptions, isAirbnb, itemOf, methodsFor, needOf, payGuestText, rcGuestText,
   type ChargeMethod, type ChargeNeed, type NightDay, type UpsellCharge } from '../../src/lib/upsell-charge.ts';
 
 type Fail = { ok: false; message: string; status?: number };
@@ -331,13 +332,49 @@ export async function payPage(sql: SqlFn, ek: string, request: Request): Promise
   }
 }
 
-/** The stay's charges for its portal page: pending card ones with their pay link, and the ones paid. */
+/** The note a guest's "I already paid" leaves on the case — also how the portal knows it was said (no column, no migration). */
+const SAID_PAID = 'Guest says they paid in the Resolution Center';
+
+/**
+ * The stay's charges for its portal page: pending card ones with their pay link, pending Resolution Center requests (owner,
+ * 2026-11-23: on Airbnb the guest sees it pending until the team marks it received, with Airbnb's link and "I already paid"),
+ * and the ones paid.
+ */
 export async function stayCharges(sql: SqlFn, ek: string, origin: string, token: string): Promise<Response> {
   const m = /^(\d{1,20})\.([A-Za-z0-9_-]{6,64})$/.exec(token);
   if (!m || !await verifyGuest(ek, m[1]!, m[2]!)) return Response.json({ ok: false, message: 'This stay link is not valid.' }, { status: 403 });
-  const rows = (await chargesOfStay(sql, m[1]!).catch(() => [] as ChargeRow[])).filter(r => r.method === 'card' || r.status === 'paid');
+  const rows = (await chargesOfStay(sql, m[1]!).catch(() => [] as ChargeRow[])).filter(r => r.status === 'pending' || r.status === 'paid');
+  const rcClaims = rows.filter(r => r.method === 'rc' && r.status === 'pending').map(r => r.claim_id);
+  const said = rcClaims.length ? await (sql`SELECT subject_id::text AS id, max(created_at) AS at FROM work_updates
+      WHERE account_id = 1 AND subject = 'claim' AND kind = 'note' AND subject_id::text = ANY(${rcClaims}) AND body LIKE ${`${SAID_PAID}%`}
+      GROUP BY 1` as Promise<{ id: string; at: string | Date }[]>).catch(() => []) : [];
+  const saidAt = new Map(said.map(s => [s.id, new Date(s.at).toISOString()]));
   const base = await linkBase(sql, origin);
-  const charges = await Promise.all(rows.map(async r => ({ id: r.id, label: r.label, amount: Number(r.amount), status: r.status,
-    payUrl: r.status === 'pending' ? base + await payPath(ek, r.id) : null, paidAt: r.paid_at ? new Date(r.paid_at).toISOString() : null })));
+  const charges = await Promise.all(rows.map(async r => ({ id: r.id, label: r.label, amount: Number(r.amount), status: r.status, method: r.method,
+    // What it changes: an hour waiting on this payment shows "!" beside the stay's check-in / checkout until it is paid.
+    need: r.need, hour: r.hour,
+    payUrl: r.status === 'pending' && r.method === 'card' ? base + await payPath(ek, r.id) : null,
+    rcUrl: r.status === 'pending' && r.method === 'rc' ? AIRBNB_RESOLUTION : null,
+    saidPaidAt: r.method === 'rc' && r.status === 'pending' ? saidAt.get(r.claim_id) ?? null : null,
+    paidAt: r.paid_at ? new Date(r.paid_at).toISOString() : null })));
   return Response.json({ ok: true, charges }, { headers: { 'Cache-Control': 'no-store' } });
+}
+
+/**
+ * The guest's "I already paid" on a Resolution Center request: a note on the case and a line in its Slack thread — the team checks
+ * Airbnb and marks it received (`rcReceived`). Said once; nothing is marked paid on the guest's word.
+ */
+export async function staySaidPaid(sql: SqlFn, ek: string, token: string, chargeId: unknown): Promise<Response> {
+  const m = /^(\d{1,20})\.([A-Za-z0-9_-]{6,64})$/.exec(token);
+  if (!m || !await verifyGuest(ek, m[1]!, m[2]!)) return Response.json({ ok: false, message: 'This stay link is not valid.' }, { status: 403 });
+  const r = (await chargesOfStay(sql, m[1]!).catch(() => [] as ChargeRow[])).find(x => x.id === String(chargeId ?? ''));
+  if (!r || r.method !== 'rc' || r.status !== 'pending') return Response.json({ ok: false, message: 'This payment is not waiting any more.' }, { status: 409 });
+  const [done] = await sql`SELECT 1 AS ok FROM work_updates WHERE account_id = 1 AND subject = 'claim' AND subject_id::text = ${r.claim_id}
+                            AND kind = 'note' AND body LIKE ${`${SAID_PAID}%`} LIMIT 1` as { ok: number }[];
+  if (!done) {
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'claim', ${r.claim_id}, 'note', ${`${SAID_PAID}: ${r.label} $${Number(r.amount).toFixed(2)} — check Airbnb and mark it received.`}, 'Guest (stay page)')`;
+    await notifyClaim(sql, ek, r.claim_id, 'changed', 'Guest (stay page)', '— the guest says it is paid in the Resolution Center; check Airbnb and mark it received').catch(() => {});
+  }
+  return Response.json({ ok: true, saidPaidAt: new Date().toISOString() }, { headers: { 'Cache-Control': 'no-store' } });
 }

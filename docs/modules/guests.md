@@ -344,6 +344,17 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   which `portalLink` does. `/crew/guest-demo` 200. **But the stay link shows only Pending payments** — Phase 2 (the check-in on the real link)
   is not built.
 
+#### Pending payments on the stay page (owner, 2026-11-23)
+- One bar at the top of `/guest/<res>.<sig>` (`PendingPayments`, GuestPortal.tsx): Airbnb pink `#e31c5f` (white text, 5.7:1), "You have N pending
+  payments ›", opens in place. Each: label, amount, "Secure payment on Airbnb" / "Secure card payment", **Pay** (card) or **Pay on Airbnb**
+  (airbnb.com/resolutions) + **I already paid** → "Confirming". Every Resolution Center charge shows (any category), not only card ones.
+- **I already paid** (`POST /api/report-link?charges=<token>` {charge} → `staySaidPaid`): a note on the case (`Guest says they paid in the
+  Resolution Center…`, created_by "Guest (stay page)") + `notifyClaim` in the case's Slack thread — once; nothing is marked paid on the guest's word.
+  The note is also how the page knows (`saidPaidAt`) — no column, no migration.
+- An hour waiting on payment (`need` checkin / checkout + `hour` on the charge) → "! Pay for 3:00 PM" in that cell of the reservation box; it
+  opens the bar. Once "Mark received" sets the hour in Hostaway, the cell shows the new hour.
+- Checked locally with the charges answer stubbed (Wendi, CL1339). Not seen for real: the note + Slack line. SOP #3: `.sop-pending-1123.mjs` after deploy.
+
 ### The real door — Phase 2 (owner 2026-11-23: "what is missing to migrate the guest portal? create it") — migration 123
 
 - `/guest/<res>.<sig>` (`GuestLinkPage`) is the whole portal now, from the server: `GET /api/report-link?stay=<token>` (`functions/_lib/guest-stay.ts`

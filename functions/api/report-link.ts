@@ -38,7 +38,7 @@ import { workAct, workOfToken, workPage, workPhoto } from '../_lib/vendor-work.t
 import { stripeOnboard } from '../_lib/payouts.ts';
 import { demoHouse } from '../_lib/guest-demo.ts';
 import { guestCheckout, guestCheckoutState, guestIdentity, guestIdentityState, stripeWebhook } from '../_lib/guest-pay.ts';
-import { payPage, stayCharges } from '../_lib/upsell-charge.ts';
+import { payPage, stayCharges, staySaidPaid } from '../_lib/upsell-charge.ts';
 import { stayGet, stayPost } from '../_lib/guest-stay.ts';
 
 interface Link { cleaner: string; lang: 'en' | 'es'; cleaning_key: string; unit_id: string | null; unit_name: string; clean_date: string; expires_on: string }
@@ -111,6 +111,9 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env, waitUnti
   if (request.headers.has('X-Inspect-Token')) return inspectPost(sql, env.ENCRYPTION_KEY, request);
   if (new URL(request.url).searchParams.has('checkout')) return guestCheckout(sql, env.ENCRYPTION_KEY, request, env);
   if (new URL(request.url).searchParams.has('stay')) return stayPost(sql, env, request, p => waitUntil(p));
+  // A stay's "I already paid" on a Resolution Center request (upsell-charge.ts).
+  const said = new URL(request.url).searchParams.get('charges');
+  if (said) return staySaidPaid(sql, env.ENCRYPTION_KEY, said, ((await request.json().catch(() => ({}))) as { charge?: unknown }).charge);
   if (new URL(request.url).searchParams.has('identity')) return guestIdentity(sql, env.ENCRYPTION_KEY, request);
   if (request.headers.has('X-Work-Token')) {
     const w = await workOfToken(sql, request);

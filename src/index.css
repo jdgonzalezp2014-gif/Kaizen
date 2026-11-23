@@ -3537,6 +3537,9 @@ button.gx-cell { cursor: pointer; } button.gx-cell:hover { background: var(--tin
 .gx-resv-row:first-child .gx-cell + .gx-cell { border-left: 1px solid var(--line-strong); }
 .gx-cell .gx-k { font-size: 10.5px; font-weight: 800; letter-spacing: .06em; color: var(--ink); }
 .gx-cell b { font-size: 16px; font-weight: 600; }
+.gx-due-pill { --due: #e31c5f; margin-top: 6px; display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px 5px 5px; border: 0; border-radius: 999px;
+  background: var(--due); color: #fff; font: inherit; font-size: 13px; font-weight: 700; white-space: nowrap; cursor: pointer; }
+.gx-due-bang { display: inline-grid; place-items: center; width: 18px; height: 18px; border-radius: 50%; background: #fff; color: var(--due); font-weight: 900; font-size: 12px; }
 .gx-ask { margin-top: 4px; font-size: 13.5px; font-weight: 600; color: var(--accent); }
 /* Stripe inside the page: its form is white by its own design — a white sheet with our corners, in light and dark. */
 .ci-embed { min-height: 420px; border-radius: 16px; overflow: hidden; background: #fff; }
@@ -4052,6 +4055,27 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
 .gl-charges li > span:first-child { flex: 1; display: inline-flex; align-items: center; gap: 6px; }
 .gl-amt { font-weight: 600; }
 .gl-pay { background: var(--accent); color: var(--on-accent); padding: 8px 16px; border-radius: 10px; text-decoration: none; font-weight: 600; }
+.gl-due { --due: #e31c5f; border: 1px solid var(--due); border-radius: 14px; background: var(--card, #fff); overflow: hidden; }
+.gl-due-head { width: 100%; display: flex; align-items: center; gap: 10px; padding: 13px 14px; background: var(--due); border: 0; font: inherit; font-weight: 700; color: #fff; cursor: pointer; text-align: left; }
+.gl-due .gl-charges { margin-top: 12px; }
+.gl-due-head .icon, .gl-due-head svg { width: 18px; height: 18px; flex: none; }
+.gl-due-head span:nth-child(2) { flex: 1; }
+.gl-due-arrow { font-size: 20px; line-height: 1; transition: transform .25s ease; }
+.gl-due.open .gl-due-arrow { transform: rotate(90deg); }
+.gl-due-body { display: grid; grid-template-rows: 0fr; transition: grid-template-rows .3s ease; }
+.gl-due.open .gl-due-body { grid-template-rows: 1fr; }
+.gl-due-body > div { overflow: hidden; }
+.gl-due .gl-charges { padding: 0 12px 12px; }
+.gl-due .gl-charges li { flex-wrap: wrap; }
+.gl-due .gl-charges li > .gl-due-what { flex: 1; display: grid; gap: 2px; align-items: start; }
+.gl-due-what small { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-size: var(--fs-footnote); }
+.gl-due-what small svg { width: 12px; height: 12px; }
+.gl-due-acts { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.gl-due-acts .gl-pay, .gl-due-acts .gl-paid { padding: 8px 12px; font-size: 15px; }
+.gl-due-check { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); font-weight: 600; }
+.gl-due-check svg { width: 14px; height: 14px; }
+@media (prefers-reduced-motion: reduce) { .gl-due-body, .gl-due-arrow { transition: none; } }
+.gl-paid { background: none; border: 1px solid var(--line); color: var(--ink, inherit); padding: 7px 14px; border-radius: 10px; font: inherit; font-weight: 600; cursor: pointer; }
 .gl-paid { opacity: .8; }
 .uc-ways { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
 .uc-past .uc-hold, .uc-past .uc-err { flex-basis: 100%; display: inline-flex; align-items: center; gap: 4px; padding-left: 20px; }

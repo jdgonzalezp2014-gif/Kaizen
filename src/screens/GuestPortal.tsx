@@ -9,6 +9,7 @@ import { Carousel } from './Work.tsx';
 import { DEFAULT_FIELDS, DEFAULT_FIELDS_AFTER, appleDir, googleDir, type HouseItem } from '../lib/checkin.ts';
 import { checkinPhotoUrl } from '../api.ts';
 import { Icon, ic } from '../components/Icon.tsx';
+import { timeOfHour } from '../lib/stay-time.ts';
 import { Hint } from '../components/Hint.tsx';
 import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
@@ -46,8 +47,8 @@ export function resetDemoFlow() {
 const whenLabel = (iso: string) => new Date(iso).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZone: 'America/Chicago' });
 
 /** `embedded`: the builder's live preview — no URL state, no page-wide theme (the preview box carries `.g-scope`). */
-export function GuestPortal({ stay: booked, now = new Date(), demoBar, embedded = false, startSec = 'stay', remote }: {
-  stay: GuestStay; now?: Date; demoBar?: React.ReactNode; embedded?: boolean; startSec?: Sec;
+export function GuestPortal({ stay: booked, now = new Date(), demoBar, topBar, due, embedded = false, startSec = 'stay', remote }: {
+  stay: GuestStay; now?: Date; demoBar?: React.ReactNode; topBar?: React.ReactNode; due?: Due; embedded?: boolean; startSec?: Sec;
   /** The real stay link (Phase 2): the check-in as the server keeps it, and where each change is saved. */
   remote?: { flow: Flow; save: (f: Flow) => void } }) {
   const [sec, setSec] = useState<Sec>(startSec);
@@ -117,7 +118,8 @@ export function GuestPortal({ stay: booked, now = new Date(), demoBar, embedded 
     </header>
     {menu && <Menu stay={stay} sec={sec} g={g} st={steps(flow, stay, prot)} go={go} close={() => setMenu(false)} theme={embedded ? null : theme} setTheme={setTheme} />}
     <div className="report-page v-page g-page">
-      {sec === 'stay' ? <StayView stay={stay} now={now} go={go} sent={sent} choose={choose} {...ck} />
+      {topBar}
+      {sec === 'stay' ? <StayView stay={stay} now={now} go={go} sent={sent} choose={choose} due={due} {...ck} />
         : sec === 'checkin' ? step && steps(flow, stay, prot).some(x => x.key === step) ? <StepScreen k={step} stay={stay} flow={flow} set={setFlow} p={prot} back={() => goStep(null)} go={goStep} />
           : <CheckinView stay={stay} now={now} go={go} {...ck} />
         : sec === 'guide' ? <GuideView stay={stay} g={g} goStep={goStep} go={go} />
@@ -236,8 +238,8 @@ const lockLine = (g: Entry) => g.open ? '' : g.why === 'steps' ? 'After check-in
  * Stay — the home (2026-11-15 redesign, Airbnb's trip page in Apple's manners): the house and dates, the check-in
  * progress, four tiles for what the stay unlocks (shown, but blocked until check-in is done), then the extras carousel.
  */
-function StayView({ stay, now, go, sent, choose, flow, prot, goStep }: { stay: GuestStay; now: Date; go: (s: Sec) => void;
-  sent: PaidExtra[]; choose: (k: Upsell['kind']) => void } & Ck) {
+function StayView({ stay, now, go, sent, choose, due, flow, prot, goStep }: { stay: GuestStay; now: Date; go: (s: Sec) => void;
+  sent: PaidExtra[]; choose: (k: Upsell['kind']) => void; due?: Due } & Ck) {
   const n = nights(stay);
   const g = entry(flow, stay, prot, now);
   const st = steps(flow, stay, prot);
@@ -260,7 +262,7 @@ function StayView({ stay, now, go, sent, choose, flow, prot, goStep }: { stay: G
       <p className="gx-sub"><Icon n="bed" /> {n} {n === 1 ? 'night' : 'nights'} · <Icon n="users" /> {stay.guests} {stay.guests === 1 ? 'guest' : 'guests'}
         {(stay.guest?.pets ?? 0) > 0 && <> · <Icon n="paw" /> {stay.guest!.pets} {stay.guest!.pets === 1 ? 'pet' : 'pets'}</>}
         {stay.address && <> · <a href={mapsUrl(stay.address)} target="_blank" rel="noreferrer">Map</a></>}</p>
-      <Reservation stay={stay} choose={choose} />
+      <Reservation stay={stay} choose={choose} due={due} />
     </section>
 
     {st.some(x => !x.done) && <CheckinProgress st={st} go={goStep} list />}
@@ -285,17 +287,23 @@ function StayView({ stay, now, go, sent, choose, flow, prot, goStep }: { stay: G
  * one outlined box, check-in | checkout, a thin "Extend stay" strip under. Each date offers its change ("suggest the change") when the house
  * offers it and the calendar allows: earlier arrival, later checkout, more nights — each opens that extra.
  */
-function Reservation({ stay, choose }: { stay: GuestStay; choose: (k: Upsell['kind']) => void }) {
+/** An hour waiting on a payment (owner, 2026-11-23): "!" beside that date until it is paid; it opens the pending payments. */
+export type Due = { checkin?: string | null; checkout?: string | null; open: () => void };
+
+function Reservation({ stay, choose, due }: { stay: GuestStay; choose: (k: Upsell['kind']) => void; due?: Due }) {
   const may = (k: Upsell['kind']) => { const u = offered(stay).find(x => x.kind === k); return !!u && availability(stay, u).ok; };
-  const cell = (label: string, day: string, time: string, k: Upsell['kind'], ask: string) => {
+  const cell = (label: string, day: string, time: string, k: Upsell['kind'], ask: string, wait?: string | null) => {
+    if (wait && due) return <div className="gx-cell"><span className="gx-k">{label}</span><b>{dateLabel(day)}</b><span className="note">{time}</span>
+      <button type="button" className="gx-due-pill" onClick={due.open} aria-label={`${wait} — pending payment, pay to confirm`}>
+        <span className="gx-due-bang" aria-hidden>!</span>Pay for {wait}</button></div>;
     const inner = <><span className="gx-k">{label}</span><b>{dateLabel(day)}</b><span className="note">{time}</span>
       {may(k) && <span className="gx-ask">{ask} ›</span>}</>;
     return may(k) ? <button className="gx-cell" onClick={() => choose(k)}>{inner}</button> : <div className="gx-cell">{inner}</div>;
   };
   return <div className="gx-resv">
     <div className="gx-resv-row">
-      {cell('Check-in', stay.arrival, stay.checkInTime, 'early-checkin', 'Arrive earlier')}
-      {cell('Checkout', stay.departure, stay.checkOutTime, 'late-checkout', 'Leave later')}
+      {cell('Check-in', stay.arrival, stay.checkInTime, 'early-checkin', 'Arrive earlier', due?.checkin)}
+      {cell('Checkout', stay.departure, stay.checkOutTime, 'late-checkout', 'Leave later', due?.checkout)}
     </div>
     {may('extra-nights') && <button className="gx-extend" onClick={() => choose('extra-nights')}><Icon n="calendar" /> Extend stay <span aria-hidden>›</span></button>}
   </div>;
@@ -673,13 +681,41 @@ function useHouse(dates: { arrival: string; departure: string }) {
  * Wi-Fi, arrival steps and door code arrive only once the server opens the entry. Charges the team made from a case
  * (upsell links, §178) show under the page as "Pending payments".
  */
-type StayCharge = { id: string; label: string; amount: number; status: 'pending' | 'paid'; payUrl: string | null; paidAt: string | null };
+type StayCharge = { id: string; label: string; amount: number; status: 'pending' | 'paid'; method?: 'card' | 'rc'; need?: string; hour?: number | null; payUrl: string | null;
+  rcUrl?: string | null; saidPaidAt?: string | null; paidAt: string | null };
+/**
+ * Pending payments as one bar at the top that opens (owner, 2026-11-23: "on top, it slides open, very little text"). A Resolution
+ * Center request stays here until the team marks it received; "I already paid" only tells the team.
+ */
+function PendingPayments({ pending, saidPaid, open, setOpen }: { pending: StayCharge[]; saidPaid: (id: string) => void; open: boolean; setOpen: (f: (o: boolean) => boolean) => void }) {
+  const n = pending.length;
+  return <section id="pending-payments" className={`gl-due ${open ? 'open' : ''}`}>
+    <button type="button" className="gl-due-head" aria-expanded={open} onClick={() => setOpen(o => !o)}>
+      <Icon n="card" /><span>You have {n} pending payment{n === 1 ? '' : 's'}</span><span className="gl-due-arrow" aria-hidden>›</span>
+    </button>
+    <div className="gl-due-body"><div>
+      <ul className="gl-charges">{pending.map(c => <li key={c.id}>
+        <span className="gl-due-what"><b>{c.label}</b><small><Icon n="lock" /> {c.rcUrl ? 'Secure payment on Airbnb' : 'Secure card payment'}</small></span>
+        <span className="gl-amt">{money2(c.amount)}</span>
+        <span className="gl-due-acts">
+          {c.payUrl && <a className="gl-pay" href={c.payUrl}>Pay</a>}
+          {c.rcUrl && (c.saidPaidAt
+            ? <span className="gl-due-check"><Icon n="clock" /> Confirming</span>
+            : <><a className="gl-pay" href={c.rcUrl} target="_blank" rel="noreferrer">Pay on Airbnb</a>
+              <button type="button" className="gl-paid" onClick={() => saidPaid(c.id)}>I already paid</button></>)}
+        </span>
+      </li>)}</ul>
+    </div></div>
+  </section>;
+}
+
 type StayAnswer = { ok: true; stay: GuestStay; flow: Flow; open: boolean } | { ok: false; message?: string };
 export function GuestLinkPage() {
   const gl = guestLink(location.pathname);
   const token = gl?.sig ? `${gl.id}.${gl.sig}` : null;
   const [data, setData] = useState<{ stay: GuestStay; flow: Flow } | null>(null);
   const [charges, setCharges] = useState<StayCharge[]>([]);
+  const [dueOpen, setDueOpen] = useState(false);
   const [bad, setBad] = useState('');
   const [saveNote, setSaveNote] = useState('');
   useEffect(() => {
@@ -700,11 +736,17 @@ export function GuestLinkPage() {
   if (bad) return <div className="report-page v-page g-page"><p className="banner warn">▲ {bad}</p></div>;
   if (!data) return <div className="report-page v-page g-page"><p className="note">Loading your stay…</p></div>;
   const pending = charges.filter(c => c.status === 'pending');
+  const hourOf = (need: string) => { const c = pending.find(x => x.need === need && x.hour != null); return c ? timeOfHour(c.hour!) : null; };
+  const due: Due = { checkin: hourOf('checkin'), checkout: hourOf('checkout'),
+    open: () => { setDueOpen(true); document.getElementById('pending-payments')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); } };
+  const saidPaid = (id: string) => {
+    if (!token) return;
+    void fetch(`/api/report-link?charges=${encodeURIComponent(token)}`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ charge: id }) })
+      .then(r => r.json() as Promise<{ ok: boolean; saidPaidAt?: string; message?: string }>)
+      .then(j => j.ok ? setCharges(cs => cs.map(c => c.id === id ? { ...c, saidPaidAt: j.saidPaidAt ?? new Date().toISOString() } : c)) : setSaveNote(j.message ?? 'Not sent — try again.'))
+      .catch(() => setSaveNote('Not sent — check the connection.'));
+  };
   return <GuestPortal stay={data.stay} remote={{ flow: data.flow, save }}
-    demoBar={<>
-      {saveNote && <p className="banner warn">▲ {saveNote}</p>}
-      {pending.length > 0 && <section className="card"><h2 className="gl-title">Pending payments</h2>
-        <ul className="gl-charges">{pending.map(c => <li key={c.id}><span><b>{c.label}</b></span><span className="gl-amt">{money2(c.amount)}</span>
-          {c.payUrl && <a className="gl-pay" href={c.payUrl}>Pay</a>}</li>)}</ul></section>}
-    </>} />;
+    topBar={pending.length > 0 && <PendingPayments pending={pending} saidPaid={saidPaid} open={dueOpen} setOpen={setDueOpen} />} due={due}
+    demoBar={saveNote && <p className="banner warn">▲ {saveNote}</p>} />;
 }
