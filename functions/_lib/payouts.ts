@@ -36,6 +36,9 @@ export async function payoutOf(sql: SqlFn, invoiceNumber: string): Promise<Payou
 
 /* ── Stripe ───────────────────────────────────────────────────────── */
 
+/** Vendor payouts by Stripe stay test-only while the key is live for the guest portal (owner turns them on in code). */
+export const LIVE_PAYOUTS_OFF = 'Live Stripe payouts to vendors are not switched on — pay this one another way (Wise / bank), or ask to turn them on.';
+
 export async function stripeKey(sql: SqlFn, encryptionKey: string): Promise<{ key: string; mode: 'test' | 'live' } | null> {
   const [a] = await sql`SELECT stripe_secret_key_enc FROM accounts WHERE id = 1` as { stripe_secret_key_enc: string | null }[];
   if (!a?.stripe_secret_key_enc) return null;
@@ -157,6 +160,8 @@ export async function payInvoice(sql: SqlFn, encryptionKey: string, inv: ToPay, 
   if (method === 'stripe') {
     const s = await stripeKey(sql, encryptionKey);
     if (!s) throw new Error('Stripe is not set up — add the secret key in Settings → Payments.');
+    // 2026-11-23: the live key went in for the guest portal; paying vendors with it is still the owner's call, made here.
+    if (s.mode === 'live') throw new Error(LIVE_PAYOUTS_OFF);
     const p = await payeeOf(sql, inv.kind, inv.name);
     if (!p?.account || p.mode !== s.mode) throw new Error(`${inv.name} has no Stripe account in ${s.mode} mode yet — send them the setup link first.`);
     const st = await accountState(s.key, p.account);

@@ -239,13 +239,12 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
       const enc = await encrypt(body.claudeApiKey.trim(), env.ENCRYPTION_KEY);
       await sql`UPDATE accounts SET claude_api_key_enc = ${enc} WHERE id = 1`;
     }
-    // Owner, 2026-10-25: Stripe pays cleaners and handymen (functions/_lib/payouts.ts). Test keys only for now:
-    // a live key moves real money, and turning that on is the owner's decision, made here in code.
+    // Owner, 2026-10-25: Stripe pays cleaners and handymen (functions/_lib/payouts.ts). 2026-11-23 (owner: "send the real one"):
+    // live keys are accepted for the guest portal — its bill is computed on the server; vendor payouts still refuse a live key.
     if (typeof body.stripeSecretKey === 'string' && body.stripeSecretKey.trim()) {
       const key = body.stripeSecretKey.trim();
       const mode = stripeMode(key);
-      if (!mode) return Response.json({ ok: false, error: 'That is not a Stripe secret key (sk_test_… or rk_test_…).' }, { status: 400 });
-      if (mode === 'live') return Response.json({ ok: false, error: 'Live keys are not accepted yet — use the test key (sk_test_…) until live payouts are switched on.' }, { status: 400 });
+      if (!mode) return Response.json({ ok: false, error: 'That is not a Stripe secret key (sk_… or rk_…).' }, { status: 400 });
       try { await platformBalance(key); }
       catch (e) { return Response.json({ ok: false, error: `Stripe refused the key: ${e instanceof Error ? e.message : String(e)}` }, { status: 400 }); }
       await sql`UPDATE accounts SET stripe_secret_key_enc = ${await encrypt(key, env.ENCRYPTION_KEY)} WHERE id = 1`;
@@ -254,7 +253,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
     // The publishable key (2026-11-16): the guest portal shows Stripe's payment and ID check inside its own page. Not a secret.
     if (typeof body.stripePublishableKey === 'string') {
       const pk = body.stripePublishableKey.trim();
-      if (pk && !/^pk_test_[A-Za-z0-9]{10,200}$/.test(pk)) return Response.json({ ok: false, error: pk.startsWith('pk_live_') ? 'Test keys only for now (pk_test_…).' : 'That is not a Stripe publishable key (pk_test_…).' }, { status: 400 });
+      if (pk && !/^pk_(test|live)_[A-Za-z0-9]{10,200}$/.test(pk)) return Response.json({ ok: false, error: 'That is not a Stripe publishable key (pk_live_… or pk_test_…).' }, { status: 400 });
       try { await sql`UPDATE accounts SET stripe_publishable_key = ${pk || null} WHERE id = 1`; }
       catch { return Response.json({ ok: false, error: 'The database needs migration 115 first (npm run migrate).' }, { status: 409 }); }
     }

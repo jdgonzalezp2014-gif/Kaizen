@@ -731,8 +731,8 @@ function IntegrationsPanel({ account, panels }: { account: Account; panels: Reco
 
 /**
  * Payments (owner, 2026-10-25): Stripe pays cleaners' and handymen's invoices
- * (Operations → Cleaners / Handymen → Payment). Test keys only until live
- * payouts are switched on; the key is checked with Stripe before it is kept,
+ * (Operations → Cleaners / Handymen → Payment). Live keys accepted 2026-11-23 for the guest portal; payouts refuse live
+ * until they are switched on; the key is checked with Stripe before it is kept,
  * stored encrypted and never shown again.
  */
 function StripePanel({ account, onSaved }: { account: Account; onSaved: () => void }) {
@@ -753,12 +753,12 @@ function StripePanel({ account, onSaved }: { account: Account; onSaved: () => vo
     <div className="card">
       <h2>Payments — Stripe <Hint>This company's own Stripe account. It takes the guests' payments in the guest portal (damage waiver, deposit hold,
         extras) and pays cleaners' and handymen's invoices through Stripe Connect. Paste a secret or restricted key from Stripe's dashboard → Developers →
-        API keys (restricted: write on PaymentIntents, SetupIntents, Checkout Sessions, Customers, Refunds). Only test keys (sk_test_… / rk_test_…) for
-        now — no real money moves. The key is checked with Stripe before it is kept, stored encrypted, and never shown again.</Hint></h2>
+        API keys. A live key (sk_live_… / rk_live_…) takes real guest payments; vendor payouts by Stripe stay off with a live key until they are
+        switched on. Live and publishable keys must be the same mode. The key is checked with Stripe before it is kept, stored encrypted, and never shown again.</Hint></h2>
       <label>
         Secret key {account.hasStripeKey && <span className="ok-tag">one is stored</span>}
         <input type="password" value={key} onChange={e => setKey(e.target.value)} autoComplete="off"
-               placeholder={account.hasStripeKey ? 'stored — type to replace' : 'sk_test_…'} />
+               placeholder={account.hasStripeKey ? 'stored — type to replace' : 'sk_live_… or rk_live_…'} />
       </label>
       {status && <p className="note">{status.configured
         ? <>Stripe {status.mode === 'test' ? 'TEST mode' : 'LIVE mode'}{status.balance && ` · balance $${status.balance.available.toFixed(2)} available`}
@@ -796,7 +796,7 @@ function StripeInPage({ account, onSaved }: { account: Account; onSaved: () => v
       Embedded Checkout and ID check, inside our page). Without it, Stripe's own pages open instead. Apple Pay shows only on domains registered here —
       register each domain the portal runs on (this one, and the website's subdomain once it exists). Google Pay needs nothing.</Hint></h3>
     <label>Publishable key {account.stripePublishableKey && <span className="ok-tag">saved</span>}
-      <input value={pk} onChange={e => setPk(e.target.value)} autoComplete="off" spellCheck={false} placeholder="pk_test_…" />
+      <input value={pk} onChange={e => setPk(e.target.value)} autoComplete="off" spellCheck={false} placeholder="pk_live_…" />
     </label>
     <div className="button-row"><button onClick={() => void savePk()} disabled={busy || pk.trim() === (account.stripePublishableKey ?? '')}>Save publishable key</button></div>
     <p className="note">Wallet domains</p>

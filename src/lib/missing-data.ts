@@ -105,7 +105,6 @@ export const HOSTAWAY_RULES: { check: string; severity: Severity; why: string }[
   { check: 'house_rules', severity: 'high', why: 'Guests agree to no house rules.' },
   { check: 'cleaning_fee', severity: 'high', why: 'Guests are not charged for the clean.' },
   { check: 'checkin_until', severity: 'medium', why: 'No latest check-in time for guests.' },
-  { check: 'insurance_fee', severity: 'medium', why: 'No damage waiver charged per night.' },
   { check: 'hw_contact_phone', severity: 'medium', why: 'Channels show no contact phone.' },
 ];
 

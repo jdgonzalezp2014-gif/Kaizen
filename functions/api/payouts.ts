@@ -17,7 +17,7 @@ import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { loadCrewPage, refuse } from '../_lib/crew.ts';
 import { loadVendorPage } from '../_lib/vendor-pay.ts';
-import { accountState, connectAccount, ensureVendor, payeeOf, payInvoice, platformBalance, signPayee, stripeKey, undoPayout,
+import { accountState, connectAccount, ensureVendor, payeeOf, payInvoice, platformBalance, signPayee, stripeKey, undoPayout, LIVE_PAYOUTS_OFF,
          type PayeeKind, type ToPay } from '../_lib/payouts.ts';
 import { payBlockers } from '../../src/lib/payouts.ts';
 import { todayIn } from '../../src/lib/dates.ts';
@@ -72,6 +72,7 @@ export const onRequestPost: PagesFunction<Env> = async ({ request, env }) => {
   if (b.action === 'link') {
     const s = await stripeKey(sql, env.ENCRYPTION_KEY);
     if (!s) return refuse(400, 'bad_request', 'Stripe is not set up — add the secret key in Settings → Payments.');
+    if (s.mode === 'live') return refuse(409, 'live_off', LIVE_PAYOUTS_OFF);
     if (kind === 'vendor') name = await ensureVendor(sql, name);
     const p = await payeeOf(sql, kind, name);
     if (!p) return refuse(404, 'not_found', `${name} is not on the roster.`);

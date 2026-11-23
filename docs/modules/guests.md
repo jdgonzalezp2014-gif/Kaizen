@@ -329,8 +329,10 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - **Hostaway descriptions (written 2026-11-23, 23 active listings, all read back):** `scripts/description-protection-notice.mjs` appended a
   "Damage protection: …" paragraph to `description`, `homeawayPropertyDescription` (Vrbo) and `bookingcomPropertyDescription`; the text as it
   was is in `listing_text_changes`. Airbnb's fields untouched (AirCover; Airbnb forbids asking for money outside it).
-  ⚠ Hostaway still adds its own **$12/night Damage Waiver fee** to direct/Vrbo bookings (finance.md, 2026-11-11) — with the portal charging
-  the waiver too, that fee must go (or the portal must skip the waiver) before the portal charges for real: owner's call.
+  **Hostaway's own $12/night Damage Waiver fee was taken off all 31 listings (owner, 2026-11-23)** — `scripts/drop-damage-waiver-fee.mjs`, 62 rows
+  (general + Vrbo; the Vrbo row answers 403 but goes with its general row), each kept as JSON in `listing_text_changes` (field
+  `listingFeeSetting:<id>`) to put back by POST. Bookings already made keep the fee they were charged. Expedia's own setting (added by hand) is
+  separate. `insurance_fee` is now only the portal's rate: no longer compared with Hostaway (repo-checks) nor a Missing-data gap.
 - **Check-in guide coverage (2026-11-23, active units):** The Links 10/10 use a building guide (1xxx → building 1, 4xxx → building 4).
   P2-4217 / P2-4222 had empty records — check-in/out times, guest access, rules, parking, phone, address copied from LP-4212 (same building,
   repo_audit). **No arrival steps:** CL 1125, CL 1446, CL1250, CL1339, CL2260, CL2450 (one shared Cortland guide would cover them — owner
@@ -366,11 +368,19 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
   Quest (Vrbo, in house) and CL 1125 (Airbnb) → entry open with Hostaway's door code, address, Wi-Fi, pins (Google + Apple Maps), Cortland video;
   phone screenshot fine. **Not tried:** a real card / ID through Stripe's own pages on the link (test the full flow once on a phone), the webhook path.
 - Arrival guides 2026-11-23: **Cortland** = `shared:cortland-building-1|2` (1xxx / 2xxx, like The Links), from the CL-1125 / CL-2359 house manuals:
-  drive (pin), call box (the slides' codes, stored only in the guide rows), elevator to {floor}, door code; house items gym/pool fob, trash chute,
-  check-out. Building 1 units get their own Drive video (1446, 1339, 1250, 1125, 1425, 1350, 1235 — shared by link). ⚠ The slides disagree on the
-  call box (the 1125 deck also says "#1250" for Building 1) — confirm on site. **Houses** (Amber Valley, Bobcat, Concord, Napa, Quest, Timber Crest,
+  drive (pin), call box (owner 2026-11-23: one code for both buildings, stored only in the guide rows;
+  entrance pin 33.0884292, -96.8424110 — the owner gave the same point for both buildings), elevator to {floor}, door code; house items gym/pool fob, trash chute,
+  check-out. Building 1 units get their own Drive video (1446, 1339, 1250, 1125, 1425, 1350, 1235 — shared by link). **Houses** (Amber Valley, Bobcat, Concord, Napa, Quest, Timber Crest,
   Preston): arrive (address + Maps pin from `units.lat/lng`) → smart-lock keypad with the door code. Preston's code: Guest check-in code ← the
   "Front door code" written in its Elevator field.
+
+### Stripe live (owner, 2026-11-23: "send the real one")
+- Settings → Payments accepts live secret / restricted keys and `pk_live_` now (both must be the same mode — `embedKey`). The real stay link and
+  upsell pay links run on it; the open demo (`/crew/guest-demo`) stays test-only and refuses to pay with a live key. **Vendor payouts by Stripe
+  refuse a live key** (`LIVE_PAYOUTS_OFF`, payouts.ts) until the owner switches them on.
+- ⚠ **Deposit holds last ~7 days** (card authorisations): a guest who checks in early and picks the deposit makes the WHOLE payment manual-capture
+  (extras in it too) — not captured within 7 days, it lapses. Proposed: deposit = card saved for off-session (no hold) and charge only on damage;
+  owner to decide before the deposit is offered live.
 
 ### Rules
 
