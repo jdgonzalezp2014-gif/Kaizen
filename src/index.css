@@ -2620,6 +2620,20 @@ button.link.home-more:hover { background: color-mix(in srgb, var(--accent) 10%, 
   .ops-gear .live-dot { top: 6px; right: 6px; border-color: var(--tint); }
 }
 @media (prefers-reduced-motion: reduce) { .ops-gear, .ops-gear .icon { transition: none; } .ops-gear:hover .icon { transform: none; } }
+/* Owner, 2026-11-23: failed Host Note writes — an orange "!" before the gear, the explanation on hover. */
+.ops-alert { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent);
+  background: color-mix(in srgb, var(--warn) 10%, var(--card)); }
+.ops-alert:hover { background: color-mix(in srgb, var(--warn) 18%, var(--card)); }
+.ops-alert:hover .icon { transform: none; }
+.ops-alert + .ops-gear { margin-left: 8px; }
+.ops-alert-n { position: absolute; top: -4px; right: -4px; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px;
+  background: var(--warn); color: #fff; font-size: 10px; font-weight: 700; line-height: 17px; text-align: center; }
+.ops-alert::after { content: attr(data-tip); position: absolute; top: calc(100% + 8px); right: 0; z-index: 50;
+  width: max-content; max-width: min(280px, 85vw); padding: 8px 10px; border-radius: var(--r-sm); border: 1px solid var(--line);
+  background: var(--card); color: var(--ink); box-shadow: var(--shadow-2); font-size: var(--fs-footnote); font-weight: 400;
+  white-space: normal; text-align: left; opacity: 0; visibility: hidden; transition: opacity .1s ease; pointer-events: none; }
+.ops-alert:hover::after, .ops-alert:focus-visible::after { opacity: 1; visibility: visible; }
+.ops-manual-form.bare { margin: 0; }
 /* The day in the menu: plain text at the foot of the rail, right-aligned, fading in with the other labels
    when it opens; a chip in the phone's header. */
 .side-today { padding: 0 12px; font-weight: 500; font-size: var(--fs-footnote); color: var(--muted); white-space: nowrap; }

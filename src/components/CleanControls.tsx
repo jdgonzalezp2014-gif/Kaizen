@@ -82,8 +82,10 @@ export function FlagControl({ cleanKey, flag, onChanged, date, today, price, onP
  * clean needed"; for a mid-stay clean it is optional; an extra clean has
  * none. The stays are asked of Hostaway for that unit and day.
  */
-export function ManualCleanForm({ today, roster, initial, onDone, onCancel }: {
+export function ManualCleanForm({ today, roster, initial, onDone, onCancel, bare = false }: {
   today: string; roster: Cleaner[];
+  /** Inside a pop-up, which already carries the title and the frame. */
+  bare?: boolean;
   /** From a cleaner's page (Operations → Cleaners): that cleaner, and a day already past. */
   initial: { unitId?: string; resId?: string; kind?: ManualCleanKind; cleaner?: string; date?: string };
   onDone: () => void; onCancel: () => void;
@@ -127,8 +129,8 @@ export function ManualCleanForm({ today, roster, initial, onDone, onCancel }: {
   };
 
   return (
-    <div className="card ops-manual-form">
-      <h3>Manual clean</h3>
+    <div className={bare ? 'ops-manual-form bare' : 'card ops-manual-form'}>
+      {!bare && <h3>Manual clean</h3>}
       <div className="todo-kind" role="group" aria-label="Why">
         {(['early_departure', 'mid_stay', 'extra'] as ManualCleanKind[]).map(k => (
           <button key={k} type="button" className={kind === k ? 'chip active' : 'chip'} onClick={() => setKind(k)}>{MANUAL_WORD[k]}</button>

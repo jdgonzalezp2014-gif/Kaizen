@@ -195,9 +195,12 @@ key had no SOPs.
 - The record: excluded, never deleted (`void_reason`); one unit, one day, one clean; the past
   is frozen; daily pass reconciles the last 45 days (§70).
 - Manual cleans (early departure / mid-stay / extra); early departure makes the checkout
-  clean "no clean needed"; undo restores (§79).
+  clean "no clean needed"; undo restores (§79). On Movements the form opens as a pop-up (2026-11-23; on a
+  cleaner's page it stays a card).
 - Host Note: `mergeHostNote` replaces only Kaizen's line, keeps hand text, pushes only when
   our block changed, verifies by reading back; archived listings refuse (403) — skipped (§64, §70).
+  Failed writes show as an orange "!" + count before the gear at the top of Operations, explained on hover,
+  click → Setup (2026-11-23; no banner any more).
   The scheduled push runs from `/api/slack-cron` (the 5-minute clock), at most once an hour (`slack_sent`
   key `hostnotes:<UTC hour>`): `/api/cron` sits behind Access and nothing calls it, so before 2026-10-12
   only stays someone edited got their note.

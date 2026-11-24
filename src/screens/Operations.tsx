@@ -50,6 +50,7 @@ import { Loading } from '../components/Loading.tsx';
 import { recallTiming, rememberTiming } from '../lib/progress.ts';
 import { IconFlag, Peek } from '../components/Hint.tsx';
 import { Icon, ic } from '../components/Icon.tsx';
+import { Modal } from '../components/Modal.tsx';
 import { setParams, useUrlState } from '../components/useUrlState.ts';
 import { FlagControl, LEVEL_LABEL, MANUAL_WORD, ManualCleanForm } from '../components/CleanControls.tsx';
 
@@ -214,6 +215,19 @@ export function Operations({ permissions, initialView, nav, onView, focus }: {
             <button key={k} className={view === k || (k === 'crew' && view === 'calendar') ? 'tab active' : 'tab'} onClick={() => setView(k)}>{label}</button>
           ))}
         </nav>
+        {/* Owner, 2026-11-23: failed Host Note writes are an orange "!" beside the gear, explained on hover — not a
+            banner across every view. A refusal because the listing is archived is not a fault to retry, so it is not counted. */}
+        {(() => {
+          if (data?.mode !== 'live') return null;
+          const failed = data.pushes.filter(p => p.outcome === 'failed' && !/archived listing/i.test(p.detail ?? '')).length;
+          if (!failed) return null;
+          const why = `${failed} of the last ${data.pushes.length} Host Note writes to Hostaway failed — the next scheduled pass retries them.`;
+          const canSetup = can(data.permissions, 'operations.setup');
+          return (
+            <button className="ops-gear ops-alert" aria-label={why} data-tip={why}
+                    onClick={() => { if (canSetup) openSetup('general'); }}><Icon n="alert" /><span className="ops-alert-n">{failed}</span></button>
+          );
+        })()}
         {view !== 'setup' && can(data?.permissions, 'operations.setup') && (
           <button className="ops-gear" onClick={() => openSetup(SETUP_OF[view])} aria-label="Settings for this section"
                   title={`Settings for this section${data?.mode === 'live' ? ' — Live: Kaizen decides the cleans and writes the Host Note in Hostaway' : ''}`}>
@@ -270,18 +284,8 @@ export function Operations({ permissions, initialView, nav, onView, focus }: {
 function ModeBanner({ data, onSetup }: { data: OperationsResponse; onSetup: () => void }) {
   const s = data.summary;
   if (data.mode === 'live') {
-    // A refusal because the listing is archived is not a fault to retry —
-    // Kaizen no longer asks — so it is not counted as one.
-    const failed = data.pushes.filter(p => p.outcome === 'failed' && !/archived listing/i.test(p.detail ?? '')).length;
-    // §159: live and well is the normal state — the gear's dot says it; only a failure takes a line.
-    if (!failed) return null;
-    return (
-      <p className={`banner ${failed ? 'warn' : 'ok'}`}>
-        ● <b>Live.</b> Kaizen decides the cleans and writes the Host Note in Hostaway.
-        {failed > 0 && <> ▲ {failed} of the last {data.pushes.length} Host Note writes failed — the
-          next scheduled pass retries them.</>}
-      </p>
-    );
+    // Owner, 2026-11-23: failed Host Note writes show as the orange "!" beside the gear (top of Operations).
+    return null;
   }
   const compared = s.departures - s.notInDailyFile;
   return (
@@ -504,9 +508,13 @@ function Board({ data, range, patch, reload }: {
           ` (set by hand, or within ${data.crewView.autoDays} days)`}</span>}
       </div>
 
+      {/* Owner, 2026-11-23: a pop-up, not a card above the table — opened from a row far down the board, the
+          card appeared off-screen and nothing seemed to happen. */}
       {addingClean && (
-        <ManualCleanForm today={data.today} roster={data.roster} initial={addingClean} onCancel={() => setAddingClean(null)}
-                         onDone={() => { setAddingClean(null); reload(); }} />
+        <Modal title={addingClean.kind ? `Manual clean — ${MANUAL_WORD[addingClean.kind]}` : 'Manual clean'} onClose={() => setAddingClean(null)} wide>
+          <ManualCleanForm bare today={data.today} roster={data.roster} initial={addingClean} onCancel={() => setAddingClean(null)}
+                           onDone={() => { setAddingClean(null); reload(); }} />
+        </Modal>
       )}
 
       <div className="grid-scroll">
