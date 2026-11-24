@@ -93,6 +93,11 @@ export interface Flow {
   extended?: { before: number; after: number } | null;
   /** What Stripe says was paid today (shown as the confirmation). */
   paidTotal?: number | null;
+  /**
+   * Airbnb (owner, 2026-11-23: "Airbnb is preferred"): the check-in paid through Airbnb's Resolution Center — set by the
+   * server only. `said` = the guest tapped "I already paid" (the step counts; the team checks Airbnb and marks it received).
+   */
+  rc?: { id: string; amount: number; said: boolean; received: boolean } | null;
 }
 /** The check-in answers kept in the tab while the guest is on Stripe Checkout (the page reloads when they come back). */
 export const FLOW_KEY = 'kaizen-guest-flow';

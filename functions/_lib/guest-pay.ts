@@ -23,7 +23,7 @@ import { toCents } from '../../src/lib/payouts.ts';
 import { decodeLines, encodeLines, itemLabel, type PaidLine } from '../../src/lib/guest-payments.ts';
 import { settleCharge, syncChargeRefund } from './charge-settle.ts';
 import type { Env } from './db.ts';
-import { loadStay, markStay, stayId } from './guest-stay.ts';
+import { dropRc, loadStay, markStay, stayId } from './guest-stay.ts';
 import { verifyHouse } from './guest-demo.ts';
 import { mirrorTodos } from './inventory.ts';
 import { bill, protectionFor } from '../../src/lib/guest-checkin.ts';
@@ -54,7 +54,7 @@ async function anyKey(sql: SqlFn, encryptionKey: string) {
  * What a real stay pays, computed here from the stay as Hostaway and the Repository give it (never from the page):
  * the check-in bill from the saved answers, or one extra priced by the same rules as the page shows.
  */
-async function stayLines(sql: SqlFn, env: Env, id: string, purpose: unknown, extra: unknown) {
+export async function stayLines(sql: SqlFn, env: Env, id: string, purpose: unknown, extra: unknown) {
   const l = await loadStay(sql, env, id);
   if (typeof l === 'string') return l;
   const prot = protectionFor(l.stay.unitType ?? 'house', l.stay.protection ?? {}, nights(l.stay));
@@ -136,7 +136,11 @@ export async function guestCheckout(sql: SqlFn, encryptionKey: string, request: 
   });
   try {
     const s = await stripeCall<{ id: string; url: string | null; client_secret: string | null }>(k.key, 'POST', '/checkout/sessions', p);
-    if (real && b.purpose === 'checkin') await markStay(sql, real, fromStay!.l.listingId, { paySession: s.id });
+    if (real && b.purpose === 'checkin') {
+      // Switched to the card after asking to pay on Airbnb: the Resolution Center request goes (guest-rc.ts).
+      await dropRc(sql, fromStay!.l.row).catch(() => {});
+      await markStay(sql, real, fromStay!.l.listingId, { paySession: s.id });
+    }
     return Response.json(pk ? { ok: true, id: s.id, clientSecret: s.client_secret, publishableKey: pk } : { ok: true, url: s.url });
   } catch (e) { return bad(e instanceof Error ? e.message : String(e), 502); }
 }

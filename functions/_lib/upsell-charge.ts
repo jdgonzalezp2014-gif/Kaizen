@@ -32,7 +32,7 @@ import { encodeLines } from '../../src/lib/guest-payments.ts';
 import { portalLink } from '../../src/lib/inbox.ts';
 import { addDays, type DateStr } from '../../src/lib/dates.ts';
 import { isUpsell } from '../../src/lib/claims.ts';
-import { AIRBNB_RESOLUTION, airbnbLinks, chargeLabel, extraNights, freeAround, hourOptions, isAirbnb, itemOf, methodsFor, needOf, payGuestText, rcGuestText,
+import { AIRBNB_RESOLUTION, SAID_PAID, airbnbLinks, chargeLabel, extraNights, freeAround, hourOptions, isAirbnb, itemOf, methodsFor, needOf, payGuestText, rcGuestText,
   type ChargeMethod, type ChargeNeed, type NightDay, type UpsellCharge } from '../../src/lib/upsell-charge.ts';
 
 type Fail = { ok: false; message: string; status?: number };
@@ -348,7 +348,6 @@ export async function payPage(sql: SqlFn, ek: string, request: Request): Promise
 }
 
 /** The note a guest's "I already paid" leaves on the case — also how the portal knows it was said (no column, no migration). */
-const SAID_PAID = 'Guest says they paid in the Resolution Center';
 
 /**
  * The stay's charges for its portal page: pending card ones with their pay link, pending Resolution Center requests (owner,

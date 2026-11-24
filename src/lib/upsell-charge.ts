@@ -101,6 +101,8 @@ export function itemOf(category: string): string {
 
 /** Airbnb's own doors: where a host asks for money, and the reservation's page (Change reservation lives there). */
 export const AIRBNB_RESOLUTION = 'https://www.airbnb.com/resolutions';
+/** The case note the guest's "I already paid" leaves (stay page); its presence is how the page and the check-in know. */
+export const SAID_PAID = 'Guest says they paid in the Resolution Center';
 export function airbnbLinks(confirmationCode: string | null | undefined) {
   const code = (confirmationCode ?? '').trim();
   return {

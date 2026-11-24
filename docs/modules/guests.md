@@ -397,6 +397,17 @@ $75 minimum; the arrival guide locked until paid *and* a release time; no fee on
 - **Guest phone** (owner, 2026-11-23): the Details step asks for the mobile number (Airbnb: empty, typed; others: the booking's, confirmed) — `flow.phone` in guest_flows (+E.164, `cleanPhone`). `confirmedPhone()` (guest-phone.ts) wins over Hostaway's for the CRM ("confirmed by guest") and every Quo SMS (Inbox tab + automations).
 - **Test stays** (owner, 2026-11-23): `node --env-file=.env.local scripts/test-stay-link.mjs <listingId> [direct|airbnb] [YYYY-MM-DD] [nights]` mints a real /guest/ link for a made-up stay (id 77…, `testReservation()`): real house + live Stripe, nothing read from or written to Hostaway, no "after check-in" messages. To-dos it makes carry "Test Guest".
 - **Airbnb protection** (owner, 2026-11-23): Airbnb guests see the waiver / deposit too, plus a small "None of them" (`protection: 'none'`, Airbnb only) with a note that any damage goes to Airbnb as a claim, likely charged in full. No more "Covered by Airbnb".
+- **Airbnb pays on Airbnb** (owner, 2026-11-23: "all upselling in the guest portal through the Resolution Center … Stripe option but Airbnb
+  preferred"): on an Airbnb stay the check-in's **Review and pay** and every extra (`Pick`) show **Pay $X on Airbnb** first (`AirbnbPay`,
+  GuestCheckin.tsx), "Pay by card instead" below. `POST /api/report-link?rc=1` (`functions/_lib/guest-rc.ts`) prices it on the server
+  (`stayLines`, the card's bill), opens an upsell case (created_by "Guest (stay page)", Slack "opened") + a pending `upsell_charges` row
+  `method 'rc'` (early / late → need + hour, nights → need + nights, so "Mark received" sets Hostaway up like §178). The guest sends the
+  money (Resolution Center › trip › Send money) and taps **I already paid** (`staySaidPaid`: note + Slack line with the check buttons).
+  Check-in: `guest_flows.pay_session = 'rc:<charge>'`; `loadStay` → `flow.rc` {said, received}; **the guest's "I already paid" counts for the
+  Pay step** (door opens at release) — "Paid on Airbnb — confirming" until the team marks it received (then `paid_ok`); "Not there" deletes
+  the note, so the step reopens. Same request again → reused; bill changed → old one Dismissed; switching to card (`guestCheckout`) →
+  `dropRc` cancels it unless the guest already said paid. A deposit is a card hold → card only on Airbnb. No migration. Not tried on a real
+  Airbnb stay yet (test: `scripts/test-stay-link.mjs <listing> airbnb`).
 - **Identity step hidden** (owner, 2026-11-23): `IDENTITY_STEP_ON = false` in guest-checkin.ts — Stripe Identity (live) applied for, flow
   not finished. Hidden from the list and not required for the door code (server uses the same `steps()`). Flip to true to bring it back.
 - ⚠ **Deposit holds last ~7 days** (card authorisations): a guest who checks in early and picks the deposit makes the WHOLE payment manual-capture

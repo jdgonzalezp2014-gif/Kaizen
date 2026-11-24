@@ -15,8 +15,8 @@ import { useUrlState } from '../components/useUrlState.ts';
 import { money2 } from '../lib/format.ts';
 import { UPSELLS, availability, guestLink, stayToken, extendStay, offered, choiceLine, mapsUrl, nights, priceOf, quote, ready, paidExtra, timeOptions, needsApproval, APPROVAL_NOTE,
   type Choice, type GuestGuide, type GuestStay, type Upsell, type UpsellKind, type PaidExtra } from '../lib/guest-portal.ts';
-import { FLOW_KEY, VS_KEY, doorCodeFor, doneFlow, entry, newFlow, progress, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
-import { CheckinProgress, Island, PaidIsland, SecTop, StepIsland, StepScreen, StripePay, type IslandItem } from './GuestCheckin.tsx';
+import { FLOW_KEY, VS_KEY, channelCovers, doorCodeFor, doneFlow, entry, newFlow, progress, protectionFor, steps, type Flow, type Protection, type StepKey } from '../lib/guest-checkin.ts';
+import { AirbnbPay, CheckinProgress, Island, PaidIsland, SecTop, StepIsland, StepScreen, StripePay, type IslandItem } from './GuestCheckin.tsx';
 
 export type Sec = 'stay' | 'checkin' | 'guide' | 'extras';
 const of = (i: number, n: number) => `${i} of ${n}`;
@@ -426,6 +426,8 @@ function Extras({ stay, sent, choose }: { stay: GuestStay; sent: PaidExtra[]; ch
  */
 function Pick({ stay, u, paid, extend }: { stay: GuestStay; u: Upsell; paid: (c: Choice) => void; extend: (c: Choice) => void }) {
   const [done, setDone] = useState<{ title: string; line: string; sub?: string } | null>(null);
+  // Airbnb (owner, 2026-11-23): extras through Airbnb's Resolution Center first; the card stays one tap away.
+  const [card, setCard] = useState(false);
   const [c, setC] = useState<Choice>(u.pick.type === 'qty' ? { qty: 1 } : u.kind === 'extra-nights' ? { before: stay.freeAfter > 0 ? 0 : Math.min(1, stay.freeBefore), after: stay.freeAfter > 0 ? 1 : 0 } : {});
   const total = quote(stay, u, c);
   if (done) return <section className="card ci-card ci-confirmed">
@@ -457,7 +459,11 @@ function Pick({ stay, u, paid, extend }: { stay: GuestStay; u: Upsell; paid: (c:
       {u.pick.type === 'qty' && <Stepper label="How many" value={c.qty ?? 1} min={1} max={u.pick.max} set={v => setC({ qty: v })} />}
       {approval && <p className="note">Another guest leaves or arrives that day and you are asking on the day itself, so this is subject to our approval. If we cannot make it work, you get a full refund.</p>}
       <div className="g-total"><span>Total</span><b>{total != null ? money2(total) : '—'}</b></div>
-      {ok ? <StripePay key={JSON.stringify(c)} email={stay.guest?.email ?? null} label={`${u.kind === 'extra-nights' ? 'Book' : 'Add'} & pay ${money2(total!)}`} back="extras"
+      {ok && channelCovers(stay) && !card
+        ? <AirbnbPay key={JSON.stringify(c)} amount={total!} purpose="extra" extra={{ kind: u.kind, choice: c as Record<string, unknown> }} onCard={() => setCard(true)}
+            onSaid={() => setDone({ title: `${u.title} — requested`, line: [choiceLine({ kind: u.kind, choice: c }), money2(total!)].filter(Boolean).join(' · '),
+              sub: 'Paid on Airbnb — we confirm it there, then set it up' })} />
+        : ok ? <StripePay key={JSON.stringify(c)} email={stay.guest?.email ?? null} label={`${u.kind === 'extra-nights' ? 'Book' : 'Add'} & pay ${money2(total!)}`} back="extras"
           stay={stay} lines={[{ label, amount: total!, kind: 'charge', item: u.kind, note: note || undefined }]} onPaid={onPaid}
           extra={{ kind: u.kind, choice: c as Record<string, unknown> }} />
         : <button className="g-cta" disabled>{u.pick.type === 'time' ? 'Pick a time' : u.pick.type === 'nights' ? 'Pick your nights' : 'Not available'}</button>}

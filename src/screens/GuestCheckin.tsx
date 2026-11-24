@@ -14,6 +14,7 @@ import { loadStripe, type EmbeddedCheckout } from '../components/stripe-js.ts';
 import { Icon } from '../components/Icon.tsx';
 import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
+import { AIRBNB_RESOLUTION } from '../lib/upsell-charge.ts';
 import { UPSELLS, APPROVAL_NOTE, needsApproval, quote, timeOptions, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
 import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, cleanEmail, cleanPhone, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type BillLine, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
@@ -310,6 +311,9 @@ function Extras({ stay, flow, save }: S) {
 function Pay({ stay, flow, p, save, set }: S) {
   const b = bill(flow, stay, p);
   const label = b.today > 0 ? `Pay ${money2(b.today)}` : `Authorize ${money2(b.hold)} hold`;
+  // Airbnb (owner, 2026-11-23): through Airbnb's Resolution Center first, the card as the other way. A deposit is a card hold.
+  const airbnb = channelCovers(stay) && b.today > 0;
+  const [card, setCard] = useState(false);
   if (flow.paid) return <>
     <PaidCard flow={flow} today={b.today} hold={b.hold} />
     <button className="g-cta" onClick={() => save(flow)}>Continue</button>
@@ -323,9 +327,62 @@ function Pay({ stay, flow, p, save, set }: S) {
       <div className="ci-line ci-sum"><span>Today</span><b>{money2(b.today)}</b></div>
       {b.hold > 0 && <div className="ci-line ci-sum ci-sub"><span>Held, released after check-out</span><span>{money2(b.hold)}</span></div>}
     </section>
-    <StripePay lines={b.lines} email={stay.guest?.email ?? null} label={label} stay={stay} purpose="checkin"
-      beforeRedirect={() => { try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); } catch { /* private mode: the page just starts over */ } }}
-      onPaid={total => set({ ...flow, paid: true, paidTotal: total })} />
+    {airbnb && !card && b.hold === 0
+      ? <AirbnbPay amount={b.today} purpose="checkin" pending={flow.rc} onCard={() => setCard(true)}
+          onSaid={c => set({ ...flow, paid: true, paidTotal: c.amount, rc: { ...c, said: true, received: false } })} />
+      : <>
+        {airbnb && b.hold > 0 && <p className="note">The deposit is a hold on a card, which Airbnb cannot do. Choose the waiver to pay on Airbnb instead.</p>}
+        <StripePay lines={b.lines} email={stay.guest?.email ?? null} label={label} stay={stay} purpose="checkin"
+          beforeRedirect={() => { try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); } catch { /* private mode: the page just starts over */ } }}
+          onPaid={total => set({ ...flow, paid: true, paidTotal: total, rc: null })} />
+        {airbnb && card && b.hold === 0 && <button className="chip" onClick={() => setCard(false)}>‹ Pay on Airbnb instead</button>}
+      </>}
+  </>;
+}
+
+/**
+ * Airbnb's Resolution Center (owner, 2026-11-23: "Airbnb is preferred", the card stays offered). The server prices it and
+ * opens the request (guest-rc.ts: a case + a pending charge, the team told in Slack); the guest sends the money in Airbnb
+ * and taps "I already paid" — the team checks Airbnb and marks it received. The demo (no stay link) only walks through it.
+ */
+export function AirbnbPay({ amount, purpose, extra, pending, onSaid, onCard }: { amount: number; purpose: 'checkin' | 'extra';
+  extra?: { kind: string; choice: Record<string, unknown> }; pending?: Flow['rc']; onSaid: (c: { id: string; amount: number }) => void; onCard: () => void }) {
+  const open = pending && !pending.said && !pending.received && Math.abs(pending.amount - amount) < 0.005 ? { id: pending.id, amount: pending.amount } : null;
+  const [req, setReq] = useState<{ id: string; amount: number } | null>(open);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const post = async (url: string, body: unknown) => (await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })).json() as
+    Promise<{ ok?: boolean; charge?: { id: string; amount: number }; message?: string }>;
+  const start = async () => {
+    const t = stayToken();
+    if (!t) { setReq({ id: 'demo', amount }); return; }
+    setBusy(true); setErr(null);
+    try { const j = await post('/api/report-link?rc=1', { stayToken: t, purpose, extra }); if (j.charge) setReq(j.charge); else setErr(j.message ?? 'Could not start — try again.'); }
+    catch { setErr('Could not start — check the connection.'); }
+    setBusy(false);
+  };
+  const said = async () => {
+    const t = stayToken();
+    if (!req) return;
+    if (!t || req.id === 'demo') { onSaid(req); return; }
+    setBusy(true); setErr(null);
+    try { const j = await post(`/api/report-link?charges=${encodeURIComponent(t)}`, { charge: req.id }); if (j.ok) { onSaid(req); return; } setErr(j.message ?? 'Could not save — try again.'); }
+    catch { setErr('Could not save — check the connection.'); }
+    setBusy(false);
+  };
+  return <>
+    {err && <p className="banner warn">▲ {err}</p>}
+    {!req ? <button className="g-cta" onClick={start} disabled={busy}>{busy ? 'One moment…' : `Pay ${money2(amount)} on Airbnb`}</button>
+      : <section className="card ci-card">
+        <b className="ci-name">Send {money2(req.amount)} on Airbnb</b>
+        <span className="note">Resolution Center › this trip › Send money › {money2(req.amount)}</span>
+        <a className="g-cta" href={AIRBNB_RESOLUTION} target="_blank" rel="noreferrer">Open the Resolution Center</a>
+        <button className="chip" onClick={said} disabled={busy}>{busy ? 'Saving…' : 'I already paid'}</button>
+      </section>}
+    <p className="ci-stripe"><span><Icon n="lock" /> Secure payment on Airbnb · recommended</span>
+      <span><Hint>For Airbnb bookings the payment goes through Airbnb's Resolution Center, so Airbnb protects it. Send the amount there,
+        then tap I already paid — we confirm it in Airbnb. You can also pay by card here.</Hint></span></p>
+    <button className="chip" onClick={onCard}>Pay by card instead</button>
   </>;
 }
 
@@ -386,10 +443,12 @@ export function StripePay({ lines, email, label, onPaid, beforeRedirect, back = 
 /** The payment, confirmed (owner, 2026-11-16: "confirm it was paid — it does not show"): Stripe's total, and the hold. */
 export function PaidCard({ flow, today, hold }: { flow: Flow; today: number; hold: number }) {
   // Stripe's total covers the hold too (one manual-capture payment); the bill splits it back.
-  const now = hold > 0 ? today : flow.paidTotal ?? today;
+  const now = flow.rc ? flow.rc.amount : hold > 0 ? today : flow.paidTotal ?? today;
+  // Airbnb: the guest's word opens the step; "confirmed" only once the team saw it in the Resolution Center.
+  const waiting = !!flow.rc && !flow.rc.received;
   return <section className="card ci-card ci-confirmed">
-    <span className="ci-seal" aria-hidden><Icon n="check" /></span>
-    <b className="ci-name">Payment confirmed</b>
+    <span className="ci-seal" aria-hidden><Icon n={waiting ? 'clock' : 'check'} /></span>
+    <b className="ci-name">{flow.rc ? waiting ? 'Paid on Airbnb — confirming' : 'Payment confirmed on Airbnb' : 'Payment confirmed'}</b>
     <span className="ci-paid">{money2(now)} <span className="note">today</span>{hold > 0 && <> · {money2(hold)} <span className="note">held</span></>}</span>
     {hold > 0 && <span className="note">The hold is released after check-out</span>}
   </section>;

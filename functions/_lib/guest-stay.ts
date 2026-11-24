@@ -21,6 +21,7 @@ import { guidePhoto } from './guest-demo.ts';
 import { fireStay } from './guest-outbox.ts';
 import { mirrorTodos } from './inventory.ts';
 import { todayIn } from '../../src/lib/dates.ts';
+import { SAID_PAID } from '../../src/lib/upsell-charge.ts';
 import { doneFlow, doorCodeFor, entry, protectionFor, steps, type Flow } from '../../src/lib/guest-checkin.ts';
 import { nights, type GuestStay } from '../../src/lib/guest-portal.ts';
 import { cleanFlow, isLive, lockedStay, stayFrom, testReservation } from '../../src/lib/guest-stay.ts';
@@ -62,6 +63,20 @@ export async function loadStay(sql: SqlFn, env: Env, id: string, now = new Date(
       row = { ...row, paid_ok: true, paid_total: p.amount };
     }
   }
+  // Airbnb's Resolution Center (owner, 2026-11-23): pay_session = 'rc:<charge>'. Received by the team → paid; the guest's
+  // "I already paid" → the step counts while the team checks Airbnb ("Not there" takes the note back, so it reopens).
+  let rc: Flow['rc'] = null;
+  if (row?.pay_session?.startsWith('rc:')) {
+    const cid = row.pay_session.slice(3);
+    const [c] = await (sql`SELECT u.status, u.amount::text AS amount, EXISTS (SELECT 1 FROM work_updates w WHERE w.account_id = 1 AND w.subject = 'claim'
+                             AND w.subject_id = u.claim_id::text AND w.kind = 'note' AND w.body LIKE ${`${SAID_PAID}%`}) AS said
+                           FROM upsell_charges u WHERE u.account_id = 1 AND u.id::text = ${cid}` as Promise<{ status: string; amount: string; said: boolean }[]>).catch(() => []);
+    if (c?.status === 'paid' && !row.paid_ok) {
+      await sql`UPDATE guest_flows SET paid_ok = true, paid_total = ${c.amount}, updated_at = now() WHERE account_id = 1 AND reservation_id = ${id}`;
+      row = { ...row, paid_ok: true, paid_total: c.amount };
+    }
+    if (c && (c.status === 'paid' || c.status === 'pending')) rc = { id: cid, amount: Number(c.amount), said: c.said, received: c.status === 'paid' };
+  }
   const checkedIn = checkins.length > 0;
   const doorCode = doorCodeFor(house.lockType, house.guestCode, str(r.doorCode));
   const stay = stayFrom(r, house, { checkedIn, doorCode });
@@ -69,7 +84,7 @@ export async function loadStay(sql: SqlFn, env: Env, id: string, now = new Date(
   // A stay the team marked as checked in (the Inbox) is done: nothing is asked again.
   const marked = checkins.some(c => c.source === 'team');
   const flow = marked ? { ...doneFlow(), protection: cleanFlow(row?.flow, { identity: true, paid: true }).protection ?? 'waiver' }
-    : cleanFlow(row?.flow, { identity: !!row?.identity_ok, paid: !!row?.paid_ok, paidTotal: row?.paid_total ? Number(row.paid_total) : null });
+    : { ...cleanFlow(row?.flow, { identity: !!row?.identity_ok, paid: !!row?.paid_ok || !!rc?.said, paidTotal: row?.paid_total ? Number(row.paid_total) : rc?.said ? rc.amount : null }), rc };
   const prot = protectionFor(stay.unitType ?? 'house', stay.protection ?? {}, nights(stay));
   const e = entry(flow, stay, prot, now);
   const stepsDone = e.open || e.why === 'release';
@@ -108,7 +123,7 @@ export async function stayPost(sql: SqlFn, env: Env, request: Request, defer?: (
   if (typeof before === 'string') return no(before, 404);
   const f = cleanFlow(b?.flow, { identity: false, paid: false });
   // Stored without identity / paid: those columns are Stripe's.
-  const { identity: _i, paid: _p, paidTotal: _t, ...answers } = f;
+  const { identity: _i, paid: _p, paidTotal: _t, rc: _r, ...answers } = f;
   await sql`INSERT INTO guest_flows (account_id, reservation_id, listing_id, flow) VALUES (1, ${id}, ${before.listingId}, ${JSON.stringify(answers)}::jsonb)
             ON CONFLICT (account_id, reservation_id) DO UPDATE SET flow = EXCLUDED.flow, listing_id = EXCLUDED.listing_id, updated_at = now()`;
   const prev = before.row ? cleanFlow(before.row.flow, { identity: false, paid: false }).changeAsk : null;
@@ -127,6 +142,24 @@ export async function stayPost(sql: SqlFn, env: Env, request: Request, defer?: (
   }
   const l = await loadStay(sql, env, id, new Date(), defer);
   return typeof l === 'string' ? no(l, 404) : answer(l);
+}
+
+/**
+ * The guest went to pay the check-in by card after asking to pay it on Airbnb: the Resolution Center request is dropped, so
+ * the stay page does not show it pending too (nothing was paid there yet — a request the guest said they paid stays).
+ */
+export async function dropRc(sql: SqlFn, row: { pay_session: string | null } | null) {
+  const cid = row?.pay_session?.startsWith('rc:') ? row.pay_session.slice(3) : null;
+  if (!cid) return;
+  const [c] = await sql`UPDATE upsell_charges u SET status = 'cancelled', cancelled_at = now(), cancelled_by = 'Guest (stay page)'
+                         WHERE u.account_id = 1 AND u.id::text = ${cid} AND u.status = 'pending'
+                           AND NOT EXISTS (SELECT 1 FROM work_updates w WHERE w.account_id = 1 AND w.subject = 'claim' AND w.subject_id = u.claim_id::text
+                                             AND w.kind = 'note' AND w.body LIKE ${`${SAID_PAID}%`})
+                         RETURNING claim_id::text AS claim_id, label, amount::float8 AS amount` as { claim_id: string; label: string; amount: number }[];
+  if (!c) return;
+  await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+            VALUES (1, 'claim', ${c.claim_id}, 'note', ${`The guest chose to pay by card instead — Resolution Center request cancelled: ${c.label} $${c.amount.toFixed(2)}.`}, 'Guest (stay page)')`;
+  await sql`UPDATE claims SET status = 'Dismissed', resolved_on = COALESCE(resolved_on, ${todayIn('America/New_York')}::date) WHERE account_id = 1 AND id::text = ${c.claim_id} AND status = 'Open'`.catch(() => {});
 }
 
 /** For guest-pay.ts: Stripe confirmed something for this stay. */
