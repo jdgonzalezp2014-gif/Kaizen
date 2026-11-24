@@ -1,6 +1,6 @@
 /**
  * Adds the damage-protection notice to the end of every active listing's description in Hostaway (owner, 2026-11-23):
- * the guest pays a $500 deposit, or a damage waiver of $12 a night with a $60 minimum (was $300 / $70), whichever is greater.
+ * the guest pays a $350 deposit (2026-11-23 evening; was $500), or a damage waiver of $12 a night with a $60 minimum (was $300 / $70), whichever is greater.
  *
  *   node --env-file=.env.local scripts/description-protection-notice.mjs --dry   show what would change
  *   node --env-file=.env.local scripts/description-protection-notice.mjs         change it
@@ -17,7 +17,7 @@ import { getCredentials } from '../functions/_lib/accounts.ts';
 import { getAccessToken } from '../functions/_lib/hostaway.ts';
 
 export const NOTICE = 'Damage protection: before check-in, guests complete our online check-in and choose either a refundable ' +
-  '$500 security deposit (held on the card and released after check-out) or a non-refundable damage waiver of $12 per night ' +
+  '$350 security deposit (held on the card and released after check-out) or a non-refundable damage waiver of $12 per night ' +
   'or $60, whichever is greater.';
 const MARK = 'Damage protection: before check-in';
 const FIELDS = ['description', 'homeawayPropertyDescription', 'bookingcomPropertyDescription', 'airbnbNotes', 'houseRules'];

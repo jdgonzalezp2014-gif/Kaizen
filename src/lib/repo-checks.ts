@@ -74,7 +74,8 @@ export const CHECKS: CheckDef[] = [
   one('fees', 'cleaning_fee', 'Cleaning fee (guest)', 'cleaningFee', 'money', 'What the guest is charged to clean — revenue, not the cleaner\'s pay.'),
   one('fees', 'extra_guest_fee', 'Extra guest fee (per night)', 'priceForExtraPerson', 'money', 'Per guest over "Guests included", per night.'),
   one('fees', 'pet_fee', 'Pet fee (Airbnb)', 'airbnbPetFeeAmount', 'money', 'Hostaway keeps it as an Airbnb setting.'),
-  one('fees', 'damage_deposit', 'Refundable damage deposit', 'refundableDamageDeposit', 'money'),
+  // Not sent: Hostaway's field is $350 only on the Airbnb test half (scripts/airbnb-deposit-split.mjs), $0 on the rest.
+  one('fees', 'damage_deposit', 'Refundable damage deposit', 'refundableDamageDeposit', 'money', 'Hostaway has it only on the Airbnb test half (mandatory there); the portal charges it everywhere.', false),
   one('fees', 'checkin_fee', 'Check-in fee', 'checkinFee', 'money'),
   // insurance_fee (Damage waiver per night) is no longer compared: Hostaway's fee was taken off 2026-11-23 — the guest portal
   // charges the waiver from the Repository's value (guest-checkin.ts portalFrom).
