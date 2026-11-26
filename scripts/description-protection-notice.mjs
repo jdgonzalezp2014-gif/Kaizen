@@ -21,8 +21,10 @@ export const NOTICE = 'Damage protection: before check-in, guests complete our o
   '$350 security deposit (held on the card and released after check-out) or a non-refundable damage waiver: $55 per stay, ' +
   '$75 for stays of 7 nights or more, or $99 for monthly stays.';
 const MARK = 'Damage protection: before check-in';
-const FIELDS = ['description', 'homeawayPropertyDescription', 'bookingcomPropertyDescription', 'airbnbNotes', 'houseRules'];
-const ALWAYS = new Set(['airbnbNotes', 'houseRules']);   // an empty one does not fall back to `description`
+// airbnbSpace (owner, 2026-11-26: "the descriptions on Airbnb do not show it"): Airbnb's description is airbnbSummary (500 characters,
+// full) + airbnbSpace ("The space") — the notice goes at the end of The space so it reads in the description itself.
+const FIELDS = ['description', 'homeawayPropertyDescription', 'bookingcomPropertyDescription', 'airbnbSpace', 'airbnbNotes', 'houseRules'];
+const ALWAYS = new Set(['airbnbSpace', 'airbnbNotes', 'houseRules']);   // an empty one does not fall back to `description`
 
 const DRY = process.argv.includes('--dry');
 const WHO = process.argv.find(a => a.startsWith('--by='))?.slice(5) ?? 'kaizen-script';

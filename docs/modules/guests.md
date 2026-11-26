@@ -539,8 +539,9 @@ the extra charges, and show them in the guest's portal as pending payments."
   — `protectionFor` / `waiverFor`, `WEEK_NIGHTS` / `MONTH_NIGHTS` in guest-checkin.ts. Was max($60, $12 × nights).
   Repository: `waiver_price` = the base (129 moved 60 → 55, titled "Damage waiver (under 7 nights)"); `waiver_week` /
   `waiver_month` optional per record (no column yet); `insurance_fee` no longer read. Guest AI and the portal texts say the tiers.
-  Hostaway notice (`scripts/description-protection-notice.mjs`, NOTICE updated): dry run = 23 listings × 5 fields — **not run,
-  waiting for the owner's OK**. SOP #42 → v3 in `.sop-payments-1126.mjs`.
+  Hostaway notice (`scripts/description-protection-notice.mjs`, NOTICE updated, now also `airbnbSpace` — Airbnb showed the notice only
+  under "Other things to note", not in the description; `airbnbSummary` is full at 500): dry run = 23 listings × 6 fields; owner OK'd,
+  auto mode refused the write — **owner runs it** (`--by=owner-1126-waiver`). Airbnb's house rules did not show in the page's HTML: not verified. SOP #42 → v3 in `.sop-payments-1126.mjs`.
 - **Also in the CRM's reservation card** (`StayPayments` in Inbox.tsx, `/api/payments?reservation=`): this stay's portal payments,
   hold end, set-up to-do (done = completed/cancelled), and Release / Keep / Refund — shown with `payments`, buttons with `payments.refund`.
 - **Pending + reminders + Airbnb check (owner, 2026-11-26):** `pendingFor` lists team charges not paid (an Airbnb check-in bill is
