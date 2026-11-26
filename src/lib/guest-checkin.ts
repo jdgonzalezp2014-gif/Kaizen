@@ -10,32 +10,41 @@ import { UPSELLS, APPROVAL_NOTE, needsApproval, priceOf, quote, availability, al
 
 /** Protection values depend on what is rented: a room is not a house (owner, 2026-11-15). Per listing in the Repository. */
 export type UnitType = 'room' | 'apartment' | 'house';
-/** `waiver.price` is what this stay pays: the per-night rate × nights, never under the minimum (owner, 2026-11-23). */
-export interface Protection { waiver: { price: number; min: number; perNight: number; cap: number }; deposit: { hold: number } }
+/**
+ * `waiver.price` is what this stay pays, by its length (owner, 2026-11-26): `base` under 7 nights, `week` from 7 nights,
+ * `month` from 28 nights (a monthly stay). One fee per stay — no per-night rate any more.
+ */
+export interface Protection { waiver: { price: number; base: number; week: number; month: number; cap: number }; deposit: { hold: number } }
 
-/** Owner, 2026-11-23, every listing: $350 deposit (was $500, before that $300), or a waiver of $12 a night with a $60 minimum (was $70). Caps are still placeholders. */
-const STANDARD = { min: 60, perNight: 12, hold: 350 };
-export const PROTECTION_DEFAULTS: Record<UnitType, { waiver: { min: number; perNight: number; cap: number }; deposit: { hold: number } }> = {
-  room: { waiver: { min: STANDARD.min, perNight: STANDARD.perNight, cap: 1000 }, deposit: { hold: STANDARD.hold } },
-  apartment: { waiver: { min: STANDARD.min, perNight: STANDARD.perNight, cap: 1500 }, deposit: { hold: STANDARD.hold } },
-  house: { waiver: { min: STANDARD.min, perNight: STANDARD.perNight, cap: 3000 }, deposit: { hold: STANDARD.hold } },
+/** From this many nights the week price applies, and from MONTH_NIGHTS the monthly one. */
+export const WEEK_NIGHTS = 7, MONTH_NIGHTS = 28;
+/** Owner, 2026-11-26, every listing: waiver $55 / $75 (7+ nights) / $99 (monthly) — was $12 a night, $60 minimum. Deposit $350 (2026-11-23). Caps are still placeholders. */
+const STANDARD = { base: 55, week: 75, month: 99, hold: 350 };
+const tiers = (cap: number) => ({ base: STANDARD.base, week: STANDARD.week, month: STANDARD.month, cap });
+export const PROTECTION_DEFAULTS: Record<UnitType, { waiver: { base: number; week: number; month: number; cap: number }; deposit: { hold: number } }> = {
+  room: { waiver: tiers(1000), deposit: { hold: STANDARD.hold } },
+  apartment: { waiver: tiers(1500), deposit: { hold: STANDARD.hold } },
+  house: { waiver: tiers(3000), deposit: { hold: STANDARD.hold } },
 };
 
-export interface ProtectionOverride { waiverMin?: number | null; waiverNight?: number | null; waiverCap?: number | null; depositHold?: number | null }
+export interface ProtectionOverride { waiverBase?: number | null; waiverWeek?: number | null; waiverMonth?: number | null; waiverCap?: number | null; depositHold?: number | null }
+
+/** The waiver for a stay of `nights`, by tier. */
+export const waiverFor = (w: { base: number; week: number; month: number }, nights: number) =>
+  nights >= MONTH_NIGHTS ? w.month : nights >= WEEK_NIGHTS ? w.week : w.base;
 
 /** The unit type's defaults, with whatever the listing sets on top (a blank field keeps the default), for a stay of `nights`. */
 export function protectionFor(type: UnitType, o: ProtectionOverride = {}, nights = 1): Protection {
   const d = PROTECTION_DEFAULTS[type];
   const n = (v: number | null | undefined, def: number) => (v != null && Number.isFinite(v) && v >= 0 ? v : def);
-  const min = n(o.waiverMin, d.waiver.min), perNight = n(o.waiverNight, d.waiver.perNight);
-  const price = Math.round(Math.max(min, perNight * Math.max(1, Math.round(nights))) * 100) / 100;
-  return { waiver: { price, min, perNight, cap: n(o.waiverCap, d.waiver.cap) }, deposit: { hold: n(o.depositHold, d.deposit.hold) } };
+  const w = { base: n(o.waiverBase, d.waiver.base), week: n(o.waiverWeek, d.waiver.week), month: n(o.waiverMonth, d.waiver.month) };
+  return { waiver: { price: waiverFor(w, Math.max(1, Math.round(nights))), ...w, cap: n(o.waiverCap, d.waiver.cap) }, deposit: { hold: n(o.depositHold, d.deposit.hold) } };
 }
 
 /**
  * The record's unit type (Guest portal, migration 110) and protection values — Fees since 2026-11-23 (migration 122):
- * Refundable damage deposit, Damage waiver per night (the same field as Hostaway's nightly fee), Damage waiver minimum.
- * Blanks keep the defaults.
+ * Refundable damage deposit, Damage waiver (`waiver_price`, the base: under 7 nights); `waiver_week` / `waiver_month` when a
+ * record sets them. Blanks keep the defaults. `insurance_fee` (the old per-night rate) is no longer read (2026-11-26).
  */
 export function portalFrom(vals: Record<string, unknown> | null | undefined): { unitType: UnitType | null; protection: ProtectionOverride } {
   const num = (v: unknown) => { const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v.replace(/[$,\s]/g, '')) : NaN; return Number.isFinite(n) && n >= 0 ? n : null; };
@@ -45,23 +54,21 @@ export function portalFrom(vals: Record<string, unknown> | null | undefined): { 
   const fromPt: UnitType | null = /room/.test(pt) ? 'room' : /apartment|condo|loft|studio|flat/.test(pt) ? 'apartment' : /house|home|villa|townhouse|cottage|cabin/.test(pt) ? 'house' : null;
   return {
     unitType: t === 'room' || t === 'apartment' || t === 'house' ? t : fromPt,
-    protection: { waiverMin: num(vals?.waiver_price), waiverNight: num(vals?.insurance_fee), waiverCap: num(vals?.waiver_cap),
+    protection: { waiverBase: num(vals?.waiver_price), waiverWeek: num(vals?.waiver_week), waiverMonth: num(vals?.waiver_month), waiverCap: num(vals?.waiver_cap),
       depositHold: num(vals?.damage_deposit) ?? num(vals?.deposit_hold) },
   };
 }
 
 /**
- * Airbnb guests (owner, 2026-11-23) get the same waiver / deposit as everyone, plus a small "None of them": with no
- * protection, any damage goes to Airbnb as a claim. Other channels must pick one of the two.
+ * An Airbnb stay (owner, 2026-11-23): pays its check-in and extras on Airbnb (Resolution Center) first, card second.
  */
 export const channelCovers = (s: Pick<GuestStay, 'channel'>) => s.channel === 'airbnb';
 /**
- * "None of them" (owner, 2026-11-26): only on Airbnb, and only where the listing has NO refundable deposit in Hostaway's own
- * settings. A deposit set there is required by the channel, so the guest cannot opt out — only the waiver or the deposit.
+ * Owner, 2026-11-26: "None of them" is gone — every guest picks the waiver or the deposit. A stay that already finished its
+ * check-in with "none" (Airbnb, 2026-11-23..26) keeps it, so its door code does not lock again.
  */
-export const noneAllowed = (s: Pick<GuestStay, 'channel' | 'channelDeposit'>) => channelCovers(s) && !((s.channelDeposit ?? 0) > 0);
-const protectionDone = (f: Pick<Flow, 'protection'>, s: Pick<GuestStay, 'channel' | 'channelDeposit'>) =>
-  f.protection === 'waiver' || f.protection === 'deposit' || (f.protection === 'none' && noneAllowed(s));
+const protectionDone = (f: Pick<Flow, 'protection'>, s: Pick<GuestStay, 'channel' | 'checkedIn'>) =>
+  f.protection === 'waiver' || f.protection === 'deposit' || (f.protection === 'none' && channelCovers(s) && !!s.checkedIn);
 
 /** A phone number as the guest typed it → +E.164 (10 digits = US/Canada), or null when it cannot be one. */
 export function cleanPhone(v: unknown): string | null {

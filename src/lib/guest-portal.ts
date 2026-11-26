@@ -28,8 +28,6 @@ export interface GuestStay {
   checkOutTime: string;       // "11:00 AM"
   guests: number;
   channel: Channel;
-  /** The listing's refundable damage deposit in Hostaway's settings (0 = none set): set → "None of them" is not offered. */
-  channelDeposit?: number;
   total: number;              // what Kaizen collects for the stay (0 when the channel collects)
   paid: number;
   nightly: number | null;     // rate for extra nights, when known
@@ -53,7 +51,7 @@ export interface GuestStay {
   checkedIn?: boolean;
   /** The guest's door code (Hostaway's per-reservation code when set) — shown only once check-in opens the entry. */
   doorCode?: string | null;
-  protection?: { waiverMin?: number | null; waiverNight?: number | null; waiverCap?: number | null; depositHold?: number | null } | null;
+  protection?: { waiverBase?: number | null; waiverWeek?: number | null; waiverMonth?: number | null; waiverCap?: number | null; depositHold?: number | null } | null;
   /** The house's check-in guide, from its Repository record (null = none yet). Served only once the guide opens. */
   guide?: GuestGuide | null;
   /** House prices from the Repository's Fees, overriding the UPSELLS placeholders. */

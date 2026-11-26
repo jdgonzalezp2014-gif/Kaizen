@@ -97,7 +97,7 @@ export async function suggestReply(sql: SqlFn, env: Env, stay: AiStay, thread: T
   const n = stay.arrival && stay.departure ? stayNights({ arrival: stay.arrival, departure: stay.departure }) : 1;
   const p = protectionFor(pf.unitType ?? 'house', pf.protection, n);
   const protection = /airbnb/i.test(stay.channel ?? '') ? 'Damage protection: covered by Airbnb (AirCover) — no deposit or waiver for this guest.'
-    : `Damage protection, chosen in the online check-in: a refundable $${p.deposit.hold} security deposit (a hold, released after check-out) or a non-refundable damage waiver of $${p.waiver.perNight} per night or $${p.waiver.min}, whichever is greater — $${p.waiver.price} for this ${n}-night stay.`;
+    : `Damage protection, chosen in the online check-in: a refundable $${p.deposit.hold} security deposit (a hold, released after check-out) or a non-refundable damage waiver, one fee per stay: $${p.waiver.base} under 7 nights, $${p.waiver.week} for 7 nights or more, $${p.waiver.month} for a monthly stay (28+ nights) — $${p.waiver.price} for this ${n}-night stay. Every guest picks one of the two.`;
   const portal = portalLines({ hasLink, checkinDone, oldPortalDone: stay.agreement === 'signed' || stay.idVerified === true, portalFirst: cfg.portalFirst,
     oldNotice: cfg.oldPortalNotice, protection, inHouse });
   // What Kaizen will send this stay: rows already in the outbox, and automations still to come (Hostaway's own are not readable — its API has none).

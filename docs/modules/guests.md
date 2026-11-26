@@ -532,10 +532,15 @@ the extra charges, and show them in the guest's portal as pending payments."
 - Release = cancel the PaymentIntent (deposit alone) or capture only the charges (check-in bill with a hold). Keep = partial capture
   (charges + kept). `recordSession` now: `released` status (PI cancelled, uncaptured), and a partial capture's released part is no
   longer counted as refunded.
-- **Deposit rule (owner):** a listing with a deposit in Hostaway's settings → the portal does not offer Airbnb guests "None of them"
-  (`noneAllowed`, `GuestStay.channelDeposit` from `fetchListingDeposit` in `guestHouse`; not read → None stays, as before).
-  `channelCovers` is unchanged (it also routes Airbnb payments to the Resolution Center).
-- Checked 2026-11-26: 11 listings on ($350, = `GROUP_B`), 12 off; before the rule, 7 Airbnb check-ins on "on" listings picked None.
+- ~~Deposit rule (no "None" where Hostaway has a deposit)~~ — superseded the same day: **"None of them" is gone for everyone**
+  (owner, 2026-11-26). `protectionDone` accepts "none" only on a stay already checked in with it (16 Airbnb check-ins of 11-23..26
+  keep their door code). The `channelDeposit` plumbing was removed again; the Payments screen still reads the Hostaway deposit.
+- **Waiver by stay length (owner, 2026-11-26, migration 129):** $55 under 7 nights, $75 from 7 nights, $99 from 28 (monthly)
+  — `protectionFor` / `waiverFor`, `WEEK_NIGHTS` / `MONTH_NIGHTS` in guest-checkin.ts. Was max($60, $12 × nights).
+  Repository: `waiver_price` = the base (129 moved 60 → 55, titled "Damage waiver (under 7 nights)"); `waiver_week` /
+  `waiver_month` optional per record (no column yet); `insurance_fee` no longer read. Guest AI and the portal texts say the tiers.
+  Hostaway notice (`scripts/description-protection-notice.mjs`, NOTICE updated): dry run = 23 listings × 5 fields — **not run,
+  waiting for the owner's OK**. SOP #42 → v3 in `.sop-payments-1126.mjs`.
 - **Also in the CRM's reservation card** (`StayPayments` in Inbox.tsx, `/api/payments?reservation=`): this stay's portal payments,
   hold end, set-up to-do (done = completed/cancelled), and Release / Keep / Refund — shown with `payments`, buttons with `payments.refund`.
 - Open: portal extras still never write Hostaway (only the to-do) — owner said they should, except same day; not built yet.

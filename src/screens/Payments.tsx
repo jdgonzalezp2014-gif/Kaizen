@@ -71,7 +71,7 @@ export function Payments({ canAct }: { canAct: boolean }) {
           <div><dt>Check-ins completed</dt><dd>{v.t.completed}<small>{data.checkins.filter(c => c.source === 'portal').length} online · {data.checkins.filter(c => c.source === 'team').length} by the team</small></dd></div>
           <div><dt>Damage waiver</dt><dd>{v.t.waiver}<small>{share(v.t.waiver, v.t.completed)} of check-ins</small></dd></div>
           <div><dt>Security deposit</dt><dd>{v.t.deposit}<small>{share(v.t.deposit, v.t.completed)} of check-ins</small></dd></div>
-          <div><dt>None (Airbnb)</dt><dd>{v.t.none}<small>{share(v.t.none, v.t.completed)} of check-ins</small></dd></div>
+          {v.t.none > 0 && <div><dt>None</dt><dd>{v.t.none}<small>Airbnb, before 2026-11-26 (option removed)</small></dd></div>}
           <div><dt>Deposits held</dt><dd>{money2(v.held.reduce((s, p) => s + p.hold, 0))}<small>{v.held.length} on guests' cards</small></dd></div>
           <div><dt>Refunded</dt><dd>{money2(v.refunds)}<small>from Kaizen, last {days} days</small></dd></div>
         </dl>
@@ -142,26 +142,26 @@ export function Payments({ canAct }: { canAct: boolean }) {
         <div className="card">
           <div className="row-controls">
             <h2>Deposit by listing <Hint>Hostaway's own "Refundable damage deposit" for each active listing, read from Hostaway now.
-              On → the channel requires it, so the portal does not offer Airbnb guests "None of them": only the waiver or the deposit.
-              Off → Airbnb guests may also pick None. The check-in columns count the online check-ins completed in the last {days} days.</Hint></h2>
+              It is shared by every channel; on Airbnb it makes the deposit part of the booking. In the portal every guest picks the waiver
+              or the deposit either way. The check-in columns count the online check-ins completed in the last {days} days ("None" = Airbnb
+              check-ins before the option was removed on 2026-11-26).</Hint></h2>
             <span className="rb-spacer" />
             <span className="note">{data.hostawayRead ? `${v.withDeposit} on · ${data.listings.length - v.withDeposit} off` : '! Hostaway could not be read'}</span>
           </div>
           <div className="table-wrap">
             <table className="money-table">
-              <thead><tr><th>Listing</th><th>Hostaway deposit</th><th>"None" on Airbnb</th><th className="n">Check-ins</th><th className="n">Waiver</th><th className="n">Deposit</th><th className="n">None</th></tr></thead>
+              <thead><tr><th>Listing</th><th>Hostaway deposit</th><th className="n">Check-ins</th><th className="n">Waiver</th><th className="n">Deposit</th><th className="n">None</th></tr></thead>
               <tbody>{[...data.listings].sort((a, b) => (b.deposit ?? 0) - (a.deposit ?? 0) || a.name.localeCompare(b.name)).map(l => {
                 const t = tally(l.picks);
                 return <tr key={l.id}>
                   <td>{l.name}</td>
                   <td>{l.deposit == null ? '? Not read' : l.deposit > 0 ? `✓ On · ${money2(l.deposit)}` : '— Off'}</td>
-                  <td>{l.deposit == null ? '—' : l.deposit > 0 ? 'Not offered' : 'Offered'}</td>
                   <td className="n">{t.completed || '—'}</td><td className="n">{t.waiver || '—'}</td><td className="n">{t.deposit || '—'}</td><td className="n">{t.none || '—'}</td>
                 </tr>;
               })}</tbody>
               <tfoot>
-                <tr><td>Deposit on</td><td /><td /><td className="n">{v.on.completed}</td><td className="n">{v.on.waiver}</td><td className="n">{v.on.deposit}</td><td className="n">{v.on.none}</td></tr>
-                <tr><td>Deposit off</td><td /><td /><td className="n">{v.off.completed}</td><td className="n">{v.off.waiver}</td><td className="n">{v.off.deposit}</td><td className="n">{v.off.none}</td></tr>
+                <tr><td>Deposit on</td><td /><td className="n">{v.on.completed}</td><td className="n">{v.on.waiver}</td><td className="n">{v.on.deposit}</td><td className="n">{v.on.none}</td></tr>
+                <tr><td>Deposit off</td><td /><td className="n">{v.off.completed}</td><td className="n">{v.off.waiver}</td><td className="n">{v.off.deposit}</td><td className="n">{v.off.none}</td></tr>
               </tfoot>
             </table>
           </div>

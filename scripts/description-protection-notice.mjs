@@ -1,6 +1,7 @@
 /**
  * Adds the damage-protection notice to the end of every active listing's description in Hostaway (owner, 2026-11-23):
- * the guest pays a $350 deposit (2026-11-23 evening; was $500), or a damage waiver of $12 a night with a $60 minimum (was $300 / $70), whichever is greater.
+ * the guest pays a $350 deposit (2026-11-23 evening; was $500), or a damage waiver — since 2026-11-26 one fee by stay length:
+ * $55, $75 for 7+ nights, $99 monthly (was $12 a night with a $60 minimum, before that $300 / $70).
  *
  *   node --env-file=.env.local scripts/description-protection-notice.mjs --dry   show what would change
  *   node --env-file=.env.local scripts/description-protection-notice.mjs         change it
@@ -8,17 +9,17 @@
  * Fields: `description` (direct / website / Expedia), `homeawayPropertyDescription` (Vrbo), `bookingcomPropertyDescription`
  * (Booking.com), and since 2026-11-23 (owner: "la información tiene que estar en Airbnb… en la descripción y al final de las
  * house rules") `airbnbNotes` (Airbnb's "Other details to note") and `houseRules` (shared by every channel, Airbnb included) —
- * the portal asks Airbnb guests for the waiver or deposit too (with "None of them"). Those two get it even when empty.
+ * the portal asks Airbnb guests for the waiver or deposit too (no "None of them" since 2026-11-26). Those two get it even when empty.
  * Each field's text as it was is kept in listing_text_changes; a field that already has this notice is left alone, and an
- * older notice (2026-11-23: $300 / $70 → $500 / $60) is replaced in place.
+ * older notice (other amounts, any version) is replaced in place.
  */
 import { neon } from '@neondatabase/serverless';
 import { getCredentials } from '../functions/_lib/accounts.ts';
 import { getAccessToken } from '../functions/_lib/hostaway.ts';
 
 export const NOTICE = 'Damage protection: before check-in, guests complete our online check-in and choose either a refundable ' +
-  '$350 security deposit (held on the card and released after check-out) or a non-refundable damage waiver of $12 per night ' +
-  'or $60, whichever is greater.';
+  '$350 security deposit (held on the card and released after check-out) or a non-refundable damage waiver: $55 per stay, ' +
+  '$75 for stays of 7 nights or more, or $99 for monthly stays.';
 const MARK = 'Damage protection: before check-in';
 const FIELDS = ['description', 'homeawayPropertyDescription', 'bookingcomPropertyDescription', 'airbnbNotes', 'houseRules'];
 const ALWAYS = new Set(['airbnbNotes', 'houseRules']);   // an empty one does not fall back to `description`

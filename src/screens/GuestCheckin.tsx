@@ -16,7 +16,7 @@ import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
 import { AIRBNB_RESOLUTION } from '../lib/upsell-charge.ts';
 import { UPSELLS, APPROVAL_NOTE, needsApproval, quote, timeOptions, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
-import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, noneAllowed, cleanEmail, cleanPhone, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
+import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, cleanEmail, cleanPhone, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type BillLine, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
 const STEP_ICON: Record<StepKey, string> = { details: 'user', identity: 'idcard', protection: 'shield', rules: 'book', extras: 'sparkles', pay: 'card' };
@@ -240,15 +240,15 @@ function Identity({ flow, save, set }: S) {
   </>;
 }
 
-function ProtectionStep({ stay, flow, p, save }: S) {
-  const airbnb = noneAllowed(stay);
-  const [pick, setPick] = useState<'waiver' | 'deposit' | 'none'>(flow.protection === 'none' && !airbnb ? 'waiver' : flow.protection ?? 'waiver');
+function ProtectionStep({ flow, p, save }: S) {
+  // Owner, 2026-11-26: no "None of them" — the waiver or the deposit.
+  const [pick, setPick] = useState<'waiver' | 'deposit'>(flow.protection === 'deposit' ? 'deposit' : 'waiver');
   return <>
     <div className="ci-opts" role="radiogroup" aria-label="Damage protection">
       <button role="radio" aria-checked={pick === 'waiver'} className={`card ci-plan${pick === 'waiver' ? ' on' : ''}`} onClick={() => setPick('waiver')}>
         <span className="ci-plan-top"><span className="ci-radio" aria-hidden /><b>Damage waiver</b><span className="ci-badge">Recommended</span></span>
         <span className="ci-price">{usd(p.waiver.price)}<span> once</span></span>
-        <ul className="ci-pts"><li>{usd(p.waiver.perNight)} per night, {usd(p.waiver.min)} minimum</li><li>Accidental damage covered up to {usd(p.waiver.cap)}</li><li>No hold on your card</li><li>No surprise bills after you leave</li></ul>
+        <ul className="ci-pts"><li>{usd(p.waiver.base)} a stay · {usd(p.waiver.week)} for 7+ nights · {usd(p.waiver.month)} monthly</li><li>Accidental damage covered up to {usd(p.waiver.cap)}</li><li>No hold on your card</li><li>No surprise bills after you leave</li></ul>
       </button>
       <button role="radio" aria-checked={pick === 'deposit'} className={`card ci-plan${pick === 'deposit' ? ' on' : ''}`} onClick={() => setPick('deposit')}>
         <span className="ci-plan-top"><span className="ci-radio" aria-hidden /><b>Security deposit</b></span>
@@ -256,14 +256,9 @@ function ProtectionStep({ stay, flow, p, save }: S) {
         <ul className="ci-pts"><li>Held on your card, not charged</li><li>Released 5–7 business days after check-out</li><li>Charged only if something is damaged</li></ul>
       </button>
     </div>
-    {airbnb && <button role="radio" aria-checked={pick === 'none'} className={`ci-none${pick === 'none' ? ' on' : ''}`} onClick={() => setPick('none')}>
-      <span className="ci-plan-top"><span className="ci-radio" aria-hidden /><span>None of them</span></span>
-      <small>Any damage reported, whatever the cost, goes to Airbnb as a claim and will most likely be charged to you in full.
-        With the waiver, accidental damage up to {usd(p.waiver.cap)} is on us.</small>
-    </button>}
     <p className="ci-fine">Not covered: damage on purpose, theft, smoking, unapproved pets, and anything above {usd(p.waiver.cap)}.
-      <Hint>The waiver is a one-time fee ({usd(p.waiver.perNight)} per night or {usd(p.waiver.min)}, whichever is greater) that covers accidental damage during your stay, up to the limit. The deposit is a temporary hold on your card; we release it after check-out unless damage is reported.</Hint></p>
-    <button className="g-cta" onClick={() => save({ ...flow, protection: pick })}>{pick === 'none' ? 'Continue without protection' : `Continue with the ${pick === 'waiver' ? 'waiver' : 'deposit'}`}</button>
+      <Hint>The waiver is a one-time fee per stay ({usd(p.waiver.base)} under 7 nights, {usd(p.waiver.week)} for 7 nights or more, {usd(p.waiver.month)} for a monthly stay of 28 nights or more) that covers accidental damage during your stay, up to the limit. The deposit is a temporary hold on your card; we release it after check-out unless damage is reported.</Hint></p>
+    <button className="g-cta" onClick={() => save({ ...flow, protection: pick })}>{`Continue with the ${pick === 'waiver' ? 'waiver' : 'deposit'}`}</button>
   </>;
 }
 

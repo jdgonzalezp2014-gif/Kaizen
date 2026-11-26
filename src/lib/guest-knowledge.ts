@@ -47,7 +47,7 @@ const LISTING: { key: string; label: string; max: number; booked?: true; money?:
   { key: 'extra_guest_fee', label: 'Extra guest fee per night (beyond the guests included)', max: 20, money: true },
   { key: 'pet_fee', label: 'Pet fee', max: 20, money: true },
   { key: 'insurance_fee', label: 'Damage waiver per night', max: 20, money: true },
-  { key: 'waiver_price', label: 'Damage waiver minimum per stay (the waiver is the per-night rate × nights, never less)', max: 20, money: true },
+  { key: 'waiver_price', label: 'Damage waiver per stay under 7 nights (7+ nights and monthly stays have their own price)', max: 20, money: true },
   { key: 'waiver_cap', label: 'Damage waiver covers up to', max: 20, money: true },
   { key: 'damage_deposit', label: 'Refundable damage deposit', max: 20, money: true },
   { key: 'deposit_hold', label: 'Security deposit hold', max: 20, money: true },
