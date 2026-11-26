@@ -18,7 +18,9 @@ type Action = { id: string; session_id: string; kind: 'refund' | 'release' | 'ca
   guest: string | null; unit_name: string | null; livemode: boolean | null };
 type Checkin = { reservationId: string; listingId: string | null; source: string; completedAt: string; pick: ProtectionPick; depositOn: boolean | null };
 type Listing = { id: string; name: string; deposit: number | null; picks: ProtectionPick[] };
-export interface Overview { days: number; payments: DeskPayment[]; charges: Charge[]; actions: Action[]; checkins: Checkin[]; listings: Listing[]; hostawayRead: boolean }
+export type Pending = { key: string; reservationId: string; chargeId: string | null; guest: string | null; unit: string | null; what: string;
+  amount: number | null; method: 'rc' | 'card'; since: string; said: boolean; lastReminder: { at: string; by: string } | null; draft: string };
+export interface Overview { days: number; payments: DeskPayment[]; pending: Pending[]; charges: Charge[]; actions: Action[]; checkins: Checkin[]; listings: Listing[]; hostawayRead: boolean }
 
 const STATE: Record<GuestPayment['status'], string> = { paid: '✓ Paid', held: '○ Held', refunded: '↺ Refunded', released: '○ Released' };
 const day = (iso: string | null) => iso ? iso.slice(0, 10) : '—';
@@ -75,6 +77,15 @@ export function Payments({ canAct }: { canAct: boolean }) {
           <div><dt>Deposits held</dt><dd>{money2(v.held.reduce((s, p) => s + p.hold, 0))}<small>{v.held.length} on guests' cards</small></dd></div>
           <div><dt>Refunded</dt><dd>{money2(v.refunds)}<small>from Kaizen, last {days} days</small></dd></div>
         </dl>
+
+        <div className="card">
+          <h2>Pending <Hint>What a guest still owes: a damage waiver, deposit or extra picked in the online check-in and not paid by card,
+            and every charge not paid yet (an Airbnb stay's check-in bill is a Resolution Center request). "Says paid" = the guest tapped
+            "I already paid" on Airbnb: check the Resolution Center and mark it received in its case. <b>Remind</b> opens a message to the
+            guest with their check-in link — read it, change it if needed, and send; it goes through the stay's Hostaway conversation
+            and shows in the CRM.</Hint></h2>
+          {!data.pending.length ? <p className="note">Nothing pending.</p> : <PendingTable rows={data.pending} canAct={canAct} onDone={() => setN(x => x + 1)} />}
+        </div>
 
         <div className="card">
           <div className="row-controls">
@@ -169,6 +180,97 @@ export function Payments({ canAct }: { canAct: boolean }) {
       </>}
       {ask && <ActionDialog ask={ask} onClose={() => setAsk(null)} onDone={() => { setAsk(null); setN(x => x + 1); }} />}
     </section>
+  );
+}
+
+/** The pending list — Guest Services → Payments and the CRM's reservation card share it. */
+export function PendingTable({ rows, canAct, onDone, compact = false, rcLink }: { rows: Pending[]; canAct: boolean; onDone: () => void; compact?: boolean;
+  /** The stay's own page in Airbnb (the CRM knows it); else Airbnb's Resolution Center list. */
+  rcLink?: string | null }) {
+  const [remind, setRemind] = useState<Pending | null>(null);
+  const [check, setCheck] = useState<Pending | null>(null);
+  return <>
+    <div className="table-wrap">
+      <table className="money-table">
+        <thead><tr><th>Since</th>{!compact && <th>Guest</th>}{!compact && <th>Unit</th>}<th>What</th><th className="n">Amount</th><th>How</th><th>Reminded</th>{canAct && <th />}</tr></thead>
+        <tbody>{rows.map(p => (
+          <tr key={p.key}>
+            <td>{day(p.since)}</td>{!compact && <td>{p.guest ?? '—'}</td>}{!compact && <td>{p.unit ?? '—'}</td>}
+            <td>{p.what.replace(/^./, c => c.toUpperCase())}</td>
+            <td className="n">{p.amount != null ? money2(p.amount) : '—'}</td>
+            <td>{p.method === 'rc' ? 'Airbnb RC' : 'Card'}{p.said && <small> · ! says paid — check Airbnb</small>}</td>
+            <td>{p.lastReminder ? `${day(p.lastReminder.at)} · ${who(p.lastReminder.by)}` : '—'}</td>
+            {canAct && <td>{p.method === 'rc' && p.chargeId && <button className="chip" onClick={() => setCheck(p)}>{p.said ? '! Check…' : 'Check…'}</button>}
+              <button className="chip" onClick={() => setRemind(p)}>Remind…</button></td>}
+          </tr>))}</tbody>
+      </table>
+    </div>
+    {remind && <RemindDialog p={remind} onClose={() => setRemind(null)} onDone={() => { setRemind(null); onDone(); }} />}
+    {check && <RcDialog p={check} link={rcLink ?? AIRBNB_RC} onClose={() => setCheck(null)} onDone={() => { setCheck(null); onDone(); }} />}
+  </>;
+}
+
+const AIRBNB_RC = 'https://www.airbnb.com/resolutions';
+
+/**
+ * An Airbnb Resolution Center request, checked from the stay (owner, 2026-11-26): open Airbnb, then confirm or deny.
+ * Confirmed → the case is paid and Kaizen sets Hostaway up (early check-in hour, late check-out, nights); denied → the guest's
+ * "I already paid" is taken back and their stay page shows it pending again.
+ */
+function RcDialog({ p, link, onClose, onDone }: { p: Pending; link: string; onClose: () => void; onDone: () => void }) {
+  const [amount, setAmount] = useState(String(p.amount ?? ''));
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const go = async (action: 'rc-received' | 'rc-not-there') => {
+    setBusy(true); setErr('');
+    const r = await paymentAction({ action, id: p.chargeId!, amount: action === 'rc-received' ? Number(amount) : undefined })
+      .catch(e => ({ ok: false, message: String(e) }));
+    setBusy(false);
+    if (r.ok) onDone(); else setErr(r.message ?? 'Not saved.');
+  };
+  const n = Number(amount);
+  return (
+    <Modal title={`Airbnb payment — ${p.guest ?? 'guest'}`} onClose={onClose}>
+      <p className="note">{p.unit ?? '—'} · {p.what.replace(/^./, c => c.toUpperCase())} {p.amount != null ? money2(p.amount) : ''} · requested {day(p.since)}
+        {p.said ? ' · ! the guest says it is paid' : ''}</p>
+      <p><a href={link} target="_blank" rel="noreferrer">Open it in Airbnb ↗</a> <small className="note">— Resolution Center: is the request paid?</small></p>
+      <label className="field">Received<input type="number" min="0.01" step="0.01" value={amount} onChange={e => setAmount(e.target.value)} /></label>
+      <small className="note">Confirm: the case is marked paid and Kaizen sets it up in Hostaway (the hour, the nights). Not received: the guest sees it pending again.</small>
+      {err && <p className="banner error">{err}</p>}
+      <div className="row-controls"><span className="rb-spacer" />
+        <button className="chip" disabled={busy} onClick={() => go('rc-not-there')}>✕ Not received</button>
+        <button className="primary" disabled={busy || !(n > 0)} onClick={() => go('rc-received')}>{busy ? 'Saving…' : `✓ Confirm ${money2(n || 0)} received`}</button></div>
+    </Modal>
+  );
+}
+
+function RemindDialog({ p, onClose, onDone }: { p: Pending; onClose: () => void; onDone: () => void }) {
+  const [body, setBody] = useState(p.draft);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState('');
+  const [note, setNote] = useState('');
+  const go = async () => {
+    setBusy(true); setErr('');
+    const r = await paymentAction({ action: 'remind', id: p.key, reservationId: p.reservationId, body, what: p.what, amount: p.amount ?? undefined })
+      .catch(e => ({ ok: false, message: String(e) }));
+    setBusy(false);
+    if (!r.ok) { setErr(r.message ?? 'It did not go.'); return; }
+    if ('note' in r && r.note) { setNote(r.note); return; }
+    onDone();
+  };
+  return (
+    <Modal title={`Remind ${p.guest ?? 'the guest'}`} onClose={onClose}>
+      <p className="note">{p.unit ?? '—'} · {p.what}{p.amount != null ? ` ${money2(p.amount)}` : ''} · {p.method === 'rc' ? 'Airbnb Resolution Center' : 'card'}
+        {p.lastReminder ? ` · last reminded ${day(p.lastReminder.at)}` : ''}</p>
+      {p.said && <p className="banner">! The guest says they already paid on Airbnb — check the Resolution Center before reminding.</p>}
+      <label className="field">Message<textarea rows={6} value={body} onChange={e => setBody(e.target.value)} /></label>
+      <small className="note">Goes through the stay's Hostaway conversation, the way it already talks (Airbnb chat, email…).</small>
+      {err && <p className="banner error">{err}</p>}
+      {note && <p className="banner">{note}</p>}
+      <div className="row-controls"><span className="rb-spacer" />
+        <button className="chip" onClick={note ? onDone : onClose}>{note ? 'Close' : 'Back'}</button>
+        {!note && <button className="primary" disabled={busy || body.trim().length < 10} onClick={go}>{busy ? 'Sending…' : 'Send reminder'}</button>}</div>
+    </Modal>
   );
 }
 

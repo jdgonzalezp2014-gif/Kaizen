@@ -49,3 +49,20 @@ export function tally(picks: ProtectionPick[]): PickTally {
 }
 /** "40%" of the completed check-ins; "—" with none. */
 export const share = (n: number, of: number) => of > 0 ? `${Math.round((n / of) * 100)}%` : '—';
+
+/** What a pending payment is, for the reminder and the list. */
+export interface PendingInfo { first: string | null; unit: string | null; what: string; amount: number | null; method: 'rc' | 'card'; link: string | null }
+
+/**
+ * The reminder the team sends (owner, 2026-11-26: "a reminder to the guest" for a waiver picked and not paid). A draft: the
+ * person reads it and may change it before it goes. Airbnb stays pay the request sent on Airbnb first, the card link second.
+ */
+export function reminderText(p: PendingInfo): string {
+  const hi = p.first ? `Hi ${p.first},` : 'Hi,';
+  const what = `${p.what}${p.amount != null ? ` ($${p.amount.toFixed(2).replace(/\.00$/, '')})` : ''}`;
+  const where = p.unit ? ` for your stay at ${p.unit}` : ' for your stay';
+  const how = p.method === 'rc'
+    ? ` Please accept the payment request we sent you on Airbnb (Resolution Center).${p.link ? ` You can also pay by card in your online check-in: ${p.link}` : ''}`
+    : p.link ? ` You can complete it in your online check-in: ${p.link}` : ' You can complete it in your online check-in.';
+  return `${hi} a quick reminder that the ${what}${where} is still pending.${how} Thank you!`;
+}

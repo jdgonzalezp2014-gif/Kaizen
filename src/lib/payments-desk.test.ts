@@ -1,6 +1,13 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { captureFor, chargesOf, holdEndsOn, holdOf, pickOf, refundable, share, tally } from './payments-desk.ts';
+import { captureFor, chargesOf, holdEndsOn, holdOf, pickOf, refundable, reminderText, share, tally } from './payments-desk.ts';
+
+test('reminder: card link, or the Airbnb request first', () => {
+  assert.equal(reminderText({ first: 'Ravi', unit: 'P2-4304', what: 'damage waiver', amount: 60, method: 'rc', link: 'https://x/guest/1.a' }),
+    'Hi Ravi, a quick reminder that the damage waiver ($60) for your stay at P2-4304 is still pending. Please accept the payment request we sent you on Airbnb (Resolution Center). You can also pay by card in your online check-in: https://x/guest/1.a Thank you!');
+  assert.equal(reminderText({ first: null, unit: null, what: 'security deposit', amount: null, method: 'card', link: null }),
+    'Hi, a quick reminder that the security deposit for your stay is still pending. You can complete it in your online check-in. Thank you!');
+});
 
 const lines = [{ item: 'waiver', label: 'Damage waiver', amount: 60 }, { item: 'deposit', label: 'Security deposit', amount: 350, hold: true }];
 

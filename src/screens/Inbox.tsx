@@ -21,7 +21,7 @@ import { ClaimPop, TodoList } from '../components/Todos.tsx';
 import type { DateStr } from '../lib/dates.ts';
 import { Icon } from '../components/Icon.tsx';
 import { money2 } from '../lib/format.ts';
-import { ActionDialog, type Ask as PayAsk, type DeskPayment } from './Payments.tsx';
+import { ActionDialog, PendingTable, type Ask as PayAsk, type DeskPayment, type Pending } from './Payments.tsx';
 import { BrandMark } from '../components/BrandMark.tsx';
 import { GUEST_EVENT } from '../components/GuestPing.tsx';
 import { Automations } from './Automations.tsx';
@@ -407,23 +407,27 @@ const closedCase = (status: string) => /^(resolved|paid|dismissed|closed)$/i.tes
  * What this guest paid in the portal (owner, 2026-11-26: "see if they paid the deposit, and refund it right there") — the same
  * rows and buttons as Guest Services → Payments, for this reservation only.
  */
-function StayPayments({ reservationId, canRefund }: { reservationId: string; canRefund: boolean }) {
+function StayPayments({ reservationId, canRefund, airbnbLink }: { reservationId: string; canRefund: boolean; airbnbLink?: string | null }) {
   const [list, setList] = useState<DeskPayment[] | null>(null);
+  const [pending, setPending] = useState<Pending[]>([]);
   const [err, setErr] = useState('');
   const [ask, setAsk] = useState<PayAsk | null>(null);
   const [n, setN] = useState(0);
   useEffect(() => {
-    getStayPayments(reservationId).then(r => { if (r.ok) { setList(r.payments); setErr(''); } else setErr(r.message ?? 'Could not read the payments.'); })
+    getStayPayments(reservationId).then(r => { if (r.ok) { setList(r.payments); setPending(r.pending ?? []); setErr(''); } else setErr(r.message ?? 'Could not read the payments.'); })
       .catch(e => setErr(String(e)));
   }, [reservationId, n]);
   const held = (list ?? []).filter(p => p.status === 'held');
   return (
-    <Fold title="Payments" urgent count={held.length}
+    <Fold title="Payments" urgent count={held.length + pending.length}
       hint={<>What this guest paid in the guest portal by card: the waiver, the deposit (held on the card, not charged) and each extra.
         <b> Release</b> lets a held deposit go; <b>Keep…</b> charges part of it for damage and lets the rest go; <b>Refund…</b> gives money back
-        on a paid line. A hold lasts about 7 days. All stays: Guest Services → Payments.</>}>
+        on a paid line. A hold lasts about 7 days. <b>Pending</b> is what the guest still owes; <b>Remind…</b> sends them a message with their
+        check-in link. All stays: Guest Services → Payments.</>}>
       {err && <p className="ix-state warn">{err}</p>}
-      {list === null ? (!err && <p className="note loading-dot">Reading</p>) : !list.length ? <p className="note">Nothing paid in the portal.</p> : (
+      {pending.length > 0 && <><p className="ix-state warn"><Icon n="alert" /> Pending</p>
+        <PendingTable rows={pending} canAct={canRefund} compact rcLink={airbnbLink} onDone={() => setN(x => x + 1)} /></>}
+      {list === null ? (!err && <p className="note loading-dot">Reading</p>) : !list.length ? (!pending.length && <p className="note">Nothing paid in the portal.</p>) : (
         <ul className="ix-pays">
           {list.map(p => <li key={p.id}>
             <div className="ix-pay">
@@ -650,7 +654,8 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, canPaymen
         </div>
       </Modal>}
 
-      {row.reservationId && canPayments && <StayPayments key={row.reservationId} reservationId={row.reservationId} canRefund={canRefund} />}
+      {row.reservationId && canPayments && <StayPayments key={row.reservationId} reservationId={row.reservationId} canRefund={canRefund}
+        airbnbLink={links.channel?.url ?? null} />}
 
       {row.reservationId && canTodos && <Fold title="Work" urgent count={tasks.filter(t => !t.done).length} onAdd={() => open('work')} addLabel="Add a task, repair or purchase"
         hint={<>The team's work tied to this stay — the same as Operations → To-do. The + makes a <b>Task</b>, a <b>Repair</b> (work order) or a <b>Purchase</b>

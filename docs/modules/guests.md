@@ -543,5 +543,11 @@ the extra charges, and show them in the guest's portal as pending payments."
   waiting for the owner's OK**. SOP #42 → v3 in `.sop-payments-1126.mjs`.
 - **Also in the CRM's reservation card** (`StayPayments` in Inbox.tsx, `/api/payments?reservation=`): this stay's portal payments,
   hold end, set-up to-do (done = completed/cancelled), and Release / Keep / Refund — shown with `payments`, buttons with `payments.refund`.
+- **Pending + reminders + Airbnb check (owner, 2026-11-26):** `pendingFor` lists team charges not paid (an Airbnb check-in bill is
+  one: its RC request) and check-in bills picked and not paid by card (test ids `77…` and team-marked stays left out). **Remind…**
+  sends a drafted message (`reminderText`, check-in link from `portalFor`) through `deliver`, logged as kind `reminder` in
+  `guest_payment_actions` (128 extended before it was applied: `reservation_id`, nullable `session_id`). **Check…** on an RC row:
+  open Airbnb (the stay's page from the CRM, else /resolutions), **Confirm received** (`rcReceived` → `settleCharge`: case paid,
+  Hostaway set up) or **Not received** (`rcNotThere`). Same table in Payments and on the CRM card.
 - Open: portal extras still never write Hostaway (only the to-do) — owner said they should, except same day; not built yet.
   Migration 128 + `.sop-payments-1126.mjs` after deploy.

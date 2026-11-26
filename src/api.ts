@@ -317,9 +317,10 @@ export type PaymentsOverview = import('./screens/Payments.tsx').Overview;
 export const getPayments = (days: number) =>
   call<({ ok: true } & PaymentsOverview) | { ok: false; message?: string }>(`/api/payments?days=${days}`);
 export const getStayPayments = (reservationId: string) =>
-  call<{ ok: true; payments: import('./screens/Payments.tsx').DeskPayment[] } | { ok: false; message?: string }>(`/api/payments?reservation=${encodeURIComponent(reservationId)}`);
-export const paymentAction = (body: { action: 'refund' | 'release' | 'keep' | 'cancel-charge'; id: string; amount?: number; reason?: string }) =>
-  call<{ ok: boolean; message?: string }>('/api/payments', { method: 'POST', body: JSON.stringify(body) });
+  call<{ ok: true; payments: import('./screens/Payments.tsx').DeskPayment[]; pending: import('./screens/Payments.tsx').Pending[] } | { ok: false; message?: string }>(`/api/payments?reservation=${encodeURIComponent(reservationId)}`);
+export const paymentAction = (body: { action: 'refund' | 'release' | 'keep' | 'cancel-charge' | 'remind' | 'rc-received' | 'rc-not-there'; id: string; amount?: number; reason?: string;
+  reservationId?: string; body?: string; what?: string }) =>
+  call<{ ok: boolean; message?: string; sent?: boolean; note?: string | null }>('/api/payments', { method: 'POST', body: JSON.stringify(body) });
 export const getClaimsMoney = (from: string, to: string) =>
   call<{ ok: true; cases: ClaimMoney[] } | { ok: false; message?: string }>(`/api/claims-money?from=${from}&to=${to}`);
 export const saveClaimMoney = (body: { id: string } & CaseMoneyChange) =>
