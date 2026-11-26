@@ -64,6 +64,8 @@ export interface HouseFacts {
   unitName: string; photo: string | null; lockType: string | null; guestCode: string | null;
   unitType: GuestStay['unitType'] | null; protection: GuestStay['protection'] | null; guide: GuestGuide | null;
   prices: GuestStay['prices']; notOffered?: UpsellKind[];
+  /** Hostaway's refundable deposit for the listing; null = not read. */
+  channelDeposit?: number | null;
   calendar?: Pick<GuestStay, 'freeBefore' | 'freeAfter' | 'turnIn' | 'turnOut' | 'turnInGuest' | 'turnOutGuest' | 'nightPrices'> | null;
 }
 
@@ -79,6 +81,7 @@ export function stayFrom(r: Record<string, unknown>, h: HouseFacts, o: { checked
     checkOutTime: hourLabel(r.checkOutTime, h.guide?.checkOut ? `${h.guide.checkOut}` : '11:00 AM'),
     guests: num(r.numberOfGuests) || num(r.adults) || 1,
     channel: channelOf(r.channelName),
+    ...(h.channelDeposit != null ? { channelDeposit: h.channelDeposit } : {}),
     // Hostaway (or the channel) collects the booking itself: the portal charges only protection and extras.
     total: 0, paid: 0, nightly: null,
     freeBefore: h.calendar?.freeBefore ?? 0, freeAfter: h.calendar?.freeAfter ?? 0,

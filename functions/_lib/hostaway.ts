@@ -814,6 +814,19 @@ export async function fetchListingCover(creds: HostawayCredentials, listingId: s
   return null;
 }
 
+/**
+ * The listing's refundable damage deposit in Hostaway's own settings (`refundableDamageDeposit`, shared by every channel).
+ * Owner, 2026-11-26: set there → required, so the portal offers no "None of them". Null = could not read it.
+ */
+export async function fetchListingDeposit(creds: HostawayCredentials, listingId: string): Promise<number | null> {
+  const token = await getAccessToken(creds);
+  const res = await fetch(`${BASE}/listings/${encodeURIComponent(listingId)}`, { headers: { Authorization: `Bearer ${token}` }, cache: 'no-store' });
+  if (!res.ok) return null;
+  const l = ((await res.json()) as { result?: { refundableDamageDeposit?: unknown } }).result;
+  const n = Number(l?.refundableDamageDeposit ?? 0);
+  return Number.isFinite(n) ? n : null;
+}
+
 /** A listing's amenities as Hostaway lists them (present ones) — only with includeResources=1 (checked 2026-11-19: 105 on 366045, none without). */
 export async function fetchListingAmenities(creds: HostawayCredentials, listingId: string): Promise<string[]> {
   const token = await getAccessToken(creds);

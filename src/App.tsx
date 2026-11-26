@@ -28,6 +28,7 @@ import { ThemeToggle } from './components/ThemeToggle.tsx';
 import { TabIcon } from './components/TabIcon.tsx';
 import { Modal } from './components/Modal.tsx';
 import { Icon } from './components/Icon.tsx';
+import { Payments } from './screens/Payments.tsx';
 import { LiveBell } from './components/LiveBell.tsx';
 import { usePhone } from './components/usePhone.ts';
 import { ReportsDialog } from './components/Reports.tsx';
@@ -35,7 +36,7 @@ import { param, setParams } from './components/useUrlState.ts';
 
 type Tab = 'home' | 'units' | 'revenue' | 'operations' | 'repository' | 'costs' | 'analytics' | 'claims' | 'sops' | 'settings' | 'crew' | 'vendor'
   // The module map (2026-11-16, src/lib/modules.ts): the Inbox, and the planned modules' empty pages.
-  | 'inbox' | 'experience' | 'sales' | 'schedules';
+  | 'inbox' | 'payments' | 'experience' | 'sales' | 'schedules';
 
 /**
  * A cleaner's secret link (§122): /crew#t=<token>. Read once, then taken
@@ -159,7 +160,7 @@ function CrewShell({ token }: { token: string | null }) {
 }
 
 /** What the server draws when it does not say (it always does): the tabs a role can earn. The menu itself is MODULES. */
-const TABS: Tab[] = ['home', 'units', 'revenue', 'operations', 'repository', 'costs', 'analytics', 'inbox', 'sops', 'settings'];
+const TABS: Tab[] = ['home', 'units', 'revenue', 'operations', 'repository', 'costs', 'analytics', 'inbox', 'payments', 'sops', 'settings'];
 
 function TeamApp() {
   // Null, not 'units'. Rendering a default tab before the role is known
@@ -366,6 +367,7 @@ function TeamApp() {
                                     canTodos={can(permissions, 'todos') && !!allowed?.includes('operations')}
                                     canClaims={can(permissions, 'todos') && can(permissions, 'claims')}
                                     onSettings={allowed?.includes('settings') ? () => go('settings', { int: 'guestai' }) : undefined} />}
+      {tab === 'payments' && <Payments canAct={can(permissions, 'payments.refund')} />}
       {planned && <ModuleSoon mod={planned} />}
 
       {/* The procedures for the screen someone is on (§92), floating bottom right (§96);

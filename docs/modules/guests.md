@@ -522,3 +522,19 @@ the extra charges, and show them in the guest's portal as pending payments."
 - Tested on Neon branch `test-upsell-charge-r2` (2026-11-19): RC on a real Airbnb stay → Paid, nothing in Hostaway; RC refused on Vrbo; one pending
   per case; card link → pay page → Stripe test page; sweep; "paid but not set up" → urgent to-do; partial + full refund. **Not tried: the
   reservation extension PUT and the calendar block on a real listing** — watch the first real paid extension.
+
+### Guest Services → Payments + deposit rule (owner, 2026-11-26) — migration 128
+- New door **Guest Services → Payments** (`src/screens/Payments.tsx`, `functions/_lib/payments-desk.ts`, `/api/payments`, rules in
+  `src/lib/payments-desk.ts`). Permissions `payments` (see) and `payments.refund` (Refund / Release / Keep / Cancel a team charge).
+  Shows: check-ins completed + waiver / deposit / none picks; each portal payment with its set-up to-do (`extraTodo`) status;
+  held deposits with "hold ends" (created + 7 days); team upsell charges; a log of refunds, released / kept deposits and cancelled
+  charges (`guest_payment_actions`); each active listing's Hostaway `refundableDamageDeposit`, read live, with picks per listing.
+- Release = cancel the PaymentIntent (deposit alone) or capture only the charges (check-in bill with a hold). Keep = partial capture
+  (charges + kept). `recordSession` now: `released` status (PI cancelled, uncaptured), and a partial capture's released part is no
+  longer counted as refunded.
+- **Deposit rule (owner):** a listing with a deposit in Hostaway's settings → the portal does not offer Airbnb guests "None of them"
+  (`noneAllowed`, `GuestStay.channelDeposit` from `fetchListingDeposit` in `guestHouse`; not read → None stays, as before).
+  `channelCovers` is unchanged (it also routes Airbnb payments to the Resolution Center).
+- Checked 2026-11-26: 11 listings on ($350, = `GROUP_B`), 12 off; before the rule, 7 Airbnb check-ins on "on" listings picked None.
+- Open: portal extras still never write Hostaway (only the to-do) — owner said they should, except same day; not built yet.
+  Migration 128 + `.sop-payments-1126.mjs` after deploy.

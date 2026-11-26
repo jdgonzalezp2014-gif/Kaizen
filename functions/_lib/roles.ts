@@ -110,6 +110,12 @@ export const PERMISSIONS: Permission[] = [
     { path: '/api/inbox', methods: ['POST'] }] },
   { key: 'messages.setup', label: 'Inbox — templates, automatic messages, the guest AI and the live switch', routes: [
     { path: '/api/inbox-settings', methods: ['GET', 'POST'] }] },
+  // Guest Services → Payments (owner, 2026-11-26): what guests paid, check-ins' protection picks, each listing's deposit.
+  // Seeing it and giving money back are two trusts.
+  { key: 'payments', label: 'Payments — guests\' portal payments, refunds, deposits and check-in picks', tab: 'payments', routes: [
+    { path: '/api/payments', methods: ['GET'] }] },
+  { key: 'payments.refund', label: 'Payments — refund a guest, release or keep a deposit, cancel a charge', routes: [
+    { path: '/api/payments', methods: ['POST'] }] },
   // SOPs (§92): the library tab, and each screen's "SOPs" button. Drafts are for editors only.
   { key: 'sops', label: 'SOPs — read the procedures and articles', tab: 'sops', routes: [
     { path: '/api/sops', methods: ['GET'] }, { path: '/api/assistant', methods: ['POST'] }] },

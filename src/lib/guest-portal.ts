@@ -28,6 +28,8 @@ export interface GuestStay {
   checkOutTime: string;       // "11:00 AM"
   guests: number;
   channel: Channel;
+  /** The listing's refundable damage deposit in Hostaway's settings (0 = none set): set → "None of them" is not offered. */
+  channelDeposit?: number;
   total: number;              // what Kaizen collects for the stay (0 when the channel collects)
   paid: number;
   nightly: number | null;     // rate for extra nights, when known

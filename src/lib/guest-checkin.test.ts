@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { bill, doorCodeFor, entry, portalFrom, newFlow, doneFlow, nextStep, progress, protectionFor, rulesList, steps, IDENTITY_STEP_ON, flowExtras, arrivalTimes, LATE_ARRIVAL, type Flow } from './guest-checkin.ts';
+import { bill, doorCodeFor, entry, portalFrom, newFlow, doneFlow, nextStep, progress, protectionFor, rulesList, steps, IDENTITY_STEP_ON, flowExtras, arrivalTimes, LATE_ARRIVAL, noneAllowed, type Flow } from './guest-checkin.ts';
 import type { GuestStay } from './guest-portal.ts';
 
 const stay = (o: Partial<GuestStay> = {}): GuestStay => ({
@@ -117,4 +117,11 @@ test('cleanPhone: US 10 / 11 digits and +country numbers; anything short is not 
   assert.equal(cleanPhone('+57 300 123 4567'), '+573001234567');
   assert.equal(cleanPhone('555-0199'), null);
   assert.equal(cleanPhone(42), null);
+});
+
+test('"None of them": Airbnb only, and not where Hostaway has a refundable deposit (owner, 2026-11-26)', () => {
+  assert.equal(noneAllowed({ channel: 'airbnb' }), true);
+  assert.equal(noneAllowed({ channel: 'airbnb', channelDeposit: 0 }), true);
+  assert.equal(noneAllowed({ channel: 'airbnb', channelDeposit: 350 }), false);
+  assert.equal(noneAllowed({ channel: 'vrbo' as never, channelDeposit: 0 }), false);
 });

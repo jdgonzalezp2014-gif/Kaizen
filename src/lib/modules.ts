@@ -36,7 +36,9 @@ export const MODULES: NavModule[] = [
   // Owner 2026-11-17: the Inbox is the CRM; the claims shortcut is gone (claims and upsells live in Operations → To-do and in
   // each conversation). One door, still drawn under the module: the CRM carries the count, the module only a dot.
   { key: 'guests', label: 'Guest Services', icon: 'inbox', alwaysSub: true, links: [
-    { key: 'inbox', label: 'CRM', tab: 'inbox' }] },
+    { key: 'inbox', label: 'CRM', tab: 'inbox' },
+    // Owner, 2026-11-26: what guests paid, refunds and deposits, check-in picks, each listing's Hostaway deposit.
+    { key: 'payments', label: 'Payments', tab: 'payments' }] },
   { key: 'operations', label: 'Operations', icon: 'operations', links: [
     { key: 'board', label: 'Movements', tab: 'operations', view: 'board' },
     { key: 'todos', label: 'To-do', tab: 'operations', view: 'todos', perms: ['todos'] },

@@ -16,7 +16,7 @@ import { Hint } from '../components/Hint.tsx';
 import { money2 } from '../lib/format.ts';
 import { AIRBNB_RESOLUTION } from '../lib/upsell-charge.ts';
 import { UPSELLS, APPROVAL_NOTE, needsApproval, quote, timeOptions, type GuestStay, type UpsellKind } from '../lib/guest-portal.ts';
-import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, cleanEmail, cleanPhone, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
+import { FLOW_KEY, VS_KEY, arrivalTimes, bill, channelCovers, noneAllowed, cleanEmail, cleanPhone, flowExtras, nextStep, progress, rulesList, steps, SAMPLE_RULES,
   type Arrival, type BillLine, type Flow, type Protection, type Step, type StepKey } from '../lib/guest-checkin.ts';
 
 const STEP_ICON: Record<StepKey, string> = { details: 'user', identity: 'idcard', protection: 'shield', rules: 'book', extras: 'sparkles', pay: 'card' };
@@ -241,7 +241,7 @@ function Identity({ flow, save, set }: S) {
 }
 
 function ProtectionStep({ stay, flow, p, save }: S) {
-  const airbnb = channelCovers(stay);
+  const airbnb = noneAllowed(stay);
   const [pick, setPick] = useState<'waiver' | 'deposit' | 'none'>(flow.protection === 'none' && !airbnb ? 'waiver' : flow.protection ?? 'waiver');
   return <>
     <div className="ci-opts" role="radiogroup" aria-label="Damage protection">

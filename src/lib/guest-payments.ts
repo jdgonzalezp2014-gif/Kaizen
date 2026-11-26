@@ -22,7 +22,7 @@ export interface GuestPayment {
   amount: number;             // what Stripe collected (a held payment: what was authorised)
   fee: number | null;         // Stripe's fee, once the charge settled
   refunded: number;
-  status: 'paid' | 'held' | 'refunded';
+  status: 'paid' | 'held' | 'refunded' | 'released';
   paidOn: string;             // YYYY-MM-DD, the day the guest paid
   /** An upsell charge the team made (2026-11-19): its money is the case's (claims.refund), counted there once. */
   claimId?: string | null;

@@ -97,6 +97,8 @@ export const FEATURES: { key: string; label: string; tab: string; view?: string;
   { key: 'revenue.portal', label: 'Revenue · Portal sales', tab: 'revenue', view: 'portal', section: 'finance' },
   // Guest Services → Inbox, the CRM (2026-11-16).
   { key: 'inbox', label: 'Guest Services · Inbox', tab: 'inbox', section: 'guest' },
+  // Guest Services → Payments (2026-11-26).
+  { key: 'payments', label: 'Guest Services · Payments', tab: 'payments', section: 'finance' },
   { key: 'settings', label: 'Settings', tab: 'settings', section: 'systems' }
 ];
 export const FEATURE_KEYS = new Set(FEATURES.map(f => f.key));

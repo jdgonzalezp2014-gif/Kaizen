@@ -12,7 +12,7 @@ import type { Period } from '../lib/finance.ts';
 import { RangePicker } from '../components/RangePicker.tsx';
 import { Hint } from '../components/Hint.tsx';
 
-const STATUS: Record<GuestPayment['status'], string> = { paid: '✓ Paid', held: '○ Held', refunded: '↺ Refunded' };
+const STATUS: Record<GuestPayment['status'], string> = { paid: '✓ Paid', held: '○ Held', refunded: '↺ Refunded', released: '○ Released' };
 
 export function PortalSales() {
   const [preset, setPreset] = useState<PresetId | 'custom'>('mtd');

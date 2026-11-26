@@ -166,7 +166,7 @@ export async function guestCheckoutState(sql: SqlFn, encryptionKey: string, id: 
 
 /* ── Into the books (owner, 2026-11-17): guest_payments, read by /api/portfolio and Revenue → Portal sales ── */
 
-type Charge = { id: string; created: number; amount_captured: number; amount_refunded: number; captured: boolean;
+type Charge = { id: string; created: number; amount: number; amount_captured: number; amount_refunded: number; captured: boolean;
   balance_transaction: { fee: number } | string | null };
 type Intent = { id: string; status: string; amount: number; amount_received: number; latest_charge: Charge | string | null };
 type Session = { id: string; status: string; payment_status: string; amount_total: number; livemode: boolean; created: number;
@@ -189,7 +189,12 @@ export async function recordSession(sql: SqlFn, key: string, id: string, encrypt
   let lines: PaidLine[] = decodeLines(m.lines);
   if (!lines.length) lines = [{ item: 'other', label: 'Guest payment', amount: s.amount_total / 100 }];
   const captured = ch?.captured ? ch.amount_captured / 100 : 0;
-  const status = ch?.captured ? (ch.amount_refunded >= ch.amount_captured && ch.amount_captured > 0 ? 'refunded' : 'paid') : 'held';
+  // A partial capture lets the rest of the hold go, and Stripe counts that part in amount_refunded: only what came back
+  // AFTER the capture is a refund.
+  const back = ch ? Math.max(0, ch.amount_refunded - (ch.captured ? ch.amount - ch.amount_captured : 0)) : 0;
+  // A hold let go without capturing (the team's "Release", or Stripe after ~7 days) — nothing was charged.
+  const released = !ch?.captured && pi?.status === 'canceled';
+  const status = released ? 'released' : ch?.captured ? (back >= ch.amount_captured && ch.amount_captured > 0 ? 'refunded' : 'paid') : 'held';
   if (ch?.captured && lines.some(l => l.hold)) {
     // A captured hold: the charges, plus whatever of the deposit was kept.
     const charges = lines.filter(l => !l.hold).reduce((a, l) => a + l.amount, 0);
@@ -198,7 +203,7 @@ export async function recordSession(sql: SqlFn, key: string, id: string, encrypt
   }
   const fee = ch && typeof ch.balance_transaction === 'object' && ch.balance_transaction ? ch.balance_transaction.fee / 100 : null;
   const amount = ch?.captured ? captured : s.amount_total / 100;
-  const refunded = ch ? ch.amount_refunded / 100 : 0;
+  const refunded = back / 100;
   await sql`
     INSERT INTO guest_payments (account_id, session_id, payment_intent, livemode, reservation_id, unit_id, unit_name, guest, lines, amount, fee, refunded, status, paid_on, claim_id)
     VALUES (1, ${s.id}, ${pi?.id ?? (typeof s.payment_intent === 'string' ? s.payment_intent : null)}, ${s.livemode}, ${m.reservation ?? null}, ${m.unit ?? null},

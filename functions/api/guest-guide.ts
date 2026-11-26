@@ -9,7 +9,7 @@
  */
 import { db, type Env } from '../_lib/db.ts';
 import { getCredentials, type SqlFn } from '../_lib/accounts.ts';
-import { fetchCalendar, fetchListingCover, fetchReservationsTouching, fetchStandardHours, type HostawayCredentials } from '../_lib/hostaway.ts';
+import { fetchCalendar, fetchListingCover, fetchListingDeposit, fetchReservationsTouching, fetchStandardHours, type HostawayCredentials } from '../_lib/hostaway.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
 import { repoMatch, type RepoRow } from '../../src/lib/unit-access.ts';
 import { UNIT_TABLES } from '../../src/lib/repo-checks.ts';
@@ -83,16 +83,18 @@ export async function guestHouse(sql: SqlFn, unitId: string, encryptionKey?: str
   const ownPhoto = typeof rec?.vals?.portal_photo === 'string' && rec.vals.portal_photo.startsWith('https://') ? rec.vals.portal_photo : null;
   const creds = encryptionKey ? await getCredentials(sql, encryptionKey).catch(() => null) : null;
   const dated = isDay(stay?.arrival) && isDay(stay?.departure) && stay.arrival < stay.departure;
-  const [photo, fit] = await Promise.all([
+  const [photo, fit, channelDeposit] = await Promise.all([
     ownPhoto ?? (creds ? fetchListingCover(creds, unitId).catch(() => null) : null),
     creds && dated ? fetchCalendar(creds, unitId, shift(stay.arrival!, -8), shift(stay.departure!, 8))
       .then(days => days.length ? calendarFit(days, stay.arrival!, stay.departure!) : null, () => null) : null,
+    // Not read → null: the portal keeps offering "None of them" on Airbnb, as before this rule.
+    creds ? fetchListingDeposit(creds, unitId).catch(() => null) : null,
   ]);
   const calendar = fit && creds ? { ...fit, ...await turnoverGuests(sql, creds, unitId, stay!.arrival!, stay!.departure!, fit) } : fit;
   const portal = portalFrom(rec?.vals);
   // Door code by Lock type (doorCodeFor): staff-only route; the guest's signed link must send it only once entry() opens.
   const str = (v: unknown) => typeof v === 'string' && v.trim() ? v.trim() : null;
-  return { unitName: u.name, photo, lockType: str(rec?.vals?.lock_type), guestCode: str(rec?.vals?.guest_code), unitType: portal.unitType, protection: portal.protection, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals), notOffered: notOfferedFrom(rec?.vals), calendar };
+  return { unitName: u.name, photo, lockType: str(rec?.vals?.lock_type), guestCode: str(rec?.vals?.guest_code), unitType: portal.unitType, protection: portal.protection, guide: guide || steps.length || house.length ? { ...(guide ?? emptyGuide()), steps, house } : null, prices: pricesFrom(rec?.vals), notOffered: notOfferedFrom(rec?.vals), calendar, channelDeposit };
 }
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {

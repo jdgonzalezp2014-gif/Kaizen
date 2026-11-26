@@ -55,8 +55,13 @@ export function portalFrom(vals: Record<string, unknown> | null | undefined): { 
  * protection, any damage goes to Airbnb as a claim. Other channels must pick one of the two.
  */
 export const channelCovers = (s: Pick<GuestStay, 'channel'>) => s.channel === 'airbnb';
-const protectionDone = (f: Pick<Flow, 'protection'>, s: Pick<GuestStay, 'channel'>) =>
-  f.protection === 'waiver' || f.protection === 'deposit' || (f.protection === 'none' && channelCovers(s));
+/**
+ * "None of them" (owner, 2026-11-26): only on Airbnb, and only where the listing has NO refundable deposit in Hostaway's own
+ * settings. A deposit set there is required by the channel, so the guest cannot opt out — only the waiver or the deposit.
+ */
+export const noneAllowed = (s: Pick<GuestStay, 'channel' | 'channelDeposit'>) => channelCovers(s) && !((s.channelDeposit ?? 0) > 0);
+const protectionDone = (f: Pick<Flow, 'protection'>, s: Pick<GuestStay, 'channel' | 'channelDeposit'>) =>
+  f.protection === 'waiver' || f.protection === 'deposit' || (f.protection === 'none' && noneAllowed(s));
 
 /** A phone number as the guest typed it → +E.164 (10 digits = US/Canada), or null when it cannot be one. */
 export function cleanPhone(v: unknown): string | null {
