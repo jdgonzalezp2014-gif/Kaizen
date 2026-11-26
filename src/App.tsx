@@ -366,6 +366,7 @@ function TeamApp() {
       {tab === 'inbox'    && <Inbox canSend={can(permissions, 'messages.send')} canSetup={can(permissions, 'messages.setup')}
                                     canTodos={can(permissions, 'todos') && !!allowed?.includes('operations')}
                                     canClaims={can(permissions, 'todos') && can(permissions, 'claims')}
+                                    canPayments={!!allowed?.includes('payments')} canRefund={can(permissions, 'payments.refund')}
                                     onSettings={allowed?.includes('settings') ? () => go('settings', { int: 'guestai' }) : undefined} />}
       {tab === 'payments' && <Payments canAct={can(permissions, 'payments.refund')} />}
       {planned && <ModuleSoon mod={planned} />}

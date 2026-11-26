@@ -11,7 +11,7 @@ import type { GuestPayment } from '../lib/guest-payments.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Modal } from '../components/Modal.tsx';
 
-export type DeskPayment = GuestPayment & { createdAt: string; followUps: { id: string; status: string }[]; hold: number; holdEndsOn: string | null; refundable: number };
+export type DeskPayment = GuestPayment & { createdAt: string; followUps: { id: string; status: string; done: boolean }[]; hold: number; holdEndsOn: string | null; refundable: number };
 type Charge = { id: string; claim_id: string; reservation_id: string; unit_name: string | null; guest: string | null; label: string; amount: number;
   status: 'pending' | 'paid' | 'cancelled'; method: string; created_by: string; created_at: string; paid_at: string | null; cancelled_at: string | null; cancelled_by: string | null };
 type Action = { id: string; session_id: string; kind: 'refund' | 'release' | 'capture'; amount: number; reason: string | null; created_by: string; created_at: string;
@@ -24,7 +24,7 @@ const STATE: Record<GuestPayment['status'], string> = { paid: '✓ Paid', held: 
 const day = (iso: string | null) => iso ? iso.slice(0, 10) : '—';
 const who = (email: string | null) => email ? email.split('@')[0] : '—';
 
-type Ask = { kind: 'refund' | 'release' | 'keep'; p: DeskPayment } | { kind: 'cancel-charge'; c: Charge };
+export type Ask = { kind: 'refund' | 'release' | 'keep'; p: DeskPayment } | { kind: 'cancel-charge'; c: Charge };
 
 export function Payments({ canAct }: { canAct: boolean }) {
   const [days, setDays] = useState(30);
@@ -95,7 +95,7 @@ export function Payments({ canAct }: { canAct: boolean }) {
                     <td>{p.lines.map(l => `${l.label}${l.hold ? ' (hold)' : ''}`).join(' · ')}</td>
                     <td className="n">{money2(p.amount)}{p.refunded > 0 && <small> −{money2(p.refunded)}</small>}</td>
                     <td>{STATE[p.status]}{p.holdEndsOn && <small> · hold ends {p.holdEndsOn}</small>}{!p.livemode && <span className="g-pill"> Test</span>}</td>
-                    <td>{p.followUps.length ? p.followUps.map(t => <span key={t.id}>{t.status === 'done' ? '✓' : '!'} #{t.id} {t.status === 'done' ? 'done' : 'pending'} </span>) : '—'}</td>
+                    <td>{p.followUps.length ? p.followUps.map(t => <span key={t.id}>{t.done ? '✓' : '!'} #{t.id} {t.done ? 'done' : 'pending'} </span>) : '—'}</td>
                     {canAct && <td>
                       {p.status === 'held' && <><button className="chip" onClick={() => setAsk({ kind: 'release', p })}>Release</button>
                         <button className="chip" onClick={() => setAsk({ kind: 'keep', p })}>Keep…</button></>}
@@ -172,7 +172,7 @@ export function Payments({ canAct }: { canAct: boolean }) {
   );
 }
 
-function ActionDialog({ ask, onClose, onDone }: { ask: Ask; onClose: () => void; onDone: () => void }) {
+export function ActionDialog({ ask, onClose, onDone }: { ask: Ask; onClose: () => void; onDone: () => void }) {
   const p = ask.kind === 'cancel-charge' ? null : ask.p;
   const target = ask.kind === 'cancel-charge' ? ask.c.id : ask.p.id;
   const max = !p ? 0 : ask.kind === 'refund' ? p.refundable : p.hold;

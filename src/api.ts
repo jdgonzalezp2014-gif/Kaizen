@@ -316,6 +316,8 @@ export const getGuestPayments = (from: string, to: string) =>
 export type PaymentsOverview = import('./screens/Payments.tsx').Overview;
 export const getPayments = (days: number) =>
   call<({ ok: true } & PaymentsOverview) | { ok: false; message?: string }>(`/api/payments?days=${days}`);
+export const getStayPayments = (reservationId: string) =>
+  call<{ ok: true; payments: import('./screens/Payments.tsx').DeskPayment[] } | { ok: false; message?: string }>(`/api/payments?reservation=${encodeURIComponent(reservationId)}`);
 export const paymentAction = (body: { action: 'refund' | 'release' | 'keep' | 'cancel-charge'; id: string; amount?: number; reason?: string }) =>
   call<{ ok: boolean; message?: string }>('/api/payments', { method: 'POST', body: JSON.stringify(body) });
 export const getClaimsMoney = (from: string, to: string) =>

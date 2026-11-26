@@ -5,7 +5,7 @@
 import { db, type Env } from '../_lib/db.ts';
 import type { SqlFn } from '../_lib/accounts.ts';
 import { identify, unauthorised } from '../_lib/auth.ts';
-import { paymentAction, paymentsOverview } from '../_lib/payments-desk.ts';
+import { paymentAction, paymentsOverview, reservationPayments } from '../_lib/payments-desk.ts';
 
 const answer = (r: { ok: boolean; status?: number }) => {
   const { status, ...rest } = r as { ok: boolean; status?: number };
@@ -15,7 +15,13 @@ const crash = (e: unknown) => Response.json({ ok: false, message: e instanceof E
 
 export const onRequestGet: PagesFunction<Env> = async ({ request, env }) => {
   if (!identify(request, env)) return unauthorised();
-  const days = Math.min(365, Math.max(1, Number(new URL(request.url).searchParams.get('days')) || 30));
+  const q = new URL(request.url).searchParams;
+  const res = q.get('reservation');
+  if (res != null) {
+    if (!/^\d{1,20}$/.test(res)) return Response.json({ ok: false, message: 'Which reservation?' }, { status: 400 });
+    try { return answer(await reservationPayments(db(env) as unknown as SqlFn, res)); } catch (e) { return crash(e); }
+  }
+  const days = Math.min(365, Math.max(1, Number(q.get('days')) || 30));
   try { return answer(await paymentsOverview(db(env) as unknown as SqlFn, env.ENCRYPTION_KEY, days)); }
   catch (e) { return crash(e); }
 };

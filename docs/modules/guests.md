@@ -536,5 +536,7 @@ the extra charges, and show them in the guest's portal as pending payments."
   (`noneAllowed`, `GuestStay.channelDeposit` from `fetchListingDeposit` in `guestHouse`; not read → None stays, as before).
   `channelCovers` is unchanged (it also routes Airbnb payments to the Resolution Center).
 - Checked 2026-11-26: 11 listings on ($350, = `GROUP_B`), 12 off; before the rule, 7 Airbnb check-ins on "on" listings picked None.
+- **Also in the CRM's reservation card** (`StayPayments` in Inbox.tsx, `/api/payments?reservation=`): this stay's portal payments,
+  hold end, set-up to-do (done = completed/cancelled), and Release / Keep / Refund — shown with `payments`, buttons with `payments.refund`.
 - Open: portal extras still never write Hostaway (only the to-do) — owner said they should, except same day; not built yet.
   Migration 128 + `.sop-payments-1126.mjs` after deploy.

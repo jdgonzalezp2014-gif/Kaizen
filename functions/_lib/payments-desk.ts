@@ -33,7 +33,7 @@ export async function paymentsOverview(sql: SqlFn, ek: string, days: number) {
                refunded::float8 AS refunded, status, paid_on::text AS paid_on, created_at::text AS created_at, claim_id::text AS claim_id
           FROM guest_payments WHERE account_id = 1 AND (created_at >= ${since} OR status = 'held') ORDER BY created_at DESC LIMIT 500` as Promise<PayRow[]>,
     // The set-up to-do of an extra paid in the portal names its Stripe session (guest-pay.ts extraTodo).
-    sql`SELECT id::text AS id, status, description FROM todos WHERE account_id = 1 AND created_by = 'Guest portal' AND created_at >= ${since}::timestamptz - interval '1 day'` as Promise<{ id: string; status: string; description: string }[]>,
+    sql`SELECT id::text AS id, status, description FROM todos WHERE account_id = 1 AND created_by = 'Guest portal' AND created_at >= ${since}::timestamptz - interval '1 day'` as Promise<TodoRow[]>,
     sql`SELECT id::text AS id, claim_id::text AS claim_id, reservation_id, unit_name, guest, label, amount::float8 AS amount, status, method,
                created_by, created_at::text AS created_at, paid_at::text AS paid_at, cancelled_at::text AS cancelled_at, cancelled_by
           FROM upsell_charges WHERE account_id = 1 AND (created_at >= ${since} OR status = 'pending') ORDER BY created_at DESC LIMIT 300` as Promise<Record<string, unknown>[]>,
@@ -54,9 +54,23 @@ export async function paymentsOverview(sql: SqlFn, ek: string, days: number) {
   const raw = creds ? await fetchListingsRaw(creds).catch(() => null) : null;
   const dep = new Map((raw ?? []).map(l => [String(l.id), Number(l.refundableDamageDeposit ?? 0) || 0]));
 
-  const payments = pays.map(p => {
+  const payments = shapePayments(pays, todos);
+
+  const checkins = flows.map(f => ({ reservationId: f.reservation_id, listingId: f.listing_id, source: f.source, completedAt: f.completed_at,
+    pick: pickOf(f.protection), depositOn: f.listing_id && raw ? (dep.get(f.listing_id) ?? 0) > 0 : null }));
+  const listings = units.map(u => ({ id: u.id, name: u.name, deposit: raw ? (dep.get(u.id) ?? 0) : null,
+    picks: checkins.filter(c => c.listingId === u.id).map(c => c.pick) }));
+
+  return { ok: true as const, days, payments, charges, actions, checkins, listings, hostawayRead: !!raw };
+}
+
+type TodoRow = { id: string; status: string; description: string };
+
+/** Rows as the screens show them: the set-up to-dos, the hold and its last day, what is left to refund. */
+function shapePayments(pays: PayRow[], todos: TodoRow[]) {
+  return pays.map(p => {
     const lines = Array.isArray(p.lines) ? p.lines : [];
-    const followUps = todos.filter(t => t.description.includes(p.session_id)).map(t => ({ id: t.id, status: t.status }));
+    const followUps = todos.filter(t => t.description.includes(p.session_id)).map(t => ({ id: t.id, status: t.status, done: t.status === 'completed' || t.status === 'cancelled' }));
     return {
       id: p.session_id, livemode: p.livemode, reservationId: p.reservation_id, unitId: p.unit_id, unitName: p.unit_name, guest: p.guest,
       lines, amount: Number(p.amount), fee: p.fee == null ? null : Number(p.fee), refunded: Number(p.refunded), status: p.status,
@@ -65,13 +79,17 @@ export async function paymentsOverview(sql: SqlFn, ek: string, days: number) {
       refundable: refundable({ status: p.status, amount: Number(p.amount), refunded: Number(p.refunded) }),
     };
   });
+}
 
-  const checkins = flows.map(f => ({ reservationId: f.reservation_id, listingId: f.listing_id, source: f.source, completedAt: f.completed_at,
-    pick: pickOf(f.protection), depositOn: f.listing_id && raw ? (dep.get(f.listing_id) ?? 0) > 0 : null }));
-  const listings = units.map(u => ({ id: u.id, name: u.name, deposit: raw ? (dep.get(u.id) ?? 0) : null,
-    picks: checkins.filter(c => c.listingId === u.id).map(c => c.pick) }));
-
-  return { ok: true as const, days, payments, charges, actions, checkins, listings, hostawayRead: !!raw };
+/** One stay's payments (the CRM's reservation card, owner 2026-11-26): every payment it made, whatever the date. */
+export async function reservationPayments(sql: SqlFn, reservationId: string) {
+  const [pays, todos] = await Promise.all([
+    sql`SELECT session_id, payment_intent, livemode, reservation_id, unit_id, unit_name, guest, lines, amount::float8 AS amount, fee::float8 AS fee,
+               refunded::float8 AS refunded, status, paid_on::text AS paid_on, created_at::text AS created_at, claim_id::text AS claim_id
+          FROM guest_payments WHERE account_id = 1 AND reservation_id = ${reservationId} ORDER BY created_at DESC LIMIT 50` as Promise<PayRow[]>,
+    sql`SELECT id::text AS id, status, description FROM todos WHERE account_id = 1 AND created_by = 'Guest portal' AND reservation_id = ${reservationId}` as Promise<TodoRow[]>,
+  ]);
+  return { ok: true as const, payments: shapePayments(pays, todos) };
 }
 
 async function paymentOf(sql: SqlFn, id: string) {

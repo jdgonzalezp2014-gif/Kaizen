@@ -279,3 +279,5 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
 - 2026-11-23 (owner): **a to-do or a case opens as a pop-up over the conversation** — no trip to Operations → To-do / Claims & upselling.
   Work rows → `<TodoList task>` (the single-task pop-up Costs already used); Claims and Upselling rows → `ClaimPop` (Todos.tsx: the
   `ClaimCase` card in a Modal, re-read on `claims` live events). Closing it reloads the stay panel. `Inbox` no longer takes `onTodo` / `onClaim`.
+- **Payments on the reservation card (2026-11-26):** a "Payments" fold lists what the guest paid in the portal (deposit held, waiver, extras,
+  set-up to-dos) with Release / Keep / Refund — same rules and dialog as Guest Services → Payments (see guests.md).

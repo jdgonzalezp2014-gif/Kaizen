@@ -7,7 +7,7 @@
  * paragraphs — the how-to sits behind each "?" (CLAUDE.md); what a state or a limit says stays on screen.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { getInbox, getInboxSms, getInboxThread, inboxAction, inboxExtend, inboxSuggest, saveClaim, todoAction, type ExtendFit, type StayCase,
+import { getStayPayments, getInbox, getInboxSms, getInboxThread, inboxAction, inboxExtend, inboxSuggest, saveClaim, todoAction, type ExtendFit, type StayCase,
   type InboxList, type InboxSms, type InboxThread } from '../api.ts';
 import { FILTERS, MAX_BODY, STAGE_LABEL, bookingLinks, channelLabel, fill, matchesFilter, searchHit, stageOf, tabOf, threadTabs, varsFor, waits,
   type Channel, type InboxFilter, type InboxRow, type Planned, type Suggestion, type ThreadMsg, type ThreadTab, type Via } from '../lib/inbox.ts';
@@ -20,6 +20,8 @@ import { UpsellCharge } from '../components/UpsellCharge.tsx';
 import { ClaimPop, TodoList } from '../components/Todos.tsx';
 import type { DateStr } from '../lib/dates.ts';
 import { Icon } from '../components/Icon.tsx';
+import { money2 } from '../lib/format.ts';
+import { ActionDialog, type Ask as PayAsk, type DeskPayment } from './Payments.tsx';
 import { BrandMark } from '../components/BrandMark.tsx';
 import { GUEST_EVENT } from '../components/GuestPing.tsx';
 import { Automations } from './Automations.tsx';
@@ -42,8 +44,10 @@ function Avatar({ row, size = 40 }: { row: Pick<InboxRow, 'guest' | 'photo'>; si
     : <span className="ix-avatar ix-initials" style={{ width: size, height: size }} aria-hidden="true">{initials(row.guest)}</span>;
 }
 
-export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onSettings }: {
+export function Inbox({ canSend, canSetup, canTodos, canClaims = false, canPayments = false, canRefund = false, onSettings }: {
   canSend: boolean; canSetup: boolean; canTodos: boolean;
+  /** Guest Services → Payments: see this stay's portal payments; refund / release them (owner, 2026-11-26). */
+  canPayments?: boolean; canRefund?: boolean;
   /** May open a case in Claims & upselling (the chat's + offers an upsell). */
   canClaims?: boolean;
   /** Settings → Integrations → Guest messages & AI, for whoever may open it. */
@@ -148,7 +152,7 @@ export function Inbox({ canSend, canSetup, canTodos, canClaims = false, onSettin
       </aside>
 
       {open && list
-        ? <Conversation key={open.conversationId} row={open} list={list} canSend={canSend} canTodos={canTodos} canClaims={canClaims} onBack={() => pick(null)}
+        ? <Conversation key={open.conversationId} row={open} list={list} canSend={canSend} canTodos={canTodos} canClaims={canClaims} canPayments={canPayments} canRefund={canRefund} onBack={() => pick(null)}
                         onSettings={onSettings} onChanged={() => void load()} />
         : <section className="ix-empty"><Icon n="message" /><p>Pick a conversation</p></section>}
 
@@ -160,8 +164,8 @@ type Pane = ThreadTab | 'stay';
 const TAB: Record<ThreadTab, { icon: string; label: string }> = { all: { icon: 'layers', label: 'All' }, chat: { icon: 'message', label: 'Chat' },
   email: { icon: 'mail', label: 'Email' }, sms: { icon: 'phone', label: 'SMS' } };
 
-function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onSettings, onChanged }: {
-  row: InboxRow; list: InboxList; canSend: boolean; canTodos: boolean; canClaims: boolean; onBack: () => void;
+function Conversation({ row, list, canSend, canTodos, canClaims, canPayments, canRefund, onBack, onSettings, onChanged }: {
+  row: InboxRow; list: InboxList; canSend: boolean; canTodos: boolean; canClaims: boolean; canPayments: boolean; canRefund: boolean; onBack: () => void;
   onSettings?: () => void; onChanged: () => void;
 }) {
   const [pane, setPane] = useState<Pane>('all');
@@ -183,7 +187,7 @@ function Conversation({ row, list, canSend, canTodos, canClaims, onBack, onSetti
   const tabs = threadTabs(row, thread?.messages ?? []);
   // Texts Hostaway itself sent (its automations) live in its thread, not in Quo: the SMS tab shows both, in order.
   const hostSms = thread?.messages.filter(m => m.channel === 'hostaway' && tabOf(m) === 'sms') ?? [];
-  const stay = <StayPanel row={row} stage={stage} thread={thread} canTodos={canTodos} canClaims={canClaims} canSend={canSend} today={list.today} onChanged={after} />;
+  const stay = <StayPanel row={row} stage={stage} thread={thread} canTodos={canTodos} canClaims={canClaims} canSend={canSend} canPayments={canPayments} canRefund={canRefund} today={list.today} onChanged={after} />;
   return (
     <>
       <section className="ix-thread" aria-label={`Conversation with ${row.guest}`}>
@@ -399,6 +403,50 @@ const closedCase = (status: string) => /^(resolved|paid|dismissed|closed)$/i.tes
  * A section of the stay's side that opens on a click (owner, 2026-11-17: "not all of them showing"); the count stays visible.
  * `urgent` (Work, Claims): while anything is open its count is red with a "!" — so nothing is left undone behind a fold.
  */
+/**
+ * What this guest paid in the portal (owner, 2026-11-26: "see if they paid the deposit, and refund it right there") — the same
+ * rows and buttons as Guest Services → Payments, for this reservation only.
+ */
+function StayPayments({ reservationId, canRefund }: { reservationId: string; canRefund: boolean }) {
+  const [list, setList] = useState<DeskPayment[] | null>(null);
+  const [err, setErr] = useState('');
+  const [ask, setAsk] = useState<PayAsk | null>(null);
+  const [n, setN] = useState(0);
+  useEffect(() => {
+    getStayPayments(reservationId).then(r => { if (r.ok) { setList(r.payments); setErr(''); } else setErr(r.message ?? 'Could not read the payments.'); })
+      .catch(e => setErr(String(e)));
+  }, [reservationId, n]);
+  const held = (list ?? []).filter(p => p.status === 'held');
+  return (
+    <Fold title="Payments" urgent count={held.length}
+      hint={<>What this guest paid in the guest portal by card: the waiver, the deposit (held on the card, not charged) and each extra.
+        <b> Release</b> lets a held deposit go; <b>Keep…</b> charges part of it for damage and lets the rest go; <b>Refund…</b> gives money back
+        on a paid line. A hold lasts about 7 days. All stays: Guest Services → Payments.</>}>
+      {err && <p className="ix-state warn">{err}</p>}
+      {list === null ? (!err && <p className="note loading-dot">Reading</p>) : !list.length ? <p className="note">Nothing paid in the portal.</p> : (
+        <ul className="ix-pays">
+          {list.map(p => <li key={p.id}>
+            <div className="ix-pay">
+              <Icon n={p.status === 'held' ? 'clock' : p.status === 'paid' ? 'check' : 'card'} />
+              <span>{p.lines.map(l => `${l.label}${l.hold ? ' (hold)' : ''}`).join(' · ')} — <b>{money2(p.amount)}</b>
+                {p.refunded > 0 && <small> −{money2(p.refunded)} refunded</small>}
+                <small> · {PAY_STATE[p.status]} {p.paidOn}{p.holdEndsOn ? ` · hold ends ${p.holdEndsOn}` : ''}{!p.livemode ? ' · test' : ''}</small>
+                {p.followUps.map(t => <small key={t.id}> · {t.done ? '✓' : '!'} set-up #{t.id} {t.done ? 'done' : 'pending'}</small>)}</span>
+              {canRefund && <span>
+                {p.status === 'held' && <><button type="button" className="ix-ghost" onClick={() => setAsk({ kind: 'release', p })}>Release</button>
+                  <button type="button" className="ix-ghost" onClick={() => setAsk({ kind: 'keep', p })}>Keep…</button></>}
+                {p.refundable > 0 && <button type="button" className="ix-ghost" onClick={() => setAsk({ kind: 'refund', p })}>Refund…</button>}
+              </span>}
+            </div>
+          </li>)}
+        </ul>
+      )}
+      {ask && <ActionDialog ask={ask} onClose={() => setAsk(null)} onDone={() => { setAsk(null); setN(x => x + 1); }} />}
+    </Fold>
+  );
+}
+const PAY_STATE = { paid: '✓ Paid', held: '○ Held', refunded: '↺ Refunded', released: '○ Released' } as const;
+
 function Fold({ title, count, hint, onAdd, addLabel, urgent = false, children }: { title: string; count: number; hint: ReactNode; onAdd?: () => void; addLabel?: string; urgent?: boolean; children: ReactNode }) {
   const hot = urgent && count > 0;
   return (
@@ -421,8 +469,9 @@ function CaseList({ cases, onOpen }: { cases: StayCase[]; onOpen: (id: string) =
   </li>)}</ul>;
 }
 
-function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, today, onChanged }: {
-  row: InboxRow; stage: ReturnType<typeof stageOf>; thread: InboxThread | null; canTodos: boolean; canClaims: boolean; canSend: boolean; today: DateStr;
+function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, canPayments, canRefund, today, onChanged }: {
+  row: InboxRow; stage: ReturnType<typeof stageOf>; thread: InboxThread | null; canTodos: boolean; canClaims: boolean; canSend: boolean;
+  canPayments: boolean; canRefund: boolean; today: DateStr;
   onChanged: () => void;
 }) {
   // Owner, 2026-11-23: a to-do or a case opens as a pop-up over the conversation — never a trip to Operations → To-do.
@@ -600,6 +649,8 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, today, on
           {msg && <p className="ix-state warn">{msg}</p>}
         </div>
       </Modal>}
+
+      {row.reservationId && canPayments && <StayPayments key={row.reservationId} reservationId={row.reservationId} canRefund={canRefund} />}
 
       {row.reservationId && canTodos && <Fold title="Work" urgent count={tasks.filter(t => !t.done).length} onAdd={() => open('work')} addLabel="Add a task, repair or purchase"
         hint={<>The team's work tied to this stay — the same as Operations → To-do. The + makes a <b>Task</b>, a <b>Repair</b> (work order) or a <b>Purchase</b>

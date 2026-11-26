@@ -4116,3 +4116,10 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
   .ait-steps li { grid-template-columns: auto 1fr auto; }
   .ait-steps li select, .ait-steps li input:not([type=checkbox]) { grid-column: 1 / -1; }
 }
+
+/* CRM reservation card → Payments (2026-11-26): one row per portal payment, its buttons on the right. */
+.ix-pays { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ix-pay { display: grid; grid-template-columns: 16px 1fr auto; align-items: start; gap: 8px; padding: 4px; }
+.ix-pay > span:last-child:not(:nth-child(2)) { display: inline-flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
+.ix-pay small { color: var(--muted); }
+@media (max-width: 520px) { .ix-pay { grid-template-columns: 16px 1fr; } .ix-pay > span:nth-child(3) { grid-column: 2; justify-content: flex-start; } }
