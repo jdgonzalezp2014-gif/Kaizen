@@ -306,9 +306,10 @@ function Extras({ stay, flow, save }: S) {
 function Pay({ stay, flow, p, save, set }: S) {
   const b = bill(flow, stay, p);
   const label = b.today > 0 ? `Pay ${money2(b.today)}` : `Authorize ${money2(b.hold)} hold`;
-  // Airbnb (owner, 2026-11-23): through Airbnb's Resolution Center first, the card as the other way. A deposit is a card hold.
+  // Airbnb (owner, 2026-11-27, reversing 11-23): the card (Stripe) first; Airbnb's Resolution Center is the small other way.
+  // A request already open on Airbnb keeps that view. A deposit is a card hold.
   const airbnb = channelCovers(stay) && b.today > 0;
-  const [card, setCard] = useState(false);
+  const [card, setCard] = useState(!flow.rc);
   if (flow.paid) return <>
     <PaidCard flow={flow} today={b.today} hold={b.hold} />
     <button className="g-cta" onClick={() => save(flow)}>Continue</button>
@@ -330,13 +331,13 @@ function Pay({ stay, flow, p, save, set }: S) {
         <StripePay lines={b.lines} email={stay.guest?.email ?? null} label={label} stay={stay} purpose="checkin"
           beforeRedirect={() => { try { sessionStorage.setItem(FLOW_KEY, JSON.stringify(flow)); } catch { /* private mode: the page just starts over */ } }}
           onPaid={total => set({ ...flow, paid: true, paidTotal: total, rc: null })} />
-        {airbnb && card && b.hold === 0 && <button className="chip" onClick={() => setCard(false)}>‹ Pay on Airbnb instead</button>}
+        {airbnb && card && b.hold === 0 && <button type="button" className="ci-alt" onClick={() => setCard(false)}>Pay on Airbnb instead</button>}
       </>}
   </>;
 }
 
 /**
- * Airbnb's Resolution Center (owner, 2026-11-23: "Airbnb is preferred", the card stays offered). The server prices it and
+ * Airbnb's Resolution Center (owner, 2026-11-27: the card is preferred, this is the other way). The server prices it and
  * opens the request (guest-rc.ts: a case + a pending charge, the team told in Slack); the guest sends the money in Airbnb
  * and taps "I already paid" — the team checks Airbnb and marks it received. The demo (no stay link) only walks through it.
  */
@@ -374,10 +375,10 @@ export function AirbnbPay({ amount, purpose, extra, pending, onSaid, onCard }: {
         <a className="g-cta" href={AIRBNB_RESOLUTION} target="_blank" rel="noreferrer">Open the Resolution Center</a>
         <button className="chip" onClick={said} disabled={busy}>{busy ? 'Saving…' : 'I already paid'}</button>
       </section>}
-    <p className="ci-stripe"><span><Icon n="lock" /> Secure payment on Airbnb · recommended</span>
+    <p className="ci-stripe"><span><Icon n="lock" /> Secure payment on Airbnb</span>
       <span><Hint>For Airbnb bookings the payment goes through Airbnb's Resolution Center, so Airbnb protects it. Send the amount there,
         then tap I already paid — we confirm it in Airbnb. You can also pay by card here.</Hint></span></p>
-    <button className="chip" onClick={onCard}>Pay by card instead</button>
+    <button type="button" className="chip" onClick={onCard}>‹ Pay by card</button>
   </>;
 }
 

@@ -3428,6 +3428,8 @@ p.g-lock.g-guide { display: flex; align-items: center; gap: 8px; margin: 0; }
 .ci-field + .ci-field:last-child { border-left: 1px solid var(--line); }
 .ci-stripe { margin: 0; text-align: center; font-size: 12.5px; color: var(--muted); display: flex; flex-direction: column; align-items: center; gap: 2px; }
 .ci-stripe > span { display: inline-flex; align-items: center; gap: 5px; }
+/* The other way to pay (owner, 2026-11-27: card first, Airbnb small). */
+.ci-alt { display: block; margin: 4px auto 0; background: none; border: 0; padding: 6px; font: inherit; font-size: 12.5px; color: var(--muted); text-decoration: underline; cursor: pointer; }
 .ci-code { display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 22px 18px !important; text-align: center; }
 .ci-digits { display: flex; gap: 8px; background: none; border: 0; padding: 0; cursor: pointer; }
 .ci-digits span { width: 54px; height: 66px; border-radius: 12px; border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--line)); display: grid; place-items: center;

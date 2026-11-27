@@ -426,8 +426,8 @@ function Extras({ stay, sent, choose }: { stay: GuestStay; sent: PaidExtra[]; ch
  */
 function Pick({ stay, u, paid, extend }: { stay: GuestStay; u: Upsell; paid: (c: Choice) => void; extend: (c: Choice) => void }) {
   const [done, setDone] = useState<{ title: string; line: string; sub?: string } | null>(null);
-  // Airbnb (owner, 2026-11-23): extras through Airbnb's Resolution Center first; the card stays one tap away.
-  const [card, setCard] = useState(false);
+  // Airbnb (owner, 2026-11-27, reversing 11-23): extras by card first; Airbnb's Resolution Center is the small other way.
+  const [card, setCard] = useState(true);
   const [c, setC] = useState<Choice>(u.pick.type === 'qty' ? { qty: 1 } : u.kind === 'extra-nights' ? { before: stay.freeAfter > 0 ? 0 : Math.min(1, stay.freeBefore), after: stay.freeAfter > 0 ? 1 : 0 } : {});
   const total = quote(stay, u, c);
   if (done) return <section className="card ci-card ci-confirmed">
@@ -463,9 +463,10 @@ function Pick({ stay, u, paid, extend }: { stay: GuestStay; u: Upsell; paid: (c:
         ? <AirbnbPay key={JSON.stringify(c)} amount={total!} purpose="extra" extra={{ kind: u.kind, choice: c as Record<string, unknown> }} onCard={() => setCard(true)}
             onSaid={() => setDone({ title: `${u.title} — requested`, line: [choiceLine({ kind: u.kind, choice: c }), money2(total!)].filter(Boolean).join(' · '),
               sub: 'Paid on Airbnb — we confirm it there, then set it up' })} />
-        : ok ? <StripePay key={JSON.stringify(c)} email={stay.guest?.email ?? null} label={`${u.kind === 'extra-nights' ? 'Book' : 'Add'} & pay ${money2(total!)}`} back="extras"
+        : ok ? <><StripePay key={JSON.stringify(c)} email={stay.guest?.email ?? null} label={`${u.kind === 'extra-nights' ? 'Book' : 'Add'} & pay ${money2(total!)}`} back="extras"
           stay={stay} lines={[{ label, amount: total!, kind: 'charge', item: u.kind, note: note || undefined }]} onPaid={onPaid}
           extra={{ kind: u.kind, choice: c as Record<string, unknown> }} />
+          {channelCovers(stay) && <button type="button" className="ci-alt" onClick={() => setCard(false)}>Pay on Airbnb instead</button>}</>
         : <button className="g-cta" disabled>{u.pick.type === 'time' ? 'Pick a time' : u.pick.type === 'nights' ? 'Pick your nights' : 'Not available'}</button>}
     </section>
   </>;
