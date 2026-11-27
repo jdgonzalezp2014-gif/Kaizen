@@ -538,7 +538,8 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, canPaymen
   const open = (g: Group) => { setGroup(g); setKind(NEW_KINDS.find(k => GROUP_OF[k.key] === g)!.key); setCategory(''); setMsg(''); setAdding(true); };
   const tasks = thread?.tasks ?? [];
   const claims = (thread?.cases ?? []).filter(c => !isUpsell(c.category));
-  const upsells = (thread?.cases ?? []).filter(c => isUpsell(c.category));
+  // Owner, 2026-11-27: a cancelled upsell (the guest switched how to pay, or changed the check-in) is not shown — it was never owed.
+  const upsells = (thread?.cases ?? []).filter(c => isUpsell(c.category) && !/^dismissed$/i.test(c.status));
   // Owner, 2026-11-23: the hours on the card, marked while an early/late charge is not paid — Hostaway's hour moves only once it is.
   const unpaid = (cats: string[]) => upsells.find(c => !closedCase(c.status) && cats.includes(c.category ?? ''));
   const unpaidIn = unpaid(['Early check-in', 'Late check-in']), unpaidOut = unpaid(['Late checkout']);
