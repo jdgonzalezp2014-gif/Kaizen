@@ -483,6 +483,9 @@ the extra charges, and show them in the guest's portal as pending payments."
   rest → amount), `isAirbnb` (Hostaway `channelName`), $20/h (`hourPrice`, same as the portal), `freeAround` / `nightsPrice` (calendar),
   `airbnbLinks` (Resolution Center + `hosting/reservations/details/<HM>`), the guest messages. New kind **Extra nights** in `UPSELL_CATEGORIES`;
   `COLLECTED_VIA` + **Stripe**.
+- 2026-11-27 (owner): **Pet fee prefills** — `petFee(nights, pets)`, the tiers every listing's house rules state (1–2 nights $100/pet,
+  3–6 $150, 7–29 $250, 30+ $300/month/pet, once per stay); the plan returns `category` + `stay.pets` (Hostaway); the block shows a Pets
+  stepper (booking's count, else 1) and the amount stays editable ("Use $X" brings the rule back). Repository `pet_fee` (the Airbnb setting) is not used.
 - **Server** `functions/_lib/upsell-charge.ts`, API `/api/upsell-charge` (permission `claims`): the plan (stay read from Hostaway,
   nights ±7 days), `create`, `cancel`. **Hold first, charge after:** nights blocked one by one with `setNightOpen` (read back; any failure
   reopens the ones done, nothing charged); hours through the board's `pushStayTimes` (its log `stay_time_pushes` decides). Airbnb: no charge,

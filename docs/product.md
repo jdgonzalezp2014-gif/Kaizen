@@ -73,3 +73,4 @@ come later for a fully in-page look. Built 2026-11-15 (`functions/_lib/guest-pay
   "old check-in" = Hostaway's agreement signed / ID verified, `scripts/description-protection-notice.mjs` (Kaizen's English text and Hostaway fields).
 - 2026-11-23 (guests, the portal's real door): per account — `guest_flows`, the stay link's HMAC. **Hard-wired:** the release time (noon Central
   the day before arrival, `RELEASE_HOUR` / `STAY_TZ`), English guest texts and to-do titles, Cortland's / The Links' building guides (data, not code).
+- 2026-11-27 (guests, pet fee prefill): **Hard-wired:** Kaizen's pet tiers in `petFee` (src/lib/upsell-charge.ts) — another host would need them per account.

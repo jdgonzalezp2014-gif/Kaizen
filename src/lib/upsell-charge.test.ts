@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { airbnbLinks, applyPlan, chargeLabel, extraNights, followUp, freeAround, hourLabel, hourOptions, hourPrice, isAirbnb, isDirect,
-  itemOf, methodsFor, needOf, nightsPrice, payGuestText, runsOf } from './upsell-charge.ts';
+  itemOf, methodsFor, needOf, nightsPrice, petFee, payGuestText, runsOf } from './upsell-charge.ts';
 
 test('what each upsell kind needs besides money', () => {
   assert.equal(needOf('Extra nights'), 'nights');
@@ -94,4 +94,16 @@ test('the follow-up says the new day and the three things to move', () => {
 test('the pay message carries the stay page when there is one', () => {
   assert.match(payGuestText('Pet fee', 75, 'https://x/pay', 'https://x/guest/1.a'), /stay page: https:\/\/x\/guest\/1\.a/);
   assert.doesNotMatch(payGuestText('Pet fee', 75, 'https://x/pay'), /stay page/);
+});
+
+test('petFee: the house rules\' tiers, per pet, per stay', () => {
+  assert.equal(petFee(2, 1), 100);
+  assert.equal(petFee(3, 2), 300);
+  assert.equal(petFee(6, 1), 150);
+  assert.equal(petFee(7, 1), 250);
+  assert.equal(petFee(29, 2), 500);
+  assert.equal(petFee(30, 1), 300);
+  assert.equal(petFee(45, 1), 600, 'a part month counts whole');
+  assert.equal(petFee(0, 1), null);
+  assert.equal(petFee(3, 0), null);
 });

@@ -81,6 +81,17 @@ export function nightsPrice(days: NightDay[], dates: DateStr[]): number | null {
   return Math.round(sum * 100) / 100;
 }
 
+/**
+ * The pet fee every listing's house rules state (owner, 2026-11-27: "it's in the listing description"): "Extra Pet
+ * Cleaning Fee — 1-2 nights: $100/pet; 3-6 nights: $150/pet; 7-29 nights: $250/pet; 30+ nights: $300/month/pet",
+ * one time per stay. A month = 30 nights, a part month counts whole. The team can still type another amount.
+ */
+export function petFee(nights: number, pets: number): number | null {
+  if (!(nights > 0) || !(pets > 0)) return null;
+  const perPet = nights <= 2 ? 100 : nights <= 6 ? 150 : nights <= 29 ? 250 : 300 * Math.ceil(nights / 30);
+  return perPet * pets;
+}
+
 /** What the guest sees on the payment page and the portal: "Extra nights · Nov 21 – Nov 23". */
 export function chargeLabel(category: string, detail: { nights?: DateStr[]; hour?: number | null }): string {
   if (detail.nights?.length) {

@@ -283,10 +283,10 @@ export const saveCaseMoney = (id: string, change: CaseMoneyChange) =>
 import type { ChargeMethod, ChargeNeed, NightDay, UpsellCharge } from './lib/upsell-charge.ts';
 /** 2026-11-19: an upsell carried out from its case — Hostaway hold + Stripe pay link (functions/_lib/upsell-charge.ts). */
 export interface ChargePlan {
-  ok: true; need: ChargeNeed; charges: UpsellCharge[]; methods: ChargeMethod[];
+  ok: true; need: ChargeNeed; category?: string | null; charges: UpsellCharge[]; methods: ChargeMethod[];
   nightDays: NightDay[]; free: { before: number; after: number } | null; message?: string;
   stay: { channel: string; airbnb: boolean; arrival: string | null; departure: string | null; checkInHour: number | null;
-          checkOutHour: number | null; guest: string | null; cancelled: boolean } | null;
+          checkOutHour: number | null; guest: string | null; pets?: number; cancelled: boolean } | null;
   links: { resolution: string; reservation: string | null } | null;
 }
 export type ChargeMade = { ok: true; method: 'rc'; id: string; links: { resolution: string; reservation: string | null }; guestText: string; warning: null }

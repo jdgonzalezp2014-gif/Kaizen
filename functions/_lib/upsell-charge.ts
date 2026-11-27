@@ -86,6 +86,7 @@ async function shapeCharge(ek: string, base: string, r: ChargeRow): Promise<Upse
 interface StayFacts {
   reservationId: string; channel: string; airbnb: boolean; listingId: string | null; arrival: DateStr | null; departure: DateStr | null;
   checkInHour: number | null; checkOutHour: number | null; guest: string | null; email: string | null; code: string | null; status: string;
+  pets: number;
 }
 async function stayOf(sql: SqlFn, ek: string, resId: string): Promise<StayFacts | null> {
   const creds = await getCredentials(sql, ek);
@@ -101,7 +102,8 @@ async function stayOf(sql: SqlFn, ek: string, resId: string): Promise<StayFacts 
   return { reservationId: resId, channel, airbnb: isAirbnb(channel), listingId,
     arrival: DAY.test(String(r.arrivalDate)) ? String(r.arrivalDate) : null, departure: DAY.test(String(r.departureDate)) ? String(r.departureDate) : null,
     checkInHour: cin, checkOutHour: cout, guest: str(r.guestName), email: str(r.guestEmail),
-    code: str(r.confirmationCode) ?? /-confirmation-([A-Z0-9]+)$/.exec(String(r.channelReservationId ?? ''))?.[1] ?? null, status: String(r.status ?? '') };
+    code: str(r.confirmationCode) ?? /-confirmation-([A-Z0-9]+)$/.exec(String(r.channelReservationId ?? ''))?.[1] ?? null, status: String(r.status ?? ''),
+    pets: Math.max(0, Math.floor(Number(r.pets) || 0)) };
 }
 
 /** The nights around the stay (a week each side), as the calendar has them now. */
@@ -119,16 +121,16 @@ export async function chargePlan(sql: SqlFn, ek: string, origin: string, claimId
   const base = await linkBase(sql, origin);
   const charges = await Promise.all((await chargesOfClaim(sql, claimId)).map(r => shapeCharge(ek, base, r)));
   const need = needOf(c.category);
-  const none = { ok: true as const, need, stay: null, free: null, nightDays: [], charges, links: null, methods: [] as ChargeMethod[] };
+  const none = { ok: true as const, need, category: c.category, stay: null, free: null, nightDays: [], charges, links: null, methods: [] as ChargeMethod[] };
   if (!c.reservation_id) return none;
   const stay = await stayOf(sql, ek, c.reservation_id);
   if (!stay) return { ...none, message: 'Hostaway did not return this reservation.' };
   // Airbnb paid outside blocks the calendar too (owner), so every channel needs the nights around the stay.
   const nightDays = need === 'nights' ? await nightsAround(sql, ek, stay) : [];
   const free = stay.arrival && stay.departure ? freeAround(nightDays, stay.arrival, stay.departure) : { before: 0, after: 0 };
-  return { ok: true as const, need, charges, nightDays, free, methods: methodsFor(stay.airbnb),
+  return { ok: true as const, need, category: c.category, charges, nightDays, free, methods: methodsFor(stay.airbnb),
     stay: { channel: stay.channel, airbnb: stay.airbnb, arrival: stay.arrival, departure: stay.departure, checkInHour: stay.checkInHour,
-            checkOutHour: stay.checkOutHour, guest: stay.guest, cancelled: CANCELLED.test(stay.status) },
+            checkOutHour: stay.checkOutHour, guest: stay.guest, pets: stay.pets, cancelled: CANCELLED.test(stay.status) },
     links: stay.airbnb ? airbnbLinks(stay.code) : null };
 }
 

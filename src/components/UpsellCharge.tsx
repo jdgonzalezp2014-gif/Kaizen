@@ -6,7 +6,8 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { cancelUpsellCharge, getChargePlan, makeCharge, rcChargeReceived, type ChargePlan } from '../api.ts';
-import { extraNights, hourLabel, hourOptions, hourPrice, nightsPrice, type ChargeMethod, type UpsellCharge as Charge } from '../lib/upsell-charge.ts';
+import { extraNights, hourLabel, hourOptions, hourPrice, nightsPrice, petFee, type ChargeMethod, type UpsellCharge as Charge } from '../lib/upsell-charge.ts';
+import { daysBetween } from '../lib/dates.ts';
 import { money2 } from '../lib/format.ts';
 import { Hint } from './Hint.tsx';
 import { Icon } from './Icon.tsx';
@@ -33,6 +34,7 @@ export function UpsellCharge({ claimId, hasStay, onChanged }: { claimId: string;
   const [before, setBefore] = useState(0);
   const [after, setAfter] = useState(0);
   const [hour, setHour] = useState<number | null>(null);
+  const [pets, setPets] = useState(1);
   const [amount, setAmount] = useState('');
   const [typed, setTyped] = useState(false);
   const [got, setGot] = useState('');
@@ -48,6 +50,10 @@ export function UpsellCharge({ claimId, hasStay, onChanged }: { claimId: string;
   useEffect(() => { if (plan?.methods.length) setWay(w => w === 'alter' || plan.methods.includes(w as ChargeMethod) ? w : plan.methods[0]!); }, [plan?.methods.join()]);
 
   const stay = plan?.stay;
+  // Pet fee: the house rules' tiers by the stay's nights × the pets (Hostaway's count, else 1) — the team can change both.
+  const isPet = plan?.category === 'Pet fee';
+  const stayNights = stay?.arrival && stay.departure ? daysBetween(stay.arrival, stay.departure) : 0;
+  useEffect(() => { if (stay?.pets) setPets(stay.pets); }, [stay?.pets]);
   const need = plan?.need ?? 'amount';
   const stayHour = need === 'checkin' ? stay?.checkInHour : need === 'checkout' ? stay?.checkOutHour : null;
   const hours = stayHour != null && (need === 'checkin' || need === 'checkout') ? hourOptions(need, stayHour) : [];
@@ -55,8 +61,9 @@ export function UpsellCharge({ claimId, hasStay, onChanged }: { claimId: string;
   const suggested = useMemo(() => {
     if (need === 'nights' && stay?.arrival && stay.departure && (before || after)) return nightsPrice(plan!.nightDays, extraNights(stay.arrival, stay.departure, before, after));
     if ((need === 'checkin' || need === 'checkout') && stayHour != null && hour != null) return hourPrice(need, stayHour, hour) || null;
+    if (isPet) return petFee(stayNights, pets);
     return null;
-  }, [need, stay, before, after, hour, stayHour, plan]);
+  }, [need, stay, before, after, hour, stayHour, plan, isPet, stayNights, pets]);
   useEffect(() => { if (!typed) setAmount(suggested != null ? String(suggested) : ''); }, [suggested, typed]);
 
   if (!hasStay) return <p className="note uc-none"><Icon n="card" /> To charge it, pick the stay first (✎ Edit claim → Stay).</p>;
@@ -84,13 +91,13 @@ export function UpsellCharge({ claimId, hasStay, onChanged }: { claimId: string;
     setMade(null); load(); onChanged?.();
   };
   const ready = way !== 'alter' && Number(amount) > 0 && (need !== 'nights' || before + after > 0) && ((need !== 'checkin' && need !== 'checkout') || hour != null);
-  const step = (v: number, set: (n: number) => void, max: number, label: string) => (
+  const step = (v: number, set: (n: number) => void, max: number, label: string, note?: string, min = 0) => (
     <label className="uc-step"><span>{label}</span>
       <span className="uc-stepper">
-        <button type="button" className="small" aria-label={`Fewer — ${label}`} disabled={v <= 0} onClick={() => set(v - 1)}>−</button>
+        <button type="button" className="small" aria-label={`Fewer — ${label}`} disabled={v <= min} onClick={() => set(v - 1)}>−</button>
         <b>{v}</b>
         <button type="button" className="small" aria-label={`More — ${label}`} disabled={v >= max} onClick={() => set(v + 1)}>+</button>
-      </span><small>{max ? `${max} free` : 'none free'}</small></label>
+      </span><small>{note ?? (max ? `${max} free` : 'none free')}</small></label>
   );
   const cancelBtn = (c: Charge) => sure === c.id
     ? <><button type="button" className="small danger" disabled={busy} onClick={() => void act(() => cancelUpsellCharge(c.id), 'Cancelled.')}>Cancel it</button>
@@ -102,7 +109,8 @@ export function UpsellCharge({ claimId, hasStay, onChanged }: { claimId: string;
       <div className="uc-head"><b><Icon n="card" /> Charge the guest</b>
         <Hint>How the guest pays: <b>Card</b> — a Stripe pay link (card, Apple Pay, Google Pay) to send in the chat; the guest also sees it on
           their stay page under Pending payments. On Airbnb also <b>Resolution Center</b> — ask there, then mark it received here when the money comes
-          in. For more nights on Airbnb, <b>Change it on Airbnb</b> is the alteration the guest accepts (its price lands on the reservation).
+          in. <b>Pet fee</b> fills in by the house rules: 1–2 nights $100 a pet, 3–6 $150, 7–29 $250, 30+ $300 a month a pet (pets from the booking — change them, or type another amount).
+          For more nights on Airbnb, <b>Change it on Airbnb</b> is the alteration the guest accepts (its price lands on the reservation).
           <br /><br />Nothing changes in Hostaway until the money is confirmed. Then Kaizen sets it up on its own: the new check-in / check-out hour
           on the reservation; extra nights on a direct booking extend the reservation; on Airbnb, Vrbo, Booking.com or Expedia the nights are blocked
           on the calendar and an urgent to-do asks for the door code, the clean and the check-out messages (the reservation keeps its dates).
@@ -158,6 +166,9 @@ export function UpsellCharge({ claimId, hasStay, onChanged }: { claimId: string;
                     <select value={hour ?? ''} onChange={e => setHour(e.target.value === '' ? null : Number(e.target.value))}>
                       <option value="">Pick…</option>{hours.map(h => <option key={h} value={h}>{hourLabel(h)}</option>)}
                     </select></label>)}
+              {isPet && <div className="uc-steps">
+                {step(pets, setPets, 5, 'Pets', `${stayNights} night${stayNights === 1 ? '' : 's'}${stay.pets ? ` · ${stay.pets} on the booking` : ''}`, 1)}
+              </div>}
               <label className="uc-amount"><span>Amount</span>
                 <input type="number" min={0} step="0.01" className="money-in" placeholder="$" value={amount}
                        onChange={e => { setAmount(e.target.value); setTyped(true); }} />
