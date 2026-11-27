@@ -162,6 +162,23 @@ export async function dropRc(sql: SqlFn, row: { pay_session: string | null } | n
   await sql`UPDATE claims SET status = 'Dismissed', resolved_on = COALESCE(resolved_on, ${todayIn('America/New_York')}::date) WHERE account_id = 1 AND id::text = ${c.claim_id} AND status = 'Open'`.catch(() => {});
 }
 
+/**
+ * An extra the guest paid by card after asking to pay it on Airbnb (owner, 2026-11-27: parking + early check-in stayed
+ * "pending" in the Resolution Center though the card had paid): Stripe's word is the money, so the open RC request for the
+ * same item goes, even if the guest also tapped "I already paid" there; the note says to check Airbnb for a double payment.
+ */
+export async function dropRcItems(sql: SqlFn, reservationId: string, items: string[], sessionId: string) {
+  if (!items.length) return;
+  const gone = await sql`UPDATE upsell_charges SET status = 'cancelled', cancelled_at = now(), cancelled_by = 'Guest (stay page)'
+                         WHERE account_id = 1 AND reservation_id = ${reservationId} AND method = 'rc' AND status = 'pending' AND item = ANY(${items})
+                         RETURNING claim_id::text AS claim_id, label, amount::float8 AS amount` as { claim_id: string; label: string; amount: number }[];
+  for (const c of gone) {
+    await sql`INSERT INTO work_updates (account_id, subject, subject_id, kind, body, created_by)
+              VALUES (1, 'claim', ${c.claim_id}, 'note', ${`Paid by card instead (Stripe ${sessionId.slice(0, 16)}...): Resolution Center request cancelled: ${c.label} $${c.amount.toFixed(2)}. If Airbnb shows a payment too, refund one.`}, 'Guest (stay page)')`;
+    await sql`UPDATE claims SET status = 'Dismissed', resolved_on = COALESCE(resolved_on, ${todayIn('America/New_York')}::date) WHERE account_id = 1 AND id::text = ${c.claim_id} AND status = 'Open'`.catch(() => {});
+  }
+}
+
 /** For guest-pay.ts: Stripe confirmed something for this stay. */
 export async function markStay(sql: SqlFn, id: string, listingId: string | null, set: { identityVs?: string; identityOk?: boolean; paySession?: string; paidTotal?: number }) {
   await sql`INSERT INTO guest_flows (account_id, reservation_id, listing_id) VALUES (1, ${id}, ${listingId}) ON CONFLICT DO NOTHING`;

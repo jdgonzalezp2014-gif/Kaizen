@@ -502,6 +502,7 @@ the extra charges, and show them in the guest's portal as pending payments."
   end to end; the full portal on the stay link (Phase 2).
 
 #### Round 2 (owner, same day, after the audit) — migration 121
+- 2026-11-27: an **extra paid by card** (Stripe confirms, `recordSession`) cancels the open RC request for the same item (`dropRcItems`, guest-stay.ts) and dismisses its case, even if the guest also tapped "I already paid"; the note says to check Airbnb for a double payment. Check-in already did this (`dropRc`).
 - **How the guest pays** (`methodsFor`): card everywhere; Airbnb also the **Resolution Center** (`method = 'rc'`: "Log the RC request" →
   "Mark received" with what came in → `rcReceived`). Airbnb + Extra nights also offers **Change it on Airbnb** (the alteration; nothing logged).
   The hour is set from Kaizen on Airbnb too.

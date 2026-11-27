@@ -23,7 +23,7 @@ import { toCents } from '../../src/lib/payouts.ts';
 import { decodeLines, encodeLines, itemLabel, type PaidLine } from '../../src/lib/guest-payments.ts';
 import { settleCharge, syncChargeRefund } from './charge-settle.ts';
 import type { Env } from './db.ts';
-import { dropRc, loadStay, markStay, stayId } from './guest-stay.ts';
+import { dropRc, dropRcItems, loadStay, markStay, stayId } from './guest-stay.ts';
 import { verifyHouse } from './guest-demo.ts';
 import { mirrorTodos } from './inventory.ts';
 import { bill, protectionFor } from '../../src/lib/guest-checkin.ts';
@@ -212,6 +212,10 @@ export async function recordSession(sql: SqlFn, key: string, id: string, encrypt
     ON CONFLICT (account_id, session_id) DO UPDATE SET payment_intent = EXCLUDED.payment_intent, lines = EXCLUDED.lines, amount = EXCLUDED.amount,
       fee = COALESCE(EXCLUDED.fee, guest_payments.fee), refunded = EXCLUDED.refunded, status = EXCLUDED.status,
       guest = COALESCE(guest_payments.guest, EXCLUDED.guest), updated_at = now()`;
+  // An extra paid by card: its open Resolution Center request for the same item goes (dropRcItems).
+  if (status === 'paid' && m.source === 'guest-portal' && m.purpose === 'extra' && m.reservation) {
+    await dropRcItems(sql, m.reservation, lines.filter(l => !l.hold).map(l => l.item), s.id).catch(() => {});
+  }
   // An upsell charge the team made (upsell-charge.ts): paid → its case settles and Hostaway is set up, once; a refund
   // comes off the case (charge-settle.ts).
   if (m.charge && (status === 'paid' || status === 'refunded')) {
