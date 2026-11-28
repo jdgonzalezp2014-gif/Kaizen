@@ -195,18 +195,16 @@ export function Payments({ canAct }: { canAct: boolean }) {
 }
 
 /** The pending list — Guest Services → Payments and the CRM's reservation card share it. */
-export function PendingTable({ rows, canAct, onDone, compact = false, rcLink }: { rows: Pending[]; canAct: boolean; onDone: () => void; compact?: boolean;
-  /** The stay's own page in Airbnb (the CRM knows it); else Airbnb's Resolution Center list. */
-  rcLink?: string | null }) {
+function PendingTable({ rows, canAct, onDone }: { rows: Pending[]; canAct: boolean; onDone: () => void }) {
   const [remind, setRemind] = useState<Pending | null>(null);
   const [check, setCheck] = useState<Pending | null>(null);
   return <>
     <div className="table-wrap">
       <table className="money-table">
-        <thead><tr><th>Since</th>{!compact && <th>Guest</th>}{!compact && <th>Unit</th>}<th>What</th><th className="n">Amount</th><th>How</th><th>Reminded</th>{canAct && <th />}</tr></thead>
+        <thead><tr><th>Since</th><th>Guest</th><th>Unit</th><th>What</th><th className="n">Amount</th><th>How</th><th>Reminded</th>{canAct && <th />}</tr></thead>
         <tbody>{rows.map(p => (
           <tr key={p.key}>
-            <td>{day(p.since)}</td>{!compact && <td><GuestLink name={p.guest} reservationId={p.reservationId} /></td>}{!compact && <td>{p.unit ?? '—'}</td>}
+            <td>{day(p.since)}</td><td><GuestLink name={p.guest} reservationId={p.reservationId} /></td><td>{p.unit ?? '—'}</td>
             <td>{p.what.replace(/^./, c => c.toUpperCase())}</td>
             <td className="n">{p.amount != null ? money2(p.amount) : '—'}</td>
             <td>{p.method === 'rc' ? 'Airbnb RC' : 'Card'}{p.said && <small> · ! says paid — check Airbnb</small>}</td>
@@ -217,7 +215,7 @@ export function PendingTable({ rows, canAct, onDone, compact = false, rcLink }: 
       </table>
     </div>
     {remind && <RemindDialog p={remind} onClose={() => setRemind(null)} onDone={() => { setRemind(null); onDone(); }} />}
-    {check && <RcDialog p={check} link={rcLink ?? AIRBNB_RC} onClose={() => setCheck(null)} onDone={() => { setCheck(null); onDone(); }} />}
+    {check && <RcDialog p={check} link={AIRBNB_RC} onClose={() => setCheck(null)} onDone={() => { setCheck(null); onDone(); }} />}
   </>;
 }
 

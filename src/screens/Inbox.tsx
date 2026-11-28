@@ -6,7 +6,7 @@
  * Hostaway and Quo keep the conversations; Kaizen keeps only its own outbox. Nothing here explains itself in
  * paragraphs — the how-to sits behind each "?" (CLAUDE.md); what a state or a limit says stays on screen.
  */
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from 'react';
 import { saveTurnover, getStayPayments, getInbox, getInboxSms, getInboxThread, inboxAction, inboxExtend, inboxSuggest, saveClaim, todoAction, type ExtendFit, type StayCase,
   type InboxList, type InboxSms, type InboxThread } from '../api.ts';
 import { FILTERS, MAX_BODY, STAGE_LABEL, bookingLinks, channelLabel, fill, matchesFilter, searchHit, stageOf, tabOf, threadTabs, varsFor, waits,
@@ -21,7 +21,7 @@ import { ClaimPop, TodoList } from '../components/Todos.tsx';
 import type { DateStr } from '../lib/dates.ts';
 import { Icon } from '../components/Icon.tsx';
 import { money2 } from '../lib/format.ts';
-import { ActionDialog, PendingTable, type Ask as PayAsk, type DeskPayment, type Pending } from './Payments.tsx';
+import { ActionDialog, type Ask as PayAsk, type DeskPayment, type Pending } from './Payments.tsx';
 import { BrandMark } from '../components/BrandMark.tsx';
 import { GUEST_EVENT } from '../components/GuestPing.tsx';
 import { Automations } from './Automations.tsx';
@@ -429,8 +429,7 @@ function StayPayments({ reservationId, canRefund, airbnbLink }: { reservationId:
         on a paid line. A hold lasts about 7 days. <b>Pending</b> is what the guest still owes; <b>Remind…</b> sends them a message with their
         check-in link. All stays: Guest Services → Payments.</>}>
       {err && <p className="ix-state warn">{err}</p>}
-      {pending.length > 0 && <><p className="ix-state warn"><Icon n="alert" /> Pending</p>
-        <PendingTable rows={pending} canAct={canRefund} compact rcLink={airbnbLink} onDone={() => setN(x => x + 1)} /></>}
+      {pending.length > 0 && <PendingMini rows={pending} rcLink={airbnbLink} />}
       {list === null ? (!err && <p className="note loading-dot">Reading</p>) : !list.length ? (!pending.length && <p className="note">Nothing paid in the portal.</p>) : (
         <ul className="ix-pays">
           {list.map(p => <li key={p.id}>
@@ -455,6 +454,28 @@ function StayPayments({ reservationId, canRefund, airbnbLink }: { reservationId:
       {ask && <ActionDialog ask={ask} onClose={() => setAsk(null)} onDone={() => { setAsk(null); setN(x => x + 1); }} />}
     </Fold>
   );
+}
+/**
+ * What the guest still owes, one short line each (owner, 2026-11-27: the table did not fit the panel) — the date behind a
+ * calendar, what + amount + how; Remind / Check live in Guest Services → Payments, one tap away.
+ */
+function PendingMini({ rows, rcLink }: { rows: Pending[]; rcLink?: string | null }) {
+  const toDesk = (e: MouseEvent) => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault(); setParams({ tab: 'payments' }, { whole: true }); dispatchEvent(new PopStateEvent('popstate'));
+  };
+  return <>
+    <ul className="ix-pays">{rows.map(p => <li key={p.key}><div className="ix-pay">
+      <IconFlag sm tone="attn" icon={<Icon n="calendar" />} label={`Pending since ${md(p.since.slice(0, 10))}`}
+        detail={p.lastReminder ? `Reminded ${md(p.lastReminder.at.slice(0, 10))} by ${p.lastReminder.by.split('@')[0]}` : 'Not reminded yet'} />
+      <span><small>{p.what.replace(/^./, c => c.toUpperCase())}</small> <b>{p.amount != null ? money2(p.amount) : '—'}</b>
+        {p.method === 'rc'
+          ? <IconFlag sm icon={<Icon n="home" />} label="Airbnb Resolution Center">{rcLink && <><br /><a href={rcLink} target="_blank" rel="noreferrer">Open in Airbnb ↗</a></>}</IconFlag>
+          : <IconFlag sm icon={<Icon n="card" />} label="Card, in the guest portal" />}
+        {p.said && <IconFlag sm tone="bad" icon={<Icon n="alert" />} label="The guest says it is paid" detail="Check Airbnb, then confirm it in Payments." />}</span>
+    </div></li>)}</ul>
+    <a className="ix-pay-more" href="?tab=payments" onClick={toDesk}>Remind or check in Payments ↗</a>
+  </>;
 }
 const PAY_STATE = { paid: 'Paid', held: 'Held on the card', refunded: 'Refunded', released: 'Released' } as const;
 

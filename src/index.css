@@ -4130,4 +4130,6 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
 .ix-pay { display: grid; grid-template-columns: 20px 1fr auto; align-items: start; gap: 8px; padding: 4px; }
 .ix-pay > span:last-child:not(:nth-child(2)) { display: inline-flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
 .ix-pay small { color: var(--muted); }
+.ix-pay > span:nth-child(2) .iflag { margin-left: 2px; }
+.ix-pay-more { display: inline-block; margin-top: 4px; font-size: var(--fs-caption); }
 @media (max-width: 520px) { .ix-pay { grid-template-columns: 20px 1fr; } .ix-pay > span:nth-child(3) { grid-column: 2; justify-content: flex-start; } }

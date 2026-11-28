@@ -237,6 +237,8 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   attn=amber, bad=red): Paid / Agreement / ID as three icons, Online check-in a check (Undo in its pop-up), Bad experience a red "!"
   beside the title (Clear in its pop-up), payment rows a status icon (dates/hold end on hover) + blue/amber set-up icons. Chat meta:
   status, Automatic/AI and the channel (email/SMS) are small icons; a failed send's reason is in its red "!".
+  Pending in the stay panel = `PendingMini` (calendar → since / reminded, what + amount, card or Airbnb icon); Remind / Check only in
+  Guest Services → Payments (link under the list).
 
 ## Open items
 
