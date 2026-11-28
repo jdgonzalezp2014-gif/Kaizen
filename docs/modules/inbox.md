@@ -216,6 +216,9 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
   the red to-dos count on the right. The stay's **Upselling** fold is red with "!" while a charge is open, like Work and Claims.
   The stay card shows Hostaway's check-in / check-out **hours** under the dates; an open (unpaid) Early / Late check-in or Late checkout
   case marks that hour amber "! · not paid" (Hostaway's hour moves only once the charge is paid — §178). Needs `claims` to see the mark.
+  2026-11-27 (owner): each hour is a dropdown — picking one POSTs `/api/turnover` `set.checkinTime/checkoutTime` (same as the
+  Operations board) → `pushStayTimes` writes it on the Hostaway reservation; logged in `stay_time_pushes`. No cleaner pop-up here
+  (no Slack reminder, no night block) — for a late checkout that touches the next clean, use the board. Ops not live → saved only.
   Bad experience keeps its own red mark in the preview line. **Suggest** is now the sparkle icon alone (owner: the word looked too important).
 
 ## Not verified yet (no way to without a real guest or a key)

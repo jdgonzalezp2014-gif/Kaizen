@@ -3821,6 +3821,9 @@ a.gx-tile { text-decoration: none; }
 .ix-hour { display: inline-flex; align-items: center; gap: 3px; }
 .ix-hour.warn { color: var(--amber); font-weight: 650; }
 .ix-hour svg { width: 12px; height: 12px; }
+.ix-hour-pick { font: inherit; color: inherit; background: transparent; border: 0; border-bottom: 1px dashed var(--line); padding: 0 2px; cursor: pointer; }
+.ix-hour-pick:hover { border-bottom-color: currentColor; }
+.ix-hour-msg { margin: 6px 0 0; font-size: var(--fs-caption); color: var(--muted); }
 .ix-nights { padding: 2px 8px; border-radius: var(--r-pill); background: var(--tint); }
 .ix-fact { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 8px; font-size: var(--fs-footnote); color: var(--muted); }
 .ix-fact .icon { width: 15px; height: 15px; }

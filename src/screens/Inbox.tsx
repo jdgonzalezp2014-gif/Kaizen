@@ -7,12 +7,12 @@
  * paragraphs — the how-to sits behind each "?" (CLAUDE.md); what a state or a limit says stays on screen.
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { getStayPayments, getInbox, getInboxSms, getInboxThread, inboxAction, inboxExtend, inboxSuggest, saveClaim, todoAction, type ExtendFit, type StayCase,
+import { saveTurnover, getStayPayments, getInbox, getInboxSms, getInboxThread, inboxAction, inboxExtend, inboxSuggest, saveClaim, todoAction, type ExtendFit, type StayCase,
   type InboxList, type InboxSms, type InboxThread } from '../api.ts';
 import { FILTERS, MAX_BODY, STAGE_LABEL, bookingLinks, channelLabel, fill, matchesFilter, searchHit, stageOf, tabOf, threadTabs, varsFor, waits,
   type Channel, type InboxFilter, type InboxRow, type Planned, type Suggestion, type ThreadMsg, type ThreadTab, type Via } from '../lib/inbox.ts';
 import { segments } from '../lib/sms.ts';
-import { hourWord } from '../lib/stay-time.ts';
+import { HOURS, hourWord, timeOfHour } from '../lib/stay-time.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Modal } from '../components/Modal.tsx';
 import { CASE_CATEGORIES, UPSELL_CATEGORIES, isUpsell } from '../lib/claims.ts';
@@ -543,9 +543,34 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, canPaymen
   // Owner, 2026-11-23: the hours on the card, marked while an early/late charge is not paid — Hostaway's hour moves only once it is.
   const unpaid = (cats: string[]) => upsells.find(c => !closedCase(c.status) && cats.includes(c.category ?? ''));
   const unpaidIn = unpaid(['Early check-in', 'Late check-in']), unpaidOut = unpaid(['Late checkout']);
-  const hourOf = (h: number | null, open: StayCase | undefined) => <small className={open ? 'ix-hour warn' : 'ix-hour'}
-    title={open ? `${open.category} requested — not paid yet. Hostaway keeps this hour until it is paid.` : 'The hour Hostaway has for this stay'}>
-    {open && <Icon n="alert" />}{h == null ? '—' : hourWord(h)}{open ? ' · not paid' : ''}</small>;
+  // Owner, 2026-11-27: the hour is changed right here — written on the Hostaway reservation (same path as the board),
+  // so the reminders and the guest portal say the hour that was agreed. Shown as set until the next sync reads it back.
+  const [setHour, setSetHour] = useState<{ checkin?: number; checkout?: number }>({});
+  const [hourMsg, setHourMsg] = useState('');
+  useEffect(() => { setSetHour({}); setHourMsg(''); }, [row.reservationId, row.checkInHour, row.checkOutHour]);
+  const changeHour = async (k: 'checkin' | 'checkout', h: number) => {
+    if (!row.reservationId) return;
+    setSetHour(x => ({ ...x, [k]: h })); setHourMsg('Sending to Hostaway…');
+    const r = await saveTurnover({ resId: row.reservationId, set: k === 'checkin' ? { checkinTime: timeOfHour(h) } : { checkoutTime: timeOfHour(h) } })
+      .catch(e => ({ ok: false as const, message: String(e) }));
+    if (!r.ok) { setSetHour(x => ({ ...x, [k]: undefined })); setHourMsg(('message' in r && r.message) || 'Not saved.'); return; }
+    setHourMsg(r.time === 'queued' ? `${k === 'checkin' ? 'Check-in' : 'Check-out'} ${hourWord(h)} sent to Hostaway.` : 'Saved in Kaizen — Operations is not live, Hostaway not changed.');
+    onChanged();
+  };
+  const hourOf = (k: 'checkin' | 'checkout', h0: number | null, open: StayCase | undefined) => {
+    const h = setHour[k] ?? h0;
+    return <small className={open ? 'ix-hour warn' : 'ix-hour'}
+      title={open ? `${open.category} requested — not paid yet. Hostaway keeps this hour until it is paid.` : 'The hour Hostaway has for this stay — change it here'}>
+      {open && <Icon n="alert" />}
+      {row.reservationId
+        ? <select className="ix-hour-pick" value={h ?? ''} aria-label={k === 'checkin' ? 'Check-in hour' : 'Check-out hour'}
+            onChange={e => e.target.value !== '' && void changeHour(k, Number(e.target.value))}>
+            {h == null && <option value="">—</option>}
+            {HOURS.map(x => <option key={x} value={x}>{hourWord(x)}</option>)}
+          </select>
+        : h == null ? '—' : hourWord(h)}
+      {open ? ' · not paid' : ''}</small>;
+  };
   const links = bookingLinks(row);
   const [ext, setExt] = useState<ExtendFit | { message: string } | null>(null);
   const [extBusy, setExtBusy] = useState(false);
@@ -583,10 +608,11 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, canPaymen
         <span className={`ix-stage s-${stage}`}>{STAGE_LABEL[stage]}</span>
         <h3>{row.listing}</h3>
         <div className="ix-dates">
-          <div><span>Check-in</span><b>{row.arrival ? md(row.arrival) : '—'}</b>{hourOf(row.checkInHour ?? null, unpaidIn)}</div>
+          <div><span>Check-in</span><b>{row.arrival ? md(row.arrival) : '—'}</b>{hourOf('checkin', row.checkInHour ?? null, unpaidIn)}</div>
           <span className="ix-nights">{nights > 0 ? `${nights} night${nights === 1 ? '' : 's'}` : ''}</span>
-          <div><span>Check-out</span><b>{row.departure ? md(row.departure) : '—'}</b>{hourOf(row.checkOutHour ?? null, unpaidOut)}</div>
+          <div><span>Check-out</span><b>{row.departure ? md(row.departure) : '—'}</b>{hourOf('checkout', row.checkOutHour ?? null, unpaidOut)}</div>
         </div>
+        {hourMsg && <p className="ix-hour-msg">{hourMsg}</p>}
         {fact('users', 'Guests', row.guests ?? '—')}
         {fact('globe', 'Channel', row.channel ? channelLabel(row.channel) : '—')}
         {fact('phone', thread?.phoneConfirmed ? 'Phone · confirmed by guest' : 'Phone', thread?.phone ?? '—')}
