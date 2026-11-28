@@ -55,10 +55,10 @@ export function Peek({ label, children, ariaLabel, className = '' }: { label: Re
  * A flag that is only an icon on the row — inspection, same-day, deep — its word and its reason on hover or a
  * tap (owner, 2026-10-14 — §159: the words were noise on every line). `tone` colours the icon when it asks for attention.
  */
-export function IconFlag({ icon, label, detail, tone }: { icon: ReactNode; label: string; detail?: string | null; tone?: 'attn' }) {
+export function IconFlag({ icon, label, detail, tone, sm, children }: { icon: ReactNode; label: string; detail?: ReactNode; tone?: 'attn' | 'ok' | 'info' | 'bad'; sm?: boolean; children?: ReactNode }) {
   return (
-    <Peek className={`iflag ${tone ?? ''}`} ariaLabel={label} label={icon}>
-      <b>{label}</b>{detail ? <><br />{detail}</> : null}
+    <Peek className={`iflag ${tone ?? ''}${sm ? ' sm' : ''}`} ariaLabel={label} label={icon}>
+      <b>{label}</b>{detail ? <><br />{detail}</> : null}{children}
     </Peek>
   );
 }

@@ -233,6 +233,10 @@ or answer; for now a draft that can be sent or not; later it takes care of it."
 - `quoThread` / guest SMS — written from Quo's reference; the account has no Quo key. `quo.ts` still uses
   `api.openphone.com` (Quo's docs now show `api.quo.com`).
 - The AI suggestion on a real thread — mode is off until 116 runs.
+- **Icons, not words (owner, 2026-11-27):** stay panel status is `IconFlag`s (word + detail on hover/tap; tones ok=green, info=blue,
+  attn=amber, bad=red): Paid / Agreement / ID as three icons, Online check-in a check (Undo in its pop-up), Bad experience a red "!"
+  beside the title (Clear in its pop-up), payment rows a status icon (dates/hold end on hover) + blue/amber set-up icons. Chat meta:
+  status, Automatic/AI and the channel (email/SMS) are small icons; a failed send's reason is in its red "!".
 
 ## Open items
 

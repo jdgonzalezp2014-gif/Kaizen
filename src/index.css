@@ -2528,6 +2528,14 @@ tr.rc-open > td { border-bottom: 0; }
 .iflag .peek-label { width: 24px; height: 24px; justify-content: center; border-radius: var(--r-pill); color: var(--muted);
   border: 1px solid var(--line); text-decoration: none; vertical-align: middle; margin: 0 2px; }
 .iflag.attn .peek-label { color: var(--amber); border-color: color-mix(in srgb, var(--amber) 40%, transparent); }
+.iflag.ok .peek-label { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
+.iflag.info .peek-label { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); }
+.iflag.bad .peek-label { color: var(--red); border-color: color-mix(in srgb, var(--red) 40%, transparent); }
+.iflag .peek-label .icon { width: 13px; height: 13px; }
+.iflag .hint-pop .ix-ghost, .iflag .hint-pop .link { margin-top: 6px; }
+/* 2026-11-27: small flags inside a line (chat meta, payment rows) — 20px, no border. */
+.iflag.sm .peek-label { width: 20px; height: 20px; border-color: transparent; margin: 0; }
+.iflag.sm .peek-label .icon { width: 12px; height: 12px; }
 .iflag .peek-label:hover { background: var(--hover); }
 @media (max-width: 720px) { .iflag .peek-label { width: 30px; height: 30px; } }
 /* §159 (owner: "Show 3 more" went unseen): a full-width row in the action colour, so more is never missed. */
@@ -3769,11 +3777,10 @@ a.gx-tile { text-decoration: none; }
 .ix-bubble img { display: block; max-width: 220px; max-height: 220px; margin-top: 6px; border-radius: var(--r-sm); }
 .ix-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: var(--fs-caption); color: var(--muted); }
 .ix-msg.out .ix-meta { justify-content: flex-end; }
+/* Flags on the right edge open leftwards so the pop-up stays on screen. */
+.ix-msg.out .ix-meta .hint-pop, .ix-ci-row .ix-ci .hint-pop, .ix-pay .hint-pop { left: auto; right: -8px; }
+.ix-meta .iflag, .ix-done-flags .iflag, .ix-pay > .iflag { margin-left: 0; }
 .ix-by { display: inline-flex; align-items: center; gap: 3px; }
-.ix-flag { display: inline-flex; align-items: center; gap: 4px; font-weight: 600; }
-.ix-flag .icon { width: 12px; height: 12px; }
-.ix-flag.f-failed, .ix-why { color: var(--red); }
-.ix-flag.f-scheduled { color: var(--accent); }
 .ix-blank { flex: 1; display: grid; place-content: center; justify-items: center; gap: 10px; color: var(--muted); text-align: center; padding: var(--s-5); }
 .ix-blank > .icon { width: 32px; height: 32px; }
 .ix-blank p { margin: 0; font-size: var(--fs-callout); color: var(--ink); }
@@ -3828,11 +3835,7 @@ a.gx-tile { text-decoration: none; }
 .ix-fact { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 8px; font-size: var(--fs-footnote); color: var(--muted); }
 .ix-fact .icon { width: 15px; height: 15px; }
 .ix-fact b { color: var(--ink); font-weight: 550; text-transform: capitalize; }
-.ix-done { display: flex; flex-wrap: wrap; gap: 6px; padding-top: 10px; border-top: 1px solid var(--line); }
-.ix-done span { display: inline-flex; align-items: center; gap: 4px; padding: 2px 9px; border-radius: var(--r-pill); border: 1px solid var(--line); font-size: var(--fs-caption);
-  color: var(--muted); text-transform: capitalize; }
-.ix-done span.yes { color: var(--green); border-color: color-mix(in srgb, var(--green) 40%, transparent); }
-.ix-done .icon { width: 12px; height: 12px; }
+.ix-done-flags { display: flex; gap: 2px; padding-top: 8px; border-top: 1px solid var(--line); }
 .ix-add { margin-left: auto; width: 26px; height: 26px; padding: 0; display: inline-grid; place-items: center; background: none; border: 1px solid var(--line-strong);
   border-radius: 50%; color: var(--ink); font-size: var(--fs-callout); line-height: 1; }
 .ix-add:hover { border-color: var(--ink); }
@@ -4124,7 +4127,7 @@ button.ix-auto-card.recipe .ix-auto-when { color: var(--muted); display: block; 
 
 /* CRM reservation card → Payments (2026-11-26): one row per portal payment, its buttons on the right. */
 .ix-pays { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
-.ix-pay { display: grid; grid-template-columns: 16px 1fr auto; align-items: start; gap: 8px; padding: 4px; }
+.ix-pay { display: grid; grid-template-columns: 20px 1fr auto; align-items: start; gap: 8px; padding: 4px; }
 .ix-pay > span:last-child:not(:nth-child(2)) { display: inline-flex; flex-wrap: wrap; gap: 4px; justify-content: flex-end; }
 .ix-pay small { color: var(--muted); }
-@media (max-width: 520px) { .ix-pay { grid-template-columns: 16px 1fr; } .ix-pay > span:nth-child(3) { grid-column: 2; justify-content: flex-start; } }
+@media (max-width: 520px) { .ix-pay { grid-template-columns: 20px 1fr; } .ix-pay > span:nth-child(3) { grid-column: 2; justify-content: flex-start; } }

@@ -13,7 +13,7 @@ import { FILTERS, MAX_BODY, STAGE_LABEL, bookingLinks, channelLabel, fill, match
   type Channel, type InboxFilter, type InboxRow, type Planned, type Suggestion, type ThreadMsg, type ThreadTab, type Via } from '../lib/inbox.ts';
 import { segments } from '../lib/sms.ts';
 import { HOURS, hourWord, timeOfHour } from '../lib/stay-time.ts';
-import { Hint } from '../components/Hint.tsx';
+import { Hint, IconFlag } from '../components/Hint.tsx';
 import { Modal } from '../components/Modal.tsx';
 import { CASE_CATEGORIES, UPSELL_CATEGORIES, isUpsell } from '../lib/claims.ts';
 import { UpsellCharge } from '../components/UpsellCharge.tsx';
@@ -272,11 +272,15 @@ function Bubbles({ msgs, canSend, onChanged, empty }: { msgs: ThreadMsg[] | null
               {m.images?.map(u => <a key={u} href={u} target="_blank" rel="noreferrer"><img src={u} alt="Photo from the conversation" loading="lazy" /></a>)}
             </div>
             <div className="ix-meta">
-              {pending && <span className={`ix-flag f-${m.status}`}><Icon n={m.status === 'scheduled' ? 'clock' : m.status === 'failed' ? 'alert' : 'eye'} /> {STATUS_WORD[m.status]}</span>}
+              {/* Owner, 2026-11-27: the meta line is icons with their word on hover — the message gets the room. */}
+              {pending && <IconFlag sm tone={m.status === 'failed' ? 'bad' : m.status === 'scheduled' ? 'info' : 'attn'}
+                icon={<Icon n={m.status === 'scheduled' ? 'clock' : m.status === 'failed' ? 'alert' : 'eye'} />} label={STATUS_WORD[m.status ?? ""] ?? "Not sent"}
+                detail={m.status === 'failed' ? m.detail : null} />}
               <span>{m.status === 'scheduled' ? fmt(m.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) : clock(m.at)}</span>
-              {m.by && <span className="ix-by" title="Who sent it — the guest sees the listing's host account"><Icon n={/automat/i.test(m.by) ? 'zap' : m.by === 'Kaizen AI' ? 'sparkles' : 'user'} /> {m.by.split('@')[0]}</span>}
-              {m.via && m.via !== 'channel' && <span>{m.via}</span>}
-              {m.detail && m.status === 'failed' && <span className="ix-why">{m.detail}</span>}
+              {m.by && (/automat/i.test(m.by) || m.by === 'Kaizen AI'
+                ? <IconFlag sm icon={<Icon n={m.by === 'Kaizen AI' ? 'sparkles' : 'zap'} />} label={m.by === 'Kaizen AI' ? 'Kaizen AI' : 'Automatic'} detail="The guest sees the listing's host account." />
+                : <span className="ix-by" title="Who sent it — the guest sees the listing's host account">{m.by.split('@')[0]}</span>)}
+              {m.via && m.via !== 'channel' && <IconFlag sm icon={<Icon n={m.via === 'email' ? 'mail' : m.via === 'sms' ? 'phone' : 'message'} />} label={`Sent by ${m.via}`} />}
               {canSend && m.ours && m.status === 'scheduled' && <button type="button" className="link tiny" disabled={busy === m.id} onClick={() => void act('cancel', m.id)}>Cancel</button>}
               {canSend && m.ours && (m.status === 'failed' || m.status === 'staged') && <button type="button" className="link tiny" disabled={busy === m.id} onClick={() => void act('retry', m.id)}>{m.status === 'failed' ? 'Retry' : 'Send now'}</button>}
             </div>
@@ -431,11 +435,14 @@ function StayPayments({ reservationId, canRefund, airbnbLink }: { reservationId:
         <ul className="ix-pays">
           {list.map(p => <li key={p.id}>
             <div className="ix-pay">
-              <Icon n={p.status === 'held' ? 'clock' : p.status === 'paid' ? 'check' : 'card'} />
-              <span>{p.lines.map(l => `${l.label}${l.hold ? ' (hold)' : ''}`).join(' · ')} — <b>{money2(p.amount)}</b>
-                {p.refunded > 0 && <small> −{money2(p.refunded)} refunded</small>}
-                <small> · {PAY_STATE[p.status]} {p.paidOn}{p.holdEndsOn ? ` · hold ends ${p.holdEndsOn}` : ''}{!p.livemode ? ' · test' : ''}</small>
-                {p.followUps.map(t => <small key={t.id}> · {t.done ? '✓' : '!'} set-up #{t.id} {t.done ? 'done' : 'pending'}</small>)}</span>
+              {/* Owner, 2026-11-27: status as icons (green paid, blue set-up done, ! pending), the dates on hover. */}
+              <IconFlag sm tone={p.status === 'paid' ? 'ok' : p.status === 'held' ? 'info' : undefined}
+                icon={<Icon n={p.status === 'held' ? 'clock' : p.status === 'paid' ? 'check' : 'undo'} />} label={PAY_STATE[p.status]}
+                detail={`${p.paidOn}${p.holdEndsOn ? ` · hold ends ${p.holdEndsOn}` : ''}${p.refunded > 0 ? ` · ${money2(p.refunded)} refunded` : ''}${!p.livemode ? ' · test' : ''}`} />
+              <span>{p.lines.map(l => `${l.label}${l.hold ? ' (hold)' : ''}`).join(' · ')} <b>{money2(p.amount)}</b>
+                {p.refunded > 0 && <small> −{money2(p.refunded)}</small>}
+                {p.followUps.map(t => <IconFlag key={t.id} sm tone={t.done ? 'info' : 'attn'} icon={<Icon n={t.done ? 'done' : 'alert'} />}
+                  label={`Set-up #${t.id} ${t.done ? 'done' : 'pending'}`} />)}</span>
               {canRefund && <span>
                 {p.status === 'held' && <><button type="button" className="ix-ghost" onClick={() => setAsk({ kind: 'release', p })}>Release</button>
                   <button type="button" className="ix-ghost" onClick={() => setAsk({ kind: 'keep', p })}>Keep…</button></>}
@@ -449,7 +456,7 @@ function StayPayments({ reservationId, canRefund, airbnbLink }: { reservationId:
     </Fold>
   );
 }
-const PAY_STATE = { paid: '✓ Paid', held: '○ Held', refunded: '↺ Refunded', released: '○ Released' } as const;
+const PAY_STATE = { paid: 'Paid', held: 'Held on the card', refunded: 'Refunded', released: 'Released' } as const;
 
 function Fold({ title, count, hint, onAdd, addLabel, urgent = false, children }: { title: string; count: number; hint: ReactNode; onAdd?: () => void; addLabel?: string; urgent?: boolean; children: ReactNode }) {
   const hot = urgent && count > 0;
@@ -617,11 +624,15 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, canPaymen
         {fact('globe', 'Channel', row.channel ? channelLabel(row.channel) : '—')}
         {fact('phone', thread?.phoneConfirmed ? 'Phone · confirmed by guest' : 'Phone', thread?.phone ?? '—')}
         {row.reservationId && fact('clipboard', 'Reservation', `#${row.reservationId}`)}
-        {row.reservationId && <div className="ix-done" aria-label="What the guest has done">
-          <span className={/^paid$/i.test(row.payment ?? '') ? 'yes' : ''}><Icon n={/^paid$/i.test(row.payment ?? '') ? 'check' : 'card'} /> {row.payment || 'Payment —'}</span>
-          <span className={row.agreement === 'signed' ? 'yes' : ''}><Icon n={row.agreement === 'signed' ? 'check' : 'file'} /> {row.agreement === 'signed' ? 'Agreement signed' : 'Agreement —'}</span>
-          <span className={row.idVerified ? 'yes' : ''}><Icon n={row.idVerified ? 'check' : 'idcard'} /> {row.idVerified ? 'ID verified' : 'ID —'}</span>
-        </div>}
+        {row.reservationId && (() => {
+          const paid = /^paid$/i.test(row.payment ?? ''), signed = row.agreement === 'signed';
+          // Owner, 2026-11-27: icons, the word on hover — green check when done, the thing's own icon while not.
+          return <div className="ix-done-flags" aria-label="What the guest has done">
+            <IconFlag tone={paid ? 'ok' : undefined} icon={<Icon n={paid ? 'check' : 'card'} />} label={paid ? 'Paid' : `Payment: ${row.payment || 'not recorded'}`} />
+            <IconFlag tone={signed ? 'ok' : undefined} icon={<Icon n={signed ? 'check' : 'file'} />} label={signed ? 'Agreement signed' : 'Agreement not signed'} />
+            <IconFlag tone={row.idVerified ? 'ok' : undefined} icon={<Icon n={row.idVerified ? 'check' : 'idcard'} />} label={row.idVerified ? 'ID verified' : 'ID not verified'} />
+          </div>;
+        })()}
       </div>
 
       {row.reservationId && <div className="ix-card ix-ci-row">
@@ -629,10 +640,10 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, canPaymen
           link is live; until then a person marks it here. Marking it done sends the automations that go <b>After online check-in</b> (the door code) and
           stops the reminders meant for guests who have not done it.</Hint></span>
         {ci
-          ? <span className="ix-ci yes" title={`${fmt(ci.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} — ${ci.source === 'team' ? `marked by ${(ci.by ?? 'the team').split('@')[0]}` : 'by the guest'}`}>
-              <Icon n="check" /> Done
-              {canSend && ci.source === 'team' && <button type="button" className="link tiny" disabled={ciBusy} onClick={() => void markCheckin(false)}>Undo</button>}</span>
-          : <span className="ix-ci"><Icon n="clock" /> Not done
+          ? <span className="ix-ci"><IconFlag tone="ok" icon={<Icon n="check" />} label="Done"
+              detail={`${fmt(ci.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} — ${ci.source === 'team' ? `marked by ${(ci.by ?? 'the team').split('@')[0]}` : 'by the guest'}`}>
+              {canSend && ci.source === 'team' && <><br /><button type="button" className="link tiny" disabled={ciBusy} onClick={() => void markCheckin(false)}>Undo</button></>}</IconFlag></span>
+          : <span className="ix-ci"><IconFlag tone="attn" icon={<Icon n="clock" />} label="Not done yet" />
               {canSend && thread && <button type="button" className="ix-ghost" disabled={ciBusy} onClick={() => void markCheckin(true)}>{ciBusy ? 'Saving…' : 'Mark done'}</button>}</span>}
         {ciMsg && <p className="ix-state warn">{ciMsg}</p>}
       </div>}
@@ -640,13 +651,15 @@ function StayPanel({ row, stage, thread, canTodos, canClaims, canSend, canPaymen
       {row.reservationId && <div className="ix-card ix-ci-row">
         <span className="ix-ci-label">Bad experience <Hint>Kept on record when a guest reports a bad experience (dirty, broken, noise, a complaint) — the AI records it
           when it reads the message, or a person here. While it is on record, automations with the condition <b>No bad experience</b> (the review ask)
-          are not sent to this stay. The guest is told nothing about it. Clear it if it was not one.</Hint></span>
+          are not sent to this stay. The guest is told nothing about it. Clear it if it was not one.</Hint>
+          {/* Owner, 2026-11-27: the "!" sits beside the title, what happened on hover — the card stays one line. */}
+          {issue && <IconFlag tone="bad" icon={<Icon n="alert" />} label={issue.why}
+            detail={`${fmt(issue.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} — ${issue.source === 'team' ? `by ${(issue.by ?? 'the team').split('@')[0]}` : 'noticed by the AI'}`}>
+            {canSend && <><br /><button type="button" className="link tiny" disabled={isBusy} onClick={() => void markIssue(false)}>Clear</button></>}</IconFlag>}</span>
         {issue
-          ? <span className="ix-ci warn" title={`${fmt(issue.at, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} — ${issue.source === 'team' ? `by ${(issue.by ?? 'the team').split('@')[0]}` : 'noticed by the AI'}`}>
-              <Icon n="alert" /> {issue.why}
-              {canSend && <button type="button" className="link tiny" disabled={isBusy} onClick={() => void markIssue(false)}>Clear</button>}</span>
+          ? null
           : isWhy === null
-            ? <span className="ix-ci"><Icon n="check" /> None
+            ? <span className="ix-ci"><IconFlag tone="ok" icon={<Icon n="check" />} label="None on record" />
                 {canSend && thread && <button type="button" className="ix-ghost" onClick={() => setIsWhy('')}>Record</button>}</span>
             : <span className="ix-ci">
                 <input autoFocus value={isWhy} maxLength={300} placeholder="What happened, in one line" aria-label="What happened"
