@@ -10,6 +10,17 @@ import { chargesOf, share, tally, type ProtectionPick } from '../lib/payments-de
 import type { GuestPayment } from '../lib/guest-payments.ts';
 import { Hint } from '../components/Hint.tsx';
 import { Modal } from '../components/Modal.tsx';
+import { setParams } from '../components/useUrlState.ts';
+
+/** Owner, 2026-11-27: the guest's name opens their stay in the Inbox (the chat), as Slack's ?r= links do; ctrl-click → a new tab. */
+function GuestLink({ name, reservationId }: { name: string | null; reservationId: string | null | undefined }) {
+  if (!reservationId) return <>{name ?? '—'}</>;
+  const href = `?tab=inbox&r=${encodeURIComponent(reservationId)}`;
+  return <a href={href} title="Open the stay's conversation" onClick={e => {
+    if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return;
+    e.preventDefault(); setParams({ tab: 'inbox', r: reservationId }, { whole: true }); dispatchEvent(new PopStateEvent('popstate'));
+  }}>{name ?? 'guest'}</a>;
+}
 
 export type DeskPayment = GuestPayment & { createdAt: string; followUps: { id: string; status: string; done: boolean }[]; hold: number; holdEndsOn: string | null; refundable: number };
 type Charge = { id: string; claim_id: string; reservation_id: string; unit_name: string | null; guest: string | null; label: string; amount: number;
@@ -102,7 +113,7 @@ export function Payments({ canAct }: { canAct: boolean }) {
                 <thead><tr><th>Day</th><th>Guest</th><th>Unit</th><th>Items</th><th className="n">Amount</th><th>State</th><th>Set up</th>{canAct && <th />}</tr></thead>
                 <tbody>{v.pays.map(p => (
                   <tr key={p.id}>
-                    <td>{p.paidOn}</td><td>{p.guest ?? '—'}</td><td>{p.unitName ?? '—'}</td>
+                    <td>{p.paidOn}</td><td><GuestLink name={p.guest} reservationId={p.reservationId} /></td><td>{p.unitName ?? '—'}</td>
                     <td>{p.lines.map(l => `${l.label}${l.hold ? ' (hold)' : ''}`).join(' · ')}</td>
                     <td className="n">{money2(p.amount)}{p.refunded > 0 && <small> −{money2(p.refunded)}</small>}</td>
                     <td>{STATE[p.status]}{p.holdEndsOn && <small> · hold ends {p.holdEndsOn}</small>}{!p.livemode && <span className="g-pill"> Test</span>}</td>
@@ -126,7 +137,7 @@ export function Payments({ canAct }: { canAct: boolean }) {
               <thead><tr><th>Made</th><th>Guest</th><th>Unit</th><th>What</th><th>How</th><th className="n">Amount</th><th>State</th>{canAct && <th />}</tr></thead>
               <tbody>{data.charges.map(c => (
                 <tr key={c.id}>
-                  <td>{day(c.created_at)}</td><td>{c.guest ?? '—'}</td><td>{c.unit_name ?? '—'}</td><td>{c.label}</td>
+                  <td>{day(c.created_at)}</td><td><GuestLink name={c.guest} reservationId={c.reservation_id} /></td><td>{c.unit_name ?? '—'}</td><td>{c.label}</td>
                   <td>{c.method === 'rc' ? 'Airbnb RC' : 'Card link'}</td><td className="n">{money2(c.amount)}</td>
                   <td>{c.status === 'paid' ? `✓ Paid ${day(c.paid_at)}` : c.status === 'cancelled' ? `✕ Cancelled · ${who(c.cancelled_by)}` : '○ Pending'}</td>
                   {canAct && <td>{c.status === 'pending' && <button className="chip" onClick={() => setAsk({ kind: 'cancel-charge', c })}>Cancel</button>}</td>}
@@ -195,7 +206,7 @@ export function PendingTable({ rows, canAct, onDone, compact = false, rcLink }: 
         <thead><tr><th>Since</th>{!compact && <th>Guest</th>}{!compact && <th>Unit</th>}<th>What</th><th className="n">Amount</th><th>How</th><th>Reminded</th>{canAct && <th />}</tr></thead>
         <tbody>{rows.map(p => (
           <tr key={p.key}>
-            <td>{day(p.since)}</td>{!compact && <td>{p.guest ?? '—'}</td>}{!compact && <td>{p.unit ?? '—'}</td>}
+            <td>{day(p.since)}</td>{!compact && <td><GuestLink name={p.guest} reservationId={p.reservationId} /></td>}{!compact && <td>{p.unit ?? '—'}</td>}
             <td>{p.what.replace(/^./, c => c.toUpperCase())}</td>
             <td className="n">{p.amount != null ? money2(p.amount) : '—'}</td>
             <td>{p.method === 'rc' ? 'Airbnb RC' : 'Card'}{p.said && <small> · ! says paid — check Airbnb</small>}</td>
